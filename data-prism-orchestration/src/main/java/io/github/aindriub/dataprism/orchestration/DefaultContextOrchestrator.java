@@ -12,7 +12,9 @@ import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
 import io.github.aindriub.dataprism.core.RequestLimits;
+import io.github.aindriub.dataprism.core.ScopeBudget;
 import io.github.aindriub.dataprism.core.ScrubResult;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.SourceValues;
@@ -96,7 +98,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.audit = Objects.requireNonNull(audit, "audit");
         this.identities = new PassThroughIdentityResolver();
         this.fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC());
-        this.budget = new ScopeBudget();
+        this.budget = new InMemoryScopeBudget();
         this.limits = RequestLimits.DEFAULT;
         this.aliasing = SourceAliasing.exposed();
         this.correlation = new NamespaceCorrelationService(resolver, this.aliasing);

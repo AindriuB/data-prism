@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.aindriub</groupId>
+    <artifactId>data-prism</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>data-prism-hazelcast</artifactId>
+  <name>Data Prism :: Hazelcast</name>
+  <description>
+    Distributed scope state: synthetic identity caching, the re-identification
+    index and the shared read budget. An optimisation and a store, never a
+    source of truth for a synthetic value.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.hazelcast</groupId>
+      <artifactId>hazelcast</artifactId>
+      <version>${hazelcast.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+  </dependencies>
+</project>
