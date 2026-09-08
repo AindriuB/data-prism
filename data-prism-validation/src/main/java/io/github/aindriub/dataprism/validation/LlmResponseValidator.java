@@ -17,6 +17,11 @@ public interface LlmResponseValidator {
     /**
      * @param prohibited exact values that must not appear anywhere in the
      *                   response — the raw sensitive values read from the source
+     * @param emitted    values this scope generated, which a shape-based check
+     *                   must not refuse: a synthesised email is an email. The
+     *                   engine reports these; nothing else may add to them, and
+     *                   they are never logged. See docs/design-review.md §A5
      */
-    ValidationResult validate(JsonNode response, Set<String> prohibited, PrivacyContext context);
+    ValidationResult validate(JsonNode response, Set<String> prohibited, Set<String> emitted,
+                              PrivacyContext context);
 }

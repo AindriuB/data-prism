@@ -86,19 +86,26 @@ class RemainingActionsTest {
                 new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile())), SYNTHETICS, tokens);
     }
 
+    /**
+     * Shaped like an IBAN and deliberately not one: the mod-97 remainder is 69
+     * rather than 1, and the bank identifier is invented. A valid IBAN committed
+     * here would be the leak this project exists to prevent.
+     */
+    private static final String INVALID_IBAN = "IE00TEST99999999999999";
+
     @Test
     @DisplayName("HASH and TOKENIZE derive from the value, so equal values stay equal")
     void valueKeyedActions() {
-        ObjectNode first = engine(TOKENS).scrub(new Account("s-1", "IE29AIBK93115212345678",
-                "ACC-77", new BigDecimal("500"), "1980-04-17"), context());
-        ObjectNode second = engine(TOKENS).scrub(new Account("s-2", "IE29AIBK93115212345678",
-                "ACC-88", new BigDecimal("500"), "1980-04-17"), context());
+        ObjectNode first = engine(TOKENS).scrub(new Account("s-1", INVALID_IBAN,
+                "ACC-77", new BigDecimal("500"), "1980-04-17"), context()).tree();
+        ObjectNode second = engine(TOKENS).scrub(new Account("s-2", INVALID_IBAN,
+                "ACC-88", new BigDecimal("500"), "1980-04-17"), context()).tree();
 
         // Two different subjects, one shared account: the join survives, which is
         // the point of a value-keyed action and also its disclosure.
         assertThat(second.get("iban")).isEqualTo(first.get("iban"));
         assertThat(second.get("accountRef")).isNotEqualTo(first.get("accountRef"));
-        assertThat(first.toString()).doesNotContain("IE29AIBK93115212345678");
+        assertThat(first.toString()).doesNotContain(INVALID_IBAN);
     }
 
     @Test
@@ -117,7 +124,7 @@ class RemainingActionsTest {
     @DisplayName("GENERALIZE replaces a number with its band and a date with its year")
     void generalises() {
         ObjectNode out = engine(TOKENS).scrub(new Account("s-1", "IE29", "ACC-1",
-                new BigDecimal("4200.55"), "1980-04-17"), context());
+                new BigDecimal("4200.55"), "1980-04-17"), context()).tree();
 
         assertThat(out.get("balance").asText()).isEqualTo("EUR 1000–10000");
         assertThat(out.get("dateOfBirth").asText()).isEqualTo("1980");
@@ -128,13 +135,13 @@ class RemainingActionsTest {
     @DisplayName("values outside the configured bands are open-ended, not clamped")
     void bandsAreOpenEnded() {
         assertThat(engine(TOKENS).scrub(new Account("s-1", "IE29", "ACC-1",
-                new BigDecimal("-5"), "1980-04-17"), context()).get("balance").asText())
+                new BigDecimal("-5"), "1980-04-17"), context()).tree().get("balance").asText())
                 .isEqualTo("< EUR 0");
 
         // A closed top band would either be unbounded in effect or would have to
         // name the largest value seen, which is itself a disclosure.
         assertThat(engine(TOKENS).scrub(new Account("s-1", "IE29", "ACC-1",
-                new BigDecimal("99999"), "1980-04-17"), context()).get("balance").asText())
+                new BigDecimal("99999"), "1980-04-17"), context()).tree().get("balance").asText())
                 .isEqualTo(">= EUR 10000");
     }
 

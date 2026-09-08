@@ -10,9 +10,11 @@ import io.github.aindriub.dataprism.core.policy.Generalizer;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -74,7 +76,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     }
 
     @Override
-    public ObjectNode scrub(Object source, PrivacyContext context) {
+    public ScrubResult scrub(Object source, PrivacyContext context) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(context, "context");
 
@@ -89,7 +91,28 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             throw new PrivacyRefusedException("NOT_AN_OBJECT", type.getName(),
                     "source did not read as a JSON object");
         }
-        return scrubObject((ObjectNode) read, type, context, "$", 0, null);
+        Run run = new Run(context, new HashSet<>());
+        ObjectNode tree = scrubObject((ObjectNode) read, type, run, "$", 0, null);
+        return new ScrubResult(tree, run.emitted());
+    }
+
+    /**
+     * Per-call state: the scope, and the values this call generated.
+     *
+     * <p>It travels with the context rather than living on the engine, which has
+     * to stay stateless — one engine serves concurrent requests in different
+     * scopes, and a shared set would leak one scope's values into another's
+     * allowlist.
+     */
+    private record Run(PrivacyContext context, Set<String> emitted) {
+
+        /** Records a generated value and hands it straight back, so call sites read as one expression. */
+        String emit(String value) {
+            if (value != null && !value.isBlank()) {
+                emitted.add(value);
+            }
+            return value;
+        }
     }
 
     /**
@@ -99,7 +122,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      *                         inheritance every nested synthesised field would
      *                         fail for want of a subject
      */
-    private ObjectNode scrubObject(ObjectNode in, Class<?> type, PrivacyContext context,
+    private ObjectNode scrubObject(ObjectNode in, Class<?> type, Run run,
                                    String path, int depth, String inheritedSubject) {
         if (depth > MAX_DEPTH) {
             throw new PrivacyRefusedException("TOO_DEEP", path,
@@ -126,7 +149,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 md = FieldMetadata.undeclared(field);
             }
 
-            EffectivePrivacyPolicy policy = policies.resolve(md, context);
+            EffectivePrivacyPolicy policy = policies.resolve(md, run.context());
             if (!policy.allowed()) {
                 throw new PrivacyRefusedException(
                         unknownProperty ? "UNKNOWN_FIELD" : "UNDECLARED_FIELD", fieldPath,
@@ -136,7 +159,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             }
 
             JsonNode value = in.get(field);
-            JsonNode scrubbed = apply(value, md, policy, context, fieldPath, depth, ownSubject,
+            JsonNode scrubbed = apply(value, md, policy, run, fieldPath, depth, ownSubject,
                     in, byName, type);
             if (scrubbed != null) {
                 out.set(field, scrubbed);
@@ -147,7 +170,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
     /** @return the value to emit, or null to drop the field entirely */
     private JsonNode apply(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,
-                           PrivacyContext context, String path, int depth, String ownSubject,
+                           Run run, String path, int depth, String ownSubject,
                            ObjectNode parent, Map<String, FieldMetadata> siblings, Class<?> owner) {
         if (policy.action() == PrivacyAction.REMOVE) {
             return null;
@@ -159,7 +182,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         }
 
         if (value.isObject()) {
-            return scrubNestedObject((ObjectNode) value, md, context, path, depth, ownSubject);
+            return scrubNestedObject((ObjectNode) value, md, run, path, depth, ownSubject);
         }
         if (value.isArray()) {
             ArrayNode out = reader.createArrayNode();
@@ -168,15 +191,15 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 JsonNode element = in.get(i);
                 String elementPath = path + "[" + i + "]";
                 JsonNode scrubbed = element.isObject()
-                        ? scrubNestedObject((ObjectNode) element, md, context, elementPath, depth, ownSubject)
-                        : scalar(element, md, policy, context, elementPath, ownSubject, parent, siblings, owner);
+                        ? scrubNestedObject((ObjectNode) element, md, run, elementPath, depth, ownSubject)
+                        : scalar(element, md, policy, run, elementPath, ownSubject, parent, siblings, owner);
                 if (scrubbed != null) {
                     out.add(scrubbed);
                 }
             }
             return out;
         }
-        return scalar(value, md, policy, context, path, ownSubject, parent, siblings, owner);
+        return scalar(value, md, policy, run, path, ownSubject, parent, siblings, owner);
     }
 
     /**
@@ -185,14 +208,14 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * class nobody annotated — is unclassified, and the profile's setting for
      * unclassified data decides, exactly as it would for a scalar.
      */
-    private JsonNode scrubNestedObject(ObjectNode value, FieldMetadata md, PrivacyContext context,
+    private JsonNode scrubNestedObject(ObjectNode value, FieldMetadata md, Run run,
                                        String path, int depth, String inheritedSubject) {
         Class<?> nested = md.elementType() != null && md.elementType() != Object.class
                 ? md.elementType()
                 : md.valueType();
 
         if (nested != null && resolver.descendable(nested)) {
-            return scrubObject(value, nested, context, path, depth + 1, inheritedSubject);
+            return scrubObject(value, nested, run, path, depth + 1, inheritedSubject);
         }
 
         // The field holding this structure may well be declared non-sensitive --
@@ -200,7 +223,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         // says nothing about the fields inside, which nobody has classified, so
         // the profile's setting for unclassified data decides, not the field's.
         EffectivePrivacyPolicy structure =
-                policies.resolve(FieldMetadata.undeclared(md.fieldName()), context);
+                policies.resolve(FieldMetadata.undeclared(md.fieldName()), run.context());
 
         if (!structure.allowed()) {
             throw new PrivacyRefusedException("UNCLASSIFIED_STRUCTURE", path,
@@ -215,8 +238,14 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         };
     }
 
+    /**
+     * Every branch that invents a value records it on the run. Those are exactly
+     * the values a pattern detector will match without them being a leak — a
+     * synthesised email is shaped like an email on purpose, so that a bug
+     * emitting a real one is still caught by shape.
+     */
     private JsonNode scalar(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,
-                            PrivacyContext context, String path, String ownSubject,
+                            Run run, String path, String ownSubject,
                             ObjectNode parent, Map<String, FieldMetadata> siblings, Class<?> owner) {
         return switch (policy.action()) {
             case PASS_THROUGH -> value;
@@ -230,19 +259,19 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                     throw new PrivacyRefusedException("NO_SUBJECT", path,
                             "SYNTHESIZE needs a subject identifier and none resolved");
                 }
-                yield reader.getNodeFactory().textNode(
-                        synthetics.syntheticValue(subject, policy.namespace(), context));
+                yield reader.getNodeFactory().textNode(run.emit(
+                        synthetics.syntheticValue(subject, policy.namespace(), run.context())));
             }
             // HASH and TOKENIZE key on the value rather than the subject, so equal
             // values stay equal and joins on them survive. That also discloses
             // equality, and for a small value space it discloses the value --
             // see ValueTokenSource.
-            case HASH -> reader.getNodeFactory().textNode(
-                    tokens.hash(value.asText(), policy.namespace(), context));
-            case TOKENIZE -> reader.getNodeFactory().textNode(
-                    tokens.token(value.asText(), policy.namespace(), context));
-            case GENERALIZE -> reader.getNodeFactory().textNode(
-                    Generalizer.generalise(value, policy.generalization(), path));
+            case HASH -> reader.getNodeFactory().textNode(run.emit(
+                    tokens.hash(value.asText(), policy.namespace(), run.context())));
+            case TOKENIZE -> reader.getNodeFactory().textNode(run.emit(
+                    tokens.token(value.asText(), policy.namespace(), run.context())));
+            case GENERALIZE -> reader.getNodeFactory().textNode(run.emit(
+                    Generalizer.generalise(value, policy.generalization(), path)));
         };
     }
 

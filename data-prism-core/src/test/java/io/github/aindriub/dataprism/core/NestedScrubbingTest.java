@@ -81,7 +81,7 @@ class NestedScrubbingTest {
                 List.of(new Reviewed("Pat Murphy", "CLOSED")));
 
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST)
-                .scrub(source, context());
+                .scrub(source, context()).tree();
 
         assertThat(out.toString())
                 .doesNotContain("Patrick Murphy")
@@ -128,7 +128,7 @@ class NestedScrubbingTest {
                 new Unreviewed("Patrick Murphy", "patrick@example.invalid"));
 
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN)
-                .scrub(source, context());
+                .scrub(source, context()).tree();
 
         assertThat(out.get("details").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
         assertThat(out.toString()).doesNotContain("Patrick Murphy");
@@ -141,7 +141,7 @@ class NestedScrubbingTest {
                 new Unreviewed("Patrick Murphy", "patrick@example.invalid"));
 
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.DROP_AND_WARN)
-                .scrub(source, context());
+                .scrub(source, context()).tree();
 
         assertThat(out.has("details")).isFalse();
         assertThat(out.toString()).doesNotContain("Patrick Murphy");
@@ -154,7 +154,7 @@ class NestedScrubbingTest {
                 new Unreviewed("Patrick Murphy", "patrick@example.invalid"));
 
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE)
-                .scrub(source, context());
+                .scrub(source, context()).tree();
 
         // Documented rather than prevented. This is what the setting is for, and
         // what it costs: the subtree goes out exactly as the source held it.
@@ -172,7 +172,7 @@ class NestedScrubbingTest {
                 new Reviewed("Patrick Murphy", "ACTIVE"), List.of());
 
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE)
-                .scrub(source, context());
+                .scrub(source, context()).tree();
 
         assertThat(out.get("details").get("innerName").asText()).startsWith("synthetic:");
         assertThat(out.toString()).doesNotContain("Patrick Murphy");
@@ -185,7 +185,7 @@ class NestedScrubbingTest {
                 new Reviewed("Patrick Murphy", "ACTIVE"), List.of());
 
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE)
-                .scrub(source, context());
+                .scrub(source, context()).tree();
 
         assertThat(out.has("subjectRef")).isFalse();
         assertThat(out.toString()).doesNotContain("s-1");

@@ -115,7 +115,7 @@ class DescriptorFieldMetadataResolverTest {
                 new ExternalCustomer("c-1", "Patrick Murphy", "patrick@example.invalid", "ACTIVE"),
                 new PrivacyContext("C", PrivacyScopeType.CASE, "DEFAULT", "test",
                         Instant.parse("2030-01-01T00:00:00Z"),
-                        PseudonymisationVersion.HMAC_SHA256_V1));
+                        PseudonymisationVersion.HMAC_SHA256_V1)).tree();
 
         assertThat(out.get("fullName").asText()).startsWith("synthetic:");
         assertThat(out.get("email").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
