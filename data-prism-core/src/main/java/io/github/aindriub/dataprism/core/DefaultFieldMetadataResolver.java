@@ -10,6 +10,8 @@ import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -43,6 +45,7 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
 
     private static List<FieldMetadata> read(Class<?> type) {
         Map<String, List<AnnotatedElement>> sources = new LinkedHashMap<>();
+        Map<String, Type> declaredTypes = new LinkedHashMap<>();
 
         if (type.isRecord()) {
             for (RecordComponent rc : type.getRecordComponents()) {
@@ -51,6 +54,7 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
                 addIfPresent(elements, declaredField(type, rc.getName()));
                 elements.add(rc.getAccessor());
                 sources.put(rc.getName(), elements);
+                declaredTypes.put(rc.getName(), rc.getGenericType());
             }
         } else {
             for (Field field : type.getDeclaredFields()) {
@@ -61,15 +65,18 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
                 elements.add(field);
                 addIfPresent(elements, accessor(type, field.getName()));
                 sources.put(field.getName(), elements);
+                declaredTypes.put(field.getName(), field.getGenericType());
             }
         }
 
         List<FieldMetadata> out = new ArrayList<>(sources.size());
-        sources.forEach((name, elements) -> out.add(read(type, name, elements)));
+        sources.forEach((name, elements) ->
+                out.add(read(type, name, elements, declaredTypes.get(name))));
         return List.copyOf(out);
     }
 
-    private static FieldMetadata read(Class<?> type, String name, List<AnnotatedElement> elements) {
+    private static FieldMetadata read(Class<?> type, String name,
+                                      List<AnnotatedElement> elements, Type declaredType) {
         SensitiveData sensitive = first(elements, SensitiveData.class);
         NonSensitive nonSensitive = first(elements, NonSensitive.class);
         boolean internal = first(elements, InternalIdentifier.class) != null;
@@ -96,7 +103,38 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
                 sensitive == null ? PrivacyNamespace.NONE : sensitive.namespace(),
                 sensitive == null ? null : sensitive.suggestedAction(),
                 sensitive == null ? "" : sensitive.subject(),
-                nonSensitive == null ? null : nonSensitive.reason());
+                nonSensitive == null ? null : nonSensitive.reason(),
+                rawType(declaredType),
+                elementType(declaredType));
+    }
+
+    private static Class<?> rawType(Type type) {
+        if (type instanceof Class<?> c) {
+            return c;
+        }
+        if (type instanceof ParameterizedType p && p.getRawType() instanceof Class<?> c) {
+            return c;
+        }
+        return Object.class;
+    }
+
+    /**
+     * The element type of a collection, where it is stated. Erasure means a raw
+     * or wildcard collection yields nothing, which is correct: without a type
+     * there is no metadata to descend with, and the engine must treat the
+     * contents as unclassified rather than guess.
+     */
+    private static Class<?> elementType(Type type) {
+        if (type instanceof ParameterizedType p) {
+            Type[] arguments = p.getActualTypeArguments();
+            if (arguments.length > 0 && arguments[arguments.length - 1] instanceof Class<?> c) {
+                return c;
+            }
+        }
+        if (type instanceof Class<?> c && c.isArray()) {
+            return c.getComponentType();
+        }
+        return null;
     }
 
     private static <A extends java.lang.annotation.Annotation> A first(

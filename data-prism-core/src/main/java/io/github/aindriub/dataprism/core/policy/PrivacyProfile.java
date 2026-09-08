@@ -25,20 +25,59 @@ public record PrivacyProfile(
     }
 
     /**
-     * What to do with a field on an exposed model that nobody classified.
+     * What to do with a field nobody classified — one on an exposed model with no
+     * annotation, a property present in the source that the model does not
+     * declare, or a nested value whose type carries no classification.
      *
-     * <p>There is deliberately no pass-through option. An unclassified field
-     * means the decision was never made, and the specification is explicit that
-     * the safe default may be configurable between failing and redacting but
-     * never between those and exposure. See docs/pack.md §30.
+     * <p>Ordered from strictest to loosest. The first three are all safe in the
+     * sense that no unclassified value reaches the model; they differ only in how
+     * loudly they say so and whether the field keeps its place in the response.
+     * The fourth is not, and is named accordingly.
      */
     public enum UnclassifiedBehaviour {
 
-        /** Refuse the whole response. The right choice for production. */
+        /** Refuse the whole response. The default, and the right choice for production. */
         FAIL_REQUEST,
 
-        /** Redact the field and record a warning. For migrating an existing model. */
-        REDACT_AND_WARN
+        /** Keep the field, replace the value, record a warning. */
+        REDACT_AND_WARN,
+
+        /**
+         * Omit the field entirely and record a warning.
+         *
+         * <p>This is the analogue of Jackson's
+         * {@code FAIL_ON_UNKNOWN_PROPERTIES=false}: that setting <em>ignores</em>
+         * properties it does not recognise rather than passing them along, and
+         * ignoring is what makes it safe. Use this when a source adds fields
+         * faster than the models can be updated and a failed request is worse
+         * than a missing field.
+         */
+        DROP_AND_WARN,
+
+        /**
+         * Emit the value unchanged.
+         *
+         * <p>This inverts the platform's guarantee. Everything else here rests on
+         * the idea that an unclassified field means the decision was never made,
+         * so the value must not reach the model; this setting decides in favour
+         * of exposure for every field nobody looked at, including ones added to a
+         * source system after the model was written and never reviewed. The
+         * specification names it as the one thing the safe default must never be
+         * (docs/pack.md §30).
+         *
+         * <p>It exists because a caller may be working with data that genuinely
+         * carries nothing sensitive, and forcing them to annotate every field of
+         * a large model to say so is real friction. That is a legitimate choice
+         * for a specific dataset, made deliberately. It is not a default, it is
+         * spelled UNSAFE in configuration so that it cannot be enabled without
+         * reading it, and every field it releases is counted and warned about.
+         */
+        PASS_THROUGH_UNSAFE;
+
+        /** Whether a value nobody classified can reach the model under this setting. */
+        public boolean releasesUnclassifiedData() {
+            return this == PASS_THROUGH_UNSAFE;
+        }
     }
 
     /**
