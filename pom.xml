@@ -29,6 +29,7 @@
     <module>data-prism-audit</module>
     <module>data-prism-orchestration</module>
     <module>data-prism-mcp</module>
+    <module>data-prism-connectors-rest</module>
     <module>data-prism-example</module>
   </modules>
 
@@ -111,6 +112,11 @@
       <dependency>
         <groupId>io.github.aindriub</groupId>
         <artifactId>data-prism-mcp</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-connectors-rest</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>
