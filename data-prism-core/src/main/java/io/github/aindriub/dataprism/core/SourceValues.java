@@ -1,7 +1,6 @@
 package io.github.aindriub.dataprism.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.HashSet;
@@ -26,7 +25,6 @@ import java.util.Set;
  */
 public final class SourceValues {
 
-    private static final ObjectMapper READER = new ObjectMapper();
     private static final int MAX_DEPTH = 16;
 
     private SourceValues() {
@@ -34,7 +32,7 @@ public final class SourceValues {
 
     public static Set<String> prohibited(Object source, FieldMetadataResolver resolver) {
         Set<String> out = new HashSet<>();
-        JsonNode tree = READER.valueToTree(source);
+        JsonNode tree = SourceTree.of(source);
         if (tree.isObject()) {
             collect((ObjectNode) tree, source.getClass(), resolver, out, 0);
         }

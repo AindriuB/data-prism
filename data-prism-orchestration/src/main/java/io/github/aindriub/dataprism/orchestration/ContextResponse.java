@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.aindriub.dataprism.core.ConsistencyFinding;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,24 +25,36 @@ import java.util.Map;
  * tell an untrusted reader about the shape and health of infrastructure it
  * otherwise cannot see, and the model has no use for it.
  *
- * <p>Source names are emitted plainly. Pseudonymising them is S6; it is safe for
- * now only because the example sources are fictional.
+ * <p>{@code findings} is the other half of the platform's purpose. The identity
+ * in {@code entity} is deliberately consistent — one subject reads the same in
+ * every source — and that consistency would hide the fact that the systems
+ * disagree about it. The findings say so, without saying what any source held.
  */
 public record ContextResponse(
         String entityType,
         String subject,
         Map<String, String> sources,
+        List<ConsistencyFinding> findings,
         ObjectNode entity) {
 
     public ContextResponse {
         sources = Map.copyOf(sources);
+        findings = List.copyOf(findings);
     }
 
-    static ContextResponse of(String entityType, String subject,
-                              List<SourceOutcome> outcomes, ObjectNode entity) {
+    static ContextResponse of(String entityType, String subject, List<SourceOutcome> outcomes,
+                              List<ConsistencyFinding> findings, ObjectNode entity,
+                              SourceAliasing aliasing,
+                              io.github.aindriub.dataprism.core.PrivacyContext context) {
         Map<String, String> statuses = new LinkedHashMap<>();
-        outcomes.forEach(outcome -> statuses.put(outcome.sourceName(), outcome.status().name()));
-        return new ContextResponse(entityType, subject, statuses, entity);
+        outcomes.forEach(outcome -> statuses.put(
+                aliasing.nameFor(outcome.sourceName(), context), outcome.status().name()));
+        return new ContextResponse(entityType, subject, statuses, findings, entity);
+    }
+
+    /** Whether any source disagreed with another about a shared field. */
+    public boolean hasDisagreement() {
+        return findings.stream().anyMatch(ConsistencyFinding::disagreement);
     }
 
     /** The sources that actually contributed to {@code entity}. */
