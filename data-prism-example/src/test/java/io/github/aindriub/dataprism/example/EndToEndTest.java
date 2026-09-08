@@ -36,6 +36,11 @@ class EndToEndTest {
             new DataPrismAssembly(List.of(new StubCustomerAdapter()), FIXED, sink);
 
     private McpSchema.CallToolResult call(Map<String, Object> arguments) {
+        return call(assembly, arguments);
+    }
+
+    private static McpSchema.CallToolResult call(DataPrismAssembly assembly,
+                                                 Map<String, Object> arguments) {
         var tool = new GetEntityContextTool(assembly.orchestrator(), assembly::privacyContext,
                 DataPrismObjectMapper.create());
         return tool.specification().callHandler()
@@ -114,6 +119,26 @@ class EndToEndTest {
         // which is what stops one investigation reaching another's pseudonyms.
         assertThat(audited).singleElement()
                 .satisfies(event -> assertThat(event.scopeId()).isEqualTo("CASE-DEMO-1"));
+    }
+
+    @Test
+    @DisplayName("changing the profile changes the outcome, with no code change")
+    void profileDecidesRatherThanTheAnnotation() {
+        // CustomerDto suggests SYNTHESIZE for the name. Under DEFAULT that
+        // stands; under STRICT the operator's rule is stricter and wins. This is
+        // the property the specification asks for: privacy decisions are
+        // configuration, not a recompile.
+        String underDefault = call(assembly,
+                Map.of("entityType", "CUSTOMER", "subjectId", "123")).content().toString();
+        String underStrict = call(
+                new DataPrismAssembly(List.of(new StubCustomerAdapter()), FIXED, sink, "STRICT"),
+                Map.of("entityType", "CUSTOMER", "subjectId", "123")).content().toString();
+
+        assertThat(underDefault).doesNotContain("Patrick Murphy");
+        assertThat(underStrict).doesNotContain("Patrick Murphy");
+        assertThat(underDefault).as("DEFAULT synthesises a readable name").contains("(");
+        assertThat(underStrict).as("STRICT redacts it instead").doesNotContain("(");
+        assertThat(underStrict).isNotEqualTo(underDefault);
     }
 
     @Test

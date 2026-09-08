@@ -7,6 +7,7 @@ import io.github.aindriub.dataprism.annotations.NonSensitive;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.annotations.SensitiveData;
+import io.github.aindriub.dataprism.annotations.SubjectIdentifier;
 
 /**
  * Fixture types for the engine tests.
@@ -58,7 +59,7 @@ final class ScrubbingFixtures {
     @LlmExposedModel
     record TwoSubjects(
             @InternalIdentifier String applicationRef,
-            @NonSensitive(reason = "Opaque reference to the second party, not identifying on its own")
+            @SubjectIdentifier(role = "guarantor")
             String guarantorRef,
             @SensitiveData(classifications = DataClassification.PII,
                     namespace = PrivacyNamespace.PERSON_NAME,
@@ -73,5 +74,39 @@ final class ScrubbingFixtures {
 
     /** Not approved for exposure. */
     record NotExposed(@InternalIdentifier String subjectRef, String anything) {
+    }
+
+    /** A plain class rather than a record, annotated on its fields. */
+    @LlmExposedModel
+    static final class PlainClass {
+
+        @InternalIdentifier
+        private final String subjectRef;
+
+        @SensitiveData(classifications = DataClassification.PII,
+                namespace = PrivacyNamespace.PERSON_NAME,
+                suggestedAction = PrivacyAction.SYNTHESIZE)
+        private final String fullName;
+
+        @NonSensitive(reason = "Enumerated state, no free text")
+        private final String state;
+
+        PlainClass(String subjectRef, String fullName, String state) {
+            this.subjectRef = subjectRef;
+            this.fullName = fullName;
+            this.state = state;
+        }
+
+        public String getSubjectRef() {
+            return subjectRef;
+        }
+
+        public String getFullName() {
+            return fullName;
+        }
+
+        public String getState() {
+            return state;
+        }
     }
 }

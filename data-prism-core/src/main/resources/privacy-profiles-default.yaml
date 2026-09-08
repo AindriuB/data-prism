@@ -1,0 +1,62 @@
+# Default privacy profiles.
+#
+# This is a starting point, not a recommendation for any particular deployment.
+# What a classification should map to depends on the lawful basis for the
+# processing and on what the model is being asked to do, and neither of those is
+# knowable from here.
+#
+# `unclassified` has only two settings by design. A field nobody classified means
+# the decision was never made, so exposing it is never an option — see pack.md 30.
+#
+# Where a rule and a model author's @SensitiveData disagree, the stricter of the
+# two wins. Set `override: true` to take the rule verbatim instead, which is how
+# an over-classified field gets relaxed deliberately rather than by accident.
+
+profiles:
+
+  DEFAULT:
+    unclassified: FAIL_REQUEST
+    classifications:
+      # Synthesised rather than redacted so the model can still tell one person
+      # from another and follow them across sources. That is the platform's
+      # whole purpose, and it is also strictly more disclosure than redaction:
+      # a stable pseudonym is linkable within the scope.
+      PII: { action: SYNTHESIZE }
+      ADDRESS: { action: SYNTHESIZE }
+
+      PHI: { action: REDACT }
+      CONTACT: { action: REDACT }
+      CONFIDENTIAL: { action: REDACT }
+
+      # Identifiers with check digits and known formats are the values most
+      # easily recognised if they leak, and least useful to a model.
+      BANKING: { action: REDACT }
+      TAX_IDENTIFIER: { action: REDACT }
+      GOVERNMENT_IDENTIFIER: { action: REDACT }
+
+      # GENERALIZE would be the better fit and arrives with its bucket
+      # configuration in S3. Until then this is REDACT rather than a rule naming
+      # an action the engine would refuse at runtime.
+      FINANCIAL: { action: REDACT }
+
+      # Removed, not redacted: a redacted field still tells the reader a
+      # credential exists on this record.
+      CREDENTIAL: { action: REMOVE }
+      SECURITY: { action: REMOVE }
+
+  # For contexts where linkability itself is too much disclosure — a broad
+  # search, or a model outside the organisation's control.
+  STRICT:
+    unclassified: FAIL_REQUEST
+    classifications:
+      PII: { action: REDACT }
+      PHI: { action: REDACT }
+      ADDRESS: { action: REDACT }
+      CONTACT: { action: REDACT }
+      CONFIDENTIAL: { action: REDACT }
+      FINANCIAL: { action: REDACT }
+      BANKING: { action: REMOVE }
+      TAX_IDENTIFIER: { action: REMOVE }
+      GOVERNMENT_IDENTIFIER: { action: REMOVE }
+      CREDENTIAL: { action: REMOVE }
+      SECURITY: { action: REMOVE }
