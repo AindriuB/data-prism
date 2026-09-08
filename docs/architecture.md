@@ -1,0 +1,155 @@
+# Architecture
+
+The shape of the system: what the pieces are, what talks to what, and where the
+boundaries are. `explorer` and `architect` read this before inferring structure
+from the filesystem, so keeping it honest saves every session a search.
+
+Nothing here is built yet. Where a row describes a module that does not exist on
+disk, it is the target shape agreed in `design-review.md`, not a claim about the
+current tree. Delete the qualifier from a row once its module lands.
+
+## What the system does
+
+An MCP client asks for context about an entity. Data Prism authenticates the
+caller, resolves a privacy scope from the authenticated session, fans out to the
+enterprise APIs that hold that entity, normalises what comes back, correlates it,
+replaces sensitive values with deterministic pseudonyms, checks the result for
+leaks, audits the whole thing, and only then answers.
+
+Two things stay separate throughout, and confusing them is the most likely way to
+get this wrong:
+
+- **Identity is made consistent.** The same subject gets the same pseudonym in
+  every source, within one scope.
+- **Data is not.** If three systems disagree about a name, the answer says so.
+  The platform never makes the data look cleaner than it is.
+
+## Components
+
+Modules, in dependency order. Arrows point at what a module is allowed to depend
+on; anything not listed is forbidden and is enforced by ArchUnit rather than by
+review.
+
+| Module | Depends on | Owns |
+|---|---|---|
+| `annotations` | — | `@InternalIdentifier`, `@SubjectIdentifier`, `@SensitiveData`, `@NonSensitive`, `@SensitiveObject`, `@LlmExposedModel`, the classification/action/namespace enums |
+| `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, and every SPI interface the other modules implement |
+| `pseudonymisation` | `core` | HMAC generator, per-namespace synthetic generators, `PseudonymRenderer`, key and algorithm versioning |
+| `hazelcast` | `pseudonymisation` | `SyntheticIdentityResolver`, forward and reverse identity maps, scope purge |
+| `validation` | `core` | `SensitiveDataScanner`, `LlmResponseValidator`, scope-aware pseudonym allowlist |
+| `security` | `core` | `AuthorizationService`, `InvestigationContext`, purpose validation |
+| `audit` | `core` | `AuditEvent`, `AuditSink`, per-writer hash chain |
+| `orchestration` | `core` + the above | `ContextOrchestrator`, fan-out, request and cost limits, `EntityCorrelationService` |
+| `mcp` | `orchestration` | Tool definitions, schemas, transport |
+| `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
+| `connectors-search` | `core` | Elasticsearch adapter with index and field allowlists |
+| `reidentification` | `hazelcast`, `security`, `audit` | The controlled reverse-lookup surface. Separate application, separate port |
+| `spring-boot-starter` | everything | Auto-configuration and wiring |
+| `example/example-sources` | — | Three stub APIs with deliberately divergent representations |
+| `example/example-app` | starter, connectors, example-sources | The demonstration |
+
+Two directions matter and are easy to get backwards:
+
+- **`mcp` and `orchestration` must not depend on `connectors-*`.** They see
+  `DataSourceAdapter` from `core`; the starter supplies implementations at
+  runtime. The pack's §9 dependency chain contradicts its own §72 ArchUnit rule
+  on this point — the rule is right.
+- **Nothing depends on `spring-boot-starter`** except the example. It is the
+  wiring leaf.
+
+## Repository topology
+
+One repository, one Maven reactor. There are no sibling project repositories.
+
+`.claude/` is untracked on purpose: it holds worktree scripts installed from an
+agent kit whose single clone lives outside every project it serves and is
+refreshed with `git -C <kit> pull`. The roles are not here at all —
+`~/.claude/agents` and `~/.claude/commands` are symlinks into that kit, shared by
+every project. Tracking any of it here would fork the harness from its upstream,
+and committing its `settings.json` would hand every contributor a tool-permission
+allowlist they never reviewed. `CONTRIBUTING.md` says how to install it.
+
+`.worktrees/` is untracked and holds one checkout per running task.
+
+`docs/pack.md` is the original specification, copied in verbatim so agents do not
+have to reach outside the repository for it. It is a historical document and is
+not edited. `docs/design-review.md` amends it and wins wherever the two disagree.
+
+## How they talk
+
+**Inbound.** MCP over stdio in development, streamable HTTP in production, behind
+an OAuth2 resource server. Four tools and no more: `get_entity_context`,
+`compare_entity_sources`, `search_entity_data`, `describe_entity_model`. Backend
+endpoints are never exposed one-to-one — that would hand privacy and correlation
+decisions to the caller.
+
+**Outbound.** `RestClient` over mTLS to enterprise APIs, one adapter per source,
+endpoints configured server-side only. Elasticsearch through an adapter that
+translates a controlled query grammar; raw DSL never reaches it.
+
+**Sideways.** Hazelcast in client–server topology against a dedicated isolated
+cluster, holding synthetic identity mappings and short-lived scope state. Never
+raw source records, never business caching.
+
+**Concurrency.** Virtual threads for the blocking fan-out, with per-source
+timeouts, circuit breakers, bulkheads and a bounded pool. An LLM in a retry loop
+is the realistic overload, not an attacker.
+
+## Boundaries that must not be crossed
+
+Violating any of these is a defect regardless of how the code reads or whether
+tests pass.
+
+1. **No source data reaches `mcp` without passing the privacy engine.** The
+   engine is installed as a Jackson module on the `ObjectMapper` the MCP layer
+   uses, so bypassing it means constructing a different mapper — which is the
+   thing to look for in review.
+2. **The privacy engine operates on a data tree, not on the Java object graph.**
+   Records are immutable and their constructors validate; reflective field
+   mutation is not an option and `Unsafe` is not acceptable in a security
+   component.
+3. **A response that fails validation is not returned.** There is no
+   log-and-continue path.
+4. **The caller never supplies its own scope, principal, purpose or case id.**
+   All four derive from the authenticated session. A tool argument claiming any
+   of them is ignored and the attempt is audited.
+5. **Re-identification is never an MCP tool.** Separate application, separate
+   port, separate authorisation scope, mandatory purpose, mandatory audit.
+6. **Hazelcast never holds raw sensitive values** — pseudonyms and subject ids
+   only.
+7. **No sensitive value in a log line, metric label, trace attribute, exception
+   message or audit record.** Search parameters are fingerprinted with an HMAC
+   under the scope key, not hashed.
+8. **The core carries no business domain.** No `Customer`, `Taxpayer`,
+   `Employee` or `Account` type outside `example/`.
+
+## Decisions worth knowing
+
+One line each, with the date and the alternative rejected. Longer reasoning for
+all of these is in `design-review.md` under the section named.
+
+- **2026-09-08 — Pseudonymisation is keyed on an explicit subject, not the
+  record's own identifier** (§A1). Rejected: one `@InternalIdentifier` per
+  record, which merges two people named in one record into a single pseudonym.
+- **2026-09-08 — Pseudonyms carry a deterministic discriminator** (§A2).
+  Rejected: bare generated names, which collide by the birthday bound at roughly
+  6,000 subjects in a scope.
+- **2026-09-08 — Correlation requires a resolvable key, behind an
+  `IdentityResolver` SPI** (§A3). Rejected: probabilistic entity matching, which
+  is a different product and would change the orchestrator's shape if bolted on.
+- **2026-09-08 — Scrubbing operates on a Jackson tree** (§A4). Rejected:
+  reflective object-graph scrubbing, which cannot write to records.
+- **2026-09-08 — The output validator allowlists this scope's own pseudonyms**
+  (§A5). Rejected: naive pattern detection, which rejects every synthesised
+  email and deadlocks the fail-closed path.
+- **2026-09-08 — The audit hash chain is per writer, not global** (§A6).
+  Rejected: a single chain, which stateless horizontally-scaled instances fork
+  into something indistinguishable from tampering.
+- **2026-09-08 — Fail-closed requires `@NonSensitive(reason=...)` and an
+  annotation processor** (§B2). Rejected: runtime-only fail-closed, which
+  developers defeat by marking everything `PASS_THROUGH`.
+- **2026-09-08 — Hazelcast runs client–server, not embedded** (§C4). Rejected:
+  embedded members, which rebalance partitions on every autoscale event.
+- **2026-09-08 — Build the walking skeleton first, then thicken it**
+  (`development-plan.md`). Rejected: the pack's layer-by-layer Phase 1–9 order,
+  which defers proving the privacy boundary end-to-end until the last phase.
