@@ -3,8 +3,6 @@ package io.github.aindriub.dataprism.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.aindriub.dataprism.annotations.LlmExposedModel;
-import io.github.aindriub.dataprism.annotations.SensitiveObject;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -65,7 +63,7 @@ public final class SourceValues {
         Class<?> nested = md.elementType() != null && md.elementType() != Object.class
                 ? md.elementType()
                 : md.valueType();
-        if (nested == null || !descendable(nested)) {
+        if (nested == null || !resolver.descendable(nested)) {
             return;
         }
         if (value.isObject()) {
@@ -79,11 +77,6 @@ public final class SourceValues {
                 }
             });
         }
-    }
-
-    private static boolean descendable(Class<?> type) {
-        return type.getAnnotation(LlmExposedModel.class) != null
-                || type.getAnnotation(SensitiveObject.class) != null;
     }
 
     /** Every scalar under this node, so a sensitive collection contributes each element. */

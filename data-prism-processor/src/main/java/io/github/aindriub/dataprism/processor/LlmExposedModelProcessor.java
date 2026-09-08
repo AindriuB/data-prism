@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.annotations.LlmExposedModel;
 import io.github.aindriub.dataprism.annotations.NonSensitive;
 import io.github.aindriub.dataprism.annotations.SensitiveData;
 import io.github.aindriub.dataprism.annotations.SubjectIdentifier;
+import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.RoundEnvironment;
@@ -31,6 +32,10 @@ import java.util.Set;
  * <p>{@code @NonSensitive} needs a reason for the same purpose: the annotation
  * exists so that "this is safe" is a statement someone made and a reviewer can
  * disagree with, rather than the absence of a statement.
+ *
+ * <p>A type that sets {@code undeclaredFields} is exempt. It has already made the
+ * statement, once, for the whole class — which is the point of that setting, and
+ * the difference between adopting the platform on a large existing model and not.
  */
 @SupportedAnnotationTypes("io.github.aindriub.dataprism.annotations.LlmExposedModel")
 public final class LlmExposedModelProcessor extends AbstractProcessor {
@@ -48,6 +53,13 @@ public final class LlmExposedModelProcessor extends AbstractProcessor {
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
         for (Element type : round.getElementsAnnotatedWith(LlmExposedModel.class)) {
             if (type.getKind() != ElementKind.CLASS && type.getKind() != ElementKind.RECORD) {
+                continue;
+            }
+            // The type has stated what silence means on it, which is the decision
+            // this check exists to force. Demanding it again per field would make
+            // the retrofit path pointless.
+            if (type.getAnnotation(LlmExposedModel.class).undeclaredFields()
+                    != UndeclaredFields.PROFILE_DEFAULT) {
                 continue;
             }
             for (Element member : type.getEnclosedElements()) {

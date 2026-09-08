@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.aindriub.dataprism.annotations.LlmExposedModel;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
-import io.github.aindriub.dataprism.annotations.SensitiveObject;
 import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 
@@ -72,7 +70,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         Objects.requireNonNull(context, "context");
 
         Class<?> type = source.getClass();
-        if (type.getAnnotation(LlmExposedModel.class) == null) {
+        if (!resolver.exposed(type)) {
             throw new PrivacyRefusedException("MODEL_NOT_EXPOSED", type.getName(),
                     "type is not annotated @LlmExposedModel");
         }
@@ -184,7 +182,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 ? md.elementType()
                 : md.valueType();
 
-        if (nested != null && descendable(nested)) {
+        if (nested != null && resolver.descendable(nested)) {
             return scrubObject(value, nested, context, path, depth + 1, inheritedSubject);
         }
 
@@ -206,11 +204,6 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             case REDACT -> reader.getNodeFactory().textNode(REDACTED);
             default -> null;
         };
-    }
-
-    private static boolean descendable(Class<?> type) {
-        return type.getAnnotation(LlmExposedModel.class) != null
-                || type.getAnnotation(SensitiveObject.class) != null;
     }
 
     private JsonNode scalar(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,

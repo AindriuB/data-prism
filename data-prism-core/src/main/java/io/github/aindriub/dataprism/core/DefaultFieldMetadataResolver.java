@@ -1,10 +1,15 @@
 package io.github.aindriub.dataprism.core;
 
+import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
+import io.github.aindriub.dataprism.annotations.LlmExposedModel;
+import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.NonSensitive;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.annotations.SensitiveData;
+import io.github.aindriub.dataprism.annotations.SensitiveObject;
 import io.github.aindriub.dataprism.annotations.SubjectIdentifier;
+import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
@@ -95,17 +100,61 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
         boolean identifier = internal || subject != null;
         String role = internal ? FieldMetadata.SELF : (subject == null ? null : subject.role());
 
-        return new FieldMetadata(
-                name,
-                identifier,
-                role,
-                sensitive == null ? List.of() : List.of(sensitive.classifications()),
-                sensitive == null ? PrivacyNamespace.NONE : sensitive.namespace(),
-                sensitive == null ? null : sensitive.suggestedAction(),
-                sensitive == null ? "" : sensitive.subject(),
-                nonSensitive == null ? null : nonSensitive.reason(),
-                rawType(declaredType),
-                elementType(declaredType));
+        List<DataClassification> classifications =
+                sensitive == null ? List.of() : List.of(sensitive.classifications());
+        PrivacyNamespace namespace =
+                sensitive == null ? PrivacyNamespace.NONE : sensitive.namespace();
+        PrivacyAction action = sensitive == null ? null : sensitive.suggestedAction();
+        String subjectField = sensitive == null ? "" : sensitive.subject();
+        String reason = nonSensitive == null ? null : nonSensitive.reason();
+
+        if (sensitive == null && nonSensitive == null && !identifier) {
+            SensitiveObject typeLevel = type.getAnnotation(SensitiveObject.class);
+            if (typeLevel != null && typeLevel.classifications().length > 0) {
+                // The type classifies its own contents — an address split across
+                // several components, say. Stated once rather than per field.
+                classifications = List.of(typeLevel.classifications());
+                namespace = typeLevel.namespace();
+                action = typeLevel.suggestedAction();
+            } else {
+                switch (undeclaredFieldsOf(type)) {
+                    case NON_SENSITIVE -> reason = "declared by " + type.getSimpleName()
+                            + ".undeclaredFields = NON_SENSITIVE";
+                    // Classified rather than merely acted on, so the value also
+                    // enters the validator's prohibited set: if it escapes by some
+                    // other route, the last line still catches it.
+                    case REDACT -> {
+                        classifications = List.of(DataClassification.CONFIDENTIAL);
+                        action = PrivacyAction.REDACT;
+                    }
+                    case DROP -> {
+                        classifications = List.of(DataClassification.CONFIDENTIAL);
+                        action = PrivacyAction.REMOVE;
+                    }
+                    case PROFILE_DEFAULT -> {
+                        // Left undeclared on purpose: the profile decides.
+                    }
+                }
+            }
+        }
+
+        return new FieldMetadata(name, identifier, role, classifications, namespace, action,
+                subjectField, reason, rawType(declaredType), elementType(declaredType));
+    }
+
+    /**
+     * The type's stated default for its own unannotated fields. An explicit
+     * setting on {@code @LlmExposedModel} wins over one on
+     * {@code @SensitiveObject}, since the former is the more specific statement
+     * about how this type is exposed.
+     */
+    private static UndeclaredFields undeclaredFieldsOf(Class<?> type) {
+        LlmExposedModel exposed = type.getAnnotation(LlmExposedModel.class);
+        if (exposed != null && exposed.undeclaredFields() != UndeclaredFields.PROFILE_DEFAULT) {
+            return exposed.undeclaredFields();
+        }
+        SensitiveObject nested = type.getAnnotation(SensitiveObject.class);
+        return nested == null ? UndeclaredFields.PROFILE_DEFAULT : nested.undeclaredFields();
     }
 
     private static Class<?> rawType(Type type) {
