@@ -1,11 +1,11 @@
-package io.github.aindriub.dataprism.orchestration;
+package io.github.aindriub.dataprism.core;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Counts how often one subject has been read inside one scope.
+ * A per-instance read counter.
  *
  * <p>This is the mitigation the generalisation work could not provide for itself.
  * A banded value resists a single look and not a determined series of them: ask
@@ -17,13 +17,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * reads the same subject repeatedly, and the per-request limits do not see a
  * pattern that only exists across requests.
  *
- * <p><strong>In memory, therefore per instance.</strong> Across a horizontally
- * scaled deployment the effective ceiling is instances × budget, and a caller
- * spread across instances gets that many times the reads. Stated rather than
- * hidden: the shared counter belongs in the distributed scope state that arrives
- * with Hazelcast in S7, and until then this is a brake rather than a guarantee.
+ * <p><strong>Per instance, therefore a brake rather than a limit.</strong> Across
+ * a horizontally scaled deployment the effective ceiling is instances × budget.
+ * Correct for a single instance and for tests; a deployment that needs the number
+ * to mean what it says uses the Hazelcast implementation.
  */
-public final class ScopeBudget {
+public final class InMemoryScopeBudget implements ScopeBudget {
 
     /**
      * Joins the two halves of a key. NUL because it cannot occur in an
@@ -40,6 +39,7 @@ public final class ScopeBudget {
      *         so a caller that keeps asking after being refused does not push the
      *         count somewhere it can never recover from
      */
+    @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
         AtomicInteger count = reads.computeIfAbsent(key(scopeId, subjectId), k -> new AtomicInteger());
         while (true) {
@@ -53,12 +53,14 @@ public final class ScopeBudget {
         }
     }
 
+    @Override
     public int reads(String scopeId, String subjectId) {
         AtomicInteger count = reads.get(key(scopeId, subjectId));
         return count == null ? 0 : count.get();
     }
 
     /** Drops the counters for a scope. Called when a scope ends. */
+    @Override
     public void forget(String scopeId) {
         reads.keySet().removeIf(key -> key.startsWith(scopeId + SEPARATOR));
     }

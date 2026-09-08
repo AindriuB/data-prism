@@ -4,9 +4,11 @@ The shape of the system: what the pieces are, what talks to what, and where the
 boundaries are. `explorer` and `architect` read this before inferring structure
 from the filesystem, so keeping it honest saves every session a search.
 
-Nothing here is built yet. Where a row describes a module that does not exist on
-disk, it is the target shape agreed in `design-review.md`, not a claim about the
-current tree. Delete the qualifier from a row once its module lands.
+Modules marked **planned** in the table below do not exist on disk yet; they are
+the target shape agreed in `design-review.md`. Everything else is built and
+tested. Move a row out of *planned* when its module lands, and keep this file
+honest — an architecture document that describes something other than the code
+costs more than having none.
 
 ## What the system does
 
@@ -35,18 +37,17 @@ review.
 | `annotations` | — | `@InternalIdentifier`, `@SubjectIdentifier`, `@SensitiveData`, `@NonSensitive`, `@SensitiveObject`, `@LlmExposedModel`, the classification/action/namespace enums |
 | `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, and every SPI interface the other modules implement |
 | `pseudonymisation` | `core` | HMAC generator, per-namespace synthetic generators, `PseudonymRenderer`, key and algorithm versioning |
-| `hazelcast` | `pseudonymisation` | `SyntheticIdentityResolver`, forward and reverse identity maps, scope purge |
+| `hazelcast` | `core` | Embedded member, identity cache, re-identification index, shared read budget, scope purge |
 | `validation` | `core` | `SensitiveDataScanner`, `LlmResponseValidator`, scope-aware pseudonym allowlist |
-| `security` | `core` | `AuthorizationService`, `InvestigationContext`, purpose validation |
+| `security` *(planned)* | `core` | `AuthorizationService`, `InvestigationContext`, purpose validation |
 | `audit` | `core` | `AuditEvent`, `AuditSink`, per-writer hash chain |
-| `orchestration` | `core` + the above | `ContextOrchestrator`, fan-out, request and cost limits, `EntityCorrelationService` |
+| `orchestration` | `core` + the above | `ContextOrchestrator`, parallel fan-out, circuit breaker, request and cost limits, correlation and consistency findings |
 | `mcp` | `orchestration` | Tool definitions, schemas, transport |
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
-| `connectors-search` | `core` | Elasticsearch adapter with index and field allowlists |
-| `reidentification` | `hazelcast`, `security`, `audit` | The controlled reverse-lookup surface. Separate application, separate port |
-| `spring-boot-starter` | everything | Auto-configuration and wiring |
-| `example/example-sources` | — | Three stub APIs with deliberately divergent representations |
-| `example/example-app` | starter, connectors, example-sources | The demonstration |
+| `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
+| `reidentification` *(planned)* | `hazelcast`, `security`, `audit` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
+| `spring-boot-starter` *(planned)* | everything | Auto-configuration and wiring |
+| `example` | everything | Three stub sources with divergent representations, and the runnable server |
 
 Two directions matter and are easy to get backwards:
 
@@ -87,9 +88,11 @@ decisions to the caller.
 endpoints configured server-side only. Elasticsearch through an adapter that
 translates a controlled query grammar; raw DSL never reaches it.
 
-**Sideways.** Hazelcast in client–server topology against a dedicated isolated
-cluster, holding synthetic identity mappings and short-lived scope state. Never
-raw source records, never business caching.
+**Sideways.** An embedded Hazelcast member holding the identity cache, the shared
+read budget and — only where a deployment enables it — the re-identification
+index. Never raw source records, never business caching. The identity cache is an
+optimisation and losing it changes no answer; the read budget and the
+re-identification index are not, and are treated differently for that reason.
 
 **Concurrency.** Virtual threads for the blocking fan-out, with per-source
 timeouts, circuit breakers, bulkheads and a bounded pool. An LLM in a retry loop
@@ -116,7 +119,9 @@ tests pass.
 5. **Re-identification is never an MCP tool.** Separate application, separate
    port, separate authorisation scope, mandatory purpose, mandatory audit.
 6. **Hazelcast never holds raw sensitive values** — pseudonyms and subject ids
-   only.
+   only. The identity cache never decides a value: every path through it returns
+   what the generator would have returned, including the path where the cluster
+   is gone.
 7. **No sensitive value in a log line, metric label, trace attribute, exception
    message or audit record.** Search parameters are fingerprinted with an HMAC
    under the scope key, not hashed.
@@ -148,8 +153,23 @@ all of these is in `design-review.md` under the section named.
 - **2026-09-08 — Fail-closed requires `@NonSensitive(reason=...)` and an
   annotation processor** (§B2). Rejected: runtime-only fail-closed, which
   developers defeat by marking everything `PASS_THROUGH`.
-- **2026-09-08 — Hazelcast runs client–server, not embedded** (§C4). Rejected:
-  embedded members, which rebalance partitions on every autoscale event.
+- **2026-09-09 — Hazelcast runs embedded, reversing the earlier decision** (§C4).
+  The original objection was that members in an autoscaled deployment rebalance
+  partitions on every scale event, which sounded ruinous for the map that decides
+  what a subject is called. It is not, and the reason is a property this codebase
+  now actually has: a synthetic value is a pure function of scope, subject,
+  namespace and key, so a lost partition costs a recomputed HMAC and never a
+  different answer. Rebalancing produces cache misses, not renamed people.
+  Embedded removes a cluster to operate and a hop from every lookup.
+  Accepted consequence: the re-identification index is a store rather than a
+  cache — nothing can recompute a subject id from a pseudonym — so its durability
+  is the cluster's durability, and an embedded cluster scaled to zero loses it.
+  That index is therefore off unless a deployment enables it deliberately.
+- **2026-09-09 — The read budget fails closed; the identity cache fails open.**
+  They look alike and are opposites. An unreachable identity cache costs
+  computation and changes no answer, so it degrades. An unreachable budget means
+  nobody is counting, and continuing would silently remove the only limit on how
+  much a caller can extract about one subject.
 - **2026-09-08 — Coordinates are `io.github.aindriub` / `data-prism-*`, package
   root `io.github.aindriub.dataprism`.** Rejected: a group id under a project
   domain, which reads better but requires owning one — every close spelling of

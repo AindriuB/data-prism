@@ -1,4 +1,4 @@
-package io.github.aindriub.dataprism.orchestration;
+package io.github.aindriub.dataprism.core;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,12 +10,12 @@ import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class ScopeBudgetTest {
+class InMemoryScopeBudgetTest {
 
     @Test
     @DisplayName("reads are counted per subject within a scope")
     void countsPerSubject() {
-        var budget = new ScopeBudget();
+        var budget = new InMemoryScopeBudget();
 
         assertThat(budget.tryRead("CASE-A", "s-1", 2)).isTrue();
         assertThat(budget.tryRead("CASE-A", "s-1", 2)).isTrue();
@@ -31,7 +31,7 @@ class ScopeBudgetTest {
     @Test
     @DisplayName("a refused read is not counted")
     void refusedReadsDoNotAccumulate() {
-        var budget = new ScopeBudget();
+        var budget = new InMemoryScopeBudget();
         budget.tryRead("CASE-A", "s-1", 1);
 
         for (int i = 0; i < 5; i++) {
@@ -46,7 +46,7 @@ class ScopeBudgetTest {
     @Test
     @DisplayName("a scope id containing the separator cannot reach another scope's count")
     void keysCannotBeConfused() {
-        var budget = new ScopeBudget();
+        var budget = new InMemoryScopeBudget();
         budget.tryRead("CASE-A", "s-1", 1);
 
         // If the key were a plain concatenation, a crafted scope id could land on
@@ -58,14 +58,14 @@ class ScopeBudgetTest {
     @Test
     @DisplayName("the budget holds under concurrent reads")
     void isThreadSafe() throws Exception {
-        var budget = new ScopeBudget();
+        var budget = new InMemoryScopeBudget();
         int permitted = 50;
         List<Callable<Boolean>> attempts = java.util.Collections.nCopies(200,
                 () -> budget.tryRead("CASE-A", "s-1", permitted));
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             long granted = executor.invokeAll(attempts).stream()
-                    .map(ScopeBudgetTest::get)
+                    .map(InMemoryScopeBudgetTest::get)
                     .filter(Boolean::booleanValue)
                     .count();
 
@@ -79,7 +79,7 @@ class ScopeBudgetTest {
     @Test
     @DisplayName("forgetting a scope drops its counters and no others")
     void forgetIsScoped() {
-        var budget = new ScopeBudget();
+        var budget = new InMemoryScopeBudget();
         budget.tryRead("CASE-A", "s-1", 5);
         budget.tryRead("CASE-B", "s-1", 5);
 

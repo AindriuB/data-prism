@@ -30,6 +30,7 @@
     <module>data-prism-orchestration</module>
     <module>data-prism-mcp</module>
     <module>data-prism-connectors-rest</module>
+    <module>data-prism-hazelcast</module>
     <module>data-prism-example</module>
   </modules>
 
@@ -42,6 +43,7 @@
     <spring-boot.version>3.5.16</spring-boot.version>
     <mcp.version>2.0.1</mcp.version>
     <archunit.version>1.5.0</archunit.version>
+    <hazelcast.version>5.7.0</hazelcast.version>
 
     <!-- Maven 3.8.6 still defaults to compiler 3.1, which predates the `release`
          flag, and surefire 2.12.4, which cannot run JUnit 5 at all. Both are
@@ -117,6 +119,11 @@
       <dependency>
         <groupId>io.github.aindriub</groupId>
         <artifactId>data-prism-connectors-rest</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-hazelcast</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>
