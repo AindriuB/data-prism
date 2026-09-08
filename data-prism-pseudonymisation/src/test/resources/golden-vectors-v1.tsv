@@ -1,0 +1,19 @@
+# Golden vectors for pseudonymisation algorithm v1 (HmacSHA256).
+# key: golden-vector-key-for-tests-only-v1
+#
+# These pin the algorithm. If a change to the generator makes this file
+# fail, that is the file doing its job: every synthetic identity already
+# issued under v1 would have changed. Do not re-bless it. Ship a v2 and
+# leave v1 resolvable, per docs/design-review.md B4.
+#
+# scopeId<TAB>subjectId<TAB>namespace<TAB>expected
+CASE-A	123	PERSON_NAME	Morgan Rossi (6H10)
+CASE-B	123	PERSON_NAME	Hayden Moreau (AAWS)
+CASE-A	456	PERSON_NAME	Jordan Ferreira (FZ56)
+CASE-A	123	PERSON_FIRST_NAME	Payton (HT9T)
+CASE-A	123	PERSON_LAST_NAME	Walsh (RT85)
+CASE-A	123	EMAIL	person.kz48@example.invalid
+CASE-A	123	ADDRESS	159 Cedar Rise, Oakhaven
+CASE-A	123	ORGANISATION_NAME	Fairhaven Holdings (A7N4)
+CASE-A	123	NONE	SUBJ-N9MT
+CASE-A	123	GOVERNMENT_IDENTIFIER	GOVERNMENT_IDENTIFIER-GXRP
