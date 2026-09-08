@@ -20,6 +20,13 @@ import java.util.List;
  *                           the record's own
  * @param nonSensitiveReason the author's stated reason, null unless declared
  *                           non-sensitive
+ * @param valueType          the field's declared type. Needed because the engine
+ *                           walks a JSON tree, which has no idea what a nested
+ *                           object was: without the type there is no metadata to
+ *                           descend with, and the subtree can only be copied or
+ *                           refused
+ * @param elementType        for a collection, the declared element type; null
+ *                           otherwise
  */
 public record FieldMetadata(
         String fieldName,
@@ -29,12 +36,24 @@ public record FieldMetadata(
         PrivacyNamespace namespace,
         PrivacyAction suggestedAction,
         String subjectField,
-        String nonSensitiveReason) {
+        String nonSensitiveReason,
+        Class<?> valueType,
+        Class<?> elementType) {
 
     public static final String SELF = "self";
 
     public FieldMetadata {
         classifications = List.copyOf(classifications);
+    }
+
+    /**
+     * A property that appeared in the serialised source with no declaration at
+     * all behind it. Undeclared by construction, so the profile's setting for
+     * unclassified data decides what happens to it.
+     */
+    public static FieldMetadata undeclared(String fieldName) {
+        return new FieldMetadata(fieldName, false, null, List.of(), PrivacyNamespace.NONE,
+                null, "", null, Object.class, null);
     }
 
     public boolean sensitive() {

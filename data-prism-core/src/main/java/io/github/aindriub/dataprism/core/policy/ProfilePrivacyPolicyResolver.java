@@ -53,15 +53,7 @@ public final class ProfilePrivacyPolicyResolver implements PrivacyPolicyResolver
         }
 
         if (!field.declared()) {
-            if (profile.unclassified() == PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST) {
-                return EffectivePrivacyPolicy.refuse(profile.name());
-            }
-            // Named, not valued: the point of the warning is that someone fixes
-            // the model, and a field name is not itself the sensitive part.
-            LOG.warn("unclassified field {} redacted under profile {}",
-                    field.fieldName(), profile.name());
-            return new EffectivePrivacyPolicy(SAFE_DEFAULT, field.namespace(), true,
-                    profile.name(), EffectivePrivacyPolicy.Decided.UNCLASSIFIED);
+            return unclassified(field, profile);
         }
 
         if (!field.sensitive()) {
@@ -91,7 +83,8 @@ public final class ProfilePrivacyPolicyResolver implements PrivacyPolicyResolver
                     ? new EffectivePrivacyPolicy(SAFE_DEFAULT, field.namespace(), true,
                             profile.name(), EffectivePrivacyPolicy.Decided.SAFE_DEFAULT)
                     : new EffectivePrivacyPolicy(suggested, field.namespace(), true,
-                            profile.name(), EffectivePrivacyPolicy.Decided.ANNOTATION);
+                            profile.name(), EffectivePrivacyPolicy.Decided.ANNOTATION,
+                            generalization(suggested, field, profile));
         }
 
         PrivacyAction action = (override || suggested == null)
@@ -99,6 +92,64 @@ public final class ProfilePrivacyPolicyResolver implements PrivacyPolicyResolver
                 : ActionStrictness.stricter(fromProfile, suggested);
 
         return new EffectivePrivacyPolicy(action, field.namespace(), true, profile.name(),
-                EffectivePrivacyPolicy.Decided.PROFILE_RULE);
+                EffectivePrivacyPolicy.Decided.PROFILE_RULE, generalization(action, field, profile));
+    }
+
+    /**
+     * GENERALIZE without a rule is refused rather than approximated. What counts
+     * as coarse enough depends on the population, so there is no default that
+     * would be right often enough to be worth having.
+     */
+    private static GeneralizationRule generalization(PrivacyAction action, FieldMetadata field,
+                                                     PrivacyProfile profile) {
+        if (action != PrivacyAction.GENERALIZE) {
+            return null;
+        }
+        GeneralizationRule rule = profile.generalizations().get(field.namespace());
+        if (rule == null) {
+            throw new IllegalStateException("profile " + profile.name()
+                    + " maps " + field.fieldName() + " to GENERALIZE but declares no rule for "
+                    + field.namespace());
+        }
+        return rule;
+    }
+
+    /**
+     * Applies the profile's setting for anything nobody classified.
+     *
+     * <p>Warnings name the field but never its value. The point of the warning is
+     * that someone goes and classifies the field, and a field name is not the
+     * sensitive part.
+     */
+    private static EffectivePrivacyPolicy unclassified(FieldMetadata field, PrivacyProfile profile) {
+        return switch (profile.unclassified()) {
+            case FAIL_REQUEST -> EffectivePrivacyPolicy.refuse(profile.name());
+            case REDACT_AND_WARN -> {
+                LOG.warn("unclassified field {} redacted under profile {}",
+                        field.fieldName(), profile.name());
+                yield unclassifiedPolicy(SAFE_DEFAULT, field, profile);
+            }
+            case DROP_AND_WARN -> {
+                LOG.warn("unclassified field {} dropped under profile {}",
+                        field.fieldName(), profile.name());
+                yield unclassifiedPolicy(PrivacyAction.REMOVE, field, profile);
+            }
+            case PASS_THROUGH_UNSAFE -> {
+                // Deliberately WARN rather than DEBUG, and on every field rather
+                // than once: this is the setting that lets unreviewed data reach
+                // the model, and it should be visible in any log anyone reads.
+                LOG.warn("unclassified field {} released unchanged under profile {} "
+                                + "(unclassified: PASS_THROUGH_UNSAFE)",
+                        field.fieldName(), profile.name());
+                yield unclassifiedPolicy(PrivacyAction.PASS_THROUGH, field, profile);
+            }
+        };
+    }
+
+    private static EffectivePrivacyPolicy unclassifiedPolicy(PrivacyAction action,
+                                                             FieldMetadata field,
+                                                             PrivacyProfile profile) {
+        return new EffectivePrivacyPolicy(action, field.namespace(), true, profile.name(),
+                EffectivePrivacyPolicy.Decided.UNCLASSIFIED);
     }
 }

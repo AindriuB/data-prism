@@ -20,6 +20,7 @@ import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
+import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
@@ -67,7 +68,8 @@ public final class DataPrismAssembly {
         Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve(localeTag);
         SyntheticValueSource synthetics = new HmacSyntheticGenerator(keys, vocabulary);
         PrivacyPolicyResolver policies = new ProfilePrivacyPolicyResolver(defaultProfiles());
-        ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics);
+        ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics,
+                new HmacValueTokenSource(keys));
         LlmResponseValidator validator = new RawValueLeakValidator();
 
         this.orchestrator = new DefaultContextOrchestrator(adapters, scrubber, resolver, validator,

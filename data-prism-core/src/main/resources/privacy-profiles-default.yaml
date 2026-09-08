@@ -34,9 +34,28 @@ profiles:
       TAX_IDENTIFIER: { action: REDACT }
       GOVERNMENT_IDENTIFIER: { action: REDACT }
 
-      # GENERALIZE would be the better fit and arrives with its bucket
-      # configuration in S3. Until then this is REDACT rather than a rule naming
-      # an action the engine would refuse at runtime.
+      # GENERALIZE is usually the better fit here and is now implemented, but it
+      # needs bands, and bands are policy rather than a platform default: 0 to
+      # 1,000,000 discloses nothing about a retail customer and identifies a
+      # company outright. Shipping a guess would be worse than shipping REDACT,
+      # so this stays REDACT and the rule below is commented out for you to size.
+      #
+      #   FINANCIAL: { action: GENERALIZE }
+      #
+      # with, in this profile:
+      #
+      #   generalization:
+      #     FINANCIAL_VALUE:
+      #       type: NUMERIC_BAND
+      #       unit: EUR
+      #       bounds: [0, 100, 1000, 10000, 100000]
+      #     PERSON_IDENTITY:
+      #       type: DATE_TRUNCATION
+      #       precision: YEAR
+      #
+      # Note that generalisation resists a single look, not a determined series
+      # of them: repeated reads narrow a value. Rate limiting per subject per
+      # scope is the mitigation and arrives with the request limits in S5.
       FINANCIAL: { action: REDACT }
 
       # Removed, not redacted: a redacted field still tells the reader a

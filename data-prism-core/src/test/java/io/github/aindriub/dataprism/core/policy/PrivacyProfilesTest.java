@@ -104,6 +104,57 @@ class PrivacyProfilesTest {
     }
 
     @Test
+    @DisplayName("generalisation rules are read from the profile")
+    void readsGeneralizationRules() {
+        var profiles = PrivacyProfiles.fromYaml(yaml("""
+                profiles:
+                  P:
+                    classifications:
+                      FINANCIAL: { action: GENERALIZE }
+                    generalization:
+                      FINANCIAL_VALUE:
+                        type: NUMERIC_BAND
+                        unit: EUR
+                        bounds: [0, 1000, 10000]
+                      PERSON_IDENTITY:
+                        type: DATE_TRUNCATION
+                        precision: YEAR
+                """));
+
+        var rules = profiles.get("P").generalizations();
+        assertThat(rules.get(io.github.aindriub.dataprism.annotations.PrivacyNamespace.FINANCIAL_VALUE))
+                .satisfies(rule -> {
+                    assertThat(rule.kind()).isEqualTo(GeneralizationRule.Kind.NUMERIC_BAND);
+                    assertThat(rule.unit()).isEqualTo("EUR");
+                    assertThat(rule.bounds()).hasSize(3);
+                });
+        assertThat(rules.get(io.github.aindriub.dataprism.annotations.PrivacyNamespace.PERSON_IDENTITY)
+                .precision()).isEqualTo(GeneralizationRule.Precision.YEAR);
+    }
+
+    @Test
+    @DisplayName("a band rule with unusable bounds fails at load")
+    void badBoundsFailAtLoad() {
+        assertThatThrownBy(() -> PrivacyProfiles.fromYaml(yaml("""
+                profiles:
+                  P:
+                    generalization:
+                      FINANCIAL_VALUE: { type: NUMERIC_BAND, bounds: [1000, 10] }
+                """)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must ascend");
+
+        assertThatThrownBy(() -> PrivacyProfiles.fromYaml(yaml("""
+                profiles:
+                  P:
+                    generalization:
+                      FINANCIAL_VALUE: { type: NUMERIC_BAND, bounds: [ten, twenty] }
+                """)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("non-numeric bound");
+    }
+
+    @Test
     @DisplayName("unclassified defaults to failing the request when not stated")
     void unclassifiedDefaultsToFailClosed() {
         var profiles = PrivacyProfiles.fromYaml(yaml("""

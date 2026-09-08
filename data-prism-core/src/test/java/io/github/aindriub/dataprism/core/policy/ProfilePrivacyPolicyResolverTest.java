@@ -26,7 +26,7 @@ class ProfilePrivacyPolicyResolverTest {
 
     private static FieldMetadata sensitive(PrivacyAction suggested, DataClassification... classifications) {
         return new FieldMetadata("field", false, null, List.of(classifications),
-                PrivacyNamespace.PERSON_NAME, suggested, "", null);
+                PrivacyNamespace.PERSON_NAME, suggested, "", null, String.class, null);
     }
 
     private static ProfilePrivacyPolicyResolver resolver(PrivacyProfile profile) {
@@ -116,8 +116,7 @@ class ProfilePrivacyPolicyResolverTest {
     @DisplayName("an unclassified field fails the request under the production setting")
     void unclassifiedFailsClosed() {
         var resolver = resolver(profile(PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST, Map.of()));
-        var undeclared = new FieldMetadata("field", false, null, List.of(),
-                PrivacyNamespace.NONE, null, "", null);
+        var undeclared = FieldMetadata.undeclared("field");
 
         assertThat(resolver.resolve(undeclared, context("DEFAULT")).allowed()).isFalse();
     }
@@ -126,8 +125,7 @@ class ProfilePrivacyPolicyResolverTest {
     @DisplayName("redact-and-warn redacts, and still never passes through")
     void unclassifiedRedactsWhenConfigured() {
         var resolver = resolver(profile(PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of()));
-        var undeclared = new FieldMetadata("field", false, null, List.of(),
-                PrivacyNamespace.NONE, null, "", null);
+        var undeclared = FieldMetadata.undeclared("field");
 
         var policy = resolver.resolve(undeclared, context("DEFAULT"));
 
@@ -140,7 +138,7 @@ class ProfilePrivacyPolicyResolverTest {
     void identifiersAreAlwaysRemoved() {
         var resolver = resolver(profile(PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of()));
         var identifier = new FieldMetadata("subjectRef", true, FieldMetadata.SELF, List.of(),
-                PrivacyNamespace.NONE, null, "", null);
+                PrivacyNamespace.NONE, null, "", null, String.class, null);
 
         assertThat(resolver.resolve(identifier, context("DEFAULT")).action())
                 .isEqualTo(PrivacyAction.REMOVE);
