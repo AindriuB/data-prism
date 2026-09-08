@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.aindriub</groupId>
+  <artifactId>data-prism</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>Data Prism</name>
+  <description>A privacy layer between MCP clients and enterprise APIs.</description>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+
+  <modules>
+    <module>data-prism-annotations</module>
+    <module>data-prism-core</module>
+    <module>data-prism-pseudonymisation</module>
+    <module>data-prism-validation</module>
+    <module>data-prism-audit</module>
+    <module>data-prism-orchestration</module>
+    <module>data-prism-mcp</module>
+    <module>data-prism-example</module>
+  </modules>
+
+  <properties>
+    <!-- Artifacts target 21 even when built on a newer JDK, so the library
+         stays usable on the version the specification names. -->
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <spring-boot.version>3.5.16</spring-boot.version>
+    <mcp.version>2.0.1</mcp.version>
+    <archunit.version>1.5.0</archunit.version>
+
+    <!-- Maven 3.8.6 still defaults to compiler 3.1, which predates the `release`
+         flag, and surefire 2.12.4, which cannot run JUnit 5 at all. Both are
+         pinned rather than inherited. -->
+    <enforcer.version>3.6.3</enforcer.version>
+    <compiler.version>3.16.0</compiler.version>
+    <surefire.version>3.6.0</surefire.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp-bom</artifactId>
+        <version>${mcp.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
+        <scope>test</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-annotations</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-pseudonymisation</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-validation</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-audit</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-orchestration</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-mcp</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${compiler.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>${enforcer.version}</version>
+        <executions>
+          <execution>
+            <id>enforce-jackson-major</id>
+            <goals><goal>enforce</goal></goals>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <!-- The `mcp` aggregate pulls mcp-json-jackson3, which puts a
+                       second Jackson major on the classpath. The scrubbing engine
+                       is a Jackson module registered on one ObjectMapper; a split
+                       would register it on a mapper that does not serialise MCP
+                       output, and would do so silently. Depend on mcp-core plus
+                       mcp-json-jackson2 instead. -->
+                  <excludes>
+                    <exclude>io.modelcontextprotocol.sdk:mcp</exclude>
+                    <exclude>io.modelcontextprotocol.sdk:mcp-json-jackson3</exclude>
+                    <exclude>tools.jackson.core:*</exclude>
+                  </excludes>
+                  <message>
+                    Do not depend on the `mcp` aggregate or Jackson 3. See
+                    docs/architecture.md and the S0 plan: this project is on a
+                    single Jackson 2 classpath so the scrubbing module cannot be
+                    silently bypassed.
+                  </message>
+                </bannedDependencies>
+                <requireMavenVersion>
+                  <version>[3.6.3,)</version>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
