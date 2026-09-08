@@ -28,26 +28,12 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### S1 — Metadata and policy
-
-Resolve metadata from classes and accessors as well as record components; add
-`@SubjectIdentifier` for records describing more than one subject; put a real
-policy layer between the annotation and the action, with YAML profiles and the
-precedence chain from pack.md §29; and enforce fail-closed at build time with an
-annotation processor rather than only at runtime.
-
-S0 honours `suggestedAction` directly, which the specification explicitly warns
-against — the annotation is the model author's suggestion and the server-side
-policy is meant to have final authority. Until this lands, changing a privacy
-decision means editing and redeploying application code.
-**Blocked by:** nothing. S0 merged 2026-09-08.
-
 ### S2 — Pseudonymisation, properly
 
 Per-namespace generators beyond the S0 four, key rotation with `keyId` pinned at
 scope creation, multi-key resolution, and a properly sized and licensed name
 pool. The golden vectors and the discriminator already exist.
-**Blocked by:** nothing; independent of S1.
+**Blocked by:** nothing. S1 merged 2026-09-08.
 
 ## Next
 
@@ -56,7 +42,7 @@ pool. The golden vectors and the discriminator already exist.
 The core deliverable: tree-based traversal driven by type metadata, all seven
 privacy actions, generalisation strategies, nesting, collections, maps, cycles
 and unknown properties, installed as a Jackson module on the MCP mapper.
-**Blocked by:** S1, S2.
+**Blocked by:** S2. S1 merged 2026-09-08.
 
 ### S4 — Validation and scanning
 

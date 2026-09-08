@@ -17,6 +17,31 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-08 — S1 policy layer and build-time fail-closed
+
+Privacy decisions moved out of model classes and into YAML profiles. The engine
+now applies a decision from `PrivacyPolicyResolver` rather than reading
+`suggestedAction`, so changing what is disclosed no longer means editing and
+redeploying application code. Metadata is read from plain classes and accessors
+as well as record components, `@SubjectIdentifier` lands, and an annotation
+processor fails the build on any unclassified field of an exposed model. 55 tests.
+
+**Cost:** the interesting problem was combining a profile rule with a model
+author's suggestion. Letting the profile win outright would let an annotation
+widen disclosure by being edited; letting the annotation win would make the
+profile advisory. Both are wrong, so the two are combined by taking the stricter,
+which needs a total order over actions — and that order is a judgement, not a
+fact. It is stated and argued in `ActionStrictness`. The placement worth knowing
+is SYNTHESIZE below REDACT: a stable pseudonym is linkable within its scope,
+which is strictly more disclosure than redaction, even though it looks more
+thorough. `override: true` exists so an over-classified field can still be
+relaxed, deliberately and visibly.
+
+Profiles are parsed by hand from a generic map rather than data-bound. Binding
+turns a misspelled classification into a rule that silently does not apply, and
+a privacy profile that quietly loses a rule is the worst kind of configuration
+bug: nothing fails, and less is protected than the file says.
+
 ## 2026-09-08 — S0 walking skeleton
 
 One vertical thread now runs from an MCP tool call to a pseudonymised response:

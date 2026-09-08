@@ -20,4 +20,5 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-08 | S1 | Policy profiles decide actions; class/accessor metadata; processor fails build on unclassified fields | `## 2026-09-08 — S1 policy layer and build-time fail-closed` |
 | 2026-09-08 | S0 | Walking skeleton: 8 modules, MCP stdio, HMAC pseudonyms, fail-closed, 31 tests | `## 2026-09-08 — S0 walking skeleton` |
