@@ -1,0 +1,46 @@
+# Han script, Mandarin.
+#
+# Two things differ from the Latin sets and both matter to how names are put
+# together elsewhere in the pipeline. Chinese names are family-name-first, and
+# they are written without a separating space. A renderer that joins with a
+# space and assumes given-then-family produces something that is recognisably
+# not a Chinese name, which defeats the purpose of having this set at all --
+# so the renderer asks the vocabulary for its script rather than assuming.
+#
+# Characters here are outside the Basic Multilingual Plane in no case, but the
+# set is still a good check that the path is UTF-8 clean end to end.
+
+id: mandarin
+version: 1
+locale: zh
+script: Hans
+
+pools:
+  # Given names, one or two characters as is usual.
+  firstNames: [伟, 芳, 娜, 敏, 静, 丽, 强, 磊,
+               军, 洋, 勇, 艳, 杰, 娟, 涛, 明,
+               超, 霞, 平, 刚, 秀英, 桂英, 秀兰, 玉兰,
+               建国, 建华, 志强, 志明, 晓明, 晓东, 文静, 雨欣,
+               子涵, 浩然, 欣怡, 嘉怡, 宇轩, 梓萱, 若曦, 思远]
+
+  # Family names, in rough order of frequency.
+  lastNames: [李, 王, 张, 刘, 陈, 杨, 黄, 赵,
+              吴, 周, 徐, 孙, 马, 朱, 胡, 郭,
+              何, 高, 林, 罗, 郑, 梁, 谢, 宋,
+              唐, 许, 韩, 冯, 邓, 曹, 彭, 曾,
+              肖, 田, 董, 袁, 潘, 蒋, 蔡, 余]
+
+  streets: [和平路, 人民路, 建设大道, 中山路,
+            解放路, 长江路, 黄河街, 光明路,
+            文化路, 环湖路, 朝阳大街, 新华路,
+            友谊路, 幸福街, 青年路, 复兴大道]
+
+  towns: [青山区, 望江镇, 云溪县, 松林新城,
+          东湖区, 白沙镇, 金山县, 梅岭新区,
+          南屏区, 柳河镇, 石桥县, 翠湖新城,
+          西塘区, 玉泉镇, 清河县, 沐阳新区]
+
+  organisations: [远东实业, 华信科技, 长风集团, 明德控股,
+                  东方物流, 恒通商贸, 瑞丰置业, 天元能源,
+                  中和医药, 广联建设, 汇通金融, 新洲传媒,
+                  嘉禾农业, 万隆贸易, 星海电子, 联创软件]

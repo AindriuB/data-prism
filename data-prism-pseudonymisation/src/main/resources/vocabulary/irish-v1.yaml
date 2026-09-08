@@ -1,0 +1,45 @@
+# Irish and Gaelic.
+#
+# Deliberately keeps the síneadh fada (á é í ó ú) and the Ó/Ní/Mac/Mag surname
+# particles. Stripping them would be the exact failure this set exists to avoid:
+# a dataset of Irish-language names replaced by unaccented English ones has lost
+# something a reader can see, and an investigator looking at the output would
+# have no way to tell the source was different.
+#
+# Surnames here are written in both the Ó (masculine) and Ní (feminine) forms
+# because the source data will contain both. Selection is by digest, so a
+# pseudonym's particle carries no information about the real subject.
+
+id: irish
+version: 1
+locale: ga
+script: Latn
+
+pools:
+  firstNames: [Seán, Aoife, Siobhán, Caoimhe, Niamh, Órla, Pádraig, Ciarán,
+               Eoin, Dara, Fionn, Saoirse, Róisín, Éabha, Tadhg, Oisín,
+               Cillian, Muireann, Gráinne, Bríd, Aisling, Cathal, Dónal, Eimear,
+               Fiachra, Gearóid, Íde, Lorcán, Máire, Nuala, Odhrán, Peadar,
+               Ruairí, Sorcha, Treasa, Úna, Aodh, Blathnaid, Colm, Deirdre,
+               Éanna, Fionnuala, Gobnait, Liadán, Maolíosa, Neasa, Ronán, Síle]
+
+  lastNames: ["Ó Súilleabháin", "Ní Bhriain", "Ó Conchúir", "Mac Cárthaigh",
+              "Ní Dhomhnaill", "Ó Ceallaigh", "Mac Gabhann", "Ó Ríordáin",
+              "Ní Mhurchú", "Ó Dochartaigh", "Mac Aodha", "Ní Chonaill",
+              "Ó Braonáin", "Mag Uidhir", "Ní Ríordáin", "Ó Faoláin",
+              "Mac Diarmada", "Ní Ghallchóir", "Ó hEidhin", "Ó Muirthile",
+              "Mac Lochlainn", "Ní Loingsigh", "Ó Beaglaoich", "Ó Tuama",
+              "Mac Suibhne", "Ní Fhloinn", "Ó Dálaigh", "Ó Riain",
+              "Mac Mathúna", "Ní Cheallaigh", "Ó Cuinn", "Ó Neachtain",
+              "Mac Giolla Phádraig", "Ní Bhaoill", "Ó Laoghaire", "Ó Máille",
+              "Mac Fhlannchadha", "Ní Ainle", "Ó Tuathail", "Ó Duinnín"]
+
+  streets: ["Bóthar na Trá", "Sráid an Chaisleáin", "Cé an Phoirt", "Ascaill na Coille",
+            "Bóthar Chnoc Álainn", "Sráid Uí Chonaill", "Plás na hAbhann", "Lána an Mhuilinn",
+            "Bóthar na Mainistreach", "Sráid na Céibhe", "Cúirt na Fuinseoige", "Páirc an Locha",
+            "Bóthar an tSléibhe", "Sráid Thobar Rí", "Cearnóg an Mhargaidh", "Lána Chill Dara"]
+
+  towns: [Baile Átha Fhirdhia, Cill Chainnigh, Dún Chaoin, Inis Meáin,
+          Léim an Bhradáin, Machaire Rabhartaigh, Ros Muc, Sliabh na mBan,
+          Tír Chonaill, Uachtar Ard, Áth Trasna, Béal Átha na Sluaighe,
+          Ceann Toirc, Doire Fhíonáin, Eachdhroim, Fionnghlas]

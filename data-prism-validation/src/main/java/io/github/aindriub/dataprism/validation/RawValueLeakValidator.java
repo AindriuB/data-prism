@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.validation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.Text;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +18,12 @@ import java.util.Set;
  * catches the engine passing a field through, an action silently doing nothing,
  * and a raw DTO being returned in place of a scrubbed tree.
  *
+ * <p>Comparison is on canonical text rather than raw bytes. A source that stores
+ * "Seań" and a response carrying the precomposed "Seán" are the same name,
+ * and an exact byte match would let the second through while reporting the check
+ * as passed -- the worst possible outcome for a check whose whole job is to be
+ * the last line.
+ *
  * <p>What it does not catch is a sensitive value that was never in a classified
  * field — a national identifier sitting in a free-text note, say. Pattern
  * detection for that is S4, along with the scope-aware allowlist that stops
@@ -26,8 +33,12 @@ public final class RawValueLeakValidator implements LlmResponseValidator {
 
     @Override
     public ValidationResult validate(JsonNode response, Set<String> prohibited, PrivacyContext context) {
+        Set<String> canonical = prohibited.stream()
+                .map(Text::canonical)
+                .collect(java.util.stream.Collectors.toSet());
+
         List<Violation> violations = new ArrayList<>();
-        walk(response, "$", prohibited, violations);
+        walk(response, "$", canonical, violations);
         return violations.isEmpty() ? ValidationResult.ok() : ValidationResult.failed(violations);
     }
 
@@ -48,7 +59,7 @@ public final class RawValueLeakValidator implements LlmResponseValidator {
             return;
         }
         String text = node.asText();
-        if (text != null && !text.isBlank() && prohibited.contains(text)) {
+        if (text != null && !text.isBlank() && prohibited.contains(Text.canonical(text))) {
             out.add(new Violation(path, "RAW_SOURCE_VALUE", "exact-match"));
         }
     }

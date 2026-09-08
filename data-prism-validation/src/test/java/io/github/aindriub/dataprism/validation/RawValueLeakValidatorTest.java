@@ -64,6 +64,45 @@ class RawValueLeakValidatorTest {
     }
 
     @Test
+    @DisplayName("a leak spelled in another Unicode form is still caught")
+    void catchesNormalisationVariants() {
+        // The source stored the decomposed form; the response carries the
+        // precomposed one. Byte equality would pass this and report the check as
+        // successful, which is the worst outcome available to a last line of
+        // defence.
+        ObjectNode response = mapper.createObjectNode();
+        response.put("name", "Seán Ó Súilleabháin");
+
+        ValidationResult result = validator.validate(
+                response, Set.of("Seán Ó Súilleabháin"), context);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.violations()).singleElement()
+                .satisfies(v -> assertThat(v.code()).isEqualTo("RAW_SOURCE_VALUE"));
+    }
+
+    @Test
+    @DisplayName("a leak hidden behind invisible marks is still caught")
+    void catchesInvisibleCharacterVariants() {
+        ObjectNode response = mapper.createObjectNode();
+        response.put("name", "‎عبدالله‏");
+
+        assertThat(validator.validate(response,
+                Set.of("عبدالله"), context).valid()).isFalse();
+    }
+
+    @Test
+    @DisplayName("normalisation does not make the validator over-eager")
+    void doesNotOverMatch() {
+        ObjectNode response = mapper.createObjectNode();
+        response.put("name", "Sean Murphy");
+
+        // "Sean" is not "Seán". Folding accents away would merge genuinely
+        // different names and start refusing responses that are perfectly safe.
+        assertThat(validator.validate(response, Set.of("Seán Murphy"), context).valid()).isTrue();
+    }
+
+    @Test
     @DisplayName("an empty prohibited set does not make the validator vacuous by accident")
     void emptyProhibitedPasses() {
         ObjectNode response = mapper.createObjectNode();
