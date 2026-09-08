@@ -6,8 +6,11 @@ import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.RequestLimits;
 import io.github.aindriub.dataprism.core.ScrubResult;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.SourceValues;
@@ -17,7 +20,11 @@ import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
 import io.github.aindriub.dataprism.validation.Violation;
 
+import java.time.Clock;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -34,9 +41,12 @@ import java.util.UUID;
  * returns a response after it fails: a refusal is an exception, so there is
  * nothing for a caller to accidentally ignore.
  *
- * <p>S0 calls its sources in sequence. Parallel fan-out with timeouts, circuit
- * breakers and bounded concurrency is S5; sequencing is fine for one stub and
- * would be wrong for a real deployment.
+ * <p>Sources are called in parallel on virtual threads, under a bulkhead, a
+ * per-source timeout and a circuit breaker. A source that fails or times out is
+ * recorded as absent and the answer is built from the rest: failing the whole
+ * request because one system is slow would make the platform less available
+ * than the systems behind it, and the gap is stated in the response rather
+ * than hidden.
  */
 public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
@@ -47,6 +57,10 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private final SyntheticValueSource synthetics;
     private final ParameterFingerprinter fingerprinter;
     private final AuditRecorder audit;
+    private final IdentityResolver identities;
+    private final SourceFanOut fanOut;
+    private final ScopeBudget budget;
+    private final RequestLimits limits;
 
     /**
      * The standard pipeline: the supplied comparison check, plus the pattern
@@ -76,6 +90,40 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
         this.fingerprinter = Objects.requireNonNull(fingerprinter, "fingerprinter");
         this.audit = Objects.requireNonNull(audit, "audit");
+        this.identities = new PassThroughIdentityResolver();
+        this.fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC());
+        this.budget = new ScopeBudget();
+        this.limits = RequestLimits.DEFAULT;
+        if (this.validators.isEmpty()) {
+            throw new IllegalArgumentException("at least one response validator is required");
+        }
+    }
+
+    /**
+     * The full pipeline, with identity resolution, fan-out and limits supplied.
+     *
+     * <p>The shorter constructors above assume every source shares a key and
+     * that failures need no breaker, which is true of a single stub and of
+     * very little else. A real deployment uses this one.
+     */
+    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
+                                      FieldMetadataResolver resolver,
+                                      List<LlmResponseValidator> validators,
+                                      SyntheticValueSource synthetics,
+                                      ParameterFingerprinter fingerprinter, AuditRecorder audit,
+                                      IdentityResolver identities, SourceFanOut fanOut,
+                                      ScopeBudget budget, RequestLimits limits) {
+        this.adapters = List.copyOf(adapters);
+        this.scrubber = Objects.requireNonNull(scrubber, "scrubber");
+        this.resolver = Objects.requireNonNull(resolver, "resolver");
+        this.validators = List.copyOf(validators);
+        this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
+        this.fingerprinter = Objects.requireNonNull(fingerprinter, "fingerprinter");
+        this.audit = Objects.requireNonNull(audit, "audit");
+        this.identities = Objects.requireNonNull(identities, "identities");
+        this.fanOut = Objects.requireNonNull(fanOut, "fanOut");
+        this.budget = Objects.requireNonNull(budget, "budget");
+        this.limits = Objects.requireNonNull(limits, "limits");
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
         }
@@ -88,8 +136,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         String fingerprint = fingerprinter.fingerprint(
                 request.entityType() + "/" + request.subjectId(), context);
 
-        DataRequest dataRequest = DataRequest.of(request.entityType(), request.subjectId());
-        List<String> sources = new ArrayList<>();
+        List<SourceOutcome> sources = new ArrayList<>();
         Set<String> prohibited = new LinkedHashSet<>();
         // Never logged and never audited: this is every synthetic value the
         // response contains, and it is only ever read by the validators.
@@ -97,12 +144,22 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         ObjectNode merged = null;
 
         try {
-            for (DataSourceAdapter<?> adapter : adapters) {
-                Object record = adapter.fetch(dataRequest);
+            if (!budget.tryRead(context.scopeId(), request.subjectId(), limits.scopeReadBudget())) {
+                // Refused rather than throttled. A banded value narrows under
+                // repeated asking and every individual answer looks correct,
+                // so there is nothing later in the pipeline that could notice.
+                throw new PrivacyRefusedException("SCOPE_READ_BUDGET", request.entityType(),
+                        "this subject has been read " + limits.scopeReadBudget()
+                                + " times in this scope");
+            }
+
+            for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
+                    requestsPerSource(request), limits)) {
+                sources.add(fetched.outcome());
+                Object record = fetched.record();
                 if (record == null) {
                     continue;
                 }
-                sources.add(adapter.sourceName());
                 prohibited.addAll(SourceValues.prohibited(record, resolver));
 
                 ScrubResult scrubbed = scrubber.scrub(record, context);
@@ -137,14 +194,38 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         }
 
         audit(request, subjectToken, fingerprint, context, "ALLOW", sources, correlationId);
-        return new ContextResponse(request.entityType(), subjectToken, sources, merged);
+        return ContextResponse.of(request.entityType(), subjectToken, sources, merged);
+    }
+
+    /**
+     * What to ask each source for.
+     *
+     * <p>The identity resolver decides, because a source keyed by its own
+     * reference needs that reference rather than the canonical id. A source
+     * the resolver leaves out is not called at all, which keeps a subject
+     * that only some systems know from producing a row of misleading
+     * no-data outcomes.
+     */
+    private Map<String, DataRequest> requestsPerSource(ContextRequest request) {
+        List<String> names = adapters.stream().map(DataSourceAdapter::sourceName).toList();
+        Map<String, DataRequest> requests = new LinkedHashMap<>();
+        for (IdentityResolver.SourceRef ref : identities.expand(
+                new IdentityResolver.CanonicalId(request.subjectId()), names)) {
+            requests.put(ref.sourceName(), DataRequest.of(request.entityType(), ref.key()));
+        }
+        return requests;
     }
 
     private void audit(ContextRequest request, String subjectToken, String fingerprint,
-                       PrivacyContext context, String decision, List<String> sources,
+                       PrivacyContext context, String decision, List<SourceOutcome> sources,
                        String correlationId) {
+        // Name and status only. How a source answered is operational; what it
+        // answered with is never audited.
+        Set<String> names = sources.stream()
+                .map(outcome -> outcome.sourceName() + ":" + outcome.status())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         audit.record("system", "get_entity_context", request.entityType(), subjectToken,
                 fingerprint, context.redactionProfile(), context.scopeId(), decision,
-                Set.copyOf(sources), correlationId);
+                names, correlationId);
     }
 }

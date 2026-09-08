@@ -51,9 +51,9 @@ class ArchitectureTest {
                     "..dataprism.audit..", "..dataprism.pseudonymisation..");
 
     /**
-     * MCP talks to the orchestrator, never to a source. When the connector
-     * modules land they are leaves that nothing imports; this is the rule that
-     * keeps it that way.
+     * MCP talks to the orchestrator, never to a source. The connector modules are
+     * leaves that nothing imports, which is what makes it impossible for the tool
+     * layer to reach a source system directly rather than merely impolite.
      */
     @ArchTest
     static final ArchRule mcpDoesNotReachSources = noClasses()
@@ -61,6 +61,25 @@ class ArchitectureTest {
             .should().dependOnClassesThat()
             .resideInAnyPackage("..dataprism.connectors..", "..dataprism.example..")
             .allowEmptyShould(true);
+
+    /**
+     * The orchestrator decides which sources to call and knows none of them. It
+     * sees {@code DataSourceAdapter} from core; the implementations are wired in
+     * at assembly. Without this the fan-out would slowly acquire knowledge of
+     * HTTP, and the next transport would have to be threaded through it.
+     */
+    @ArchTest
+    static final ArchRule orchestrationDoesNotReachConnectors = noClasses()
+            .that().resideInAPackage("..dataprism.orchestration..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("..dataprism.connectors..", "..dataprism.example..");
+
+    /** Nothing in the platform depends on a connector; the example wires them. */
+    @ArchTest
+    static final ArchRule connectorsAreLeaves = noClasses()
+            .that().resideInAPackage("io.github.aindriub.dataprism..")
+            .and().resideOutsideOfPackages("..dataprism.connectors..", "..dataprism.example..")
+            .should().dependOnClassesThat().resideInAPackage("..dataprism.connectors..");
 
     /** Nothing depends on the example, including the example's own libraries. */
     @ArchTest

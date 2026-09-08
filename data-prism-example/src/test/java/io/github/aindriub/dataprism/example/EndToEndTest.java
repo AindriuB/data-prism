@@ -88,7 +88,7 @@ class EndToEndTest {
         assertThat(audited).singleElement().satisfies(event -> {
             assertThat(event.policyDecision()).isEqualTo("ALLOW");
             assertThat(event.tool()).isEqualTo("get_entity_context");
-            assertThat(event.sourceSystems()).containsExactly("customer-api");
+            assertThat(event.sourceSystems()).containsExactly("customer-api:ANSWERED");
             assertThat(event.subjectPseudonym()).startsWith("SUBJ-").isNotEqualTo("123");
             assertThat(event.toString())
                     .doesNotContain("Patrick Murphy")
