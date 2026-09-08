@@ -28,48 +28,21 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### R — Make the repository a git repository
-
-`git init` plus a first commit. The whole `/fanout` model is worktree-based and
-cannot run without it, so nothing below can start.
-**Blocked by:** nothing.
-
-### S0 — Walking skeleton
-
-One vertical thread through every layer with everything stubbed that can be:
-parent POM, module skeleton, CI, the four annotations, a hardcoded scope, one
-stub adapter, HMAC generation with a dev key, a trivial validator, one MCP tool,
-a file audit sink. Exit: an MCP client gets a pseudonymised answer and an audit
-line, proven by one integration test.
-
-This is first because it settles the MCP SDK choice, the `ObjectMapper` boundary
-and the `PrivacyContext` plumbing while they are still cheap to change. The
-pack's own Phase 1–9 order defers all three to the end.
-**Blocked by:** R.
-
-## Next
-
-### S1 — Metadata and policy
-
-`FieldMetadataResolver` over records, classes and accessors; the subject graph
-rather than one identifier per record; YAML profiles with the §29 precedence
-chain; fail-closed with `@NonSensitive(reason=...)` enforced by an annotation
-processor at build time.
-**Blocked by:** S0.
-
 ### S2 — Pseudonymisation, properly
 
-Keyed HMAC over `(scopeId, subjectId, namespace, algVersion, keyId)`, per-namespace
-generators, the discriminator suffix, key rotation, and the checked-in golden
-vectors that make an accidental algorithm change break the build.
-**Blocked by:** S0.
+Per-namespace generators beyond the S0 four, key rotation with `keyId` pinned at
+scope creation, multi-key resolution, and a properly sized and licensed name
+pool. The golden vectors and the discriminator already exist.
+**Blocked by:** nothing. S1 merged 2026-09-08.
+
+## Next
 
 ### S3 — Scrubbing engine
 
 The core deliverable: tree-based traversal driven by type metadata, all seven
 privacy actions, generalisation strategies, nesting, collections, maps, cycles
 and unknown properties, installed as a Jackson module on the MCP mapper.
-**Blocked by:** S1, S2.
+**Blocked by:** S2. S1 merged 2026-09-08.
 
 ### S4 — Validation and scanning
 

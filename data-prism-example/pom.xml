@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.aindriub</groupId>
+    <artifactId>data-prism</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>data-prism-example</artifactId>
+  <name>Data Prism :: Example</name>
+  <description>
+    A stub source and a runnable server, proving the thread end to end. This is
+    the only module permitted to contain a business domain type, and nothing
+    depends on it.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-mcp</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+    </dependency>
+
+    <!-- The example depends on every module, so it is where the architecture
+         rules can see the whole graph. -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- On the processor path, not the compile classpath: the example
+               depends on the check running, not on the checker's classes. -->
+          <annotationProcessorPaths>
+            <path>
+              <groupId>io.github.aindriub</groupId>
+              <artifactId>data-prism-processor</artifactId>
+              <version>${project.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
