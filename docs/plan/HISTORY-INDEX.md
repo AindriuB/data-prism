@@ -20,6 +20,9 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-09 | S7 | Embedded Hazelcast: identity cache fails open, read budget fails closed, scope purge | `## 2026-09-09 — S7 embedded Hazelcast for distributed scope state` |
+| 2026-09-09 | S6 | Correlation before scrubbing; findings name which sources agree, never what they hold | `## 2026-09-09 — S6 correlation and consistency findings` |
+| 2026-09-09 | S5 | Virtual-thread fan-out with bulkhead, timeout, breaker; REST connectors; request limits | `## 2026-09-09 — S5 parallel connectors and request limits` |
 | 2026-09-08 | S4 | Pattern detection plus the scope-aware allowlist that stops it refusing our own output | `## 2026-09-08 — S4 pattern detection with a scope-aware allowlist` |
 | 2026-09-08 | S2a | Multi-key resolution so a key rotation does not invalidate running scopes | `## 2026-09-08 — S2a key rotation` |
 | 2026-09-08 | S3 | Nested descent (closed a fail-open hole), class-level defaults, descriptors, full action set | `## 2026-09-08 — S3 scrubbing engine, and the nesting hole it closed` |

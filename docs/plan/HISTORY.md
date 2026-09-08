@@ -17,6 +17,94 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — S7 embedded Hazelcast for distributed scope state
+
+Three pieces of shared state that look alike and are not: the identity cache, the
+read budget, and the re-identification index. 212 tests.
+
+**Cost:** the useful distinction, and the one to preserve if this is ever changed.
+The identity cache may fail open, because a synthetic value is a pure function of
+scope, subject, namespace and key — losing the cluster costs a recomputed HMAC
+and never a different answer. The read budget must fail closed, because an
+unreachable budget means nobody is counting and continuing would silently remove
+the only limit on how much a caller can extract about one subject. The first
+version of that fail-closed path did not work: obtaining the map and taking the
+lock are themselves cluster calls that throw when the member is gone, and they
+sat outside the guard, so the exception escaped before the refusal could run.
+
+Embedded rather than client-server, reversing the design review. The objection was
+that autoscale rebalancing disturbs the identity map; it does not, because a lost
+partition costs recomputation rather than a rename. What the argument does not
+cover is the re-identification index, which is a store rather than a cache —
+nothing recomputes a subject id from a pseudonym — so it is off unless a
+deployment enables it and accepts that its durability is the cluster's.
+
+Departed from the specification's §24 sketch, which returns the stored value on a
+concurrent write. Two threads deriving one key derive one value, so a differing
+stored value is not a race but a mid-scope change of key, algorithm or
+vocabulary. Preferring it would make output depend on cache state.
+
+Tests use an embedded member rather than Testcontainers because Docker was
+unavailable; a multi-member test is still worth adding. Hazelcast startup makes
+this module's tests take about a minute against under ten seconds for everything
+else.
+
+## 2026-09-09 — S6 correlation and consistency findings
+
+Three systems holding "Patrick Murphy", "Pat Murphy" and "P. Murphy" now produce
+one consistent identity and a finding saying the systems disagree. The
+specification's §64 worked example runs end to end. 201 tests.
+
+**Cost:** the ordering is the whole slice and is easy to get backwards.
+Correlation runs on raw records before scrubbing, because the pseudonym is keyed
+on the subject — after scrubbing all three spellings are the same string, and
+correlating then would report perfect agreement about data that agrees on
+nothing. Anyone moving correlation later in the pipeline will find it still
+compiles, still passes most tests, and silently reports agreement.
+
+Findings carry no values, only which sources agreed with each other. Fields match
+across sources by namespace rather than name, and a field with no namespace is
+deliberately not correlated: two fields both called `status` in different systems
+are usually not the same fact.
+
+Two things worth not undoing. `ComparisonForm` is aggressive where
+`Text.canonical` is conservative, on purpose — being wrong in the latter splits a
+subject or lets a leak past, being wrong in the former downgrades a finding.
+`ABBREVIATION` is restricted to name-like namespaces because "one value is a
+prefix of the other" is a genuine clue about an identifier.
+
+The injection heuristic first examined only namespaced fields, which is precisely
+where instruction text does not live — it lives in free-text notes. Correlation
+and the heuristic were never the same filter and sharing one hid the bug.
+
+An architecture rule caught this work: three classes each built their own reading
+ObjectMapper, so the "one mapper" rule had a four-name allowlist that would have
+grown again. Reading is consolidated in `SourceTree` and the allowlist is two
+names — one that reads, one that writes.
+
+## 2026-09-09 — S5 parallel connectors and request limits
+
+Sources are called in parallel on virtual threads under a bulkhead, a per-source
+timeout and a source cap, with a circuit breaker per source. A failing source is
+recorded absent and the answer built from the rest. 180 tests, new
+`connectors-rest` module.
+
+**Cost:** three things worth knowing. The per-source timeout is wall-clock from
+the start of the fan-out, so a source queued behind the bulkhead spends part of
+its budget waiting — intended, and it means concurrency set far below the source
+count shows up as timeouts rather than slow success. Holding nothing for a
+subject is an answer and does not trip a breaker; treating it as failure would
+open the breaker on a healthy source. And putting per-source `Duration` in the
+response broke MCP serialisation, which is how it surfaced: latency is
+operational telemetry, and infrastructure timings tell an untrusted reader about
+the health of systems it cannot otherwise see.
+
+Two test traps caught here. An assertion on a decoded URL path fails for the
+right reason and the wrong one — `/customers/../../admin` contains `/admin` while
+still being one safe segment, and the property to assert is that the slash
+arrived encoded. And a test class named `...IT` is Failsafe's convention, so
+Surefire skipped it in silence: a test that never runs is worse than no test.
+
 ## 2026-09-08 — S4 pattern detection with a scope-aware allowlist
 
 The validator now catches sensitive values that were never in a classified field

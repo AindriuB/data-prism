@@ -28,16 +28,55 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### S5 — Connectors and orchestration
+### S8 — Security
 
-`RestClient` sources with server-side endpoint configuration, virtual-thread
-fan-out with per-source timeouts, circuit breakers and bounded concurrency, the
-`IdentityResolver` SPI, and request limits including the per-scope cost budget.
+The slice that makes the rest mean what it says. `PrivacyContext` is currently a
+constant, and `scopeId` is half the pseudonymisation key: scope isolation is real
+in the code and vacuous in the deployment, because there is only ever one scope.
+Audit attributes every event to a principal named "system" that does not exist.
 
-Also the home for the rate limiting S4 could not provide: generalisation resists
-a single look rather than a determined series of them, and nothing yet stops a
-caller narrowing a banded value by asking repeatedly.
-**Blocked by:** nothing. S3, S2a and S4 merged 2026-09-08.
+Scope, principal, purpose and case must derive from an authenticated session.
+That forces the streamable HTTP transport too, because stdio cannot carry an
+identity — the two are one piece of work, not two.
+
+The plumbing is understood and supported: the MCP SDK's transport builder takes a
+`contextExtractor`, and the tool handler reads `exchange.transportContext()`. No
+filter-and-ThreadLocal workaround. Stdio stays as an explicitly single-principal
+development mode.
+
+Already in place: `ScopeIdentityIndex.endScope()` purges a scope's identities,
+reverse index and budget, so revocation is largely done; `SourceAliasing`'s
+expose-real-names flag is capability-shaped and becomes a real capability.
+
+**Four questions to settle before starting:**
+
+1. Token issuer — a specific IdP, or any JWT against a configured JWKS?
+2. Where a case comes from — does an investigator arrive with a `case_id` claim,
+   or does Data Prism own scope lifecycle as a user-facing surface? This is the
+   difference between a resolver and another whole slice.
+3. The purpose taxonomy — even three or four values. Without a list,
+   `PurposeValidator` compares strings against nothing.
+4. Whether stdio survives as a dev-only mode, refused in production profiles.
+
+**Blocked by:** those four answers. S5, S6 and S7 merged.
+
+### S9a — The cheap half of observability
+
+Worth folding into S8 while audit is already being touched: the real principal in
+audit events, metrics per docs/pack.md §89, and a log-scanning test that fails on
+any PII in a full integration run. The append-only sink and the chain verifier can
+wait for a deployment that needs them.
+**Blocked by:** S8.
+
+## Recommended stopping point
+
+After S8 and S9a. That is where the README stops needing an asterisk: every claim
+it makes is then true of a deployment rather than only of the library.
+
+S10 was deferred past V1 by decision and the index it needs already exists. S11
+is the Elasticsearch connector and Docker Compose — real work, no new guarantees,
+and the three divergent stub sources it was going to build landed in S6. S12's
+mutation and load testing is for a system with users.
 
 ## Someday
 
