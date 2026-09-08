@@ -48,7 +48,7 @@ class JsonTreeScrubbingEngineTest {
         var source = new ScrubbingFixtures.Declared(
                 "subject-1", "Patrick Murphy", "patrick@example.invalid", "internal note", "ACTIVE");
 
-        ObjectNode out = engine.scrub(source, context);
+        ObjectNode out = engine.scrub(source, context).tree();
 
         assertThat(out.get("fullName").asText())
                 .isEqualTo(FAKE_SYNTHETICS.syntheticValue("subject-1", PrivacyNamespace.PERSON_NAME, context));
@@ -67,7 +67,7 @@ class JsonTreeScrubbingEngineTest {
         var source = new ScrubbingFixtures.Declared(
                 "subject-1", "Patrick Murphy", "patrick@example.invalid", "note", "ACTIVE");
 
-        ObjectNode out = engine.scrub(source, context);
+        ObjectNode out = engine.scrub(source, context).tree();
 
         assertThat(out.has("subjectRef")).isFalse();
         assertThat(out.toString()).doesNotContain("subject-1");
@@ -102,7 +102,7 @@ class JsonTreeScrubbingEngineTest {
         var source = new ScrubbingFixtures.TwoSubjects(
                 "app-1", "guarantor-9", "Patrick Murphy", "Aoife Byrne");
 
-        ObjectNode out = engine.scrub(source, context);
+        ObjectNode out = engine.scrub(source, context).tree();
 
         // The failure this guards against is not a leak: it is the model being
         // told two people are one person. See docs/design-review.md A1.

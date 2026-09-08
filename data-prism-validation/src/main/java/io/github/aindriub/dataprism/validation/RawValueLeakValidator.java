@@ -25,14 +25,21 @@ import java.util.Set;
  * the last line.
  *
  * <p>What it does not catch is a sensitive value that was never in a classified
- * field — a national identifier sitting in a free-text note, say. Pattern
- * detection for that is S4, along with the scope-aware allowlist that stops
- * those patterns rejecting the platform's own synthetic values.
+ * field — a national identifier sitting in a free-text note, say. That is
+ * {@link SensitivePatternValidator}'s job, and the two run together rather than
+ * one replacing the other: this check cannot be fooled by an unusual shape, and
+ * that one cannot be fooled by a value the source never held.
  */
 public final class RawValueLeakValidator implements LlmResponseValidator {
 
+    /**
+     * The emitted set is ignored here. A value the engine generated is not a raw
+     * source value, so it cannot be in {@code prohibited} in the first place; an
+     * allowlist would only be able to hide a genuine leak.
+     */
     @Override
-    public ValidationResult validate(JsonNode response, Set<String> prohibited, PrivacyContext context) {
+    public ValidationResult validate(JsonNode response, Set<String> prohibited, Set<String> emitted,
+                                     PrivacyContext context) {
         Set<String> canonical = prohibited.stream()
                 .map(Text::canonical)
                 .collect(java.util.stream.Collectors.toSet());

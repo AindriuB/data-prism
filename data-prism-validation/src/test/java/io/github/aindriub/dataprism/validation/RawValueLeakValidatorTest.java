@@ -15,6 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RawValueLeakValidatorTest {
 
+    /** This validator compares against source values, so the emitted allowlist is never its input. */
+    private static final Set<String> NONE = Set.of();
+
     private final RawValueLeakValidator validator = new RawValueLeakValidator();
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -29,7 +32,7 @@ class RawValueLeakValidatorTest {
         response.put("fullName", "Morgan Rossi (6H10)");
         response.put("state", "ACTIVE");
 
-        assertThat(validator.validate(response, Set.of("Patrick Murphy"), context).valid()).isTrue();
+        assertThat(validator.validate(response, Set.of("Patrick Murphy"), NONE, context).valid()).isTrue();
     }
 
     @Test
@@ -38,7 +41,7 @@ class RawValueLeakValidatorTest {
         ObjectNode response = mapper.createObjectNode();
         response.putObject("nested").putArray("aliases").add("Patrick Murphy");
 
-        ValidationResult result = validator.validate(response, Set.of("Patrick Murphy"), context);
+        ValidationResult result = validator.validate(response, Set.of("Patrick Murphy"), NONE, context);
 
         assertThat(result.valid()).isFalse();
         assertThat(result.violations()).singleElement()
@@ -55,7 +58,7 @@ class RawValueLeakValidatorTest {
         response.put("leaked", "patrick@example.invalid");
 
         ValidationResult result = validator.validate(
-                response, Set.of("patrick@example.invalid"), context);
+                response, Set.of("patrick@example.invalid"), NONE, context);
 
         // The violation is written to logs and audit. Putting the detected value
         // in it would leak exactly what the check just caught.
@@ -74,7 +77,7 @@ class RawValueLeakValidatorTest {
         response.put("name", "Seán Ó Súilleabháin");
 
         ValidationResult result = validator.validate(
-                response, Set.of("Seán Ó Súilleabháin"), context);
+                response, Set.of("Seán Ó Súilleabháin"), NONE, context);
 
         assertThat(result.valid()).isFalse();
         assertThat(result.violations()).singleElement()
@@ -88,7 +91,7 @@ class RawValueLeakValidatorTest {
         response.put("name", "‎عبدالله‏");
 
         assertThat(validator.validate(response,
-                Set.of("عبدالله"), context).valid()).isFalse();
+                Set.of("عبدالله"), NONE, context).valid()).isFalse();
     }
 
     @Test
@@ -99,7 +102,7 @@ class RawValueLeakValidatorTest {
 
         // "Sean" is not "Seán". Folding accents away would merge genuinely
         // different names and start refusing responses that are perfectly safe.
-        assertThat(validator.validate(response, Set.of("Seán Murphy"), context).valid()).isTrue();
+        assertThat(validator.validate(response, Set.of("Seán Murphy"), NONE, context).valid()).isTrue();
     }
 
     @Test
@@ -112,6 +115,6 @@ class RawValueLeakValidatorTest {
         // find, so a caller passing an empty set gets no protection from this
         // validator. That is why the orchestrator derives the set from the
         // source rather than accepting one.
-        assertThat(validator.validate(response, Set.of(), context).valid()).isTrue();
+        assertThat(validator.validate(response, Set.of(), NONE, context).valid()).isTrue();
     }
 }

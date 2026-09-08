@@ -89,7 +89,7 @@ class ClassLevelDefaultsTest {
     @DisplayName("one annotation on the class adopts a whole legacy model")
     void classLevelNonSensitiveAdoptsTheTail() {
         ObjectNode out = engine().scrub(
-                new Legacy("s-1", "Patrick Murphy", "ACTIVE", "WEB", "RETAIL"), context());
+                new Legacy("s-1", "Patrick Murphy", "ACTIVE", "WEB", "RETAIL"), context()).tree();
 
         // The profile still says FAIL_REQUEST. Only this type opted out.
         assertThat(out.get("status").asText()).isEqualTo("ACTIVE");
@@ -119,10 +119,10 @@ class ClassLevelDefaultsTest {
     @Test
     @DisplayName("REDACT and DROP are available as class-level defaults too")
     void otherClassLevelDefaults() {
-        assertThat(engine().scrub(new CautiousLegacy("s-1", "free text"), context())
+        assertThat(engine().scrub(new CautiousLegacy("s-1", "free text"), context()).tree()
                 .get("note").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
 
-        assertThat(engine().scrub(new TerseLegacy("s-1", "free text"), context())
+        assertThat(engine().scrub(new TerseLegacy("s-1", "free text"), context()).tree()
                 .has("note")).isFalse();
     }
 
@@ -130,7 +130,7 @@ class ClassLevelDefaultsTest {
     @DisplayName("a structured value can be classified once on its type")
     void typeLevelClassificationCoversEveryComponent() {
         ObjectNode out = engine().scrub(new WithAddress("s-1",
-                new Address("12 Elm Street", "Apt 4", "Belmont", "D02 XY45")), context());
+                new Address("12 Elm Street", "Apt 4", "Belmont", "D02 XY45")), context()).tree();
 
         ObjectNode address = (ObjectNode) out.get("address");
         assertThat(address.get("line1").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
