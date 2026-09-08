@@ -28,30 +28,16 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### S2a — Key rotation
+### S5 — Connectors and orchestration
 
-The remaining half of S2. `keyId` is already pinned per scope and threaded
-through the generator; what is missing is a provider that resolves more than one
-key at a time, so a rotation can begin without invalidating scopes still running
-under the previous key.
-**Blocked by:** nothing. Vocabulary half of S2 merged 2026-09-08.
+`RestClient` sources with server-side endpoint configuration, virtual-thread
+fan-out with per-source timeouts, circuit breakers and bounded concurrency, the
+`IdentityResolver` SPI, and request limits including the per-scope cost budget.
 
-## Next
-
-### S3 — Scrubbing engine
-
-The core deliverable: tree-based traversal driven by type metadata, all seven
-privacy actions, generalisation strategies, nesting, collections, maps, cycles
-and unknown properties, installed as a Jackson module on the MCP mapper.
-**Blocked by:** nothing. S1 and S2 merged 2026-09-08.
-
-### S4 — Validation and scanning
-
-Structural and pattern detection, scope-aware allowlisting of the platform's own
-pseudonyms, fail-closed refusal, violations recorded without the offending value.
-Without the allowlist the fail-closed path deadlocks on synthesised emails, so
-this cannot be deferred past the first synthesising profile.
-**Blocked by:** S3.
+Also the home for the rate limiting S4 could not provide: generalisation resists
+a single look rather than a determined series of them, and nothing yet stops a
+caller narrowing a banded value by asking repeatedly.
+**Blocked by:** nothing. S3, S2a and S4 merged 2026-09-08.
 
 ## Someday
 

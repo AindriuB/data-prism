@@ -17,6 +17,76 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-08 — S4 pattern detection with a scope-aware allowlist
+
+The validator now catches sensitive values that were never in a classified field
+— an identifier in a free-text note, an IBAN in a description. Detectors for
+IBAN, card PAN, PPSN, SSN, email, phone, JWT and common API-key prefixes, run
+over the whole tree at any depth and size-bounded. 146 tests.
+
+**Cost:** detection and the allowlist had to be one change. SYNTHESIZE emits
+`person.kz48@example.invalid`; an email detector matches it, fail-closed refuses,
+and every synthesising profile deadlocks. Building detection first would have
+produced something that passes its own tests and cannot be deployed. The engine
+therefore reports what it emitted and the validator permits those values —
+PASS_THROUGH values deliberately excluded, since a field passed through unchanged
+should still be scanned.
+
+The non-obvious call is that **shape refuses and the checksum only labels the
+reason**. Gating refusal on a valid checksum is unimplementable here: fixtures are
+required to carry invalid check digits, so every detection test would be vacuous.
+Checksum correctness is proved by counting valid variants — one of 100 IBAN
+check-digit pairs, one of 10 card final digits, one of 23 PPSN letters — without
+committing a valid value anywhere.
+
+This also caught a breach of the project's own rule: `IE29AIBK93115212345678`,
+introduced in S3 and merged to main, computes to mod-97 = 1 and is therefore a
+structurally valid IBAN. A documentation example rather than a real account, so
+nothing was disclosed, but the rule exists so a fixture cannot quietly be real.
+
+## 2026-09-08 — S2a key rotation
+
+`MultiKeySecretKeyProvider` resolves several keys at once, so a rotation can begin
+without invalidating scopes still running under the previous key. Adding a key
+never displaces another; `remove` is the only way to retire one. 132 tests.
+
+**Cost:** small slice, one trap. The tempting fallback is to return the only key
+held when an unknown id is asked for — it looks harmless and would silently change
+every synthetic value in that scope while nothing appeared to fail. There is a
+specific test for a provider holding exactly one key still refusing a different
+id. The provider is deliberately not a `record`, because the generated
+`toString()` would print every key.
+
+## 2026-09-08 — S3 scrubbing engine, and the nesting hole it closed
+
+Nested objects and collections are descended into rather than copied; class-level
+defaults and descriptor files provide two routes to classifying a model without
+annotating every field; and the action set is complete with HASH, TOKENIZE and
+GENERALIZE. 117 tests.
+
+**Cost:** the reason this slice mattered was a fail-open hole nobody had noticed.
+A nested object declared `@NonSensitive` — the natural annotation for a
+sub-structure believed inert — was copied into the response wholesale, raw values
+included, and the validator did not catch it because `SourceValues` only walked
+top-level fields. Eighty-three green tests missed it because every fixture was
+flat. If a future change makes the engine copy a subtree again, that is the
+failure to look for.
+
+Two things fell out of fixing it. A nested structure must inherit its parent's
+subject, or every nested synthesised field fails for want of one. And an
+undescendable subtree must consult the profile's unclassified setting rather than
+the holding field's action — consulting the field meant a `@NonSensitive` wrapper
+passed its contents through even under FAIL_REQUEST, which was the original hole
+wearing a different hat.
+
+Retrofit ergonomics drove the rest. Annotating every field of a large legacy model
+produces no information and creates pressure to disable fail-closed globally, so
+`@LlmExposedModel(undeclaredFields = ...)` states per type what silence means, and
+descriptors classify types that cannot be annotated at all. Descriptors may only
+tighten: if configuration could declassify a field, anyone who can edit a file can
+disclose data. Namespace is the one thing that cannot merge by strictness and
+fails loudly on disagreement, because picking one would split a subject in two.
+
 ## 2026-09-08 — S2 configurable multi-locale name pools
 
 Name pools are now configuration. Seven sets ship — a widened Latin default,
