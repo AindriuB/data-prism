@@ -150,6 +150,34 @@ all of these is in `design-review.md` under the section named.
   developers defeat by marking everything `PASS_THROUGH`.
 - **2026-09-08 — Hazelcast runs client–server, not embedded** (§C4). Rejected:
   embedded members, which rebalance partitions on every autoscale event.
+- **2026-09-08 — Coordinates are `io.github.aindriub` / `data-prism-*`, package
+  root `io.github.aindriub.dataprism`.** Rejected: a group id under a project
+  domain, which reads better but requires owning one — every close spelling of
+  `dataprism` is registered, and `data-prism.io` is free but cannot be a Java
+  package because hyphens are illegal in package names. `io.github.<user>` is
+  verifiable on Maven Central through the GitHub account alone. The cost is that
+  moving to an organisation later is a breaking coordinate change.
+- **2026-09-08 — The MCP layer uses the official MCP Java SDK directly**, with
+  Spring wiring written here; stdio in development, streamable HTTP in
+  production. Rejected: the Spring AI MCP server starter, which supplies the
+  transport for free but couples the `mcp` module to Spring AI's release train,
+  and whose auto-registration of `@Tool` beans is the expose-everything pattern
+  the specification forbids. Verify the SDK coordinates and version at build
+  time; this ecosystem moves faster than any document about it.
+- **2026-09-08 — No vendor client in core, for either secrets or audit.** The
+  HMAC key arrives at startup through a `SecretKeyProvider` SPI and lives in
+  application memory; `AuditSink` ships a file/SLF4J implementation only.
+  Rejected: bundling Vault, a cloud secrets client or Kafka, which would make
+  every consumer of a generic library inherit a dependency and a deployment
+  assumption they did not choose. Accepted consequence: a memory disclosure
+  exposes the key for every scope, where a KMS-derived per-scope subkey would
+  have limited it to live scopes. Reference implementations, if any, go in
+  optional modules.
+- **2026-09-08 — Re-identification: the reverse map is built in S7, the operator
+  surface is deferred past V1.** Rejected: deferring both, because a reverse map
+  added later cannot resolve any pseudonym issued before it existed, so every
+  scope created in the interim would be permanently opaque. The map is cheap; the
+  surface is what needs the security review, and that can wait.
 - **2026-09-08 — Build the walking skeleton first, then thicken it**
   (`development-plan.md`). Rejected: the pack's layer-by-layer Phase 1–9 order,
   which defers proving the privacy boundary end-to-end until the last phase.

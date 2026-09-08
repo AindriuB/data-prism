@@ -12,17 +12,21 @@ the sizing and the exit criteria. This file carries the order and the state.
 
 ---
 
+## Decided
+
+The five choices that blocked S0 were settled on 2026-09-08. Recorded here in
+brief; the reasoning and the rejected alternatives are in
+`docs/architecture.md#decisions-worth-knowing`.
+
+| | Decision |
+|---|---|
+| Coordinates | Group `io.github.aindriub`, artifacts `data-prism-*`, package root `io.github.aindriub.dataprism` |
+| MCP | Official MCP Java SDK directly, with Spring wiring written here. stdio in development, streamable HTTP in production |
+| HMAC key | Local key supplied at startup through a `SecretKeyProvider` SPI. No vendor client in core |
+| Audit sink | `AuditSink` SPI with a file/SLF4J implementation. No vendor client in core |
+| Re-identification | Reverse map built in S7. The operator surface (S10) is deferred past V1 |
+
 ## Now
-
-### D — Five decisions that block everything
-
-Group id and package root; MCP SDK and transport; secret-management platform for
-the HMAC key; audit sink of record; whether re-identification is in V1. Each one
-is cheap now and expensive later: the package root renames every consuming
-application, and a re-identification reverse map added after the fact invalidates
-every scope that already exists. `docs/development-plan.md` states each choice
-and what it determines.
-**Blocked by:** nothing — these need a human answer, not a task.
 
 ### R — Make the repository a git repository
 
@@ -41,7 +45,7 @@ line, proven by one integration test.
 This is first because it settles the MCP SDK choice, the `ObjectMapper` boundary
 and the `PrivacyContext` plumbing while they are still cheap to change. The
 pack's own Phase 1–9 order defers all three to the end.
-**Blocked by:** D, R.
+**Blocked by:** R.
 
 ## Next
 
@@ -94,8 +98,9 @@ lands and are the natural parallelisation point.
   pseudonymised subject ids in audit, metrics, and a log-scanning test that fails
   on any PII in a full integration run.
 - **S10 — Re-identification surface.** Separate application, separate port,
-  separate authorisation scope, mandatory purpose and audit. Only if decision D
-  puts it in V1 — but the reverse map is built in S7 either way.
+  separate authorisation scope, mandatory purpose and audit. Deferred past V1 by
+  decision; the reverse map it will read is still built in S7, because one added
+  after the fact cannot resolve any pseudonym issued before it existed.
 - **S11 — Example application and search.** Three divergent stub APIs, the
   Elasticsearch connector with allowlists and caps, `search_entity_data` and
   `describe_entity_model`, Docker Compose.

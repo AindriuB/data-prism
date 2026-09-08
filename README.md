@@ -72,9 +72,11 @@ anything coming from outside — file there, not in `PLAN.md`.
 
 ## Stack
 
-Java 21, Spring Boot 3.x, Maven multi-module, Hazelcast, Model Context Protocol.
-The published group id is not yet chosen; see decision **D** in
-`docs/plan/PLAN.md`.
+Java 21, Spring Boot 3.x, Maven multi-module, Hazelcast, Model Context Protocol
+via the official MCP Java SDK.
+
+Artifacts publish under group `io.github.aindriub` as `data-prism-<module>`, with
+package root `io.github.aindriub.dataprism`.
 
 ## Contributing
 
