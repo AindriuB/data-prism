@@ -28,12 +28,13 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### S2 — Pseudonymisation, properly
+### S2a — Key rotation
 
-Per-namespace generators beyond the S0 four, key rotation with `keyId` pinned at
-scope creation, multi-key resolution, and a properly sized and licensed name
-pool. The golden vectors and the discriminator already exist.
-**Blocked by:** nothing. S1 merged 2026-09-08.
+The remaining half of S2. `keyId` is already pinned per scope and threaded
+through the generator; what is missing is a provider that resolves more than one
+key at a time, so a rotation can begin without invalidating scopes still running
+under the previous key.
+**Blocked by:** nothing. Vocabulary half of S2 merged 2026-09-08.
 
 ## Next
 
@@ -42,7 +43,7 @@ pool. The golden vectors and the discriminator already exist.
 The core deliverable: tree-based traversal driven by type metadata, all seven
 privacy actions, generalisation strategies, nesting, collections, maps, cycles
 and unknown properties, installed as a Jackson module on the MCP mapper.
-**Blocked by:** S2. S1 merged 2026-09-08.
+**Blocked by:** nothing. S1 and S2 merged 2026-09-08.
 
 ### S4 — Validation and scanning
 

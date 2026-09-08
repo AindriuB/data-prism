@@ -1,0 +1,53 @@
+# The default pool: broad, Latin script, Anglophone.
+#
+# Chosen as the default because it is the widest-recognised script among the
+# bundled sets, not because it is neutral. Nothing about a pseudonym pool is
+# neutral -- see the class comment on VocabularyRegistry.
+#
+# Replace or extend this rather than editing it in place. Editing changes the
+# vocabulary id, which is the mechanism that stops a scope silently drifting
+# onto a different pool mid-investigation.
+
+id: western
+version: 2
+locale: en
+script: Latn
+
+pools:
+  firstNames: [Alex, Robin, Sam, Jordan, Casey, Morgan, Riley, Quinn,
+               Avery, Rowan, Sage, Emery, Reese, Finley, Harper, Kai,
+               Jules, Kerry, Lane, Marlow, Nico, Oakley, Payton, Remy,
+               Ellis, Frankie, Gray, Hayden, Devon, Ari, Blair, Cameron,
+               Dakota, Eden, Flynn, Greer, Hollis, Isley, Jamie, Kendall,
+               Logan, Micah, Noel, Parker, Reagan, Shea, Tatum, Wynn,
+               Adrian, Bailey, Charlie, Drew, Elliot, Frances, Georgia, Hunter,
+               Imogen, Jesse, Keaton, Lennox, Maddox, Nell, Owen, Piper,
+               Quincy, Rory, Skyler, Toby, Vaughn, Wesley, Yale, Zephyr,
+               Arden, Beckett, Clarke, Delaney, Emerson, Fallon, Gideon, Haven]
+
+  lastNames: [Murphy, Walsh, Gallagher, Whitfield, Bergman, Castellano, Ellison, Fairbanks,
+              Granger, Halloway, Ingram, Jarvis, Kingsley, Lockhart, Merrick, Norwood,
+              Osborne, Pemberton, Quimby, Radcliffe, Sinclair, Thornton, Underhill, Vance,
+              Waverley, Yates, Ashworth, Blackwood, Carlisle, Danvers, Everly, Fitzgerald,
+              Grimshaw, Harrington, Ivers, Jennings, Kendrick, Langford, Mortimer, Nash,
+              Ollerton, Prescott, Quinlan, Rutherford, Sutcliffe, Tremaine, Ullswater, Vickers,
+              Whitlock, Yarrow, Abbott, Bexley, Cartwright, Doherty, Eastwood, Fenwick,
+              Garrick, Hartley, Isherwood, Jessop, Kirkbride, Lindsey, Marchetti, Newbury,
+              Oakes, Pennington, Quarrie, Rothwell, Stanhope, Thackeray, Umber, Verity,
+              Winterbourne, Yeardley, Ashby, Braithwaite, Calloway, Deverell, Emberton, Fairhurst]
+
+  streets: ["Aspen Way", "Birch Lane", "Cedar Rise", "Dovecote Road", "Elm Court",
+            "Fern Walk", "Grange Close", "Hazel Street", "Ivy Terrace", "Juniper Row",
+            "Kestrel Drive", "Linden Park", "Maple Grove", "Nightingale Road",
+            "Orchard Mews", "Poplar Avenue", "Quarry Bank", "Rowan Close",
+            "Sycamore Rise", "Thistle Court", "Upton Row", "Verbena Walk",
+            "Willow Bank", "Yewtree Lane"]
+
+  towns: [Ashford, Belmont, Carrowmore, Dunmore, Eastvale, Fairhaven,
+          Glenbrook, Highfield, Inverlea, Jarrow, Kingsmere, Loxley,
+          Millbrook, Northgate, Oakhaven, Pinehurst, Quenby, Redmarsh,
+          Stonebridge, Thornbury, Ulverton, Vale End, Westmere, Yarnfield]
+
+  organisations: [Ashcroft, Blackwater, Cordelia, Dunmore, Eastgate, Fairlight,
+                  Greyfriars, Harborne, Ivywell, Jenner, Kestrel, Lambourn,
+                  Marchmont, Northwind, Oakbourne, Pinewell]

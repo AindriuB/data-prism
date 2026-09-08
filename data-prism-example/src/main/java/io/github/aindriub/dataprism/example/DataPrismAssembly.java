@@ -21,6 +21,8 @@ import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
+import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
+import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 
@@ -50,14 +52,20 @@ public final class DataPrismAssembly {
     private final PrivacyContext privacyContext;
 
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink) {
-        this(adapters, clock, sink, "DEFAULT");
+        this(adapters, clock, sink, "DEFAULT", "en");
     }
 
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
                              String profile) {
+        this(adapters, clock, sink, profile, "en");
+    }
+
+    public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
+                             String profile, String localeTag) {
         SecretKeyProvider keys = StaticSecretKeyProvider.of(DEV_KEY);
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
-        SyntheticValueSource synthetics = new HmacSyntheticGenerator(keys);
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve(localeTag);
+        SyntheticValueSource synthetics = new HmacSyntheticGenerator(keys, vocabulary);
         PrivacyPolicyResolver policies = new ProfilePrivacyPolicyResolver(defaultProfiles());
         ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics);
         LlmResponseValidator validator = new RawValueLeakValidator();
@@ -76,7 +84,7 @@ public final class DataPrismAssembly {
                 profile,
                 "demonstration",
                 Instant.now(clock).plus(8, ChronoUnit.HOURS),
-                PseudonymisationVersion.HMAC_SHA256_V1);
+                PseudonymisationVersion.HMAC_SHA256_V1.withVocabulary(vocabulary.id()));
     }
 
     private static java.util.Map<String, io.github.aindriub.dataprism.core.policy.PrivacyProfile>

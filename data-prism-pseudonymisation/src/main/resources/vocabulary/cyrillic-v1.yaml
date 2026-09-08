@@ -1,0 +1,41 @@
+# Cyrillic script, Russian.
+#
+# Russian surnames inflect for gender: Иванов and Иванова are the same family
+# name. Both forms are listed because both appear in source data, and selection
+# is by digest, so the form a pseudonym lands on says nothing about the real
+# subject. A renderer that paired a masculine given name with a feminine surname
+# would look wrong to any reader of the language, but it would leak nothing --
+# and enforcing agreement would mean the pseudonym encoded the subject's gender,
+# which is the more serious problem of the two.
+#
+# Ё is kept distinct from Е. Sources vary on whether they write it, so the two
+# are different bytes for what is often the same name; canonicalisation does not
+# fold them, and cross-source matching on Russian names should not assume it does.
+
+id: cyrillic
+version: 1
+locale: ru
+script: Cyrl
+
+pools:
+  firstNames: [Александр, Дмитрий, Максим, Сергей, Андрей, Алексей, Артём, Илья,
+               Кирилл, Михаил, Никита, Матвей, Роман, Егор, Арсений, Иван,
+               Анна, Мария, Елена, Ольга, Наталья, Ирина, Татьяна, Светлана,
+               Екатерина, Юлия, Анастасия, Ксения, Дарья, Полина, Валентина, Людмила,
+               Владимир, Николай, Павел, Виктор, Галина, Надежда, Вера, София]
+
+  lastNames: [Иванов, Иванова, Смирнов, Смирнова, Кузнецов, Кузнецова, Попов, Попова,
+              Васильев, Васильева, Петров, Петрова, Соколов, Соколова, Михайлов, Михайлова,
+              Новиков, Новикова, Фёдоров, Фёдорова, Морозов, Морозова, Волков, Волкова,
+              Алексеев, Алексеева, Лебедев, Лебедева, Семёнов, Семёнова, Егоров, Егорова,
+              Павлов, Павлова, Козлов, Козлова, Степанов, Степанова, Николаев, Николаева]
+
+  streets: [улица Ленина, проспект Мира, Садовая улица, Набережная улица,
+            улица Пушкина, Заречный переулок, бульвар Победы, Лесная улица,
+            улица Гагарина, Октябрьский проспект, Тихая улица, улица Кирова,
+            Северный переулок, улица Чехова, Речной проспект, Полевая улица]
+
+  towns: [Заозёрск, Белогорье, Новосельцево, Краснохолмск,
+          Приморье, Светлогорск, Тихвинка, Ольховец,
+          Верхнеречье, Дубровка, Ясногорск, Каменка,
+          Сосновый Бор, Малиновка, Устье, Родники]

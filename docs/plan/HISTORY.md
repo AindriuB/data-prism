@@ -17,6 +17,42 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-08 — S2 configurable multi-locale name pools
+
+Name pools are now configuration. Seven sets ship — a widened Latin default,
+pan-European, Irish, Arabic, Mandarin, Cyrillic, and the original pool frozen —
+and any of them can be replaced, extended, or joined by a locale that is not
+bundled. Rendering follows the script: Han names are family-first and unspaced,
+Han addresses run largest unit first. 83 tests.
+
+**Cost:** the thing that is easy to miss is that a name is chosen by
+`digest mod pool size`. Adding one entry shifts the choice for a large share of
+subjects, silently, for every scope at once — under a scheme where a pseudonym
+must stay stable for the life of an investigation, that is indistinguishable
+from corruption. Vocabularies are therefore content-addressed and pinned by the
+scope exactly as the signing key is, and a generator serving a scope pinned to a
+different pool refuses. Two golden vector files exist for the same reason: the
+frozen `generic-v1` reproduces every S0 vector byte for byte, and `western-v2`
+disagrees with it on the same subject. The disagreement is the evidence.
+
+Unicode closed two failures that both looked like success. The same person
+stored NFC in one system and NFD in another would have become two people; and a
+value leaked in the other normalisation form would have passed the output
+validator while it reported the check as passing. Canonicalisation is NFC plus
+removal of invisible bidi and zero-width marks, and deliberately does not fold
+case, accents or Cyrillic Ё — merging genuinely different names is the
+symmetric failure and just as damaging.
+
+Two choices that look like bugs and are not. Russian surnames are listed in both
+gendered forms and paired by digest, so a pseudonym can read as grammatically
+odd; enforcing agreement would make the pseudonym encode the subject's gender.
+And locale is configuration rather than per-record detection, because a
+locale-matched pseudonym preserves an attribute the pseudonym was otherwise
+removing — that should be a decision someone makes, not a default.
+
+A test asserting that no bundled set mixes scripts caught two stray Latin and
+Cyrillic entries in the Mandarin pool during authoring.
+
 ## 2026-09-08 — S1 policy layer and build-time fail-closed
 
 Privacy decisions moved out of model classes and into YAML profiles. The engine
