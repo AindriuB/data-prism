@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
+import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -85,7 +88,53 @@ public final class PrivacyProfiles {
                 rules.put(classification, new PrivacyProfile.ClassificationRule(resolved, override));
             }
         }
-        return new PrivacyProfile(name, unclassified, rules);
+        return new PrivacyProfile(name, unclassified, rules, generalizations(name, body));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<PrivacyNamespace, GeneralizationRule> generalizations(
+            String profile, Map<String, Object> body) {
+        Map<PrivacyNamespace, GeneralizationRule> out = new LinkedHashMap<>();
+        Object node = body.get("generalization");
+        if (!(node instanceof Map<?, ?> map)) {
+            return out;
+        }
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+            String key = String.valueOf(e.getKey());
+            String where = profile + ".generalization." + key;
+            PrivacyNamespace namespace = enumValue(PrivacyNamespace.class, key, where);
+            if (!(e.getValue() instanceof Map<?, ?> ruleBody)) {
+                throw new IllegalArgumentException(where + " is not a mapping");
+            }
+            out.put(namespace, rule(where, (Map<String, Object>) ruleBody));
+        }
+        return out;
+    }
+
+    private static GeneralizationRule rule(String where, Map<String, Object> body) {
+        GeneralizationRule.Kind kind = enumValue(GeneralizationRule.Kind.class,
+                body.getOrDefault("type", "NUMERIC_BAND"), where + ".type");
+
+        if (kind == GeneralizationRule.Kind.DATE_TRUNCATION) {
+            return GeneralizationRule.dates(enumValue(GeneralizationRule.Precision.class,
+                    body.getOrDefault("precision", "YEAR"), where + ".precision"));
+        }
+
+        Object bounds = body.get("bounds");
+        if (!(bounds instanceof java.util.List<?> list) || list.isEmpty()) {
+            throw new IllegalArgumentException(where + " has no bounds");
+        }
+        java.util.List<BigDecimal> parsed = new ArrayList<>();
+        for (Object bound : list) {
+            try {
+                parsed.add(new BigDecimal(String.valueOf(bound).trim()));
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(
+                        where + " has a non-numeric bound '" + bound + "'", e);
+            }
+        }
+        Object unit = body.get("unit");
+        return GeneralizationRule.bands(parsed, unit == null ? null : String.valueOf(unit));
     }
 
     private static <E extends Enum<E>> E enumValue(Class<E> type, Object raw, String where) {

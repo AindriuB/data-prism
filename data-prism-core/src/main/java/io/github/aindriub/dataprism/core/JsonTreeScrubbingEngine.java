@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
+import io.github.aindriub.dataprism.core.policy.Generalizer;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 
 import java.util.ArrayList;
@@ -56,12 +57,20 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     private final FieldMetadataResolver resolver;
     private final PrivacyPolicyResolver policies;
     private final SyntheticValueSource synthetics;
+    private final ValueTokenSource tokens;
 
+    /** Without a token source, HASH and TOKENIZE refuse rather than degrade. */
     public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
                                    SyntheticValueSource synthetics) {
+        this(resolver, policies, synthetics, ValueTokenSource.unavailable());
+    }
+
+    public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
+                                   SyntheticValueSource synthetics, ValueTokenSource tokens) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
         this.policies = Objects.requireNonNull(policies, "policies");
         this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
+        this.tokens = Objects.requireNonNull(tokens, "tokens");
     }
 
     @Override
@@ -224,8 +233,16 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 yield reader.getNodeFactory().textNode(
                         synthetics.syntheticValue(subject, policy.namespace(), context));
             }
-            default -> throw new PrivacyRefusedException("UNSUPPORTED_ACTION", path,
-                    "action " + policy.action() + " is not implemented yet");
+            // HASH and TOKENIZE key on the value rather than the subject, so equal
+            // values stay equal and joins on them survive. That also discloses
+            // equality, and for a small value space it discloses the value --
+            // see ValueTokenSource.
+            case HASH -> reader.getNodeFactory().textNode(
+                    tokens.hash(value.asText(), policy.namespace(), context));
+            case TOKENIZE -> reader.getNodeFactory().textNode(
+                    tokens.token(value.asText(), policy.namespace(), context));
+            case GENERALIZE -> reader.getNodeFactory().textNode(
+                    Generalizer.generalise(value, policy.generalization(), path));
         };
     }
 

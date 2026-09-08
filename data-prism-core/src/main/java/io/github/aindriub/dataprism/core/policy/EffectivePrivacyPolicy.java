@@ -16,7 +16,14 @@ public record EffectivePrivacyPolicy(
         PrivacyNamespace namespace,
         boolean allowed,
         String profile,
-        Decided source) {
+        Decided source,
+        GeneralizationRule generalization) {
+
+    /** Everything but GENERALIZE, which is the only action needing a rule. */
+    public EffectivePrivacyPolicy(PrivacyAction action, PrivacyNamespace namespace,
+                                  boolean allowed, String profile, Decided source) {
+        this(action, namespace, allowed, profile, source, null);
+    }
 
     public enum Decided {
         /** A rule in the profile matched a classification on the field. */

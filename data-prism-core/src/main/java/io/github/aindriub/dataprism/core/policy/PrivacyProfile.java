@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.core.policy;
 
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
+import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 
 import java.util.Map;
 import java.util.Objects;
@@ -16,12 +17,20 @@ import java.util.Objects;
 public record PrivacyProfile(
         String name,
         UnclassifiedBehaviour unclassified,
-        Map<DataClassification, ClassificationRule> classifications) {
+        Map<DataClassification, ClassificationRule> classifications,
+        Map<PrivacyNamespace, GeneralizationRule> generalizations) {
 
     public PrivacyProfile {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(unclassified, "unclassified");
         classifications = Map.copyOf(classifications);
+        generalizations = generalizations == null ? Map.of() : Map.copyOf(generalizations);
+    }
+
+    /** A profile with no generalisation configured, which is the common case. */
+    public PrivacyProfile(String name, UnclassifiedBehaviour unclassified,
+                          Map<DataClassification, ClassificationRule> classifications) {
+        this(name, unclassified, classifications, Map.of());
     }
 
     /**
