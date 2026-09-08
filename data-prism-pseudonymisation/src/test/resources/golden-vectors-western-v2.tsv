@@ -1,0 +1,19 @@
+# Golden vectors for the western-v2 default pool, algorithm v1.
+# key: golden-vector-key-for-tests-only-v1
+#
+# Paired with golden-vectors-v1.tsv, which pins the frozen generic pool.
+# The two disagree on the same subject on purpose: that is the evidence
+# that widening a pool renames everyone, and why a scope pins its
+# vocabulary id the way it pins its key.
+#
+# scopeId<TAB>subjectId<TAB>namespace<TAB>expected
+CASE-A	123	PERSON_NAME	Morgan Kirkbride (6H10)
+CASE-B	123	PERSON_NAME	Payton Vickers (AAWS)
+CASE-A	456	PERSON_NAME	Jordan Waverley (FZ56)
+CASE-A	123	PERSON_FIRST_NAME	Owen (HT9T)
+CASE-A	123	PERSON_LAST_NAME	Harrington (RT85)
+CASE-A	123	EMAIL	person.kz48@example.invalid
+CASE-A	123	ADDRESS	159 Kestrel Drive, Westmere
+CASE-A	123	ORGANISATION_NAME	Fairlight (A7N4)
+CASE-A	123	NONE	SUBJ-N9MT
+CASE-A	123	GOVERNMENT_IDENTIFIER	GOVERNMENT_IDENTIFIER-GXRP

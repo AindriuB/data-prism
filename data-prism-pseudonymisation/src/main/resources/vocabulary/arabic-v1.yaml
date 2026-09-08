@@ -1,0 +1,39 @@
+# Arabic script.
+#
+# Right-to-left text carries invisible characters that legitimately belong in it
+# -- the Arabic letter mark and the bidi marks -- and those change the bytes
+# without changing the name. Values are canonicalised before they are hashed or
+# compared, so a source that includes them and one that does not resolve to the
+# same subject. Emitted text keeps whatever the source held; nothing is stripped
+# on the way out, because the marks are needed to render correctly.
+#
+# Surnames here are the definite (al-) forms that appear in records. Selection is
+# by digest, so nothing about a chosen name reflects the real one.
+
+id: arabic
+version: 1
+locale: ar
+script: Arab
+
+pools:
+  firstNames: [محمد, أحمد, علي, حسن, حسين, عبدالله, عمر, خالد,
+               يوسف, إبراهيم, مصطفى, طارق, سامي, رامي, زياد, ياسر,
+               فاطمة, عائشة, مريم, زينب, نور, سارة, ليلى, هدى,
+               أمينة, خديجة, رنا, دعاء, سلمى, هبة, ريم, لينا,
+               بلال, حمزة, كريم, مالك, نادر, وسيم, أيمن, جمال]
+
+  lastNames: [العلي, الأحمد, الحسن, الخالدي, المنصوري, السيد, الحربي, القحطاني,
+              الشمري, الدوسري, العتيبي, الزهراني, الغامدي, المالكي, الشهري, البلوي,
+              الجابري, الفهد, النعيمي, الكعبي, الحمادي, المرزوقي, السويدي, الظاهري,
+              الخطيب, الحداد, النجار, الصايغ, البستاني, القاضي, الرفاعي, العطار,
+              المصري, الشامي, البغدادي, الحلبي, الطرابلسي, القيسي, الدمشقي, الموصلي]
+
+  streets: [شارع النيل, شارع الحمراء, طريق الملك, شارع الجامعة,
+            شارع البحر, طريق المطار, شارع الزهور, شارع النخيل,
+            شارع السلام, طريق الكورنيش, شارع الأندلس, شارع الربيع,
+            شارع الوحدة, طريق الحرية, شارع الفردوس, شارع القدس]
+
+  towns: [المدينة الشمالية, حي الأندلس, وادي السدر, رأس الخيمة الجديدة,
+          بلدة الواحة, ضاحية النخيل, قرية الزيتون, مدينة الفجر,
+          حي الصفا, بلدة الغدير, ضاحية السلام, وادي الريان,
+          حي المروج, قرية الينابيع, مدينة الشروق, بلدة الرمال]

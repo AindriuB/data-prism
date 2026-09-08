@@ -1,0 +1,43 @@
+# Continental European, Latin script with diacritics.
+#
+# Spans Germanic, Romance, Slavic-Latin and Nordic naming, and deliberately
+# includes the characters that break naive pipelines: ä ö ü ß, å ø æ, ł ą ę ż,
+# ñ, ç, ř ů, þ ð. If any of these come back mangled, something in the path is
+# not UTF-8 clean, and it is better to find that here than in a name a person
+# actually has.
+#
+# Written precomposed (NFC). Entries are normalised on load, so a file written
+# with combining marks produces the same vocabulary and the same id.
+
+id: european
+version: 1
+locale: mul
+script: Latn
+
+pools:
+  firstNames: [Søren, Åsa, Jürgen, Zoë, Renée, Łukasz, Agnieszka, Matthías,
+               Björn, José, María, Mikaël, Ólafur, Anaïs, Nikolaj, Þóra,
+               Grzegorz, Eleonóra, François, Núria, Kjærstin, Þorvaldur, Csaba, Márta,
+               Jiří, Věra, Đorđe, Siân, Íris, Rúnar, Célia, Wojciech,
+               Estíbaliz, Håkon, Émile, Ingrid, Joana, Krzysztof, Liesbeth, Miloš,
+               Noémie, Örjan, Piotr, Quirijn, Rasmus, Sofía, Tomáš, Ulrike]
+
+  lastNames: [Müller, Schmidt, Fischer, Weber, Kowalski, Nowak, García, Martínez,
+              Rossi, Ferrari, Larsson, Nilsson, Jansen, "De Vries", Novák, Horváth,
+              Þórsson, Sørensen, Møller, Kjær, Wiśniewski, Wójcik, Kowalczyk, Zieliński,
+              Dvořák, Černý, Procházka, Rodríguez, Fernández, Gonçalves, Oliveira, Moreau,
+              Lefèvre, Girard, Bäcker, Schäfer, Groß, Weiß, Hänninen, Väisänen,
+              Öztürk, Lindström, Åkesson, Guðmundsdóttir, Jónsdóttir, Sigurðsson, Björnsson, Halldórsson]
+
+  streets: ["Rue des Lilas", "Calle Mayor", "Via Garibaldi", "Königstraße",
+            "Nørregade", "Storgatan", "Ulica Kwiatowa", "Vodičkova",
+            "Rua das Flores", "Prinsengracht", "Bahnhofstraße", "Avinguda Diagonal",
+            "Laugavegur", "Mannerheimintie", "Piața Unirii", "Váci utca"]
+
+  towns: [Åbenrå, Bergün, Częstochowa, Děčín, Évora, Füssen,
+          Győr, Härnösand, Ísafjörður, Jyväskylä, Kołobrzeg, Lærdal,
+          Mönchengladbach, Nyíregyháza, Óbidos, Přerov]
+
+  organisations: [Nordlys, Vermeer, Falkenberg, Aurelia, Brøndby, Castellane,
+                  Dünenhof, Espinosa, Fjordvik, Grünwald, Hälsinge, Íslandsbrú,
+                  Járnvið, Køge, Lindegård, Munkeby]

@@ -1,0 +1,31 @@
+# The original pool, frozen.
+#
+# Kept exactly as it was so pseudonyms issued under it stay resolvable. Do not
+# add to this file: every index is derived as `digest mod pool size`, so one
+# extra entry re-pseudonymises a large share of every scope that pinned it.
+# New entries go in a new set with a new version.
+
+id: generic
+version: 1
+locale: und
+script: Zyyy
+
+pools:
+  firstNames: [Alex, Robin, Sam, Jordan, Casey, Morgan, Riley, Quinn,
+               Avery, Rowan, Sage, Emery, Reese, Finley, Harper, Kai,
+               Noor, Ari, Devon, Ellis, Frankie, Gray, Hayden, Indigo,
+               Jules, Kerry, Lane, Marlow, Nico, Oakley, Payton, Remy]
+
+  lastNames: [Murphy, Walsh, Adeyemi, Novak, Okafor, Larsen, Duarte, Haddad,
+              Ferreira, Kowalski, Nakamura, Petrov, Rossi, Silva, Tan, Vargas,
+              Whitfield, Yilmaz, Zhang, Ahmed, Bergman, Castellano, Dubois, Eriksen,
+              Fontaine, Gallagher, Hoffmann, Ibrahim, Jensen, Keller, Lindqvist, Moreau]
+
+  streets: ["Aspen Way", "Birch Lane", "Cedar Rise", "Dovecote Road", "Elm Court",
+            "Fern Walk", "Grange Close", "Hazel Street", "Ivy Terrace", "Juniper Row",
+            "Kestrel Drive", "Linden Park", "Maple Grove", "Nightingale Road",
+            "Orchard Mews", "Poplar Avenue"]
+
+  towns: [Ashford, Belmont, Carrowmore, Dunmore, Eastvale, Fairhaven,
+          Glenbrook, Highfield, Inverlea, Jarrow, Kingsmere, Loxley,
+          Millbrook, Northgate, Oakhaven, Pinehurst]
