@@ -36,4 +36,24 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- On the processor path, not the compile classpath: the example
+               depends on the check running, not on the checker's classes. -->
+          <annotationProcessorPaths>
+            <path>
+              <groupId>io.github.aindriub</groupId>
+              <artifactId>data-prism-processor</artifactId>
+              <version>${project.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

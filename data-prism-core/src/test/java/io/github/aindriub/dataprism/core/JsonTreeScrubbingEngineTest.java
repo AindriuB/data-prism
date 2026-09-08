@@ -1,11 +1,16 @@
 package io.github.aindriub.dataprism.core;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.aindriub.dataprism.annotations.DataClassification;
+import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
+import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,8 +30,17 @@ class JsonTreeScrubbingEngineTest {
             "DEFAULT", "test", Instant.parse("2030-01-01T00:00:00Z"),
             PseudonymisationVersion.HMAC_SHA256_V1);
 
-    private final JsonTreeScrubbingEngine engine =
-            new JsonTreeScrubbingEngine(new RecordFieldMetadataResolver(), FAKE_SYNTHETICS);
+    /** Mirrors the shipped DEFAULT profile closely enough to exercise precedence. */
+    private static final PrivacyProfile DEFAULT_PROFILE = new PrivacyProfile("DEFAULT",
+            PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST,
+            Map.of(DataClassification.PII, PrivacyProfile.ClassificationRule.of(PrivacyAction.SYNTHESIZE),
+                    DataClassification.CONTACT, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT),
+                    DataClassification.CONFIDENTIAL, PrivacyProfile.ClassificationRule.of(PrivacyAction.REMOVE)));
+
+    private final JsonTreeScrubbingEngine engine = new JsonTreeScrubbingEngine(
+            new DefaultFieldMetadataResolver(),
+            new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", DEFAULT_PROFILE)),
+            FAKE_SYNTHETICS);
 
     @Test
     @DisplayName("each action is applied and the raw values do not survive")

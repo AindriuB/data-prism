@@ -22,6 +22,7 @@
 
   <modules>
     <module>data-prism-annotations</module>
+    <module>data-prism-processor</module>
     <module>data-prism-core</module>
     <module>data-prism-pseudonymisation</module>
     <module>data-prism-validation</module>
@@ -75,6 +76,11 @@
       <dependency>
         <groupId>io.github.aindriub</groupId>
         <artifactId>data-prism-annotations</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-processor</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

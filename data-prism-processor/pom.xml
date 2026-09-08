@@ -10,11 +10,12 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
 
-  <artifactId>data-prism-core</artifactId>
-  <name>Data Prism :: Core</name>
+  <artifactId>data-prism-processor</artifactId>
+  <name>Data Prism :: Processor</name>
   <description>
-    The privacy model, field metadata, the scrubbing engine, and the SPI
-    interfaces every other module implements. Carries no business domain.
+    Compile-time enforcement that every field of an LLM-exposed model was
+    classified. Belongs on annotationProcessorPaths, never on the compile
+    classpath.
   </description>
 
   <dependencies>
@@ -22,17 +23,19 @@
       <groupId>io.github.aindriub</groupId>
       <artifactId>data-prism-annotations</artifactId>
     </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.dataformat</groupId>
-      <artifactId>jackson-dataformat-yaml</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-    </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- This module *is* the processor; running it on itself would
+               only slow the build and confuse the output. -->
+          <proc>none</proc>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

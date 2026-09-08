@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
+import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
+import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,10 +18,20 @@ import java.util.stream.Collectors;
 /**
  * The tree-based scrubbing engine.
  *
- * <p>S0 handles flat records and the {@code SYNTHESIZE}, {@code REDACT} and
- * {@code REMOVE} actions. Nesting, collections, maps and the remaining actions
- * are S3; each throws here rather than falling through, because a privacy action
- * that quietly does nothing is worse than one that fails.
+ * <p>The engine works on a data tree rather than the Java object graph. Records
+ * are immutable and their canonical constructors may validate, so there is no
+ * way to write a scrubbed value back into one; and a tree makes unknown fields
+ * visible, which is what fail-closed needs. See docs/design-review.md §A4.
+ *
+ * <p>It applies decisions, it does not make them. Every field goes through
+ * {@link PrivacyPolicyResolver}, so what happens to a value is a configuration
+ * question rather than a property of the model class — the specification is
+ * explicit that the annotation is a suggestion and the server-side policy has
+ * final authority.
+ *
+ * <p>S1 handles flat objects. Nesting, collections and maps are S3; each throws
+ * rather than falling through, because a privacy action that quietly does
+ * nothing is worse than one that fails.
  */
 public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
@@ -33,10 +45,13 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     private final ObjectMapper reader = new ObjectMapper();
 
     private final FieldMetadataResolver resolver;
+    private final PrivacyPolicyResolver policies;
     private final SyntheticValueSource synthetics;
 
-    public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, SyntheticValueSource synthetics) {
+    public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
+                                   SyntheticValueSource synthetics) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
+        this.policies = Objects.requireNonNull(policies, "policies");
         this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
     }
 
@@ -61,40 +76,42 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         }
         ObjectNode in = (ObjectNode) read;
 
-        // Read the subject before anything is removed: the identifier field is
-        // itself dropped below, and synthesis still needs its value.
+        // Read the subject before anything is removed: identifier fields are
+        // dropped below, and synthesis still needs their values.
         String ownSubject = subjectValue(in, byName, null, type);
 
         ObjectNode out = reader.createObjectNode();
         for (String field : fieldNames(in)) {
             FieldMetadata md = byName.get(field);
-            if (md == null || !md.declared()) {
-                // Nobody classified this. Fail closed: an unclassified field on an
-                // exposed model means the decision was never made, not that it was
-                // made in favour of exposure.
+            if (md == null) {
+                // A JSON property with no corresponding declaration at all. Not
+                // even the fail-closed path can classify this, because there is
+                // nothing to classify.
+                throw new PrivacyRefusedException("UNKNOWN_FIELD", field,
+                        "property present in the serialised source but not on " + type.getName());
+            }
+
+            EffectivePrivacyPolicy policy = policies.resolve(md, context);
+            if (!policy.allowed()) {
                 throw new PrivacyRefusedException("UNDECLARED_FIELD", field,
                         "field on an @LlmExposedModel carries neither @SensitiveData nor @NonSensitive");
             }
 
-            if (md.internalIdentifier()) {
-                // Source identifiers are operational metadata and are not exposed
-                // without an explicit capability. See docs/pack.md §32, §53.
-                continue;
-            }
-
-            if (!md.sensitive()) {
-                out.set(field, in.get(field));
-                continue;
-            }
-
             JsonNode value = in.get(field);
-            if (value == null || value.isNull()) {
+            if (policy.action() == PrivacyAction.PASS_THROUGH) {
                 out.set(field, value);
                 continue;
             }
+            if (value == null || value.isNull()) {
+                // Nothing to protect, and dropping it would change the shape of
+                // the response for a reason unrelated to privacy.
+                if (policy.action() != PrivacyAction.REMOVE) {
+                    out.set(field, value);
+                }
+                continue;
+            }
 
-            PrivacyAction action = md.suggestedAction();
-            switch (action) {
+            switch (policy.action()) {
                 case REDACT -> out.put(field, REDACTED);
                 case REMOVE -> { }
                 case SYNTHESIZE -> {
@@ -105,10 +122,10 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                         throw new PrivacyRefusedException("NO_SUBJECT", field,
                                 "SYNTHESIZE needs a subject identifier and none resolved");
                     }
-                    out.put(field, synthetics.syntheticValue(subject, md.namespace(), context));
+                    out.put(field, synthetics.syntheticValue(subject, policy.namespace(), context));
                 }
                 default -> throw new PrivacyRefusedException("UNSUPPORTED_ACTION", field,
-                        "action " + action + " is not implemented in S0");
+                        "action " + policy.action() + " is not implemented yet");
             }
         }
         return out;

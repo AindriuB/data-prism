@@ -9,7 +9,10 @@ import io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.PseudonymisationVersion;
-import io.github.aindriub.dataprism.core.RecordFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
+import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
+import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.SecretKeyProvider;
 import io.github.aindriub.dataprism.core.SyntheticValueSource;
@@ -47,10 +50,16 @@ public final class DataPrismAssembly {
     private final PrivacyContext privacyContext;
 
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink) {
+        this(adapters, clock, sink, "DEFAULT");
+    }
+
+    public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
+                             String profile) {
         SecretKeyProvider keys = StaticSecretKeyProvider.of(DEV_KEY);
-        FieldMetadataResolver resolver = new RecordFieldMetadataResolver();
+        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         SyntheticValueSource synthetics = new HmacSyntheticGenerator(keys);
-        ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, synthetics);
+        PrivacyPolicyResolver policies = new ProfilePrivacyPolicyResolver(defaultProfiles());
+        ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics);
         LlmResponseValidator validator = new RawValueLeakValidator();
 
         this.orchestrator = new DefaultContextOrchestrator(adapters, scrubber, resolver, validator,
@@ -64,10 +73,19 @@ public final class DataPrismAssembly {
         this.privacyContext = new PrivacyContext(
                 "CASE-DEMO-1",
                 PrivacyScopeType.INVESTIGATION,
-                "DEFAULT",
+                profile,
                 "demonstration",
                 Instant.now(clock).plus(8, ChronoUnit.HOURS),
                 PseudonymisationVersion.HMAC_SHA256_V1);
+    }
+
+    private static java.util.Map<String, io.github.aindriub.dataprism.core.policy.PrivacyProfile>
+            defaultProfiles() {
+        try (var in = DataPrismAssembly.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
+            return PrivacyProfiles.fromYaml(in);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("default privacy profiles could not be loaded", e);
+        }
     }
 
     public static DataPrismAssembly standard() {
