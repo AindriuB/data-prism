@@ -99,7 +99,8 @@ public final class DataPrismAssembly {
     }
 
     public static DataPrismAssembly standard() {
-        return new DataPrismAssembly(List.of(new StubCustomerAdapter()),
+        return new DataPrismAssembly(List.of(new StubCustomerAdapter(),
+                        new StubAccountAdapter(), new StubOrderAdapter()),
                 Clock.systemUTC(), new Slf4jAuditSink());
     }
 

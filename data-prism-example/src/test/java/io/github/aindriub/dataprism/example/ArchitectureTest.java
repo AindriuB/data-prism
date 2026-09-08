@@ -20,16 +20,21 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 class ArchitectureTest {
 
     /**
-     * The privacy engine is a Jackson module installed on one mapper. A second
-     * mapper below the MCP layer is a route from source data to the transport
-     * that never passes through it — and it would look completely normal.
+     * Two mappers exist and no more: {@code SourceTree} reads source objects on
+     * the trusted side and never serialises, {@code DataPrismObjectMapper} writes
+     * everything a model sees. A third would be a route from source data to the
+     * transport that never passes through the privacy engine, and it would look
+     * completely normal in review.
+     *
+     * <p>The allowlist is two names rather than four because the reading side was
+     * consolidated. A rule that grows an exception every time someone needs a
+     * mapper stops being a rule.
      */
     @ArchTest
     static final ArchRule onlyDesignatedClassesCreateMappers = noClasses()
             .that().resideInAPackage("io.github.aindriub.dataprism..")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.mcp.DataPrismObjectMapper")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.SourceValues")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.SourceTree")
             .should().callConstructor(ObjectMapper.class)
             .because("output is serialised by one mapper, which is what makes the engine unbypassable");
 

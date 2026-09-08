@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.DataRequest;
+import io.github.aindriub.dataprism.core.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.EntityCorrelationService;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PrivacyContext;
@@ -61,6 +63,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private final SourceFanOut fanOut;
     private final ScopeBudget budget;
     private final RequestLimits limits;
+    private final EntityCorrelationService correlation;
+    private final SourceAliasing aliasing;
 
     /**
      * The standard pipeline: the supplied comparison check, plus the pattern
@@ -94,6 +98,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC());
         this.budget = new ScopeBudget();
         this.limits = RequestLimits.DEFAULT;
+        this.aliasing = SourceAliasing.exposed();
+        this.correlation = new NamespaceCorrelationService(resolver, this.aliasing);
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
         }
@@ -112,7 +118,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                       SyntheticValueSource synthetics,
                                       ParameterFingerprinter fingerprinter, AuditRecorder audit,
                                       IdentityResolver identities, SourceFanOut fanOut,
-                                      ScopeBudget budget, RequestLimits limits) {
+                                      ScopeBudget budget, RequestLimits limits,
+                                      EntityCorrelationService correlation,
+                                      SourceAliasing aliasing) {
         this.adapters = List.copyOf(adapters);
         this.scrubber = Objects.requireNonNull(scrubber, "scrubber");
         this.resolver = Objects.requireNonNull(resolver, "resolver");
@@ -124,6 +132,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.fanOut = Objects.requireNonNull(fanOut, "fanOut");
         this.budget = Objects.requireNonNull(budget, "budget");
         this.limits = Objects.requireNonNull(limits, "limits");
+        this.aliasing = Objects.requireNonNull(aliasing, "aliasing");
+        this.correlation = Objects.requireNonNull(correlation, "correlation");
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
         }
@@ -137,6 +147,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 request.entityType() + "/" + request.subjectId(), context);
 
         List<SourceOutcome> sources = new ArrayList<>();
+        List<ConsistencyFinding> findings = List.of();
         Set<String> prohibited = new LinkedHashSet<>();
         // Never logged and never audited: this is every synthetic value the
         // response contains, and it is only ever read by the validators.
@@ -153,6 +164,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                 + " times in this scope");
             }
 
+            List<EntityCorrelationService.SourceRecord> raw = new ArrayList<>();
             for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
                     requestsPerSource(request), limits)) {
                 sources.add(fetched.outcome());
@@ -160,6 +172,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 if (record == null) {
                     continue;
                 }
+                raw.add(new EntityCorrelationService.SourceRecord(
+                        fetched.outcome().sourceName(), record));
                 prohibited.addAll(SourceValues.prohibited(record, resolver));
 
                 ScrubResult scrubbed = scrubber.scrub(record, context);
@@ -170,6 +184,11 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                     merged.setAll(scrubbed.tree());
                 }
             }
+
+            // Before scrubbing, and it has to be: the pseudonym is keyed on the
+            // subject, so once these records are scrubbed every source's version
+            // of a name is the same string and there is nothing left to compare.
+            findings = correlation.correlate(raw, context);
 
             if (merged == null) {
                 throw new PrivacyRefusedException("NO_SOURCE_DATA", request.entityType(),
@@ -194,7 +213,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         }
 
         audit(request, subjectToken, fingerprint, context, "ALLOW", sources, correlationId);
-        return ContextResponse.of(request.entityType(), subjectToken, sources, merged);
+        return ContextResponse.of(request.entityType(), subjectToken, sources,
+                findings, merged, aliasing, context);
     }
 
     /**

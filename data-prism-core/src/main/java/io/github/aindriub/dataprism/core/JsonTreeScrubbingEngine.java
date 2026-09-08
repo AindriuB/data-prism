@@ -1,7 +1,6 @@
 package io.github.aindriub.dataprism.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
@@ -49,13 +48,6 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      */
     private static final int MAX_DEPTH = 16;
 
-    /**
-     * Reads source objects into a tree. It never serialises output, so it is not
-     * the mapper the boundary rule is about — MCP output goes through the single
-     * mapper in the mcp module.
-     */
-    private final ObjectMapper reader = new ObjectMapper();
-
     private final FieldMetadataResolver resolver;
     private final PrivacyPolicyResolver policies;
     private final SyntheticValueSource synthetics;
@@ -86,7 +78,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                     "type is not annotated @LlmExposedModel");
         }
 
-        JsonNode read = reader.valueToTree(source);
+        JsonNode read = SourceTree.of(source);
         if (!read.isObject()) {
             throw new PrivacyRefusedException("NOT_AN_OBJECT", type.getName(),
                     "source did not read as a JSON object");
@@ -137,7 +129,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         String declaredSubject = subjectValue(in, byName, null, type);
         String ownSubject = declaredSubject != null ? declaredSubject : inheritedSubject;
 
-        ObjectNode out = reader.createObjectNode();
+        ObjectNode out = SourceTree.newObject();
         for (String field : fieldNames(in)) {
             String fieldPath = path + "." + field;
 
@@ -185,7 +177,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             return scrubNestedObject((ObjectNode) value, md, run, path, depth, ownSubject);
         }
         if (value.isArray()) {
-            ArrayNode out = reader.createArrayNode();
+            ArrayNode out = SourceTree.newArray();
             ArrayNode in = (ArrayNode) value;
             for (int i = 0; i < in.size(); i++) {
                 JsonNode element = in.get(i);
@@ -233,7 +225,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         }
         return switch (structure.action()) {
             case PASS_THROUGH -> value;
-            case REDACT -> reader.getNodeFactory().textNode(REDACTED);
+            case REDACT -> SourceTree.text(REDACTED);
             default -> null;
         };
     }
@@ -249,7 +241,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                             ObjectNode parent, Map<String, FieldMetadata> siblings, Class<?> owner) {
         return switch (policy.action()) {
             case PASS_THROUGH -> value;
-            case REDACT -> reader.getNodeFactory().textNode(REDACTED);
+            case REDACT -> SourceTree.text(REDACTED);
             case REMOVE -> null;
             case SYNTHESIZE -> {
                 String subject = md.subjectField().isEmpty()
@@ -259,18 +251,18 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                     throw new PrivacyRefusedException("NO_SUBJECT", path,
                             "SYNTHESIZE needs a subject identifier and none resolved");
                 }
-                yield reader.getNodeFactory().textNode(run.emit(
+                yield SourceTree.text(run.emit(
                         synthetics.syntheticValue(subject, policy.namespace(), run.context())));
             }
             // HASH and TOKENIZE key on the value rather than the subject, so equal
             // values stay equal and joins on them survive. That also discloses
             // equality, and for a small value space it discloses the value --
             // see ValueTokenSource.
-            case HASH -> reader.getNodeFactory().textNode(run.emit(
+            case HASH -> SourceTree.text(run.emit(
                     tokens.hash(value.asText(), policy.namespace(), run.context())));
-            case TOKENIZE -> reader.getNodeFactory().textNode(run.emit(
+            case TOKENIZE -> SourceTree.text(run.emit(
                     tokens.token(value.asText(), policy.namespace(), run.context())));
-            case GENERALIZE -> reader.getNodeFactory().textNode(run.emit(
+            case GENERALIZE -> SourceTree.text(run.emit(
                     Generalizer.generalise(value, policy.generalization(), path)));
         };
     }
