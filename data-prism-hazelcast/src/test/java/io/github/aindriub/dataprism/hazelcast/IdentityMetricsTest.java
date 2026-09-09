@@ -4,6 +4,7 @@ import com.hazelcast.config.Config;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.SyntheticValueSource;
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * What {@link CachingSyntheticValueSource} and {@link ScopeIdentityIndex}
@@ -160,6 +162,64 @@ class IdentityMetricsTest {
         assertThat(result).isEqualTo(generator.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context));
         assertThat(metrics.countOf(Metric.IDENTITY_CACHE_HIT)).isZero();
         assertThat(metrics.countOf(Metric.IDENTITY_CACHE_MISS)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a generator that throws after a real miss counts that miss once, not twice")
+    void generatorFailureDoesNotDoubleCountTheMiss() {
+        var metrics = new RecordingPrivacyMetrics();
+        var refusing = new SyntheticValueSource() {
+            @Override
+            public String syntheticValue(String subjectId, PrivacyNamespace namespace, PrivacyContext ctx) {
+                throw new IllegalStateException("scope pinned to a different vocabulary");
+            }
+        };
+        var caching = new CachingSyntheticValueSource(refusing, notReidentifying, metrics);
+        var context = scope("M-CASE-GENFAIL");
+
+        assertThatThrownBy(() -> caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(metrics.countOf(Metric.IDENTITY_CACHE_MISS)).isEqualTo(1);
+        assertThat(caching.misses()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a metrics failure on the fallback miss never escapes the lookup")
+    void metricsFailureOnFallbackMissDoesNotFailTheLookup() {
+        Config config = new Config();
+        config.setClusterName("dataprism-metrics-throw-" + System.nanoTime());
+        config.getJetConfig().setEnabled(false);
+        config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
+        config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
+        var failing = PrivacyCluster.embedded(config, false);
+        var generator = new EchoGenerator();
+        var throwingMetrics = new PrivacyMetrics() {
+            @Override
+            public void increment(Metric metric) {
+                throw new IllegalStateException("conflicting meter registration");
+            }
+
+            @Override
+            public void increment(Metric metric, String sourceName) {
+                throw new IllegalStateException("conflicting meter registration");
+            }
+
+            @Override
+            public void record(Metric metric, String sourceName, java.time.Duration duration) {
+                throw new IllegalStateException("conflicting meter registration");
+            }
+        };
+        var caching = new CachingSyntheticValueSource(generator, failing, throwingMetrics);
+        var context = scope("M-CASE-METRICSFAIL");
+
+        // Not a graceful drain: the member is stopped underneath a live caller,
+        // which is what a crashed node looks like.
+        failing.close();
+
+        String result = caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context);
+
+        assertThat(result).isEqualTo(generator.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context));
     }
 
     @Test

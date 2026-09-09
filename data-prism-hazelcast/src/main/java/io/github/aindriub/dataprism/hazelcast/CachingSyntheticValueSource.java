@@ -71,6 +71,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     @Override
     public String syntheticValue(String subjectId, PrivacyNamespace namespace, PrivacyContext context) {
         String generated = null;
+        boolean lookupOutcomeRecorded = false;
         try {
             IMap<String, String> identities = cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP);
             String key = ScopeKeys.identity(context.scopeId(), subjectId, namespace);
@@ -78,11 +79,13 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             String cached = identities.get(key);
             if (cached != null) {
                 hits.incrementAndGet();
+                lookupOutcomeRecorded = true;
                 metrics.increment(Metric.IDENTITY_CACHE_HIT, namespace.name());
                 return cached;
             }
 
             misses.incrementAndGet();
+            lookupOutcomeRecorded = true;
             metrics.increment(Metric.IDENTITY_CACHE_MISS, namespace.name());
             generated = generator.syntheticValue(subjectId, namespace, context);
             store(identities, key, generated, subjectId, namespace, context);
@@ -93,12 +96,16 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             failures.incrementAndGet();
             LOG.warn("identity cache unavailable, falling back to computation: {}",
                     cacheFailure.getClass().getSimpleName());
-            if (generated == null) {
-                // The failure happened before either counter above ran: the cluster
-                // was gone before the lookup completed. Functionally that is a
-                // miss — computation was not saved — never a hit, so it is counted
-                // as one rather than left unrecorded.
-                metrics.increment(Metric.IDENTITY_CACHE_MISS, namespace.name());
+            // A miss was already emitted above unless the failure struck before the
+            // lookup resolved to a hit or a miss (the cluster call itself threw).
+            // In that case, and only that case, emit the miss here: nothing above
+            // ran to record it, and no computation was saved either way.
+            if (!lookupOutcomeRecorded) {
+                try {
+                    metrics.increment(Metric.IDENTITY_CACHE_MISS, namespace.name());
+                } catch (RuntimeException metricsFailure) {
+                    LOG.warn("metrics reporting failed, ignoring: {}", metricsFailure.getClass().getSimpleName());
+                }
             }
             return generated != null
                     ? generated
