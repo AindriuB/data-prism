@@ -108,4 +108,31 @@ class ArchitectureTest {
             .orShould().callMethod(java.util.UUID.class, "randomUUID")
             .orShould().callMethod(java.lang.System.class, "currentTimeMillis")
             .allowEmptyShould(true);
+
+    /**
+     * {@code data-prism-security} is authorisation and scope resolution, usable
+     * from any transport — it must work identically whether stdio or the HTTP
+     * resource server calls it. Depending on MCP, the orchestrator, a connector
+     * or the example would make it impossible to reuse from a transport that
+     * is not this one.
+     */
+    @ArchTest
+    static final ArchRule securityDoesNotDependOnOuterLayers = noClasses()
+            .that().resideInAPackage("..dataprism.security..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("..dataprism.mcp..", "..dataprism.orchestration..",
+                    "..dataprism.connectors..", "..dataprism.example..");
+
+    /**
+     * Spring Security is task 07's own choice, for turning a verified JWT into
+     * an {@code AuthenticatedCaller} at the resource server's edge. Nothing
+     * else — least of all {@code data-prism-security}, which is meant to work
+     * the same way regardless of which web framework, or none, sits in front
+     * of it — may depend on it.
+     */
+    @ArchTest
+    static final ArchRule onlyTheExampleDependsOnSpringSecurity = noClasses()
+            .that().resideOutsideOfPackage("..dataprism.example..")
+            .should().dependOnClassesThat().resideInAPackage("org.springframework.security..")
+            .allowEmptyShould(true);
 }

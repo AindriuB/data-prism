@@ -1,0 +1,34 @@
+# Configuration for the HTTP resource server (ResourceServerApplication).
+# The stdio launcher (ExampleApplication) never starts a Spring context and
+# never reads this file.
+#
+# Nothing below is a secret, a key, a keystore password or a real URL: the
+# jwk-set-uri is a local placeholder a real deployment overrides, and every
+# test in this module overrides it with its own in-test JWKS endpoint.
+
+server:
+  # 0 binds an ephemeral port. A fixed port here would be exactly the
+  # hardcoded-port mistake task 07 is required not to make.
+  port: 0
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:0/not-configured/jwks
+
+dataprism:
+  security:
+    jwt:
+      issuer: data-prism-example
+      audience: data-prism-mcp
+  security-policy:
+    purposes:
+      - investigation
+    roles:
+      investigator:
+        - GET_ENTITY_CONTEXT
+      privileged-investigator:
+        - GET_ENTITY_CONTEXT
+        - EXPOSE_SOURCE_NAMES

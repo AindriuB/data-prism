@@ -32,6 +32,39 @@
       <artifactId>slf4j-simple</artifactId>
     </dependency>
 
+    <!-- The resource server: validates a bearer JWT against a configured JWKS
+         URL and serves the MCP streamable HTTP transport on embedded Tomcat.
+         spring-boot-starter-logging is excluded from both starters below so
+         logback-classic never reaches this module's classpath — two SLF4J
+         providers would let logback's own default console appender win the
+         race non-deterministically, and stdio's launcher (ExampleApplication)
+         depends on every diagnostic going through slf4j-simple to stderr
+         rather than the stream stdio's own protocol occupies. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-core</artifactId>
+    </dependency>
+
     <!-- The example depends on every module, so it is where the architecture
          rules can see the whole graph. -->
     <dependency>

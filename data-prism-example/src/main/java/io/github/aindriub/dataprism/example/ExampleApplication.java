@@ -40,10 +40,37 @@ public final class ExampleApplication {
     private static final String DEVELOPMENT_CASE = "CASE-DEMO-1";
     private static final String DEVELOPMENT_ROLE = "developer";
 
+    /**
+     * The one profile name that refuses stdio. Matched case-insensitively
+     * against a comma-separated list, the same shape Spring itself accepts for
+     * {@code spring.profiles.active} — this launcher reads that convention
+     * directly rather than starting a Spring context to ask it, which would put
+     * a banner on the stream stdio's own protocol occupies.
+     */
+    private static final String PRODUCTION_PROFILE = "production";
+
     private ExampleApplication() {
     }
 
     public static void main(String[] args) throws InterruptedException {
+        McpSyncServer server = buildServer(activeProfiles());
+
+        Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));
+        System.err.println("data-prism listening on stdio; tool: get_entity_context");
+
+        Thread.currentThread().join();
+    }
+
+    /**
+     * Everything {@link #main} does except register the shutdown hook and block
+     * on {@code join()} — visible for {@code StdioProductionProfileTest}, which
+     * wants the server (or the refusal) without a launcher that never returns.
+     *
+     * @throws io.github.aindriub.dataprism.security.SecurityRefusedException with code
+     *                                  {@code STDIO_DEVELOPMENT_ONLY} when {@code activeProfiles}
+     *                                  names the production profile
+     */
+    static McpSyncServer buildServer(String activeProfiles) {
         DataPrismAssembly assembly = DataPrismAssembly.standard();
 
         SecurityPolicy policy = new SecurityPolicy(Set.of(DEVELOPMENT_PURPOSE),
@@ -56,12 +83,35 @@ public final class ExampleApplication {
                 Set.of(DEVELOPMENT_ROLE), DEVELOPMENT_PURPOSE, DEVELOPMENT_CASE, null);
         AuditRecorder toolAudit = new AuditRecorder(new Slf4jAuditSink(), assembly.clock(), "example-1-mcp");
 
-        McpSyncServer server = DataPrismMcpServer.stdio(assembly.orchestrator(), authorizationService,
-                scopeResolver, developmentCaller, true, false, PrivacyMetrics.none(), toolAudit, assembly.clock());
+        return DataPrismMcpServer.stdio(assembly.orchestrator(), authorizationService,
+                scopeResolver, developmentCaller, true, isProductionProfile(activeProfiles),
+                PrivacyMetrics.none(), toolAudit, assembly.clock());
+    }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));
-        System.err.println("data-prism listening on stdio; tool: get_entity_context");
+    /**
+     * {@code spring.profiles.active} read the way the JVM itself would set it —
+     * a system property, falling back to the environment variable Spring
+     * documents for the same purpose — without touching a Spring API, since
+     * nothing here is a Spring application.
+     */
+    private static String activeProfiles() {
+        String systemProperty = System.getProperty("spring.profiles.active");
+        if (systemProperty != null && !systemProperty.isBlank()) {
+            return systemProperty;
+        }
+        return System.getenv("SPRING_PROFILES_ACTIVE");
+    }
 
-        Thread.currentThread().join();
+    /** Visible for {@code StdioProductionProfileTest}. */
+    static boolean isProductionProfile(String activeProfiles) {
+        if (activeProfiles == null || activeProfiles.isBlank()) {
+            return false;
+        }
+        for (String profile : activeProfiles.split(",")) {
+            if (profile.trim().equalsIgnoreCase(PRODUCTION_PROFILE)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
