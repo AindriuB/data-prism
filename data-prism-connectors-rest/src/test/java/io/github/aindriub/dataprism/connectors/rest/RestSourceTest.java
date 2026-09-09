@@ -83,7 +83,7 @@ class RestSourceTest {
     @Test
     @DisplayName("sources load from YAML, and a malformed one fails at startup")
     void loadsFromYaml() {
-        var sources = RestSources.fromYaml(new ByteArrayInputStream("""
+        var config = RestSources.fromYaml(new ByteArrayInputStream("""
                 sources:
                   customer-api:
                     base-url: https://customer.internal
@@ -93,11 +93,15 @@ class RestSourceTest {
                     base-url: https://account.internal
                     path: /accounts/by-customer/{subject}
                 """.getBytes(StandardCharsets.UTF_8)));
+        var sources = config.sources();
 
         assertThat(sources).containsOnlyKeys("customer-api", "account-api");
         assertThat(sources.get("customer-api").timeout()).isEqualTo(Duration.ofSeconds(2));
         // An unstated timeout gets a default rather than none.
         assertThat(sources.get("account-api").timeout()).isEqualTo(Duration.ofSeconds(3));
+        // No `tls:` block: sources stay permissive, and none require https.
+        assertThat(config.tlsConfigured()).isFalse();
+        assertThat(sources.get("customer-api").requireHttps()).isFalse();
 
         // A source that silently did not exist would look like a subject the
         // system genuinely does not hold, so this has to fail loudly.
@@ -114,5 +118,61 @@ class RestSourceTest {
                 """.getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("ISO-8601");
+    }
+
+    @Test
+    @DisplayName("a `tls:` block configures TlsSettings and makes every source require https")
+    void tlsBlockIsParsedAndAppliedToSources() {
+        String var = "DATA_PRISM_TEST_TLS_PASSWORD";
+        assertThat(System.getenv(var)).as("test relies on the module POM's surefire env config").isNotNull();
+
+        var config = RestSources.fromYaml(new ByteArrayInputStream(("""
+                tls:
+                  key-store: keystore.p12
+                  key-store-password-env: %s
+                  trust-store: truststore.p12
+                  trust-store-password-env: %s
+                  store-type: PKCS12
+                sources:
+                  customer-api:
+                    base-url: https://customer.internal
+                    path: /customers/{subject}
+                """.formatted(var, var)).getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.tlsConfigured()).isTrue();
+        assertThat(config.tls().storeType()).isEqualTo("PKCS12");
+        assertThat(config.sources().get("customer-api").requireHttps()).isTrue();
+
+        // An http source under a tls: block is refused, naming the source.
+        assertThatThrownBy(() -> RestSources.fromYaml(new ByteArrayInputStream(("""
+                tls:
+                  key-store: keystore.p12
+                  key-store-password-env: %s
+                  trust-store: truststore.p12
+                  trust-store-password-env: %s
+                  store-type: PKCS12
+                sources:
+                  customer-api:
+                    base-url: http://customer.internal
+                    path: /customers/{subject}
+                """.formatted(var, var)).getBytes(StandardCharsets.UTF_8))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("https");
+    }
+
+    @Test
+    @DisplayName("an unparseable `tls:` block names the offending key")
+    void tlsBlockRejectsMissingKeys() {
+        assertThatThrownBy(() -> RestSources.fromYaml(new ByteArrayInputStream("""
+                tls:
+                  key-store: keystore.p12
+                sources:
+                  customer-api:
+                    base-url: https://customer.internal
+                    path: /customers/{subject}
+                """.getBytes(StandardCharsets.UTF_8))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("key-store-password-env");
     }
 }
