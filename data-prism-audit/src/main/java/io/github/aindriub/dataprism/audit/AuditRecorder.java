@@ -34,21 +34,27 @@ public final class AuditRecorder {
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
     }
 
-    public synchronized AuditEvent record(String principalId, String tool, String entityType,
-                                          String subjectPseudonym, String parameterFingerprint,
-                                          String privacyProfile, String scopeId, String policyDecision,
-                                          Set<String> sourceSystems, String correlationId) {
+    public synchronized AuditEvent record(String principalId, String clientId, String tool,
+                                          String entityType, String subjectPseudonym,
+                                          String parameterFingerprint, String privacyProfile,
+                                          String scopeId, String purpose, String caseId,
+                                          String policyDecision, Set<String> sourceSystems,
+                                          Set<String> rejectedArguments, String correlationId) {
         long seq = sequence.incrementAndGet();
         String id = UUID.randomUUID().toString();
         String prior = previousHash;
-        String body = String.join("|", id, instanceId, Long.toString(seq), principalId, tool,
-                entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId,
-                policyDecision, correlationId, prior);
+        // Sorted so the hash does not depend on the iteration order of whatever
+        // Set implementation the caller happened to pass in.
+        String rejected = String.join(",", rejectedArguments.stream().sorted().toList());
+        String body = String.join("|", id, instanceId, Long.toString(seq), principalId, clientId, tool,
+                entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose,
+                caseId, policyDecision, correlationId, rejected, prior);
         String hash = sha256(body);
 
-        AuditEvent event = new AuditEvent(id, clock.instant(), principalId, tool, entityType,
-                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, policyDecision,
-                sourceSystems, correlationId, instanceId, seq, prior, hash);
+        AuditEvent event = new AuditEvent(id, clock.instant(), principalId, clientId, tool, entityType,
+                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
+                policyDecision, sourceSystems, rejectedArguments, correlationId, instanceId, seq, prior,
+                hash);
 
         previousHash = hash;
         sink.record(event);

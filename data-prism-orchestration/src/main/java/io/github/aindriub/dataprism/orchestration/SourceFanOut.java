@@ -2,6 +2,8 @@ package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.Metric;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.RequestLimits;
 
 import java.time.Clock;
@@ -49,10 +51,16 @@ public final class SourceFanOut {
 
     private final SourceCircuitBreaker breaker;
     private final Clock clock;
+    private final PrivacyMetrics metrics;
 
     public SourceFanOut(SourceCircuitBreaker breaker, Clock clock) {
+        this(breaker, clock, PrivacyMetrics.none());
+    }
+
+    public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, PrivacyMetrics metrics) {
         this.breaker = Objects.requireNonNull(breaker, "breaker");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
     }
 
     /**
@@ -112,7 +120,13 @@ public final class SourceFanOut {
             }
         }
 
-        results.forEach(fetched -> breaker.record(fetched.outcome()));
+        results.forEach(fetched -> {
+            breaker.record(fetched.outcome());
+            metrics.record(Metric.SOURCE_LATENCY, fetched.outcome().sourceName(), fetched.outcome().took());
+            if (fetched.outcome().failure()) {
+                metrics.increment(Metric.SOURCE_ERRORS, fetched.outcome().sourceName());
+            }
+        });
         return List.copyOf(results);
     }
 

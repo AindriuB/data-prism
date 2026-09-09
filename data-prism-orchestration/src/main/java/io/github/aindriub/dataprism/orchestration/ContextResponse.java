@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.orchestration;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.core.ConsistencyFinding;
+import io.github.aindriub.dataprism.core.InvestigationContext;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,11 +45,12 @@ public record ContextResponse(
 
     static ContextResponse of(String entityType, String subject, List<SourceOutcome> outcomes,
                               List<ConsistencyFinding> findings, ObjectNode entity,
-                              SourceAliasing aliasing,
+                              SourceAliasing aliasing, InvestigationContext investigationContext,
                               io.github.aindriub.dataprism.core.PrivacyContext context) {
         Map<String, String> statuses = new LinkedHashMap<>();
         outcomes.forEach(outcome -> statuses.put(
-                aliasing.nameFor(outcome.sourceName(), context), outcome.status().name()));
+                aliasing.nameFor(outcome.sourceName(), investigationContext, context),
+                outcome.status().name()));
         return new ContextResponse(entityType, subject, statuses, findings, entity);
     }
 

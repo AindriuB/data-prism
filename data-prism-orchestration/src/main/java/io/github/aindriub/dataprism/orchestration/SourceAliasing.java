@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.core.Capability;
+import io.github.aindriub.dataprism.core.InvestigationContext;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.ValueTokenSource;
 
@@ -20,43 +22,29 @@ import java.util.Objects;
  * name. It is stable for the life of a scope, so a finding in one call and a
  * finding in the next refer to the same system by the same alias, and it is
  * meaningless outside that scope. An operator maps aliases back through the audit
- * trail.
+ * trail, which always carries the real name regardless of this decision.
  *
- * <p>Real names are available to a caller that holds the capability. The example
- * application turns it on, because its sources are fictional and the output is
- * meant to be read.
+ * <p>Real names are returned only when the caller asking — not the scope, the
+ * caller — holds {@link Capability#EXPOSE_SOURCE_NAMES}. That is a capability
+ * check, made fresh for every call, rather than a deployment-wide switch: two
+ * callers in the same scope may see two different answers.
  */
 public final class SourceAliasing {
 
     private final ValueTokenSource tokens;
-    private final boolean exposeRealNames;
 
-    public SourceAliasing(ValueTokenSource tokens, boolean exposeRealNames) {
+    public SourceAliasing(ValueTokenSource tokens) {
         this.tokens = Objects.requireNonNull(tokens, "tokens");
-        this.exposeRealNames = exposeRealNames;
     }
 
-    /** Aliases sources, which is the right default for anything not fictional. */
-    public static SourceAliasing aliased(ValueTokenSource tokens) {
-        return new SourceAliasing(tokens, false);
-    }
-
-    /** Names sources as they are. Requires the caller to hold the capability. */
-    public static SourceAliasing exposed() {
-        return new SourceAliasing(ValueTokenSource.unavailable(), true);
-    }
-
-    public String nameFor(String sourceName, PrivacyContext context) {
-        if (exposeRealNames) {
+    public String nameFor(String sourceName, InvestigationContext investigationContext,
+                          PrivacyContext context) {
+        if (investigationContext.has(Capability.EXPOSE_SOURCE_NAMES)) {
             return sourceName;
         }
         // ORGANISATION_IDENTITY because that is what a source system is: a named
         // party whose identity is being substituted, keyed on the value so the
         // same system reads the same way throughout the scope.
         return tokens.token(sourceName, PrivacyNamespace.ORGANISATION_IDENTITY, context);
-    }
-
-    public boolean exposesRealNames() {
-        return exposeRealNames;
     }
 }

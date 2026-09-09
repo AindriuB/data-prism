@@ -9,7 +9,10 @@ import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.IdentityResolver;
+import io.github.aindriub.dataprism.core.InvestigationContext;
+import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
@@ -23,6 +26,8 @@ import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
 import io.github.aindriub.dataprism.validation.Violation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.util.ArrayList;
@@ -51,8 +56,14 @@ import java.util.UUID;
  * request because one system is slow would make the platform less available
  * than the systems behind it, and the gap is stated in the response rather
  * than hidden.
+ *
+ * <p>Every call carries an {@link InvestigationContext}: who is actually asking,
+ * never a constant. It decides whether source names are exposed and is what
+ * every audit event is attributed to.
  */
 public final class DefaultContextOrchestrator implements ContextOrchestrator {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultContextOrchestrator.class);
 
     private final List<DataSourceAdapter<?>> adapters;
     private final ScrubbingEngine scrubber;
@@ -67,6 +78,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private final RequestLimits limits;
     private final EntityCorrelationService correlation;
     private final SourceAliasing aliasing;
+    private final PrivacyMetrics metrics;
 
     /**
      * The standard pipeline: the supplied comparison check, plus the pattern
@@ -78,17 +90,34 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
                                       FieldMetadataResolver resolver, LlmResponseValidator validator,
                                       SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
-                                      AuditRecorder audit) {
+                                      AuditRecorder audit, SourceAliasing aliasing) {
+        this(adapters, scrubber, resolver, validator, synthetics, fingerprinter, audit, aliasing,
+                PrivacyMetrics.none());
+    }
+
+    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
+                                      FieldMetadataResolver resolver, LlmResponseValidator validator,
+                                      SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
+                                      AuditRecorder audit, SourceAliasing aliasing, PrivacyMetrics metrics) {
         this(adapters, scrubber, resolver,
                 List.of(Objects.requireNonNull(validator, "validator"), new SensitivePatternValidator()),
-                synthetics, fingerprinter, audit);
+                synthetics, fingerprinter, audit, aliasing, metrics);
     }
 
     public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
                                       FieldMetadataResolver resolver,
                                       List<LlmResponseValidator> validators,
                                       SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
-                                      AuditRecorder audit) {
+                                      AuditRecorder audit, SourceAliasing aliasing) {
+        this(adapters, scrubber, resolver, validators, synthetics, fingerprinter, audit, aliasing,
+                PrivacyMetrics.none());
+    }
+
+    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
+                                      FieldMetadataResolver resolver,
+                                      List<LlmResponseValidator> validators,
+                                      SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
+                                      AuditRecorder audit, SourceAliasing aliasing, PrivacyMetrics metrics) {
         this.adapters = List.copyOf(adapters);
         this.scrubber = Objects.requireNonNull(scrubber, "scrubber");
         this.resolver = Objects.requireNonNull(resolver, "resolver");
@@ -97,11 +126,12 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.fingerprinter = Objects.requireNonNull(fingerprinter, "fingerprinter");
         this.audit = Objects.requireNonNull(audit, "audit");
         this.identities = new PassThroughIdentityResolver();
-        this.fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC());
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), this.metrics);
         this.budget = new InMemoryScopeBudget();
         this.limits = RequestLimits.DEFAULT;
-        this.aliasing = SourceAliasing.exposed();
-        this.correlation = new NamespaceCorrelationService(resolver, this.aliasing);
+        this.aliasing = Objects.requireNonNull(aliasing, "aliasing");
+        this.correlation = new NamespaceCorrelationService(resolver);
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
         }
@@ -123,6 +153,19 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                       ScopeBudget budget, RequestLimits limits,
                                       EntityCorrelationService correlation,
                                       SourceAliasing aliasing) {
+        this(adapters, scrubber, resolver, validators, synthetics, fingerprinter, audit, identities,
+                fanOut, budget, limits, correlation, aliasing, PrivacyMetrics.none());
+    }
+
+    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
+                                      FieldMetadataResolver resolver,
+                                      List<LlmResponseValidator> validators,
+                                      SyntheticValueSource synthetics,
+                                      ParameterFingerprinter fingerprinter, AuditRecorder audit,
+                                      IdentityResolver identities, SourceFanOut fanOut,
+                                      ScopeBudget budget, RequestLimits limits,
+                                      EntityCorrelationService correlation,
+                                      SourceAliasing aliasing, PrivacyMetrics metrics) {
         this.adapters = List.copyOf(adapters);
         this.scrubber = Objects.requireNonNull(scrubber, "scrubber");
         this.resolver = Objects.requireNonNull(resolver, "resolver");
@@ -136,13 +179,24 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this.limits = Objects.requireNonNull(limits, "limits");
         this.aliasing = Objects.requireNonNull(aliasing, "aliasing");
         this.correlation = Objects.requireNonNull(correlation, "correlation");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
         if (this.validators.isEmpty()) {
             throw new IllegalArgumentException("at least one response validator is required");
         }
     }
 
     @Override
-    public ContextResponse buildContext(ContextRequest request, PrivacyContext context) {
+    public ContextResponse buildContext(ContextRequest request, PrivacyContext context,
+                                        InvestigationContext investigationContext) {
+        Objects.requireNonNull(investigationContext, "investigationContext");
+        if (!request.rejectedArguments().isEmpty()) {
+            // Names only: request.rejectedArguments() is Set<String> of argument
+            // names, never values, so there is nothing here for a value to leak
+            // through even by accident.
+            LOG.warn("caller supplied reserved argument name(s), ignored: {}",
+                    request.rejectedArguments());
+        }
+
         String correlationId = UUID.randomUUID().toString();
         String subjectToken = synthetics.syntheticValue(request.subjectId(), PrivacyNamespace.NONE, context);
         String fingerprint = fingerprinter.fingerprint(
@@ -175,10 +229,12 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                     continue;
                 }
                 raw.add(new EntityCorrelationService.SourceRecord(
-                        fetched.outcome().sourceName(), record));
+                        aliasing.nameFor(fetched.outcome().sourceName(), investigationContext, context),
+                        record));
                 prohibited.addAll(SourceValues.prohibited(record, resolver));
 
                 ScrubResult scrubbed = scrubber.scrub(record, context);
+                metrics.increment(Metric.PRIVACY_TRANSFORMATIONS);
                 emitted.addAll(scrubbed.emitted());
                 if (merged == null) {
                     merged = scrubbed.tree();
@@ -203,6 +259,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 violations.addAll(result.violations());
             }
             if (!violations.isEmpty()) {
+                violations.forEach(v -> metrics.increment(Metric.PRIVACY_VALIDATION_FAILURES));
                 // Named by classification and path; the values themselves stay in
                 // the withheld response, which no caller ever sees.
                 throw new PrivacyRefusedException("VALIDATION_FAILED", violations.get(0).path(),
@@ -210,13 +267,18 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                 + " by " + violations.get(0).detectionMethod() + "; response withheld");
             }
         } catch (RuntimeException failure) {
-            audit(request, subjectToken, fingerprint, context, "DENY", sources, correlationId);
+            if (failure instanceof PrivacyRefusedException) {
+                metrics.increment(Metric.PRIVACY_FAILCLOSED);
+            }
+            audit(request, subjectToken, fingerprint, context, investigationContext, "DENY", sources,
+                    correlationId);
             throw failure;
         }
 
-        audit(request, subjectToken, fingerprint, context, "ALLOW", sources, correlationId);
+        audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
+                correlationId);
         return ContextResponse.of(request.entityType(), subjectToken, sources,
-                findings, merged, aliasing, context);
+                findings, merged, aliasing, investigationContext, context);
     }
 
     /**
@@ -239,15 +301,18 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     }
 
     private void audit(ContextRequest request, String subjectToken, String fingerprint,
-                       PrivacyContext context, String decision, List<SourceOutcome> sources,
-                       String correlationId) {
-        // Name and status only. How a source answered is operational; what it
-        // answered with is never audited.
+                       PrivacyContext context, InvestigationContext investigationContext,
+                       String decision, List<SourceOutcome> sources, String correlationId) {
+        // Name and status only, and always the real source name: the audit trail
+        // is an operational record for an operator, not a view a caller sees, so
+        // it is never subject to SourceAliasing's capability check.
         Set<String> names = sources.stream()
                 .map(outcome -> outcome.sourceName() + ":" + outcome.status())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        audit.record("system", "get_entity_context", request.entityType(), subjectToken,
-                fingerprint, context.redactionProfile(), context.scopeId(), decision,
-                names, correlationId);
+        audit.record(investigationContext.principalId(), investigationContext.clientId(),
+                "get_entity_context", request.entityType(), subjectToken, fingerprint,
+                context.redactionProfile(), context.scopeId(), context.purpose(),
+                investigationContext.caseId(), decision, names, request.rejectedArguments(),
+                correlationId);
     }
 }

@@ -2,12 +2,15 @@ package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.Metric;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.RequestLimits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -265,5 +268,37 @@ class SourceFanOutTest {
             assertThat(f.outcome().detail()).isEqualTo("IllegalStateException")
                     .doesNotContain("Patrick Murphy");
         });
+    }
+
+    @Test
+    @DisplayName("every outcome records its latency, and only a failure counts as a source error")
+    void recordsSourceMetricsByConfiguredName() {
+        List<Metric> recorded = new ArrayList<>();
+        List<Metric> incremented = new ArrayList<>();
+        List<String> incrementedFor = new ArrayList<>();
+        PrivacyMetrics metrics = new PrivacyMetrics() {
+            @Override
+            public void increment(Metric metric) {
+            }
+
+            @Override
+            public void increment(Metric metric, String sourceName) {
+                incremented.add(metric);
+                incrementedFor.add(sourceName);
+            }
+
+            @Override
+            public void record(Metric metric, String sourceName, Duration duration) {
+                recorded.add(metric);
+            }
+        };
+        var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), metrics);
+        List<DataSourceAdapter<?>> adapters = List.of(Stub.answering("ok", "A"), Stub.failing("broken"));
+
+        fanOut.fetchAll(adapters, askAll(adapters), limits(8, Duration.ofSeconds(5), 4));
+
+        assertThat(recorded).containsExactlyInAnyOrder(Metric.SOURCE_LATENCY, Metric.SOURCE_LATENCY);
+        assertThat(incremented).containsExactly(Metric.SOURCE_ERRORS);
+        assertThat(incrementedFor).containsExactly("broken");
     }
 }
