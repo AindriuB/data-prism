@@ -36,12 +36,10 @@ public final class NamespaceCorrelationService implements EntityCorrelationServi
             PrivacyNamespace.PERSON_LAST_NAME, PrivacyNamespace.ORGANISATION_NAME);
 
     private final FieldMetadataResolver resolver;
-    private final SourceAliasing aliasing;
     private final InstructionContentHeuristic instructions;
 
-    public NamespaceCorrelationService(FieldMetadataResolver resolver, SourceAliasing aliasing) {
+    public NamespaceCorrelationService(FieldMetadataResolver resolver) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
-        this.aliasing = Objects.requireNonNull(aliasing, "aliasing");
         this.instructions = new InstructionContentHeuristic();
     }
 
@@ -53,7 +51,10 @@ public final class NamespaceCorrelationService implements EntityCorrelationServi
         List<ConsistencyFinding> findings = new ArrayList<>();
 
         for (SourceRecord source : records) {
-            String alias = aliasing.nameFor(source.sourceName(), context);
+            // Already resolved to a real name or a scope-local alias by the
+            // caller: correlation compares and labels, it does not decide who
+            // may see which. See SourceAliasing.
+            String alias = source.sourceName();
             allSources.add(alias);
             JsonNode tree = SourceTree.of(source.record());
 

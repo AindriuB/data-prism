@@ -13,6 +13,13 @@ import java.util.Set;
  * back to a subject is the re-identification path's job, under its own
  * authorisation. See docs/design-review.md §E.
  *
+ * <p>{@code principalId}, {@code clientId} and {@code caseId} come from the
+ * caller's {@code InvestigationContext} — never a constant, and never a value
+ * the caller supplied as a tool argument. {@code rejectedArguments} is the other
+ * half of that: the *names* of any reserved argument the caller attempted to
+ * supply instead of letting the session decide. Both are what let this event
+ * answer "who actually asked, and did they try to say otherwise".
+ *
  * <p>The chain fields are per writer, not global: instances are stateless and
  * horizontally scaled, so a single chain would fork under concurrency into
  * something indistinguishable from tampering (§A6). S0 writes them; verifying
@@ -22,14 +29,18 @@ public record AuditEvent(
         String eventId,
         Instant timestamp,
         String principalId,
+        String clientId,
         String tool,
         String entityType,
         String subjectPseudonym,
         String parameterFingerprint,
         String privacyProfile,
         String scopeId,
+        String purpose,
+        String caseId,
         String policyDecision,
         Set<String> sourceSystems,
+        Set<String> rejectedArguments,
         String correlationId,
         String instanceId,
         long sequence,
@@ -38,5 +49,6 @@ public record AuditEvent(
 
     public AuditEvent {
         sourceSystems = Set.copyOf(sourceSystems);
+        rejectedArguments = Set.copyOf(rejectedArguments);
     }
 }

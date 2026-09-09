@@ -58,7 +58,7 @@ class NamespaceCorrelationServiceTest {
             PseudonymisationVersion.HMAC_SHA256_V1);
 
     private final NamespaceCorrelationService correlation = new NamespaceCorrelationService(
-            new DefaultFieldMetadataResolver(), SourceAliasing.exposed());
+            new DefaultFieldMetadataResolver());
 
     private Optional<ConsistencyFinding> nameFinding(List<SourceRecord> records) {
         return correlation.correlate(records, CONTEXT).stream()
@@ -193,25 +193,11 @@ class NamespaceCorrelationServiceTest {
     }
 
     @Test
-    @DisplayName("source names are aliased unless the caller may see them")
-    void sourceNamesAreAliasedByDefault() {
-        var tokens = new io.github.aindriub.dataprism.core.ValueTokenSource() {
-            @Override
-            public String hash(String value, PrivacyNamespace namespace, PrivacyContext ctx) {
-                return "HASH-" + value.length();
-            }
-
-            @Override
-            public String token(String value, PrivacyNamespace namespace, PrivacyContext ctx) {
-                return "ALIAS-" + value.length();
-            }
-        };
-        var aliased = new NamespaceCorrelationService(new DefaultFieldMetadataResolver(),
-                SourceAliasing.aliased(tokens));
-
-        var findings = aliased.correlate(List.of(
-                new SourceRecord("customer-api", new Person("1", "Patrick Murphy", null)),
-                new SourceRecord("account-api", new Holder("1", "Bridget Kelly"))), CONTEXT);
+    @DisplayName("a finding names sources exactly as given: aliasing is the caller's job, not correlation's")
+    void namesSourcesExactlyAsGiven() {
+        var findings = correlation.correlate(List.of(
+                new SourceRecord("ALIAS-1", new Person("1", "Patrick Murphy", null)),
+                new SourceRecord("ALIAS-2", new Holder("1", "Bridget Kelly"))), CONTEXT);
 
         assertThat(findings).singleElement().satisfies(f -> assertThat(f.agreementGroups())
                 .allSatisfy(group -> assertThat(group)

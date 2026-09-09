@@ -42,7 +42,7 @@ class EndToEndTest {
     private static McpSchema.CallToolResult call(DataPrismAssembly assembly,
                                                  Map<String, Object> arguments) {
         var tool = new GetEntityContextTool(assembly.orchestrator(), assembly::privacyContext,
-                DataPrismObjectMapper.create());
+                assembly::investigationContext, DataPrismObjectMapper.create());
         return tool.specification().callHandler()
                 .apply(null, new McpSchema.CallToolRequest(GetEntityContextTool.NAME, arguments));
     }
@@ -117,8 +117,38 @@ class EndToEndTest {
 
         // The extra arguments are not read at all. Scope comes from the session,
         // which is what stops one investigation reaching another's pseudonyms.
-        assertThat(audited).singleElement()
-                .satisfies(event -> assertThat(event.scopeId()).isEqualTo("CASE-DEMO-1"));
+        // The attempt is not merely ignored, though: its names are audited.
+        assertThat(audited).singleElement().satisfies(event -> {
+            assertThat(event.scopeId()).isEqualTo("CASE-DEMO-1");
+            assertThat(event.rejectedArguments()).containsExactlyInAnyOrder("scopeId", "purpose");
+        });
+    }
+
+    @Test
+    @DisplayName("a rejected argument's value never appears in the audit event or the warning it logs")
+    void rejectedArgumentValueNeverAppearsAnywhere() {
+        // Distinctive enough that a stray copy anywhere is unmistakably this
+        // value and not, say, a coincidental substring of something legitimate.
+        String distinctiveValue = "ZQ7-NEVER-LOG-THIS-VALUE-4471";
+
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream originalErr = System.err;
+        System.setErr(new java.io.PrintStream(captured, true, java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            call(Map.of("entityType", "CUSTOMER", "subjectId", "123", "scopeId", distinctiveValue));
+        } finally {
+            System.setErr(originalErr);
+        }
+        String logged = captured.toString(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(logged).contains("WARN").contains("scopeId").doesNotContain(distinctiveValue);
+        // Logged once, not once per pipeline stage that happens to see it.
+        assertThat(logged.split("WARN", -1).length - 1).isEqualTo(1);
+
+        assertThat(audited).singleElement().satisfies(event -> {
+            assertThat(event.rejectedArguments()).containsExactly("scopeId");
+            assertThat(event.toString()).doesNotContain(distinctiveValue);
+        });
     }
 
     @Test
@@ -148,8 +178,8 @@ class EndToEndTest {
                 List.of(new UnexposedAdapter()), FIXED, sink);
 
         assertThatThrownBy(() -> assembly.orchestrator().buildContext(
-                new io.github.aindriub.dataprism.orchestration.ContextRequest("THING", "1"),
-                assembly.privacyContext()))
+                io.github.aindriub.dataprism.orchestration.ContextRequest.of("THING", "1"),
+                assembly.privacyContext(), assembly.investigationContext()))
                 .isInstanceOf(PrivacyRefusedException.class);
     }
 

@@ -36,7 +36,8 @@ class WorkedExampleTest {
 
     private ContextResponse customer123() {
         return assembly.orchestrator().buildContext(
-                new ContextRequest("CUSTOMER", "123"), assembly.privacyContext());
+                ContextRequest.of("CUSTOMER", "123"), assembly.privacyContext(),
+                assembly.investigationContext());
     }
 
     @Test
@@ -108,7 +109,8 @@ class WorkedExampleTest {
     void agreementGroupsPartitionTheSources() {
         // Customer 456 is spelled identically in the account and order systems.
         ContextResponse response = assembly.orchestrator().buildContext(
-                new ContextRequest("CUSTOMER", "456"), assembly.privacyContext());
+                ContextRequest.of("CUSTOMER", "456"), assembly.privacyContext(),
+                assembly.investigationContext());
 
         assertThat(response.findings())
                 .as("all three systems agree on this one, so there is nothing to report")

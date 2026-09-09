@@ -16,11 +16,13 @@ public final class Slf4jAuditSink implements AuditSink {
 
     @Override
     public void record(AuditEvent e) {
-        AUDIT.info("event={} seq={}/{} ts={} principal={} tool={} entityType={} subject={} "
-                        + "params={} profile={} scope={} decision={} sources={} correlation={} hash={} prev={}",
-                e.eventId(), e.instanceId(), e.sequence(), e.timestamp(), e.principalId(), e.tool(),
-                e.entityType(), e.subjectPseudonym(), e.parameterFingerprint(), e.privacyProfile(),
-                e.scopeId(), e.policyDecision(), e.sourceSystems(), e.correlationId(),
-                e.eventHash(), e.previousHash());
+        AUDIT.info("event={} seq={}/{} ts={} principal={} client={} tool={} entityType={} subject={} "
+                        + "params={} profile={} scope={} purpose={} case={} decision={} sources={} "
+                        + "rejected={} correlation={} hash={} prev={}",
+                e.eventId(), e.instanceId(), e.sequence(), e.timestamp(), e.principalId(), e.clientId(),
+                e.tool(), e.entityType(), e.subjectPseudonym(), e.parameterFingerprint(),
+                e.privacyProfile(), e.scopeId(), e.purpose(), e.caseId(), e.policyDecision(),
+                e.sourceSystems(), e.rejectedArguments(), e.correlationId(), e.eventHash(),
+                e.previousHash());
     }
 }
