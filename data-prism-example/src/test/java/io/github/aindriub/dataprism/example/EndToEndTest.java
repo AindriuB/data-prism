@@ -1,50 +1,85 @@
 package io.github.aindriub.dataprism.example;
 
 import io.github.aindriub.dataprism.audit.AuditEvent;
+import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
+import io.github.aindriub.dataprism.security.AuthenticatedCaller;
+import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.ScopeResolver;
+import io.github.aindriub.dataprism.security.SecurityPolicy;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The whole thread: tool call, fetch, scrub, validate, audit, serialise.
+ * The whole thread: authorisation, scope resolution, fetch, scrub, validate,
+ * audit, serialise.
  *
- * <p>Drives the tool's own call handler rather than a stdio subprocess, so the
- * assertions are about the pipeline rather than about JSON-RPC framing. The
- * transport is exercised separately by running the application.
+ * <p>Drives the tool's own call handler with a real {@link McpSyncServerExchange}
+ * carrying an {@link AuthenticatedCaller} in its transport context, rather than
+ * a stdio subprocess, so the assertions are about the pipeline rather than about
+ * JSON-RPC framing. The transport is exercised separately by running the
+ * application.
  */
 class EndToEndTest {
 
     private static final Clock FIXED = Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneOffset.UTC);
+    private static final String PURPOSE = "demonstration";
+    private static final String ROLE = "investigator";
 
     private final List<AuditEvent> audited = new ArrayList<>();
     private final AuditSink sink = audited::add;
     private final DataPrismAssembly assembly =
             new DataPrismAssembly(List.of(new StubCustomerAdapter()), FIXED, sink);
+    private final AuditRecorder toolAudit = new AuditRecorder(sink, FIXED, "example-1-mcp");
 
-    private McpSchema.CallToolResult call(Map<String, Object> arguments) {
-        return call(assembly, arguments);
+    private static AuthenticatedCaller caller(String caseId) {
+        return new AuthenticatedCaller("investigator-1", "client-1", Set.of(ROLE), PURPOSE, caseId, null);
     }
 
-    private static McpSchema.CallToolResult call(DataPrismAssembly assembly,
-                                                 Map<String, Object> arguments) {
-        var tool = new GetEntityContextTool(assembly.orchestrator(), assembly::privacyContext,
-                assembly::investigationContext, DataPrismObjectMapper.create());
+    private static AuthorizationService authorizationService(String privacyProfile) {
+        SecurityPolicy policy = new SecurityPolicy(Set.of(PURPOSE), Map.of(ROLE, Set.of("GET_ENTITY_CONTEXT")));
+        return new AuthorizationService(policy, privacyProfile, PrivacyScopeType.INVESTIGATION);
+    }
+
+    private static McpSyncServerExchange exchangeFor(AuthenticatedCaller caller) {
+        return new McpSyncServerExchange(new McpAsyncServerExchange("session-1", null, null, null,
+                McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller))));
+    }
+
+    private McpSchema.CallToolResult call(Map<String, Object> arguments) {
+        return call(assembly, "DEFAULT", caller("case-1"), arguments);
+    }
+
+    private McpSchema.CallToolResult call(DataPrismAssembly assembly, String privacyProfile,
+                                          AuthenticatedCaller caller, Map<String, Object> arguments) {
+        ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
+                new PurposeValidator(Set.of(PURPOSE)));
+        var tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService(privacyProfile),
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED);
         return tool.specification().callHandler()
-                .apply(null, new McpSchema.CallToolRequest(GetEntityContextTool.NAME, arguments));
+                .apply(exchangeFor(caller), new McpSchema.CallToolRequest(GetEntityContextTool.NAME, arguments));
     }
 
     @Test
@@ -78,6 +113,17 @@ class EndToEndTest {
         String two = call(Map.of("entityType", "CUSTOMER", "subjectId", "456")).content().toString();
 
         assertThat(two).isNotEqualTo(one);
+    }
+
+    @Test
+    @DisplayName("two callers with different case_id claims read the same subject as two different pseudonyms")
+    void scopeIsolationHoldsAcrossCallers() {
+        String first = call(assembly, "DEFAULT", caller("case-1"),
+                Map.of("entityType", "CUSTOMER", "subjectId", "123")).content().toString();
+        String second = call(assembly, "DEFAULT", caller("case-2"),
+                Map.of("entityType", "CUSTOMER", "subjectId", "123")).content().toString();
+
+        assertThat(first).isNotEqualTo(second);
     }
 
     @Test
@@ -132,10 +178,11 @@ class EndToEndTest {
 
         // Scope comes from the session, which is what stops one investigation
         // reaching another's pseudonyms. The attempt is not merely ignored,
-        // though: its names are audited.
+        // though: its names are audited. "case:" + case id is ScopeResolver's
+        // own, documented format (see ScopeResolver.scopeId).
         assertThat(audited).singleElement().satisfies(event -> {
             assertThat(event.policyDecision()).isEqualTo("ALLOW");
-            assertThat(event.scopeId()).isEqualTo(assembly.privacyContext().scopeId());
+            assertThat(event.scopeId()).isEqualTo("case:case-1");
             assertThat(event.rejectedArguments())
                     .containsExactlyInAnyOrder("principalId", "scopeId", "purpose", "caseId");
         });
@@ -175,10 +222,9 @@ class EndToEndTest {
         // stands; under STRICT the operator's rule is stricter and wins. This is
         // the property the specification asks for: privacy decisions are
         // configuration, not a recompile.
-        String underDefault = call(assembly,
+        String underDefault = call(assembly, "DEFAULT", caller("case-1"),
                 Map.of("entityType", "CUSTOMER", "subjectId", "123")).content().toString();
-        String underStrict = call(
-                new DataPrismAssembly(List.of(new StubCustomerAdapter()), FIXED, sink, "STRICT"),
+        String underStrict = call(assembly, "STRICT", caller("case-1"),
                 Map.of("entityType", "CUSTOMER", "subjectId", "123")).content().toString();
 
         assertThat(underDefault).doesNotContain("Patrick Murphy");
