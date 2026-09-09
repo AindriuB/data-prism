@@ -8,13 +8,16 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Loads source definitions from YAML.
+ * Loads source definitions, and the optional outbound TLS configuration, from
+ * YAML.
  *
  * <p>Parsed by hand for the same reason the privacy profiles and model
  * descriptors are: a malformed entry must be a startup failure naming the line,
@@ -30,7 +33,7 @@ public final class RestSources {
     }
 
     @SuppressWarnings("unchecked")
-    public static Map<String, RestSource> fromYaml(InputStream in) {
+    public static RestSourcesConfig fromYaml(InputStream in) {
         Map<String, Object> root;
         try {
             root = YAML.readValue(in, Map.class);
@@ -43,25 +46,29 @@ public final class RestSources {
             throw new IllegalArgumentException("source configuration has no `sources` section");
         }
 
+        TlsSettings tls = tls(root);
+        boolean requireHttps = tls != null;
+
         Map<String, RestSource> out = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             String name = String.valueOf(entry.getKey());
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
                 throw new IllegalArgumentException("source " + name + " is not a mapping");
             }
-            out.put(name, source(name, (Map<String, Object>) body));
+            out.put(name, source(name, (Map<String, Object>) body, requireHttps));
         }
-        return Map.copyOf(out);
+        return new RestSourcesConfig(Map.copyOf(out), tls);
     }
 
-    private static RestSource source(String name, Map<String, Object> body) {
-        String baseUrl = required(body, "base-url", name);
-        String path = required(body, "path", name);
+    private static RestSource source(String name, Map<String, Object> body, boolean requireHttps) {
+        String baseUrl = required(body, "base-url", "source " + name);
+        String path = required(body, "path", "source " + name);
         Object timeout = body.get("timeout");
 
         try {
             return new RestSource(name, new URI(baseUrl), path,
-                    timeout == null ? Duration.ofSeconds(3) : Duration.parse(String.valueOf(timeout)));
+                    timeout == null ? Duration.ofSeconds(3) : Duration.parse(String.valueOf(timeout)),
+                    requireHttps);
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException(
                     "source " + name + " has an unparseable base-url", e);
@@ -71,10 +78,36 @@ public final class RestSources {
         }
     }
 
-    private static String required(Map<String, Object> body, String key, String name) {
+    @SuppressWarnings("unchecked")
+    private static TlsSettings tls(Map<String, Object> root) {
+        Object node = root.get("tls");
+        if (node == null) {
+            return null;
+        }
+        if (!(node instanceof Map<?, ?> body)) {
+            throw new IllegalArgumentException("tls configuration is not a mapping");
+        }
+        Map<String, Object> tlsBody = (Map<String, Object>) body;
+
+        String keyStore = required(tlsBody, "key-store", "tls configuration");
+        String keyStorePasswordEnv = required(tlsBody, "key-store-password-env", "tls configuration");
+        String trustStore = required(tlsBody, "trust-store", "tls configuration");
+        String trustStorePasswordEnv = required(tlsBody, "trust-store-password-env", "tls configuration");
+        String storeType = required(tlsBody, "store-type", "tls configuration");
+
+        try {
+            return new TlsSettings(Path.of(keyStore), Path.of(trustStore), storeType,
+                    keyStorePasswordEnv, trustStorePasswordEnv);
+        } catch (InvalidPathException e) {
+            throw new IllegalArgumentException(
+                    "tls configuration has an unparseable key-store or trust-store path", e);
+        }
+    }
+
+    private static String required(Map<String, Object> body, String key, String context) {
         Object value = body.get(key);
         if (value == null || String.valueOf(value).isBlank()) {
-            throw new IllegalArgumentException("source " + name + " has no " + key);
+            throw new IllegalArgumentException(context + " has no " + key);
         }
         return String.valueOf(value);
     }

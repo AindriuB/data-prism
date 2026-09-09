@@ -32,4 +32,22 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- The literal here must match STORE_PASSWORD in
+               MutualTlsRestClientsHttpsTest, which is also where the value's
+               scope is explained: it protects only a throwaway key pair
+               generated inside that test run. -->
+          <environmentVariables>
+            <DATA_PRISM_TEST_TLS_PASSWORD>dp-test-only-not-a-real-secret</DATA_PRISM_TEST_TLS_PASSWORD>
+          </environmentVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

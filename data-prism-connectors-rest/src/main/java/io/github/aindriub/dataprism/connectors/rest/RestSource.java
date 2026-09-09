@@ -19,8 +19,14 @@ import java.util.Objects;
  *
  * @param pathTemplate a path containing exactly one {@code {subject}} placeholder,
  *                     e.g. {@code /customers/{subject}}
+ * @param requireHttps when {@code true}, an {@code http} base URL is refused at
+ *                     construction rather than permitted; production sources loaded
+ *                     from configuration set this whenever TLS is required, and it
+ *                     defaults to {@code false} only through the compatibility
+ *                     constructor used by the in-process stub tests below
  */
-public record RestSource(String name, URI baseUrl, String pathTemplate, Duration timeout) {
+public record RestSource(String name, URI baseUrl, String pathTemplate, Duration timeout,
+                          boolean requireHttps) {
 
     private static final String PLACEHOLDER = "{subject}";
 
@@ -34,6 +40,10 @@ public record RestSource(String name, URI baseUrl, String pathTemplate, Duration
         if (scheme == null || !(scheme.equals("http") || scheme.equals("https"))) {
             throw new IllegalArgumentException(
                     "source " + name + " has a non-HTTP base URL scheme: " + scheme);
+        }
+        if (requireHttps && scheme.equals("http")) {
+            throw new IllegalArgumentException(
+                    "source " + name + " requires https but its base URL is " + baseUrl);
         }
         if (baseUrl.getHost() == null) {
             throw new IllegalArgumentException("source " + name + " has no host");
@@ -51,5 +61,15 @@ public record RestSource(String name, URI baseUrl, String pathTemplate, Duration
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("source " + name + " timeout must be positive");
         }
+    }
+
+    /**
+     * Permissive constructor: {@code http} is allowed. Used by the in-process
+     * stub tests, whose loopback server has no certificate to present. Sources
+     * built from configuration go through {@link RestSources#fromYaml}, which
+     * always states the mode explicitly rather than relying on this default.
+     */
+    public RestSource(String name, URI baseUrl, String pathTemplate, Duration timeout) {
+        this(name, baseUrl, pathTemplate, timeout, false);
     }
 }
