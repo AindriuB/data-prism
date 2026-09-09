@@ -13,7 +13,18 @@
   <description>The MCP tool surface. Sees orchestration only, never a connector.</description>
   <dependencies>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-orchestration</artifactId></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-security</artifactId></dependency>
     <dependency><groupId>io.modelcontextprotocol.sdk</groupId><artifactId>mcp-core</artifactId></dependency>
     <dependency><groupId>io.modelcontextprotocol.sdk</groupId><artifactId>mcp-json-jackson2</artifactId></dependency>
+    <!-- Version pinned to match what mcp-core's HttpServletStreamableServerTransportProvider
+         is compiled against (its own dependency is `provided`, so it does not
+         propagate here); the root POM's imported Spring Boot BOM manages an
+         older 6.0.0 that would otherwise win. -->
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>6.1.0</version>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 </project>
