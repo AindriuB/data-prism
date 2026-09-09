@@ -17,6 +17,56 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — Task 10: the mTLS refusal assertion made cross-platform
+
+`main` went red on GitHub Actions at commit `3f6a59a`.
+`MutualTlsRestClientsHttpsTest.clientWithoutCertificateIsRefused` required an
+`SSLException` in the cause chain. That holds on Windows; on the Linux runner
+the server closes the TCP connection before the client reads the TLS alert, so
+the client surfaces `HTTP/1.1 header parser received no bytes` instead. The
+handshake was refused on both — the test asserted one platform's spelling of
+it.
+
+The test now accepts either observable and documents both in its javadoc. The
+negative cases still hold: pointing the base URL at a closed port fails it,
+and so does a request that reaches the server and gets a 404 — that second one
+is what separates "refused during the TLS handshake" from "reached the server
+and got an error", which the assertion this test started life with could not
+distinguish. Verified green on the Linux CI runner in GitHub Actions run
+34386674901, on `main` at `b953014` — this is the run being recorded as
+closing the task, since every prior local verification of this assertion ran
+on Windows.
+
+**Cost worth recording, and it is about how this was verified rather than
+about TLS.** This is the test task 08 rewrote, correctly, to fix a genuinely
+vacuous `isInstanceOf(RuntimeException.class)`. The tightening was right and
+should not be read as a mistake. What was wrong is that every verification of
+it ran on Windows — a 20-run stability check included — while CI runs Linux. A
+platform-specific assertion is invisible to a platform-specific verifier. The
+single earlier failure seen under a full run and attributed to `target/`
+contention was probably this, and that explanation was accepted too readily.
+
+Recorded honestly as a known trade-off, not a hidden one: the Linux branch of
+the assertion matches a literal JDK message string, because the wrapped
+exception type varies with kernel behaviour and is not a reliable
+discriminator. A JDK upgrade that reworks that message will turn this test red
+for a reason unrelated to mTLS. That was a deliberate choice with the
+alternative rejected; whoever sees it fail should read the javadoc before
+assuming a real regression.
+
+Two findings from this task are not this task's work, and are recorded as open
+in `docs/plan/PLAN.md` rather than fixed here: repository auto-merge is
+enabled with no branch protection requiring the build to pass — PR #9 merged
+into `main` while its own Actions run was failing (run 34385475478), and this
+task itself was never reviewed for that reason, so this is a decision needed
+from the repository owner, not scheduled work — and a seventh cannot-fail
+assertion at
+`data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/RestDataSourceAdapterHttpTest.java:97`,
+the same vacuous `isInstanceOf(RuntimeException.class)` form task 08 removed
+from its neighbour. A survey of every test module found no other test
+asserting on a platform-specific exception type or message, so the
+cross-platform problem appears confined to the one test fixed here.
+
 ## 2026-09-09 — Task 09: shipped defaults, and closing the last gap in the log scan
 
 This closes S8 and the cheap half of S9, and brings the plan to its

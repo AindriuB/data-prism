@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-09 | 10 | `MutualTlsRestClientsHttpsTest`'s refusal assertion required an `SSLException`, true on Windows but not Linux CI; now accepts either platform's observable, documented in javadoc; verified green on Actions run 34386674901 | `## 2026-09-09 — Task 10: the mTLS refusal assertion made cross-platform` |
 | 2026-09-09 | 09 | Shipped defaults fixed to match what's tested (no `EXPOSE_SOURCE_NAMES` by default, named `developer` policy factory); `PiiLogScanTest` parses audit records per-field, closing the word-boundary gap; plan reaches its recommended stopping point | `## 2026-09-09 — Task 09: shipped defaults, and closing the last gap in the log scan` |
 | 2026-09-09 | 07 | OAuth2 resource server, Micrometer, PII log scan — closes S8/S9a; real HTTP MCP end-to-end test; a false PII-leak alarm traced to concurrent Maven contention, not a leak | `## 2026-09-09 — Task 07: OAuth2 resource server, Micrometer, PII log scan` |
 | 2026-09-09 | 06 | Streamable HTTP transport, per-request caller context, authorisation at the tool — PrivacyContext now derives from an authenticated session | `## 2026-09-09 — Task 06: streamable HTTP transport, per-request caller context, authorisation at the tool` |

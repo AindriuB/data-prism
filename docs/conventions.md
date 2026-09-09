@@ -114,22 +114,32 @@ disable the validator, and the test must fail. See the reviewer-isolation rule
 below before scheduling one of these alongside a review.
 
 **Assertions that cannot fail are a recurring class of bug in this project, not
-a one-off.** `docs/plan/HISTORY.md` has counted six as of task 09; the three
-with a precise citation:
+a one-off.** `docs/plan/HISTORY.md` has counted seven as of task 10; four with
+a precise citation:
 
 - `MutualTlsRestClientsHttpsTest`'s no-client-certificate case asserted
   `isInstanceOf(RuntimeException.class)`, which an unreachable test server
   satisfies as easily as a rejected handshake. Fixed to assert
   `ResourceAccessException` with an `SSLException` in the cause chain. Found in
-  S8 wave 1, fixed in the "S8: three inert controls made to run" entry.
+  S8 wave 1, fixed in the "S8: three inert controls made to run" entry. That
+  fix was itself platform-specific — it held on Windows but not on Linux CI,
+  where the server closes the TCP connection before the client reads the TLS
+  alert — and task 10 replaced the single `SSLException` check with a
+  cross-platform property covering both observables. See `docs/plan/HISTORY.md`
+  — grep "Task 10" — for what changed and why the Linux branch still matches a
+  literal JDK message string.
 - `EndToEndTest`'s reserved-argument assertion passed on a blanket `DENY`,
   unable to distinguish "the caller's own `scopeId` was ignored" from "the
   call was refused for an unrelated reason". Fixed to assert content equality
   against a plain call plus a single `ALLOW` audit event naming the four
-  rejected argument names. Same entry as above.
+  rejected argument names. Same entry as the original mTLS fix above.
 - `PiiLogScanTest.java:191-193` sums two complementary counts and asserts the
   sum equals the total scanned — true by construction, since the second count
   is defined as the complement of the first. Left open; see `docs/plan/PLAN.md`.
+- `RestDataSourceAdapterHttpTest.java:97` asserts
+  `isInstanceOf(RuntimeException.class)`, the same vacuous form as the first
+  item above, in the neighbouring module. Found by task 10's survey; left
+  open, see `docs/plan/PLAN.md`.
 
 Grep `docs/plan/HISTORY.md` for "vacuous" and "cannot fail" for the full
 history, including the earlier instances this list does not itemise

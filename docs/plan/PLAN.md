@@ -42,6 +42,13 @@ Closed the last two real defects and cleared four pieces of debt. Task 09
 merged 2026-09-09; `docs/plan/tasks/` has no open task file left. See
 `docs/plan/HISTORY.md` — grep `Task 09` — for what landed and what it cost.
 
+### Task 10 — done
+
+Made `main`'s red-on-Linux mTLS refusal assertion hold on both platforms it
+runs on, without weakening it. Task 10 merged 2026-09-09, verified green on
+Actions run 34386674901; `docs/plan/tasks/` has no open task file. See
+`docs/plan/HISTORY.md` — grep `Task 10` — for what landed and what it cost.
+
 ## Recommended stopping point — reached 2026-09-09
 
 The plan is now at the point recorded below: every claim the README makes is
@@ -87,6 +94,23 @@ it is a doc fix:
 - No `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, or issue/PR
   templates. Security reporting is folded into `CONTRIBUTING.md`, which works
   but is non-standard for a public repository.
+
+Found by task 10, not fixed there because neither is that task's work:
+
+- **Repository auto-merge is enabled with no branch protection requiring the
+  build to pass.** PR #9 merged into `main` while its own Actions run was
+  failing (run 34385475478), and neither PR #9 nor #10 needed a `gh pr merge`.
+  A red commit can reach `main` automatically, and a task branch can merge
+  without ever passing through `/verify` — task 10 itself was never reviewed,
+  for that reason. This is a repository settings change and belongs to the
+  repository owner; it is a decision needed, not work to schedule.
+- A seventh cannot-fail assertion:
+  `data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/RestDataSourceAdapterHttpTest.java:97`
+  is a bare `isInstanceOf(RuntimeException.class)`, the same vacuous form task
+  08 removed from its neighbour. Listed in `docs/conventions.md`'s enumerated
+  list. A survey of every test module found no other test asserting on a
+  platform-specific exception type or message, so the cross-platform problem
+  task 10 fixed appears confined to the one test it fixed.
 
 ## Someday
 
