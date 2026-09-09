@@ -97,13 +97,22 @@ it is a doc fix:
 
 Found by task 10, not fixed there because neither is that task's work:
 
-- **Repository auto-merge is enabled with no branch protection requiring the
-  build to pass.** PR #9 merged into `main` while its own Actions run was
-  failing (run 34385475478), and neither PR #9 nor #10 needed a `gh pr merge`.
-  A red commit can reach `main` automatically, and a task branch can merge
-  without ever passing through `/verify` — task 10 itself was never reviewed,
-  for that reason. This is a repository settings change and belongs to the
-  repository owner; it is a decision needed, not work to schedule.
+- ~~Repository auto-merge is enabled with no branch protection requiring the
+  build to pass.~~ **Resolved 2026-09-09.** Branch protection on `main` now
+  requires the `build` status check (GitHub Actions), up to date with the
+  branch being merged, enforced for admins, with force-push and deletion
+  blocked. Auto-merge now has a required check to wait on, so the failure
+  mode that let PR #9 merge while its own Actions run was failing (run
+  34385475478) is closed. Consequence for the loop: `/record` can no longer
+  merge a task branch locally and push straight to `main` — that push is
+  itself rejected, since the merged commit has no check run against it yet.
+  Every task branch now reaches `main` through a PR whose head commit goes
+  green. See `docs/workflow.md`'s Phase 4 for the updated flow.
+- The kit's own `/record` skill definition (outside this repository, in
+  `~/.claude/commands/`) still describes the old flow — merge locally, push
+  straight to `main`. This repository cannot fix it; it belongs to the
+  repository owner to update in the kit itself, or the next `/record`
+  invocation will attempt a push that branch protection now rejects.
 - A seventh cannot-fail assertion:
   `data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/RestDataSourceAdapterHttpTest.java:97`
   is a bare `isInstanceOf(RuntimeException.class)`, the same vacuous form task

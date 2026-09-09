@@ -85,10 +85,36 @@ It does not get "fixed inline" — that is how the main context blows up.
 
 ## Phase 4 — record
 
-`scribe` merges the passing branches, removes their worktrees, moves the task
-files out of `tasks/`, and updates `PLAN.md` and `HISTORY.md`. It is the only
-role that touches those files, which is why they never end up with conflicting
-concurrent edits.
+`main` has branch protection: the `build` check (GitHub Actions) is required
+and must be up to date with the branch being merged, and this is enforced for
+admins too. A commit merged locally and pushed straight to `main` has no check
+run against it and GitHub rejects the push — this applies to a direct push,
+not only to a fast-forward merge. So a passing branch reaches `main` through a
+pull request, not a local merge:
+
+1. Push the task branch, open a PR against `main`.
+2. Let Actions run `build` on the PR's head commit.
+3. Merge once `build` is green — auto-merge is safe to enable now, because the
+   required check gives it something to wait on. Before protection existed,
+   auto-merge had nothing gating it and a red commit reached `main` this way;
+   see `docs/plan/HISTORY.md`, grep "Task 10", for that incident. Do not rely
+   on `.claude/scripts/wt-merge.sh` for this — it merges and pushes locally,
+   which the protected branch now refuses, and it was already broken on
+   Windows under Git Bash (`resolve_repo` vs `pwd` mismatch) before this
+   changed. It is part of the shared kit, not this repository, so push a
+   branch and open a PR by hand (or via `gh`) instead of patching the script
+   here.
+4. After the PR is merged, `scribe` removes the task's worktree, moves the
+   task file out of `tasks/`, and updates `PLAN.md` and `HISTORY.md`. It is
+   the only role that touches those files, which is why they never end up
+   with conflicting concurrent edits.
+
+**CI merging the PR does not replace the scribe's post-merge full-suite
+re-run.** `build` verifies the merge commit for one PR at a time; the reason
+this project re-runs the full suite after closing a wave is that
+individually-green branches can still break in combination once several land
+together, and branch protection does nothing to change that — `scribe` still
+runs the suite after a wave closes.
 
 Each `HISTORY.md` entry gets its row in `HISTORY-INDEX.md` in the same commit.
 That pairing is what keeps the index trustworthy enough for `planner` to rely
