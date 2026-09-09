@@ -2,7 +2,9 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.SyntheticValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +50,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
 
     private final SyntheticValueSource generator;
     private final PrivacyCluster cluster;
+    private final PrivacyMetrics metrics;
 
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
@@ -55,13 +58,22 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
     private final AtomicLong conflicts = new AtomicLong();
 
     public CachingSyntheticValueSource(SyntheticValueSource generator, PrivacyCluster cluster) {
+        this(generator, cluster, PrivacyMetrics.none());
+    }
+
+    public CachingSyntheticValueSource(SyntheticValueSource generator, PrivacyCluster cluster,
+                                        PrivacyMetrics metrics) {
         this.generator = Objects.requireNonNull(generator, "generator");
         this.cluster = Objects.requireNonNull(cluster, "cluster");
+        // Wrapped once, here, so nothing below has to guard a metrics call: none
+        // of them can throw, so none of them can fail, skip or alter a lookup.
+        this.metrics = FailSafeMetrics.wrap(Objects.requireNonNull(metrics, "metrics"));
     }
 
     @Override
     public String syntheticValue(String subjectId, PrivacyNamespace namespace, PrivacyContext context) {
         String generated = null;
+        boolean lookupOutcomeRecorded = false;
         try {
             IMap<String, String> identities = cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP);
             String key = ScopeKeys.identity(context.scopeId(), subjectId, namespace);
@@ -69,10 +81,14 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             String cached = identities.get(key);
             if (cached != null) {
                 hits.incrementAndGet();
+                lookupOutcomeRecorded = true;
+                metrics.increment(Metric.IDENTITY_CACHE_HIT, namespace.name());
                 return cached;
             }
 
             misses.incrementAndGet();
+            lookupOutcomeRecorded = true;
+            metrics.increment(Metric.IDENTITY_CACHE_MISS, namespace.name());
             generated = generator.syntheticValue(subjectId, namespace, context);
             store(identities, key, generated, subjectId, namespace, context);
             return generated;
@@ -82,6 +98,14 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             failures.incrementAndGet();
             LOG.warn("identity cache unavailable, falling back to computation: {}",
                     cacheFailure.getClass().getSimpleName());
+            // lookupOutcomeRecorded is set once a hit or a miss has already been
+            // emitted above. When it is false, neither ran — the cluster call
+            // itself threw, including ScopeKeys.identity — so nothing above has
+            // recorded an outcome and no computation was saved either; emit a
+            // miss here instead.
+            if (!lookupOutcomeRecorded) {
+                metrics.increment(Metric.IDENTITY_CACHE_MISS, namespace.name());
+            }
             return generated != null
                     ? generated
                     : generator.syntheticValue(subjectId, namespace, context);
@@ -97,6 +121,7 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             // Not a race: two threads deriving the same key derive the same value.
             // Something about the derivation changed while the scope was live.
             conflicts.incrementAndGet();
+            metrics.increment(Metric.IDENTITY_COLLISION, namespace.name());
             LOG.warn("cached identity for a live scope disagrees with the generator; "
                     + "the key, algorithm version or vocabulary changed mid-scope. "
                     + "Overwriting so output stays a function of the generator, not the cache.");

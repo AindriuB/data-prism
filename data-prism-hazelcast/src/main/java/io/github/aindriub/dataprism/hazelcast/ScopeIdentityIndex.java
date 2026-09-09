@@ -2,6 +2,8 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.core.Metric;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -27,9 +29,15 @@ import java.util.Optional;
 public final class ScopeIdentityIndex {
 
     private final PrivacyCluster cluster;
+    private final PrivacyMetrics metrics;
 
     public ScopeIdentityIndex(PrivacyCluster cluster) {
+        this(cluster, PrivacyMetrics.none());
+    }
+
+    public ScopeIdentityIndex(PrivacyCluster cluster, PrivacyMetrics metrics) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
     }
 
     /**
@@ -41,8 +49,10 @@ public final class ScopeIdentityIndex {
             return Optional.empty();
         }
         IMap<String, String> index = cluster.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP);
-        return Optional.ofNullable(index.get(
+        Optional<String> subject = Optional.ofNullable(index.get(
                 ScopeKeys.reidentification(scopeId, namespace, synthetic)));
+        subject.ifPresent(ignored -> metrics.increment(Metric.REIDENTIFICATION, namespace.name()));
+        return subject;
     }
 
     /**
