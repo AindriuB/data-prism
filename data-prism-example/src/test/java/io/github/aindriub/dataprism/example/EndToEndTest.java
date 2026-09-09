@@ -110,17 +110,34 @@ class EndToEndTest {
     }
 
     @Test
-    @DisplayName("a caller cannot pass its own scope or purpose")
+    @DisplayName("a caller cannot pass its own principal, scope, purpose or case id")
     void ignoresCallerSuppliedContext() {
-        call(Map.of("entityType", "CUSTOMER", "subjectId", "123",
-                "scopeId", "CASE-SOMEONE-ELSE", "purpose", "whatever"));
+        McpSchema.CallToolResult withoutReservedArguments =
+                call(Map.of("entityType", "CUSTOMER", "subjectId", "123"));
+        audited.clear();
 
-        // The extra arguments are not read at all. Scope comes from the session,
-        // which is what stops one investigation reaching another's pseudonyms.
-        // The attempt is not merely ignored, though: its names are audited.
+        McpSchema.CallToolResult withReservedArguments = call(Map.of(
+                "entityType", "CUSTOMER", "subjectId", "123",
+                "principalId", "someone-else",
+                "scopeId", "CASE-SOMEONE-ELSE",
+                "purpose", "whatever",
+                "caseId", "CASE-SOMEONE-ELSE"));
+
+        // The reserved arguments are not read at all: the call is served on
+        // session-derived context rather than refused. Equal content is what
+        // separates "ignored, call proceeded" from "refused" -- a denial
+        // cannot produce the same content as the unadulterated call above.
+        assertThat(withReservedArguments.isError()).isNotEqualTo(Boolean.TRUE);
+        assertThat(withReservedArguments.content()).isEqualTo(withoutReservedArguments.content());
+
+        // Scope comes from the session, which is what stops one investigation
+        // reaching another's pseudonyms. The attempt is not merely ignored,
+        // though: its names are audited.
         assertThat(audited).singleElement().satisfies(event -> {
-            assertThat(event.scopeId()).isEqualTo("CASE-DEMO-1");
-            assertThat(event.rejectedArguments()).containsExactlyInAnyOrder("scopeId", "purpose");
+            assertThat(event.policyDecision()).isEqualTo("ALLOW");
+            assertThat(event.scopeId()).isEqualTo(assembly.privacyContext().scopeId());
+            assertThat(event.rejectedArguments())
+                    .containsExactlyInAnyOrder("principalId", "scopeId", "purpose", "caseId");
         });
     }
 
