@@ -10,10 +10,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.IOException;
@@ -64,7 +66,7 @@ class MutualTlsRestClientsHttpsTest {
 
     private HttpsServer server;
     private TlsSettings clientTlsSettings;
-    private Path clientTrustStorePath;
+    private URI base;
 
     @BeforeEach
     void startServer() throws Exception {
@@ -102,7 +104,6 @@ class MutualTlsRestClientsHttpsTest {
 
         this.clientTlsSettings = new TlsSettings(clientKeyStore, clientTrustStore, "PKCS12",
                 KEY_STORE_PASSWORD_ENV, TRUST_STORE_PASSWORD_ENV);
-        this.clientTrustStorePath = clientTrustStore;
 
         SSLContext serverContext = sslContext(serverKeyStore, serverTrustStore, true);
 
@@ -125,6 +126,7 @@ class MutualTlsRestClientsHttpsTest {
             }
         });
         server.start();
+        this.base = URI.create("https://127.0.0.1:" + server.getAddress().getPort());
     }
 
     @AfterEach
@@ -135,7 +137,6 @@ class MutualTlsRestClientsHttpsTest {
     @Test
     @DisplayName("a client built by the factory with the client certificate fetches a record")
     void factoryBuiltClientCompletesTheHandshake() {
-        URI base = URI.create("https://127.0.0.1:" + server.getAddress().getPort());
         var adapter = new RestDataSourceAdapter<>(
                 new RestSource("customer-api", base, "/customers/{subject}", Duration.ofSeconds(5), true),
                 MutualTlsRestClients.build(clientTlsSettings), String.class);
@@ -145,22 +146,43 @@ class MutualTlsRestClientsHttpsTest {
         assertThat(body).contains("\"customerId\":\"123\"");
     }
 
+    /**
+     * Built from exactly the same server, the same trust store — {@link
+     * TlsSettings#trustStore()} on the very {@link #clientTlsSettings} the
+     * passing test's factory call also reads — and the same {@link #base} URI
+     * as {@link #factoryBuiltClientCompletesTheHandshake}. The only argument
+     * that differs from that client's construction is {@code withKeyManager},
+     * passed {@code false} below where the factory would install a real key
+     * manager. So neither a wrong URL, a missing file nor a store password can
+     * be the reason the fetch below fails: only the absent certificate can.
+     */
     @Test
-    @DisplayName("a client with no certificate is refused by the server")
+    @DisplayName("a client with no certificate is refused by the server with an SSL handshake failure")
     void clientWithoutCertificateIsRefused() throws Exception {
-        SSLContext trustOnly = sslContext(null, clientTrustStorePath, false);
+        SSLContext noKeyManager = sslContext(null, clientTlsSettings.trustStore(), false);
         RestClient noCertClient = RestClient.builder()
                 .requestFactory(new JdkClientHttpRequestFactory(
-                        HttpClient.newBuilder().sslContext(trustOnly).build()))
+                        HttpClient.newBuilder().sslContext(noKeyManager).build()))
                 .build();
 
-        URI base = URI.create("https://127.0.0.1:" + server.getAddress().getPort());
         var adapter = new RestDataSourceAdapter<>(
                 new RestSource("customer-api", base, "/customers/{subject}", Duration.ofSeconds(5), true),
                 noCertClient, String.class);
 
         assertThatThrownBy(() -> adapter.fetch(DataRequest.of("CUSTOMER", "123")))
-                .isInstanceOf(RuntimeException.class);
+                .isInstanceOf(ResourceAccessException.class)
+                .satisfies(e -> assertThat(causeChainContains(e, SSLException.class))
+                        .as("cause chain of %s should contain an SSLException", e)
+                        .isTrue());
+    }
+
+    private static boolean causeChainContains(Throwable throwable, Class<? extends Throwable> type) {
+        for (Throwable current = throwable.getCause(); current != null; current = current.getCause()) {
+            if (type.isInstance(current)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static SSLContext sslContext(Path keyStorePath, Path trustStorePath, boolean withKeyManager)

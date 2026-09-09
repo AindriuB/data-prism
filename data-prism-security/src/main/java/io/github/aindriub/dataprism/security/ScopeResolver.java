@@ -24,10 +24,15 @@ public final class ScopeResolver {
 
     private final PseudonymisationVersion pseudonymisationVersion;
     private final Duration maxScopeLifetime;
+    private final PurposeValidator purposeValidator;
 
-    public ScopeResolver(PseudonymisationVersion pseudonymisationVersion, Duration maxScopeLifetime) {
+    public ScopeResolver(
+            PseudonymisationVersion pseudonymisationVersion,
+            Duration maxScopeLifetime,
+            PurposeValidator purposeValidator) {
         this.pseudonymisationVersion = Objects.requireNonNull(pseudonymisationVersion, "pseudonymisationVersion");
         this.maxScopeLifetime = Objects.requireNonNull(maxScopeLifetime, "maxScopeLifetime");
+        this.purposeValidator = Objects.requireNonNull(purposeValidator, "purposeValidator");
         if (maxScopeLifetime.isZero() || maxScopeLifetime.isNegative()) {
             throw new IllegalArgumentException("maxScopeLifetime must be positive");
         }
@@ -36,8 +41,10 @@ public final class ScopeResolver {
     /**
      * @throws SecurityRefusedException with code {@code TOKEN_EXPIRED} when
      *                                  {@code caller}'s token has already expired against
-     *                                  {@code clock}, or with the decision's own
-     *                                  {@code denialCode} when {@code decision} is not allowed
+     *                                  {@code clock}, with the decision's own
+     *                                  {@code denialCode} when {@code decision} is not allowed, or
+     *                                  with code {@link PurposeValidator#UNKNOWN_PURPOSE} when
+     *                                  {@code caller}'s purpose is not in the configured list
      */
     public PrivacySession resolve(AuthenticatedCaller caller, AuthorizationDecision decision, Clock clock) {
         Objects.requireNonNull(caller, "caller");
@@ -51,6 +58,7 @@ public final class ScopeResolver {
         if (!decision.allowed()) {
             throw new SecurityRefusedException(decision.denialCode(), "caller is not authorised");
         }
+        String purpose = purposeValidator.validate(caller.purpose());
 
         Instant configuredExpiry = now.plus(maxScopeLifetime);
         Instant expiresAt = caller.expiresAt() == null || configuredExpiry.isBefore(caller.expiresAt())
@@ -61,7 +69,7 @@ public final class ScopeResolver {
                 scopeId(caller.caseId()),
                 decision.scopeType(),
                 decision.privacyProfile(),
-                caller.purpose(),
+                purpose,
                 expiresAt,
                 pseudonymisationVersion);
 
