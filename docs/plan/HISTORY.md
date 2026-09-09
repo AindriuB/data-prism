@@ -17,6 +17,65 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — Task 09: shipped defaults, and closing the last gap in the log scan
+
+This closes S8 and the cheap half of S9, and brings the plan to its
+recommended stopping point. Five items, two substantive.
+
+`DataPrismAssembly` stopped minting a context holding
+`Capability.EXPOSE_SOURCE_NAMES` — the capability that unmasks real source
+names — and handing it to any caller that asked. Task 06 worked around this
+rather than fixing it, because it did not own the file, and the visible
+symptom was that the documented worked example showed unmasked source names
+while the actual application path masked them. `WorkedExampleTest`'s
+assertions on literal source names moved to aliases, so the specification's
+§64 worked example now demonstrates what running the application actually
+does. The shipped `developer` policy became a named factory that main uses and
+a test asserts, so the default that ships is the one under test rather than
+one every test rebuilds for itself.
+
+`PiiLogScanTest` now parses `dataprism.audit` records field by field instead
+of matching raw text on word boundaries. That closes a residual gap — a banned
+value glued to word characters, `subject=SUBJ-123a7f9` or `id_456_x`,
+previously passed the scan, and the first is the shape a pseudonymisation bug
+concatenating a raw id onto a prefix would produce.
+
+**Cost worth recording — this test has now had three separate flake sources,
+and the third was found only because 30 sequential runs were required as
+evidence.** First, bare substring matching collided with random hex in audit
+fields, about one run in four. Second, a real `Clock.systemUTC()` timestamp:
+not hex, but its nanosecond digits are equally random, and one run
+coincidentally spelled `456`. Third — not a flake but the thing that masked
+the diagnosis — concurrent Maven processes against one `target/`, recorded
+under task 07.
+
+The general lesson: any unpinned field carrying random digits can impersonate
+a leaked identifier, and a leak detector that cries wolf is one nobody reads.
+The fix is that a field is exempt from scanning only by matching a pinned
+shape, never by its name — an exemption keyed on a name is one a future field
+inherits by accident, which is exactly how the timestamp field became a flake
+source. Verified at review by making an exemption name-only and watching the
+guard test redden.
+
+Verification evidence: 50 consecutive sequential runs of `PiiLogScanTest`, 10
+each of `WorkedExampleTest`, `ShippedDefaultsTest` and `EndToEndTest`, all
+clean, no leaked ports or JVMs.
+
+Two small items left open, not fixed here: `PiiLogScanTest.java:191-193`, a
+tautological sum assertion (the sixth cannot-fail assertion found in this
+repository, this one from the task brief rather than the implementer); and
+`PiiLogScanTest.java:104-112`, a javadoc claiming "twenty placeholders" where
+`AUDIT_KEYS` holds 19 names because the sink's `seq={}/{}` is two placeholders
+folded into one field. Both recorded in `docs/plan/PLAN.md`.
+
+**Cost:** the flake diagnosis above is what took the time — three unrelated
+causes had to be told apart before the third fix could be trusted, and the
+only way to trust it was volume (30 sequential runs) rather than a smaller
+number of clean ones. Nothing was tried and abandoned on the substantive
+items; the factory-not-caller fix for `EXPOSE_SOURCE_NAMES` was the design
+task 06 had already pointed at but could not make because it did not own
+`DataPrismAssembly`.
+
 ## 2026-09-09 — Task 07: OAuth2 resource server, Micrometer, PII log scan
 
 This closes S8 and the cheap half of S9. A Spring Boot resource server validates

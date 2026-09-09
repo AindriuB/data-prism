@@ -36,39 +36,41 @@ observability: real principal in audit, Micrometer metrics, a PII log scan that
 can actually fail) are both complete, closed by task 07 merging 2026-09-09. See
 `docs/plan/HISTORY.md` — grep `Task 07` — for what landed and what it cost.
 
-### Now — Task 09: shipped defaults and hygiene
+### Task 09 — done
 
-The last item before the plan's recommended stopping point. Two real defects —
-`DataPrismAssembly` mints a context carrying `EXPOSE_SOURCE_NAMES` by
-construction, so the worked example prints real source names while the shipped
-application masks them; and the shipped `developer` role's capability set is
-untested — plus two small pieces of debt (`ScopeResolver`'s stale javadoc,
-`data-prism-security` pulled transitively rather than declared). Task file:
-`docs/plan/tasks/09-shipped-defaults-and-hygiene.md`.
+Closed the last two real defects and cleared four pieces of debt. Task 09
+merged 2026-09-09; `docs/plan/tasks/` has no open task file left. See
+`docs/plan/HISTORY.md` — grep `Task 09` — for what landed and what it cost.
 
-**Blocked by:** nothing. Its dependency, task 07, merged 2026-09-09.
+## Recommended stopping point — reached 2026-09-09
 
-**Also queued for 09, not yet folded into its acceptance list:** `PiiLogScanTest`
-(task 07) matches banned values on word boundaries, so a banned value glued to
-word characters is not caught — `subject=SUBJ-123a7f9` and `id_456_x` both pass
-today. No current code path emits either shape, but the first is the shape a
-pseudonymiser bug concatenating a raw id would produce. Scanning the audit
-line's structured fields rather than raw text would close it. `PiiLogScanTest`
-is not in task 09's `Owns`, so this needs either a widened `Owns` or a follow-up
-task file when 09 is next planned in detail — do not silently fold it into 09's
-existing acceptance list without updating `Owns` to match.
-
-## Recommended stopping point
-
-After S8 and S9a, plus task 09's hygiene follow-ups. S8 and S9a are done; task 09
-is the only open task and the only thing between here and the stopping point.
-That is where the README stops needing an asterisk: every claim it makes is
-then true of a deployment rather than only of the library.
+The plan is now at the point recorded below: every claim the README makes is
+true of a deployment, not only of the library. Nothing is open in
+`docs/plan/tasks/`. The remaining slices stay ordered under "Someday" but are
+not scheduled — picking any of them back up is a new planning decision, not a
+continuation of this run.
 
 S10 was deferred past V1 by decision and the index it needs already exists. S11
 is the Elasticsearch connector and Docker Compose — real work, no new guarantees,
 and the three divergent stub sources it was going to build landed in S6. S12's
 mutation and load testing is for a system with users.
+
+### Small open items, unscheduled
+
+Left by task 09's close-out. Neither blocks anything; pick either up only if a
+future task already owns the file.
+
+- `PiiLogScanTest.java:191-193` — the sum assertion (`auditCount + nonAuditCount
+  == total`) is tautological: the second count is defined as the complement of
+  the first, so the assertion cannot fail. The two non-empty assertions either
+  side of it are the load-bearing checks and do work. Harmless, but the sixth
+  instance in this repository of an assertion that cannot fail — this one came
+  from the task brief itself rather than from the implementer.
+- `PiiLogScanTest.java:104-112` — `AUDIT_KEYS` holds 19 names while the javadoc
+  says "twenty placeholders": the sink's `seq={}/{}` is two placeholders folded
+  into one field. `docs/conventions.md` forbids a comment asserting a state
+  nobody established; this one should be corrected to 19, or the javadoc
+  reworded to explain the fold, next time this file is touched.
 
 ## Someday
 
