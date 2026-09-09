@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-09 | 01, 02 | S8 wave 1: InvestigationContext/Capability/metrics SPI, mTLS to sources | `## 2026-09-09 — S8 wave 1: session types, metrics SPI, and mTLS to sources` |
 | 2026-09-09 | S7 | Embedded Hazelcast: identity cache fails open, read budget fails closed, scope purge | `## 2026-09-09 — S7 embedded Hazelcast for distributed scope state` |
 | 2026-09-09 | S6 | Correlation before scrubbing; findings name which sources agree, never what they hold | `## 2026-09-09 — S6 correlation and consistency findings` |
 | 2026-09-09 | S5 | Virtual-thread fan-out with bulkhead, timeout, breaker; REST connectors; request limits | `## 2026-09-09 — S5 parallel connectors and request limits` |

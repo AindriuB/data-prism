@@ -170,6 +170,20 @@ all of these is in `design-review.md` under the section named.
   computation and changes no answer, so it degrades. An unreachable budget means
   nobody is counting, and continuing would silently remove the only limit on how
   much a caller can extract about one subject.
+- **2026-09-09 — Data Prism is an OAuth2 resource server, not a token issuer and
+  not a pass-through.** It validates caller JWTs against a configured JWKS; it
+  never forwards the caller's token upstream, calling source systems under its
+  own service identity via mTLS instead. Rejected: pass-through, because the
+  caller is the untrusted party and forwarding its token would recreate the
+  `LLM → Enterprise APIs` path that `pack.md` §87 asks network policy to make
+  impossible. It would also collapse two different authorisation questions —
+  "may this service fetch this record" and "may this caller see a
+  pseudonymised view of it" — into the first. This makes Data Prism a confused
+  deputy by construction, which is why `AuthorizationService` is a separate
+  contract from token verification: verification answers who the caller is,
+  authorization answers what the caller may see, and neither is allowed to
+  stand in for the other. RFC 8693 token exchange is a deliberate non-goal for
+  this slice.
 - **2026-09-08 — Coordinates are `io.github.aindriub` / `data-prism-*`, package
   root `io.github.aindriub.dataprism`.** Rejected: a group id under a project
   domain, which reads better but requires owning one — every close spelling of

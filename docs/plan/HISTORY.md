@@ -17,6 +17,37 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — S8 wave 1: session types, metrics SPI, and mTLS to sources
+
+The two tasks with no dependency on the rest of S8 landed first. `InvestigationContext`
+and `Capability` give the pipeline a caller shape to carry once wave 2 threads a real
+principal through it; `Metric` and `PrivacyMetrics` are the SPI wave 2 and S9a report
+through, with `PrivacyMetrics.none()` as the default so nothing downstream is forced onto
+a backend yet. `data-prism-security` is registered in the reactor as an empty module,
+ready for task 03. Outbound calls to source systems can now run over mTLS:
+`TlsSettings`, `MutualTlsRestClients`, `RestSourcesConfig`, a `requireHttps` mode on
+`RestSource`, and `tls:` block parsing. 220 tests after task 01, 224 after both, all 13
+modules, `mvn -B verify` clean with both branches merged together (neither task depended
+on the other, so this is the first time they were built as one tree).
+
+**Cost:** two follow-ups fell out of review that were real but did not block merging,
+carried forward as acceptance criteria on task 03 rather than fixed ad hoc:
+`Capability.KNOWN` has no test pinning it, so a fifth capability added later without
+updating `KNOWN` fails silently — `Metric` already has this test, in `PrivacyMetricsTest`,
+and it needed mirroring rather than inventing something new. The other is a vacuous
+assertion: `MutualTlsRestClientsHttpsTest`'s no-client-certificate case asserts
+`isInstanceOf(RuntimeException.class)`, which would also pass if the test server were
+simply unreachable, so it does not prove what it claims to. This is the fourth vacuous
+assertion this project has shipped, which is why `docs/conventions.md` calls the pattern
+out by name — worth treating as a class of bug to look for on every review, not a one-off.
+
+Also settled this session and worth not re-litigating: Data Prism is an OAuth2 resource
+server, never a token issuer and never a pass-through of the caller's token to source
+systems. See `docs/architecture.md#decisions-worth-knowing` (2026-09-09) for the full
+reasoning — the short version is that pass-through would recreate the network path
+`pack.md` §87 asks to be impossible, and would collapse two distinct authorisation
+questions into one.
+
 ## 2026-09-09 — S7 embedded Hazelcast for distributed scope state
 
 Three pieces of shared state that look alike and are not: the identity cache, the

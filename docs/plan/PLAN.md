@@ -48,17 +48,34 @@ Already in place: `ScopeIdentityIndex.endScope()` purges a scope's identities,
 reverse index and budget, so revocation is largely done; `SourceAliasing`'s
 expose-real-names flag is capability-shaped and becomes a real capability.
 
-**Four questions to settle before starting:**
+The four questions below are answered; the authentication model — resource
+server, not issuer, not pass-through — is recorded in
+`docs/architecture.md#decisions-worth-knowing` (2026-09-09).
 
-1. Token issuer — a specific IdP, or any JWT against a configured JWKS?
-2. Where a case comes from — does an investigator arrive with a `case_id` claim,
-   or does Data Prism own scope lifecycle as a user-facing surface? This is the
-   difference between a resolver and another whole slice.
-3. The purpose taxonomy — even three or four values. Without a list,
-   `PurposeValidator` compares strings against nothing.
-4. Whether stdio survives as a dev-only mode, refused in production profiles.
+**Four questions, settled:**
 
-**Blocked by:** those four answers. S5, S6 and S7 merged.
+1. Token issuer — any JWT against a configured JWKS, no specific IdP.
+2. Where a case comes from — an investigator arrives with a `case_id` claim;
+   Data Prism does not own scope lifecycle as a user-facing surface.
+3. The purpose taxonomy — a configurable list, `PurposeValidator` fails closed
+   on anything not in it.
+4. stdio survives as a dev-only mode, refused in production profiles.
+
+Four waves, in dependency order:
+
+- **Wave 1 — done.** Tasks 01 (session types and metrics SPI) and 02 (mTLS for
+  outbound source calls) merged 2026-09-09.
+- **Wave 2 — next.** Tasks 03 (security module: caller, authorisation, purpose,
+  scope resolution), 04 (real principal through orchestration) and 05
+  (Hazelcast identity and collision metrics) — all depend only on 01, so run in
+  parallel.
+- **Wave 3.** Task 06 (streamable HTTP transport, per-request caller context,
+  authorisation at the tool) — depends on 03 and 04.
+- **Wave 4.** Task 07 (OAuth2 resource server app, Micrometer binding, PII log
+  scan) — depends on 02, 05 and 06.
+
+**Blocked by:** nothing outstanding for wave 2. Task files for waves 2–4 are at
+`docs/plan/tasks/03-security-module.md` through `07-resource-server-app-and-pii-log-scan.md`.
 
 ### S9a — The cheap half of observability
 
