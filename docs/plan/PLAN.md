@@ -73,25 +73,31 @@ of).
 - **Wave 2.5 — done.** Task 08 (purpose validation composed into
   `ScopeResolver`; the mTLS and reserved-argument tests made able to fail)
   merged 2026-09-09.
-- **Wave 3 — next.** Task 06 (streamable HTTP transport, per-request caller
-  context, authorisation at the tool) — depended on 03, 04 and 08, now
-  unblocked. 08 released `EndToEndTest`, which 06 now owns alongside
-  `WorkedExampleTest`.
-- **Wave 4.** Task 07 (OAuth2 resource server app, Micrometer binding, PII log
-  scan) — depends on 02, 05 and 06.
+- **Wave 3 — done.** Task 06 (streamable HTTP transport, per-request caller
+  context, authorisation at the tool) merged 2026-09-09. `PrivacyContext` now
+  derives from an authenticated session; `GetEntityContextTool` reads the
+  caller from `exchange.transportContext()`, authorises, resolves the
+  session, and audits a denial.
+- **Wave 4 — next.** Task 07 (OAuth2 resource server app, Micrometer binding,
+  PII log scan) — depends on 02, 05 and 06, now unblocked.
 
-**Blocked by:** nothing outstanding for wave 3. Task file at
-`docs/plan/tasks/06-streamable-http-transport.md`; task 07's file is at
-`docs/plan/tasks/07-resource-server-app-and-pii-log-scan.md` and stays blocked
-until wave 3 lands.
+**Blocked by:** nothing outstanding for wave 4. Task file at
+`docs/plan/tasks/07-resource-server-app-and-pii-log-scan.md`.
 
-**Open item, not actioned by 08:** `ScopeResolver`'s class javadoc
-(`data-prism-security/src/main/java/io/github/aindriub/dataprism/security/ScopeResolver.java:12-22`)
-still describes only scopeId and pseudonymisation pinning, omitting the purpose
-refusal that is now the class's third responsibility. Task 06 writes the first
-call site of the three-argument constructor and its author will read that
-javadoc first — worth a one-line fix when 06 touches the file, not a task of its
-own.
+**Open items from task 06, being planned as a follow-up task:**
+1. `WorkedExampleTest` runs on `assembly.investigationContext()` and prints
+   real source names — the documented worked example no longer matches what
+   running the application shows.
+2. `ExampleApplication.java:49` grants `Capability.EXPOSE_SOURCE_NAMES` to the
+   shipped `developer` role; no test kills this, so the shipped default is
+   unguarded.
+3. Nothing exercises the HTTP transport end to end — the `contextExtractor`
+   delivering a real caller into `exchange.transportContext()` on a real
+   request is unverified.
+4. `ScopeResolver`'s class javadoc still omits the purpose refusal added in
+   task 08.
+5. `data-prism-example/pom.xml` gets `data-prism-security` transitively
+   through `mcp` rather than declaring it directly.
 
 ### S9a — The cheap half of observability
 

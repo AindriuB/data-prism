@@ -17,6 +17,71 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — Task 06: streamable HTTP transport, per-request caller context, authorisation at the tool
+
+This is the task that makes S8 mean something. `PrivacyContext` was a constant
+and `scopeId` is half the pseudonymisation key, so scope isolation was real in
+the code and vacuous in the deployment — there was only ever one scope. It now
+derives from an authenticated session.
+
+`DataPrismMcpServer` exposes two named factories instead of one constructor: a
+stdio mode that refuses to start without an explicit development flag or under
+a production profile, and a streamable HTTP mode taking a caller-supplied
+`contextExtractor`. Both build `JacksonMcpJsonMapper` over the single
+`DataPrismObjectMapper.create()`, so boundary 1 holds on both paths and
+`ArchitectureTest` still enforces the one construction site.
+
+`GetEntityContextTool` reads the caller from `exchange.transportContext()` —
+it previously discarded the exchange entirely — then authorises, resolves the
+session, and audits a denial. No caller means refusal with zero orchestrator
+calls. A denial returns a code only, never partial data.
+
+**Cost:** the task text said to use the assembly's development caller, but
+`DataPrismAssembly.investigationContext()` carries `EXPOSE_SOURCE_NAMES` by
+construction — the capability that unmasks real source names — so following
+the task text literally would have violated the task's own acceptance
+criterion that no dev principal holds it by default. The implementer built a
+scoped-down caller in `ExampleApplication` and reported the contradiction
+rather than silently choosing, and review confirmed that was right. The
+consequence is that `DataPrismAssembly` still hands that context to anything
+else that asks, and `WorkedExampleTest` is one such caller — now open item 1
+below.
+
+Review found no defects. Mutation proofs covered blanket ALLOW and blanket
+DENY, `MCP_DENIED` removal, `MCP_REQUESTS` removal, `ReservedArguments`
+bypass, a silent fallback caller, both halves of the stdio guard, a constant
+`scopeId`, and `EXPOSE_SOURCE_NAMES` leaked into every decision. One
+surviving mutant was correctly identified as equivalent rather than a gap:
+neutralising the tool's own `!decision.allowed()` branch survives because
+`ScopeResolver.resolve` re-refuses with the same code — defence in depth
+working, not dead code.
+
+One correction to the record, because it matters for how these numbers are
+trusted: the reviewer reported "286 tests" from its scratch clone while the
+tester reported 300. The tester was right — the branch has 292 `@Test` + 8
+`@ArchTest` = 300, main has 279 + 8 = 287, no parameterized tests, and the
+reviewer's clone was not this branch; 286 matches neither tree. Its
+per-criterion findings stood regardless, each anchored to a file:line in the
+actual worktree with mutation proofs run there. The criterion that replaced
+the stale literal is only as good as the tree it is measured on.
+
+Open items, not fixed here, going into a follow-up task:
+1. `WorkedExampleTest` still runs on `assembly.investigationContext()` and
+   prints real source names, so the documented worked example no longer
+   matches what running the application shows.
+2. Granting `Capability.EXPOSE_SOURCE_NAMES` to the shipped `developer` role
+   in `ExampleApplication.java:49` kills no test — every capability test
+   builds its own policy, so the shipped default is unguarded.
+3. Nothing exercises the HTTP transport end to end: the new test asserts the
+   builder returned non-null and never starts a server or opens a socket, and
+   `EndToEndTest` drives the call handler through a synthetic exchange. The
+   `contextExtractor` delivering a real caller into
+   `exchange.transportContext()` on a real request is unverified.
+4. `ScopeResolver`'s class javadoc still omits the purpose refusal added in
+   task 08.
+5. `data-prism-example/pom.xml` gets `data-prism-security` transitively
+   through `mcp` rather than declaring it directly.
+
 ## 2026-09-09 — S8: three inert controls made to run
 
 The theme is worth recording as a theme, because it is the shape of defect this
