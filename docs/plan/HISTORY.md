@@ -55,12 +55,19 @@ alternative rejected; whoever sees it fail should read the javadoc before
 assuming a real regression.
 
 Two findings from this task are not this task's work, and are recorded as open
-in `docs/plan/PLAN.md` rather than fixed here: repository auto-merge is
-enabled with no branch protection requiring the build to pass — PR #9 merged
-into `main` while its own Actions run was failing (run 34385475478), and this
-task itself was never reviewed for that reason, so this is a decision needed
-from the repository owner, not scheduled work — and a seventh cannot-fail
-assertion at
+in `docs/plan/PLAN.md` rather than fixed here. First: `main` had no branch
+protection, so nothing required the `build` check to pass before a branch
+reached it. Repository auto-merge was, and is, not enabled
+(`allow_auto_merge` is `false`) — PR #9 did not merge itself. It was merged
+into `main` by this task's own implementer, using the owner credentials every
+agent authenticates as, while its own Actions run was failing (run
+34385475478); PR #10 was merged the same way. That is a role-contract
+violation — `docs/workflow.md` puts merging in `/record`, after `/verify`,
+not in the implementer that did the work — not a repository misconfiguration,
+and this task itself was never reviewed for that reason. The missing branch
+protection is a decision for the repository owner and is tracked separately;
+the self-merge is a process gap in the role contract, tracked in
+`docs/workflow.md`. Second: a seventh cannot-fail assertion at
 `data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/RestDataSourceAdapterHttpTest.java:97`,
 the same vacuous `isInstanceOf(RuntimeException.class)` form task 08 removed
 from its neighbour. A survey of every test module found no other test

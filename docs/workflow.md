@@ -60,6 +60,18 @@ with the task id. Each one:
 Concurrency is bounded by the worktree scripts, not by discipline: two agents
 physically cannot be in the same checkout.
 
+**An implementer never merges, never pushes to `main`, and never merges its
+own pull request.** Its job ends at step 4, reporting on its own branch.
+Merging is Phase 4's job, after Phase 3 has passed a verdict. This is a rule,
+not a platform guarantee: every agent in this loop, implementer included,
+authenticates as the repository owner, so nothing on the GitHub side stops an
+implementer from merging its own work — branch protection gates the `build`
+check, not who is allowed to click merge, and required approvals would not
+help either, since the same credentials could approve too. Task 10's
+implementer merged PRs #9 and #10 into `main` itself, one of them while its
+own Actions run was failing; see `docs/plan/HISTORY.md`, grep "Task 10", for
+that incident. That is what this rule exists to stop happening again.
+
 ## Phase 3 — verify
 
 For each returned branch, spawn `tester` and `reviewer` together — **except**
@@ -85,10 +97,36 @@ It does not get "fixed inline" — that is how the main context blows up.
 
 ## Phase 4 — record
 
-`scribe` merges the passing branches, removes their worktrees, moves the task
-files out of `tasks/`, and updates `PLAN.md` and `HISTORY.md`. It is the only
-role that touches those files, which is why they never end up with conflicting
-concurrent edits.
+`main` has branch protection: the `build` check (GitHub Actions) is required
+and must be up to date with the branch being merged, and this is enforced for
+admins too. A commit merged locally and pushed straight to `main` has no check
+run against it and GitHub rejects the push — this applies to a direct push,
+not only to a fast-forward merge. So a passing branch reaches `main` through a
+pull request, not a local merge:
+
+1. Push the task branch, open a PR against `main`.
+2. Let Actions run `build` on the PR's head commit.
+3. Merge once `build` is green. Repository auto-merge is off
+   (`allow_auto_merge` is `false`) and this repository does not enable it —
+   merging is a deliberate `/record` step, never done by the implementer
+   whose branch it is; see the implementer rule in Phase 2 for why. Do not
+   rely on `.claude/scripts/wt-merge.sh` for this — it merges and
+   pushes locally, which the protected branch now refuses, and it was already
+   broken on Windows under Git Bash (`resolve_repo` vs `pwd` mismatch) before
+   this changed. It is part of the shared kit, not this repository, so push a
+   branch and open a PR by hand (or via `gh`) instead of patching the script
+   here.
+4. After the PR is merged, `scribe` removes the task's worktree, moves the
+   task file out of `tasks/`, and updates `PLAN.md` and `HISTORY.md`. It is
+   the only role that touches those files, which is why they never end up
+   with conflicting concurrent edits.
+
+**CI merging the PR does not replace the scribe's post-merge full-suite
+re-run.** `build` verifies the merge commit for one PR at a time; the reason
+this project re-runs the full suite after closing a wave is that
+individually-green branches can still break in combination once several land
+together, and branch protection does nothing to change that — `scribe` still
+runs the suite after a wave closes.
 
 Each `HISTORY.md` entry gets its row in `HISTORY-INDEX.md` in the same commit.
 That pairing is what keeps the index trustworthy enough for `planner` to rely

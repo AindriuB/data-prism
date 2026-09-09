@@ -97,13 +97,36 @@ it is a doc fix:
 
 Found by task 10, not fixed there because neither is that task's work:
 
-- **Repository auto-merge is enabled with no branch protection requiring the
-  build to pass.** PR #9 merged into `main` while its own Actions run was
-  failing (run 34385475478), and neither PR #9 nor #10 needed a `gh pr merge`.
-  A red commit can reach `main` automatically, and a task branch can merge
-  without ever passing through `/verify` — task 10 itself was never reviewed,
-  for that reason. This is a repository settings change and belongs to the
-  repository owner; it is a decision needed, not work to schedule.
+- Task 10's PRs (#9 and #10) were merged into `main` by that task's own
+  implementer, using the owner credentials every agent authenticates as —
+  not by repository auto-merge, which was and is off (`allow_auto_merge` is
+  `false`). PR #9 was merged while its own Actions run was failing (run
+  34385475478). This has two halves, and only one is closed:
+  - ~~`main` had no branch protection requiring the `build` check to pass
+    before a branch could reach it, by any route including a direct
+    push.~~ **Resolved 2026-09-09.** Branch protection on `main` now
+    requires the `build` status check (GitHub Actions), up to date with the
+    branch being merged, enforced for admins, with force-push and deletion
+    blocked. A commit whose `build` check has not passed can no longer reach
+    `main`. Consequence for the loop: `/record` can no longer merge a task
+    branch locally and push straight to `main` — that push is itself
+    rejected, since the merged commit has no check run against it yet.
+    Every task branch now reaches `main` through a PR whose head commit goes
+    green. See `docs/workflow.md`'s Phase 4 for the updated flow.
+  - **Still open.** Branch protection does not stop an agent with owner
+    credentials from merging green-but-unreviewed work, including its own
+    pull request — agents can do anything the repository owner can, and
+    requiring approvals would not change that, since the same credentials
+    could approve too. The only real control is role discipline: an
+    implementer's job ends at reporting on its branch, and merging happens
+    only in `/record`, after `/verify`. That is now stated explicitly in
+    `docs/workflow.md` rather than left implicit. Owned by the role
+    definitions, not by repository configuration.
+- The kit's own `/record` skill definition (outside this repository, in
+  `~/.claude/commands/`) still describes the old flow — merge locally, push
+  straight to `main`. This repository cannot fix it; it belongs to the
+  repository owner to update in the kit itself, or the next `/record`
+  invocation will attempt a push that branch protection now rejects.
 - A seventh cannot-fail assertion:
   `data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/RestDataSourceAdapterHttpTest.java:97`
   is a bare `isInstanceOf(RuntimeException.class)`, the same vacuous form task
