@@ -18,7 +18,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.TrustManagerFactory;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -164,22 +163,26 @@ class MutualTlsRestClientsHttpsTest {
      * chain contains an {@link SSLException} (typically
      * {@code SSLHandshakeException}) directly. On Linux, the server tears
      * down the TCP connection before the client gets to read the alert, so
-     * the client instead observes a plain end of stream: the JDK's HTTP/1.1
-     * header parser receives zero bytes and reports exactly that — see
+     * the client instead observes a plain end of stream, with no bytes ever
+     * read: the JDK's own HTTP/1.1 header parser reports exactly that — see
      * {@code jdk.internal.net.http.Http1HeaderParser#currentStateMessage()},
-     * whose {@code "HTTP/1.1 header parser received no bytes"} appeared
-     * verbatim in the CI failure this test now guards against — wrapping the
-     * underlying {@link EOFException} that the JDK's transport layer threw.
-     * Both observables share the same cross-platform property this test
-     * asserts: the connection produced no HTTP response at all, only a TLS
-     * failure or an immediate EOF, which is why {@link #indicatesTlsHandshakeRefusal}
-     * checks for either type in the cause chain rather than one specific
-     * exception. A closed port instead throws a {@code ConnectException}
-     * ("Connection refused"), which matches neither branch, and a request
-     * that completes the handshake and reaches a 404 never throws a {@link
-     * ResourceAccessException} in the first place — both keep failing this
-     * test, which is what distinguishes a genuine handshake refusal from
-     * every other way this test could go green for the wrong reason.
+     * which returns the literal {@link #LINUX_HANDSHAKE_REFUSAL_MESSAGE}
+     * whenever the parser is still in its initial state when the connection
+     * ends. That literal, wrapping whatever transport-level exception (an
+     * {@code EOFException} or a {@code SocketException}, depending on
+     * exactly how the kernel tore the connection down) triggered it, is what
+     * appeared verbatim in the CI run this test now guards against. Both
+     * observables share the same cross-platform property this test asserts:
+     * the connection produced no HTTP response at all, only a TLS failure or
+     * an immediate, contentless end of stream — which is why {@link
+     * #indicatesTlsHandshakeRefusal} checks for either rather than one
+     * specific exception type. A closed port instead throws a {@code
+     * ConnectException} ("Connection refused"), which matches neither
+     * branch, and a request that completes the handshake and reaches a 404
+     * never throws a {@link ResourceAccessException} in the first place —
+     * both keep failing this test, which is what distinguishes a genuine
+     * handshake refusal from every other way this test could go green for
+     * the wrong reason.
      */
     @Test
     @DisplayName("a client with no certificate is refused by the server with an SSL handshake failure")
@@ -199,15 +202,36 @@ class MutualTlsRestClientsHttpsTest {
                 .satisfies(e -> assertThat(indicatesTlsHandshakeRefusal(e))
                         .as("cause chain of %s should show a TLS handshake refusal: either an "
                                 + "SSLException (the Windows observable, where the client reads the "
-                                + "server's fatal alert) or an EOFException (the Linux observable, where "
-                                + "the server resets the connection first, so the client sees a bare end "
-                                + "of stream before any bytes arrive)", e)
+                                + "server's fatal alert) or a cause whose message is \"%s\" (the Linux "
+                                + "observable, where the server tears the connection down before the "
+                                + "client can read the alert, so the JDK's HTTP/1.1 header parser sees "
+                                + "the connection end having received no bytes at all)",
+                                e, LINUX_HANDSHAKE_REFUSAL_MESSAGE)
                         .isTrue());
     }
 
+    /**
+     * The exact string {@code jdk.internal.net.http.Http1HeaderParser
+     * #currentStateMessage()} returns when the header parser's state is
+     * still {@code INITIAL} at the point the connection ends — i.e. no
+     * bytes at all were read from the socket. This is the Linux spelling of
+     * a refused TLS handshake; see the javadoc on {@link
+     * #clientWithoutCertificateIsRefused}.
+     */
+    private static final String LINUX_HANDSHAKE_REFUSAL_MESSAGE = "HTTP/1.1 header parser received no bytes";
+
     private static boolean indicatesTlsHandshakeRefusal(Throwable throwable) {
         return causeChainContains(throwable, SSLException.class)
-                || causeChainContains(throwable, EOFException.class);
+                || causeChainContainsMessage(throwable, LINUX_HANDSHAKE_REFUSAL_MESSAGE);
+    }
+
+    private static boolean causeChainContainsMessage(Throwable throwable, String message) {
+        for (Throwable current = throwable.getCause(); current != null; current = current.getCause()) {
+            if (message.equals(current.getMessage())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean causeChainContains(Throwable throwable, Class<? extends Throwable> type) {
