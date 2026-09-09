@@ -65,7 +65,9 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
                                         PrivacyMetrics metrics) {
         this.generator = Objects.requireNonNull(generator, "generator");
         this.cluster = Objects.requireNonNull(cluster, "cluster");
-        this.metrics = Objects.requireNonNull(metrics, "metrics");
+        // Wrapped once, here, so nothing below has to guard a metrics call: none
+        // of them can throw, so none of them can fail, skip or alter a lookup.
+        this.metrics = FailSafeMetrics.wrap(Objects.requireNonNull(metrics, "metrics"));
     }
 
     @Override
@@ -96,16 +98,13 @@ public final class CachingSyntheticValueSource implements SyntheticValueSource {
             failures.incrementAndGet();
             LOG.warn("identity cache unavailable, falling back to computation: {}",
                     cacheFailure.getClass().getSimpleName());
-            // A miss was already emitted above unless the failure struck before the
-            // lookup resolved to a hit or a miss (the cluster call itself threw).
-            // In that case, and only that case, emit the miss here: nothing above
-            // ran to record it, and no computation was saved either way.
+            // lookupOutcomeRecorded is set once a hit or a miss has already been
+            // emitted above. When it is false, neither ran — the cluster call
+            // itself threw, including ScopeKeys.identity — so nothing above has
+            // recorded an outcome and no computation was saved either; emit a
+            // miss here instead.
             if (!lookupOutcomeRecorded) {
-                try {
-                    metrics.increment(Metric.IDENTITY_CACHE_MISS, namespace.name());
-                } catch (RuntimeException metricsFailure) {
-                    LOG.warn("metrics reporting failed, ignoring: {}", metricsFailure.getClass().getSimpleName());
-                }
+                metrics.increment(Metric.IDENTITY_CACHE_MISS, namespace.name());
             }
             return generated != null
                     ? generated

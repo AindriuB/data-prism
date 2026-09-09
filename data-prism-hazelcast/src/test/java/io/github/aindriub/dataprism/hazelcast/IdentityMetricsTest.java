@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
@@ -22,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,6 +67,56 @@ class IdentityMetricsTest {
         public String syntheticValue(String subjectId, PrivacyNamespace namespace, PrivacyContext context) {
             return "synthetic:" + context.scopeId() + ":" + namespace + ":" + subjectId;
         }
+    }
+
+    /** Counts invocations, so a test can tell a cache hit from a re-derivation. */
+    private static final class CountingGenerator implements SyntheticValueSource {
+        private final AtomicInteger calls = new AtomicInteger();
+
+        @Override
+        public String syntheticValue(String subjectId, PrivacyNamespace namespace, PrivacyContext context) {
+            calls.incrementAndGet();
+            return "synthetic:" + context.scopeId() + ":" + namespace + ":" + subjectId;
+        }
+
+        int callCount() {
+            return calls.get();
+        }
+    }
+
+    /** Every method throws, the way a Micrometer meter conflict would. */
+    private static PrivacyMetrics throwingMetrics() {
+        return throwingOnly(null);
+    }
+
+    /**
+     * Throws only for {@code target}, so a test can prove a single call site is
+     * guarded without a throw at an earlier site (a miss, say) short-circuiting
+     * the path the test means to exercise. {@code null} throws for every metric.
+     */
+    private static PrivacyMetrics throwingOnly(Metric target) {
+        return new PrivacyMetrics() {
+            @Override
+            public void increment(Metric metric) {
+                maybeThrow(metric);
+            }
+
+            @Override
+            public void increment(Metric metric, String sourceName) {
+                maybeThrow(metric);
+            }
+
+            @Override
+            public void record(Metric metric, String sourceName, Duration duration) {
+                maybeThrow(metric);
+            }
+
+            private void maybeThrow(Metric metric) {
+                if (target == null || target == metric) {
+                    throw new IllegalStateException("conflicting meter registration");
+                }
+            }
+        };
     }
 
     private static PrivacyContext scope(String scopeId) {
@@ -194,23 +246,7 @@ class IdentityMetricsTest {
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
         var failing = PrivacyCluster.embedded(config, false);
         var generator = new EchoGenerator();
-        var throwingMetrics = new PrivacyMetrics() {
-            @Override
-            public void increment(Metric metric) {
-                throw new IllegalStateException("conflicting meter registration");
-            }
-
-            @Override
-            public void increment(Metric metric, String sourceName) {
-                throw new IllegalStateException("conflicting meter registration");
-            }
-
-            @Override
-            public void record(Metric metric, String sourceName, java.time.Duration duration) {
-                throw new IllegalStateException("conflicting meter registration");
-            }
-        };
-        var caching = new CachingSyntheticValueSource(generator, failing, throwingMetrics);
+        var caching = new CachingSyntheticValueSource(generator, failing, throwingMetrics());
         var context = scope("M-CASE-METRICSFAIL");
 
         // Not a graceful drain: the member is stopped underneath a live caller,
@@ -220,6 +256,72 @@ class IdentityMetricsTest {
         String result = caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context);
 
         assertThat(result).isEqualTo(generator.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context));
+    }
+
+    @Test
+    @DisplayName("a metrics failure on a cache hit returns the cached value without re-deriving it")
+    void metricsFailureOnHitDoesNotReDeriveOrEscape() {
+        var generator = new CountingGenerator();
+        // Only the hit emit throws, so a real miss on the first call seeds the
+        // cache uneventfully and the second call is the one under test.
+        var caching = new CachingSyntheticValueSource(generator, notReidentifying,
+                throwingOnly(Metric.IDENTITY_CACHE_HIT));
+        var context = scope("M-CASE-HITTHROW");
+
+        String first = caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context);
+        String second = caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context);
+
+        assertThat(second).isEqualTo(first);
+        // Two lookups, one derivation: the second must have come from the cache,
+        // not from the generator running again because the hit's metric call threw.
+        assertThat(generator.callCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a metrics failure on a collision still overwrites the disagreeing cached value")
+    void metricsFailureOnCollisionStillOverwritesTheStaleValue() throws Exception {
+        var context = scope("M-CASE-COLLISIONTHROW");
+        String key = ScopeKeys.identity(context.scopeId(), "s-1", PrivacyNamespace.PERSON_NAME);
+
+        // Same latch technique as the collision test above: the generator signals
+        // that its own lookup already came back empty, then blocks, so the direct
+        // write below is guaranteed to land before the store.
+        CountDownLatch generatorEntered = new CountDownLatch(1);
+        CountDownLatch proceed = new CountDownLatch(1);
+        var blockingGenerator = new SyntheticValueSource() {
+            @Override
+            public String syntheticValue(String subjectId, PrivacyNamespace namespace, PrivacyContext ctx) {
+                generatorEntered.countDown();
+                await(proceed);
+                return "generated-value";
+            }
+        };
+        // Only the collision emit throws, so the real miss above it in store()
+        // proceeds and the write this test cares about is the one under test.
+        var caching = new CachingSyntheticValueSource(blockingGenerator, notReidentifying,
+                throwingOnly(Metric.IDENTITY_COLLISION));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<String> pending = executor.submit(
+                    () -> caching.syntheticValue("s-1", PrivacyNamespace.PERSON_NAME, context));
+
+            assertThat(generatorEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            notReidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(key, "stale-value");
+            proceed.countDown();
+
+            String result = pending.get(5, TimeUnit.SECONDS);
+            assertThat(result).isEqualTo("generated-value");
+        } finally {
+            executor.shutdown();
+        }
+
+        // The corrective overwrite must have completed even though the collision
+        // metric call above it threw; a metrics failure must not leave the
+        // disagreeing value in place for every later lookup to return.
+        String storedAfter = notReidentifying.instance()
+                .<String, String>getMap(PrivacyCluster.IDENTITY_MAP).get(key);
+        assertThat(storedAfter).isEqualTo("generated-value");
     }
 
     @Test
@@ -251,7 +353,7 @@ class IdentityMetricsTest {
 
     @Test
     @DisplayName("no metric call in this module carries a scope id, subject id or pseudonym as its label")
-    void sourceNameIsNeverAnIdentifier() {
+    void sourceNameIsNeverAnIdentifier() throws Exception {
         var metrics = new RecordingPrivacyMetrics();
         var caching = new CachingSyntheticValueSource(new EchoGenerator(), reidentifying, metrics);
         var index = new ScopeIdentityIndex(reidentifying, metrics);
@@ -259,21 +361,70 @@ class IdentityMetricsTest {
         String subjectId = "s-safe-subject";
         var context = scope(scopeId);
 
+        // Hit (second call), miss (first call) and reidentification.
         String synthetic = caching.syntheticValue(subjectId, PrivacyNamespace.PERSON_NAME, context);
         caching.syntheticValue(subjectId, PrivacyNamespace.PERSON_NAME, context);
         index.subjectFor(scopeId, PrivacyNamespace.PERSON_NAME, synthetic);
+
+        // Collision, so the assertion below also covers CachingSyntheticValueSource:125.
+        String collisionScopeId = "M-CASE-SAFE-COLLISION";
+        var collisionContext = scope(collisionScopeId);
+        String collisionKey = ScopeKeys.identity(collisionScopeId, subjectId, PrivacyNamespace.PERSON_NAME);
+        CountDownLatch generatorEntered = new CountDownLatch(1);
+        CountDownLatch proceed = new CountDownLatch(1);
+        var blockingGenerator = new SyntheticValueSource() {
+            @Override
+            public String syntheticValue(String subject, PrivacyNamespace namespace, PrivacyContext ctx) {
+                generatorEntered.countDown();
+                await(proceed);
+                return "generated-value";
+            }
+        };
+        var collisionCaching = new CachingSyntheticValueSource(blockingGenerator, reidentifying, metrics);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<String> pending = executor.submit(() ->
+                    collisionCaching.syntheticValue(subjectId, PrivacyNamespace.PERSON_NAME, collisionContext));
+            assertThat(generatorEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            reidentifying.instance().getMap(PrivacyCluster.IDENTITY_MAP).set(collisionKey, "stale-value");
+            proceed.countDown();
+            pending.get(5, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdown();
+        }
+
+        // Fallback miss on a cluster failure, so the assertion below also covers
+        // CachingSyntheticValueSource:105.
+        String fallbackScopeId = "M-CASE-SAFE-FALLBACK";
+        Config fallbackConfig = new Config();
+        fallbackConfig.setClusterName("dataprism-metrics-label-fail-" + System.nanoTime());
+        fallbackConfig.getJetConfig().setEnabled(false);
+        fallbackConfig.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
+        fallbackConfig.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
+        var failing = PrivacyCluster.embedded(fallbackConfig, false);
+        var failingCaching = new CachingSyntheticValueSource(new EchoGenerator(), failing, metrics);
+        // Not a graceful drain: the member is stopped underneath a live caller,
+        // which is what a crashed node looks like.
+        failing.close();
+        failingCaching.syntheticValue(subjectId, PrivacyNamespace.PERSON_NAME, scope(fallbackScopeId));
 
         Set<String> namespaceNames = Arrays.stream(PrivacyNamespace.values())
                 .map(Enum::name)
                 .collect(Collectors.toSet());
 
-        assertThat(metrics.increments()).isNotEmpty();
+        assertThat(metrics.increments())
+                .as("every emit site this assertion claims to cover must actually run")
+                .extracting(RecordingPrivacyMetrics.Increment::metric)
+                .contains(Metric.IDENTITY_CACHE_HIT, Metric.IDENTITY_CACHE_MISS,
+                        Metric.IDENTITY_COLLISION, Metric.REIDENTIFICATION);
         metrics.increments().forEach(increment -> {
             assertThat(increment.sourceName())
                     .as("metric %s must not be labelled with an identifier", increment.metric())
                     .isNotEqualTo(scopeId)
                     .isNotEqualTo(subjectId)
-                    .isNotEqualTo(synthetic);
+                    .isNotEqualTo(synthetic)
+                    .isNotEqualTo(collisionScopeId)
+                    .isNotEqualTo(fallbackScopeId);
             if (increment.sourceName() != null) {
                 assertThat(namespaceNames)
                         .as("the only permitted argument is a configured name")
