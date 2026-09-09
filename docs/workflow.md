@@ -60,6 +60,18 @@ with the task id. Each one:
 Concurrency is bounded by the worktree scripts, not by discipline: two agents
 physically cannot be in the same checkout.
 
+**An implementer never merges, never pushes to `main`, and never merges its
+own pull request.** Its job ends at step 4, reporting on its own branch.
+Merging is Phase 4's job, after Phase 3 has passed a verdict. This is a rule,
+not a platform guarantee: every agent in this loop, implementer included,
+authenticates as the repository owner, so nothing on the GitHub side stops an
+implementer from merging its own work — branch protection gates the `build`
+check, not who is allowed to click merge, and required approvals would not
+help either, since the same credentials could approve too. Task 10's
+implementer merged PRs #9 and #10 into `main` itself, one of them while its
+own Actions run was failing; see `docs/plan/HISTORY.md`, grep "Task 10", for
+that incident. That is what this rule exists to stop happening again.
+
 ## Phase 3 — verify
 
 For each returned branch, spawn `tester` and `reviewer` together — **except**
@@ -94,14 +106,14 @@ pull request, not a local merge:
 
 1. Push the task branch, open a PR against `main`.
 2. Let Actions run `build` on the PR's head commit.
-3. Merge once `build` is green — auto-merge is safe to enable now, because the
-   required check gives it something to wait on. Before protection existed,
-   auto-merge had nothing gating it and a red commit reached `main` this way;
-   see `docs/plan/HISTORY.md`, grep "Task 10", for that incident. Do not rely
-   on `.claude/scripts/wt-merge.sh` for this — it merges and pushes locally,
-   which the protected branch now refuses, and it was already broken on
-   Windows under Git Bash (`resolve_repo` vs `pwd` mismatch) before this
-   changed. It is part of the shared kit, not this repository, so push a
+3. Merge once `build` is green. Repository auto-merge is off
+   (`allow_auto_merge` is `false`) and this repository does not enable it —
+   merging is a deliberate `/record` step, never done by the implementer
+   whose branch it is; see the implementer rule in Phase 2 for why. Do not
+   rely on `.claude/scripts/wt-merge.sh` for this — it merges and
+   pushes locally, which the protected branch now refuses, and it was already
+   broken on Windows under Git Bash (`resolve_repo` vs `pwd` mismatch) before
+   this changed. It is part of the shared kit, not this repository, so push a
    branch and open a PR by hand (or via `gh`) instead of patching the script
    here.
 4. After the PR is merged, `scribe` removes the task's worktree, moves the
