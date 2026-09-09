@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -95,13 +96,41 @@ class WorkedExampleTest {
         }
 
         // Three sources, three different values, so three groups of one. That
-        // tells an investigator exactly where to look and discloses nothing.
+        // tells an investigator exactly where to look and discloses nothing —
+        // and it discloses no real source name either: agreementGroups() names
+        // sources by the same scope-local alias sources() uses, never the real
+        // name, since EXPOSE_SOURCE_NAMES is not held here.
         ConsistencyFinding name = response.findings().stream()
                 .filter(f -> f.kind() == ConsistencyFinding.Kind.ABBREVIATION)
                 .findFirst().orElseThrow();
         assertThat(name.agreementGroups()).hasSize(3).allSatisfy(g -> assertThat(g).hasSize(1));
-        assertThat(name.agreementGroups().stream().flatMap(List::stream))
-                .containsExactlyInAnyOrder("customer-api", "account-api", "order-api");
+
+        // Exactly three distinct aliases — a collection that were empty or
+        // absent would satisfy neither of these — and the same three the
+        // response names in sources(), so a finding and the source list agree
+        // on what to call each system.
+        Set<String> aliasesInFinding = name.agreementGroups().stream()
+                .flatMap(List::stream).collect(java.util.stream.Collectors.toSet());
+        assertThat(aliasesInFinding).hasSize(3).isEqualTo(response.sources().keySet());
+    }
+
+    @Test
+    @DisplayName("real source names never appear without EXPOSE_SOURCE_NAMES")
+    void realSourceNamesAreNeverExposed() {
+        ContextResponse response = customer123();
+        List<String> realNames = List.of("customer-api", "account-api", "order-api");
+
+        for (String realName : realNames) {
+            assertThat(response.sources().keySet())
+                    .as("sources() must not name the real source '%s'", realName)
+                    .doesNotContain(realName);
+            assertThat(response.findings().toString())
+                    .as("findings must not name the real source '%s'", realName)
+                    .doesNotContain(realName);
+            assertThat(response.entity().toString())
+                    .as("the serialised entity must not name the real source '%s'", realName)
+                    .doesNotContain(realName);
+        }
     }
 
     @Test
@@ -138,8 +167,12 @@ class WorkedExampleTest {
     void allSourcesAreAccountedFor() {
         ContextResponse response = customer123();
 
-        assertThat(response.sources())
-                .containsKeys("customer-api", "account-api", "order-api");
+        // Three distinct scope-local aliases, never the real source names —
+        // a response with an empty or absent sources() would not have three
+        // distinct keys, so this cannot pass vacuously.
+        assertThat(response.sources().keySet()).hasSize(3);
+        assertThat(response.sources().keySet())
+                .doesNotContain("customer-api", "account-api", "order-api");
         assertThat(response.answered()).hasSize(3);
         assertThat(response.incomplete()).isFalse();
     }

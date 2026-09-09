@@ -73,8 +73,7 @@ public final class ExampleApplication {
     static McpSyncServer buildServer(String activeProfiles) {
         DataPrismAssembly assembly = DataPrismAssembly.standard();
 
-        SecurityPolicy policy = new SecurityPolicy(Set.of(DEVELOPMENT_PURPOSE),
-                Map.of(DEVELOPMENT_ROLE, Set.of(Capability.GET_ENTITY_CONTEXT)));
+        SecurityPolicy policy = shippedSecurityPolicy();
         AuthorizationService authorizationService =
                 new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
@@ -86,6 +85,18 @@ public final class ExampleApplication {
         return DataPrismMcpServer.stdio(assembly.orchestrator(), authorizationService,
                 scopeResolver, developmentCaller, true, isProductionProfile(activeProfiles),
                 PrivacyMetrics.none(), toolAudit, assembly.clock());
+    }
+
+    /**
+     * The shipped stdio development policy: one role, {@code developer}, holding
+     * only {@link Capability#GET_ENTITY_CONTEXT}. A named factory rather than a
+     * value built inline in {@link #buildServer}, so {@code ShippedDefaultsTest}
+     * can assert on the same policy {@code main} actually runs, instead of a
+     * lookalike the test builds itself.
+     */
+    static SecurityPolicy shippedSecurityPolicy() {
+        return new SecurityPolicy(Set.of(DEVELOPMENT_PURPOSE),
+                Map.of(DEVELOPMENT_ROLE, Set.of(Capability.GET_ENTITY_CONTEXT)));
     }
 
     /**

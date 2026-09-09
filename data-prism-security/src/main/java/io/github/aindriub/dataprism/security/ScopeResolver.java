@@ -19,6 +19,10 @@ import java.util.Objects;
  * resolver's own configuration — the {@link PseudonymisationVersion} handed to
  * the constructor — and that same version is pinned onto every session this
  * instance produces.
+ *
+ * <p>{@link #resolve} fails closed on purpose: a caller whose purpose is not in
+ * the configured list is refused rather than resolved into a session, with
+ * code {@code UNKNOWN_PURPOSE}.
  */
 public final class ScopeResolver {
 

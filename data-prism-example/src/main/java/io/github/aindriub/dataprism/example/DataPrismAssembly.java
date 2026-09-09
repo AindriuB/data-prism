@@ -102,11 +102,13 @@ public final class DataPrismAssembly {
 
         // The single-principal development mode the plan settled on: one caller
         // for every request, until a real session exists to derive it from
-        // (task 06). EXPOSE_SOURCE_NAMES because this example's sources are
-        // fictional and its output is meant to be read.
+        // (task 06). No EXPOSE_SOURCE_NAMES: this factory hands the context to
+        // anything that asks (WorkedExampleTest, EndToEndTest), so it mints the
+        // same masked default a real deployment ships, rather than an unmasking
+        // grant nothing here re-checks who is asking for.
         this.investigationContext = new InvestigationContext(
                 "stdio-development", "stdio-development", "CASE-DEMO-1",
-                Set.of(Capability.EXPOSE_SOURCE_NAMES));
+                Set.of(Capability.GET_ENTITY_CONTEXT));
 
         this.clock = clock;
     }
