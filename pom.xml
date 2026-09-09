@@ -27,6 +27,7 @@
     <module>data-prism-pseudonymisation</module>
     <module>data-prism-validation</module>
     <module>data-prism-audit</module>
+    <module>data-prism-security</module>
     <module>data-prism-orchestration</module>
     <module>data-prism-mcp</module>
     <module>data-prism-connectors-rest</module>
@@ -104,6 +105,11 @@
       <dependency>
         <groupId>io.github.aindriub</groupId>
         <artifactId>data-prism-audit</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-security</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
