@@ -66,7 +66,7 @@ start when the deployment says it is in production.
       the scope isolation property, proved at the tool rather than at the resolver.
 - [ ] `ExampleApplication` still runs stdio, now passing the development flag explicitly and using the
       assembly's development caller.
-- [ ] `mvn -B verify` from the repo root passes; all 212 tests at `7db0491` still pass.
+- [ ] `mvn -B verify` from the repo root passes; all 224 tests at `da0bbdf` still pass.
 
 ## Out of scope
 - The OAuth2 resource server, JWKS configuration, the servlet registration and the Spring Boot

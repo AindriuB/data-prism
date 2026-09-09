@@ -77,7 +77,7 @@ true of a deployment rather than only of the library.
       `..dataprism.mcp..`, `..dataprism.orchestration..`, `..dataprism.connectors..` or
       `..dataprism.example..`, and that no class outside `..dataprism.example..` depends on
       `org.springframework.security..`. Existing rules are unchanged.
-- [ ] `mvn -B verify` from the repo root passes; all 212 tests at `7db0491` still pass.
+- [ ] `mvn -B verify` from the repo root passes; all 224 tests at `da0bbdf` still pass.
 
 ## Out of scope
 - The append-only audit sink and the chain verifier. S9's other half, deliberately deferred.

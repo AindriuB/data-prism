@@ -65,17 +65,18 @@ Four waves, in dependency order:
 
 - **Wave 1 — done.** Tasks 01 (session types and metrics SPI) and 02 (mTLS for
   outbound source calls) merged 2026-09-09.
-- **Wave 2 — next.** Tasks 03 (security module: caller, authorisation, purpose,
+- **Wave 2 — done.** Tasks 03 (security module: caller, authorisation, purpose,
   scope resolution), 04 (real principal through orchestration) and 05
-  (Hazelcast identity and collision metrics) — all depend only on 01, so run in
-  parallel.
-- **Wave 3.** Task 06 (streamable HTTP transport, per-request caller context,
-  authorisation at the tool) — depends on 03 and 04.
+  (Hazelcast identity and collision metrics) merged 2026-09-09.
+- **Wave 3 — next.** Task 06 (streamable HTTP transport, per-request caller
+  context, authorisation at the tool) — depended on 03 and 04, now unblocked.
 - **Wave 4.** Task 07 (OAuth2 resource server app, Micrometer binding, PII log
   scan) — depends on 02, 05 and 06.
 
-**Blocked by:** nothing outstanding for wave 2. Task files for waves 2–4 are at
-`docs/plan/tasks/03-security-module.md` through `07-resource-server-app-and-pii-log-scan.md`.
+**Blocked by:** nothing outstanding for wave 3. Task file at
+`docs/plan/tasks/06-streamable-http-transport.md`; task 07's file is at
+`docs/plan/tasks/07-resource-server-app-and-pii-log-scan.md` and stays blocked
+until wave 3 lands.
 
 ### S9a — The cheap half of observability
 

@@ -17,6 +17,44 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — S8 wave 2: security module, real principal, and identity metrics
+
+The three tasks that depended only on wave 1 landed together. `AuthenticatedCaller`,
+`AuthorizationService`, `AuthorizationDecision`, `PurposeValidator` and `ScopeResolver`
+give Data Prism capability-based authorisation, with roles from token claims mapped to
+capabilities in configuration; `ScopeResolver` pins `keyId` and `vocabularyId` at scope
+creation, so a key rotation or vocabulary change mid-scope cannot silently change what a
+pseudonym means. `DefaultContextOrchestrator` previously hardcoded the principal as
+`"system"`, so every audit event was attributed to a principal that does not exist — the
+real authenticated principal now flows through into audit, and `SourceAliasing`'s
+expose-real-names boolean became a real capability check. Hazelcast identity cache hit,
+miss, collision and re-identification counters now publish through the `PrivacyMetrics`
+SPI. 285 tests post-merge (up from the 224-test baseline this wave started from), all 13
+modules, `mvn -B verify` clean with all three branches merged into one tree.
+
+**Cost:** the Hazelcast metrics task took three attempts, and the reason generalises
+past this file. Attempts 1 and 2 both failed on the same theme: instrumentation that can
+change the thing it measures. Attempt 1 emitted `dataprism.identity.cache.miss` twice on
+one lookup when the *generator* threw rather than the cluster, so the published metric
+disagreed with the counter it exists to publish. Attempt 2 fixed that but guarded only
+one of three emit sites — a `PrivacyMetrics` whose `increment` throws could still either
+escape `syntheticValue` (breaking the fail-open guarantee stated in the class's own
+javadoc) or, on the collision path, exit `store()` before the corrective `identities.set`,
+leaving the known-bad cached value in place so every later lookup in that scope returned
+it. The collision counter exists precisely because a non-zero value means an answer may
+have changed; its own failure would have caused that outcome. Attempt 3 fixed it
+structurally with `FailSafeMetrics`, a wrapper applied once at construction so emit sites
+added later are guarded by construction rather than by memory — the transferable point is
+that a guard which has to be remembered at each new call site will be missed, and it was,
+between attempts 2 and 3. This mattered immediately rather than hypothetically: task 07
+binds Micrometer, which throws on conflicting meter registration.
+
+One deliberate exception, ruled correct on review rather than an oversight to fix later:
+`ScopeIdentityIndex.subjectFor` calls `metrics.increment` unguarded. Re-identification is
+not the fail-open case — the identity cache is, because a synthetic value is a pure
+function and nothing can recompute a subject id from a pseudonym. A metrics failure
+refusing to reveal a subject is fail-closed working as intended.
+
 ## 2026-09-09 — S8 wave 1: session types, metrics SPI, and mTLS to sources
 
 The two tasks with no dependency on the rest of S8 landed first. `InvestigationContext`
