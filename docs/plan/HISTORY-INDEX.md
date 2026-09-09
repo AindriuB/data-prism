@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-09 | 08 | Three inert controls made to run: purpose validation composed into ScopeResolver, mTLS and reserved-argument tests made able to fail | `## 2026-09-09 — S8: three inert controls made to run` |
 | 2026-09-09 | 03, 04, 05 | S8 wave 2: security module (authz/purpose/scope), real principal in audit, Hazelcast identity metrics | `## 2026-09-09 — S8 wave 2: security module, real principal, and identity metrics` |
 | 2026-09-09 | 01, 02 | S8 wave 1: InvestigationContext/Capability/metrics SPI, mTLS to sources | `## 2026-09-09 — S8 wave 1: session types, metrics SPI, and mTLS to sources` |
 | 2026-09-09 | S7 | Embedded Hazelcast: identity cache fails open, read budget fails closed, scope purge | `## 2026-09-09 — S7 embedded Hazelcast for distributed scope state` |

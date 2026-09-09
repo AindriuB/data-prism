@@ -17,6 +17,47 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — S8: three inert controls made to run
+
+The theme is worth recording as a theme, because it is the shape of defect this
+project keeps producing and the one a reviewer is least likely to catch: a
+control that is present in the code and does nothing. Someone reading for "is
+there a check?" finds one.
+
+`PurposeValidator` existed and failed closed correctly when called, and nothing
+called it. It is now composed into `ScopeResolver`'s sole constructor — no
+overload, no default, `requireNonNull` on the field — and runs on the path that
+builds a `PrivacyContext`, before the context is created. An unknown purpose
+refuses with `UNKNOWN_PURPOSE` and yields no session.
+
+`MutualTlsRestClientsHttpsTest` asserted `isInstanceOf(RuntimeException.class)`,
+which a URL typo or a missing file satisfies. It now asserts
+`ResourceAccessException` with an `SSLException` in the cause chain, and differs
+from the positive test only by the key manager.
+
+`EndToEndTest`'s reserved-argument assertion passed on a blanket DENY, so it
+could not distinguish "the caller's own scopeId was ignored and the call
+proceeded on session-derived context" from "the call was refused for an
+unrelated reason". It now asserts content equality against a plain call plus a
+single `ALLOW` audit event naming exactly the four rejected argument names. Both
+directions of failure are now live on that assertion, proven at review by
+mutating `GetEntityContextTool` to honour the caller's `scopeId` — the assertion
+caught it, with the pseudonym differing between runs.
+
+This brings the count of tests-that-could-not-fail found in this project to
+five, all recorded in `docs/conventions.md`. Two of them were fixed here. 287
+tests post-merge (up from 285), all 13 modules, `mvn -B verify` clean.
+
+**Cost:** nothing unusual on the implementation side — this was a small,
+targeted diff against three known files. The finding worth carrying is a
+review note not actioned: `ScopeResolver`'s class javadoc
+(`data-prism-security/.../ScopeResolver.java:12-22`) still describes only
+scopeId and pseudonymisation pinning, omitting the purpose refusal that is now
+the class's third responsibility. Left for whoever next touches the file
+(task 06, which writes the first call site of the new constructor) rather than
+edited here, since only `implementer` writes code and this task's owned-files
+list did not cover a doc-only javadoc pass as its own item.
+
 ## 2026-09-09 — S8 wave 2: security module, real principal, and identity metrics
 
 The three tasks that depended only on wave 1 landed together. `AuthenticatedCaller`,

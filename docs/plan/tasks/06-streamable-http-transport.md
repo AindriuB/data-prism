@@ -1,10 +1,12 @@
 # 06 — Streamable HTTP transport, per-request caller context, and authorisation at the tool
 
 **Repo:** `.`
-**Depends on:** 03, 04
+**Depends on:** 03, 04, 08 — 08 holds `EndToEndTest` and changes `ScopeResolver`'s constructor, so 06 starts only after 08 merges.
 **Owns:**
 - data-prism-mcp/**
 - data-prism-example/src/main/java/io/github/aindriub/dataprism/example/ExampleApplication.java
+- data-prism-example/src/test/java/io/github/aindriub/dataprism/example/EndToEndTest.java
+- data-prism-example/src/test/java/io/github/aindriub/dataprism/example/WorkedExampleTest.java
 
 ## Goal
 stdio cannot carry an identity, so the transport and the security model are one
@@ -64,9 +66,17 @@ start when the deployment says it is in production.
 - [ ] A test drives the tool handler twice with two different `AuthenticatedCaller`s carrying different
       `case_id` claims and asserts the two responses give the same subject two *different* pseudonyms —
       the scope isolation property, proved at the tool rather than at the resolver.
+- [ ] The stdio development principal does not hold `Capability.EXPOSE_SOURCE_NAMES` by default.
+      `DataPrismMcpServer.java:44` mints one that does today, and deleting the constructor that uses it
+      is not the same as the capability going away: the stdio factory must produce a caller without it
+      unless it is configured deliberately. A test drives a stdio development session and asserts the
+      response carries aliased source names, and a second asserts real source names appear only when
+      `EXPOSE_SOURCE_NAMES` was explicitly configured onto that principal.
 - [ ] `ExampleApplication` still runs stdio, now passing the development flag explicitly and using the
       assembly's development caller.
-- [ ] `mvn -B verify` from the repo root passes; all 224 tests at `da0bbdf` still pass.
+- [ ] `mvn -B verify` passes from the repo root with no test failures and no skipped tests, and the
+      test count is not below the tip of `main` — establish that number by running the suite on `main`
+      before starting.
 
 ## Out of scope
 - The OAuth2 resource server, JWKS configuration, the servlet registration and the Spring Boot

@@ -61,15 +61,22 @@ server, not issuer, not pass-through — is recorded in
    on anything not in it.
 4. stdio survives as a dev-only mode, refused in production profiles.
 
-Four waves, in dependency order:
+Five waves, in dependency order (08 was added mid-slice: three inert controls
+found during wave 2 verification, none of which wave 3 could safely build on top
+of).
 
 - **Wave 1 — done.** Tasks 01 (session types and metrics SPI) and 02 (mTLS for
   outbound source calls) merged 2026-09-09.
 - **Wave 2 — done.** Tasks 03 (security module: caller, authorisation, purpose,
   scope resolution), 04 (real principal through orchestration) and 05
   (Hazelcast identity and collision metrics) merged 2026-09-09.
+- **Wave 2.5 — done.** Task 08 (purpose validation composed into
+  `ScopeResolver`; the mTLS and reserved-argument tests made able to fail)
+  merged 2026-09-09.
 - **Wave 3 — next.** Task 06 (streamable HTTP transport, per-request caller
-  context, authorisation at the tool) — depended on 03 and 04, now unblocked.
+  context, authorisation at the tool) — depended on 03, 04 and 08, now
+  unblocked. 08 released `EndToEndTest`, which 06 now owns alongside
+  `WorkedExampleTest`.
 - **Wave 4.** Task 07 (OAuth2 resource server app, Micrometer binding, PII log
   scan) — depends on 02, 05 and 06.
 
@@ -77,6 +84,14 @@ Four waves, in dependency order:
 `docs/plan/tasks/06-streamable-http-transport.md`; task 07's file is at
 `docs/plan/tasks/07-resource-server-app-and-pii-log-scan.md` and stays blocked
 until wave 3 lands.
+
+**Open item, not actioned by 08:** `ScopeResolver`'s class javadoc
+(`data-prism-security/src/main/java/io/github/aindriub/dataprism/security/ScopeResolver.java:12-22`)
+still describes only scopeId and pseudonymisation pinning, omitting the purpose
+refusal that is now the class's third responsibility. Task 06 writes the first
+call site of the three-argument constructor and its author will read that
+javadoc first — worth a one-line fix when 06 touches the file, not a task of its
+own.
 
 ### S9a — The cheap half of observability
 
