@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,8 +62,22 @@ class PiiLogScanTest {
      * The stub fixtures' own identifying values (StubCustomerAdapter,
      * StubAccountAdapter): the customer names, the email addresses, and the
      * raw subject ids task 07's acceptance criteria name explicitly. A literal
-     * list, scanned by substring, never by a regex a vacuous pattern could
-     * satisfy.
+     * list — {@link #findLeaked} matches each value whole, at its own
+     * boundaries, never by a pattern loose enough to be satisfied vacuously.
+     *
+     * <p>The bare ids {@code "123"} and {@code "456"} stay in this list on
+     * purpose: {@code "123"} is the stub subject id, exactly the kind of value
+     * that must never appear in a log line. Audit lines also carry random hex
+     * — event id, correlation id, the parameter fingerprint, the hash chain —
+     * and a hex run can contain the digits {@code "123"} or {@code "456"} by
+     * pure coincidence with no id anywhere near it. Matching each id only when
+     * it stands as its own token, bounded by a non-hex character (or the ends
+     * of the line) on both sides, tells the two apart: no field emitted by
+     * {@code Slf4jAuditSink} — the UUID event and correlation ids (fixed
+     * hyphen-delimited group widths, none three characters), the fingerprint,
+     * or the SHA-256 hash chain (both a single unbroken run of hex) — has a
+     * three-character token sitting at one of those boundaries, so a
+     * coincidental hex collision can no longer read as a leak.
      */
     private static final List<String> BANNED_VALUES = List.of(
             "Patrick Murphy", "Aoife Byrne",
@@ -75,6 +90,17 @@ class PiiLogScanTest {
         String captured = captureLogOutput(PiiLogScanTest::runFullIntegrationRun);
 
         Path logFile = writeLogFile("pii-log-scan", captured);
+
+        // A known-safe marker straight from Slf4jAuditSink's message format —
+        // never parameterised, so it carries no fixture value — proves the run
+        // actually reached the audit logger. Without this, a run that silently
+        // stopped logging would pass the scan below for the wrong reason: there
+        // is nothing left to leak.
+        assertThat(captured)
+                .as("captured log output written to %s must contain audit output, or this scan proves nothing",
+                        logFile)
+                .contains("event=");
+
         List<String> leaked = findLeaked(withoutTimestamps(captured), BANNED_VALUES);
 
         assertThat(leaked)
@@ -152,12 +178,13 @@ class PiiLogScanTest {
 
     /**
      * {@code simplelogger.properties} stamps every line with the wall-clock
-     * millisecond ({@code dateTimeFormat}'s {@code .SSS}), and a fixture id as
-     * short as {@code "123"} has a real chance of appearing there by pure
-     * coincidence — a false leak with nothing to do with what this test exists
-     * to catch. Stripping the leading timestamp before scanning removes that
-     * source of flakiness without touching the detection logic itself, which
-     * stays plain substring matching over whatever remains of the line.
+     * millisecond ({@code dateTimeFormat}'s {@code .SSS}), bounded by a
+     * literal {@code .} before it and a space after — a boundary on both
+     * sides, exactly what {@link #findLeaked} looks for, so a millisecond
+     * field that happens to read {@code "123"} would still pass as a token
+     * match. Stripping the leading timestamp before scanning removes that
+     * source of flakiness at its origin rather than asking the matcher to
+     * tell a clock from a leak.
      */
     private static String withoutTimestamps(String log) {
         return log.lines()
@@ -166,10 +193,20 @@ class PiiLogScanTest {
                 .orElse("");
     }
 
+    /**
+     * A banned value is reported only when it appears as a whole token —
+     * bounded by a non-word character, or the start or end of the log, on
+     * both sides — never as a fragment inside a longer run of word
+     * characters. Plain {@code String.contains} would treat the digits
+     * {@code "123"} inside an unrelated hex id the same as the digits
+     * {@code "123"} standing alone as the stub subject id; {@code \b} tells
+     * them apart, because a hex id has no reason to break stride exactly at
+     * the three characters that spell a banned value.
+     */
     private static List<String> findLeaked(String log, List<String> bannedValues) {
         List<String> leaked = new ArrayList<>();
         for (String value : bannedValues) {
-            if (log.contains(value)) {
+            if (Pattern.compile("\\b" + Pattern.quote(value) + "\\b").matcher(log).find()) {
                 leaked.add(value);
             }
         }
