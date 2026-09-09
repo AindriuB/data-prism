@@ -18,6 +18,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.TrustManagerFactory;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -155,6 +156,30 @@ class MutualTlsRestClientsHttpsTest {
      * passed {@code false} below where the factory would install a real key
      * manager. So neither a wrong URL, a missing file nor a store password can
      * be the reason the fetch below fails: only the absent certificate can.
+     *
+     * <p>What the JDK's {@code HttpClient} surfaces for that refusal differs
+     * by platform, because the two ends of the TCP connection race each
+     * other after the server sends its fatal TLS alert. On Windows, the
+     * client reliably reads the alert before the socket closes, so the cause
+     * chain contains an {@link SSLException} (typically
+     * {@code SSLHandshakeException}) directly. On Linux, the server tears
+     * down the TCP connection before the client gets to read the alert, so
+     * the client instead observes a plain end of stream: the JDK's HTTP/1.1
+     * header parser receives zero bytes and reports exactly that — see
+     * {@code jdk.internal.net.http.Http1HeaderParser#currentStateMessage()},
+     * whose {@code "HTTP/1.1 header parser received no bytes"} appeared
+     * verbatim in the CI failure this test now guards against — wrapping the
+     * underlying {@link EOFException} that the JDK's transport layer threw.
+     * Both observables share the same cross-platform property this test
+     * asserts: the connection produced no HTTP response at all, only a TLS
+     * failure or an immediate EOF, which is why {@link #indicatesTlsHandshakeRefusal}
+     * checks for either type in the cause chain rather than one specific
+     * exception. A closed port instead throws a {@code ConnectException}
+     * ("Connection refused"), which matches neither branch, and a request
+     * that completes the handshake and reaches a 404 never throws a {@link
+     * ResourceAccessException} in the first place — both keep failing this
+     * test, which is what distinguishes a genuine handshake refusal from
+     * every other way this test could go green for the wrong reason.
      */
     @Test
     @DisplayName("a client with no certificate is refused by the server with an SSL handshake failure")
@@ -171,9 +196,18 @@ class MutualTlsRestClientsHttpsTest {
 
         assertThatThrownBy(() -> adapter.fetch(DataRequest.of("CUSTOMER", "123")))
                 .isInstanceOf(ResourceAccessException.class)
-                .satisfies(e -> assertThat(causeChainContains(e, SSLException.class))
-                        .as("cause chain of %s should contain an SSLException", e)
+                .satisfies(e -> assertThat(indicatesTlsHandshakeRefusal(e))
+                        .as("cause chain of %s should show a TLS handshake refusal: either an "
+                                + "SSLException (the Windows observable, where the client reads the "
+                                + "server's fatal alert) or an EOFException (the Linux observable, where "
+                                + "the server resets the connection first, so the client sees a bare end "
+                                + "of stream before any bytes arrive)", e)
                         .isTrue());
+    }
+
+    private static boolean indicatesTlsHandshakeRefusal(Throwable throwable) {
+        return causeChainContains(throwable, SSLException.class)
+                || causeChainContains(throwable, EOFException.class);
     }
 
     private static boolean causeChainContains(Throwable throwable, Class<? extends Throwable> type) {
