@@ -39,20 +39,47 @@ can actually fail) are both complete, closed by task 07 merging 2026-09-09. See
 ### Task 09 — done
 
 Closed the last two real defects and cleared four pieces of debt. Task 09
-merged 2026-09-09; `docs/plan/tasks/` has no open task file left. See
-`docs/plan/HISTORY.md` — grep `Task 09` — for what landed and what it cost.
+merged 2026-09-09. See `docs/plan/HISTORY.md` — grep `Task 09` — for what
+landed and what it cost.
 
 ### Task 10 — done
 
 Made `main`'s red-on-Linux mTLS refusal assertion hold on both platforms it
 runs on, without weakening it. Task 10 merged 2026-09-09, verified green on
-Actions run 34386674901; `docs/plan/tasks/` has no open task file. See
-`docs/plan/HISTORY.md` — grep `Task 10` — for what landed and what it cost.
+Actions run 34386674901. See `docs/plan/HISTORY.md` — grep `Task 10` — for
+what landed and what it cost.
+
+### Tasks 11, 12, 13 — planned, not started
+
+Fanned out to implementers on 2026-09-09 and stopped a few minutes into
+implementation at the user's request. No commits were made on any of their
+branches, no pull requests were opened, and their worktrees and branches have
+since been removed. `main` was never touched by them. They are planned and
+unstarted, not in progress and not abandoned: anyone picking one up starts a
+fresh implementer against its task file with nothing to reconcile.
+
+- **Task 11** — `docs/plan/tasks/11-rest-adapter-error-assertion.md`.
+  `RestDataSourceAdapterHttpTest.java:97` asserts
+  `isInstanceOf(RuntimeException.class)`, which passes on any failure at all —
+  the seventh cannot-fail assertion found in this repository. Replace it with
+  an assertion only the 500 stub can satisfy.
+- **Task 12** — `docs/plan/tasks/12-architecture-rules-determinism-and-boundaries.md`.
+  `Instant.now()` is banned by `docs/conventions.md:54` in the same sentence as
+  `Random` and `UUID.randomUUID`, but the ArchUnit determinism rule checks only
+  the other four; add it. The task also carries a judgement on whether
+  architecture boundaries 2 and 3 are honestly enforceable by a test, with an
+  explicit licence to conclude they are not and leave them as prose. Boundary 5
+  stays prose-only by decision until the re-identification module exists.
+- **Task 13** — `docs/plan/tasks/13-hazelcast-holds-no-raw-values.md`.
+  Architecture boundary 6 — Hazelcast never holds a raw sensitive value — has
+  no test. A violation there is silent and permanent: a raw value written to a
+  distributed map is not something a later fix retrieves. This is the most
+  valuable of the three.
 
 ## Recommended stopping point — reached 2026-09-09
 
-The plan is now at the point recorded below: every claim the README makes is
-true of a deployment, not only of the library. Nothing is open in
+Every claim the README makes is true of a deployment, not only of the
+library. Tasks 11, 12 and 13 above are the only work open in
 `docs/plan/tasks/`. The remaining slices stay ordered under "Someday" but are
 not scheduled — picking any of them back up is a new planning decision, not a
 continuation of this run.
@@ -82,15 +109,10 @@ future task already owns the file.
 Found by the 2026-09-09 documentation audit, not fixed there because none of
 it is a doc fix:
 
-- `ArchitectureTest.pseudonymisationIsDeterministic` checks `Random`,
-  `SecureRandom`, `UUID.randomUUID` and `System.currentTimeMillis` but not
-  `Instant.now()`, which `docs/conventions.md:54` bans in the same sentence.
-  Add it to the rule.
-- Boundaries 2, 3, 5, 6 in `docs/architecture.md` have no enforcing test — see
-  that file's boundaries section for the full enforcement audit. Boundary 6,
-  Hazelcast never holding a raw sensitive value, is the one worth a test
-  soonest: a violation there is silent and durable, not a build failure or a
-  request-time refusal.
+- `ArchitectureTest.pseudonymisationIsDeterministic`'s missing `Instant.now()`
+  check, and boundaries 2, 3, 5, 6 in `docs/architecture.md` having no
+  enforcing test — see that file's boundaries section for the full
+  enforcement audit — are now tasks 12 and 13 above, not free-floating items.
 - No `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, or issue/PR
   templates. Security reporting is folded into `CONTRIBUTING.md`, which works
   but is non-standard for a public repository.
@@ -127,11 +149,11 @@ Found by task 10, not fixed there because neither is that task's work:
   straight to `main`. This repository cannot fix it; it belongs to the
   repository owner to update in the kit itself, or the next `/record`
   invocation will attempt a push that branch protection now rejects.
-- A seventh cannot-fail assertion:
-  `data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/RestDataSourceAdapterHttpTest.java:97`
-  is a bare `isInstanceOf(RuntimeException.class)`, the same vacuous form task
-  08 removed from its neighbour. Listed in `docs/conventions.md`'s enumerated
-  list. A survey of every test module found no other test asserting on a
+- The seventh cannot-fail assertion this survey found —
+  `RestDataSourceAdapterHttpTest.java:97`'s bare
+  `isInstanceOf(RuntimeException.class)`, the same vacuous form task 08
+  removed from its neighbour — is now task 11 above, not a free-floating
+  item. A survey of every test module found no other test asserting on a
   platform-specific exception type or message, so the cross-platform problem
   task 10 fixed appears confined to the one test it fixed.
 
