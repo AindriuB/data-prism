@@ -67,10 +67,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * value glued to word characters, such as a pseudonymiser bug that prefixes
  * rather than replaces a raw subject id, is invisible to a whole-line
  * {@code \b} scan but not to a scan of the isolated field it landed in. The
- * fields known to be nothing but random hex or a UUID by construction — the
- * ones a coincidental collision could occur in — are skipped, but only when
- * the field's whole value matches that field's pinned shape; a value that
- * does not is scanned like any other.
+ * fields known to be nothing but random hex, a UUID, or a system timestamp by
+ * construction — the ones a coincidental collision could occur in — are
+ * skipped, but only when the field's whole value matches that field's pinned
+ * shape; a value that does not is scanned like any other.
  */
 class PiiLogScanTest {
 
@@ -120,19 +120,34 @@ class PiiLogScanTest {
     private static final Pattern HEX64_SHAPE = Pattern.compile("[0-9a-f]{64}");
 
     /**
-     * The fields {@code Slf4jAuditSink} fills with nothing but a UUID or a run
-     * of hex: {@code event} and {@code correlation} (UUIDs), {@code params}
-     * (a twelve-byte HMAC fingerprint), and {@code hash}/{@code prev} (a
-     * SHA-256 hex digest). Every other field — {@code subject} above all, the
-     * field a leak actually lands in — is never exempted, whatever it looks
-     * like.
+     * {@code Instant.toString()}'s own shape: a fractional second, when
+     * present, is always 3, 6 or 9 digits, never any other width. Pinned this
+     * precisely — not merely "digits after a dot" — for the same reason every
+     * other shape here is pinned precisely: a loose pattern would exempt a
+     * glued leak that happened to sit next to something date-shaped.
+     */
+    private static final Pattern INSTANT_SHAPE =
+            Pattern.compile("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.(\\d{3}|\\d{6}|\\d{9}))?Z");
+
+    /**
+     * The fields {@code Slf4jAuditSink} fills with nothing but a UUID, a run
+     * of hex, or a system timestamp: {@code event} and {@code correlation}
+     * (UUIDs), {@code params} (a twelve-byte HMAC fingerprint), {@code hash}
+     * and {@code prev} (a SHA-256 hex digest), and {@code ts} — the wall clock
+     * at the moment of the call, via {@code Clock.systemUTC()} in
+     * {@code DataPrismAssembly.standard()}, so its nanosecond digits are as
+     * good as random and were observed, empirically, to coincidentally spell
+     * a banned digit run and redden this test with no leak anywhere near it.
+     * Every other field — {@code subject} above all, the field a leak
+     * actually lands in — is never exempted, whatever it looks like.
      */
     private static final Map<String, Pattern> EXEMPT_SHAPES = Map.of(
             "event", UUID_SHAPE,
             "correlation", UUID_SHAPE,
             "params", HEX24_SHAPE,
             "hash", HEX64_SHAPE,
-            "prev", HEX64_SHAPE);
+            "prev", HEX64_SHAPE,
+            "ts", INSTANT_SHAPE);
 
     @Test
     @DisplayName("a full integration run's log output contains none of the stub fixtures' identifying values")
@@ -264,6 +279,29 @@ class PiiLogScanTest {
 
         String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
                 .info("simulated leak, for this test only: hash={}", hex64ContainingCoincidentalDigits));
+
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123", "456")))
+                .isEmpty();
+    }
+
+    /**
+     * The bug this class actually reddened on while item five was being built:
+     * {@code ts} is {@code Instant.now()} against the real system clock
+     * {@code DataPrismAssembly.standard()} uses, so its nanosecond digits are
+     * effectively random and, over enough runs, do coincidentally spell a
+     * banned digit run with no leak anywhere near it. A synthetic value
+     * engineered to contain both {@code "123"} and {@code "456"} in its
+     * fraction, but otherwise a well-formed {@code Instant.toString()}, proves
+     * the exemption actually covers it.
+     */
+    @Test
+    @DisplayName("a well-formed timestamp field is exempt even where its nanoseconds coincidentally spell a banned digit run")
+    void wellFormedTimestampFieldIsExempt() {
+        String instantContainingCoincidentalDigits = "2026-09-09T16:36:44.123456900Z";
+        assertThat(instantContainingCoincidentalDigits).containsPattern(INSTANT_SHAPE);
+
+        String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: ts={}", instantContainingCoincidentalDigits));
 
         assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123", "456")))
                 .isEmpty();
