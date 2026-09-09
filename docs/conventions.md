@@ -113,6 +113,29 @@ is accompanied by a mutation proving it non-vacuous — remove the annotation, o
 disable the validator, and the test must fail. See the reviewer-isolation rule
 below before scheduling one of these alongside a review.
 
+**Assertions that cannot fail are a recurring class of bug in this project, not
+a one-off.** `docs/plan/HISTORY.md` has counted six as of task 09; the three
+with a precise citation:
+
+- `MutualTlsRestClientsHttpsTest`'s no-client-certificate case asserted
+  `isInstanceOf(RuntimeException.class)`, which an unreachable test server
+  satisfies as easily as a rejected handshake. Fixed to assert
+  `ResourceAccessException` with an `SSLException` in the cause chain. Found in
+  S8 wave 1, fixed in the "S8: three inert controls made to run" entry.
+- `EndToEndTest`'s reserved-argument assertion passed on a blanket `DENY`,
+  unable to distinguish "the caller's own `scopeId` was ignored" from "the
+  call was refused for an unrelated reason". Fixed to assert content equality
+  against a plain call plus a single `ALLOW` audit event naming the four
+  rejected argument names. Same entry as above.
+- `PiiLogScanTest.java:191-193` sums two complementary counts and asserts the
+  sum equals the total scanned — true by construction, since the second count
+  is defined as the complement of the first. Left open; see `docs/plan/PLAN.md`.
+
+Grep `docs/plan/HISTORY.md` for "vacuous" and "cannot fail" for the full
+history, including the earlier instances this list does not itemise
+individually. Treat this as a class of bug to look for on every review, not a
+checklist to consider closed once six is reached.
+
 Property-based tests cover the pseudonymisation invariants: determinism across
 runs, divergence across scopes, and collision-freedom over a large subject
 population.

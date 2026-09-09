@@ -1,8 +1,11 @@
 # Contributing
 
-The project is pre-implementation. Until the walking skeleton lands, the useful
-contributions are review of `docs/design-review.md` and `docs/architecture.md` —
-particularly anywhere the reasoning is wrong rather than merely different.
+The walking skeleton and every slice through S9a are built — 12 Maven modules,
+a passing test suite, and a working end-to-end path from an MCP call to a
+pseudonymised response. See `README.md` for what exists and `docs/plan/PLAN.md`
+for what is open. Review of `docs/design-review.md` and `docs/architecture.md`
+— particularly anywhere the reasoning is wrong rather than merely different —
+is still useful, alongside code contributions against the open plan.
 
 ## Before a pull request
 
@@ -42,10 +45,10 @@ already documented there is not a vulnerability report.
 ## Development setup
 
 Work is split and run with an external agent kit; it is not vendored here, and
-`.claude/` is gitignored on purpose. Committing it would fork this copy from the
-kit's upstream, and committing its `settings.json` would hand you a
-tool-permission allowlist you never reviewed. Install it yourself and it stays
-current:
+`.claude/` is a plain, untracked, gitignored directory populated by installing
+the kit — not a symlink. Committing it would fork this copy from the kit's
+upstream, and committing its `settings.json` would hand you a tool-permission
+allowlist you never reviewed. Install it yourself and it stays current:
 
 ```bash
 git clone <kit-repo> ~/.claude-kit

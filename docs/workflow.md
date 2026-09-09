@@ -62,11 +62,23 @@ physically cannot be in the same checkout.
 
 ## Phase 3 — verify
 
-For each returned branch, spawn `tester` and `reviewer` together. `tester` runs
-the build and suite in that worktree and returns `PASS`/`FAIL` plus, on failure,
-the first failing test name and its assertion — never the log. `reviewer` reads
-the diff against the task's acceptance criteria and returns a verdict per
-criterion.
+For each returned branch, spawn `tester` and `reviewer` together — **except**
+when `reviewer`'s brief includes a mutation-based non-vacuity proof, which
+means it will compile and rebuild inside the worktree. A compiling reviewer and
+a tester both write to that worktree's `target/` even though neither touches a
+tracked file, and a contended `target/` does not fail loudly — it produces a
+wrong test result indistinguishable from a real defect. Task 07 lost roughly a
+day to exactly this: a `PiiLogScanTest` failure that looked like a leak was
+actually two concurrent `mvn` processes corrupting one shared `target/`. See
+`docs/conventions.md`, "Reviewer isolation" and "Concurrent Maven
+verification", for the full rule and the incident. When that applies, either
+have the reviewer clone the worktree first, or run tester and reviewer in
+sequence rather than together.
+
+`tester` runs the build and suite in that worktree and returns `PASS`/`FAIL`
+plus, on failure, the first failing test name and its assertion — never the
+log. `reviewer` reads the diff against the task's acceptance criteria and
+returns a verdict per criterion.
 
 A failing task goes back to phase 2 with the failure appended to its task file.
 It does not get "fixed inline" — that is how the main context blows up.

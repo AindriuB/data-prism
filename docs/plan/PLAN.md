@@ -72,6 +72,22 @@ future task already owns the file.
   nobody established; this one should be corrected to 19, or the javadoc
   reworded to explain the fold, next time this file is touched.
 
+Found by the 2026-09-09 documentation audit, not fixed there because none of
+it is a doc fix:
+
+- `ArchitectureTest.pseudonymisationIsDeterministic` checks `Random`,
+  `SecureRandom`, `UUID.randomUUID` and `System.currentTimeMillis` but not
+  `Instant.now()`, which `docs/conventions.md:54` bans in the same sentence.
+  Add it to the rule.
+- Boundaries 2, 3, 5, 6 in `docs/architecture.md` have no enforcing test — see
+  that file's boundaries section for the full enforcement audit. Boundary 6,
+  Hazelcast never holding a raw sensitive value, is the one worth a test
+  soonest: a violation there is silent and durable, not a build failure or a
+  request-time refusal.
+- No `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`, or issue/PR
+  templates. Security reporting is folded into `CONTRIBUTING.md`, which works
+  but is non-standard for a public repository.
+
 ## Someday
 
 Ordered, not scheduled. S5, S6 and S7 are independent of one another once S3

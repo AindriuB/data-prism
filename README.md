@@ -2,10 +2,18 @@
 
 A privacy layer between MCP clients and enterprise APIs.
 
-**Status: design complete, nothing implemented.** There is no code in this
-repository yet — only the specification, its review, and the plan. Do not depend
-on it. This notice comes down when the walking skeleton in `docs/plan/PLAN.md`
-lands.
+**Status: the walking skeleton and every slice through S9a are built**, with 12
+Maven modules and a passing test suite. The privacy engine, correlation and
+consistency findings, parallel mTLS connectors, embedded Hazelcast identity
+cache and read budget, an OAuth2 resource server with session-derived
+`PrivacyContext`, audit and metrics are all real and exercised end to end.
+Not built: the re-identification operator surface (deferred past V1 by
+decision, see `docs/architecture.md#decisions-worth-knowing`), the
+Elasticsearch connector and its search tools, Docker Compose, and the
+append-only audit sink with hash-chain verifier (a file/SLF4J sink exists; the
+append-only sink is deliberately deferred). Only one MCP tool exists today,
+`get_entity_context` — the other three named in the design review are not yet
+built. See `docs/plan/PLAN.md` for what is open.
 
 ## The problem
 
@@ -77,6 +85,26 @@ via the official MCP Java SDK.
 
 Artifacts publish under group `io.github.aindriub` as `data-prism-<module>`, with
 package root `io.github.aindriub.dataprism`.
+
+## Building and running
+
+Requires Java 21 (the build compiles with `--release 21`, so a newer local JDK
+is fine) and Maven >= 3.6.3 (`pom.xml:201-203` enforces this).
+
+```bash
+mvn -B --no-transfer-progress verify
+```
+
+This is the same command CI runs (`.github/workflows/build.yml`). It builds all
+12 modules, runs the full test suite, the ArchUnit boundary rules, and the
+enforcer rule that keeps the classpath on a single Jackson major.
+
+`data-prism-example` is the runnable server — a Spring Boot application
+(`ResourceServerApplication`) wiring the MCP tool surface to three stub source
+APIs behind an OAuth2 resource server. There is no Docker Compose yet (`S11`,
+open); running it currently means supplying your own JWKS and source
+configuration. Read `data-prism-example/src/main/java/.../http/` before
+attempting it.
 
 ## Contributing
 

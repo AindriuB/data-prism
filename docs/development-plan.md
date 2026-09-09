@@ -117,11 +117,24 @@ ArchUnit proves `mcp` and `orchestration` do not reference `connectors-*`.
 
 ## Slice 7 — Hazelcast (≈1 week)
 
-- Client–server topology (§C4), one map, scoped keys, TTL, `scopeId` index, scope purge.
+**Landed 2026-09-09 diverging from the exit criteria below; see
+`docs/plan/HISTORY.md`, grep `S7 embedded Hazelcast`.** The topology is
+**embedded**, reversing §C4 (`docs/design-review.md#c4-hazelcast-topology`
+carries the reversal note; the reasoning is in
+`docs/architecture.md#decisions-worth-knowing`, 2026-09-09). The
+Testcontainers kill test below was not built — tests instead use an embedded
+member because Docker was unavailable during the session that built the
+slice; a multi-member kill test is still open, unscheduled.
+
+- ~~Client–server topology (§C4)~~ — embedded instead (see above). One map, scoped keys, TTL, `scopeId` index, scope purge.
 - Forward and reverse maps; mTLS, auth, isolation.
 - Cache-failure behaviour: degrade to pure HMAC, emit a metric, never change output.
 
-**Exit:** the §69 test — identical output with the cluster up and with it killed mid-test (Testcontainers).
+**Exit (as originally written, not what shipped):** the §69 test — identical
+output with the cluster up and with it killed mid-test (Testcontainers). What
+actually shipped: identity-cache failure degrades to a recomputed HMAC without
+changing output, proven against the embedded member; no Testcontainers kill
+test exists.
 
 ---
 
@@ -139,10 +152,19 @@ audited.
 
 ## Slice 9 — Audit and observability (≈1.5 weeks)
 
-- Per-writer hash chain with `instanceId` (§A6); file sink and append-only sink.
-- Pseudonymised subject id in audit records (§E); HMAC parameter fingerprints (§45).
-- Micrometer metrics per §89 plus the three additions; correlation id threaded through everything.
-- Log filters that fail the build on any format string interpolating a sensitive-typed value.
+The per-writer hash chain (§A6) has existed since S0, not this slice. S9a
+(`docs/plan/HISTORY.md`, grep `S8 wave 2` and `Task 09`) closed the rest of
+this slice's original scope: pseudonymised subject id in audit, Micrometer
+metrics, and a `PiiLogScanTest` that can actually fail. The only piece of this
+slice's original list that remains unbuilt is the **append-only audit sink**
+(Kafka or a database table with a per-instance sequence) — the file/SLF4J sink
+is what ships. Deliberately deferred, not forgotten.
+
+- Per-writer hash chain with `instanceId` (§A6) — **done since S0**.
+- File sink — **done**. Append-only sink — **open, deliberately deferred.**
+- Pseudonymised subject id in audit records (§E); HMAC parameter fingerprints (§45) — **done (S9a).**
+- Micrometer metrics per §89 plus the three additions; correlation id threaded through everything — **done (S9a).**
+- Log filters that fail the build on any format string interpolating a sensitive-typed value — **not built**; `PiiLogScanTest` catches this at test time, not build time.
 
 **Exit:** a chain-verification tool detects a tampered record; a log-scanning test over a full integration
 run finds no PII.
@@ -159,7 +181,10 @@ this module.
 
 ## Slice 11 — Example application and search (≈2 weeks)
 
-- Three stub source APIs (Customer, Account, Order) with deliberately divergent representations.
+The three stub source APIs (Customer, Account, Order) with deliberately
+divergent representations landed early, in S6
+(`docs/plan/HISTORY.md`, grep `S6 correlation`), not here. What remains:
+
 - Elasticsearch connector with index/field allowlists, complexity and size caps, no DSL pass-through (§44).
 - `search_entity_data` with a controlled query grammar; `describe_entity_model` (§B5).
 - Docker Compose bringing up the whole thing.

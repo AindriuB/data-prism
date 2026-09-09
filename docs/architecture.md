@@ -35,19 +35,20 @@ review.
 | Module | Depends on | Owns |
 |---|---|---|
 | `annotations` | — | `@InternalIdentifier`, `@SubjectIdentifier`, `@SensitiveData`, `@NonSensitive`, `@SensitiveObject`, `@LlmExposedModel`, the classification/action/namespace enums |
-| `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, and every SPI interface the other modules implement |
+| `processor` | `annotations` | `LlmExposedModelProcessor`, the annotation processor that fails the build on a field of an `@LlmExposedModel` carrying neither `@SensitiveData` nor `@NonSensitive(reason=...)` (§B2) |
+| `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, `InvestigationContext`, `SourceTree`, and every SPI interface the other modules implement |
 | `pseudonymisation` | `core` | HMAC generator, per-namespace synthetic generators, `PseudonymRenderer`, key and algorithm versioning |
-| `hazelcast` | `core` | Embedded member, identity cache, re-identification index, shared read budget, scope purge |
+| `hazelcast` | `core` | Embedded member, identity cache, re-identification index, shared read budget, scope purge, `FailSafeMetrics` |
 | `validation` | `core` | `SensitiveDataScanner`, `LlmResponseValidator`, scope-aware pseudonym allowlist |
-| `security` *(planned)* | `core` | `AuthorizationService`, `InvestigationContext`, purpose validation |
+| `security` | `core` | `AuthenticatedCaller`, `AuthorizationService`, `PurposeValidator`, `ScopeResolver`, `PrivacySession`, `SecurityPolicy`, `ReservedArguments`, `ToolInvocation` |
 | `audit` | `core` | `AuditEvent`, `AuditSink`, per-writer hash chain |
 | `orchestration` | `core` + the above | `ContextOrchestrator`, parallel fan-out, circuit breaker, request and cost limits, correlation and consistency findings |
-| `mcp` | `orchestration` | Tool definitions, schemas, transport |
+| `mcp` | `orchestration`, `security` | Tool definitions, schemas, transport, `DataPrismObjectMapper` |
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
 | `reidentification` *(planned)* | `hazelcast`, `security`, `audit` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
 | `spring-boot-starter` *(planned)* | everything | Auto-configuration and wiring |
-| `example` | everything | Three stub sources with divergent representations, and the runnable server |
+| `example` | everything, and declares `security` directly | Three stub sources with divergent representations, the runnable server, `MicrometerPrivacyMetrics`, `JwtCallerContextExtractor` |
 
 Two directions matter and are easy to get backwards:
 
@@ -62,13 +63,15 @@ Two directions matter and are easy to get backwards:
 
 One repository, one Maven reactor. There are no sibling project repositories.
 
-`.claude/` is untracked on purpose: it holds worktree scripts installed from an
-agent kit whose single clone lives outside every project it serves and is
-refreshed with `git -C <kit> pull`. The roles are not here at all —
-`~/.claude/agents` and `~/.claude/commands` are symlinks into that kit, shared by
-every project. Tracking any of it here would fork the harness from its upstream,
-and committing its `settings.json` would hand every contributor a tool-permission
-allowlist they never reviewed. `CONTRIBUTING.md` says how to install it.
+`.claude/` is untracked on purpose: it is a plain directory (verified with
+`fsutil reparsepoint query .claude` — it is not a reparse point), populated by
+installing an agent kit whose single clone lives outside every project it
+serves and is refreshed with `git -C <kit> pull`. `~/.claude/agents` and
+`~/.claude/commands`, not anything under this repository's `.claude/`, are the
+symlinks into that kit, shared by every project. Tracking any of it here would
+fork the harness from its upstream, and committing its `settings.json` would
+hand every contributor a tool-permission allowlist they never reviewed.
+`CONTRIBUTING.md` says how to install it.
 
 `.worktrees/` is untracked and holds one checkout per running task.
 
@@ -79,8 +82,10 @@ not edited. `docs/design-review.md` amends it and wins wherever the two disagree
 ## How they talk
 
 **Inbound.** MCP over stdio in development, streamable HTTP in production, behind
-an OAuth2 resource server. Four tools and no more: `get_entity_context`,
-`compare_entity_sources`, `search_entity_data`, `describe_entity_model`. Backend
+an OAuth2 resource server. The rule is a closed tool set, not an open one: only
+`get_entity_context` exists today; `compare_entity_sources`, `search_entity_data`
+and `describe_entity_model` are designed (§B5) but not built, and none of the
+four is a ceiling that gets relaxed by adding a tool nobody reviewed. Backend
 endpoints are never exposed one-to-one — that would hand privacy and correlation
 decisions to the caller.
 
@@ -101,32 +106,58 @@ is the realistic overload, not an attacker.
 ## Boundaries that must not be crossed
 
 Violating any of these is a defect regardless of how the code reads or whether
-tests pass.
+tests pass. Each is marked with what actually enforces it — the audited state
+as of 2026-09-09. Where the mark is *prose only*, nothing fails the build if
+the boundary is crossed; catching a violation depends on review.
 
 1. **No source data reaches `mcp` without passing the privacy engine.** The
    engine is installed as a Jackson module on the `ObjectMapper` the MCP layer
    uses, so bypassing it means constructing a different mapper — which is the
-   thing to look for in review.
+   thing to look for in review. **Enforced** — `ArchitectureTest
+   .onlyDesignatedClassesCreateMappers` forbids any class other than
+   `DataPrismObjectMapper` and `SourceTree` from constructing an `ObjectMapper`.
 2. **The privacy engine operates on a data tree, not on the Java object graph.**
    Records are immutable and their constructors validate; reflective field
    mutation is not an option and `Unsafe` is not acceptable in a security
-   component.
+   component. **Prose only.**
 3. **A response that fails validation is not returned.** There is no
-   log-and-continue path.
+   log-and-continue path. **Prose only.**
 4. **The caller never supplies its own scope, principal, purpose or case id.**
    All four derive from the authenticated session. A tool argument claiming any
-   of them is ignored and the attempt is audited.
+   of them is ignored and the attempt is audited. **Enforced** — `security`'s
+   `ReservedArguments` strips the named keys before a tool call is built, and
+   `EndToEndTest` asserts content-equal behaviour between a plain call and one
+   carrying the four rejected argument names, plus a single audited refusal.
 5. **Re-identification is never an MCP tool.** Separate application, separate
    port, separate authorisation scope, mandatory purpose, mandatory audit.
+   **Prose only** — the module does not exist yet (S10, deferred).
 6. **Hazelcast never holds raw sensitive values** — pseudonyms and subject ids
    only. The identity cache never decides a value: every path through it returns
    what the generator would have returned, including the path where the cluster
-   is gone.
+   is gone. **Prose only.** No test scans what `hazelcast` writes to its maps;
+   this is the boundary worth a test soonest, because a violation here is
+   silent and durable rather than a build failure or a request-time refusal.
 7. **No sensitive value in a log line, metric label, trace attribute, exception
    message or audit record.** Search parameters are fingerprinted with an HMAC
-   under the scope key, not hashed.
+   under the scope key, not hashed. **Partially enforced** — the log half is
+   covered by `PiiLogScanTest`, which scans captured log output for stub
+   fixture identifying values. Metric labels, trace attributes and audit
+   records are not scanned by any test.
 8. **The core carries no business domain.** No `Customer`, `Taxpayer`,
-   `Employee` or `Account` type outside `example/`.
+   `Employee` or `Account` type outside `example/`. **Partially enforced** —
+   `ArchitectureTest.coreDoesNotDependOnOuterLayers` checks the dependency
+   direction (core cannot depend on `mcp`, `orchestration`, `example` or
+   `pseudonymisation`), but nothing scans `core` for a business-domain type
+   directly; a domain type added to `core` that no outer module happened to
+   import would pass this rule.
+
+`ArchitectureTest` (in `example`, the only module that sees the whole graph)
+also enforces two rules not tied to a numbered boundary above:
+`securityDoesNotDependOnOuterLayers` (`security` must work the same from any
+transport, so it cannot depend on `mcp`, `orchestration`, a connector or
+`example`) and `onlyTheExampleDependsOnSpringSecurity` (Spring Security is the
+example's own choice for turning a verified JWT into an `AuthenticatedCaller`;
+`data-prism-security` itself must stay framework-agnostic).
 
 ## Decisions worth knowing
 
@@ -165,6 +196,16 @@ all of these is in `design-review.md` under the section named.
   cache — nothing can recompute a subject id from a pseudonym — so its durability
   is the cluster's durability, and an embedded cluster scaled to zero loses it.
   That index is therefore off unless a deployment enables it deliberately.
+- **2026-09-09 — Metrics are guarded at construction, not at each call site**
+  (`FailSafeMetrics`). A wrapper applied once when the metrics implementation
+  is built, so every emit site added later is guarded by construction rather
+  than by a reviewer remembering to wrap it. Rejected: guarding individual
+  emit calls, which the S8 wave 2 Hazelcast metrics work tried twice and
+  missed a site each time — once leaving a broken fail-open guarantee reachable, once
+  leaving a known-bad cached value in place because a throwing metric aborted
+  the corrective write that should have followed it. The standing guarantee
+  this buys: a conflicting meter registration, or any other metrics failure,
+  can never fail a lookup.
 - **2026-09-09 — The read budget fails closed; the identity cache fails open.**
   They look alike and are opposites. An unreachable identity cache costs
   computation and changes no answer, so it degrades. An unreachable budget means

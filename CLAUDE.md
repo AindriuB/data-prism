@@ -22,7 +22,7 @@ Spring Boot 3, Maven multi-module. The core carries no business domain.
 | Amendments to it — **these win** where the two disagree | `docs/design-review.md` |
 | Slice order, sizing, decisions that block Slice 0 | `docs/development-plan.md` |
 
-Load exactly one when the task needs it. `docs/pack.md` is 3,000 lines: grep the
+Load exactly one when the task needs it. `docs/pack.md` is 3,181 lines: grep the
 numbered section you need and read that alone.
 
 ## Roles

@@ -225,6 +225,17 @@ identically regardless of where javac propagated the annotation.
 
 ### C4. Hazelcast topology
 
+> **Reversed 2026-09-09 (S7).** This section recommended client–server topology.
+> The build instead runs Hazelcast **embedded** — see
+> `docs/architecture.md#decisions-worth-knowing`, entry dated 2026-09-09, for
+> the reasoning: a synthetic value is a pure function of scope, subject,
+> namespace and key, so a lost partition costs a recomputed HMAC and never a
+> different answer, which removes the objection below. The original reasoning
+> is left in place rather than deleted, because it was the reasoning believed
+> at the time and the reversal is only correct in light of a property (pure
+> determinism without the cache) this codebase did not yet demonstrably have
+> when this section was written.
+
 Embedded members in autoscaled stateless pods rebalance partitions on every scale event — the wrong
 property for the map holding identity mappings. Use **client–server topology** against a dedicated,
 isolated cluster. One map with scoped keys; TTL from `PrivacyContext.expiresAt`; an index on `scopeId` so
