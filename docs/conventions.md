@@ -262,6 +262,30 @@ serialise them, or have the reviewer work from an explicit `git show` of the tip
 Mutation-based proofs are standard practice under the discipline above, so this
 collision recurs unless both halves are stated.
 
+## Concurrent Maven verification
+
+Never run a compiling reviewer and a tester concurrently against one worktree.
+Read-only verification can be parallel; this project's reviewers routinely
+mutate and rebuild to prove a test can fail, which makes them writers of
+`target/` even though they touch no tracked file. Either the reviewer clones
+first, always, or the two run in sequence. A contended `target/` does not fail
+loudly — it produces a wrong test result.
+
+Task 07's `PiiLogScanTest` failed intermittently with paired stub subject ids
+appearing to leak into a log line — the one test whose job is to catch exactly
+that. It cost two implementation attempts and roughly a day across four agents
+before the cause was found: nothing in the code path ever logs a raw subject
+id: `DefaultContextOrchestrator.audit()` loads the HMAC pseudonym, and 100+
+sequential and parallel reproduction attempts on a clean tree never reproduced
+the failure. What did reproduce was two concurrent `mvn` processes contending
+over one shared `target/`, corrupted by a `ClassFormatError` on exactly the
+class both the implementer's and the reviewer's "prove this test can fail"
+mutation touches. Verification schedules tester and reviewer concurrently by
+default; when the reviewer's mutation-based proof compiles a mutated tree
+while the tester is running builds, mutated classes can land under a running
+test and produce a result indistinguishable from a real privacy defect. See
+`docs/plan/HISTORY.md`, grep `Task 07`, for the full trace.
+
 ## Background tasks in subagent turns *(kit)*
 
 Subagents do not receive background-task completion notifications. An implementer
@@ -297,3 +321,12 @@ Credentials, tokens, keys, real personal data, and pasted log dumps.
 If an agent needs to write a log file — verification output, replay traces — it
 goes in `logs/` at the repo root, never loose at the top level. `logs/` and
 `*.log` are gitignored: logs are scratch, not an artifact to commit.
+
+**A failing leak-detection test must preserve its captured output.**
+`PiiLogScanTest` writes its full capture to `logs/pii-log-scan-<millis>.log`
+before asserting. Every failure of that test until task 07 deleted the capture
+before anyone read it, which meant a question the log line would have settled
+in one look — real leak, or incidental match — instead cost four agents and
+several hundred test runs to resolve by inference. Any test whose job is to
+catch personal data in output writes what it captured to `logs/` on failure,
+not only on success.

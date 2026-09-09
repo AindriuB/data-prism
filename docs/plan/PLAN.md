@@ -28,89 +28,42 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### S8 — Security
+### S8 and S9a — done
 
-The slice that makes the rest mean what it says. `PrivacyContext` is currently a
-constant, and `scopeId` is half the pseudonymisation key: scope isolation is real
-in the code and vacuous in the deployment, because there is only ever one scope.
-Audit attributes every event to a principal named "system" that does not exist.
+S8 (security: OAuth2 resource server, scope/principal/purpose/case derived from
+an authenticated caller, streamable HTTP transport) and S9a (the cheap half of
+observability: real principal in audit, Micrometer metrics, a PII log scan that
+can actually fail) are both complete, closed by task 07 merging 2026-09-09. See
+`docs/plan/HISTORY.md` — grep `Task 07` — for what landed and what it cost.
 
-Scope, principal, purpose and case must derive from an authenticated session.
-That forces the streamable HTTP transport too, because stdio cannot carry an
-identity — the two are one piece of work, not two.
+### Now — Task 09: shipped defaults and hygiene
 
-The plumbing is understood and supported: the MCP SDK's transport builder takes a
-`contextExtractor`, and the tool handler reads `exchange.transportContext()`. No
-filter-and-ThreadLocal workaround. Stdio stays as an explicitly single-principal
-development mode.
+The last item before the plan's recommended stopping point. Two real defects —
+`DataPrismAssembly` mints a context carrying `EXPOSE_SOURCE_NAMES` by
+construction, so the worked example prints real source names while the shipped
+application masks them; and the shipped `developer` role's capability set is
+untested — plus two small pieces of debt (`ScopeResolver`'s stale javadoc,
+`data-prism-security` pulled transitively rather than declared). Task file:
+`docs/plan/tasks/09-shipped-defaults-and-hygiene.md`.
 
-Already in place: `ScopeIdentityIndex.endScope()` purges a scope's identities,
-reverse index and budget, so revocation is largely done; `SourceAliasing`'s
-expose-real-names flag is capability-shaped and becomes a real capability.
+**Blocked by:** nothing. Its dependency, task 07, merged 2026-09-09.
 
-The four questions below are answered; the authentication model — resource
-server, not issuer, not pass-through — is recorded in
-`docs/architecture.md#decisions-worth-knowing` (2026-09-09).
-
-**Four questions, settled:**
-
-1. Token issuer — any JWT against a configured JWKS, no specific IdP.
-2. Where a case comes from — an investigator arrives with a `case_id` claim;
-   Data Prism does not own scope lifecycle as a user-facing surface.
-3. The purpose taxonomy — a configurable list, `PurposeValidator` fails closed
-   on anything not in it.
-4. stdio survives as a dev-only mode, refused in production profiles.
-
-Five waves, in dependency order (08 was added mid-slice: three inert controls
-found during wave 2 verification, none of which wave 3 could safely build on top
-of).
-
-- **Wave 1 — done.** Tasks 01 (session types and metrics SPI) and 02 (mTLS for
-  outbound source calls) merged 2026-09-09.
-- **Wave 2 — done.** Tasks 03 (security module: caller, authorisation, purpose,
-  scope resolution), 04 (real principal through orchestration) and 05
-  (Hazelcast identity and collision metrics) merged 2026-09-09.
-- **Wave 2.5 — done.** Task 08 (purpose validation composed into
-  `ScopeResolver`; the mTLS and reserved-argument tests made able to fail)
-  merged 2026-09-09.
-- **Wave 3 — done.** Task 06 (streamable HTTP transport, per-request caller
-  context, authorisation at the tool) merged 2026-09-09. `PrivacyContext` now
-  derives from an authenticated session; `GetEntityContextTool` reads the
-  caller from `exchange.transportContext()`, authorises, resolves the
-  session, and audits a denial.
-- **Wave 4 — next.** Task 07 (OAuth2 resource server app, Micrometer binding,
-  PII log scan) — depends on 02, 05 and 06, now unblocked.
-
-**Blocked by:** nothing outstanding for wave 4. Task file at
-`docs/plan/tasks/07-resource-server-app-and-pii-log-scan.md`.
-
-**Open items from task 06, being planned as a follow-up task:**
-1. `WorkedExampleTest` runs on `assembly.investigationContext()` and prints
-   real source names — the documented worked example no longer matches what
-   running the application shows.
-2. `ExampleApplication.java:49` grants `Capability.EXPOSE_SOURCE_NAMES` to the
-   shipped `developer` role; no test kills this, so the shipped default is
-   unguarded.
-3. Nothing exercises the HTTP transport end to end — the `contextExtractor`
-   delivering a real caller into `exchange.transportContext()` on a real
-   request is unverified.
-4. `ScopeResolver`'s class javadoc still omits the purpose refusal added in
-   task 08.
-5. `data-prism-example/pom.xml` gets `data-prism-security` transitively
-   through `mcp` rather than declaring it directly.
-
-### S9a — The cheap half of observability
-
-Worth folding into S8 while audit is already being touched: the real principal in
-audit events, metrics per docs/pack.md §89, and a log-scanning test that fails on
-any PII in a full integration run. The append-only sink and the chain verifier can
-wait for a deployment that needs them.
-**Blocked by:** S8.
+**Also queued for 09, not yet folded into its acceptance list:** `PiiLogScanTest`
+(task 07) matches banned values on word boundaries, so a banned value glued to
+word characters is not caught — `subject=SUBJ-123a7f9` and `id_456_x` both pass
+today. No current code path emits either shape, but the first is the shape a
+pseudonymiser bug concatenating a raw id would produce. Scanning the audit
+line's structured fields rather than raw text would close it. `PiiLogScanTest`
+is not in task 09's `Owns`, so this needs either a widened `Owns` or a follow-up
+task file when 09 is next planned in detail — do not silently fold it into 09's
+existing acceptance list without updating `Owns` to match.
 
 ## Recommended stopping point
 
-After S8 and S9a. That is where the README stops needing an asterisk: every claim
-it makes is then true of a deployment rather than only of the library.
+After S8 and S9a, plus task 09's hygiene follow-ups. S8 and S9a are done; task 09
+is the only open task and the only thing between here and the stopping point.
+That is where the README stops needing an asterisk: every claim it makes is
+then true of a deployment rather than only of the library.
 
 S10 was deferred past V1 by decision and the index it needs already exists. S11
 is the Elasticsearch connector and Docker Compose — real work, no new guarantees,

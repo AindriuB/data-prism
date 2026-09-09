@@ -17,6 +17,94 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-09 — Task 07: OAuth2 resource server, Micrometer, PII log scan
+
+This closes S8 and the cheap half of S9. A Spring Boot resource server validates
+caller JWTs against a configured JWKS, an extractor puts an `AuthenticatedCaller`
+— and only that, never the raw token — into the MCP transport context, and the
+tool derives scope, principal, purpose and case from it. stdio's production
+refusal is wired at the one call site that existed. Micrometer binds through
+`MicrometerPrivacyMetrics`, which guards inside the implementation so a
+conflicting meter registration cannot fail a lookup.
+
+The criterion that mattered: task 06 built the streamable HTTP transport but
+nothing exercised it — its test asserted a builder returned non-null and never
+opened a socket. `McpHttpEndToEndTest` now makes a real HTTP MCP request bearing
+a locally-minted JWT against an in-test JWKS, on an ephemeral port, and asserts
+the `PrivacyContext` carries values derived from the token. Review proved it
+non-vacuous by hardcoding a constant caller in the extractor and watching four
+tests redden, and confirmed each negative-direction mutation flips exactly one
+direction, so no test passes on a blanket refusal. Its `@AfterAll` asserts a
+fresh socket connect to the port throws, so the server is proven released
+rather than merely assumed.
+
+**Cost worth recording — a false PII-leak alarm caused by the verification
+process, not by the code.**
+
+`PiiLogScanTest` failed intermittently with `Expecting empty but was: ["123",
+"456"]` — the raw stub subject ids, in the one test whose job is to prove no
+personal data reaches a log line. Attempt 1 was rejected for it after a
+reviewer measured 3 failures in 12 runs and diagnosed incidental hex collision:
+`BANNED_VALUES` held bare `123`/`456` while audit lines carry random hex.
+Attempt 2 switched to word-boundary matching and reported 25 clean runs; a
+second review approved with a structural argument that no field
+`Slf4jAuditSink` emits can produce a 3-character word-bounded token. A tester
+then ran it 30 times and got 5 failures, 4 of them the same paired ids, and
+reasoned that a pair failing together is not what independent hex collisions
+look like — which is correct, and which pointed at a real leak.
+
+It was not a leak. Investigation checked the compiled bytecode directly:
+`DefaultContextOrchestrator.audit()` loads the HMAC pseudonym, not
+`request.subjectId()`, and no logging call site in the pipeline touches a raw
+subject id. 100+ sequential and parallel reproduction attempts never produced
+the failure. What did reproduce was concurrent Maven processes contending over
+one shared `target/`, failing on exactly the class named in the accompanying
+`ClassFormatError`.
+
+The mechanism: the only change in the codebase that produces this exact
+symptom — both ids, paired, in an otherwise well-formed `event=` line — is
+swapping `subjectToken` for `request.subjectId()` in
+`DefaultContextOrchestrator`, which is precisely the mutation both the
+implementer and the reviewer run as their "prove this test can fail" step.
+Verification spawns tester and reviewer concurrently against one worktree.
+Once the reviewer compiles a mutated tree while the tester runs builds,
+mutated classes can land under a running test.
+
+Final confirmation, single agent, clean `target/`, strictly sequential: 50/50
+passes, 318 tests. Re-verified again at close-out with a full clean sequential
+`mvn -B verify` from `main` post-merge: 318 tests, 0 failures, 0 errors, 0
+skipped — including `MutualTlsRestClientsHttpsTest`, itself flagged as a
+one-off failure under a contended full run (see below), which passed cleanly
+both times.
+
+**Two process rules this establishes, added to `docs/conventions.md`:**
+
+1. **Never run a compiling reviewer and a tester concurrently against one
+   worktree.** Read-only verification can be parallel; this project's
+   reviewers routinely mutate and rebuild to prove a test can fail, which
+   makes them writers of `target/` even though they touch no tracked file.
+   Either the reviewer clones first, always, or the two run in sequence. A
+   contended `target/` does not fail loudly — it produces a wrong test
+   result, and in this case one indistinguishable from a privacy defect.
+2. **A failing leak-detection test must preserve its captured output.**
+   `PiiLogScanTest` writes the full capture to `logs/pii-log-scan-<millis>.log`
+   before asserting, and every failure so far deleted it before anyone read
+   it. The line itself settles a leak question in one look; without it, this
+   cost four agents and several hundred test runs to resolve by inference.
+
+Also record, as a known residual and not a defect: `PiiLogScanTest`'s
+word-boundary matching means a banned value glued to word characters is not
+caught — `subject=SUBJ-123a7f9` and `id_456_x` both pass, verified at review.
+No current code path emits either, but the first is the shape a
+pseudonymiser bug concatenating a raw id would produce. Scanning the audit
+line's structured fields rather than raw text would close it. Queued for task
+09.
+
+Also note `MutualTlsRestClientsHttpsTest`, which failed once during an
+earlier full run, passed 20/20 standalone, in two full reactor runs during
+review, and again in both of the close-out's clean sequential runs. Not a
+flake; the same `target/` contention as the log-scan alarm above.
+
 ## 2026-09-09 — Task 06: streamable HTTP transport, per-request caller context, authorisation at the tool
 
 This is the task that makes S8 mean something. `PrivacyContext` was a constant
