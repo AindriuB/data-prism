@@ -47,17 +47,22 @@ review.
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
 | `reidentification` *(planned)* | `hazelcast`, `security`, `audit` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
-| `spring-boot-starter` *(planned)* | everything | Auto-configuration and wiring |
+| `spring-boot-autoconfigure` *(planned)* | everything | Shared `dataprism.*` binding, validation and privacy-pipeline wiring |
+| `spring-boot-starter` *(planned)* | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
+| `server` *(planned)* | `spring-boot-autoconfigure` | Primary standalone Streamable HTTP MCP-server launcher and distribution |
 | `example` | everything, and declares `security` directly | Three stub sources with divergent representations, the runnable server, `MicrometerPrivacyMetrics`, `JwtCallerContextExtractor` |
 
 Two directions matter and are easy to get backwards:
 
 - **`mcp` and `orchestration` must not depend on `connectors-*`.** They see
-  `DataSourceAdapter` from `core`; the starter supplies implementations at
-  runtime. The pack's §9 dependency chain contradicts its own §72 ArchUnit rule
-  on this point — the rule is right.
-- **Nothing depends on `spring-boot-starter`** except the example. It is the
-  wiring leaf.
+  `DataSourceAdapter` from `core`; the shared auto-configuration core supplies
+  implementations at runtime. The pack's §9 dependency chain contradicts its
+  own §72 ArchUnit rule on this point — the rule is right.
+- **No core, privacy, MCP or orchestration module depends on a wiring or
+  distribution module.** `spring-boot-autoconfigure` is the wiring leaf; the
+  starter and server intentionally consume that shared core rather than
+  implementing separate privacy paths. Nothing else may depend on the starter
+  or server except their launchers/examples.
 
 ## Repository topology
 
@@ -81,8 +86,10 @@ not edited. `docs/design-review.md` amends it and wins wherever the two disagree
 
 ## How they talk
 
-**Inbound.** MCP over stdio in development, streamable HTTP in production, behind
-an OAuth2 resource server. The rule is a closed tool set, not an open one: only
+**Inbound.** Protected APIs use Streamable HTTP behind an OAuth2 resource
+server. Stdio is fixture-only, single-principal development transport; it is
+never a route to a protected API. The rule is a closed tool set, not an open
+one: only
 `get_entity_context` exists today; `compare_entity_sources`, `search_entity_data`
 and `describe_entity_model` are designed (§B5) but not built, and none of the
 four is a ceiling that gets relaxed by adding a tool nobody reviewed. Backend
@@ -92,6 +99,14 @@ decisions to the caller.
 **Outbound.** `RestClient` over mTLS to enterprise APIs, one adapter per source,
 endpoints configured server-side only. Elasticsearch through an adapter that
 translates a controlled query grammar; raw DSL never reaches it.
+
+**Deployment.** The standalone server is the primary product for protecting
+existing APIs; the Spring Boot starter is the embedded integration option. Both
+consume the single validated `dataprism.*` contract in
+`configuration.md`. Configuration parameterises reviewed adapters but does not
+infer classifications, create arbitrary JSON mappings, or let MCP callers
+choose a backend. Java-first adapters and annotated models are supported now;
+configuration-driven generic JSON sources are deferred.
 
 **Sideways.** An embedded Hazelcast member holding the identity cache, the shared
 read budget and — only where a deployment enables it — the re-identification
@@ -259,6 +274,12 @@ all of these is in `design-review.md` under the section named.
   added later cannot resolve any pseudonym issued before it existed, so every
   scope created in the interim would be permanently opaque. The map is cheap; the
   surface is what needs the security review, and that can wait.
+- **2026-09-13 — One configuration core serves the standalone server and Spring
+  Boot starter.** The server is the primary product and the starter an embedded
+  option; both bind and validate the same `dataprism.*` vocabulary. Rejected:
+  duplicate server/starter wiring, which would let safety rules diverge, and a
+  configuration-only arbitrary-JSON adapter, which would make classifications
+  and endpoint/schema choices implicit. See ADR 0001 and `configuration.md`.
 - **2026-09-08 — Build the walking skeleton first, then thicken it**
   (`development-plan.md`). Rejected: the pack's layer-by-layer Phase 1–9 order,
   which defers proving the privacy boundary end-to-end until the last phase.
