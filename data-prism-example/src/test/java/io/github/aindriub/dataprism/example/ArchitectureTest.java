@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.example;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -107,7 +109,44 @@ class ArchitectureTest {
             .orShould().accessClassesThat().haveFullyQualifiedName("java.security.SecureRandom")
             .orShould().callMethod(java.util.UUID.class, "randomUUID")
             .orShould().callMethod(java.lang.System.class, "currentTimeMillis")
-            .allowEmptyShould(true);
+            .orShould().callMethod(java.time.Instant.class, "now")
+            .allowEmptyShould(false);
+
+    /**
+     * Scrubbing works on a Jackson data tree. Mutating source objects would both
+     * bypass record invariants and make the boundary depend on their shape.
+     */
+    @ArchTest
+    static final ArchRule privacyModulesDoNotMutateObjectGraphsReflectively = noClasses()
+            .that().resideInAnyPackage("..dataprism.core..", "..dataprism.pseudonymisation..",
+                    "..dataprism.validation..", "..dataprism.orchestration..")
+            .should().accessClassesThat().haveFullyQualifiedName("sun.misc.Unsafe")
+            .orShould().callMethodWhere(reflectiveFieldMutation())
+            .orShould().callMethodWhere(methodHandleFieldAccess())
+            .allowEmptyShould(false);
+
+    private static DescribedPredicate<JavaMethodCall> reflectiveFieldMutation() {
+        return DescribedPredicate.describe("call Field#set* or setAccessible", call -> {
+            String owner = call.getTarget().getOwner().getFullName();
+            String name = call.getTarget().getName();
+            return (owner.equals("java.lang.reflect.Field") && name.startsWith("set"))
+                    || (owner.startsWith("java.lang.reflect.") && name.equals("setAccessible"));
+        });
+    }
+
+    private static DescribedPredicate<JavaMethodCall> methodHandleFieldAccess() {
+        return DescribedPredicate.describe("use MethodHandles or VarHandle field access", call -> {
+            String owner = call.getTarget().getOwner().getFullName();
+            String name = call.getTarget().getName();
+            return owner.equals("java.lang.invoke.VarHandle")
+                    || (owner.equals("java.lang.invoke.MethodHandles$Lookup")
+                    && (name.equals("findGetter") || name.equals("findSetter")
+                    || name.equals("findStaticGetter") || name.equals("findStaticSetter")
+                    || name.equals("findVarHandle") || name.equals("findStaticVarHandle")
+                    || name.equals("unreflectGetter") || name.equals("unreflectSetter")
+                    || name.equals("unreflectVarHandle")));
+        });
+    }
 
     /**
      * {@code data-prism-security} is authorisation and scope resolution, usable
