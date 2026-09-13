@@ -17,6 +17,34 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-13 — Tasks 11, 12 and 13: close the remaining safety-test gaps
+
+Task 11 replaces the REST adapter's blanket `RuntimeException` assertion with
+the specific HTTP 500 exception and status the fixture produces. An unreachable
+server now fails the test's negative proof instead of satisfying it. Task 12
+adds the missing `Instant.now()` determinism rule, rejects reflective mutation
+and `Unsafe` in the privacy modules, and proves an injected validation refusal
+returns no response while recording a DENY audit event. Boundary 5 remains
+prose-only: the re-identification module is still deliberately deferred.
+
+Task 13 adds `HazelcastStoredValueBoundaryTest`. It carries a distinctive,
+synthetic sensitive value through the real scrubbing and cache-backed synthesis
+path, exercises identity, re-identification and budget maps, inventories every
+live distributed map, recomputes legal entries from their keys, and scans every
+key and value for that raw fixture. The test rejects an unclassified fourth map
+as well as a raw value deliberately written by its mutation proof.
+
+**Cost:** Task 13's first review found that the raw fixture was only local to
+the test and did not reach the production-adjacent path leading to Hazelcast.
+The correction matters: a boundary scan detached from the path it claims to
+protect can pass while proving nothing. The task also confirmed the existing
+workflow constraint that Maven/fixture tests need an isolated target and local
+socket access; the restricted sandbox could not bind the HTTPS fixture, while
+the normal verification environment passed. All three PRs passed their required
+GitHub Actions build checks; Tasks 12 and 13 were rebased and rebuilt after
+earlier protected merges so every merge was up to date. The post-wave
+`mvn -B verify` run on `main` passed.
+
 ## 2026-09-09 — Task 10: the mTLS refusal assertion made cross-platform
 
 `main` went red on GitHub Actions at commit `3f6a59a`.
@@ -641,4 +669,3 @@ Two decisions worth not relitigating: scrubbing operates on a Jackson tree
 because records cannot be written back to, and pseudonyms carry a 20-bit ASCII
 discriminator because a 32x32 name pool collides well before 50,000 subjects and
 a collision tells the model that two people are one.
-
