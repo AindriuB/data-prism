@@ -17,6 +17,28 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-13 — Task 14: define the shared deployment configuration contract
+
+Data Prism now has one documented deployment contract for its two supported
+surfaces: the standalone Streamable HTTP server is primary, while the Spring
+Boot starter is an embedded integration that consumes the same validated
+configuration core. The configuration reference names every `dataprism.*`
+group, distinguishes required settings from defaults and secret references, and
+keeps stdio restricted to fixture-only, single-principal development.
+
+The contract preserves the existing trust boundaries. Operators configure fixed
+sources and reviewed adapters; an MCP caller cannot choose a host, path, field,
+or schema. Java-first applications still supply explicit, annotated models and
+adapter/identity beans. Configuration-driven JSON sources remain deferred until
+their separate allowlist, classification and schema-validation task.
+
+**Cost:** the first architecture wording over-constrained the new module graph:
+it said nothing depended on auto-configuration even though the planned starter
+does. Review corrected that to the actual rule — core, privacy, MCP and
+orchestration cannot depend on wiring/distribution modules, while the starter
+and server intentionally consume shared auto-configuration. The correction is
+what makes Task 15's ownership unambiguous.
+
 ## 2026-09-13 — Tasks 11, 12 and 13: close the remaining safety-test gaps
 
 Task 11 replaces the REST adapter's blanket `RuntimeException` assertion with

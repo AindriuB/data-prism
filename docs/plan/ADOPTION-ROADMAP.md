@@ -22,7 +22,7 @@ values. They retain their existing ownership and are not superseded here.
 | Wave | Tasks | Outcome |
 |---|---|---|
 | 0 | 11, 12, 13 | Existing safety and test-debt work closed. |
-| 1 | 14 | One agreed deployment contract, configuration vocabulary and supported-mode matrix. |
+| 1 | 14 — complete | Shared deployment contract, configuration vocabulary, and supported-mode matrix recorded. |
 | 2 | 15 | A shared Spring Boot auto-configuration module binds and validates production configuration. |
 | 3 | 16 | The starter proves the embedded Java-first integration path. |
 | 4 | 17 | The standalone server packages the same configuration core as the primary product. |
