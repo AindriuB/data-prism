@@ -6,6 +6,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
@@ -94,7 +96,9 @@ class RestDataSourceAdapterHttpTest {
     @DisplayName("any other error propagates so the fan-out can record and count it")
     void serverErrorPropagates() {
         assertThatThrownBy(() -> adapter().fetch(DataRequest.of("CUSTOMER", "broken")))
-                .isInstanceOf(RuntimeException.class);
+                .isInstanceOf(HttpServerErrorException.InternalServerError.class)
+                .satisfies(exception -> assertThat(((HttpServerErrorException) exception).getStatusCode())
+                        .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR));
     }
 
     @Test
