@@ -49,40 +49,21 @@ runs on, without weakening it. Task 10 merged 2026-09-09, verified green on
 Actions run 34386674901. See `docs/plan/HISTORY.md` — grep `Task 10` — for
 what landed and what it cost.
 
-### Tasks 11, 12, 13 — planned, not started
+### Tasks 11, 12, 13 — done
 
-Fanned out to implementers on 2026-09-09 and stopped a few minutes into
-implementation at the user's request. No commits were made on any of their
-branches, no pull requests were opened, and their worktrees and branches have
-since been removed. `main` was never touched by them. They are planned and
-unstarted, not in progress and not abandoned: anyone picking one up starts a
-fresh implementer against its task file with nothing to reconcile.
-
-- **Task 11** — `docs/plan/tasks/11-rest-adapter-error-assertion.md`.
-  `RestDataSourceAdapterHttpTest.java:97` asserts
-  `isInstanceOf(RuntimeException.class)`, which passes on any failure at all —
-  the seventh cannot-fail assertion found in this repository. Replace it with
-  an assertion only the 500 stub can satisfy.
-- **Task 12** — `docs/plan/tasks/12-architecture-rules-determinism-and-boundaries.md`.
-  `Instant.now()` is banned by `docs/conventions.md:54` in the same sentence as
-  `Random` and `UUID.randomUUID`, but the ArchUnit determinism rule checks only
-  the other four; add it. The task also carries a judgement on whether
-  architecture boundaries 2 and 3 are honestly enforceable by a test, with an
-  explicit licence to conclude they are not and leave them as prose. Boundary 5
-  stays prose-only by decision until the re-identification module exists.
-- **Task 13** — `docs/plan/tasks/13-hazelcast-holds-no-raw-values.md`.
-  Architecture boundary 6 — Hazelcast never holds a raw sensitive value — has
-  no test. A violation there is silent and permanent: a raw value written to a
-  distributed map is not something a later fix retrieves. This is the most
-  valuable of the three.
+All three safety tasks merged through protected, green pull requests on
+2026-09-13. Task 11 makes the REST 500 assertion specific; Task 12 enforces the
+missing determinism and validation boundaries; Task 13 proves every live
+Hazelcast map contains only recomputable state and no raw sensitive fixture.
+See `docs/plan/HISTORY.md` — grep `Tasks 11, 12 and 13` — for verification and
+the cost of closing them.
 
 ## Recommended stopping point — reached 2026-09-09
 
-Every claim the README makes is true of a deployment, not only of the
-library. Tasks 11, 12 and 13 above are the only work open in
-`docs/plan/tasks/`. The remaining slices stay ordered under "Someday" but are
-not scheduled — picking any of them back up is a new planning decision, not a
-continuation of this run.
+Every claim the README makes is true of a deployment, not only of the library.
+The remaining slices stay ordered under "Someday" but are not scheduled —
+picking any of them back up is a new planning decision, not a continuation of
+this run.
 
 S10 was deferred past V1 by decision and the index it needs already exists. S11
 is the Elasticsearch connector and Docker Compose — real work, no new guarantees,

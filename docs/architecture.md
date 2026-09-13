@@ -119,9 +119,14 @@ the boundary is crossed; catching a violation depends on review.
 2. **The privacy engine operates on a data tree, not on the Java object graph.**
    Records are immutable and their constructors validate; reflective field
    mutation is not an option and `Unsafe` is not acceptable in a security
-   component. **Prose only.**
+   component. **Enforced** — `ArchitectureTest
+   .privacyModulesDoNotMutateObjectGraphsReflectively` forbids `Unsafe`,
+   reflective field mutation (`Field#set*` and `setAccessible`), and field
+   access through `VarHandle` or `MethodHandles` in the privacy modules.
 3. **A response that fails validation is not returned.** There is no
-   log-and-continue path. **Prose only.**
+   log-and-continue path. **Enforced** — `ValidationBoundaryTest
+   .validationFailureIsNotReturned` injects a validator refusal and asserts a
+   `PrivacyRefusedException` plus a DENY audit event rather than a response.
 4. **The caller never supplies its own scope, principal, purpose or case id.**
    All four derive from the authenticated session. A tool argument claiming any
    of them is ignored and the attempt is audited. **Enforced** — `security`'s
@@ -134,9 +139,10 @@ the boundary is crossed; catching a violation depends on review.
 6. **Hazelcast never holds raw sensitive values** — pseudonyms and subject ids
    only. The identity cache never decides a value: every path through it returns
    what the generator would have returned, including the path where the cluster
-   is gone. **Prose only.** No test scans what `hazelcast` writes to its maps;
-   this is the boundary worth a test soonest, because a violation here is
-   silent and durable rather than a build failure or a request-time refusal.
+   is gone. **Enforced** — `HazelcastStoredValueBoundaryTest` drives identity
+   caching with re-identification and a read budget, inventories every live map,
+   recomputes allowed state from decomposed keys, and rejects both unknown maps
+   and the distinctive raw-value fixture in every key and value.
 7. **No sensitive value in a log line, metric label, trace attribute, exception
    message or audit record.** Search parameters are fingerprinted with an HMAC
    under the scope key, not hashed. **Partially enforced** — the log half is
