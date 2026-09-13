@@ -204,13 +204,17 @@ annotations
 
 connectors-rest                  (implements DataSourceAdapter; nothing depends on it)
 connectors-search                (Elasticsearch)
-spring-boot-starter              (wiring; depends on everything, nothing depends on it)
+spring-boot-autoconfigure        (shared wiring; depends on everything, nothing depends on it)
+spring-boot-starter              (dependency-only embedded entry point)
+server                           (standalone launcher; primary product)
 example/example-sources          (three stub APIs)
 example/example-app
 ```
 
 `mcp` and `orchestration` see adapter *interfaces* from `core`; concrete connectors are runtime-wired by
-the starter. The ArchUnit rule then holds by construction rather than by vigilance.
+the shared auto-configuration core. The standalone server and starter both use
+that core rather than gaining separate privacy implementations. The ArchUnit
+rule then holds by construction rather than by vigilance.
 
 ### C2. Package and coordinates
 
@@ -241,6 +245,24 @@ property for the map holding identity mappings. Use **client–server topology**
 isolated cluster. One map with scoped keys; TTL from `PrivacyContext.expiresAt`; an index on `scopeId` so
 scope purge is a single predicate delete; `MapStore` explicitly disabled; persistence off unless the
 organisation has consciously accepted storing mappings at rest.
+
+### C5. One configuration contract; Java-first sources before generic JSON
+
+> **Accepted 2026-09-13 (Task 14).** The standalone Streamable HTTP server is
+> the primary deployment product; the Spring Boot starter is an embedded option.
+> Both bind one validated `dataprism.*` vocabulary through the shared
+> auto-configuration core (ADR 0001). Configuration chooses deployment
+> parameters and reviewed adapters; it never lets an MCP caller choose a host,
+> path, schema, classification, scope, purpose, or case identifier.
+
+The initial integration path is Java-first: the host supplies explicit
+`DataSourceAdapter` and `IdentityResolver` implementations plus annotated model
+types. A generic configuration-driven JSON REST adapter is not supported yet.
+It needs explicit JSON-path classifications and subject identifiers, schema
+validation, allowlisted endpoint/path grammar, fail-closed unknown fields, and
+a separate security review before it can be introduced. Stdio remains a
+fixture-only, single-principal development transport; protected APIs use
+authenticated Streamable HTTP.
 
 ---
 
