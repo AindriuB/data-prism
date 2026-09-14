@@ -17,6 +17,32 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-14 — Task 15: build the validated Spring Boot configuration core
+
+Data Prism now has a shared `data-prism-spring-boot-autoconfigure` module for
+both supported deployment surfaces. Typed `dataprism.*` properties cover the
+deployment contract, startup validation rejects invalid source URLs, roles,
+capabilities, purposes, unsafe production stdio and missing required beans, and
+the configuration builds the existing privacy and MCP components without
+introducing another mapper or reversing the module boundaries.
+
+Secret references are operational rather than decorative: the configured HMAC
+reference is resolved through the configuration-bound provider, and an
+application bean cannot accidentally bypass it. The focused configuration
+suite contains 15 tests, and the full reactor passed before the protected PR
+merged.
+
+**Cost:** independent review found three fail-closed gaps across successive
+iterations. The first implementation did not validate the active key/profile
+relationship and omitted documented configuration groups. The next accepted
+an HMAC reference syntactically without using it to resolve the key. The final
+iteration initially allowed an application `SecretKeyProvider` to win bean
+selection and bypass that configured reference. Making the
+configuration-bound provider primary closed the ambiguity while retaining the
+application-owned adapter and identity-resolver requirement. These findings
+are why future distribution modules should consume this configuration core
+rather than duplicate its binding or bean-selection rules.
+
 ## 2026-09-13 — Task 14: define the shared deployment configuration contract
 
 Data Prism now has one documented deployment contract for its two supported
