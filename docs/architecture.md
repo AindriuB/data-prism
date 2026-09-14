@@ -47,10 +47,10 @@ review.
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
 | `reidentification` *(planned)* | `hazelcast`, `security`, `audit` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
-| `spring-boot-autoconfigure` *(planned)* | everything | Shared `dataprism.*` binding, validation and privacy-pipeline wiring |
-| `spring-boot-starter` *(planned)* | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
-| `server` *(planned)* | `spring-boot-autoconfigure` | Primary standalone Streamable HTTP MCP-server launcher and distribution |
-| `example` | everything, and declares `security` directly | Three stub sources with divergent representations, the runnable server, `MicrometerPrivacyMetrics`, `JwtCallerContextExtractor` |
+| `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding, validation, privacy-pipeline wiring, MCP lifecycle and servlet registration |
+| `spring-boot-starter` | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
+| `server` | `spring-boot-autoconfigure` | Primary executable Streamable HTTP MCP server, JWT boundary, health endpoint, production integrations and privacy metrics |
+| `example` | everything, and declares `security` directly | Fixture-only demo application, three stub sources with divergent representations, worked examples and embedded-integration tests |
 
 Two directions matter and are easy to get backwards:
 

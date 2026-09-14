@@ -25,7 +25,7 @@ values. They retain their existing ownership and are not superseded here.
 | 1 | 14 — complete | Shared deployment contract, configuration vocabulary, and supported-mode matrix recorded. |
 | 2 | 15 — complete | A shared Spring Boot auto-configuration module binds and validates production configuration. |
 | 3 | 16 — complete | The starter proves the embedded Java-first integration path. |
-| 4 | 17 | The standalone server packages the same configuration core as the primary product. |
+| 4 | 17 — complete | The standalone server packages the same configuration core as the primary product. |
 | 5 | 18, 19 | A reproducible Compose quickstart and tested agent connection guides make the product approachable. |
 | 6 | 20 | A separately reviewed configuration-driven JSON adapter serves non-Java source APIs. |
 
