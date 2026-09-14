@@ -17,6 +17,39 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-14 — Task 16: ship the Spring Boot starter and embedded protected-API example
+
+Data Prism now ships a dependency-only `data-prism-spring-boot-starter`. An
+application adds that dependency, supplies its reviewed source adapters,
+identity resolver, key resolver, audit sink, metrics and inbound security, and
+the shared auto-configuration owns the MCP SDK server lifecycle and async
+servlet registration at the configured path. The HTTP example no longer copies
+the production privacy/MCP assembly; its fixture-only stdio entry point remains
+separate.
+
+The example consumes the validated `dataprism.*` security contract for direct
+JWKS and exact issuer-discovery-document locations. Its protected end-to-end
+suite starts an HTTPS JWKS fixture, authenticates a real JWT, calls `/mcp`, and
+proves the source response is pseudonymised without leaking the raw subject,
+name or email. Startup tests also prove missing adapters, identity resolution
+or caller-context extraction refuse the application rather than silently
+serving an empty or absent boundary. The post-merge full 15-module Maven reactor
+passed on `main`.
+
+**Cost:** preflight exposed a contradiction in the original task: a POM-only
+starter could not create `/mcp` because the shared auto-configuration stopped
+at a transport record, while the task did not own that module. PR #22 corrected
+ownership before implementation so lifecycle and servlet wiring could move to
+the shared module without putting Java code in the starter. Independent review
+then found that HTTP beans ignored the selected transport mode, a missing
+caller extractor silently removed the endpoint, and issuer discovery was wired
+through an API that derives a metadata path instead of fetching the exact URI
+the configuration contract promises. Successive fixes added explicit
+HTTP/servlet conditions, stable fail-closed startup diagnostics, bounded exact
+discovery fetching with issuer/JWKS validation, and non-vacuous regression
+tests. The final independent run covered 354 tests with no failures, errors,
+skips or zero-test suites.
+
 ## 2026-09-14 — Task 15: build the validated Spring Boot configuration core
 
 Data Prism now has a shared `data-prism-spring-boot-autoconfigure` module for
