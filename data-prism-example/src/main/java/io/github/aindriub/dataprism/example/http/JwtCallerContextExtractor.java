@@ -4,6 +4,7 @@ import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.ClaimNames;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
+import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,6 +40,13 @@ import java.util.Map;
 public final class JwtCallerContextExtractor implements McpTransportContextExtractor<HttpServletRequest> {
 
     private static final Logger LOG = LoggerFactory.getLogger(JwtCallerContextExtractor.class);
+    private final ClaimNames claimNames;
+
+    public JwtCallerContextExtractor(DataPrismProperties properties) {
+        DataPrismProperties.Security.CallerClaims configured = properties.getSecurity().getCallerClaims();
+        this.claimNames = new ClaimNames(configured.getPrincipal(), java.util.List.of("azp", "client_id"),
+                configured.getRoles(), "purpose", configured.getInvestigation());
+    }
 
     @Override
     public McpTransportContext extract(HttpServletRequest request) {
@@ -53,7 +61,7 @@ public final class JwtCallerContextExtractor implements McpTransportContextExtra
 
         try {
             AuthenticatedCaller caller =
-                    AuthenticatedCaller.fromClaims(claimsOf(jwtAuthentication.getToken()), ClaimNames.DEFAULT);
+                    AuthenticatedCaller.fromClaims(claimsOf(jwtAuthentication.getToken()), claimNames);
             return McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller));
         } catch (SecurityRefusedException refused) {
             // The code is safe to log; the claims that produced it are not, and

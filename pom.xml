@@ -33,6 +33,7 @@
     <module>data-prism-connectors-rest</module>
     <module>data-prism-hazelcast</module>
     <module>data-prism-spring-boot-autoconfigure</module>
+    <module>data-prism-spring-boot-starter</module>
     <module>data-prism-example</module>
   </modules>
 
@@ -136,6 +137,11 @@
       <dependency>
         <groupId>io.github.aindriub</groupId>
         <artifactId>data-prism-spring-boot-autoconfigure</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-spring-boot-starter</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>

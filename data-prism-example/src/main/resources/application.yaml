@@ -1,4 +1,4 @@
-# Configuration for the HTTP resource server (ResourceServerApplication).
+# Configuration for the starter-backed HTTP resource server.
 # The stdio launcher (ExampleApplication) never starts a Spring context and
 # never reads this file.
 #
@@ -11,18 +11,20 @@ server:
   # hardcoded-port mistake task 07 is required not to make.
   port: 0
 
-spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: http://localhost:0/not-configured/jwks
-
 dataprism:
+  transport:
+    mode: http
+    http:
+      path: /mcp
   security:
     jwt:
       issuer: data-prism-example
       audience: data-prism-mcp
+      jwk-set-uri: https://localhost:0/not-configured/jwks
+    caller-claims:
+      principal: sub
+      roles: roles
+      investigation: case_id
   security-policy:
     purposes:
       - investigation
@@ -32,3 +34,28 @@ dataprism:
       privileged-investigator:
         - GET_ENTITY_CONTEXT
         - EXPOSE_SOURCE_NAMES
+  privacy:
+    profile: DEFAULT
+    locale: neutral
+    scope-lifetime: 8h
+    hmac-key:
+      key-id: example-v1
+      environment-variable: DATAPRISM_EXAMPLE_HMAC_KEY
+  audit:
+    sink: slf4j
+    writer-id: data-prism-example
+  metrics:
+    sink: micrometer
+  hazelcast:
+    topology: embedded
+    reidentification-enabled: false
+  sources:
+    customer-api:
+      base-url: https://customer.example.invalid
+      timeout: 2s
+    account-api:
+      base-url: https://account.example.invalid
+      timeout: 2s
+    order-api:
+      base-url: https://order.example.invalid
+      timeout: 2s

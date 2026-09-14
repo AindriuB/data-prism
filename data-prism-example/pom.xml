@@ -21,49 +21,26 @@
   <dependencies>
     <dependency>
       <groupId>io.github.aindriub</groupId>
-      <artifactId>data-prism-mcp</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.aindriub</groupId>
-      <artifactId>data-prism-connectors-rest</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.aindriub</groupId>
-      <artifactId>data-prism-security</artifactId>
+      <artifactId>data-prism-spring-boot-starter</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-logging</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
     </dependency>
 
-    <!-- The resource server: validates a bearer JWT against a configured JWKS
-         URL and serves the MCP streamable HTTP transport on embedded Tomcat.
-         spring-boot-starter-logging is excluded from both starters below so
+    <!-- The resource server dependencies arrive through the Data Prism starter.
+         spring-boot-starter-logging is excluded from that dependency so
          logback-classic never reaches this module's classpath — two SLF4J
          providers would let logback's own default console appender win the
          race non-deterministically, and stdio's launcher (ExampleApplication)
          depends on every diagnostic going through slf4j-simple to stderr
          rather than the stream stdio's own protocol occupies. -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-starter-logging</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-starter-logging</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-core</artifactId>
@@ -74,6 +51,11 @@
     <dependency>
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-test</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

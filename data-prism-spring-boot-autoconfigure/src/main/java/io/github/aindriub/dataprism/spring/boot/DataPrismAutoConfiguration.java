@@ -38,12 +38,17 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
@@ -158,11 +163,52 @@ public class DataPrismAutoConfiguration {
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
+    @Bean
+    @ConditionalOnProperty(prefix = "dataprism.transport", name = "mode", havingValue = "HTTP",
+            matchIfMissing = true)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    Object dataPrismHttpTransportValidated(
+            ObjectProvider<McpTransportContextExtractor<HttpServletRequest>> extractors) {
+        if (extractors.getIfAvailable() == null) {
+            throw new DataPrismConfigurationException("MISSING_CALLER_CONTEXT_EXTRACTOR",
+                    "HTTP transport requires an McpTransportContextExtractor<HttpServletRequest> bean");
+        }
+        return new Object();
+    }
+
     @Bean @ConditionalOnMissingBean @ConditionalOnBean(McpTransportContextExtractor.class)
+    @ConditionalOnProperty(prefix = "dataprism.transport", name = "mode", havingValue = "HTTP",
+            matchIfMissing = true)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    @DependsOn("dataPrismHttpTransportValidated")
     DataPrismMcpServer.HttpTransport dataPrismHttpTransport(ContextOrchestrator orchestrator, AuthorizationService authorization,
             ScopeResolver scopeResolver, McpTransportContextExtractor<HttpServletRequest> extractor,
             PrivacyMetrics metrics, AuditRecorder audit, Clock clock) {
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor, metrics, audit, clock);
+    }
+
+    @Bean(destroyMethod = "closeGracefully")
+    @ConditionalOnBean(DataPrismMcpServer.HttpTransport.class)
+    @ConditionalOnProperty(prefix = "dataprism.transport", name = "mode", havingValue = "HTTP",
+            matchIfMissing = true)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    McpSyncServer dataPrismMcpSyncServer(DataPrismMcpServer.HttpTransport transport) {
+        return transport.server();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "dataPrismMcpServlet")
+    @ConditionalOnBean(DataPrismMcpServer.HttpTransport.class)
+    @ConditionalOnProperty(prefix = "dataprism.transport", name = "mode", havingValue = "HTTP",
+            matchIfMissing = true)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    ServletRegistrationBean<HttpServletStreamableServerTransportProvider> dataPrismMcpServlet(
+            DataPrismMcpServer.HttpTransport transport, DataPrismProperties properties) {
+        ServletRegistrationBean<HttpServletStreamableServerTransportProvider> registration =
+                new ServletRegistrationBean<>(transport.transportProvider(),
+                        properties.getTransport().getHttp().getPath());
+        registration.setAsyncSupported(true);
+        return registration;
     }
 
     private static void validateProfile(DataPrismProperties properties) {

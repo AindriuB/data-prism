@@ -4,8 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * The deployable shape: an HTTP resource server that validates a bearer JWT
- * against a configured JWKS URL and serves the MCP streamable HTTP transport.
+ * The embedded shape: application-owned integrations plus the Data Prism starter.
  *
  * <p>Deliberately a separate class from
  * {@link io.github.aindriub.dataprism.example.ExampleApplication}, stdio's

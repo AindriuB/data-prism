@@ -8,9 +8,12 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsServer;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
@@ -20,6 +23,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
@@ -31,6 +35,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.security.KeyStore;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -38,6 +44,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,13 +60,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code exchange.transportContext()} on a real request.
  *
  * <p>Every assertion about who the pipeline thinks is calling reads it from the
- * orchestrator's own audit trail — the {@code instanceId="example-1"} events
- * {@code DataPrismAssembly} wires internally — rather than from the response,
+ * orchestrator's own audit trail — the {@code instanceId="data-prism-example"}
+ * events the starter wires from configuration — rather than from the response,
  * because {@link io.github.aindriub.dataprism.audit.AuditEvent} carries the
  * resolved {@code PrivacyContext}'s scope, purpose and case, and
  * {@code InvestigationContext}'s principal, verbatim. An {@code AuditSink}
  * substituted for the whole test class is the test double the refusal cases
- * read: no {@code example-1} event for a request means the orchestrator was
+ * read: no matching event for a request means the orchestrator was
  * never reached, which is a stronger claim than "the response was an error".
  */
 class McpHttpEndToEndTest {
@@ -71,18 +79,55 @@ class McpHttpEndToEndTest {
     private static final String CASE_ID = "CASE-JWT-771";
     private static final String OTHER_CASE_ID = "CASE-JWT-772";
 
-    private static HttpServer jwksServer;
+    private static final String STORE_PASSWORD = "data-prism-test-only";
+    @TempDir
+    static Path tempDir;
+
+    private static HttpsServer jwksServer;
     private static RSAKey signingKey;
     private static List<AuditEvent> auditEvents;
     private static ConfigurableApplicationContext context;
     private static int port;
+    private static String previousTrustStore;
+    private static String previousTrustStorePassword;
+    private static String previousTrustStoreType;
 
     @BeforeAll
     static void startJwksAndApplication() throws Exception {
         signingKey = new RSAKeyGenerator(2048).keyID("test-signing-key-1").algorithm(JWSAlgorithm.RS256).generate();
         byte[] jwksBody = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
 
-        jwksServer = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        Path keyStore = tempDir.resolve("jwks-server.p12");
+        Path trustStore = tempDir.resolve("jwks-trust.p12");
+        Path certificate = tempDir.resolve("jwks-server.cer");
+        keytool("-genkeypair", "-alias", "jwks", "-keyalg", "RSA", "-keysize", "2048",
+                "-validity", "2", "-keystore", keyStore.toString(), "-storetype", "PKCS12",
+                "-storepass", STORE_PASSWORD, "-keypass", STORE_PASSWORD,
+                "-dname", "CN=127.0.0.1", "-ext", "san=ip:127.0.0.1");
+        keytool("-exportcert", "-alias", "jwks", "-keystore", keyStore.toString(),
+                "-storetype", "PKCS12", "-storepass", STORE_PASSWORD, "-file", certificate.toString());
+        keytool("-importcert", "-alias", "jwks", "-file", certificate.toString(),
+                "-keystore", trustStore.toString(), "-storetype", "PKCS12",
+                "-storepass", STORE_PASSWORD, "-noprompt");
+
+        previousTrustStore = System.getProperty("javax.net.ssl.trustStore");
+        previousTrustStorePassword = System.getProperty("javax.net.ssl.trustStorePassword");
+        previousTrustStoreType = System.getProperty("javax.net.ssl.trustStoreType");
+        System.setProperty("javax.net.ssl.trustStore", trustStore.toString());
+        System.setProperty("javax.net.ssl.trustStorePassword", STORE_PASSWORD);
+        System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
+
+        SSLContext tls = SSLContext.getInstance("TLS");
+        KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        KeyStore serverKeys = KeyStore.getInstance("PKCS12");
+        try (var input = java.nio.file.Files.newInputStream(keyStore)) {
+            serverKeys.load(input, STORE_PASSWORD.toCharArray());
+        }
+        keyManagers.init(serverKeys, STORE_PASSWORD.toCharArray());
+        tls.init(keyManagers.getKeyManagers(), null, null);
+
+        jwksServer = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        jwksServer.setHttpsConfigurator(new HttpsConfigurator(tls));
         jwksServer.createContext("/jwks", exchange -> {
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, jwksBody.length);
@@ -105,19 +150,22 @@ class McpHttpEndToEndTest {
 
         auditEvents = new CopyOnWriteArrayList<>();
         AuditSink recordingSink = auditEvents::add;
+        HmacKeyReferenceResolver testKeys = (keyId, reference) ->
+                "task-16-test-only-key-material-longer-than-thirty-two-bytes".getBytes(StandardCharsets.UTF_8);
 
         context = new SpringApplicationBuilder(ResourceServerApplication.class)
                 .web(WebApplicationType.SERVLET)
-                .initializers(applicationContext -> applicationContext.getBeanFactory()
-                        .registerSingleton("recordingAuditSink", recordingSink))
+                .initializers(applicationContext -> {
+                    applicationContext.getBeanFactory().registerSingleton("recordingAuditSink", recordingSink);
+                    applicationContext.getBeanFactory().registerSingleton("testHmacKeyReferenceResolver", testKeys);
+                })
                 // Command-line args, not .properties(...): SpringApplicationBuilder's
                 // properties() lands as *default* properties, lower priority than
                 // application.yaml, so it can never override the placeholder
                 // jwk-set-uri already set there.
                 .run(
                         "--server.port=0",
-                        "--spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://localhost:" + jwksPort
-                                + "/jwks");
+                        "--dataprism.security.jwt.jwk-set-uri=https://127.0.0.1:" + jwksPort + "/jwks");
         port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
     }
 
@@ -125,6 +173,9 @@ class McpHttpEndToEndTest {
     static void stopJwksAndApplication() {
         context.close();
         jwksServer.stop(0);
+        restoreSystemProperty("javax.net.ssl.trustStore", previousTrustStore);
+        restoreSystemProperty("javax.net.ssl.trustStorePassword", previousTrustStorePassword);
+        restoreSystemProperty("javax.net.ssl.trustStoreType", previousTrustStoreType);
 
         // The acceptance bar task 06 was already held to, checked again here:
         // closing the context must actually have released the ephemeral port
@@ -179,9 +230,28 @@ class McpHttpEndToEndTest {
 
     private static AuditEvent orchestratorEvent() {
         return auditEvents.stream()
-                .filter(e -> "example-1".equals(e.instanceId()))
+                .filter(e -> "data-prism-example".equals(e.instanceId()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("orchestrator produced no audit event"));
+    }
+
+    private static void keytool(String... arguments) throws Exception {
+        java.util.List<String> command = new java.util.ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "keytool").toString());
+        command.addAll(java.util.List.of(arguments));
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        if (process.waitFor() != 0) {
+            throw new IllegalStateException("keytool failed: " + output);
+        }
+    }
+
+    private static void restoreSystemProperty(String name, String value) {
+        if (value == null) {
+            System.clearProperty(name);
+        } else {
+            System.setProperty(name, value);
+        }
     }
 
     @Test
@@ -207,7 +277,7 @@ class McpHttpEndToEndTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(401);
-        assertThat(auditEvents).noneMatch(e -> "example-1".equals(e.instanceId()));
+        assertThat(auditEvents).noneMatch(e -> "data-prism-example".equals(e.instanceId()));
     }
 
     @Test
@@ -223,12 +293,34 @@ class McpHttpEndToEndTest {
             AuditEvent event = orchestratorEvent();
             // Every one of these is a value that exists nowhere but this
             // token: none of them is stdio's development constant, and none
-            // is a fixed literal anywhere in McpAssemblyConfig.
+            // is a fixed literal in the application wiring.
             assertThat(event.principalId()).isEqualTo(PRINCIPAL);
             assertThat(event.clientId()).isEqualTo(CLIENT_ID);
             assertThat(event.purpose()).isEqualTo(CONFIGURED_PURPOSE);
             assertThat(event.caseId()).isEqualTo(CASE_ID);
             assertThat(event.scopeId()).isEqualTo("case:" + CASE_ID);
+        } finally {
+            client.closeGracefully();
+        }
+    }
+
+    @Test
+    @DisplayName("a protected source response contains pseudonyms and redaction but no raw identity")
+    void validTokenReceivesOnlyProtectedSourceValues() throws Exception {
+        String token = mintToken(Set.of("investigator"), CONFIGURED_PURPOSE, CASE_ID);
+        McpSyncClient client = clientWithToken(token);
+        try {
+            String body = text(callGetEntityContext(client, "123"));
+            var response = DataPrismObjectMapper.create().readTree(body);
+
+            assertThat(body).doesNotContain("Patrick Murphy").doesNotContain("Pat Murphy")
+                    .doesNotContain("P. Murphy").doesNotContain("patrick.murphy@example.invalid")
+                    .doesNotContain("4200.55").doesNotContain("\"123\"");
+            assertThat(response.path("subject").asText()).startsWith("SUBJ-").isNotEqualTo("123");
+            assertThat(response.path("entity").path("customerName").asText())
+                    .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{4}\\)$");
+            assertThat(response.path("entity").path("email").asText()).isEqualTo("[REDACTED]");
+            assertThat(response.path("entity").path("status").asText()).isEqualTo("ACTIVE");
         } finally {
             client.closeGracefully();
         }
@@ -244,7 +336,10 @@ class McpHttpEndToEndTest {
 
             assertThat(result.isError()).isEqualTo(Boolean.TRUE);
             assertThat(text(result)).contains("UNKNOWN_PURPOSE");
-            assertThat(auditEvents).noneMatch(e -> "example-1".equals(e.instanceId()));
+            assertThat(auditEvents).singleElement().satisfies(event -> {
+                assertThat(event.policyDecision()).isEqualTo("UNKNOWN_PURPOSE");
+                assertThat(event.sourceSystems()).isEmpty();
+            });
         } finally {
             client.closeGracefully();
         }

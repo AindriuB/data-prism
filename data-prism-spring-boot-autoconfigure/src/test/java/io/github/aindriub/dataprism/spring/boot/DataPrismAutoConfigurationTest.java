@@ -6,11 +6,18 @@ import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.SecretKeyProvider;
+import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,10 +28,46 @@ class DataPrismAutoConfigurationTest {
             .withPropertyValues(valid());
 
     @Test void boots_a_minimal_reviewed_context() {
-        context.run(result -> assertThat(result).hasNotFailed());
+        context.withPropertyValues("dataprism.transport.mode=stdio",
+                "dataprism.transport.fixture-development=true")
+                .run(result -> assertThat(result).hasNotFailed());
     }
     @Test void configured_reference_is_used_for_runtime_key_resolution() {
         context.run(result -> assertThat(new String(result.getBean(SecretKeyProvider.class).secret("v1"))).isEqualTo("DATAPRISM_HMAC_KEY_REF:v1:resolved-key-material"));
+    }
+    @Test void creates_the_configured_http_endpoint_and_server_lifecycle() {
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrations.class).withPropertyValues(valid())
+                .withPropertyValues("dataprism.transport.http.path=/protected-mcp").run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result).hasSingleBean(DataPrismMcpServer.HttpTransport.class)
+                            .hasSingleBean(McpSyncServer.class);
+                    ServletRegistrationBean<?> servlet = result.getBean("dataPrismMcpServlet",
+                            ServletRegistrationBean.class);
+                    assertThat(servlet.getUrlMappings()).containsExactly("/protected-mcp");
+                    assertThat(servlet.isAsyncSupported()).isTrue();
+                });
+    }
+    @Test void fixture_stdio_creates_no_http_transport_server_or_servlet_even_with_an_extractor() {
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrations.class).withPropertyValues(valid())
+                .withPropertyValues("dataprism.transport.mode=stdio",
+                        "dataprism.transport.fixture-development=true")
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result).doesNotHaveBean(DataPrismMcpServer.HttpTransport.class)
+                            .doesNotHaveBean(McpSyncServer.class)
+                            .doesNotHaveBean("dataPrismMcpServlet");
+                });
+    }
+    @Test void http_transport_refuses_a_missing_caller_context_extractor() {
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedIntegrations.class).withPropertyValues(valid())
+                .run(result -> {
+                    assertThat(result).hasFailed();
+                    assertThat(rootMessage(result.getStartupFailure()))
+                            .contains("MISSING_CALLER_CONTEXT_EXTRACTOR");
+                });
     }
     @Test void application_secret_provider_cannot_override_the_configured_reference() {
         new ApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
@@ -60,6 +103,12 @@ class DataPrismAutoConfigurationTest {
                     assertThat(result).hasFailed(); assertThat(rootMessage(result.getStartupFailure())).contains("MISSING_IDENTITY_RESOLVER");
                 });
     }
+    @Test void refuses_an_unresolved_source_adapter() {
+        new ApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(IntegrationsWithoutAdapter.class).withPropertyValues(valid()).run(result -> {
+                    assertThat(result).hasFailed(); assertThat(rootMessage(result.getStartupFailure())).contains("UNRESOLVED_SOURCE_ADAPTER");
+                });
+    }
     private void fails(String code, String override) { context.withPropertyValues(override).run(result -> { assertThat(result).hasFailed(); assertThat(rootMessage(result.getStartupFailure())).contains(code); }); }
     private static String rootMessage(Throwable failure) { Throwable current=failure; while(current.getCause()!=null) current=current.getCause(); return current.getMessage(); }
     private static String[] valid() { return new String[] {
@@ -79,8 +128,21 @@ class DataPrismAutoConfigurationTest {
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
     }
     @Configuration(proxyBeanMethods = false)
+    static class ReviewedHttpIntegrations extends ReviewedIntegrations {
+        @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor() {
+            return request -> McpTransportContext.EMPTY;
+        }
+    }
+    @Configuration(proxyBeanMethods = false)
     static class IntegrationsWithoutIdentity {
         @Bean DataSourceAdapter<String> customerAdapter() { return new ReviewedIntegrations().customerAdapter(); }
+        @Bean HmacKeyReferenceResolver keys() { return new ReviewedIntegrations().keys(); }
+        @Bean AuditSink audit() { return new ReviewedIntegrations().audit(); }
+        @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
+    }
+    @Configuration(proxyBeanMethods = false)
+    static class IntegrationsWithoutAdapter {
+        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return new ReviewedIntegrations().keys(); }
         @Bean AuditSink audit() { return new ReviewedIntegrations().audit(); }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
