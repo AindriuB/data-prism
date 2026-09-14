@@ -338,6 +338,18 @@ failures until traced by hand. A container can restart healthy while never
 re-binding a host port already held by something else, and a healthcheck does not
 catch that.
 
+## `.env*` files cannot be read or written by any agent *(kit)*
+
+This environment enforces a hard deny rule on any `.env*` path — reads and
+writes both, for every agent role. `git add`, `git commit`, `git merge` and
+PR operations that move such a file without inspecting it still work; only
+direct inspection or authoring is blocked. Task 18 hit this first: nothing
+could read, write, or verify `.env.example`, so it had to be created by hand
+by the repository owner and committed on a line count alone, unverified by
+the implementer, tester, or reviewer. Any task that owns a dotfile of this
+shape should expect the same and plan for a human step rather than
+discovering it mid-task.
+
 ## Licence headers
 
 No per-file licence header. `LICENSE` and `NOTICE` at the repository root satisfy

@@ -94,28 +94,30 @@ full-reactor re-run: 400 tests, 0 failures, 0 errors. See
 `docs/plan/HISTORY.md` — grep `Task 25` — for what landed and what it cost,
 including the ownership-breach precedent.
 
-### Task 18 — open, blocked on a local precondition only
+### Task 18 — done
 
-Replaces source-reading as onboarding with one reproducible local Compose
+Replaced source-reading as onboarding with one reproducible local Compose
 journey: standalone server, synthetic fixture APIs and a local JWT issuer,
-proving an agent-compatible MCP request succeeds end to end. Amended
-2026-09-14 to own three new runnable modules and depend on 16, 17, 21, 23 and
-25 as well, since none of the three runnable pieces it needs exist yet and the
-server now refuses the fixture-development shortcut the original brief
-assumed. All five task dependencies are merged as of 2026-09-14 — nothing
-blocks it on the task graph. Remaining blocker: the compose-based acceptance
-criteria need a running Docker daemon to verify at least once
-(`docs/conventions.md:253-258`) — OrbStack was not running when this was last
-checked; start it and confirm `docker compose version` before dispatch, or
-split the three service modules into a Docker-free predecessor task.
-`docs/plan/tasks/18-compose-quickstart.md`.
+proving an agent-compatible MCP request succeeds end to end. Delivered three
+new runnable modules (`data-prism-quickstart-fixtures`,
+`data-prism-quickstart-issuer`, `data-prism-quickstart-extension`), since none
+of the three runnable pieces it needed existed yet and the server refuses the
+fixture-development shortcut the original brief assumed. Merged through a
+protected, green pull request 2026-09-14 (#35). Post-merge reactor: 403
+tests, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep `Task 18` —
+for what landed and what it cost, including the `.env.example` hand-off this
+environment forces on any future dotfile task.
 
-### Tasks 19, 20 — open, blocked on 18
+### Tasks 19, 20 — open, unblocked
 
-Task 19 publishes tested MCP agent connection guides (depends on 17, 18 — the
-quickstart is the thing being documented). Task 20 adds a separately reviewed
-configuration-driven JSON REST source mode (depends on 14, 15, 17). Neither is
-in flight.
+Task 19 publishes tested MCP agent connection guides (depends on 17, 18, both
+merged — the quickstart is the thing being documented). Task 20 adds a
+separately reviewed configuration-driven JSON REST source mode (depends on
+14, 15, 17, all merged). Their `Owns` sets are disjoint — 19 owns
+`docs/agents/**`, `examples/agent-config/**`, `README.md`; 20 owns
+`data-prism-connectors-rest/**`, `data-prism-server/**`,
+`docs/configuration.md` — so they can run in the same wave. Neither is in
+flight.
 
 ## Remaining slices past the adopted core
 
@@ -162,6 +164,25 @@ any of them up only if a future task already owns the file.
   depends on it. Task 20 is what would wire it. (`data-prism-hazelcast` is no
   longer unconsumed: task 25 gives it a real caller through the
   autoconfigure module's `embedded` topology.)
+
+Found during `/verify` on task 18, 2026-09-14. Neither blocks anything; pick
+either up only if a future task already owns the file.
+
+- `ServerPackagingIT.DEVELOPMENT_KEY_MARKERS`
+  (`data-prism-server/src/test/java/.../ServerPackagingIT.java:42-51`) was
+  not extended with the quickstart's HMAC literal,
+  `quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long`. Confirmed by
+  both the tester and the reviewer that the literal cannot reach a packaged
+  jar today — it exists only in `compose.yaml:114`, `application.yaml` names
+  only the environment variable, and neither file is touched by `mvn
+  package` — so nothing is missed now. But that file's own javadoc obliges
+  whoever adds a development key to extend the list, and that obligation is
+  currently unmet, so a future change that did package it would not be
+  caught.
+- `QuickstartSmokeIT.java:164` asserts the synthetic name's shape, not its
+  stability. A second call for the same subject in the same scope returning
+  the same value would make the pseudonymisation claim materially stronger,
+  and consistency-within-a-scope is the core guarantee this product sells.
 
 Found during `/verify` on task 25, 2026-09-14. None blocks anything; pick any
 of them up only if a future task already owns the file.
