@@ -3,6 +3,8 @@
 **Repo:** `.`
 **Depends on:** 16
 **Owns:**
+- data-prism-mcp/**
+- data-prism-spring-boot-autoconfigure/**
 - data-prism-server/**
 - pom.xml
 - README.md
@@ -15,9 +17,10 @@ single-principal caller compiled into its production runtime.
 
 ## Acceptance
 
-- [ ] `data-prism-server` starts a Streamable HTTP MCP endpoint at `/mcp` only
-      when JWT, policy, key-reference, source-adapter and privacy configuration
-      are complete and valid.
+- [ ] `data-prism-server` starts a Streamable HTTP MCP endpoint at the
+      configured path (default `/mcp`) only when JWT, policy, key-reference,
+      source-adapter and privacy configuration are complete and valid. The
+      servlet mapping and MCP SDK transport use the same path.
 - [ ] Its production artifact has no dependency on `data-prism-example` and
       ships no stub API adapter or development HMAC key.
 - [ ] It exposes a safe unauthenticated health endpoint and authenticated MCP
