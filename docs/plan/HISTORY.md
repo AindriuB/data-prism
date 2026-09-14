@@ -17,6 +17,63 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-14 — Task 25: wire the shared read budget, make the topology an explicit choice
+
+Closes the fifth and last defect found reviewing the tasks 13-17 work
+delivered by OpenAI Codex, outside this kit. `dataprism.hazelcast.*` was
+bound and validated but read by nothing: the auto-configuration always
+supplied `InMemoryScopeBudget`, so a two-member deployment enforced the read
+budget once per process and a configured budget of 100 meant 200.
+`HazelcastScopeBudget` already existed, failed closed, and was tested — it
+was simply never wired. It is now wired for the embedded topology, and a
+per-process budget became a named choice rather than the silent default.
+
+`dataprism.hazelcast.topology` now has no default and is required for a
+protected HTTP deployment: absent refuses with `MISSING_CLUSTER_TOPOLOGY`,
+unknown with `UNSUPPORTED_HAZELCAST_TOPOLOGY`
+(`DataPrismProperties.java:57-58`). `embedded` produces `HazelcastScopeBudget`
+over a `PrivacyCluster`; `single-node` produces `InMemoryScopeBudget`, with
+the documentation now stating in plain words that the budget is then
+enforced per process and multiplied by the number of processes. `embedded`
+with `data-prism-hazelcast` absent from the classpath refuses with
+`MISSING_SHARED_BUDGET`, so the absent-dependency case cannot silently fall
+back to a per-process budget. The `data-prism-hazelcast` dependency of the
+autoconfigure module is `optional`, verified by `dependency:tree` on
+`data-prism-example` as not transitive through the starter.
+`data-prism-example` declares `single-node` explicitly — not a preference but
+a consequence: it is a single process, so per-process enforcement is not a
+silent inconsistency for it, and adding the optional Hazelcast dependency to
+its pom was outside this task's ownership, so `embedded` would refuse there
+at startup.
+
+**Cost:** the implementer proved the `MISSING_SHARED_BUDGET` test's
+`FilteredClassLoader` is load-bearing rather than decorative — the counter-
+example to this repository's dominant defect class of assertions that cannot
+fail — by retargeting its filter to a nonexistent package, observing a real
+Hazelcast member boot with multicast logging, and confirming the test then
+failed on `hasFailed()`. That distinguishes a classloader that genuinely
+hides a class from one that only appears to.
+
+The implementer also edited five files outside the task's declared `Owns`:
+`PrivacyExtensionPoints.java`, `FixtureDevelopmentRefusalTest.java`,
+`PrivacyExtensionPointsTest.java`, `ServerSecurityBoundaryTest.java`, and
+`data-prism-example`'s `StarterStartupFailureTest.java` — a rule-2 breach
+(stop and report instead), proceeded past and disclosed afterward rather than
+avoided. Review accepted each on its merits: `PrivacyExtensionPoints.java`
+was unavoidable, since `AutoConfiguredBeanClassificationTest` demands exact
+correspondence with it and the task file had named the wrong file for where
+the classification rows live; the four test edits are each one line adding
+`topology=single-node` to a pre-existing valid-deployment fixture, forced by
+making the property required, and two of the four feed assertions that would
+themselves have broken without the added line. No test was weakened. The
+planning bug (a task file naming the wrong file) was real; the correct
+response to hitting it — stop and report — was not the one taken. Both halves
+are worth carrying forward, not just the one that resolved cleanly.
+
+Post-merge full-reactor re-run: 400 tests, 0 failures, 0 errors (base 394;
+net +6, four new in `SharedReadBudgetTest`, two new in
+`DataPrismAutoConfigurationTest`).
+
 ## 2026-09-14 — Tasks 21, 22, 23 and 24: close the reviewed defects in tasks 13-17
 
 All five defects found reviewing the tasks 13-17 work (delivered by OpenAI
@@ -48,10 +105,11 @@ Task 23: the architecture rules had stopped enforcing anything outside
 modules the rules were meant to police. A new `data-prism-architecture` module
 now imports every module's `target/classes` directly — necessary because
 `data-prism-server`'s Spring Boot repackage hides its classes under
-`BOOT-INF/classes/` from any ordinary classpath scan. 14 modules, 182 classes,
-verified identical across all three attempts. `ArchitectureCoverageTest` is
-the guard-of-the-guard: it fails if a module stops contributing classes, which
-is what makes a green run mean something.
+`BOOT-INF/classes/` from any ordinary classpath scan. At merge time this was
+14 modules, 182 classes, verified identical across all three attempts — a
+count that moves as later tasks add classes, not a fixed total.
+`ArchitectureCoverageTest` is the guard-of-the-guard: it fails if a module
+stops contributing classes, which is what makes a green run mean something.
 
 Task 24: `ServerPackagingIT`'s secret scan could not fail — it read only
 `BOOT-INF/classes/` for literals that existed solely in test code. It now
