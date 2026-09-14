@@ -74,7 +74,7 @@ class ServerStartupTest {
             try (var ignored = start(true, fixtureConfiguration)) { }
         });
 
-        assertConfigurationFailure(failure, "STANDALONE_HTTP_ONLY");
+        assertConfigurationFailure(failure, "FIXTURE_DEVELOPMENT_STDIO_ONLY");
     }
 
     @Test
