@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-14 | 21, 22, 23, 24 | Fixture-development refusal moved to the shared validator; privacy-critical beans made non-replaceable with a classified extension-point sweep; architecture rules regained the whole module graph via a new scanning module; packaged-server secret scan now reaches every nested jar. Post-merge reactor: 394 tests, 0 failures | `## 2026-09-14 — Tasks 21, 22, 23 and 24: close the reviewed defects in tasks 13-17` |
 | 2026-09-14 | 17 | Executable fail-closed standalone server with JWT-authenticated configurable MCP path, reviewed extension loading, and fixture-free packaging | `## 2026-09-14 — Task 17: package the standalone Data Prism server` |
 | 2026-09-14 | 16 | Dependency-only Spring Boot starter, shared `/mcp` lifecycle wiring, and an HTTPS-JWKS embedded example with fail-closed startup proofs | `## 2026-09-14 — Task 16: ship the Spring Boot starter and embedded protected-API example` |
 | 2026-09-14 | 15 | Shared Spring Boot configuration binding and fail-closed startup validation, including operational HMAC secret-reference resolution | `## 2026-09-14 — Task 15: build the validated Spring Boot configuration core` |

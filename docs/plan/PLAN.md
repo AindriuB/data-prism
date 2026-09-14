@@ -58,19 +58,103 @@ Hazelcast map contains only recomputable state and no raw sensitive fixture.
 See `docs/plan/HISTORY.md` — grep `Tasks 11, 12 and 13` — for verification and
 the cost of closing them.
 
-## Recommended stopping point — reached 2026-09-09
+### Tasks 14, 15, 16, 17 — done
 
-Every claim the README makes is true of a deployment, not only of the library.
-The remaining slices stay ordered under "Someday" but are not scheduled —
-picking any of them back up is a new planning decision, not a continuation of
-this run.
+The adoption slice: a shared standalone-server/Spring-starter configuration
+contract (14), the validated Spring Boot configuration core (15), the Spring
+Boot starter and embedded example (16), and the packaged, fail-closed
+standalone server (17). All merged through protected, green pull requests
+2026-09-13 to 2026-09-14. See `docs/plan/HISTORY.md` — grep `Task 14: define`,
+`Task 15: build`, `Task 16: ship`, `Task 17: package` — for what landed and
+what each cost.
+
+### Tasks 21, 22, 23, 24 — done
+
+Closed the five defects found reviewing tasks 13-17's delivery (which was done
+by OpenAI Codex, outside this kit), plus one fail-open found by the architect
+that no reviewer had flagged: fixture-development refusal moved into the
+shared validator so every consumer inherits it (21); `PrivacyPolicyResolver`
+and `LlmResponseValidator` made non-replaceable, with a classified sweep of
+every extension-point bean (22); the architecture rules given back the whole
+module graph through a new scanning module (23); the packaged-server secret
+scan given a search space that can actually fail (24). Merged through
+protected, green pull requests 2026-09-14 (#28-#31). Post-merge full-reactor
+re-run: 394 tests, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep
+`Tasks 21, 22, 23 and 24` — for what landed and what it cost, including the
+counting-method settlement and the false-claim-propagation lesson.
+
+### Task 25 — open, unblocked
+
+Wires the shared read budget through the auto-configuration and makes the
+Hazelcast topology an explicit configuration choice instead of an implicit
+default. Depended on 21, 22 and 24, all merged 2026-09-14 — nothing blocks it
+now. `docs/plan/tasks/25-read-budget-scope-is-honest.md`.
+
+### Task 18 — open, blocked on 25 (and a local precondition)
+
+Replaces source-reading as onboarding with one reproducible local Compose
+journey: standalone server, synthetic fixture APIs and a local JWT issuer,
+proving an agent-compatible MCP request succeeds end to end. Amended
+2026-09-14 to own three new runnable modules and depend on 16, 17, 21, 23 and
+25 as well, since none of the three runnable pieces it needs exist yet and the
+server now refuses the fixture-development shortcut the original brief assumed.
+Blocker beyond task 25: the compose-based acceptance criteria need a running
+Docker daemon to verify at least once (`docs/conventions.md:253-258`) — OrbStack
+was not running when this was checked; start it and confirm `docker compose
+version` before dispatch, or split the three service modules into a
+Docker-free predecessor task. `docs/plan/tasks/18-compose-quickstart.md`.
+
+### Tasks 19, 20 — open, blocked on 18
+
+Task 19 publishes tested MCP agent connection guides (depends on 17, 18 — the
+quickstart is the thing being documented). Task 20 adds a separately reviewed
+configuration-driven JSON REST source mode (depends on 14, 15, 17). Neither is
+in flight.
+
+## Remaining slices past the adopted core
+
+S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
+has continued since without revisiting that deferral — it closes packaging and
+configuration gaps the deferred slices do not touch.
 
 S10 was deferred past V1 by decision and the index it needs already exists. S11
-is the Elasticsearch connector and Docker Compose — real work, no new guarantees,
-and the three divergent stub sources it was going to build landed in S6. S12's
-mutation and load testing is for a system with users.
+is the Elasticsearch connector and Docker Compose — most of that surface is now
+covered by task 18's quickstart instead, and the three divergent stub sources
+it was going to build landed in S6. S12's mutation and load testing is for a
+system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on tasks 21-24, 2026-09-14. None blocks anything; pick
+any of them up only if a future task already owns the file.
+
+- The JWKS discovery success path now has no positive coverage in either
+  module: task 21 removed `SecurityConfigTest.discovers_jwks_when_the_issuer_discovery_location_is_configured`
+  because it depended on the removed plaintext relaxation. A positive test is
+  still constructible — serve metadata over plaintext, return an `https://`
+  `jwks_uri`, assert the decoder builds and `metadataRequests == 1`, since
+  `NimbusJwtDecoder` fetches lazily. Token decoding itself remains proven by
+  `ServerSecurityBoundaryTest` and `McpHttpEndToEndTest`, so this is a gap, not
+  a hole.
+- `STANDALONE_HTTP_ONLY` is now asserted by no test anywhere.
+- `ServerIntegrationsConfiguration.java:22`'s `isFixtureDevelopment()` disjunct
+  is now dead code, since fixture implies STDIO.
+- `PrivacyExtensionPoints`' `COMPETING_BEAN_REFUSAL` is read from the same file
+  the sweep checks, so a future bean can self-certify a guard that does not
+  exist; only the `@ConditionalOnMissingBean`/`@Primary` halves are
+  independently verified.
+- `ServerArchitectureTest`'s `that()` side constrains every dataprism class on
+  the server's test classpath rather than just `..dataprism.server..`; a
+  future edge module using Spring Security would go red in a test owned by a
+  different module.
+- `data-prism-server`'s `spring-boot-maven-plugin` repackage replaces its
+  plain jar, so its classes are invisible to any ordinary Maven-classpath scan
+  after the `package` phase. Task 23 worked around it inside its own module;
+  the underlying fix is a `<classifier>` on that plugin execution in
+  `data-prism-server/pom.xml`.
+- `data-prism-connectors-rest` and `data-prism-hazelcast` are unconsumed
+  leaves — nothing in the reactor depends on either. Task 20 is what would
+  wire `connectors-rest`.
 
 Left by task 09's close-out. Neither blocks anything; pick either up only if a
 future task already owns the file.
