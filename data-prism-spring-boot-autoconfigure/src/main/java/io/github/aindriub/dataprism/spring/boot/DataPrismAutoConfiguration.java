@@ -183,8 +183,9 @@ public class DataPrismAutoConfiguration {
     @DependsOn("dataPrismHttpTransportValidated")
     DataPrismMcpServer.HttpTransport dataPrismHttpTransport(ContextOrchestrator orchestrator, AuthorizationService authorization,
             ScopeResolver scopeResolver, McpTransportContextExtractor<HttpServletRequest> extractor,
-            PrivacyMetrics metrics, AuditRecorder audit, Clock clock) {
-        return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor, metrics, audit, clock);
+            PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties) {
+        return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
+                properties.getTransport().getHttp().getPath(), metrics, audit, clock);
     }
 
     @Bean(destroyMethod = "closeGracefully")

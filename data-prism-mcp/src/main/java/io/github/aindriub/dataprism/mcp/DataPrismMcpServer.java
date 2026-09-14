@@ -109,8 +109,10 @@ public final class DataPrismMcpServer {
                                                AuthorizationService authorizationService,
                                                ScopeResolver scopeResolver,
                                                McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+                                               String endpointPath,
                                                PrivacyMetrics metrics, AuditRecorder audit, Clock clock) {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
+        Objects.requireNonNull(endpointPath, "endpointPath");
 
         ObjectMapper mapper = DataPrismObjectMapper.create();
         McpJsonMapper json = new JacksonMcpJsonMapper(mapper);
@@ -118,6 +120,7 @@ public final class DataPrismMcpServer {
                 .builder()
                 .jsonMapper(json)
                 .contextExtractor(contextExtractor)
+                .mcpEndpoint(endpointPath)
                 .build();
 
         McpSyncServer server = McpServer.sync(transport)
