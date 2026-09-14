@@ -17,6 +17,41 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-14 — Task 17: package the standalone Data Prism server
+
+Data Prism now ships `data-prism-server`, an executable Spring Boot application
+and the primary deployment surface for protecting existing APIs. It exposes a
+safe unauthenticated `/health` endpoint and a JWT-authenticated Streamable HTTP
+MCP endpoint whose configured path is shared by the servlet registration and
+the MCP SDK transport. Production startup remains fail closed until policy,
+key reference, reviewed source adapters, identity resolution, audit and privacy
+configuration are all present and valid.
+
+The executable uses Spring Boot's `PropertiesLauncher`, so an operator can add
+a separately reviewed adapter extension through `loader.path` without compiling
+fixture code into the distribution. Packaging tests prove such an extension
+starts, an extension without an identity resolver is refused, and the artifact
+contains no example dependency, stub adapter, fixture profile or development
+HMAC key. Signed-JWT boundary tests cover the successful MCP initialize exchange
+as well as invalid signature, issuer, audience, expiry, not-before, discovery,
+claim extraction, health and deny-all cases. PR #26 passed its required build;
+the post-merge 16-module Maven reactor also passed on `main`.
+
+**Cost:** the first implementation supplied a pass-through identity resolver by
+default, which would have converted an application-owned trust decision into a
+silent production fallback. Independent review caught it and the server now
+requires an explicit resolver. The original security test only asserted that a
+valid token did not receive 401, so a missing or denied endpoint could pass; a
+real initialize request both fixed that vacuity and exposed that the servlet
+used the configured path while the SDK still expected `/mcp`. PR #25 corrected
+Task 17's ownership before the shared MCP factory and auto-configuration were
+changed to pass one exact path through both layers. JWT fixtures were also moved
+from wall-clock-relative claims to fixed validity windows. The final independent
+run covered 377 tests in 57 non-empty suites with no failures, errors or skips.
+The distribution deliberately bundles no generic source adapter: reviewed Java
+extensions are the transitional path until Task 20 supplies the separately
+classified, allowlisted configuration-driven JSON adapter.
+
 ## 2026-09-14 — Task 16: ship the Spring Boot starter and embedded protected-API example
 
 Data Prism now ships a dependency-only `data-prism-spring-boot-starter`. An
