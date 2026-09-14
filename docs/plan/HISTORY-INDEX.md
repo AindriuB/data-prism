@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-14 | 15 | Shared Spring Boot configuration binding and fail-closed startup validation, including operational HMAC secret-reference resolution | `## 2026-09-14 — Task 15: build the validated Spring Boot configuration core` |
 | 2026-09-13 | 14 | Shared standalone-server/Spring-starter configuration contract, safe mode boundaries, and ADR for auto-configuration ownership | `## 2026-09-13 — Task 14: define the shared deployment configuration contract` |
 | 2026-09-13 | 11, 12, 13 | REST 500 assertions are non-vacuous; determinism, tree/validation and Hazelcast storage boundaries gained non-vacuous enforcement | `## 2026-09-13 — Tasks 11, 12 and 13: close the remaining safety-test gaps` |
 | 2026-09-09 | 10 | `MutualTlsRestClientsHttpsTest`'s refusal assertion required an `SSLException`, true on Windows but not Linux CI; now accepts either platform's observable, documented in javadoc; verified green on Actions run 34386674901 | `## 2026-09-09 — Task 10: the mTLS refusal assertion made cross-platform` |
