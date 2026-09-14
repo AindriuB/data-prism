@@ -2,11 +2,13 @@
 
 A privacy layer between MCP clients and enterprise APIs.
 
-**Status: the walking skeleton and every slice through S9a are built**, with 12
+**Status: the walking skeleton and every slice through S9a are built**, with 15
 Maven modules and a passing test suite. The privacy engine, correlation and
 consistency findings, parallel mTLS connectors, embedded Hazelcast identity
 cache and read budget, an OAuth2 resource server with session-derived
-`PrivacyContext`, audit and metrics are all real and exercised end to end.
+`PrivacyContext`, audit and metrics are all real and exercised end to end. The
+standalone server is the primary deployment surface; the Spring Boot starter is
+the embedded option.
 Not built: the re-identification operator surface (deferred past V1 by
 decision, see `docs/architecture.md#decisions-worth-knowing`), the
 Elasticsearch connector and its search tools, Docker Compose, and the
@@ -96,15 +98,35 @@ mvn -B --no-transfer-progress verify
 ```
 
 This is the same command CI runs (`.github/workflows/build.yml`). It builds all
-12 modules, runs the full test suite, the ArchUnit boundary rules, and the
+15 modules, runs the full test suite, the ArchUnit boundary rules, and the
 enforcer rule that keeps the classpath on a single Jackson major.
 
-`data-prism-example` is the runnable server — a Spring Boot application
-(`ResourceServerApplication`) wiring the MCP tool surface to three stub source
-APIs behind an OAuth2 resource server. There is no Docker Compose yet (`S11`,
-open); running it currently means supplying your own JWKS and source
-configuration. Read `data-prism-example/src/main/java/.../http/` before
-attempting it.
+`data-prism-server` is the primary executable distribution. Its `/health`
+liveness probe is public and carries no deployment detail; its configured MCP
+path (normally `/mcp`) requires a verified bearer JWT. It deliberately contains
+no source schema, fixture adapter, or key. Supply configuration described in
+[`docs/configuration.md`](docs/configuration.md), plus a reviewed Java adapter
+extension for each configured source. Until Task 20 delivers the separately
+reviewed generic-JSON mode, protecting a new source requires Java code with an
+annotated response model.
+
+Adapter extensions are ordinary jars containing Spring Boot auto-configuration
+that declares the required `DataSourceAdapter` beans and an explicit reviewed
+`IdentityResolver` (use `PassThroughIdentityResolver` only when every source
+genuinely shares the same identifier). Register that configuration in
+`META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`,
+then load reviewed extension jars without rebuilding the server:
+
+```bash
+LOADER_PATH=/opt/data-prism/extensions \
+  java -jar data-prism-server/target/data-prism-server-0.1.0-SNAPSHOT.jar \
+  --spring.config.additional-location=file:/etc/data-prism/application.yaml
+```
+
+The process refuses startup if configuration, secrets, operational bindings, or
+the exact configured adapter set is missing. `data-prism-example` remains a
+fixture-only demonstration and is not a server dependency. Container packaging
+and Compose orchestration belong to Task 18.
 
 ## Contributing
 

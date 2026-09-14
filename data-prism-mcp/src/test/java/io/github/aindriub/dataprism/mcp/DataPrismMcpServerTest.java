@@ -150,7 +150,8 @@ class DataPrismMcpServerTest {
     void streamableHttpBuildsFromASuppliedExtractor() {
         DataPrismMcpServer.HttpTransport transport = DataPrismMcpServer.streamableHttp(
                 new NeverCalledOrchestrator(), authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")),
-                scopeResolver(), request -> McpTransportContext.EMPTY, PrivacyMetrics.none(), audit(), FIXED);
+                scopeResolver(), request -> McpTransportContext.EMPTY, "/mcp",
+                PrivacyMetrics.none(), audit(), FIXED);
 
         assertThat(transport.server()).isNotNull();
         assertThat(transport.transportProvider()).isNotNull();
