@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.architecture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
@@ -86,6 +88,44 @@ class ArchitectureTest {
     private static DescribedPredicate<JavaConstructorCall> constructsAnObjectMapper() {
         return DescribedPredicate.describe("call any ObjectMapper constructor",
                 call -> call.getTarget().getOwner().isEquivalentTo(ObjectMapper.class));
+    }
+
+    /**
+     * The allowlist above only holds "a YAML configuration reader is not a
+     * route from source data to transport" for as long as these five classes
+     * actually only read. Nothing stops a later edit from also calling
+     * {@code objectMapper.writeValue(...)} on the same instance — the mapper
+     * constructor rule above would stay silent, because it is not about
+     * what the mapper is used for once built. This rule is: none of the five
+     * designated YAML readers may call any {@code ObjectMapper#write*}
+     * method, so the exemption cannot quietly widen from "parses a
+     * configuration file" to "also serialises something" without failing
+     * here first.
+     */
+    private static final ArchRule DESIGNATED_YAML_READERS_DO_NOT_WRITE = noClasses()
+            .that(isADesignatedYamlReader())
+            .should().callMethodWhere(callsAnObjectMapperWriteMethod());
+
+    @Test
+    void designatedYamlReadersDoNotWrite() {
+        DESIGNATED_YAML_READERS_DO_NOT_WRITE.check(CLASSES);
+    }
+
+    private static DescribedPredicate<JavaClass> isADesignatedYamlReader() {
+        Set<String> designatedYamlReaders = Set.of(
+                "io.github.aindriub.dataprism.connectors.rest.RestSources",
+                "io.github.aindriub.dataprism.security.SecurityPolicy",
+                "io.github.aindriub.dataprism.core.policy.PrivacyProfiles",
+                "io.github.aindriub.dataprism.core.descriptor.ModelDescriptors",
+                "io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry");
+        return DescribedPredicate.describe("is one of the five designated YAML readers",
+                javaClass -> designatedYamlReaders.contains(javaClass.getFullName()));
+    }
+
+    private static DescribedPredicate<JavaMethodCall> callsAnObjectMapperWriteMethod() {
+        return DescribedPredicate.describe("call ObjectMapper#write*", call ->
+                call.getTarget().getOwner().isEquivalentTo(ObjectMapper.class)
+                        && call.getTarget().getName().startsWith("write"));
     }
 
     /** Dependencies point inward. Core must not know what is built on top of it. */
@@ -247,27 +287,27 @@ class ArchitectureTest {
     }
 
     /**
-     * Spring Security is task 07's own choice, for turning a verified JWT into
-     * an {@code AuthenticatedCaller} at the resource server's edge. Nothing
-     * else — least of all {@code data-prism-security}, which is meant to work
-     * the same way regardless of which web framework, or none, sits in front
-     * of it — may depend on it.
+     * Spring Security is for turning a verified JWT into an {@code
+     * AuthenticatedCaller} at an HTTP resource server's edge. Nothing else —
+     * least of all {@code data-prism-security}, which is meant to work the
+     * same way regardless of which web framework, or none, sits in front of
+     * it — may depend on it.
      *
-     * <p>{@code data-prism-server} is now visible to this rule for the first
-     * time and also depends on Spring Security, for the same reason the
-     * example does: it is the standalone distribution's own resource-server
-     * edge, and {@code ServerArchitectureTest} in that module already
-     * enforces that nothing else in {@code data-prism-server} does. This rule
-     * is left exactly as it ran before — it does not yet know {@code
-     * ..dataprism.server..} is a second legitimate edge, so it now fails
-     * against {@code JwtCallerContextExtractor} and {@code
-     * ServerSecurityConfiguration}. That failure is reported rather than
-     * silenced here; widening the exception is a design decision for
-     * whoever owns this rule next, not something to do quietly while moving
-     * the file.
+     * <p>Two packages are exempt because there are two such edges: {@code
+     * ..dataprism.example..} is the embedded-starter demonstration, and
+     * {@code ..dataprism.server..} gained its own OAuth2 resource server in
+     * task 17. Both terminate an HTTP request into the rest of the system;
+     * neither is a place source data or transport output passes through, so
+     * neither can turn Spring Security into a route around the privacy
+     * engine. That data-prism-server's exemption stays no wider than the
+     * edge itself is not this rule's job to police — {@code
+     * ServerArchitectureTest} in that module already enforces that nothing
+     * else inside {@code data-prism-server} depends on Spring Security, so
+     * the narrower guarantee this rule relies on is enforced right next to
+     * the code it constrains.
      */
     private static final ArchRule ONLY_THE_EXAMPLE_DEPENDS_ON_SPRING_SECURITY = noClasses()
-            .that().resideOutsideOfPackage("..dataprism.example..")
+            .that().resideOutsideOfPackages("..dataprism.example..", "..dataprism.server..")
             .should().dependOnClassesThat().resideInAPackage("org.springframework.security..")
             .allowEmptyShould(true);
 

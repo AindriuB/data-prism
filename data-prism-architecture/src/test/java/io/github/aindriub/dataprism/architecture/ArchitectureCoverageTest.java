@@ -59,7 +59,10 @@ class ArchitectureCoverageTest {
                 .importPaths(ModuleGraph.mainClassesDirectories(repositoryRoot, modulesWithMainCode));
 
         for (String module : modulesWithMainCode) {
-            boolean present = imported.stream().anyMatch(javaClass -> originatesFromModule(javaClass, module));
+            Path moduleClassesDirectory = repositoryRoot.resolve(module).resolve("target").resolve("classes")
+                    .normalize();
+            boolean present = imported.stream()
+                    .anyMatch(javaClass -> originatesFromModule(javaClass, moduleClassesDirectory));
             assertThat(present)
                     .as("'%s' is a declared dependency but contributed no class to the imported set", module)
                     .isTrue();
@@ -69,12 +72,18 @@ class ArchitectureCoverageTest {
     /**
      * Every class ArchUnit imports carries the {@link java.net.URI} it was
      * read from. Reading straight from each module's {@code target/classes}
-     * (see {@link ModuleGraph}) means that URI always contains the module's
-     * directory name, which is also its artifact id.
+     * (see {@link ModuleGraph}) means that URI always resolves to a path
+     * inside that directory. Comparing the resolved path rather than
+     * substring-matching the module name against the URI's text means a
+     * checkout directory that happens to be named after a module — someone
+     * cloning into a path ending in {@code .../data-prism-server/} — cannot
+     * make this check pass without that module's classes actually being on
+     * the imported set.
      */
-    private static boolean originatesFromModule(JavaClass javaClass, String module) {
+    private static boolean originatesFromModule(JavaClass javaClass, Path moduleClassesDirectory) {
         return javaClass.getSource()
-                .map(source -> source.getUri().toString().contains(module))
+                .map(source -> Path.of(source.getUri()).normalize())
+                .map(path -> path.startsWith(moduleClassesDirectory))
                 .orElse(false);
     }
 }
