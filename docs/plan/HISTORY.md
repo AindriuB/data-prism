@@ -17,6 +17,97 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-14 — Tasks 21, 22, 23 and 24: close the reviewed defects in tasks 13-17
+
+All five defects found reviewing the tasks 13-17 work (delivered by OpenAI
+Codex, outside this kit) are now closed, plus one fail-open found by the
+architect during this wave's planning that no reviewer had flagged.
+
+Task 21: `DataPrismProperties.validate()` accepted
+`fixture-development=true` with `mode=HTTP`, skipping JWT issuer/audience/JWKS
+validation, the HMAC key requirement, audit/metrics sink requirements and
+Hazelcast checks, and short-circuiting `DataPrismContractValidator`. Only
+`data-prism-server` guarded it; the Spring Boot starter inherited nothing. The
+refusal now lives in the shared validator
+(`DataPrismProperties.java:40`, `FIXTURE_DEVELOPMENT_STDIO_ONLY`), so every
+consumer refuses fixture development outside STDIO. That made the
+plaintext-`http://` JWKS relaxation unreachable, and it was removed from both
+resource-server paths.
+
+Task 22: `PrivacyPolicyResolver` and `LlmResponseValidator` were
+`@ConditionalOnMissingBean`, so an application bean returning `PASS_THROUGH`
+disabled scrubbing and leak detection silently. Both are now unconditional; a
+competing resolver refuses startup with `FORBIDDEN_PRIVACY_OVERRIDE`
+(`DataPrismAutoConfiguration.java:149`), and the orchestrator takes
+`List<LlmResponseValidator>` so an application validator is additive, never a
+replacement. New `PrivacyExtensionPoints` classifies all 23 `@Bean` methods,
+swept by a test that fails on any unclassified one.
+
+Task 23: the architecture rules had stopped enforcing anything outside
+`data-prism-example`, because that module's pom no longer pulled in the
+modules the rules were meant to police. A new `data-prism-architecture` module
+now imports every module's `target/classes` directly — necessary because
+`data-prism-server`'s Spring Boot repackage hides its classes under
+`BOOT-INF/classes/` from any ordinary classpath scan. 14 modules, 182 classes,
+verified identical across all three attempts. `ArchitectureCoverageTest` is
+the guard-of-the-guard: it fails if a module stops contributing classes, which
+is what makes a green run mean something.
+
+Task 24: `ServerPackagingIT`'s secret scan could not fail — it read only
+`BOOT-INF/classes/` for literals that existed solely in test code. It now
+scans every jar entry plus nested `BOOT-INF/lib/*.jar`, and a
+`JarInputStream`/`ZipInputStream` defect found in review had been hiding 62 of
+65 nested manifests. Both branches of the scan have positive controls proven
+by mutation.
+
+Two decisions the repository owner took on 2026-09-14, both landed inside
+task 23's branch rather than as follow-ups: `onlyTheExampleDependsOnSpringSecurity`
+widened to exempt `..dataprism.server..` alongside `..dataprism.example..`,
+both being the deliberate HTTP edge, since task 17 gave `data-prism-server`
+its own OAuth2 resource server and nothing had updated the rule because no
+test could see that module until task 23 made it visible; and task 23's
+ownership was amended mid-task to include `ServerArchitectureTest.java`, so
+the rule narrowing that makes the widened exemption safe landed in the same
+branch as the claim about it.
+
+All four branches went through `/verify` with a separate tester and reviewer,
+then reached `main` through individually green, required-check-passing pull
+requests (#28-#31) — task 23 needed one branch-update-and-recheck cycle after
+#28 and #29 landed ahead of it, task 24 needed the same after #30. The
+post-merge full-reactor re-run is 394 tests, 0 failures, 0 errors (sum of
+every module's surefire/failsafe `Results:` block; see this entry's Cost line
+for why that counting method, not the number itself, is what to trust). No
+`docker`/compose smoke test exists yet for this wave — that is task 18, not
+this one.
+
+**Cost:** two things here are worth not repeating.
+
+First, the counting method. Earlier figures of 366 and 363 circulated this
+session before settling on the baseline of 377 for `main@99b419b`; both were
+counting artefacts (a partial reactor run and a double-counted IT block), not
+missing tests. The number that is trustworthy is the sum of every module's
+`Results:` line — surefire and failsafe combined — read off a full `mvn -B
+verify` from the repository root. Anything short of that full sum is not
+comparable to a prior count and should not be quoted as one.
+
+Second, and the more transferable finding: attempt 2 of task 23 shipped a
+javadoc asserting that `ServerArchitectureTest` kept the module's inner
+boundary honest. It did not — that rule exempted all of `..server..` and
+constrained only what lay outside it, so a Spring Security dependency added to
+any other `data-prism-server` class turned nothing red. The false claim
+originated in the first implementer's close-out report, was repeated in the
+decision put to the repository owner, again in the brief for attempt 2, and
+again by a tester — four restatements before any agent opened the file it
+described. It was caught only when a reviewer read `ServerArchitectureTest`
+directly. `docs/conventions.md` already forbids a comment asserting
+unestablished state; the lesson this adds is that a citation repeated between
+agents accumulates apparent authority without acquiring evidence, which is
+also why tester and reviewer are worth keeping as separate passes rather than
+folding one into the other. This is the ninth and tenth cannot-fail assertion
+found in this repository — `ServerPackagingIT`'s original scan (task 24) and
+this false enforcement claim (task 23) — and the pattern is now the dominant
+defect class here.
+
 ## 2026-09-14 — Task 17: package the standalone Data Prism server
 
 Data Prism now ships `data-prism-server`, an executable Spring Boot application
