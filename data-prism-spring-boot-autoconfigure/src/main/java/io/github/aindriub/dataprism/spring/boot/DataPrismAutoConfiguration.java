@@ -128,17 +128,39 @@ public class DataPrismAutoConfiguration {
         if (reference == null || reference.isBlank()) reference = properties.getPrivacy().getHmacKey().getProviderReference();
         return new ConfiguredSecretKeyProvider(properties.getPrivacy().getHmacKey().getKeyId(), reference, resolver);
     }
-    @Bean @ConditionalOnMissingBean
+    /**
+     * Not {@code @ConditionalOnMissingBean}: an application bean of this type must
+     * never silently replace the profile-backed resolver, so this one is always
+     * created and {@link #dataPrismPrivacyPolicyResolverPreflight()} refuses
+     * startup if a competing bean exists rather than letting one win quietly.
+     */
+    @Bean
     PrivacyPolicyResolver dataPrismPrivacyPolicyResolver(DataPrismProperties properties) {
         validateProfile(properties);
         try (var input = DataPrismAutoConfiguration.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
             return new ProfilePrivacyPolicyResolver(PrivacyProfiles.fromYaml(input));
         } catch (IOException e) { throw new IllegalStateException("default privacy profiles could not be loaded", e); }
     }
+    /** Resolve this before singleton creation, same reasoning as {@link #dataPrismIdentityResolverPreflight()}. */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismPrivacyPolicyResolverPreflight() {
+        return factory -> {
+            if (factory.getBeanNamesForType(PrivacyPolicyResolver.class, true, false).length > 1) {
+                throw new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
+                        "an application PrivacyPolicyResolver bean cannot replace the framework's profile-backed resolver");
+            }
+        };
+    }
     @Bean @ConditionalOnMissingBean
     JsonTreeScrubbingEngine dataPrismScrubber(FieldMetadataResolver metadata, PrivacyPolicyResolver policy,
                                                SyntheticValueSource synthetics, ValueTokenSource tokens) { return new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens); }
-    @Bean @ConditionalOnMissingBean
+    /**
+     * Not {@code @ConditionalOnMissingBean}: this leak check must always run. An
+     * application {@link LlmResponseValidator} bean is additive rather than a
+     * replacement, because {@link #dataPrismContextOrchestrator} collects every
+     * bean of this type into its validator list instead of taking a single one.
+     */
+    @Bean
     LlmResponseValidator dataPrismRawValueLeakValidator() { return new RawValueLeakValidator(); }
     @Bean @ConditionalOnMissingBean
     SecurityPolicy dataPrismSecurityPolicy(DataPrismProperties properties) {
@@ -155,10 +177,10 @@ public class DataPrismAutoConfiguration {
     ScopeBudget dataPrismScopeBudget() { return new InMemoryScopeBudget(); }
     @Bean @ConditionalOnMissingBean
     ContextOrchestrator dataPrismContextOrchestrator(List<DataSourceAdapter<?>> adapters, IdentityResolver identities,
-            JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, LlmResponseValidator validator,
+            JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, List<LlmResponseValidator> validators,
             SyntheticValueSource synthetics, ValueTokenSource tokens, SecretKeyProvider keys, AuditRecorder audit,
             ScopeBudget budget, PrivacyMetrics metrics, Clock clock) {
-        return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.of(validator), synthetics,
+        return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 new ParameterFingerprinter(keys), audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
