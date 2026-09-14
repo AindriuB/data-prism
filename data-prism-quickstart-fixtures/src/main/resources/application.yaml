@@ -1,0 +1,10 @@
+# This process always serves HTTPS: the standalone server refuses a
+# plaintext http:// source base URL (task 21), so a fixture source that
+# spoke plain HTTP would be unusable for the quickstart it exists for.
+# server.ssl.key-store, key-store-password, key-store-type and key-alias are
+# deliberately unset here — they name material generated at first run
+# (docker/certs-init for Compose, QuickstartSmokeIT for the Docker-free
+# smoke test) and supplied externally. Nothing generated is committed.
+server:
+  ssl:
+    enabled: true

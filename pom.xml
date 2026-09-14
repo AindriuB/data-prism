@@ -37,6 +37,9 @@
     <module>data-prism-server</module>
     <module>data-prism-example</module>
     <module>data-prism-architecture</module>
+    <module>data-prism-quickstart-fixtures</module>
+    <module>data-prism-quickstart-issuer</module>
+    <module>data-prism-quickstart-extension</module>
   </modules>
 
   <properties>
@@ -149,6 +152,21 @@
       <dependency>
         <groupId>io.github.aindriub</groupId>
         <artifactId>data-prism-server</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-quickstart-fixtures</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-quickstart-issuer</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.aindriub</groupId>
+        <artifactId>data-prism-quickstart-extension</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>
