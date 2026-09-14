@@ -17,6 +17,69 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-14 — Task 18: a reproducible local quickstart
+
+The first task in this repository to produce a runnable demonstration of the
+whole system rather than a library plus tests. `docker compose up --build`
+now brings up the standalone server, synthetic fixture APIs and a local JWT
+issuer, and a genuine MCP handshake over the resulting `/mcp` endpoint
+returns a pseudonymised response — verified for real, not reasoned about:
+the full run returned `customerName:"Rowan Okafor (2TV5)"` and
+`email:"[REDACTED]"`, with none of the raw fixture values present; absent
+and garbage tokens both got 401; the stack was torn down with `docker
+compose down --volumes` and confirmed gone.
+
+Three new Maven modules exist because none of the three runnable pieces
+could be borrowed: `data-prism-quickstart-fixtures` (synthetic source APIs;
+`data-prism-example` had stub adapters but no `spring-boot-maven-plugin`, so
+it built a library jar that cannot start), `data-prism-quickstart-issuer` (a
+local JWT issuer, promoting to main code the RSA-key-and-JWKS-over-HTTPS
+pattern that previously existed only at test scope in
+`McpHttpEndToEndTest`), and `data-prism-quickstart-extension` (a reviewed
+adapter jar loaded through `-Dloader.path`, since the standalone server
+refuses startup without a `DataSourceAdapter` for every configured source).
+Plus `compose.yaml`, `docker/**`, `docs/quickstart.md` and `.env.example`.
+
+Two constraints from earlier tasks shaped the whole design: task 21 made the
+server refuse `fixture-development=true`, so the quickstart issues real JWTs
+against a real issuer with no development bypass; and plaintext `http://` is
+refused for both the JWKS location and every source `base-url`, so the
+issuer and fixtures serve HTTPS from a certificate generated at first run
+into a Docker-managed volume, never the repository.
+
+Adding the three modules to the root `<modules>` made task 23's
+`ArchitectureCoverageTest` fail, because `data-prism-architecture`'s pom
+must declare every module with main code as a test dependency. The
+implementer stopped and reported rather than editing a module it did not
+own; the repository owner amended task 18's `Owns` to add
+`data-prism-architecture/pom.xml`, deciding to scan the three new modules
+rather than exempt them. The rules now police 17 modules and 201 classes, up
+from 14 and 186.
+
+**Cost:** two mutation proofs were run, both directions — de-classifying
+`CustomerModel.customerName` made the raw fixture name leak into the
+response and the smoke test fail, proving the `doesNotContain` assertions
+load-bearing; attaching a valid token to the "absent token" request also
+failed the test, proving the refusal assertion is not vacuous. The tester
+verified jar shapes by unzipping rather than trusting them, and confirmed
+`QuickstartSmokeIT`'s 8.5s runtime is consistent with genuinely booting
+three JVMs via `ProcessBuilder` against real HTTPS health endpoints.
+
+The one environmental cost worth recording for future tasks: `.env*` paths
+cannot be read or written by any agent in this environment, in this session
+or the implementer's. `.env.example` had to be created by hand by the
+repository owner, and its contents could not be machine-verified by the
+implementer, the tester, or the reviewer — it was committed on a line count
+alone. Any future task owning a dotfile of that shape should expect the same
+and plan for a human step rather than discovering it mid-task. Also left
+open: `ServerPackagingIT.DEVELOPMENT_KEY_MARKERS` was not extended with the
+quickstart's HMAC literal (harmless today, since nothing packages
+`compose.yaml`, but the file's own javadoc obliges the extension), and
+`QuickstartSmokeIT` proves the synthetic name's shape but not its stability
+across repeated calls for the same subject. Both logged in `PLAN.md` rather
+than fixed here, since neither blocks anything and no task alive owns the
+files.
+
 ## 2026-09-14 — Task 25: wire the shared read budget, make the topology an explicit choice
 
 Closes the fifth and last defect found reviewing the tasks 13-17 work
