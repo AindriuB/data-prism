@@ -78,7 +78,7 @@ class SecurityConfig {
     JwtDecoder jwtDecoder(DataPrismProperties properties) {
         DataPrismProperties.Security.Jwt jwt = properties.getSecurity().getJwt();
         String jwkSetUri = jwt.getJwkSetUri() == null || jwt.getJwkSetUri().isBlank()
-                ? discoverJwkSetUri(properties, jwt)
+                ? discoverJwkSetUri(jwt)
                 : jwt.getJwkSetUri();
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
@@ -88,8 +88,7 @@ class SecurityConfig {
         return decoder;
     }
 
-    private static String discoverJwkSetUri(DataPrismProperties properties,
-            DataPrismProperties.Security.Jwt jwt) {
+    private static String discoverJwkSetUri(DataPrismProperties.Security.Jwt jwt) {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) URI.create(jwt.getIssuerDiscoveryUri()).toURL().openConnection();
@@ -113,8 +112,7 @@ class SecurityConfig {
                 if (!jwt.getIssuer().equals(metadata.issuer())) {
                     throw discoveryFailure("metadata issuer does not match dataprism.security.jwt.issuer");
                 }
-                validateDiscoveredJwkSetUri(metadata.jwkSetUri(),
-                        properties.getTransport().isFixtureDevelopment());
+                validateDiscoveredJwkSetUri(metadata.jwkSetUri());
                 return metadata.jwkSetUri();
             }
         } catch (DataPrismConfigurationException exception) {
@@ -166,12 +164,10 @@ class SecurityConfig {
         return new DiscoveryMetadata(issuer, jwkSetUri);
     }
 
-    private static void validateDiscoveredJwkSetUri(String raw, boolean fixtureDevelopment) {
+    private static void validateDiscoveredJwkSetUri(String raw) {
         try {
             URI uri = URI.create(raw);
-            boolean local = "localhost".equalsIgnoreCase(uri.getHost()) || "127.0.0.1".equals(uri.getHost());
-            boolean trustedScheme = "https".equalsIgnoreCase(uri.getScheme())
-                    || (fixtureDevelopment && local && "http".equalsIgnoreCase(uri.getScheme()));
+            boolean trustedScheme = "https".equalsIgnoreCase(uri.getScheme());
             if (!trustedScheme || uri.getHost() == null || uri.getUserInfo() != null
                     || uri.getFragment() != null) {
                 throw discoveryFailure("metadata jwks_uri must be an approved HTTPS URI");
