@@ -1,0 +1,118 @@
+# Local Compose quickstart (task 18): the standalone server, a synthetic
+# fixture API and a local token issuer, wired together for one command —
+# `docker compose up --build` — to bring up. See docs/quickstart.md for the
+# guided walkthrough and docs/configuration.md for what a production
+# deployment would set instead of every value labelled "fixture-only" below.
+#
+# This is a local demonstration, never a production deployment: see "Out of
+# scope" in docs/plan/tasks/18-compose-quickstart.md. In particular, every
+# certificate and key here is generated at first run into the `certs`
+# volume — a location Docker itself owns, never a path in this repository —
+# and nothing generated is ever committed (CLAUDE.md rule 7).
+
+name: data-prism-quickstart
+
+volumes:
+  # Docker-managed, not a bind mount: what cert-init generates here never
+  # touches this repository's working tree, so there is nothing to gitignore.
+  certs: {}
+
+services:
+  # fixture-only: this container's sole purpose is generating a throwaway,
+  # locally trusted TLS keystore/truststore into the `certs` volume before
+  # anything else starts, and exiting. See docker/certs-init/generate-certs.sh.
+  cert-init:
+    build:
+      context: .
+      dockerfile: docker/certs-init/Dockerfile
+    environment:
+      CERT_PASSWORD: ${QUICKSTART_CERT_PASSWORD:-quickstart-only-not-for-production}
+    volumes:
+      - certs:/certs
+
+  # The local token issuer (data-prism-quickstart-issuer). The standalone
+  # server has no fixture-development bypass (task 21), so this is the
+  # quickstart's only path to a usable, real, signature-verified JWT.
+  issuer:
+    build:
+      context: .
+      dockerfile: docker/issuer/Dockerfile
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+    environment:
+      # Spring Boot's relaxed environment-variable binding drops hyphens
+      # rather than substituting an underscore for them, so
+      # "server.ssl.key-store" is SERVER_SSL_KEYSTORE, not
+      # SERVER_SSL_KEY_STORE — confirmed against the packaged fixtures jar
+      # before this file was written, because a wrong name here fails
+      # silently (the property is simply never bound).
+      SERVER_PORT: 8544
+      SERVER_SSL_KEYSTORE: file:/certs/server.p12
+      SERVER_SSL_KEYSTOREPASSWORD: ${QUICKSTART_CERT_PASSWORD:-quickstart-only-not-for-production}
+      SERVER_SSL_KEYSTORETYPE: PKCS12
+      SERVER_SSL_KEYALIAS: quickstart
+      QUICKSTART_ISSUER_ISSUERID: ${QUICKSTART_ISSUER_ID:-https://issuer.quickstart.invalid}
+      QUICKSTART_ISSUER_AUDIENCE: ${QUICKSTART_AUDIENCE:-data-prism-quickstart-mcp}
+    volumes:
+      - certs:/certs:ro
+    ports:
+      - "8544:8544"
+
+  # The synthetic customer API (data-prism-quickstart-fixtures). Every record
+  # it can return is invented; see its own Javadoc.
+  fixtures:
+    build:
+      context: .
+      dockerfile: docker/fixtures/Dockerfile
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+    environment:
+      SERVER_PORT: 8543
+      SERVER_SSL_KEYSTORE: file:/certs/server.p12
+      SERVER_SSL_KEYSTOREPASSWORD: ${QUICKSTART_CERT_PASSWORD:-quickstart-only-not-for-production}
+      SERVER_SSL_KEYSTORETYPE: PKCS12
+      SERVER_SSL_KEYALIAS: quickstart
+    volumes:
+      - certs:/certs:ro
+
+  # The standalone server (data-prism-server, unowned by this task), with
+  # this task's reviewed adapter extension loaded through -Dloader.path. Its
+  # own startup does not block on fixtures/issuer being reachable — adapter
+  # and JWKS calls happen lazily, on the first real request — so
+  # `depends_on: condition: service_started` here is enough; see
+  # docs/quickstart.md for why the very first request after `up` can need a
+  # retry.
+  server:
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+      issuer:
+        condition: service_started
+      fixtures:
+        condition: service_started
+    environment:
+      # Per-JVM trust configuration for this process's own outbound calls
+      # (JWKS discovery against `issuer`, the fixture API against
+      # `fixtures`) — the standard Java mechanism, not something this
+      # quickstart invents. fixture-only: a real deployment trusts its own
+      # organisation's CA instead.
+      JAVA_TOOL_OPTIONS: >-
+        -Djavax.net.ssl.trustStore=/certs/truststore.p12
+        -Djavax.net.ssl.trustStorePassword=${QUICKSTART_CERT_PASSWORD:-quickstart-only-not-for-production}
+        -Djavax.net.ssl.trustStoreType=PKCS12
+      QUICKSTART_ISSUER_ID: ${QUICKSTART_ISSUER_ID:-https://issuer.quickstart.invalid}
+      QUICKSTART_AUDIENCE: ${QUICKSTART_AUDIENCE:-data-prism-quickstart-mcp}
+      # fixture-only: see .env.example. dataprism.privacy.hmac-key.value (a
+      # literal in configuration) is refused outright — this is a reference
+      # to an environment variable, the shape task 17 requires everywhere,
+      # not an exception to it.
+      DATAPRISM_QUICKSTART_HMAC_KEY: ${QUICKSTART_HMAC_KEY:-quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long}
+    volumes:
+      - certs:/certs:ro
+    ports:
+      - "8080:8080"
