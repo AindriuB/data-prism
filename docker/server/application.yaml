@@ -1,0 +1,56 @@
+# Fixture-only configuration for the local Compose quickstart (task 18). None
+# of this is a production configuration — see docs/quickstart.md and
+# docs/configuration.md for what each of these settings means and how a real
+# deployment would choose it instead.
+dataprism:
+  transport:
+    mode: http
+    http:
+      path: /mcp
+  security:
+    jwt:
+      # fixture-only: must equal data-prism-quickstart-issuer's own
+      # quickstart.issuer.issuer-id / .audience (see its application.yaml).
+      issuer: ${QUICKSTART_ISSUER_ID:https://issuer.quickstart.invalid}
+      audience: ${QUICKSTART_AUDIENCE:data-prism-quickstart-mcp}
+      # fixture-only: "issuer" is this Compose network's own issuer service —
+      # see compose.yaml. A real deployment points this at an organisation's
+      # own identity provider.
+      jwk-set-uri: https://issuer:8544/jwks
+    caller-claims:
+      principal: sub
+      roles: roles
+      investigation: case_id
+  security-policy:
+    purposes:
+      - investigation
+    roles:
+      investigator:
+        - GET_ENTITY_CONTEXT
+  privacy:
+    profile: DEFAULT
+    scope-lifetime: 8h
+    hmac-key:
+      key-id: quickstart-v1
+      # fixture-only: see .env.example for QUICKSTART_HMAC_KEY, which compose.yaml
+      # maps to this environment variable. A real deployment never uses a
+      # literal value here (dataprism.privacy.hmac-key.value is refused
+      # outright) and instead names an approved secret provider reference.
+      environment-variable: DATAPRISM_QUICKSTART_HMAC_KEY
+  audit:
+    sink: slf4j
+    writer-id: quickstart
+  metrics:
+    sink: micrometer
+  hazelcast:
+    # fixture-only: one server process, no cluster — task 25's explicit,
+    # required choice between "embedded" and "single-node" rather than a
+    # default either could quietly fall back to.
+    topology: single-node
+  sources:
+    customer:
+      # fixture-only: "fixtures" is this Compose network's own synthetic
+      # source API — see compose.yaml and data-prism-quickstart-fixtures. A
+      # real deployment points this at its own reviewed enterprise API.
+      base-url: https://fixtures:8543
+      timeout: 5s

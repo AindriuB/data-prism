@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.aindriub</groupId>
+    <artifactId>data-prism</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>data-prism-quickstart-issuer</artifactId>
+  <name>Data Prism :: Quickstart :: Local token issuer</name>
+  <description>
+    A local JWT issuer for the Compose quickstart (task 18). There is no
+    fixture-development bypass for the standalone server (task 21): the
+    quickstart issues real, verifiable JWTs against a real JWKS endpoint, and
+    this is that endpoint. The signing key is generated in memory at process
+    start and never persisted or committed.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <!-- Not managed by spring-boot-dependencies directly: it arrives
+           transitively through spring-security-oauth2-jose, which
+           data-prism-server depends on but this module does not. The version
+           below matches what that transitive resolution already settles on
+           elsewhere in this reactor, so this issuer signs with the exact
+           library data-prism-server verifies with. -->
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <version>10.9</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution><goals><goal>repackage</goal></goals></execution>
+        </executions>
+        <configuration>
+          <mainClass>io.github.aindriub.dataprism.quickstart.issuer.IssuerApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

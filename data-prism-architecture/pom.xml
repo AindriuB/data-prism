@@ -42,6 +42,11 @@
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- Task 18's three quickstart modules: added here so ArchitectureCoverageTest
+         stays true rather than exempting them from the whole-graph rules. -->
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-quickstart-fixtures</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-quickstart-issuer</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-quickstart-extension</artifactId><scope>test</scope></dependency>
     <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><scope>test</scope></dependency>
   </dependencies>
 </project>
