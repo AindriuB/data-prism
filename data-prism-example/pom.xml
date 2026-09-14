@@ -15,7 +15,9 @@
   <description>
     A stub source and a runnable server, proving the thread end to end. This is
     the only module permitted to contain a business domain type, and nothing
-    depends on it.
+    depends on it except data-prism-architecture, which depends on every
+    module at test scope only, to see the whole graph the boundary rules
+    check.
   </description>
 
   <dependencies>
@@ -46,13 +48,10 @@
       <artifactId>micrometer-core</artifactId>
     </dependency>
 
-    <!-- The example depends on every module, so it is where the architecture
-         rules can see the whole graph. -->
-    <dependency>
-      <groupId>com.tngtech.archunit</groupId>
-      <artifactId>archunit-junit5</artifactId>
-      <scope>test</scope>
-    </dependency>
+    <!-- Only the Spring Boot dependencies used to exercise the stdio and
+         HTTP wiring end to end. The whole-graph architecture rules moved to
+         data-prism-architecture, which is the module that depends on every
+         other one now. -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-test</artifactId>

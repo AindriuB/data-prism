@@ -36,6 +36,7 @@
     <module>data-prism-spring-boot-starter</module>
     <module>data-prism-server</module>
     <module>data-prism-example</module>
+    <module>data-prism-architecture</module>
   </modules>
 
   <properties>

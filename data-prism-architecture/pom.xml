@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.aindriub</groupId>
+    <artifactId>data-prism</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>data-prism-architecture</artifactId>
+  <name>Data Prism :: Architecture rules</name>
+  <description>
+    No production code of its own. Depends on every other module, at test
+    scope only, purely so the whole-graph boundary rules have the whole graph
+    to check rather than whatever subset happened to be on some other
+    module's classpath. Runs no Spring context, which is what lets it depend
+    on both data-prism-server and data-prism-example even though their
+    application.yaml resources would collide on one classpath.
+  </description>
+  <dependencies>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-annotations</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-processor</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-core</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-pseudonymisation</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-validation</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-audit</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-security</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-orchestration</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-mcp</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-connectors-rest</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-hazelcast</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-spring-boot-autoconfigure</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-spring-boot-starter</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-server</artifactId><scope>test</scope></dependency>
+    <!-- Not in the parent's dependencyManagement: nothing else is meant to
+         depend on the example, so its version is given directly here rather
+         than adding it there for this one, test-scope consumer. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-example</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><scope>test</scope></dependency>
+  </dependencies>
+</project>
