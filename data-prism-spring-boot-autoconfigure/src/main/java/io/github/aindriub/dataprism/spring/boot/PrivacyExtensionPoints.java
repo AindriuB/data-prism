@@ -60,6 +60,8 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismScopeResolver", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismAuditRecorder", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismScopeBudget", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismClusterScopeBudget", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismSharedBudgetPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContextOrchestrator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismHttpTransportValidated", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismHttpTransport", Classification.REPLACEABLE, Guard.NONE),

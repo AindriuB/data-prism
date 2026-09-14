@@ -85,6 +85,8 @@ class DataPrismAutoConfigurationTest {
     @Test void refuses_a_reserved_caller_claim() { fails("RESERVED_CALLER_CLAIM", "dataprism.security.caller-claims.principal=caseId"); }
     @Test void refuses_a_partial_mtls_reference() { fails("INVALID_SOURCE_MTLS", "dataprism.sources.customer.mtls.key-reference=key-ref"); }
     @Test void refuses_an_unknown_audit_sink() { fails("UNKNOWN_AUDIT_SINK", "dataprism.audit.sink=stdout"); }
+    @Test void refuses_a_missing_cluster_topology() { fails("MISSING_CLUSTER_TOPOLOGY", "dataprism.hazelcast.topology="); }
+    @Test void refuses_an_unknown_topology() { fails("UNSUPPORTED_HAZELCAST_TOPOLOGY", "dataprism.hazelcast.topology=client-server"); }
     @Test void refuses_weak_key_material() {
         new ApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
                 .withUserConfiguration(WeakKeyIntegrations.class).withPropertyValues(valid()).run(result -> {
@@ -117,6 +119,7 @@ class DataPrismAutoConfigurationTest {
             "dataprism.security-policy.purposes[0]=investigation", "dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
             "dataprism.privacy.profile=DEFAULT", "dataprism.privacy.scope-lifetime=8h", "dataprism.privacy.hmac-key.key-id=v1", "dataprism.privacy.hmac-key.environment-variable=DATAPRISM_HMAC_KEY_REF",
             "dataprism.audit.sink=approved-sink", "dataprism.audit.writer-id=test", "dataprism.metrics.sink=micrometer",
+            "dataprism.hazelcast.topology=single-node",
             "dataprism.sources.customer.base-url=https://customer.example", "dataprism.sources.customer.timeout=2s"}; }
 
     @Configuration(proxyBeanMethods = false)
