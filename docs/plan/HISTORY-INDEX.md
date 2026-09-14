@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-09-14 | 25 | Shared Hazelcast read budget wired for the `embedded` topology; `dataprism.hazelcast.topology` made a required explicit choice (`MISSING_CLUSTER_TOPOLOGY`/`UNSUPPORTED_HAZELCAST_TOPOLOGY`/`MISSING_SHARED_BUDGET`), closing the fifth reviewed defect from tasks 13-17. Post-merge reactor: 400 tests, 0 failures | `## 2026-09-14 — Task 25: wire the shared read budget, make the topology an explicit choice` |
 | 2026-09-14 | 21, 22, 23, 24 | Fixture-development refusal moved to the shared validator; privacy-critical beans made non-replaceable with a classified extension-point sweep; architecture rules regained the whole module graph via a new scanning module; packaged-server secret scan now reaches every nested jar. Post-merge reactor: 394 tests, 0 failures | `## 2026-09-14 — Tasks 21, 22, 23 and 24: close the reviewed defects in tasks 13-17` |
 | 2026-09-14 | 17 | Executable fail-closed standalone server with JWT-authenticated configurable MCP path, reviewed extension loading, and fixture-free packaging | `## 2026-09-14 — Task 17: package the standalone Data Prism server` |
 | 2026-09-14 | 16 | Dependency-only Spring Boot starter, shared `/mcp` lifecycle wiring, and an HTTPS-JWKS embedded example with fail-closed startup proofs | `## 2026-09-14 — Task 16: ship the Spring Boot starter and embedded protected-API example` |

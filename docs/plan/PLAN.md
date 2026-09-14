@@ -83,26 +83,32 @@ re-run: 394 tests, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep
 `Tasks 21, 22, 23 and 24` — for what landed and what it cost, including the
 counting-method settlement and the false-claim-propagation lesson.
 
-### Task 25 — open, unblocked
+### Task 25 — done
 
-Wires the shared read budget through the auto-configuration and makes the
+Wired the shared read budget through the auto-configuration and made the
 Hazelcast topology an explicit configuration choice instead of an implicit
-default. Depended on 21, 22 and 24, all merged 2026-09-14 — nothing blocks it
-now. `docs/plan/tasks/25-read-budget-scope-is-honest.md`.
+default: `embedded` now produces a real `HazelcastScopeBudget`, and
+`dataprism.hazelcast.topology` is required rather than defaulted. Merged
+through a protected, green pull request 2026-09-14 (#33). Post-merge
+full-reactor re-run: 400 tests, 0 failures, 0 errors. See
+`docs/plan/HISTORY.md` — grep `Task 25` — for what landed and what it cost,
+including the ownership-breach precedent.
 
-### Task 18 — open, blocked on 25 (and a local precondition)
+### Task 18 — open, blocked on a local precondition only
 
 Replaces source-reading as onboarding with one reproducible local Compose
 journey: standalone server, synthetic fixture APIs and a local JWT issuer,
 proving an agent-compatible MCP request succeeds end to end. Amended
 2026-09-14 to own three new runnable modules and depend on 16, 17, 21, 23 and
 25 as well, since none of the three runnable pieces it needs exist yet and the
-server now refuses the fixture-development shortcut the original brief assumed.
-Blocker beyond task 25: the compose-based acceptance criteria need a running
-Docker daemon to verify at least once (`docs/conventions.md:253-258`) — OrbStack
-was not running when this was checked; start it and confirm `docker compose
-version` before dispatch, or split the three service modules into a
-Docker-free predecessor task. `docs/plan/tasks/18-compose-quickstart.md`.
+server now refuses the fixture-development shortcut the original brief
+assumed. All five task dependencies are merged as of 2026-09-14 — nothing
+blocks it on the task graph. Remaining blocker: the compose-based acceptance
+criteria need a running Docker daemon to verify at least once
+(`docs/conventions.md:253-258`) — OrbStack was not running when this was last
+checked; start it and confirm `docker compose version` before dispatch, or
+split the three service modules into a Docker-free predecessor task.
+`docs/plan/tasks/18-compose-quickstart.md`.
 
 ### Tasks 19, 20 — open, blocked on 18
 
@@ -152,9 +158,37 @@ any of them up only if a future task already owns the file.
   after the `package` phase. Task 23 worked around it inside its own module;
   the underlying fix is a `<classifier>` on that plugin execution in
   `data-prism-server/pom.xml`.
-- `data-prism-connectors-rest` and `data-prism-hazelcast` are unconsumed
-  leaves — nothing in the reactor depends on either. Task 20 is what would
-  wire `connectors-rest`.
+- `data-prism-connectors-rest` is an unconsumed leaf — nothing in the reactor
+  depends on it. Task 20 is what would wire it. (`data-prism-hazelcast` is no
+  longer unconsumed: task 25 gives it a real caller through the
+  autoconfigure module's `embedded` topology.)
+
+Found during `/verify` on task 25, 2026-09-14. None blocks anything; pick any
+of them up only if a future task already owns the file.
+
+- `dataprism.privacy.hmac-key`'s neighbour `identity-cache-ttl` is bound,
+  validated, and read by nothing — `CachingSyntheticValueSource.java:142-147`
+  derives its TTL from `context.expiresAt()`, and `PrivacyCluster.configure()`
+  (`PrivacyCluster.java:71-75`) replaces any pre-set `MapConfig`, so no caller
+  can wire it. Pre-existing, confirmed by review, not introduced by task 25.
+  Same defect shape as `topology` was, one layer down: a property an operator
+  can set that changes nothing. `docs/configuration.md:63` makes no false
+  claim about it, but the refusal column still implies the property means
+  something. Fixing it needs `data-prism-hazelcast`, which task 25 was
+  explicitly scoped out of.
+- `DataPrismAutoConfiguration.java:225` — `@ConditionalOnBean` also suppresses
+  the bean definition, so `topology: embedded` with Hazelcast present but no
+  `DataSourceAdapter` refuses with `MISSING_SHARED_BUDGET` and a message
+  claiming Hazelcast is missing from the classpath, which is false. Fails
+  closed, but reports the wrong cause.
+- `DataPrismAutoConfiguration.java:188` — `matchIfMissing=true` is untested;
+  flipping it to `false` leaves all 36 autoconfigure tests green. It makes no
+  refusal unreachable, so it is not a fail-open, but the default is unproven.
+- `DataPrismAutoConfiguration.java:225` — `"embedded".equals(...)` is
+  case-sensitive while the `@ConditionalOnProperty` above it matches
+  case-insensitively, so `topology=Embedded` under stdio fixture-development
+  with Hazelcast absent fails closed on an `UnsatisfiedDependencyException`
+  rather than the stable code.
 
 Left by task 09's close-out. Neither blocks anything; pick either up only if a
 future task already owns the file.

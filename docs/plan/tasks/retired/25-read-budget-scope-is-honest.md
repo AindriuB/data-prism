@@ -9,7 +9,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterScopeBudgetConfiguration.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/SharedReadBudgetTest.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfigurationTest.java
-- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanClassificationTest.java *(insertions only: the classification rows for the beans this task adds)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(insertions only: the classification rows for the beans this task adds — the task file originally misnamed this as `AutoConfiguredBeanClassificationTest.java`, which only sweeps the rows this file holds, rather than holding them itself)*
 - data-prism-example/src/main/resources/application.yaml
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/ServerStartupTest.java *(the configuration arguments only)*
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/ServerPackagingIT.java *(the configuration arguments only)*
