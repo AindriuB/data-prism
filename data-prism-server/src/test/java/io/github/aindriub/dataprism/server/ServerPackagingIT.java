@@ -394,6 +394,7 @@ class ServerPackagingIT {
                 "--dataprism.privacy.hmac-key.environment-variable=DATAPRISM_TASK17_TEST_KEY",
                 "--dataprism.audit.sink=slf4j", "--dataprism.audit.writer-id=packaging-test",
                 "--dataprism.metrics.sink=micrometer",
+                "--dataprism.hazelcast.topology=single-node",
                 "--dataprism.sources.customer.base-url=https://customer.example",
                 "--dataprism.sources.customer.timeout=2s"
         };

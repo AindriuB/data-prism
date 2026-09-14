@@ -117,6 +117,7 @@ class PrivacyExtensionPointsTest {
                 "dataprism.privacy.hmac-key.environment-variable=DATAPRISM_HMAC_KEY_REF",
                 "dataprism.audit.sink=approved-sink", "dataprism.audit.writer-id=test",
                 "dataprism.metrics.sink=micrometer",
+                "dataprism.hazelcast.topology=single-node",
                 "dataprism.sources.customer.base-url=https://customer.example",
                 "dataprism.sources.customer.timeout=2s"};
     }

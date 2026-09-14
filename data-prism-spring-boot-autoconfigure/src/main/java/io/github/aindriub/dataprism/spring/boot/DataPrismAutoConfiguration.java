@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
@@ -44,6 +45,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -52,6 +54,7 @@ import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 
 import java.io.IOException;
@@ -172,9 +175,60 @@ public class DataPrismAutoConfiguration {
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties) { return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()))); }
     @Bean @ConditionalOnMissingBean @ConditionalOnBean(AuditSink.class)
     AuditRecorder dataPrismAuditRecorder(AuditSink sink, Clock clock, DataPrismProperties properties) { return new AuditRecorder(sink, clock, properties.getAudit().getWriterId()); }
+    /**
+     * {@code single-node}, or no topology configured at all (fixture-development,
+     * where {@link DataPrismProperties#validate()} never requires one): the budget
+     * is enforced once per process. {@code matchIfMissing} covers only the
+     * unvalidated dev case — a protected deployment with no topology configured
+     * never reaches bean creation, because {@link #dataPrismPropertiesValidated}
+     * refuses it first with {@code MISSING_CLUSTER_TOPOLOGY}.
+     */
     @Bean @ConditionalOnMissingBean
     @ConditionalOnBean({IdentityResolver.class, SecretKeyProvider.class, AuditSink.class, PrivacyMetrics.class, DataSourceAdapter.class})
+    @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "single-node", matchIfMissing = true)
     ScopeBudget dataPrismScopeBudget() { return new InMemoryScopeBudget(); }
+    /**
+     * {@code embedded}: the budget is enforced once across the cluster, not once
+     * per process. {@code @ConditionalOnClass} is what lets this method — and
+     * {@link ClusterScopeBudgetConfiguration}, which is the only other class in
+     * this package that names a {@code com.hazelcast} type — go unresolved on a
+     * {@code single-node} consumer that never put {@code data-prism-hazelcast} on
+     * its classpath. When the topology is {@code embedded} and that dependency is
+     * absent, no {@link ScopeBudget} bean is created here at all, and
+     * {@link #dataPrismSharedBudgetPreflight()} is what turns that silence into a
+     * refusal instead of a missing-bean startup failure with no stable code.
+     */
+    @Bean @ConditionalOnMissingBean
+    @ConditionalOnBean({IdentityResolver.class, SecretKeyProvider.class, AuditSink.class, PrivacyMetrics.class, DataSourceAdapter.class})
+    @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
+    @ConditionalOnClass(HazelcastInstance.class)
+    ScopeBudget dataPrismClusterScopeBudget(DataPrismProperties properties) {
+        return ClusterScopeBudgetConfiguration.build(properties.getHazelcast());
+    }
+    /**
+     * Resolve this before singleton creation, same reasoning as
+     * {@link #dataPrismIdentityResolverPreflight()}: an {@code embedded} topology
+     * that silently ends up with no shared budget — because the optional
+     * {@code data-prism-hazelcast} dependency is missing — is the exact defect
+     * this task exists to close. {@code single-node} is unaffected: it never
+     * depends on the missing classes, so it is never silently short a bean here.
+     *
+     * <p>Reads the raw {@code Environment} property rather than the bound
+     * {@link DataPrismProperties} bean: forcing that bean's creation this early,
+     * before {@code ConfigurationPropertiesBindingPostProcessor} is registered as
+     * a {@code BeanPostProcessor} later in refresh, would hand every later
+     * injection point an instance whose fields were never bound at all.
+     */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismSharedBudgetPreflight(Environment environment) {
+        return factory -> {
+            if ("embedded".equals(environment.getProperty("dataprism.hazelcast.topology"))
+                    && factory.getBeanNamesForType(ScopeBudget.class, true, false).length == 0) {
+                throw new DataPrismConfigurationException("MISSING_SHARED_BUDGET",
+                        "dataprism.hazelcast.topology=embedded requires data-prism-hazelcast on the classpath");
+            }
+        };
+    }
     @Bean @ConditionalOnMissingBean
     ContextOrchestrator dataPrismContextOrchestrator(List<DataSourceAdapter<?>> adapters, IdentityResolver identities,
             JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, List<LlmResponseValidator> validators,

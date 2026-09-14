@@ -47,7 +47,13 @@ dataprism:
   metrics:
     sink: micrometer
   hazelcast:
-    topology: embedded
+    # single-node, not embedded: this module's pom does not add the optional
+    # data-prism-hazelcast dependency the starter carries, so an embedded
+    # topology here would refuse startup with MISSING_SHARED_BUDGET. The
+    # example runs as one process, so the per-process budget this topology
+    # produces is not a silent inconsistency for it the way it would be for a
+    # multi-instance deployment.
+    topology: single-node
     reidentification-enabled: false
   sources:
     customer-api:

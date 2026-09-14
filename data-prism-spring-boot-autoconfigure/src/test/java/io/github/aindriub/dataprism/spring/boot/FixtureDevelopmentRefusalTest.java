@@ -91,6 +91,7 @@ class FixtureDevelopmentRefusalTest {
         properties.getAudit().setSink("approved-sink");
         properties.getAudit().setWriterId("test");
         properties.getMetrics().setSink("micrometer");
+        properties.getHazelcast().setTopology("single-node");
         DataPrismProperties.Source source = new DataPrismProperties.Source();
         source.setBaseUrl("https://customer.example");
         source.setTimeout(Duration.ofSeconds(2));
