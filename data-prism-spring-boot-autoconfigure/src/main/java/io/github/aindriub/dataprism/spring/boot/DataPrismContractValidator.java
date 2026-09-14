@@ -22,7 +22,8 @@ final class DataPrismContractValidator implements InitializingBean {
     static void validateIntegrations(DataPrismProperties properties, java.util.List<DataSourceAdapter<?>> adapterList,
             ObjectProvider<IdentityResolver> identities, ObjectProvider<HmacKeyReferenceResolver> keys,
             ObjectProvider<AuditSink> audit, ObjectProvider<PrivacyMetrics> metrics) {
-        if (properties.getTransport().isFixtureDevelopment()) return;
+        if (properties.getTransport().isFixtureDevelopment()
+                && properties.getTransport().getMode() == DataPrismProperties.Transport.Mode.STDIO) return;
         Set<String> configured=properties.getSources().keySet(); Set<String> supplied=adapterList.stream().map(DataSourceAdapter::sourceName).collect(Collectors.toSet());
         if(configured.isEmpty()) throw new DataPrismConfigurationException("MISSING_SOURCE_ADAPTER","dataprism.sources must name at least one reviewed adapter");
         if(!configured.equals(supplied)) throw new DataPrismConfigurationException("UNRESOLVED_SOURCE_ADAPTER","configured sources and DataSourceAdapter beans differ");
