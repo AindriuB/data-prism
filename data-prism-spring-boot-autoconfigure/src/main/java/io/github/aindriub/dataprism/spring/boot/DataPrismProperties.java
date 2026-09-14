@@ -35,7 +35,10 @@ public class DataPrismProperties {
         if(transport.mode==Transport.Mode.STDIO&&!fixture) refuse("STDIO_DEVELOPMENT_ONLY","dataprism.transport.stdio requires fixture-development=true");
         if(transport.mode==null) refuse("INVALID_TRANSPORT","dataprism.transport.mode must be http or stdio");
         rootedPath(transport.http.path,"dataprism.transport.http.path");
-        if(!fixture) protectedDeployment(); validateSources(fixture);
+        boolean stdioFixture=fixture&&transport.mode==Transport.Mode.STDIO;
+        if(!stdioFixture) protectedDeployment();
+        if(fixture&&transport.mode!=Transport.Mode.STDIO) refuse("FIXTURE_DEVELOPMENT_STDIO_ONLY","dataprism.transport.fixture-development requires dataprism.transport.mode=stdio");
+        validateSources(fixture);
     }
     private void protectedDeployment() {
         required(security.jwt.issuer,"MISSING_JWT_ISSUER","dataprism.security.jwt.issuer"); required(security.jwt.audience,"MISSING_JWT_AUDIENCE","dataprism.security.jwt.audience");
