@@ -3,6 +3,7 @@
 **Repo:** `.`
 **Depends on:** 15
 **Owns:**
+- data-prism-spring-boot-autoconfigure/**
 - data-prism-spring-boot-starter/**
 - data-prism-example/**
 - pom.xml
@@ -16,9 +17,10 @@ current manual assembly.
 
 ## Acceptance
 
-- [ ] The starter supplies the auto-configuration module and no application
-      code beyond the standard dependency and explicit extension beans is
-      required to create the MCP endpoint.
+- [ ] The shared auto-configuration module owns the MCP SDK server lifecycle
+      and servlet registration; the dependency-only starter supplies that
+      module, and no application code beyond the standard dependency and
+      explicit extension beans is required to create the MCP endpoint.
 - [ ] The example is converted from hand-built `DataPrismAssembly` production
       wiring to consume the starter, while retaining fixture-only stdio as a
       distinct development entry point.
