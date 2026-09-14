@@ -18,9 +18,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
-import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,6 +31,13 @@ class ServerPackagingIT {
      * build artefact that actually emits it. A marker that no build artefact in this
      * repository ever emits does not belong here — it would let the scan pass by
      * construction (see {@code docs/conventions.md} on cannot-fail assertions).
+     *
+     * <p>This list currently holds exactly one literal. The scan matches on that literal
+     * string alone: a future development key with different key material — a new fixture
+     * assembly, a rotated literal in {@code DataPrismAssembly}, a key added to some other
+     * example module — would produce no hit and no failure unless its literal is added
+     * here too. Whoever adds a new development key to this repository must extend this
+     * list, or this scan silently stops covering it.
      */
     private static final List<String> DEVELOPMENT_KEY_MARKERS = List.of(
             // DataPrismAssembly.DEV_KEY, data-prism-example/src/main/java/io/github/aindriub/
@@ -93,6 +100,62 @@ class ServerPackagingIT {
                             + "BOOT-INF/lib/*.jar entry, or it cannot detect a real leak there either")
                     .isNotEmpty();
             assertThat(hits.get(0)).contains(marker).contains("BOOT-INF/lib/");
+        } finally {
+            Files.deleteIfExists(planted);
+        }
+    }
+
+    /**
+     * Regression control for the exact defect a review found in this scan: {@code
+     * JarInputStream} reads a nested jar's leading {@code META-INF/MANIFEST.MF} to
+     * populate {@code getManifest()} and never returns it from {@code getNextEntry()},
+     * so a marker planted specifically in a nested jar's manifest — rather than in an
+     * ordinary resource entry, as {@link #developmentKeyScanDetectsAPlantedMarkerInsideANestedLibraryJar}
+     * plants it — went undetected while the scan used {@code JarInputStream}. Measured
+     * against the real packaged {@code data-prism-server} artifact, that bug left 3 of
+     * 65 nested {@code META-INF/MANIFEST.MF} entries visible to the scan; with {@code
+     * ZipInputStream} all 65 are visible. This test fails if the scan regresses to a
+     * manifest-consuming reader.
+     */
+    @Test
+    void developmentKeyScanDetectsAPlantedMarkerInsideANestedLibraryJarManifest() throws IOException {
+        String marker = DEVELOPMENT_KEY_MARKERS.get(0);
+        Path planted = buildJarWithPlantedMarkerInNestedLibraryManifest(marker);
+        try {
+            List<String> hits = scanForDevelopmentKeyMaterial(planted, DEVELOPMENT_KEY_MARKERS);
+
+            assertThat(hits)
+                    .as("scanner must detect a development key marker planted inside a nested "
+                            + "BOOT-INF/lib/*.jar entry's META-INF/MANIFEST.MF, not just its ordinary "
+                            + "resource entries, or a manifest-consuming reader silently narrows the scan")
+                    .isNotEmpty();
+            assertThat(hits.get(0)).contains(marker).contains("BOOT-INF/lib/").contains("META-INF/MANIFEST.MF");
+        } finally {
+            Files.deleteIfExists(planted);
+        }
+    }
+
+    /**
+     * Positive control for the non-nested branch of {@link #scanForDevelopmentKeyMaterial}
+     * (the {@code else} taken for {@code BOOT-INF/classes/} resources and the outer jar's
+     * own {@code META-INF/}, as opposed to the {@code BOOT-INF/lib/*.jar} branch above):
+     * plants a development key marker directly in a {@code BOOT-INF/classes/} entry — no nested jar
+     * involved — and asserts the scan reports it. Until this test existed, only the nested
+     * {@code BOOT-INF/lib/*.jar} branch had a positive control; the non-nested branch could
+     * have its body deleted with nothing in this suite noticing.
+     */
+    @Test
+    void developmentKeyScanDetectsAPlantedMarkerInBootInfClasses() throws IOException {
+        String marker = DEVELOPMENT_KEY_MARKERS.get(0);
+        Path planted = buildJarWithPlantedMarkerInBootInfClasses(marker);
+        try {
+            List<String> hits = scanForDevelopmentKeyMaterial(planted, DEVELOPMENT_KEY_MARKERS);
+
+            assertThat(hits)
+                    .as("scanner must detect a development key marker planted directly in "
+                            + "BOOT-INF/classes/, or the non-nested branch cannot detect a real leak there either")
+                    .isNotEmpty();
+            assertThat(hits.get(0)).contains(marker).contains("BOOT-INF/classes/");
         } finally {
             Files.deleteIfExists(planted);
         }
@@ -212,8 +275,14 @@ class ServerPackagingIT {
 
     private static List<String> scanNestedJarForDevelopmentKeyMaterial(
             String outerEntryName, byte[] nestedJarBytes, List<String> markers) throws IOException {
+        // ZipInputStream, not JarInputStream: JarInputStream reads and consumes a leading
+        // META-INF/MANIFEST.MF internally to populate getManifest() and never surfaces it
+        // from getNextEntry(), so a marker planted in a nested jar's manifest — the exact
+        // shape the reviewed defect took — would silently never reach matchMarkers below.
+        // Measured against the real packaged artifact: JarInputStream exposed 3 of 65
+        // nested META-INF/MANIFEST.MF entries; ZipInputStream exposes all 65.
         List<String> hits = new ArrayList<>();
-        try (JarInputStream nested = new JarInputStream(new ByteArrayInputStream(nestedJarBytes))) {
+        try (ZipInputStream nested = new ZipInputStream(new ByteArrayInputStream(nestedJarBytes))) {
             ZipEntry entry;
             while ((entry = nested.getNextEntry()) != null) {
                 if (entry.isDirectory()) continue;
@@ -256,6 +325,51 @@ class ServerPackagingIT {
             outerOutput.closeEntry();
         } finally {
             Files.deleteIfExists(nestedLib);
+        }
+        return outer;
+    }
+
+    /**
+     * Builds a jar shaped like a packaged server distribution containing exactly one
+     * nested library jar under {@code BOOT-INF/lib/}, with {@code marker} planted inside
+     * that nested jar's own {@code META-INF/MANIFEST.MF} — the entry {@code
+     * JarInputStream} consumes internally and never returns from {@code getNextEntry()},
+     * which is the shape the reviewed defect took.
+     */
+    private static Path buildJarWithPlantedMarkerInNestedLibraryManifest(String marker) throws IOException {
+        Path nestedLib = Files.createTempFile("data-prism-nested-lib-manifest-", ".jar");
+        var nestedManifest = new java.util.jar.Manifest();
+        nestedManifest.getMainAttributes().put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0");
+        nestedManifest.getMainAttributes().putValue("Dev-Key", marker);
+        try (JarOutputStream nestedOutput = new JarOutputStream(Files.newOutputStream(nestedLib), nestedManifest)) {
+            nestedOutput.putNextEntry(new ZipEntry("io/github/aindriub/dataprism/example/Placeholder.class"));
+            nestedOutput.write(new byte[] {0});
+            nestedOutput.closeEntry();
+        }
+
+        Path outer = Files.createTempFile("data-prism-packaging-manifest-positive-control-", ".jar");
+        try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
+            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-example-0.1.0-SNAPSHOT.jar"));
+            outerOutput.write(Files.readAllBytes(nestedLib));
+            outerOutput.closeEntry();
+        } finally {
+            Files.deleteIfExists(nestedLib);
+        }
+        return outer;
+    }
+
+    /**
+     * Builds a jar shaped like a packaged server distribution with {@code marker} planted
+     * directly in a {@code BOOT-INF/classes/} entry — the non-nested branch of {@link
+     * #scanForDevelopmentKeyMaterial}, exercised without any {@code BOOT-INF/lib/*.jar}.
+     */
+    private static Path buildJarWithPlantedMarkerInBootInfClasses(String marker) throws IOException {
+        Path outer = Files.createTempFile("data-prism-packaging-classes-positive-control-", ".jar");
+        try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
+            outerOutput.putNextEntry(new ZipEntry(
+                    "BOOT-INF/classes/io/github/aindriub/dataprism/server/PlantedKey.properties"));
+            outerOutput.write(("dev.key=" + marker).getBytes(StandardCharsets.UTF_8));
+            outerOutput.closeEntry();
         }
         return outer;
     }
