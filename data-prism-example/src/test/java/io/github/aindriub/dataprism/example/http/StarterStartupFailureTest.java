@@ -34,11 +34,22 @@ class StarterStartupFailureTest {
         assertConfigurationFailure(failure, "MISSING_IDENTITY_RESOLVER");
     }
 
+    @Test
+    void httpFixtureDevelopmentPreventsTheApplicationStarting() {
+        Throwable failure = catchThrowable(() -> start(MissingAdapterApplication.class, httpFixtureConfiguration()));
+
+        assertConfigurationFailure(failure, "FIXTURE_DEVELOPMENT_STDIO_ONLY");
+    }
+
     private static void start(Class<?> application) {
+        start(application, validConfiguration());
+    }
+
+    private static void start(Class<?> application, String[] configuration) {
         try (var ignored = new SpringApplicationBuilder(application)
                 .web(WebApplicationType.NONE)
                 .logStartupInfo(false)
-                .run(validConfiguration())) {
+                .run(configuration)) {
             throw new AssertionError("application unexpectedly started");
         }
     }
@@ -51,6 +62,14 @@ class StarterStartupFailureTest {
         }
         assertThat(root).isInstanceOf(DataPrismConfigurationException.class)
                 .hasMessageStartingWith(code + ":");
+    }
+
+    private static String[] httpFixtureConfiguration() {
+        String[] valid = validConfiguration();
+        String[] configuration = java.util.Arrays.copyOf(valid, valid.length + 2);
+        configuration[valid.length] = "--dataprism.transport.mode=http";
+        configuration[valid.length + 1] = "--dataprism.transport.fixture-development=true";
+        return configuration;
     }
 
     private static String[] validConfiguration() {
