@@ -38,11 +38,11 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Builds a working pipeline by hand.
+ * Builds the fixture-only stdio pipeline by hand.
  *
- * <p>Wiring by constructor rather than by container, so the dependency direction
- * is visible in one place while it is still being argued about. The Spring Boot
- * starter that does this automatically is a later slice.
+ * <p>The protected HTTP application consumes the Spring Boot starter instead.
+ * This assembly remains only because stdio deliberately starts no Spring
+ * context: framework banners and console logging would corrupt its protocol.
  */
 public final class DataPrismAssembly {
 
