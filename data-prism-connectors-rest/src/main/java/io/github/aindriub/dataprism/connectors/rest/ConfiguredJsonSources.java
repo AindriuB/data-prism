@@ -136,9 +136,17 @@ public final class ConfiguredJsonSources {
         }
         // The same gate a Java-first source's dataprism.sources.<name>.base-url must
         // clear (DataPrismProperties.trustedUri), reimplemented here rather than
-        // depended on: a plaintext base URL is refused unless this is fixture
-        // development and the host is loopback, and a tls: block always closes even
-        // that exception, since configuring mTLS material for a plaintext connection
+        // depended on. Unconditional, regardless of the fixture-development
+        // exception below: embedded credentials, a query string or a fragment
+        // have no legitimate place in a server-owned base URL, and RestSource's
+        // own validation does not check for them.
+        if (baseUri.getUserInfo() != null || baseUri.getRawQuery() != null || baseUri.getRawFragment() != null) {
+            throw new IllegalArgumentException("json source " + name
+                    + " base-url must not carry user-info, a query string or a fragment: " + baseUri);
+        }
+        // A plaintext base URL is refused unless this is fixture development and
+        // the host is loopback, and a tls: block always closes even that
+        // exception, since configuring mTLS material for a plaintext connection
         // makes no sense.
         boolean permitPlaintextLoopback = fixtureDevelopment && !tlsConfigured && isLoopback(baseUri.getHost());
         boolean requireHttps = !permitPlaintextLoopback;

@@ -220,6 +220,22 @@ class ConfiguredJsonSourcesTest {
     }
 
     @Test
+    @DisplayName("a base-url carrying user-info, a query string or a fragment refuses, "
+            + "matching DataPrismProperties.trustedUri's clauses beyond the scheme check")
+    void baseUrlCannotCarryUserInfoQueryOrFragment() {
+        for (String hostile : new String[] {
+                "https://ops@customer.example",
+                "https://customer.example?k=v",
+                "https://customer.example#frag"}) {
+            String yaml = VALID.replace("https://customer.example", hostile);
+            assertThatThrownBy(() -> load(yaml))
+                    .as("hostile base-url %s", hostile)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("user-info, a query string or a fragment");
+        }
+    }
+
+    @Test
     @DisplayName("a loopback http base URL is refused unless fixture-development says otherwise")
     void httpAllowedForLoopbackOnlyWhenFixtureDevelopment() {
         String yaml = VALID.replace("https://customer.example", "http://127.0.0.1:1");

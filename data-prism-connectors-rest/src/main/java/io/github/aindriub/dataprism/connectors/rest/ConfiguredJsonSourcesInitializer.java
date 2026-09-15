@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
@@ -40,7 +41,7 @@ public final class ConfiguredJsonSourcesInitializer
     @Override
     public void initialize(ConfigurableApplicationContext context) {
         Environment environment = context.getEnvironment();
-        String location = environment.getProperty(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY);
+        String location = bindString(environment, ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY);
         if (location == null || location.isBlank()) {
             return;
         }
@@ -61,8 +62,10 @@ public final class ConfiguredJsonSourcesInitializer
     }
 
     static ConfiguredJsonSourcesConfig loadConfig(Environment environment) {
-        String location = environment.getProperty(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY);
-        boolean fixtureDevelopment = environment.getProperty(FIXTURE_DEVELOPMENT_PROPERTY, Boolean.class, false);
+        String location = bindString(environment, ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY);
+        boolean fixtureDevelopment = Binder.get(environment)
+                .bind(FIXTURE_DEVELOPMENT_PROPERTY, Boolean.class)
+                .orElse(false);
         try (InputStream in = new DefaultResourceLoader().getResource(location).getInputStream()) {
             return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment);
         } catch (IOException e) {
@@ -90,7 +93,7 @@ public final class ConfiguredJsonSourcesInitializer
         for (Map.Entry<String, ConfiguredJsonSource> entry : config.sources().entrySet()) {
             String name = entry.getKey();
             URI declaredHere = entry.getValue().transport().baseUrl();
-            String declaredElsewhereRaw = environment.getProperty("dataprism.sources." + name + ".base-url");
+            String declaredElsewhereRaw = bindString(environment, "dataprism.sources." + name + ".base-url");
             if (declaredElsewhereRaw == null || declaredElsewhereRaw.isBlank()) {
                 continue;
             }
@@ -106,5 +109,41 @@ public final class ConfiguredJsonSourcesInitializer
                         + declaredElsewhereRaw + "; these must name the same transport");
             }
         }
+    }
+
+    /**
+     * Reads one {@code dataprism.*} property the same way {@code
+     * @ConfigurationProperties} does: through {@link Binder}'s relaxed binding,
+     * not {@link Environment#getProperty}.
+     *
+     * <p>{@code Environment#getProperty}, on a bare {@link
+     * org.springframework.core.env.SystemEnvironmentPropertySource}, already
+     * resolves a dotted name against the literal uppercased form with every
+     * {@code .} and {@code -} substituted by {@code _}: {@code
+     * dataprism.sources.customers.base-url} matches {@code
+     * DATAPRISM_SOURCES_CUSTOMERS_BASE_URL} through either call, Binder or not.
+     * What it cannot see is the hyphen <em>dropped</em> rather than
+     * substituted — {@code DATAPRISM_SOURCES_CUSTOMERS_BASEURL} — which is
+     * {@code compose.yaml}'s own documented convention (see its comment
+     * there) and the form {@link Binder}'s relaxed matching additionally
+     * accepts. A raw {@code getProperty} call here meant this exact property,
+     * paired against {@code dataprism.sources.<name>.base-url}, could never be
+     * read back in that specific form, and the disagreement check built on it
+     * looked satisfied by an absent value it never actually saw.
+     *
+     * <p>In a full {@code SpringApplication} bootstrap, {@code
+     * ConfigDataEnvironmentPostProcessor} already attaches a relaxed-binding
+     * -aware property source to the environment before any {@code
+     * ApplicationContextInitializer} — this one included — ever runs, which
+     * makes even a plain {@code getProperty} call relaxed-binding-aware by the
+     * time this class's {@code initialize} executes in the packaged server.
+     * That does not make the raw call correct: it means this class's own
+     * correctness was, until this method existed, an accident of when
+     * something else in the startup sequence happens to run, not a property
+     * of this code. Calling {@link Binder} directly removes that dependency on
+     * an unrelated part of the bootstrap sequence having already run first.
+     */
+    private static String bindString(Environment environment, String propertyName) {
+        return Binder.get(environment).bind(propertyName, String.class).orElse(null);
     }
 }
