@@ -91,72 +91,21 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                       FieldMetadataResolver resolver, LlmResponseValidator validator,
                                       SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
                                       AuditRecorder audit, SourceAliasing aliasing) {
-        this(adapters, scrubber, resolver, validator, synthetics, fingerprinter, audit, aliasing,
-                PrivacyMetrics.none());
-    }
-
-    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
-                                      FieldMetadataResolver resolver, LlmResponseValidator validator,
-                                      SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
-                                      AuditRecorder audit, SourceAliasing aliasing, PrivacyMetrics metrics) {
         this(adapters, scrubber, resolver,
                 List.of(Objects.requireNonNull(validator, "validator"), new SensitivePatternValidator()),
-                synthetics, fingerprinter, audit, aliasing, metrics);
-    }
-
-    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
-                                      FieldMetadataResolver resolver,
-                                      List<LlmResponseValidator> validators,
-                                      SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
-                                      AuditRecorder audit, SourceAliasing aliasing) {
-        this(adapters, scrubber, resolver, validators, synthetics, fingerprinter, audit, aliasing,
-                PrivacyMetrics.none());
-    }
-
-    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
-                                      FieldMetadataResolver resolver,
-                                      List<LlmResponseValidator> validators,
-                                      SyntheticValueSource synthetics, ParameterFingerprinter fingerprinter,
-                                      AuditRecorder audit, SourceAliasing aliasing, PrivacyMetrics metrics) {
-        this.adapters = List.copyOf(adapters);
-        this.scrubber = Objects.requireNonNull(scrubber, "scrubber");
-        this.resolver = Objects.requireNonNull(resolver, "resolver");
-        this.validators = List.copyOf(validators);
-        this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
-        this.fingerprinter = Objects.requireNonNull(fingerprinter, "fingerprinter");
-        this.audit = Objects.requireNonNull(audit, "audit");
-        this.identities = new PassThroughIdentityResolver();
-        this.metrics = Objects.requireNonNull(metrics, "metrics");
-        this.fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), this.metrics);
-        this.budget = new InMemoryScopeBudget();
-        this.limits = RequestLimits.DEFAULT;
-        this.aliasing = Objects.requireNonNull(aliasing, "aliasing");
-        this.correlation = new NamespaceCorrelationService(resolver);
-        if (this.validators.isEmpty()) {
-            throw new IllegalArgumentException("at least one response validator is required");
-        }
+                synthetics, fingerprinter, audit, new PassThroughIdentityResolver(),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new InMemoryScopeBudget(), RequestLimits.DEFAULT,
+                new NamespaceCorrelationService(resolver), aliasing, PrivacyMetrics.none());
     }
 
     /**
      * The full pipeline, with identity resolution, fan-out and limits supplied.
      *
-     * <p>The shorter constructors above assume every source shares a key and
+     * <p>The shorter constructor above assumes every source shares a key and
      * that failures need no breaker, which is true of a single stub and of
      * very little else. A real deployment uses this one.
      */
-    public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
-                                      FieldMetadataResolver resolver,
-                                      List<LlmResponseValidator> validators,
-                                      SyntheticValueSource synthetics,
-                                      ParameterFingerprinter fingerprinter, AuditRecorder audit,
-                                      IdentityResolver identities, SourceFanOut fanOut,
-                                      ScopeBudget budget, RequestLimits limits,
-                                      EntityCorrelationService correlation,
-                                      SourceAliasing aliasing) {
-        this(adapters, scrubber, resolver, validators, synthetics, fingerprinter, audit, identities,
-                fanOut, budget, limits, correlation, aliasing, PrivacyMetrics.none());
-    }
-
     public DefaultContextOrchestrator(List<DataSourceAdapter<?>> adapters, ScrubbingEngine scrubber,
                                       FieldMetadataResolver resolver,
                                       List<LlmResponseValidator> validators,
@@ -220,33 +169,14 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                 + " times in this scope");
             }
 
-            List<EntityCorrelationService.SourceRecord> raw = new ArrayList<>();
-            for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
-                    requestsPerSource(request), limits)) {
-                sources.add(fetched.outcome());
-                Object record = fetched.record();
-                if (record == null) {
-                    continue;
-                }
-                raw.add(new EntityCorrelationService.SourceRecord(
-                        aliasing.nameFor(fetched.outcome().sourceName(), investigationContext, context),
-                        record));
-                prohibited.addAll(SourceValues.prohibited(record, resolver));
-
-                ScrubResult scrubbed = scrubber.scrub(record, context);
-                metrics.increment(Metric.PRIVACY_TRANSFORMATIONS);
-                emitted.addAll(scrubbed.emitted());
-                if (merged == null) {
-                    merged = scrubbed.tree();
-                } else {
-                    merged.setAll(scrubbed.tree());
-                }
-            }
+            FetchOutcome fetched = fetchScrubAndMerge(request, context, investigationContext,
+                    sources, prohibited, emitted);
+            merged = fetched.merged();
 
             // Before scrubbing, and it has to be: the pseudonym is keyed on the
             // subject, so once these records are scrubbed every source's version
             // of a name is the same string and there is nothing left to compare.
-            findings = correlation.correlate(raw, context);
+            findings = correlation.correlate(fetched.raw(), context);
 
             if (merged == null) {
                 throw new PrivacyRefusedException("NO_SOURCE_DATA", request.entityType(),
@@ -279,6 +209,55 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 correlationId);
         return ContextResponse.of(request.entityType(), subjectToken, sources,
                 findings, merged, aliasing, investigationContext, context);
+    }
+
+    /**
+     * What {@link #fetchScrubAndMerge} produces: the raw, pre-scrub records
+     * {@code correlate} needs, and the scrubbed tree merged across every
+     * source that answered.
+     */
+    private record FetchOutcome(List<EntityCorrelationService.SourceRecord> raw, ObjectNode merged) {
+    }
+
+    /**
+     * Fetches every source in parallel, then scrubs and merges each answer as
+     * it arrives.
+     *
+     * <p>A source's raw record is captured for {@code correlate} before it is
+     * scrubbed, because correlation compares what each source actually said;
+     * once scrubbed, every source's version of a name is the same pseudonym
+     * and there is nothing left to compare. {@code prohibited} and
+     * {@code emitted} are collected here because they are a property of what
+     * was fetched and scrubbed, not of the merge itself.
+     */
+    private FetchOutcome fetchScrubAndMerge(ContextRequest request, PrivacyContext context,
+                                            InvestigationContext investigationContext,
+                                            List<SourceOutcome> sources, Set<String> prohibited,
+                                            Set<String> emitted) {
+        List<EntityCorrelationService.SourceRecord> raw = new ArrayList<>();
+        ObjectNode merged = null;
+        for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
+                requestsPerSource(request), limits)) {
+            sources.add(fetched.outcome());
+            Object record = fetched.record();
+            if (record == null) {
+                continue;
+            }
+            raw.add(new EntityCorrelationService.SourceRecord(
+                    aliasing.nameFor(fetched.outcome().sourceName(), investigationContext, context),
+                    record));
+            prohibited.addAll(SourceValues.prohibited(record, resolver));
+
+            ScrubResult scrubbed = scrubber.scrub(record, context);
+            metrics.increment(Metric.PRIVACY_TRANSFORMATIONS);
+            emitted.addAll(scrubbed.emitted());
+            if (merged == null) {
+                merged = scrubbed.tree();
+            } else {
+                merged.setAll(scrubbed.tree());
+            }
+        }
+        return new FetchOutcome(raw, merged);
     }
 
     /**

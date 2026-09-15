@@ -6,18 +6,22 @@ import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
 import io.github.aindriub.dataprism.core.InvestigationContext;
 import io.github.aindriub.dataprism.core.Metric;
+import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.RequestLimits;
 import io.github.aindriub.dataprism.core.ScrubResult;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
+import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
 import io.github.aindriub.dataprism.validation.Violation;
 import org.junit.jupiter.api.DisplayName;
@@ -82,10 +86,14 @@ class DefaultContextOrchestratorTest {
 
         return new DefaultContextOrchestrator(
                 List.of(answering("thing-api", new Thing("1", "raw"))),
-                scrubber, resolver, validator,
+                scrubber, resolver, List.of(validator, new SensitivePatternValidator()),
                 (subjectId, namespace, ctx) -> "SUBJ-1",
                 new ParameterFingerprinter(KEYS),
                 new AuditRecorder(event -> { }, CLOCK, "test-1"),
+                new PassThroughIdentityResolver(),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), metrics),
+                new InMemoryScopeBudget(), RequestLimits.DEFAULT,
+                new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
                 metrics);
     }
@@ -142,5 +150,30 @@ class DefaultContextOrchestratorTest {
         assertThat(metrics.count(Metric.PRIVACY_TRANSFORMATIONS)).isEqualTo(1);
         assertThat(metrics.count(Metric.PRIVACY_VALIDATION_FAILURES)).isEqualTo(1);
         assertThat(metrics.count(Metric.PRIVACY_FAILCLOSED)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the 8-argument constructor still refuses a value never in a classified field")
+    void eightArgumentConstructorStillRunsThePatternScan() {
+        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
+        ObjectMapper mapper = new ObjectMapper();
+        // Nothing here is drawn from a classified field, so no comparison
+        // check could ever catch it — only the pattern scan can.
+        ScrubbingEngine scrubber = (source, ctx) ->
+                new ScrubResult(mapper.createObjectNode()
+                        .put("note", "reachable on nobody@example.com"), Set.of());
+        LlmResponseValidator alwaysOk = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
+
+        DefaultContextOrchestrator orchestrator = new DefaultContextOrchestrator(
+                List.of(answering("thing-api", new Thing("1", "raw"))),
+                scrubber, resolver, alwaysOk,
+                (subjectId, namespace, ctx) -> "SUBJ-1",
+                new ParameterFingerprinter(KEYS),
+                new AuditRecorder(event -> { }, CLOCK, "test-1"),
+                new SourceAliasing(new HmacValueTokenSource(KEYS)));
+
+        assertThatThrownBy(() -> orchestrator.buildContext(
+                ContextRequest.of("THING", "1"), context(), caller()))
+                .isInstanceOf(PrivacyRefusedException.class);
     }
 }
