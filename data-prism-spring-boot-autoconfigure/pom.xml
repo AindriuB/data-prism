@@ -15,7 +15,6 @@
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-mcp</artifactId></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-pseudonymisation</artifactId></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-validation</artifactId></dependency>
-    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-audit</artifactId></dependency>
     <!-- Optional: the shared read budget for topology: embedded. Optional so a
          single-node consumer, which never touches these classes, does not take
          Hazelcast onto its classpath through this starter. -->
