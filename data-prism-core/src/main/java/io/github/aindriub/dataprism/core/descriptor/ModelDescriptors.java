@@ -6,6 +6,7 @@ import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
+import io.github.aindriub.dataprism.core.StrictYaml;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,7 +14,6 @@ import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -78,7 +78,7 @@ public final class ModelDescriptors {
                 bool(body.get("descendable")),
                 body.get("undeclaredFields") == null
                         ? null
-                        : enumValue(UndeclaredFields.class, body.get("undeclaredFields"),
+                        : StrictYaml.enumValue(UndeclaredFields.class, body.get("undeclaredFields"),
                                 typeName + ".undeclaredFields"),
                 fields);
     }
@@ -91,11 +91,11 @@ public final class ModelDescriptors {
         Object raw = body.get("classifications");
         if (raw instanceof List<?> list) {
             for (Object value : list) {
-                classifications.add(enumValue(DataClassification.class, value,
+                classifications.add(StrictYaml.enumValue(DataClassification.class, value,
                         where + ".classifications"));
             }
         } else if (raw != null) {
-            classifications.add(enumValue(DataClassification.class, raw, where + ".classifications"));
+            classifications.add(StrictYaml.enumValue(DataClassification.class, raw, where + ".classifications"));
         }
 
         Object nonSensitive = body.get("nonSensitive");
@@ -107,9 +107,9 @@ public final class ModelDescriptors {
         return new ModelDescriptor.FieldDescriptor(
                 classifications,
                 body.get("namespace") == null ? null
-                        : enumValue(PrivacyNamespace.class, body.get("namespace"), where + ".namespace"),
+                        : StrictYaml.enumValue(PrivacyNamespace.class, body.get("namespace"), where + ".namespace"),
                 body.get("action") == null ? null
-                        : enumValue(PrivacyAction.class, body.get("action"), where + ".action"),
+                        : StrictYaml.enumValue(PrivacyAction.class, body.get("action"), where + ".action"),
                 body.get("subject") == null ? null : String.valueOf(body.get("subject")),
                 nonSensitive == null ? null : String.valueOf(nonSensitive),
                 body.get("identifier") == null ? null : String.valueOf(body.get("identifier")));
@@ -117,15 +117,5 @@ public final class ModelDescriptors {
 
     private static Boolean bool(Object raw) {
         return raw == null ? null : Boolean.parseBoolean(String.valueOf(raw));
-    }
-
-    private static <E extends Enum<E>> E enumValue(Class<E> type, Object raw, String where) {
-        String value = String.valueOf(raw).trim().toUpperCase(Locale.ROOT);
-        try {
-            return Enum.valueOf(type, value);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                    "unknown " + type.getSimpleName() + " '" + value + "' at " + where, e);
-        }
     }
 }

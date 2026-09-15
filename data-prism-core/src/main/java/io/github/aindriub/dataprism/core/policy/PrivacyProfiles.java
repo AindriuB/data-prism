@@ -5,6 +5,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.core.StrictYaml;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,7 +13,6 @@ import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -58,7 +58,7 @@ public final class PrivacyProfiles {
 
     @SuppressWarnings("unchecked")
     private static PrivacyProfile profile(String name, Map<String, Object> body) {
-        PrivacyProfile.UnclassifiedBehaviour unclassified = enumValue(
+        PrivacyProfile.UnclassifiedBehaviour unclassified = StrictYaml.enumValue(
                 PrivacyProfile.UnclassifiedBehaviour.class,
                 body.getOrDefault("unclassified", "FAIL_REQUEST"),
                 name + ".unclassified");
@@ -69,7 +69,7 @@ public final class PrivacyProfiles {
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 String key = String.valueOf(e.getKey());
                 DataClassification classification =
-                        enumValue(DataClassification.class, key, name + ".classifications." + key);
+                        StrictYaml.enumValue(DataClassification.class, key, name + ".classifications." + key);
 
                 if (!(e.getValue() instanceof Map<?, ?> ruleBody)) {
                     throw new IllegalArgumentException(
@@ -81,7 +81,7 @@ public final class PrivacyProfiles {
                     throw new IllegalArgumentException(
                             "rule " + name + "." + key + " has no action");
                 }
-                PrivacyAction resolved = enumValue(PrivacyAction.class, action,
+                PrivacyAction resolved = StrictYaml.enumValue(PrivacyAction.class, action,
                         name + ".classifications." + key + ".action");
                 boolean override = Boolean.parseBoolean(
                         String.valueOf(rule.getOrDefault("override", "false")));
@@ -102,7 +102,7 @@ public final class PrivacyProfiles {
         for (Map.Entry<?, ?> e : map.entrySet()) {
             String key = String.valueOf(e.getKey());
             String where = profile + ".generalization." + key;
-            PrivacyNamespace namespace = enumValue(PrivacyNamespace.class, key, where);
+            PrivacyNamespace namespace = StrictYaml.enumValue(PrivacyNamespace.class, key, where);
             if (!(e.getValue() instanceof Map<?, ?> ruleBody)) {
                 throw new IllegalArgumentException(where + " is not a mapping");
             }
@@ -112,11 +112,11 @@ public final class PrivacyProfiles {
     }
 
     private static GeneralizationRule rule(String where, Map<String, Object> body) {
-        GeneralizationRule.Kind kind = enumValue(GeneralizationRule.Kind.class,
+        GeneralizationRule.Kind kind = StrictYaml.enumValue(GeneralizationRule.Kind.class,
                 body.getOrDefault("type", "NUMERIC_BAND"), where + ".type");
 
         if (kind == GeneralizationRule.Kind.DATE_TRUNCATION) {
-            return GeneralizationRule.dates(enumValue(GeneralizationRule.Precision.class,
+            return GeneralizationRule.dates(StrictYaml.enumValue(GeneralizationRule.Precision.class,
                     body.getOrDefault("precision", "YEAR"), where + ".precision"));
         }
 
@@ -135,15 +135,5 @@ public final class PrivacyProfiles {
         }
         Object unit = body.get("unit");
         return GeneralizationRule.bands(parsed, unit == null ? null : String.valueOf(unit));
-    }
-
-    private static <E extends Enum<E>> E enumValue(Class<E> type, Object raw, String where) {
-        String value = String.valueOf(raw).trim().toUpperCase(Locale.ROOT);
-        try {
-            return Enum.valueOf(type, value);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                    "unknown " + type.getSimpleName() + " '" + value + "' at " + where, e);
-        }
     }
 }
