@@ -14,11 +14,19 @@ class ServerArchitectureTest {
         var classes = new ClassFileImporter()
                 .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
                 .importPackages(ROOT);
+        // task 26 moved the decoder construction and caller extraction that
+        // used to live in this module into data-prism-spring-boot-autoconfigure,
+        // where they're shared with the example. Both are on this module's
+        // classpath and so appear in `classes` above; they legitimately depend
+        // on Spring Security and are allowlisted here by name, the same way
+        // ServerSecurityConfiguration is.
         noClasses()
                 .that().doNotHaveFullyQualifiedName(
                         "io.github.aindriub.dataprism.server.ServerSecurityConfiguration")
                 .and().doNotHaveFullyQualifiedName(
-                        "io.github.aindriub.dataprism.server.JwtCallerContextExtractor")
+                        "io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport")
+                .and().doNotHaveFullyQualifiedName(
+                        "io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor")
                 .should().dependOnClassesThat().resideInAnyPackage("org.springframework.security..")
                 .check(classes);
     }

@@ -9,6 +9,8 @@ import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
+import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
+import io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -305,9 +307,22 @@ class ArchitectureTest {
      * else inside {@code data-prism-server} depends on Spring Security, so
      * the narrower guarantee this rule relies on is enforced right next to
      * the code it constrains.
+     *
+     * <p>{@link JwtDecoderSupport} and {@link JwtCallerContextExtractor} are
+     * exempt by fully qualified name rather than by their package: task 26
+     * collapsed the two edges' byte-for-byte duplicated decoder construction
+     * and caller extraction into these two classes in {@code
+     * ..dataprism.spring.boot..}, which also carries {@code
+     * DataPrismProperties} and other auto-configuration classes that must
+     * stay usable without a resource server on the classpath. Exempting the
+     * package would let any future class there depend on Spring Security
+     * unnoticed; naming these two keeps the exemption as narrow as what
+     * actually needs it.
      */
     private static final ArchRule ONLY_THE_EXAMPLE_DEPENDS_ON_SPRING_SECURITY = noClasses()
-            .that().resideOutsideOfPackages("..dataprism.example..", "..dataprism.server..")
+            .that(DescribedPredicate.not(JavaClass.Predicates.belongToAnyOf(
+                    JwtDecoderSupport.class, JwtCallerContextExtractor.class)))
+            .and().resideOutsideOfPackages("..dataprism.example..", "..dataprism.server..")
             .should().dependOnClassesThat().resideInAPackage("org.springframework.security..")
             .allowEmptyShould(true);
 

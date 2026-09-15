@@ -23,6 +23,12 @@
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-autoconfigure</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
     <dependency><groupId>jakarta.servlet</groupId><artifactId>jakarta.servlet-api</artifactId><version>6.1.0</version><scope>provided</scope></dependency>
+    <!-- JwtDecoderSupport and JwtCallerContextExtractor are static-factory /
+         plain classes an edge configuration calls, not an auto-configured
+         bean — so this stays `provided`, a non-transitive scope. A starter
+         user who never runs an HTTP resource server never pulls Spring
+         Security onto their classpath through this module. -->
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-oauth2-resource-server</artifactId><scope>provided</scope></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework</groupId><artifactId>spring-web</artifactId><scope>test</scope></dependency>
   </dependencies>
