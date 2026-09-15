@@ -17,6 +17,104 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-15 — Tasks 19 and 20: tested agent connection guides, and a configuration-driven JSON REST mode
+
+The last wave of this plan. Both merged through protected, green pull
+requests (#37, #38); post-merge full-reactor re-run: 441 tests, 0 failures, 0
+errors.
+
+Task 19 published `docs/agents/**` (stdio and remote HTTP) and
+`examples/agent-config/**`, verified against a real client — Claude Code CLI
+2.1.271 — rather than reasoned about: `claude mcp get` reports Connected, raw
+JSON-RPC `initialize`/`tools/list`/`tools/call` were captured live, and task
+18's quickstart was brought up with a live `docker compose up --build`. GUI
+clients are excluded with a stated reason rather than listed unverified.
+`examples/agent-config/remote-http/smoke-test.sh` now issues a real
+`get_entity_context` call and asserts the three raw fixture values are absent
+and a `SUBJ-` pseudonym plus `[REDACTED]` are present, mirroring
+`QuickstartSmokeIT` — previously it only grepped for "Connected", which would
+have passed against an endpoint returning unpseudonymised data. It also exits
+77 rather than 0 when `claude` is absent, so a CI runner no longer records a
+pass having tested nothing. A captured `tools/list` transcript was found
+damaged in transcription (missing `"type":"string"` on `entityType`), caught
+because the same schema is captured twice from one `Map.of` literal and the
+two disagreed; fixed by re-capturing from a live run rather than hand-patching
+the key back in, and the reviewer confirmed the re-capture was genuine — the
+fresh and committed blobs differ only in key ordering, which is `Map.of`'s
+per-JVM randomised iteration order, something a hand-edit would not have
+reproduced. The README's module count was wrong twice before being right:
+stale at 15 against an actual 16, then "corrected" to 18 by applying a delta
+to that wrong base. It is now 19 submodules / 20 reactor projects, counted
+directly from `pom.xml:24-42`, with the README stating which number counts
+what.
+
+Task 20 wired `data-prism-connectors-rest`, dormant and unconsumed since it
+was built, into a `json-sources:` YAML vocabulary with a per-source
+`FieldMetadataResolver` feeding the real `JsonTreeScrubbingEngine`, loaded
+opt-in via `-Dloader.path`. Its test count went from 13 to 49. Every emitted
+field must be explicitly classified; unknown fields refuse at
+`JsonTreeScrubbingEngine.java:138`, nested objects and arrays hit
+`UNCLASSIFIED_STRUCTURE` because the resolver returns `descendable=false`,
+and `PrivacyProfile.UnclassifiedBehaviour` has no pass-through value, so no
+profile can loosen it. The JSON-path grammar is
+`^[A-Za-z_][A-Za-z0-9_]*$` feeding a flat `ObjectNode.get(name)` — it cannot
+spell `.`, `[`, `/`, `:` or `..`, and no expression evaluator exists to inject
+into. An end-to-end parity test proves a configured source and a Java-first
+adapter with deliberately different field shapes produce the same synthetic
+value with raw values absent.
+
+**Cost:** three review rounds on task 20, each finding and closing a real
+defect at the edges of an otherwise sound design. Plaintext `http://` was
+accepted for a configured `base-url`, bypassing the HTTPS gate every
+Java-first source must clear — a plaintext relaxation reintroduced by a
+different door two tasks after task 21 removed the last one; now refused,
+with a loopback-only fixture exception strictly narrower than the original's
+and closable entirely by a `tls:` block. The gate was reimplemented rather
+than called, and had drifted: it initially missed `trustedUri`'s refusal of
+`userInfo`, query and fragment; now at parity, verified clause by clause. A
+configured source declares its transport twice — its own config, plus the
+`dataprism.sources.<name>` entry `DataPrismContractValidator` requires — and
+the two could disagree with the validated one silently losing; the
+implementer's own fixture encoded the contradiction. Disagreement is now
+fatal and names both values. Two more `isInstanceOf(RuntimeException.class)`
+assertions — the thirteenth and fourteenth found in this repository, in the
+module `docs/conventions.md` already names for this defect class — now assert
+the real `RestClientException` with an `HttpMessageNotReadableException`
+cause, verified not to match an unstarted server.
+
+One finding was graded down on evidence rather than taken on authority. A
+review found the transport-disagreement check read properties via raw
+`Environment.getProperty`, which does not resolve Spring Boot's
+hyphen-dropped environment-variable form, and graded it a live hole in the
+deployed path. The implementer tested the claim instead of accepting it: it
+reverted the fix, ran the real packaged server with the environment variable
+set, and the disagreement was still caught, because
+`SpringApplication.prepareEnvironment` calls
+`ConfigurationPropertySources.attach` before any `ApplicationContextInitializer`
+runs. The reviewer then verified this independently against spring-boot
+3.5.16, including in bytecode, and retracted its own grading — the defect was
+latent fragility, correct by an accident of ordering the code did not
+control, not an open door. The fix stands; the discriminating test had to be
+built as a bare `AnnotationConfigApplicationContext`, because both a real boot
+and `ApplicationContextRunner` call `attach()` first. Every defect found in
+this wave, across both tasks, had the same root shape: a reviewer comparing
+an implementation against the thing it claimed parity with, rather than
+checking whether it worked — the reimplemented HTTPS gate and the earlier
+`ServerArchitectureTest` false claim (see task 21-24's entry) both trace to a
+stated equivalence nobody had checked, the same root cause as this
+repository's cannot-fail-assertion problem: a claim carrying more authority
+than its evidence.
+
+A previous entry (task 18's, above) recorded as an open item that
+`ServerPackagingIT.DEVELOPMENT_KEY_MARKERS` should be extended with the
+quickstart's HMAC literal. That recommendation was wrong and is retracted:
+`data-prism-server` never compiles or reads the quickstart env file, so no
+artefact that scan inspects can emit the literal, and the class's own
+javadoc forbids a marker no build artefact emits. Task 20 added the marker,
+then correctly removed it once this was established; a tester confirmed by
+unzip-scanning the freshly repackaged jar that the literal appears zero
+times. Corrected in `PLAN.md` rather than left standing.
+
 ## 2026-09-14 — Task 18: a reproducible local quickstart
 
 The first task in this repository to produce a runnable demonstration of the
