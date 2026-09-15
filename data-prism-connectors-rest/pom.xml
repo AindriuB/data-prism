@@ -31,6 +31,22 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
     </dependency>
+    <!-- ConfiguredJsonScrubbingEngine's own raw-value leak check: see its
+         Javadoc for why a configured JSON source needs one the shared
+         orchestrator cannot provide for it. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-validation</artifactId>
+    </dependency>
+    <!-- Test-only: proves that a configured JSON source, run through the real
+         orchestrator, produces the same pseudonymised output as a Java-first
+         adapter. Not a main-scope dependency: this module still assembles no
+         orchestrator of its own. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-orchestration</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

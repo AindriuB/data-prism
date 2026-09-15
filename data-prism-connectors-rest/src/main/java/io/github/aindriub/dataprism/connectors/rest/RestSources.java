@@ -78,8 +78,9 @@ public final class RestSources {
         }
     }
 
+    /** Package-private: {@link ConfiguredJsonSources} parses the same {@code tls:} shape. */
     @SuppressWarnings("unchecked")
-    private static TlsSettings tls(Map<String, Object> root) {
+    static TlsSettings tls(Map<String, Object> root) {
         Object node = root.get("tls");
         if (node == null) {
             return null;
@@ -104,7 +105,8 @@ public final class RestSources {
         }
     }
 
-    private static String required(Map<String, Object> body, String key, String context) {
+    /** Package-private: {@link ConfiguredJsonSources} reuses the same required-key check. */
+    static String required(Map<String, Object> body, String key, String context) {
         Object value = body.get(key);
         if (value == null || String.valueOf(value).isBlank()) {
             throw new IllegalArgumentException(context + " has no " + key);
