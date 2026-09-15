@@ -421,6 +421,7 @@ public class DataPrismProperties {
         private String profile, locale = "neutral";
         private Duration scopeLifetime;
         private HmacKey hmacKey = new HmacKey();
+        private String descriptorFile;
 
         public String getProfile() {
             return profile;
@@ -452,6 +453,20 @@ public class DataPrismProperties {
 
         public void setHmacKey(HmacKey v) {
             hmacKey = v == null ? new HmacKey() : v;
+        }
+
+        /**
+         * Optional path to a YAML model-descriptor file. Unset by default, in which
+         * case no descriptor file is ever read and classification comes only from
+         * annotations. See {@code DataPrismAutoConfiguration#dataPrismFieldMetadataResolver}
+         * for how it is loaded and why every failure mode refuses startup.
+         */
+        public String getDescriptorFile() {
+            return descriptorFile;
+        }
+
+        public void setDescriptorFile(String v) {
+            descriptorFile = v;
         }
 
         public static class HmacKey {
