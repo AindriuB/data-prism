@@ -15,6 +15,5 @@
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-core</artifactId></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-pseudonymisation</artifactId></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-validation</artifactId></dependency>
-    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-audit</artifactId></dependency>
   </dependencies>
 </project>
