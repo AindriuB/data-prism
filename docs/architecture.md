@@ -36,17 +36,16 @@ review.
 |---|---|---|
 | `annotations` | — | `@InternalIdentifier`, `@SubjectIdentifier`, `@SensitiveData`, `@NonSensitive`, `@SensitiveObject`, `@LlmExposedModel`, the classification/action/namespace enums |
 | `processor` | `annotations` | `LlmExposedModelProcessor`, the annotation processor that fails the build on a field of an `@LlmExposedModel` carrying neither `@SensitiveData` nor `@NonSensitive(reason=...)` (§B2) |
-| `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, `InvestigationContext`, `SourceTree`, and every SPI interface the other modules implement |
+| `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, `InvestigationContext`, `SourceTree`, every SPI interface the other modules implement, and the audit contract (`AuditEvent`, `AuditSink`, per-writer hash chain) |
 | `pseudonymisation` | `core` | HMAC generator, per-namespace synthetic generators, `PseudonymRenderer`, key and algorithm versioning |
 | `hazelcast` | `core` | Embedded member, identity cache, re-identification index, shared read budget, scope purge, `FailSafeMetrics` |
 | `validation` | `core` | `SensitiveDataScanner`, `LlmResponseValidator`, scope-aware pseudonym allowlist |
 | `security` | `core` | `AuthenticatedCaller`, `AuthorizationService`, `PurposeValidator`, `ScopeResolver`, `PrivacySession`, `SecurityPolicy`, `ReservedArguments`, `ToolInvocation` |
-| `audit` | `core` | `AuditEvent`, `AuditSink`, per-writer hash chain |
 | `orchestration` | `core` + the above | `ContextOrchestrator`, parallel fan-out, circuit breaker, request and cost limits, correlation and consistency findings |
 | `mcp` | `orchestration`, `security` | Tool definitions, schemas, transport, `DataPrismObjectMapper` |
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
-| `reidentification` *(planned)* | `hazelcast`, `security`, `audit` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
+| `reidentification` *(planned)* | `hazelcast`, `security` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
 | `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding, validation, privacy-pipeline wiring, MCP lifecycle and servlet registration |
 | `spring-boot-starter` | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
 | `server` | `spring-boot-autoconfigure` | Primary executable Streamable HTTP MCP server, JWT boundary, health endpoint, production integrations and privacy metrics |

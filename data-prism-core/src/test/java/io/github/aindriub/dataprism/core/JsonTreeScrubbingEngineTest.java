@@ -112,6 +112,22 @@ class JsonTreeScrubbingEngineTest {
     }
 
     @Test
+    @DisplayName("a SYNTHESIZE field whose subjectField names a sibling still resolves")
+    void resolvesSubjectFieldNamingASibling() {
+        // Regression check for the OwnerScope bundling: guarantorName's
+        // subjectField ("guarantorRef") names a field on the same object
+        // rather than the type's own @InternalIdentifier, so resolving it
+        // needs the parent node and sibling metadata the record now carries.
+        var source = new ScrubbingFixtures.TwoSubjects(
+                "app-1", "guarantor-9", "Patrick Murphy", "Aoife Byrne");
+
+        ObjectNode out = engine.scrub(source, context).tree();
+
+        assertThat(out.get("guarantorName").asText()).isEqualTo(
+                FAKE_SYNTHETICS.syntheticValue("guarantor-9", PrivacyNamespace.PERSON_NAME, context));
+    }
+
+    @Test
     @DisplayName("a type not approved for exposure is refused")
     void refusesUnexposedType() {
         assertThatThrownBy(() -> engine.scrub(new ScrubbingFixtures.NotExposed("x", "y"), context))

@@ -13,8 +13,9 @@
   <artifactId>data-prism-core</artifactId>
   <name>Data Prism :: Core</name>
   <description>
-    The privacy model, field metadata, the scrubbing engine, and the SPI
-    interfaces every other module implements. Carries no business domain.
+    The privacy model, field metadata, the scrubbing engine, the SPI
+    interfaces every other module implements, and the audit contract
+    (events, sinks, the per-writer hash chain). Carries no business domain.
   </description>
 
   <dependencies>

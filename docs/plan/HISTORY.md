@@ -17,6 +17,151 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-15 — Simplification wave 2 (tasks 31-32): descriptor resolver wired, data-prism-audit merged into core
+
+Two tasks closing the remaining dead-code and module-count debt from the
+simplification plan. Both merged locally, no conflicts.
+
+Task 31 gave `core/descriptor` — `DescriptorFieldMetadataResolver`,
+`ModelDescriptors`, `ModelDescriptor`, roughly 320 lines with tests but no
+production caller anywhere in the reactor — its first real caller: an
+optional `dataprism.privacy.descriptor-file` property that, when set, loads
+and validates a model-descriptor YAML file and wraps the default
+`FieldMetadataResolver` in `DescriptorFieldMetadataResolver`. Four distinct
+refusal codes cover a missing file, an unreadable file, a file with no
+`models` section, and a descriptor that tries to set
+`undeclaredFields: NON_SENSITIVE`; every path fails closed at startup with no
+fallback to the undecorated resolver, and no descriptor file content reaches
+a refusal message. No new `@Bean` was added, so `PrivacyExtensionPoints`
+needed no new classification row.
+
+Task 32 deleted the `data-prism-audit` module and moved its four classes —
+`AuditEvent`, `AuditSink`, `AuditRecorder`, `Slf4jAuditSink` — plus its test
+into `data-prism-core`, package unchanged, so no consumer's imports changed.
+All renames landed at 100% similarity; no `.java` body changed and the
+per-writer audit hash chain is untouched. Five poms and the architecture
+module table were updated to match. The reactor is now 19 modules with main
+code (from 20), and `docs/architecture.md`'s planned `reidentification` row
+no longer names a module that does not exist.
+
+A single serialized full-reactor `mvn clean verify` from the main checkout
+after both merges — not the two testers' individual runs — gives 460 tests, 0
+failures, 0 errors.
+
+**Cost:** Concurrent Maven builds against this repository's shared local
+repository (`~/.m2`) are unreliable and have now produced spurious failures
+five times across two simplification waves, most recently eight fake
+security-boundary failures on the task 32 branch that passed 11 of 11 when
+re-run in isolation. Every occurrence has cleared on a serialized re-run with
+no code change. Testers and `/record` must run `mvn verify` one at a time
+against this repo, never concurrently — the flakiness is an artefact of
+shared-repository contention, not of the code under test, and re-diagnosing
+it from scratch a third time would waste a wave's worth of time for nothing.
+A stale `data-prism-audit/target/` directory also survived task 32's merge
+(the module's tracked files were deleted but its untracked, gitignored build
+output was not); removed by hand before the post-merge build so it could not
+be mistaken for a live module.
+
+Two non-blocking follow-ups from task 31's review, not fixed there because
+each needs its own acceptance criteria:
+- An application that registers its own `FieldMetadataResolver` bean
+  silently suppresses the descriptor wiring — `@ConditionalOnMissingBean`
+  means a set `descriptor-file` is then never read or validated, and startup
+  succeeds without warning. The reviewer scoped the fix to a successor task
+  because closing it means guarding a `REPLACEABLE` extension point, which is
+  a different-shaped change than this task's.
+- A descriptor file containing only a YAML document marker (`---` with no
+  `models:` key) produces a `NullPointerException` from `ModelDescriptors`
+  rather than a named refusal code. Startup still fails closed, so the
+  fail-closed invariant holds, but `docs/conventions.md` expects a stable
+  code for every refusal, not an incidental `NullPointerException`.
+
+`docs/pack.md` still lists `data-prism-audit` in its directory tree
+(around line 376). Left unchanged: that file is the frozen original
+specification, kept verbatim by its own header note, and `docs/design-review.md`
+is where amendments to it belong — not an edit to the historical document
+itself.
+
+## 2026-09-15 — Simplification wave 1 (tasks 26-30): shared JWT decoder, orchestrator cleanup, StrictYaml helper, OwnerScope record, properties formatting
+
+Five small tasks closing duplication and readability debt, independent of
+the slice plan above. All merged locally, no conflicts. A single serialized
+full-reactor `mvn clean verify` from the main checkout afterwards — deliberately
+not trusting the five testers' parallel results, three of which had hit
+transient classpath failures from five concurrent Maven builds sharing one
+local repository and only cleared on an isolated re-run — gives 440 tests, 0
+failures, 0 errors.
+
+Task 26 found `ServerSecurityConfiguration` and the example's `SecurityConfig`
+carrying byte-for-byte equivalent OIDC discovery, SSRF guards, discovery-
+document parsing and audience validation, plus two `JwtCallerContextExtractor`
+classes differing only in package and comments — the exact defect shape
+already paid for twice, where one copy gets hardened and the other silently
+does not. Both collapsed into `JwtDecoderSupport` and
+`JwtCallerContextExtractor` in `data-prism-spring-boot-autoconfigure`; the
+server and example filter chains now only carry their own
+`SecurityFilterChain` bean and delegate construction to the shared class. The
+Spring Security architecture exemption was widened by fully-qualified class
+name, not by package, so `data-prism-security` still cannot depend on Spring
+Security. The task's own Owns list, derived from same-package usage, missed
+`data-prism-server`'s `ServerSecurityBoundaryTest`, a cross-package caller
+that needed a one-line import fixed after the class moved. The implementer
+correctly stopped at the boundary rather than editing outside it; the scribe
+authorized the one-file amendment before merge. **Lesson for future task
+files:** an Owns list built from "what else lives in this package" is not
+enough — it has to be built from "who else imports this class", i.e. derived
+from callers (`rg -l` on the moved symbol across the whole reactor), not from
+package co-location. This is the second time a task's scoped file list has
+needed a late, reviewer-or-scribe-authorized addition for a cross-package
+caller; the pattern is worth catching at `/plan` time, not at merge time.
+
+Task 27 reduced `DefaultContextOrchestrator` to the two constructors actually
+called anywhere in the reactor and lifted the fetch/scrub/merge loop out of
+`buildContext` into its own private method, leaving the fail-closed try block
+that wraps it intact and independently re-verified.
+
+Task 28 extracted the duplicated `enumValue` parsing logic — previously
+inlined separately in `PrivacyProfiles` and `ModelDescriptors` — into one
+`StrictYaml` helper in `data-prism-core`. Reviewer follow-up, not a blocker:
+`StrictYamlTest` carries a comment claiming the old logic was never invoked
+with `null`; the reviewer showed four call sites in `PrivacyProfiles` and
+`ModelDescriptors` do call it with `null`. The helper's `null` handling is
+correct — only the comment's justification is wrong. Recorded in `PLAN.md`'s
+small open items rather than fixed here, since fixing a comment is not this
+task's acceptance criteria and no task currently owns the test file for a
+change beyond what shipped.
+
+Task 29 bundled `JsonTreeScrubbingEngine`'s parent/siblings/owner-object
+parameters, previously threaded separately through several method
+signatures, into a private `OwnerScope` record. The nested-descent fail-open
+hole this shape could have reopened was checked and stays closed. Reviewer
+follow-up, not a blocker: the new cross-field test added to exercise
+`OwnerScope` duplicates an existing assertion on the same fixture and does
+not actually exercise a nested parent scope, so the record's behaviour under
+real nesting is still unproven by a dedicated test. Also recorded in
+`PLAN.md`'s small open items.
+
+Task 30 reformatted `DataPrismProperties` to one statement per line — no
+behaviour change, proven by a token-stream diff rather than by eyeballing a
+644-line reformat.
+
+**Cost:** the real cost here was process, not code. Three of the five
+testers' `mvn verify` runs failed on transient classpath errors that had
+nothing to do with the change under test — five worktrees running Maven
+concurrently against one shared local repository corrupted each other's
+resolution, and each failure cleared on an isolated re-run. Parallel tester
+results are not proof a merge is sound; the one serialized full-reactor
+build after all five merges is the number that counts (440 tests, 0
+failures, 0 errors), not any individual tester's report. Task 26's task file
+was also amended in the main checkout instead of its worktree — the
+implementer had no choice, since the file was untracked on main when the
+worktree was cut, so it never existed inside the worktree to edit. That
+amendment survived the merge intact and unduplicated only because the
+worktree's branch never touched the file at all; a future task whose file
+*is* tracked before the worktree is cut would not have this escape hatch, and
+an edit made outside the worktree in that case would be a real ownership
+breach.
+
 ## 2026-09-15 — Tasks 19 and 20: tested agent connection guides, and a configuration-driven JSON REST mode
 
 The last wave of this plan. Both merged through protected, green pull

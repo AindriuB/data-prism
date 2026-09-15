@@ -134,6 +134,52 @@ them (see "Decided" above and `docs/architecture.md#decisions-worth-knowing`).
 Picking any of them up is a new planning decision, not a continuation of this
 plan — do not treat this record as opening a next wave.
 
+### Simplification plan, wave 1 (tasks 26-30) — done
+
+A separate planning cycle from the slice plan above: opened 2026-09-15 to
+close small duplication and readability debt accumulated across the earlier
+waves. Task 26 collapsed the duplicated JWT/OIDC discovery, SSRF guards and
+caller-context extractor in the server and the example into one shared
+`JwtDecoderSupport`/`JwtCallerContextExtractor` pair in
+`data-prism-spring-boot-autoconfigure`. Task 27 reduced
+`DefaultContextOrchestrator` to its two used constructors and lifted the
+fetch/scrub/merge loop into its own method. Task 28 extracted the duplicated
+YAML `enumValue` logic into a new core `StrictYaml` helper. Task 29 bundled
+`JsonTreeScrubbingEngine`'s parent/siblings/owner parameters into a private
+`OwnerScope` record. Task 30 reformatted `DataPrismProperties` to one
+statement per line. All five merged locally 2026-09-15, no conflicts. A
+single serialized full-reactor `mvn clean verify` from the main checkout
+afterwards — not the five testers' parallel runs, three of which hit
+transient classpath failures caused by five concurrent Maven builds sharing
+one local repository — gives 440 tests, 0 failures, 0 errors. See
+`docs/plan/HISTORY.md` — grep `Simplification wave 1` — for what landed and
+what it cost, including why a task's Owns list needs deriving from callers
+rather than same-package usage.
+
+### Simplification plan, wave 2 (tasks 31-32) — done. The simplification plan is done.
+
+Task 31 gave `core/descriptor` — the ~320 lines of `DescriptorFieldMetadataResolver`,
+`ModelDescriptors` and `ModelDescriptor` that had tests but no production
+caller — a real one: an optional `dataprism.privacy.descriptor-file`
+property that, when set, loads and validates a model-descriptor YAML file
+and wraps the default `FieldMetadataResolver` in
+`DescriptorFieldMetadataResolver`. Four distinct refusal codes, all fail
+closed with no fallback to the undecorated resolver and no file content in
+any message. Task 32 deleted `data-prism-audit` and moved its four classes
+and test into `data-prism-core` with the package unchanged, so no consumer's
+imports moved; five poms and the architecture module table were updated.
+Both merged locally 2026-09-15, no conflicts. A single serialized
+full-reactor `mvn clean verify` from the main checkout afterwards gives 460
+tests, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep
+`Simplification wave 2` — for what landed and what it cost, including the
+now twice-confirmed unreliability of concurrent Maven builds against this
+repo's shared local repository.
+
+With 31 and 32 closed, the simplification plan opened 2026-09-15 has no task
+left: waves 1 and 2 closed every item it named. **Nothing is scheduled past
+this point** — the small open items below, plus the two new ones from task
+31's review, are debt found along the way, not scheduled work.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
@@ -147,6 +193,36 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on task 31, 2026-09-15. Neither blocks anything; pick
+either up only if a future task already owns the file.
+
+- An application that registers its own `FieldMetadataResolver` bean
+  silently suppresses the descriptor wiring: the shipped bean is
+  `@ConditionalOnMissingBean`, so a set `dataprism.privacy.descriptor-file`
+  is then never read or validated, and startup succeeds without warning.
+  The reviewer scoped the fix to a successor task rather than folding it
+  into task 31, because closing it means guarding a `REPLACEABLE` extension
+  point, a different-shaped change than wiring the property was.
+- A descriptor file containing only a YAML document marker (`---` with no
+  `models:` key) makes `ModelDescriptors` throw a `NullPointerException`
+  rather than return a named refusal code. Startup still fails closed, so
+  the fail-closed invariant holds, but `docs/conventions.md` expects a
+  stable code for every refusal, not an incidental `NullPointerException`.
+
+Found during `/verify` on tasks 28 and 29, 2026-09-15. Neither blocks
+anything; pick either up only if a future task already owns the file.
+
+- `StrictYamlTest`'s comment claims the old inlined `enumValue` logic was
+  never invoked with `null`. The reviewer showed that is false: four call
+  sites in `PrivacyProfiles` and `ModelDescriptors` do call it with `null`.
+  `StrictYaml.enumValue`'s behaviour is correct either way — only the
+  comment's stated justification is wrong, and `docs/conventions.md`
+  forbids a comment asserting a state nobody established.
+- `JsonTreeScrubbingEngineTest`'s new cross-field test, added to exercise the
+  `OwnerScope` record, duplicates an existing assertion on the same fixture
+  and does not exercise a nested parent scope as intended. The record's
+  behaviour under real nesting remains unproven by a dedicated test.
 
 Found during `/verify` on task 20, 2026-09-15. None blocks anything; pick any
 of them up only if a future task already owns the file.
