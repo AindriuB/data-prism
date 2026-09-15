@@ -108,6 +108,16 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     }
 
     /**
+     * The object a value being scrubbed lives on: its parent node, that node's
+     * fields by name, and the Java type they were resolved against. The three
+     * travel together for one reason — a {@code SYNTHESIZE} field whose
+     * {@code subjectField} names a sibling needs all three to look that
+     * sibling up, and none of them individually.
+     */
+    private record OwnerScope(ObjectNode parent, Map<String, FieldMetadata> siblings, Class<?> owner) {
+    }
+
+    /**
      * @param inheritedSubject the enclosing object's subject. A nested structure
      *                         usually describes the same subject as its parent
      *                         and carries no identifier of its own; without
@@ -152,7 +162,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
             JsonNode value = in.get(field);
             JsonNode scrubbed = apply(value, md, policy, run, fieldPath, depth, ownSubject,
-                    in, byName, type);
+                    new OwnerScope(in, byName, type));
             if (scrubbed != null) {
                 out.set(field, scrubbed);
             }
@@ -162,8 +172,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
     /** @return the value to emit, or null to drop the field entirely */
     private JsonNode apply(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,
-                           Run run, String path, int depth, String ownSubject,
-                           ObjectNode parent, Map<String, FieldMetadata> siblings, Class<?> owner) {
+                           Run run, String path, int depth, String ownSubject, OwnerScope scope) {
         if (policy.action() == PrivacyAction.REMOVE) {
             return null;
         }
@@ -184,14 +193,14 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 String elementPath = path + "[" + i + "]";
                 JsonNode scrubbed = element.isObject()
                         ? scrubNestedObject((ObjectNode) element, md, run, elementPath, depth, ownSubject)
-                        : scalar(element, md, policy, run, elementPath, ownSubject, parent, siblings, owner);
+                        : scalar(element, md, policy, run, elementPath, ownSubject, scope);
                 if (scrubbed != null) {
                     out.add(scrubbed);
                 }
             }
             return out;
         }
-        return scalar(value, md, policy, run, path, ownSubject, parent, siblings, owner);
+        return scalar(value, md, policy, run, path, ownSubject, scope);
     }
 
     /**
@@ -237,8 +246,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * emitting a real one is still caught by shape.
      */
     private JsonNode scalar(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,
-                            Run run, String path, String ownSubject,
-                            ObjectNode parent, Map<String, FieldMetadata> siblings, Class<?> owner) {
+                            Run run, String path, String ownSubject, OwnerScope scope) {
         return switch (policy.action()) {
             case PASS_THROUGH -> value;
             case REDACT -> SourceTree.text(REDACTED);
@@ -246,7 +254,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             case SYNTHESIZE -> {
                 String subject = md.subjectField().isEmpty()
                         ? ownSubject
-                        : subjectValue(parent, siblings, md.subjectField(), owner);
+                        : subjectValue(scope.parent(), scope.siblings(), md.subjectField(), scope.owner());
                 if (subject == null || subject.isBlank()) {
                     throw new PrivacyRefusedException("NO_SUBJECT", path,
                             "SYNTHESIZE needs a subject identifier and none resolved");
