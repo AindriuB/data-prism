@@ -108,16 +108,31 @@ tests, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep `Task 18` —
 for what landed and what it cost, including the `.env.example` hand-off this
 environment forces on any future dotfile task.
 
-### Tasks 19, 20 — open, unblocked
+### Tasks 19, 20 — done. The plan is done.
 
-Task 19 publishes tested MCP agent connection guides (depends on 17, 18, both
-merged — the quickstart is the thing being documented). Task 20 adds a
-separately reviewed configuration-driven JSON REST source mode (depends on
-14, 15, 17, all merged). Their `Owns` sets are disjoint — 19 owns
-`docs/agents/**`, `examples/agent-config/**`, `README.md`; 20 owns
-`data-prism-connectors-rest/**`, `data-prism-server/**`,
-`docs/configuration.md` — so they can run in the same wave. Neither is in
-flight.
+Task 19 published tested MCP agent connection guides — verified against a
+real client (Claude Code CLI 2.1.271), not reasoned about, with GUI clients
+explicitly excluded rather than listed unverified. Task 20 wired
+`data-prism-connectors-rest`, dormant and unconsumed since it was built, into
+a configuration-driven JSON REST mode with the same fail-closed guarantees as
+the Java-first path, proven by an end-to-end parity test. Both merged through
+protected, green pull requests 2026-09-15 (#37, #38). Post-merge full-reactor
+re-run: 441 tests, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep
+`Tasks 19 and 20` — for what landed and what it cost.
+
+With 19 and 20 closed, every task this plan named is done: the five defects
+found reviewing the tasks 13-17 Codex work are closed (tasks 21-24), the
+deployment slices shipped (14-18), the quickstart demonstrates the whole
+system end to end (18), and the configuration-driven JSON mode was the last
+piece (20). There is no task open and none in flight. The small open items
+below are debt found along the way, not scheduled work — pick one up only if
+a future task already owns the file it names.
+
+**Nothing is scheduled past this point.** S5, S6, S7, S10, S11 and S12 remain
+in "Someday" below, exactly as the 2026-09-09 stopping-point decision left
+them (see "Decided" above and `docs/architecture.md#decisions-worth-knowing`).
+Picking any of them up is a new planning decision, not a continuation of this
+plan — do not treat this record as opening a next wave.
 
 ## Remaining slices past the adopted core
 
@@ -132,6 +147,41 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on task 20, 2026-09-15. None blocks anything; pick any
+of them up only if a future task already owns the file.
+
+- `ConfiguredJsonSourcesAutoConfiguration` hand-copies
+  `DefaultContextOrchestrator`'s construction from
+  `DataPrismAutoConfiguration.java:233-241` rather than sharing it, so it is
+  invisible to task 22's classification sweep, which scopes to
+  `DataPrismAutoConfiguration.class.getDeclaredMethods()`. A future hardening
+  of the base orchestrator's assembly will not reach a deployment with this
+  jar on its loader path. The architect's recommendation: have the connector
+  contribute a composed `ScrubbingEngine` bean instead, which would also let
+  it drop its `data-prism-orchestration` dependency.
+- `SourceValues.java:33-47` and `DefaultContextOrchestrator.java:234` resolve
+  `FieldMetadata` by `record.getClass()`, which the shared
+  `ConfiguredJsonPayload` wrapper defeats, so the orchestrator's own
+  prohibited-value computation returns an empty or wrong set for configured
+  sources. `ConfiguredJsonScrubbingEngine` independently closes that gap and
+  fails closed, but the root assumption is wrong and lives in
+  `core`/`orchestration`, not in the connector.
+- `connectorsAreLeaves` only forbids INBOUND edges into
+  `..dataprism.connectors..`; it does not constrain a connector's own
+  outbound dependencies. `docs/architecture.md` declares the row
+  `connectors-rest | core |`, which `data-prism-connectors-rest/pom.xml` now
+  contradicts by depending on `validation` and `orchestration`, with nothing
+  able to fail the build over it. The architecture document states a
+  boundary no rule enforces.
+- `ConfiguredJsonSourcesInitializer` never checks `dataprism.transport.mode`
+  itself, relying on other modules to refuse. Fail-closed today, but it
+  holds no independent opinion on transport mode.
+- A catalogue source name containing `_` or uppercase now makes `Binder.bind`
+  throw `InvalidConfigurationPropertyNameException` where `getProperty`
+  previously returned null. It still fails closed, but the message names
+  neither the source nor the cause; only blankness is validated at
+  `ConfiguredJsonSources.java:104`.
 
 Found during `/verify` on tasks 21-24, 2026-09-14. None blocks anything; pick
 any of them up only if a future task already owns the file.
@@ -160,25 +210,29 @@ any of them up only if a future task already owns the file.
   after the `package` phase. Task 23 worked around it inside its own module;
   the underlying fix is a `<classifier>` on that plugin execution in
   `data-prism-server/pom.xml`.
-- `data-prism-connectors-rest` is an unconsumed leaf — nothing in the reactor
-  depends on it. Task 20 is what would wire it. (`data-prism-hazelcast` is no
-  longer unconsumed: task 25 gives it a real caller through the
+- ~~`data-prism-connectors-rest` is an unconsumed leaf — nothing in the
+  reactor depends on it.~~ **Resolved 2026-09-15.** Task 20 wired it: the
+  configuration-driven JSON REST mode is its first real caller, and its test
+  count went from 13 to 49. (`data-prism-hazelcast` was resolved the same
+  way one wave earlier: task 25 gives it a real caller through the
   autoconfigure module's `embedded` topology.)
 
 Found during `/verify` on task 18, 2026-09-14. Neither blocks anything; pick
 either up only if a future task already owns the file.
 
-- `ServerPackagingIT.DEVELOPMENT_KEY_MARKERS`
+- ~~`ServerPackagingIT.DEVELOPMENT_KEY_MARKERS`
   (`data-prism-server/src/test/java/.../ServerPackagingIT.java:42-51`) was
   not extended with the quickstart's HMAC literal,
-  `quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long`. Confirmed by
-  both the tester and the reviewer that the literal cannot reach a packaged
-  jar today — it exists only in `compose.yaml:114`, `application.yaml` names
-  only the environment variable, and neither file is touched by `mvn
-  package` — so nothing is missed now. But that file's own javadoc obliges
-  whoever adds a development key to extend the list, and that obligation is
-  currently unmet, so a future change that did package it would not be
-  caught.
+  `quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long`, and that file's
+  own javadoc obliges whoever adds a development key to extend the list.~~
+  **Retracted 2026-09-15.** This recommendation was wrong: `data-prism-server`
+  never compiles or reads the quickstart env file, so no artefact this scan
+  inspects can ever emit the literal, and the class's own javadoc forbids a
+  marker no build artefact emits — extending the list would itself have
+  violated the file's rule. Task 20 added the marker, then correctly removed
+  it once this was established; a tester confirmed by unzip-scanning the
+  freshly repackaged jar that the literal appears zero times. Do not
+  re-propose this.
 - `QuickstartSmokeIT.java:164` asserts the synthetic name's shape, not its
   stability. A second call for the same subject in the same scope returning
   the same value would make the pseudonymisation claim materially stronger,
