@@ -27,7 +27,15 @@ import java.util.Map;
  */
 public final class RestSources {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    /**
+     * Package-private: {@link ConfiguredJsonSources} parses its own, differently
+     * shaped YAML from this same mapper rather than constructing a second one.
+     * Architecture rule {@code onlyDesignatedClassesCreateMappers} allowlists this
+     * class by name as one of the few permitted to call an {@code ObjectMapper}
+     * constructor at all; sharing the instance is what lets a sibling loader in
+     * this module avoid needing its own entry on that list.
+     */
+    static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
 
     private RestSources() {
     }

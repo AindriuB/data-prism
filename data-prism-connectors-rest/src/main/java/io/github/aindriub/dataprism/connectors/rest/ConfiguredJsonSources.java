@@ -1,7 +1,6 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -58,7 +57,9 @@ public final class ConfiguredJsonSources {
     private static final Set<String> SENSITIVE_FIELD_KEYS =
             Set.of("classifications", "namespace", "action");
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    // Reuses RestSources.YAML rather than constructing a second ObjectMapper:
+    // see that field's Javadoc.
+    private static final ObjectMapper YAML = RestSources.YAML;
 
     private ConfiguredJsonSources() {
     }
