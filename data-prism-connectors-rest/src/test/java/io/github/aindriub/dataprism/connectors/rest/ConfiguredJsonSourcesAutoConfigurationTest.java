@@ -49,6 +49,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ConfiguredJsonSourcesAutoConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
+            // ApplicationContextRunner builds a plain context rather than going
+            // through SpringApplication, so it does not read
+            // META-INF/spring/org.springframework.boot.ApplicationContextInitializer.imports
+            // the way a real deployment does; adding the initializer explicitly
+            // exercises the exact same initialize() method a real run invokes via
+            // that SPI file.
+            .withInitializer(new ConfiguredJsonSourcesInitializer())
             .withUserConfiguration(RequiredCollaborators.class)
             .withConfiguration(AutoConfigurations.of(
                     BaselineContextOrchestratorAutoConfiguration.class,

@@ -47,7 +47,14 @@ class ServerPackagingIT {
             // jar; it exists so an accidental future dependency, or a copy of the key into
             // this module, is caught here rather than relying on the dependency graph never
             // changing.
-            "development-only-key-not-for-any-real-data"
+            "development-only-key-not-for-any-real-data",
+            // The quickstart Compose environment's HMAC key (task 18): docs/configuration.md
+            // and the quickstart env template state this literal as the demo key for the
+            // bundled compose.yaml. It cannot reach this artefact today -- data-prism-server
+            // does not read the quickstart env file and does not compile it in -- but it is
+            // development key material checked into this repository, and this list's own
+            // contract above is that whoever adds one must extend it here.
+            "quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long"
     );
 
     /**
