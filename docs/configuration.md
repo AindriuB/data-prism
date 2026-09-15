@@ -124,19 +124,65 @@ same validation, but can only expose adapters packaged and reviewed with that
 distribution. In either mode, a missing adapter or resolver is a startup
 refusal.
 
-## Java-first now; generic JSON later
+## Java-first now; generic JSON as a separately reviewed extension
 
 V1 is **Java-first**. A source adapter is application/distribution code with an
 annotated response model. Configuration selects and parameterises that reviewed
 adapter; it does not classify a DTO from its name or infer safety from an API
 endpoint.
 
-Configuration-driven arbitrary JSON REST sources are **not supported**. They
-are a separate future capability, not a hidden interpretation of
-`dataprism.sources`. Before that mode can be enabled it must define and validate
-an allowlisted endpoint/path grammar, explicit subject identifiers and field
-classifications, allowlisted JSON paths, source-schema contracts, and refusal
-on unknown or unclassified fields. It must receive a separate security review.
+A configuration-driven JSON REST mode exists, but it is never a hidden
+interpretation of `dataprism.sources`, and it is never part of the base
+standalone server distribution. It ships in `data-prism-connectors-rest`, a
+separate artefact an operator opts into the same way as any other reviewed
+adapter: `-Dloader.path=<data-prism-connectors-rest jar>`. Absent that jar and
+its one property, a deployment is unaffected and this section does not apply.
+
+### `dataprism.json-sources.config-location`
+
+The one property this mode reads: a Spring resource location (`classpath:` or
+`file:`) naming a YAML file with its own `json-sources:` root key, structurally
+unrelated to `dataprism.sources` and never merged with it. Each named entry
+under `json-sources:` states, and only states:
+
+- `base-url`, `path` (a fixed template with exactly one `{subject}` segment)
+  and `timeout` — server-owned transport, identical in kind to a Java-first
+  source's, and this mode never defaults the timeout the way the Java-first
+  loader does; it must be stated explicitly.
+- `model-version` — an explicit, non-blank tag an operator commits to,
+  reviewed alongside the catalogue below. It is a deployment-time contract, not
+  a runtime check against the response body: a REST API rarely states its own
+  schema version on every payload.
+- `subject-json-path` — a bare property name (`^[A-Za-z_][A-Za-z0-9_]*$`; no
+  dots, no scheme, no query, no second segment) naming the response field that
+  carries this source's own correlation identifier. It must name an entry in
+  `fields:` marked `identifier: true`, and nothing else about the grammar lets
+  it reach anywhere outside the object the response already is.
+- `fields:` — the allowlisted field classification catalogue, keyed by exact
+  JSON property name. Every field this source may ever emit, including its
+  subject field, must be named here with exactly one of `identifier: true`,
+  `nonSensitive: <reason>`, or `classifications` (with optional `namespace` and
+  `action`). A property present in a response but absent from this map is
+  refused before it reaches the scrubbing engine, the same UNKNOWN_FIELD
+  refusal a Java-first model's own undeclared property gets.
+
+An optional top-level `tls:` block, identical in shape to the one `RestSource`
+already supports, requires every source in the file to use `https`.
+
+Startup fails closed and names the offending source for: a missing or
+malformed required key, an unknown top-level key, a `subject-json-path`
+outside the bounded grammar or not matching a declared identifier field, a
+field stating more than one (or none) of its three allowed shapes, and an
+unknown classification, namespace or action value. A response that is not a
+JSON object, or that is missing at request time, is a source failure or
+NO_DATA respectively, not a configuration error.
+
+`dataprism.sources` still governs which adapter names the base distribution's
+own contract validator expects; a configured JSON source's name must currently
+also appear there (with a `base-url`/`timeout` pair, even though the JSON
+catalogue is the adapter's real, authoritative transport configuration) for
+that unrelated cross-check to pass. Resolving that duplication belongs to
+whichever task next revisits `DataPrismContractValidator`.
 
 ## Ownership boundary
 
