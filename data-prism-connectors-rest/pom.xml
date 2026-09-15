@@ -13,9 +13,13 @@
   <artifactId>data-prism-connectors-rest</artifactId>
   <name>Data Prism :: Connectors :: REST</name>
   <description>
-    HTTP sources over Spring RestClient. A leaf module: nothing in the platform
-    depends on it, which is what keeps the MCP layer unable to reach a source
-    directly.
+    HTTP sources over Spring RestClient. Nothing in the base standalone server or
+    Spring Boot starter compiles against this module: the configuration-driven
+    JSON REST mode it implements is a separately reviewed adapter extension,
+    loaded only by an operator who opts in, over the same
+    -Dloader.path=&lt;reviewed extension jar&gt; mechanism task 17 built for any
+    other reviewed adapter. That is what keeps the MCP layer unable to reach a
+    source directly by default.
   </description>
 
   <dependencies>
@@ -30,6 +34,31 @@
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <!-- ConfiguredJsonScrubbingEngine's own raw-value leak check: see its
+         Javadoc for why a configured JSON source needs one the shared
+         orchestrator cannot provide for it. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-validation</artifactId>
+    </dependency>
+    <!-- ConfiguredJsonSourcesAutoConfiguration assembles a full
+         DefaultContextOrchestrator for the sources this module parses, exactly
+         as the base distribution's own auto-configuration does for Java-first
+         ones: this is what lets a configured source answer through the same
+         MCP tool instead of a second, separately-reachable one. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-orchestration</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

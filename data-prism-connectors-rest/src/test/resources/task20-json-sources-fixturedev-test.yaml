@@ -1,0 +1,10 @@
+json-sources:
+  customerapi:
+    base-url: http://127.0.0.1:1
+    path: /customers/{subject}
+    timeout: PT2S
+    model-version: customer-v1
+    subject-json-path: id
+    fields:
+      id:
+        identifier: true

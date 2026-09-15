@@ -47,6 +47,20 @@ class ServerPackagingIT {
             // jar; it exists so an accidental future dependency, or a copy of the key into
             // this module, is caught here rather than relying on the dependency graph never
             // changing.
+            //
+            // The quickstart Compose environment's HMAC key
+            // (quickstart-demo-hmac-key-not-a-real-secret-32-bytes-long, task 18) is
+            // deliberately NOT listed here. Task 20 added it once, on the reasoning that
+            // whoever adds a development key must extend this list; a review of that change
+            // found the addition itself violated this class's own opening rule two
+            // paragraphs up: data-prism-server does not read the quickstart env file and
+            // never compiles it in, by construction, so no build artefact this scan
+            // inspects can ever emit that literal, and a marker that can never be found
+            // is exactly the cannot-fail shape docs/conventions.md warns about, not a
+            // second layer of protection. The obligation to extend this list applies to a
+            // development key that can reach *this* artefact; the quickstart key's own
+            // equivalent check, if one is warranted, belongs beside whatever inspects the
+            // quickstart/Compose artefacts themselves, not here.
             "development-only-key-not-for-any-real-data"
     );
 

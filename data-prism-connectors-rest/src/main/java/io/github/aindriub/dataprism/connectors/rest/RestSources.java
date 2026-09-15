@@ -27,7 +27,15 @@ import java.util.Map;
  */
 public final class RestSources {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    /**
+     * Package-private: {@link ConfiguredJsonSources} parses its own, differently
+     * shaped YAML from this same mapper rather than constructing a second one.
+     * Architecture rule {@code onlyDesignatedClassesCreateMappers} allowlists this
+     * class by name as one of the few permitted to call an {@code ObjectMapper}
+     * constructor at all; sharing the instance is what lets a sibling loader in
+     * this module avoid needing its own entry on that list.
+     */
+    static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
 
     private RestSources() {
     }
@@ -78,8 +86,9 @@ public final class RestSources {
         }
     }
 
+    /** Package-private: {@link ConfiguredJsonSources} parses the same {@code tls:} shape. */
     @SuppressWarnings("unchecked")
-    private static TlsSettings tls(Map<String, Object> root) {
+    static TlsSettings tls(Map<String, Object> root) {
         Object node = root.get("tls");
         if (node == null) {
             return null;
@@ -104,7 +113,8 @@ public final class RestSources {
         }
     }
 
-    private static String required(Map<String, Object> body, String key, String context) {
+    /** Package-private: {@link ConfiguredJsonSources} reuses the same required-key check. */
+    static String required(Map<String, Object> body, String key, String context) {
         Object value = body.get(key);
         if (value == null || String.valueOf(value).isBlank()) {
             throw new IllegalArgumentException(context + " has no " + key);

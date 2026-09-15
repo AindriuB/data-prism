@@ -39,6 +39,17 @@
       <artifactId>archunit-junit5</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Test-only, and specifically not main-scope: the base distribution never
+         compiles against a connector. ConfiguredJsonSourcesPackagingIT loads the
+         real jar this reactor build produces as a -Dloader.path extension,
+         proving the packaged artifact, not just the Spring wiring tested
+         inside data-prism-connectors-rest, accepts it the same way it accepts
+         any other reviewed adapter. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-connectors-rest</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
