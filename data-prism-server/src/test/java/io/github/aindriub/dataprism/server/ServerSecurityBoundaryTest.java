@@ -20,6 +20,7 @@ import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
 import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
+import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
 import io.modelcontextprotocol.common.McpTransportContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;

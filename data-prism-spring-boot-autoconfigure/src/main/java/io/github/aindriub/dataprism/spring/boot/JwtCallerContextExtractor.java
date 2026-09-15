@@ -1,10 +1,9 @@
-package io.github.aindriub.dataprism.example.http;
+package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.ClaimNames;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
-import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,14 +15,15 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
  * Turns a verified {@code Jwt} into the {@link AuthenticatedCaller} the MCP
  * tool layer reads from {@code exchange.transportContext()}.
  *
- * <p>Signature, issuer and audience verification already happened in
- * {@link SecurityConfig}'s filter chain by the time this runs — Spring
+ * <p>Signature, issuer and audience verification already happened in the
+ * edge deployment's own filter chain by the time this runs — Spring
  * Security's {@code OAuth2ResourceServer} filter authenticates the request and
  * populates {@link SecurityContextHolder} before the servlet is ever reached,
  * and {@code HttpServletStreamableServerTransportProvider} calls this
@@ -44,7 +44,7 @@ public final class JwtCallerContextExtractor implements McpTransportContextExtra
 
     public JwtCallerContextExtractor(DataPrismProperties properties) {
         DataPrismProperties.Security.CallerClaims configured = properties.getSecurity().getCallerClaims();
-        this.claimNames = new ClaimNames(configured.getPrincipal(), java.util.List.of("azp", "client_id"),
+        this.claimNames = new ClaimNames(configured.getPrincipal(), List.of("azp", "client_id"),
                 configured.getRoles(), "purpose", configured.getInvestigation());
     }
 
@@ -52,10 +52,10 @@ public final class JwtCallerContextExtractor implements McpTransportContextExtra
     public McpTransportContext extract(HttpServletRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (!(authentication instanceof JwtAuthenticationToken jwtAuthentication)) {
-            // Never reachable behind SecurityConfig's filter chain for the MCP
-            // endpoint, which requires authentication before this extractor
-            // runs at all — but an empty context is the correct answer if it
-            // ever were, exactly like any other unresolvable request.
+            // Never reachable behind the filter chain for the MCP endpoint,
+            // which requires authentication before this extractor runs at
+            // all — but an empty context is the correct answer if it ever
+            // were, exactly like any other unresolvable request.
             return McpTransportContext.EMPTY;
         }
 
