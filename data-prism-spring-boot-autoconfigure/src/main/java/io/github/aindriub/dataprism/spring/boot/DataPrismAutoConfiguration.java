@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.HazelcastInstance;
+import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
@@ -8,6 +9,9 @@ import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.IdentityResolver;
+import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
+import io.github.aindriub.dataprism.core.descriptor.ModelDescriptors;
 import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
 import io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
@@ -58,6 +62,10 @@ import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
@@ -103,8 +111,54 @@ public class DataPrismAutoConfiguration {
     @Bean @ConditionalOnMissingBean
     Clock dataPrismClock() { return Clock.systemUTC(); }
 
+    /**
+     * The descriptor path only ever tightens what {@link DefaultFieldMetadataResolver}
+     * would have said, per {@code DescriptorFieldMetadataResolver}'s own contract, and
+     * every way the configured file can be wrong refuses startup rather than silently
+     * falling back to the default resolver: see {@link #dataPrismModelDescriptors}.
+     */
     @Bean @ConditionalOnMissingBean
-    FieldMetadataResolver dataPrismFieldMetadataResolver() { return new DefaultFieldMetadataResolver(); }
+    FieldMetadataResolver dataPrismFieldMetadataResolver(DataPrismProperties properties) {
+        DefaultFieldMetadataResolver defaultResolver = new DefaultFieldMetadataResolver();
+        String descriptorFile = properties.getPrivacy().getDescriptorFile();
+        if (descriptorFile == null || descriptorFile.isBlank()) {
+            return defaultResolver;
+        }
+        return new DescriptorFieldMetadataResolver(defaultResolver, dataPrismModelDescriptors(descriptorFile));
+    }
+
+    /**
+     * Loaded and validated eagerly, rather than left to the first {@code resolve()}
+     * call, so a bad file refuses startup instead of surfacing on the first request.
+     * No line of the descriptor file itself ever reaches an exception message: only
+     * the property name and the shape of the problem do.
+     */
+    private static Map<String, ModelDescriptor> dataPrismModelDescriptors(String descriptorFile) {
+        Path path = Path.of(descriptorFile);
+        if (!Files.exists(path)) {
+            throw new DataPrismConfigurationException("MODEL_DESCRIPTOR_FILE_NOT_FOUND",
+                    "dataprism.privacy.descriptor-file does not name a file that exists");
+        }
+        if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+            throw new DataPrismConfigurationException("MODEL_DESCRIPTOR_FILE_UNREADABLE",
+                    "dataprism.privacy.descriptor-file does not name a readable file");
+        }
+        Map<String, ModelDescriptor> descriptors;
+        try (InputStream in = Files.newInputStream(path)) {
+            descriptors = ModelDescriptors.fromYaml(in);
+        } catch (IOException | UncheckedIOException | IllegalArgumentException e) {
+            throw new DataPrismConfigurationException("INVALID_MODEL_DESCRIPTOR_FILE",
+                    "dataprism.privacy.descriptor-file could not be parsed");
+        }
+        for (ModelDescriptor descriptor : descriptors.values()) {
+            if (descriptor.undeclaredFields() == UndeclaredFields.NON_SENSITIVE) {
+                throw new DataPrismConfigurationException("UNSAFE_MODEL_DESCRIPTOR_UNDECLARED_FIELDS",
+                        "dataprism.privacy.descriptor-file sets undeclaredFields: NON_SENSITIVE for a model,"
+                                + " which a descriptor may never do");
+            }
+        }
+        return descriptors;
+    }
 
     @Bean @ConditionalOnMissingBean @DependsOn("dataPrismPropertiesValidated")
     Vocabulary dataPrismVocabulary(DataPrismProperties properties) {
