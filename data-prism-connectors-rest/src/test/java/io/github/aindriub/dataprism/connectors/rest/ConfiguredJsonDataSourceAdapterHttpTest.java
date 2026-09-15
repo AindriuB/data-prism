@@ -7,7 +7,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -91,8 +93,15 @@ class ConfiguredJsonDataSourceAdapterHttpTest {
     @DisplayName("a JSON array response is a schema mismatch and fails the fetch")
     void arrayResponseIsASchemaMismatch() {
         nextBody = "[{\"customerId\":\"123\"}]";
+        // Not a bare RuntimeException: that is satisfied by an unstarted server
+        // or an NPE as readily as by the mismatch this test claims to prove.
+        // ResourceAccessException (a RestClientException too, thrown when the
+        // server cannot be reached at all) has a java.net.ConnectException
+        // cause instead, so this assertion fails if the fetch never actually
+        // reached a response body to convert.
         assertThatThrownBy(() -> adapter().fetch(DataRequest.of("CUSTOMER", "123")))
-                .isInstanceOf(RuntimeException.class);
+                .isInstanceOf(RestClientException.class)
+                .hasCauseInstanceOf(HttpMessageNotReadableException.class);
     }
 
     @Test
@@ -100,6 +109,7 @@ class ConfiguredJsonDataSourceAdapterHttpTest {
     void scalarResponseIsASchemaMismatch() {
         nextBody = "\"just a string\"";
         assertThatThrownBy(() -> adapter().fetch(DataRequest.of("CUSTOMER", "123")))
-                .isInstanceOf(RuntimeException.class);
+                .isInstanceOf(RestClientException.class)
+                .hasCauseInstanceOf(HttpMessageNotReadableException.class);
     }
 }

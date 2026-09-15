@@ -179,10 +179,17 @@ NO_DATA respectively, not a configuration error.
 
 `dataprism.sources` still governs which adapter names the base distribution's
 own contract validator expects; a configured JSON source's name must currently
-also appear there (with a `base-url`/`timeout` pair, even though the JSON
-catalogue is the adapter's real, authoritative transport configuration) for
-that unrelated cross-check to pass. Resolving that duplication belongs to
-whichever task next revisits `DataPrismContractValidator`.
+also appear there (with a `base-url`/`timeout` pair) for that unrelated
+cross-check to pass, even though the `json-sources:` catalogue is the
+adapter's real, authoritative transport configuration — it is what
+`ConfiguredJsonDataSourceAdapter` actually dials. The two `base-url` values
+are therefore stated twice, and **startup refuses if they disagree**, naming
+both: the `json-sources:` value is authoritative for what gets dialled, so a
+`dataprism.sources` entry that silently won the validated-but-unused half of
+that check is exactly the hazard closed by refusing rather than picking a
+winner. Resolving the duplication itself — so only one statement of a
+configured source's transport exists at all — belongs to whichever task next
+revisits `DataPrismContractValidator`.
 
 ## Ownership boundary
 

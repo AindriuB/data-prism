@@ -105,6 +105,36 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
     }
 
     /**
+     * The base distribution's contract validator requires a {@code
+     * dataprism.sources.<name>} entry alongside every {@code DataSourceAdapter}
+     * bean's name, so this source's transport is stated twice; when the two
+     * agree, startup proceeds.
+     */
+    @Test
+    @DisplayName("a dataprism.sources entry whose base-url agrees with json-sources does not refuse")
+    void agreeingDataprismSourcesEntryIsFine() {
+        runner.withPropertyValues(
+                        "dataprism.json-sources.config-location=classpath:/task20-json-sources.yaml",
+                        "dataprism.sources.customer-api.base-url=https://127.0.0.1:1")
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    /**
+     * The hazard this proof exists for: without it, the two declarations could
+     * disagree and the validated one — {@code dataprism.sources.<name>.base-url}
+     * — would be silently ignored in favour of the one {@code
+     * ConfiguredJsonDataSourceAdapter} actually dials.
+     */
+    @Test
+    @DisplayName("a dataprism.sources entry whose base-url disagrees with json-sources refuses startup")
+    void disagreeingDataprismSourcesEntryRefusesStartup() {
+        runner.withPropertyValues(
+                        "dataprism.json-sources.config-location=classpath:/task20-json-sources.yaml",
+                        "dataprism.sources.customer-api.base-url=https://somewhere-else.example")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    /**
      * Every collaborator {@link
      * ConfiguredJsonSourcesAutoConfiguration#configuredJsonSourcesContextOrchestrator}
      * needs, built the same way the end-to-end test builds them.

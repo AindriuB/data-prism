@@ -64,8 +64,26 @@ public final class ConfiguredJsonSources {
     private ConfiguredJsonSources() {
     }
 
-    @SuppressWarnings("unchecked")
     public static ConfiguredJsonSourcesConfig fromYaml(InputStream in) {
+        return fromYaml(in, false);
+    }
+
+    /**
+     * @param fixtureDevelopment mirrors {@code dataprism.transport.fixture-development},
+     *                           the one narrow exception {@code
+     *                           DataPrismProperties.trustedUri} grants a Java-first
+     *                           source's {@code dataprism.sources.<name>.base-url}: a
+     *                           plaintext {@code http} base URL is permitted only for
+     *                           a loopback host ({@code localhost} or {@code 127.0.0.1})
+     *                           and only when this is set. Every other base URL,
+     *                           regardless of this flag, must be {@code https}. False
+     *                           is the default every caller except a fixture harness
+     *                           wants; the standalone server distribution never sets
+     *                           it, since fixture development is stdio-only and
+     *                           refused outright for an HTTP-transport deployment.
+     */
+    @SuppressWarnings("unchecked")
+    public static ConfiguredJsonSourcesConfig fromYaml(InputStream in, boolean fixtureDevelopment) {
         Map<String, Object> root;
         try {
             root = YAML.readValue(in, Map.class);
@@ -80,7 +98,6 @@ public final class ConfiguredJsonSources {
         }
 
         TlsSettings tls = RestSources.tls(root);
-        boolean requireHttps = tls != null;
 
         Map<String, ConfiguredJsonSource> out = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
@@ -91,13 +108,14 @@ public final class ConfiguredJsonSources {
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
                 throw new IllegalArgumentException("json source " + name + " is not a mapping");
             }
-            out.put(name, source(name, (Map<String, Object>) body, requireHttps));
+            out.put(name, source(name, (Map<String, Object>) body, fixtureDevelopment, tls != null));
         }
         return new ConfiguredJsonSourcesConfig(Map.copyOf(out), tls);
     }
 
     @SuppressWarnings("unchecked")
-    private static ConfiguredJsonSource source(String name, Map<String, Object> body, boolean requireHttps) {
+    private static ConfiguredJsonSource source(String name, Map<String, Object> body,
+                                               boolean fixtureDevelopment, boolean tlsConfigured) {
         rejectUnknownKeys(body.keySet(), SOURCE_KEYS, "json source " + name);
 
         String baseUrl = RestSources.required(body, "base-url", "json source " + name);
@@ -110,12 +128,25 @@ public final class ConfiguredJsonSources {
                     + " this mode requires an explicit bounded timeout, it does not default one");
         }
 
-        RestSource transport;
+        URI baseUri;
         try {
-            transport = new RestSource(name, new URI(baseUrl), path,
-                    Duration.parse(String.valueOf(timeoutRaw)), requireHttps);
+            baseUri = new URI(baseUrl);
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("json source " + name + " has an unparseable base-url", e);
+        }
+        // The same gate a Java-first source's dataprism.sources.<name>.base-url must
+        // clear (DataPrismProperties.trustedUri), reimplemented here rather than
+        // depended on: a plaintext base URL is refused unless this is fixture
+        // development and the host is loopback, and a tls: block always closes even
+        // that exception, since configuring mTLS material for a plaintext connection
+        // makes no sense.
+        boolean permitPlaintextLoopback = fixtureDevelopment && !tlsConfigured && isLoopback(baseUri.getHost());
+        boolean requireHttps = !permitPlaintextLoopback;
+
+        RestSource transport;
+        try {
+            transport = new RestSource(name, baseUri, path,
+                    Duration.parse(String.valueOf(timeoutRaw)), requireHttps);
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException(
                     "json source " + name + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
@@ -210,6 +241,11 @@ public final class ConfiguredJsonSources {
 
         return new FieldMetadata(fieldName, false, null, classifications, namespace, action,
                 "", null, String.class, null);
+    }
+
+    /** Exactly the two hosts {@code DataPrismProperties.trustedUri} treats as local. */
+    private static boolean isLoopback(String host) {
+        return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host);
     }
 
     private static void rejectUnknownKeys(Set<?> present, Set<String> allowed, String where) {

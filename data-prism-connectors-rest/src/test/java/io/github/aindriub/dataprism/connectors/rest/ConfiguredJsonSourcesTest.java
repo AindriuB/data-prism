@@ -25,7 +25,7 @@ class ConfiguredJsonSourcesTest {
     private static final String VALID = """
             json-sources:
               customer-api:
-                base-url: http://customer.example
+                base-url: https://customer.example
                 path: /v1/customers/{subject}
                 timeout: PT2S
                 model-version: customer-v1
@@ -119,7 +119,7 @@ class ConfiguredJsonSourcesTest {
         String yaml = """
                 json-sources:
                   customer-api:
-                    base-url: http://customer.example
+                    base-url: https://customer.example
                     path: /v1/customers/{subject}
                     timeout: PT2S
                     model-version: customer-v1
@@ -210,10 +210,47 @@ class ConfiguredJsonSourcesTest {
     }
 
     @Test
-    @DisplayName("a non-HTTPS base URL refuses once TLS is configured")
-    void httpRefusedOnceTlsConfigured() throws Exception {
+    @DisplayName("a plaintext http base URL refuses by default, the same gate a Java-first "
+            + "source's dataprism.sources.<name>.base-url must clear")
+    void httpBaseUrlRefusedByDefault() {
+        String yaml = VALID.replace("https://customer.example", "http://customer.example");
+        assertThatThrownBy(() -> load(yaml))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("https");
+    }
+
+    @Test
+    @DisplayName("a loopback http base URL is refused unless fixture-development says otherwise")
+    void httpAllowedForLoopbackOnlyWhenFixtureDevelopment() {
+        String yaml = VALID.replace("https://customer.example", "http://127.0.0.1:1");
+
+        assertThatThrownBy(() -> ConfiguredJsonSources.fromYaml(stream(yaml), false))
+                .as("fixture-development not set")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("https");
+        assertThatThrownBy(() -> load(yaml))
+                .as("the single-argument overload defaults to false, the same as production")
+                .isInstanceOf(IllegalArgumentException.class);
+
+        ConfiguredJsonSourcesConfig config = ConfiguredJsonSources.fromYaml(stream(yaml), true);
+        assertThat(config.sources().get("customer-api").transport().baseUrl().toString())
+                .isEqualTo("http://127.0.0.1:1");
+    }
+
+    @Test
+    @DisplayName("fixture-development does not widen the exception past a loopback host")
+    void nonLoopbackHttpRefusedEvenWithFixtureDevelopment() {
+        String yaml = VALID.replace("https://customer.example", "http://customer.example");
+        assertThatThrownBy(() -> ConfiguredJsonSources.fromYaml(stream(yaml), true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("https");
+    }
+
+    @Test
+    @DisplayName("a tls: block closes the loopback exception even under fixture-development")
+    void tlsBlockClosesTheLoopbackException() throws Exception {
         java.nio.file.Path store = java.nio.file.Files.createTempFile("dp-json-source-tls", ".p12");
-        String yaml = VALID + """
+        String yaml = VALID.replace("https://customer.example", "http://127.0.0.1:1") + """
                 tls:
                   key-store: %s
                   key-store-password-env: DATA_PRISM_TEST_TLS_PASSWORD
@@ -221,7 +258,7 @@ class ConfiguredJsonSourcesTest {
                   trust-store-password-env: DATA_PRISM_TEST_TLS_PASSWORD
                   store-type: PKCS12
                 """.formatted(store, store);
-        assertThatThrownBy(() -> load(yaml))
+        assertThatThrownBy(() -> ConfiguredJsonSources.fromYaml(stream(yaml), true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("https");
     }
@@ -232,7 +269,7 @@ class ConfiguredJsonSourcesTest {
         String yaml = """
                 json-sources:
                   customer-api:
-                    base-url: http://customer.example
+                    base-url: https://customer.example
                     path: /v1/customers/{subject}
                     timeout: PT2S
                     model-version: customer-v1

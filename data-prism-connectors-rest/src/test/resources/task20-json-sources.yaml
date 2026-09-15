@@ -1,6 +1,6 @@
 json-sources:
   customer-api:
-    base-url: http://127.0.0.1:1
+    base-url: https://127.0.0.1:1
     path: /customers/{subject}
     timeout: PT2S
     model-version: customer-v1

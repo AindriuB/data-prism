@@ -106,7 +106,12 @@ class ConfiguredJsonSourcesPackagingIT {
 
     /**
      * A minimal, self-contained catalogue: base URL and path are never dialled
-     * in this test, only parsed and wired, so an unreachable host is fine.
+     * in this test, only parsed and wired, so an unreachable host is fine. The
+     * base URL here must be identical to {@code
+     * dataprism.sources.packaging-test-api.base-url} in {@link #validArguments()}
+     * — {@link ConfiguredJsonSourcesInitializer} refuses startup if the two
+     * disagree, and it must, since a mismatch between them is exactly the
+     * hazard of stating one source's transport twice.
      */
     private Path validJsonSourcesFile() throws IOException {
         Path file = Files.createTempFile("task20-valid-json-sources-", ".yaml");
@@ -114,7 +119,7 @@ class ConfiguredJsonSourcesPackagingIT {
         Files.writeString(file, """
                 json-sources:
                   packaging-test-api:
-                    base-url: http://127.0.0.1:1
+                    base-url: https://packaging-test.example
                     path: /customers/{subject}
                     timeout: PT2S
                     model-version: customer-v1
