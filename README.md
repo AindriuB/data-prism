@@ -2,14 +2,15 @@
 
 A privacy layer between MCP clients and enterprise APIs.
 
-**Status: the walking skeleton and every slice through S9a are built**, with 18
-Maven modules and a passing test suite. The privacy engine, correlation and
-consistency findings, parallel mTLS connectors, embedded Hazelcast identity
-cache and read budget, an OAuth2 resource server with session-derived
-`PrivacyContext`, audit and metrics are all real and exercised end to end. The
-standalone server is the primary deployment surface; the Spring Boot starter is
-the embedded option. A one-command local Compose quickstart also exists: see
-"Try it" below.
+**Status: the walking skeleton and every slice through S9a are built**, with 19
+Maven submodules (`pom.xml:24-42`; 20 Maven projects in the reactor counting
+the root `pom`-packaged aggregator itself) and a passing test suite. The
+privacy engine, correlation and consistency findings, parallel mTLS
+connectors, embedded Hazelcast identity cache and read budget, an OAuth2
+resource server with session-derived `PrivacyContext`, audit and metrics are
+all real and exercised end to end. The standalone server is the primary
+deployment surface; the Spring Boot starter is the embedded option. A
+one-command local Compose quickstart also exists: see "Try it" below.
 Not built: the re-identification operator surface (deferred past V1 by
 decision, see `docs/architecture.md#decisions-worth-knowing`), the
 Elasticsearch connector and its search tools, and the append-only audit sink
@@ -117,8 +118,9 @@ mvn -B --no-transfer-progress verify
 ```
 
 This is the same command CI runs (`.github/workflows/build.yml`). It builds all
-18 modules, runs the full test suite, the ArchUnit boundary rules, and the
-enforcer rule that keeps the classpath on a single Jackson major.
+19 submodules plus the root aggregator, runs the full test suite, the
+ArchUnit boundary rules, and the enforcer rule that keeps the classpath on a
+single Jackson major.
 
 `data-prism-server` is the primary executable distribution. Its `/health`
 liveness probe is public and carries no deployment detail; its configured MCP
