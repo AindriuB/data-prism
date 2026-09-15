@@ -134,6 +134,32 @@ them (see "Decided" above and `docs/architecture.md#decisions-worth-knowing`).
 Picking any of them up is a new planning decision, not a continuation of this
 plan — do not treat this record as opening a next wave.
 
+### Simplification plan, wave 1 (tasks 26-30) — done
+
+A separate planning cycle from the slice plan above: opened 2026-09-15 to
+close small duplication and readability debt accumulated across the earlier
+waves. Task 26 collapsed the duplicated JWT/OIDC discovery, SSRF guards and
+caller-context extractor in the server and the example into one shared
+`JwtDecoderSupport`/`JwtCallerContextExtractor` pair in
+`data-prism-spring-boot-autoconfigure`. Task 27 reduced
+`DefaultContextOrchestrator` to its two used constructors and lifted the
+fetch/scrub/merge loop into its own method. Task 28 extracted the duplicated
+YAML `enumValue` logic into a new core `StrictYaml` helper. Task 29 bundled
+`JsonTreeScrubbingEngine`'s parent/siblings/owner parameters into a private
+`OwnerScope` record. Task 30 reformatted `DataPrismProperties` to one
+statement per line. All five merged locally 2026-09-15, no conflicts. A
+single serialized full-reactor `mvn clean verify` from the main checkout
+afterwards — not the five testers' parallel runs, three of which hit
+transient classpath failures caused by five concurrent Maven builds sharing
+one local repository — gives 440 tests, 0 failures, 0 errors. See
+`docs/plan/HISTORY.md` — grep `Simplification wave 1` — for what landed and
+what it cost, including why a task's Owns list needs deriving from callers
+rather than same-package usage.
+
+Tasks 31 (wire the model-descriptor resolver behind a configuration
+property, depended on 30) and 32 (merge `data-prism-audit` into
+`data-prism-core`, depended on 26) are now unblocked and are the next wave.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
@@ -147,6 +173,20 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on tasks 28 and 29, 2026-09-15. Neither blocks
+anything; pick either up only if a future task already owns the file.
+
+- `StrictYamlTest`'s comment claims the old inlined `enumValue` logic was
+  never invoked with `null`. The reviewer showed that is false: four call
+  sites in `PrivacyProfiles` and `ModelDescriptors` do call it with `null`.
+  `StrictYaml.enumValue`'s behaviour is correct either way — only the
+  comment's stated justification is wrong, and `docs/conventions.md`
+  forbids a comment asserting a state nobody established.
+- `JsonTreeScrubbingEngineTest`'s new cross-field test, added to exercise the
+  `OwnerScope` record, duplicates an existing assertion on the same fixture
+  and does not exercise a nested parent scope as intended. The record's
+  behaviour under real nesting remains unproven by a dedicated test.
 
 Found during `/verify` on task 20, 2026-09-15. None blocks anything; pick any
 of them up only if a future task already owns the file.
