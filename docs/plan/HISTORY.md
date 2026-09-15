@@ -17,6 +17,71 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-15 — Simplification wave 2 (tasks 31-32): descriptor resolver wired, data-prism-audit merged into core
+
+Two tasks closing the remaining dead-code and module-count debt from the
+simplification plan. Both merged locally, no conflicts.
+
+Task 31 gave `core/descriptor` — `DescriptorFieldMetadataResolver`,
+`ModelDescriptors`, `ModelDescriptor`, roughly 320 lines with tests but no
+production caller anywhere in the reactor — its first real caller: an
+optional `dataprism.privacy.descriptor-file` property that, when set, loads
+and validates a model-descriptor YAML file and wraps the default
+`FieldMetadataResolver` in `DescriptorFieldMetadataResolver`. Four distinct
+refusal codes cover a missing file, an unreadable file, a file with no
+`models` section, and a descriptor that tries to set
+`undeclaredFields: NON_SENSITIVE`; every path fails closed at startup with no
+fallback to the undecorated resolver, and no descriptor file content reaches
+a refusal message. No new `@Bean` was added, so `PrivacyExtensionPoints`
+needed no new classification row.
+
+Task 32 deleted the `data-prism-audit` module and moved its four classes —
+`AuditEvent`, `AuditSink`, `AuditRecorder`, `Slf4jAuditSink` — plus its test
+into `data-prism-core`, package unchanged, so no consumer's imports changed.
+All renames landed at 100% similarity; no `.java` body changed and the
+per-writer audit hash chain is untouched. Five poms and the architecture
+module table were updated to match. The reactor is now 19 modules with main
+code (from 20), and `docs/architecture.md`'s planned `reidentification` row
+no longer names a module that does not exist.
+
+A single serialized full-reactor `mvn clean verify` from the main checkout
+after both merges — not the two testers' individual runs — gives 460 tests, 0
+failures, 0 errors.
+
+**Cost:** Concurrent Maven builds against this repository's shared local
+repository (`~/.m2`) are unreliable and have now produced spurious failures
+five times across two simplification waves, most recently eight fake
+security-boundary failures on the task 32 branch that passed 11 of 11 when
+re-run in isolation. Every occurrence has cleared on a serialized re-run with
+no code change. Testers and `/record` must run `mvn verify` one at a time
+against this repo, never concurrently — the flakiness is an artefact of
+shared-repository contention, not of the code under test, and re-diagnosing
+it from scratch a third time would waste a wave's worth of time for nothing.
+A stale `data-prism-audit/target/` directory also survived task 32's merge
+(the module's tracked files were deleted but its untracked, gitignored build
+output was not); removed by hand before the post-merge build so it could not
+be mistaken for a live module.
+
+Two non-blocking follow-ups from task 31's review, not fixed there because
+each needs its own acceptance criteria:
+- An application that registers its own `FieldMetadataResolver` bean
+  silently suppresses the descriptor wiring — `@ConditionalOnMissingBean`
+  means a set `descriptor-file` is then never read or validated, and startup
+  succeeds without warning. The reviewer scoped the fix to a successor task
+  because closing it means guarding a `REPLACEABLE` extension point, which is
+  a different-shaped change than this task's.
+- A descriptor file containing only a YAML document marker (`---` with no
+  `models:` key) produces a `NullPointerException` from `ModelDescriptors`
+  rather than a named refusal code. Startup still fails closed, so the
+  fail-closed invariant holds, but `docs/conventions.md` expects a stable
+  code for every refusal, not an incidental `NullPointerException`.
+
+`docs/pack.md` still lists `data-prism-audit` in its directory tree
+(around line 376). Left unchanged: that file is the frozen original
+specification, kept verbatim by its own header note, and `docs/design-review.md`
+is where amendments to it belong — not an edit to the historical document
+itself.
+
 ## 2026-09-15 — Simplification wave 1 (tasks 26-30): shared JWT decoder, orchestrator cleanup, StrictYaml helper, OwnerScope record, properties formatting
 
 Five small tasks closing duplication and readability debt, independent of

@@ -156,9 +156,29 @@ one local repository — gives 440 tests, 0 failures, 0 errors. See
 what it cost, including why a task's Owns list needs deriving from callers
 rather than same-package usage.
 
-Tasks 31 (wire the model-descriptor resolver behind a configuration
-property, depended on 30) and 32 (merge `data-prism-audit` into
-`data-prism-core`, depended on 26) are now unblocked and are the next wave.
+### Simplification plan, wave 2 (tasks 31-32) — done. The simplification plan is done.
+
+Task 31 gave `core/descriptor` — the ~320 lines of `DescriptorFieldMetadataResolver`,
+`ModelDescriptors` and `ModelDescriptor` that had tests but no production
+caller — a real one: an optional `dataprism.privacy.descriptor-file`
+property that, when set, loads and validates a model-descriptor YAML file
+and wraps the default `FieldMetadataResolver` in
+`DescriptorFieldMetadataResolver`. Four distinct refusal codes, all fail
+closed with no fallback to the undecorated resolver and no file content in
+any message. Task 32 deleted `data-prism-audit` and moved its four classes
+and test into `data-prism-core` with the package unchanged, so no consumer's
+imports moved; five poms and the architecture module table were updated.
+Both merged locally 2026-09-15, no conflicts. A single serialized
+full-reactor `mvn clean verify` from the main checkout afterwards gives 460
+tests, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep
+`Simplification wave 2` — for what landed and what it cost, including the
+now twice-confirmed unreliability of concurrent Maven builds against this
+repo's shared local repository.
+
+With 31 and 32 closed, the simplification plan opened 2026-09-15 has no task
+left: waves 1 and 2 closed every item it named. **Nothing is scheduled past
+this point** — the small open items below, plus the two new ones from task
+31's review, are debt found along the way, not scheduled work.
 
 ## Remaining slices past the adopted core
 
@@ -173,6 +193,22 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on task 31, 2026-09-15. Neither blocks anything; pick
+either up only if a future task already owns the file.
+
+- An application that registers its own `FieldMetadataResolver` bean
+  silently suppresses the descriptor wiring: the shipped bean is
+  `@ConditionalOnMissingBean`, so a set `dataprism.privacy.descriptor-file`
+  is then never read or validated, and startup succeeds without warning.
+  The reviewer scoped the fix to a successor task rather than folding it
+  into task 31, because closing it means guarding a `REPLACEABLE` extension
+  point, a different-shaped change than wiring the property was.
+- A descriptor file containing only a YAML document marker (`---` with no
+  `models:` key) makes `ModelDescriptors` throw a `NullPointerException`
+  rather than return a named refusal code. Startup still fails closed, so
+  the fail-closed invariant holds, but `docs/conventions.md` expects a
+  stable code for every refusal, not an incidental `NullPointerException`.
 
 Found during `/verify` on tasks 28 and 29, 2026-09-15. Neither blocks
 anything; pick either up only if a future task already owns the file.
