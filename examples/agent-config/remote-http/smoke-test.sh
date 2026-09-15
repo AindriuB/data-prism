@@ -120,10 +120,11 @@ call_response="$(curl -s -X POST "$mcp_url" \
   -H "Mcp-Session-Id: $session" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_entity_context","arguments":{"entityType":"CUSTOMER","subjectId":"1001"}}}')"
 
-# The two raw values data-prism-quickstart-fixtures' CustomerController ships
-# for subject 1001 (see docs/quickstart.md). A privacy engine doing nothing —
-# an adapter returning the fixture's own JSON untouched — fails every check
-# below, not just the first.
+# The raw values data-prism-quickstart-fixtures' CustomerController ships for
+# subject 1001 (see docs/quickstart.md), plus the raw correlation id itself —
+# QuickstartSmokeIT asserts the same three absences. A privacy engine doing
+# nothing — an adapter returning the fixture's own JSON untouched — fails
+# every check below, not just the first.
 if echo "$call_response" | grep -q "Fixture Person One"; then
   echo "FAIL: response contains the raw fixture name, unpseudonymised:" >&2
   echo "$call_response" >&2
@@ -131,6 +132,11 @@ if echo "$call_response" | grep -q "Fixture Person One"; then
 fi
 if echo "$call_response" | grep -q "fixture.person.one@example.invalid"; then
   echo "FAIL: response contains the raw fixture email, unpseudonymised:" >&2
+  echo "$call_response" >&2
+  exit 1
+fi
+if echo "$call_response" | grep -q '"1001"'; then
+  echo "FAIL: response contains the raw subjectId/correlation id, unpseudonymised:" >&2
   echo "$call_response" >&2
   exit 1
 fi
@@ -146,6 +152,6 @@ if ! echo "$call_response" | grep -q '\[REDACTED\]'; then
 fi
 
 echo "PASS: $server_name connected via the remote HTTP template, and its"
-echo "get_entity_context call returned a pseudonymised response with both"
-echo "raw fixture values absent."
+echo "get_entity_context call returned a pseudonymised response with all"
+echo "three raw fixture values absent."
 exit 0
