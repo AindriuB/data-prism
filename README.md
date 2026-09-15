@@ -2,20 +2,21 @@
 
 A privacy layer between MCP clients and enterprise APIs.
 
-**Status: the walking skeleton and every slice through S9a are built**, with 15
+**Status: the walking skeleton and every slice through S9a are built**, with 18
 Maven modules and a passing test suite. The privacy engine, correlation and
 consistency findings, parallel mTLS connectors, embedded Hazelcast identity
 cache and read budget, an OAuth2 resource server with session-derived
 `PrivacyContext`, audit and metrics are all real and exercised end to end. The
 standalone server is the primary deployment surface; the Spring Boot starter is
-the embedded option.
+the embedded option. A one-command local Compose quickstart also exists: see
+"Try it" below.
 Not built: the re-identification operator surface (deferred past V1 by
 decision, see `docs/architecture.md#decisions-worth-knowing`), the
-Elasticsearch connector and its search tools, Docker Compose, and the
-append-only audit sink with hash-chain verifier (a file/SLF4J sink exists; the
-append-only sink is deliberately deferred). Only one MCP tool exists today,
-`get_entity_context` — the other three named in the design review are not yet
-built. See `docs/plan/PLAN.md` for what is open.
+Elasticsearch connector and its search tools, and the append-only audit sink
+with hash-chain verifier (a file/SLF4J sink exists; the append-only sink is
+deliberately deferred). Only one MCP tool exists today, `get_entity_context`
+— the other three named in the design review are not yet built. See
+`docs/plan/PLAN.md` for what is open.
 
 ## The problem
 
@@ -64,10 +65,28 @@ processing, and still needs a lawful basis, a DPIA, and a transfer mechanism
 where the provider is outside the EU. The platform reduces exposure; it does not
 remove the obligation.
 
+## Try it
+
+The fastest way to see a real MCP call answered by the real privacy engine —
+no local JDK, no Maven install, one command:
+
+```bash
+docker compose up --build
+```
+
+brings up the standalone server, a synthetic fixture API and a local HTTPS
+JWT issuer, and proves an agent-compatible `get_entity_context` call returns
+a pseudonymised response. Walk through it in
+[`docs/quickstart.md`](docs/quickstart.md); connect your own agent client to
+either that stack or a real deployment via
+[`docs/agents/`](docs/agents/README.md).
+
 ## Documentation
 
 | | |
 |---|---|
+| `docs/quickstart.md` | One-command local Compose demonstration — start here |
+| `docs/agents/` | Connecting an MCP agent client, local fixture or authenticated remote |
 | `docs/architecture.md` | Module map, dependency rules, the boundaries that must not be crossed, dated decisions |
 | `docs/design-review.md` | Amendments to the specification, with reasoning. **Authoritative** |
 | `docs/development-plan.md` | Slice order, sizing, and the decisions that block the first one |
@@ -98,7 +117,7 @@ mvn -B --no-transfer-progress verify
 ```
 
 This is the same command CI runs (`.github/workflows/build.yml`). It builds all
-15 modules, runs the full test suite, the ArchUnit boundary rules, and the
+18 modules, runs the full test suite, the ArchUnit boundary rules, and the
 enforcer rule that keeps the classpath on a single Jackson major.
 
 `data-prism-server` is the primary executable distribution. Its `/health`
@@ -125,8 +144,9 @@ LOADER_PATH=/opt/data-prism/extensions \
 
 The process refuses startup if configuration, secrets, operational bindings, or
 the exact configured adapter set is missing. `data-prism-example` remains a
-fixture-only demonstration and is not a server dependency. Container packaging
-and Compose orchestration belong to Task 18.
+fixture-only demonstration and is not a server dependency. Container
+packaging and Compose orchestration for a real, locally runnable instance of
+this exist too — see "Try it" above and `docs/quickstart.md`.
 
 ## Contributing
 
