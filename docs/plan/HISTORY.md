@@ -17,6 +17,60 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-16 — Task 38: the MCP registry entry, and the release plan is complete
+
+Closes the release plan opened 2026-09-16 (tasks 33-39). Merged through a
+protected, green pull request (#61). Adds `server.json`, the `mcp-name`
+marker and a registry-arrival section in `README.md`, and
+`.github/workflows/publish-mcp.yml`, all gated on `workflow_dispatch` plus a
+`refs/tags/v*` ref like the other two publish workflows.
+
+The reviewer found a defect that would have shipped a broken public listing:
+`server.json` originally declared `DATAPRISM_SECURITY_POLICY_ROLES_INVESTIGATOR`
+as a required environment variable, and it does not bind. On Spring Boot
+3.5.16, map keys under a hyphenated prefix (`dataprism.security-policy.roles`)
+are discovered by enumerating `SystemEnvironmentPropertySource`, which splits
+`SECURITY_POLICY` into `security.policy` rather than `security-policy`, so a
+consumer setting exactly the variable the entry marked required would get
+`MISSING_ROLE_POLICY` and no startup. The implementer confirmed the correct
+spelling empirically, against Spring Boot's real `Binder` and
+`SystemEnvironmentPropertySource`, testing three candidate spellings rather
+than reasoning about it:
+`DATAPRISM_SECURITYPOLICY_ROLES_INVESTIGATOR` is the one that binds. The
+entry also contradicted itself, claiming elsewhere that the role map could
+not come from an environment variable at all; that was resolved rather than
+left standing. `DataPrismProperties` has exactly two `Map` fields — `sources`
+(unhyphenated prefix, POJO value type, unaffected) and `roles` (under the
+hyphenated `security-policy`, affected); `caller-claims` and `hmac-key` are
+fixed POJOs so their underscore-split spellings bind normally, and
+`purposes` is a `List` and binds directly. Only `roles` needed the fix.
+
+`publish-mcp.yml` also gained an ordering guard: two independently-dispatched
+workflows have no ordering guarantee in GitHub Actions, so it runs `docker
+manifest inspect` against the image tag first and refuses to publish the
+registry entry unless the image is already pullable, and it asserts
+`server.json`'s `.version` equals `.packages[0].version` before either guard,
+so a drifted file fails loudly instead of publishing an entry pointing at a
+stale image.
+
+Nothing is published. Confirmed at record time:
+`curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.aindriub/data-prism"`
+returns `{"servers":[],"metadata":{"count":0}}`. All three publish workflows
+(central, image, mcp) remain gated on `workflow_dispatch` and a
+`refs/tags/v*` ref, so nothing fires until the owner tags a release and
+dispatches each workflow by hand, in order — see `PLAN.md`'s "Release the
+tagged version" section for that sequence.
+
+**Cost:** the env-var spelling defect was reasoned-then-verified, not
+reasoned-and-trusted — the implementer built a throwaway harness against
+Spring Boot's real `Binder`/`SystemEnvironmentPropertySource` rather than
+inferring the relaxed-binding rule from documentation, because a wrong guess
+here ships silently as a broken public onboarding instruction, not a test
+failure. Tester validated `server.json` two independent ways (Python
+`jsonschema` against the fetched schema, and the real `mcp-publisher
+validate` CLI) rather than trusting one validator's interpretation of the
+schema.
+
 ## 2026-09-16 — Tasks 36, 37, 39: Maven Central publishing, distributable server image, default-mode transport fail-open closed
 
 Closes the release wave opened the same day. All three merged through
