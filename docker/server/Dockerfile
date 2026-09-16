@@ -15,7 +15,7 @@ COPY . .
 # container with no local repository cache, fails to resolve it.
 RUN mvn -B -q -pl data-prism-processor,data-prism-server,data-prism-quickstart-extension -am package -DskipTests
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 COPY --from=build /workspace/data-prism-server/target/data-prism-server-0.1.0.jar /app/data-prism-server.jar
 COPY --from=build /workspace/data-prism-quickstart-extension/target/data-prism-quickstart-extension-0.1.0.jar /app/data-prism-quickstart-extension.jar
