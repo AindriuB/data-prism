@@ -86,14 +86,19 @@ either that stack or a real deployment via
 
 ## If you found this on the MCP registry
 
-The `ghcr.io/aindriub/data-prism-server` image listed there is not a
-one-command install. `docker run` alone yields a server that refuses to
-start: `DataPrismContractValidator` demands a reviewed `DataSourceAdapter`
-bean for every configured source, and `DataPrismProperties.validate()` demands
-a full deployment configuration (JWT issuer/audience/JWKS, caller-claim
-mappings, security policy, HMAC key reference, audit sink, metrics sink,
-Hazelcast topology). Neither ships in the image. Two things an operator must
-supply themselves before it serves anything:
+The `ghcr.io/aindriub/data-prism-server` image listed there is published as a
+multi-architecture manifest list covering `linux/amd64` and `linux/arm64`,
+each built and verified natively — `docker run` on Apple Silicon or any other
+arm64 host pulls the arm64 image directly, no emulation required.
+
+It is not a one-command install, on either architecture. `docker run` alone
+yields a server that refuses to start: `DataPrismContractValidator` demands a
+reviewed `DataSourceAdapter` bean for every configured source, and
+`DataPrismProperties.validate()` demands a full deployment configuration (JWT
+issuer/audience/JWKS, caller-claim mappings, security policy, HMAC key
+reference, audit sink, metrics sink, Hazelcast topology). Neither ships in the
+image. Two things an operator must supply themselves before it serves
+anything:
 
 - **A reviewed `DataSourceAdapter` (and `IdentityResolver`) jar** for each
   API you are protecting, mounted onto the image's loader path.
