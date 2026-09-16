@@ -95,6 +95,9 @@ public class DataPrismProperties {
 
     public void validate() {
         boolean fixture = transport.fixtureDevelopment;
+        // STDIO_DEVELOPMENT_ONLY is one of four codes meaning "this deployment has
+        // no usable MCP transport"; see the Javadoc on DataPrismAutoConfiguration
+        // #dataPrismMcpTransportPreflight for the full map and why they are not one.
         if (transport.mode == Transport.Mode.STDIO && !fixture) {
             refuse("STDIO_DEVELOPMENT_ONLY", "dataprism.transport.stdio requires fixture-development=true");
         }
