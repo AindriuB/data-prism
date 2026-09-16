@@ -64,6 +64,7 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismSharedBudgetPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContextOrchestrator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismStdioTransportRefused", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismMcpTransportPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismHttpTransportValidated", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismHttpTransport", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpSyncServer", Classification.REPLACEABLE, Guard.NONE),

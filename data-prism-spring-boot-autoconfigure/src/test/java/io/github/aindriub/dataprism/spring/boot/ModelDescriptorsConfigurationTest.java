@@ -13,10 +13,13 @@ import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -42,7 +45,15 @@ class ModelDescriptorsConfigurationTest {
     record DescriptorOnlyModel(String id, String name, String status) {
     }
 
-    private final ApplicationContextRunner context = new ApplicationContextRunner()
+    /**
+     * Migrated from {@code ApplicationContextRunner} to {@link
+     * WebApplicationContextRunner} (task 39): the new {@code
+     * dataPrismMcpTransportPreflight} refuses a non-web context at the default
+     * {@code dataprism.transport.mode=HTTP}. Every assertion below is unchanged;
+     * only the runner type and the addition of {@link ReviewedIntegrations
+     * #callerExtractor()} changed.
+     */
+    private final WebApplicationContextRunner context = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
             .withUserConfiguration(ReviewedIntegrations.class)
             .withPropertyValues(valid());
@@ -195,6 +206,11 @@ class ModelDescriptorsConfigurationTest {
         @Bean
         PrivacyMetrics metrics() {
             return PrivacyMetrics.none();
+        }
+
+        @Bean
+        McpTransportContextExtractor<HttpServletRequest> callerExtractor() {
+            return request -> McpTransportContext.EMPTY;
         }
     }
 }
