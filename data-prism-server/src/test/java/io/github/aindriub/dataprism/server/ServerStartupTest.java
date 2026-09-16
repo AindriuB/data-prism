@@ -78,6 +78,20 @@ class ServerStartupTest {
     }
 
     @Test
+    void stdioTransportModeRefusesStartup() {
+        String[] stdioConfiguration = java.util.stream.Stream.concat(
+                java.util.Arrays.stream(validConfiguration()),
+                java.util.stream.Stream.of("--dataprism.transport.mode=stdio",
+                        "--dataprism.transport.fixture-development=true"))
+                .toArray(String[]::new);
+        Throwable failure = catchThrowable(() -> {
+            try (var ignored = start(true, stdioConfiguration)) { }
+        });
+
+        assertConfigurationFailure(failure, "STANDALONE_HTTP_ONLY");
+    }
+
+    @Test
     void providerReferenceWithoutAReviewedResolverRefusesStartup() {
         Throwable failure = catchThrowable(() -> {
             try (var ignored = start(true, false, true, validConfiguration())) { }
