@@ -20,9 +20,12 @@ import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
 import io.github.aindriub.dataprism.validation.Violation;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -54,7 +57,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PrivacyExtensionPointsTest {
 
-    private final ApplicationContextRunner context = new ApplicationContextRunner()
+    /**
+     * Migrated from {@code ApplicationContextRunner} to {@link
+     * WebApplicationContextRunner} (task 39): the new {@code
+     * dataPrismMcpTransportPreflight} refuses a non-web context at the default
+     * {@code dataprism.transport.mode=HTTP}. Every assertion below is unchanged;
+     * only the runner type and the addition of {@link ReviewedIntegrations
+     * #callerExtractor()} changed.
+     */
+    private final WebApplicationContextRunner context = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
             .withPropertyValues(valid());
 
@@ -136,6 +147,7 @@ class PrivacyExtensionPointsTest {
         @Bean HmacKeyReferenceResolver keys() { return (id, reference) -> (reference + ":" + id + ":resolved-key-material").getBytes(); }
         @Bean AuditSink audit() { return event -> { }; }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
+        @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor() { return request -> McpTransportContext.EMPTY; }
     }
 
     @Configuration(proxyBeanMethods = false)

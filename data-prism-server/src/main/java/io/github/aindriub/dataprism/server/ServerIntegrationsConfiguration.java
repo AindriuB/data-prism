@@ -17,6 +17,12 @@ import java.nio.charset.StandardCharsets;
 /** Production integrations that are independent of an organisation's source schema. */
 @Configuration(proxyBeanMethods = false)
 class ServerIntegrationsConfiguration {
+    /**
+     * STANDALONE_HTTP_ONLY is one of four codes meaning "this deployment has no
+     * usable MCP transport"; see the Javadoc on {@code DataPrismAutoConfiguration
+     * #dataPrismMcpTransportPreflight} in {@code data-prism-spring-boot-autoconfigure}
+     * for the full map and why they are not one.
+     */
     @Bean
     Object standaloneTransportValidated(DataPrismProperties properties) {
         if (properties.getTransport().isFixtureDevelopment()
