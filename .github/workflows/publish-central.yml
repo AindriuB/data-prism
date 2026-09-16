@@ -14,6 +14,13 @@ name: publish-central
 #   step — see the task 36 hand-off), the run pauses for manual approval
 #   before anything reaches Central even when dispatched. Nothing in this
 #   file, on its own, can publish a tag push straight to Central.
+#
+# CENTRAL_TOKEN_USERNAME and CENTRAL_TOKEN_PASSWORD are expected to be scoped
+# to the `central` GitHub Environment, not the repository: only `publish`
+# requests that environment, so `stage` — which runs unattended on every tag
+# push — cannot read them even if someone adds `environment:` to it later by
+# mistake. `stage` has no `mvn deploy` step and so no use for them anyway;
+# do not add them back there.
 on:
   push:
     tags: ["v*"]
@@ -28,19 +35,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No server-id/server-username/server-password here: `stage` stops at
+      # `verify`, one phase short of `deploy`, and never talks to Central, so
+      # it has no use for CENTRAL_TOKEN_USERNAME/CENTRAL_TOKEN_PASSWORD. Those
+      # two secrets are expected to live in the `central` GitHub Environment's
+      # own scope, not the repository's, so only the approval-gated `publish`
+      # job below — which requests that environment — can read them at all.
+      # Do not add them back here; a job that can read the Central token no
+      # longer needs a human in the loop to reach Central.
       - uses: actions/setup-java@v4
         with:
           java-version: "21"
           distribution: temurin
           cache: maven
-          server-id: central
-          server-username: CENTRAL_TOKEN_USERNAME
-          server-password: CENTRAL_TOKEN_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: GPG_PASSPHRASE
         env:
-          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
       # A tag whose name disagrees with the reactor version would attach
@@ -63,8 +73,6 @@ jobs:
       # Central regardless of which secrets are present.
       - name: Build, test, sign and package (release profile)
         env:
-          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B --no-transfer-progress -Prelease clean verify
 
