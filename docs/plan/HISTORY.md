@@ -17,6 +17,54 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-16 — Task 40: publish the server image for linux/amd64 and linux/arm64
+
+`ghcr.io/aindriub/data-prism-server` was published amd64-only, and the
+(unpublished) MCP registry entry points strangers at exactly that coordinate —
+a large share of them on Apple Silicon. `docker save`/`load` cannot carry a
+multi-arch manifest list, so this was a rebuild of `publish-image.yml`'s
+shape, not a `--platform` flag: the old build → verify → save → artifact →
+load → push pipeline is replaced with a native per-architecture matrix
+(`ubuntu-latest` for amd64, `ubuntu-24.04-arm` for arm64), each leg building
+its own image, verifying the no-config refusal on its own native hardware,
+and pushing by digest, with a final job needing both legs and assembling the
+two digests into the `:0.1.0` and `:latest` manifest lists. No QEMU, no
+partial-publish path: if the arm64 runner is unavailable, the job fails
+outright rather than shipping an amd64-only manifest. Merged through a
+protected, green pull request (#64).
+
+GitHub Actions run 35162338759 (`workflow_dispatch` on the branch) proved two
+things local execution and code reading could not: `ubuntu-24.04-arm`
+resolves to a real GitHub arm64 runner and the no-config refusal verification
+succeeded there natively, not under emulation; and every registry-touching
+step in both matrix legs, plus the publish job, correctly skipped on a
+non-tag ref, with the publish job skipped entirely.
+
+**Cost:** the default `docker buildx` driver rejects `push-by-digest=true`
+("not implemented for docker driver") — the whole digest-push design would
+have failed on first real use. Fixed with a
+`docker buildx create --driver docker-container --use --bootstrap` step ahead
+of the build. The implementer was explicit that inspection alone would not
+have found this; it took actually running the build. The reviewer also found
+a gap worth keeping in mind rather than fixing: the image that gets pushed is
+a *second* `buildx build`, not the `--load`ed artifact that was verified —
+they are identical only because the builder's cache is warm, seconds apart in
+the same job. The guarantee this workflow gives is "verified a build that
+should be byte-identical to the one pushed", not "the verified bytes were
+pushed"; low risk, but a real distinction. Two paths remain undemonstrated by
+any actual run rather than merely reasoned about: the tag-push no-write case
+(the only `v*`-tag run, 35153755398, was against the *old* workflow), and the
+digest-push/`jq`/`--metadata-file` steps themselves (skipped in the only run
+that exercised this workflow, since it ran on a branch) — the first real
+release-tag dispatch will be their first execution. The image is re-pushed as
+`:0.1.0` rather than cut as a new version, because nothing external
+references it yet: the MCP registry entry is unpublished and the only puller
+so far is this project's own demo; that option expires once the registry
+entry goes live. The reviewer separately confirmed, rather than assumed, that
+`publish-mcp.yml`'s `docker manifest inspect` pullability guard is satisfied
+by a manifest list, so no successor task is needed there. `server.json`
+needed no platform change; only `README.md` did.
+
 ## 2026-09-16 — Task 38: the MCP registry entry, and the release plan is complete
 
 Closes the release plan opened 2026-09-16 (tasks 33-39). Merged through a
