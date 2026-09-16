@@ -47,6 +47,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The tag guard below only reads .version, and the image guard further
+      # down only reads .packages[0].version — two independent fields that
+      # both have to name the same release. Asserting they agree first means
+      # a drifted server.json (say, .version bumped to 0.2.0 without bumping
+      # the packages entry) fails loudly here instead of letting the tag
+      # guard pass on the stale .packages[0].version and publish an entry
+      # pointing at the wrong image.
+      - name: Assert server.json's top-level and package versions agree
+        run: |
+          top_version="$(jq -r '.version' server.json)"
+          package_version="$(jq -r '.packages[0].version' server.json)"
+          if [ "$top_version" != "$package_version" ]; then
+            echo "::error::server.json .version (${top_version}) and .packages[0].version (${package_version}) disagree"
+            exit 1
+          fi
+
       # A tag whose name disagrees with server.json's own version would
       # register a mislabelled entry. Bound once via env: rather than
       # interpolating ${{ }} straight into the script.
@@ -73,7 +89,7 @@ jobs:
         run: |
           image="ghcr.io/aindriub/data-prism-server:$(jq -r '.packages[0].version' server.json)"
           if ! docker manifest inspect "$image" >/dev/null 2>&1; then
-            echo "::error::${image} is not pullable yet; dispatch publish-image.yml for this tag first"
+            echo "::error::${image} is not pullable anonymously. Either publish-image.yml has not been dispatched for this tag yet, or the ghcr.io/aindriub/data-prism-server package is not public — check both before retrying."
             exit 1
           fi
 
