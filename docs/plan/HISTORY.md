@@ -17,6 +17,68 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-16 — Tasks 33, 34, 35: 0.1.0 cut, release hygiene files, stdio refuses instead of serving nothing
+
+Three tasks opening the release wave. All merged through protected, green pull
+requests (#41, #42, #43).
+
+Task 33 cut the 0.1.0 release version across the reactor and added a
+tag-triggered GitHub Release workflow. `release.yml` has no deploy phase and no
+`packages:`/`id-token:` permission, so it cannot publish to Maven Central or a
+container registry on its own — that is left to tasks 36 and 37, which now
+have a version to publish.
+
+Task 34 added `CHANGELOG.md`, `SECURITY.md`, `dependabot.yml`, and a
+`CONTRIBUTING.md` security section. The branch shipped with a personal email
+as `SECURITY.md`'s fallback contact; the reviewer caught it and it was fixed
+by an amendment on the same branch before merge — GitHub private vulnerability
+reporting is now the sole channel, `rg -i 'aindriubannister|@gmail'` over the
+worktree returned no matches, and the supported-version table row was
+generalised to "Latest released version".
+
+Task 35 made `dataprism.transport.mode=stdio` refuse startup unconditionally
+in the shared Spring auto-configuration (`DataPrismAutoConfiguration`'s new
+`dataPrismStdioTransportRefused` bean, `STDIO_TRANSPORT_UNSUPPORTED`), closing
+the fail-open where a starter or standalone-server context configured for
+stdio previously started with no MCP transport at all. `docs/configuration.md`
+line 55 (the `dataprism.transport` vocabulary row) said `stdio` was
+fixture-development-reachable; that is now false and has been corrected here.
+`dataprism.transport.fixture-development=true` is consequently unreachable
+everywhere in the Spring surface — `ConfiguredJsonSourcesInitializer`'s
+plaintext-loopback relaxation and `DataPrismContractValidator`'s zero-source
+early return are dead-in-effect paths (still executed, still pinned by tests,
+judged safe to leave as debt rather than removed here), and
+`data-prism-connectors-rest`'s own `fixture-development` read is dead code.
+Reviewer 35 also found a second fail-open outside this task's scope: the MCP
+HTTP transport beans are `@ConditionalOnWebApplication`, so a non-web starter
+application at the *default* `mode=HTTP` starts with no transport and no
+refusal either. That is now task 39, opened depending on 35.
+
+A single serialized full-reactor `mvn -B clean verify` from the main checkout
+after all three merges — not any individual tester's run — gives 462 tests, 0
+failures, 0 errors, 19 modules.
+
+**Cost:** One tester (34) reported "920 passed"; that number is a double-count
+of surefire and failsafe report files on a branch that touches no test code at
+all, and was not used. Testers 33 and 35, run on the same reactor, correctly
+reported 460 and 462. The serialized re-run here (`find ... surefire-reports
+... failsafe-reports`, summed per-module aggregate lines only, not per-class
+lines, to avoid the same double-count) confirms 462. Do not sum per-class
+`Tests run:` lines from a `mvn` log across both report directories — count the
+one aggregate line per module instead, or the failsafe integration-test
+modules get counted twice.
+
+The planner's task-file commit for this wave (`1c22663`, adding task files
+33-38) was made directly to a local `main` that had already diverged from
+`origin/main`, rather than through a PR — inconsistent with this repository's
+protected-branch flow (`docs/workflow.md`, Phase 4). It reached `origin/main`
+only because one of the three worktrees (task 35's) happened to be branched
+from that local `main` after the stray commit landed, carrying it along
+through PR #43's merge. It worked here by coincidence, not by design; a wave
+whose worktrees are all branched before a stray local commit would leave that
+commit permanently unreachable from `origin/main`. Planner commits need the
+same PR discipline as every other change to this repository.
+
 ## 2026-09-15 — Simplification wave 2 (tasks 31-32): descriptor resolver wired, data-prism-audit merged into core
 
 Two tasks closing the remaining dead-code and module-count debt from the
