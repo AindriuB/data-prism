@@ -34,13 +34,7 @@ accompanied by a mutation proving it fails when the protection is removed.
 
 ## Reporting a security issue
 
-Do not open a public issue. The privacy engine and the response validator are
-security-critical: a defect in either can disclose personal data. Report
-privately through GitHub's security advisory form on this repository.
-
-Findings in `docs/design-review.md` and `docs/pack.md` are published
-deliberately — the threat model is public on purpose, and describing a weakness
-already documented there is not a vulnerability report.
+See `SECURITY.md`.
 
 ## Development setup
 
