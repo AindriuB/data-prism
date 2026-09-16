@@ -11,6 +11,22 @@
   <artifactId>data-prism-spring-boot-starter</artifactId>
   <name>Data Prism :: Spring Boot starter</name>
   <description>Dependency-only entry point for embedding the protected HTTP MCP endpoint.</description>
+
+  <properties>
+    <!-- Sources jar generation is NOT skipped: package-info.java gives this
+         module real, non-empty sources content. Javadoc generation IS
+         skipped: this package holds only package-info.java (deliberately —
+         it is a dependency-only aggregator with no code of its own), and the
+         standard javadoc tool hard-errors "No public or protected classes
+         found to document" for a package with zero types, regardless of
+         visibility flags — confirmed directly against `javadoc` outside
+         Maven, not a doclint or plugin-config issue this pom can route
+         around. Fixing this needs one real (even trivial) public type added
+         to the package; tracked rather than silently worked around, see the
+         task 36 hand-off. -->
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>io.github.aindriub</groupId>
