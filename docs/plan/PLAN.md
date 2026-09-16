@@ -179,7 +179,7 @@ With 31 and 32 closed, the simplification plan opened 2026-09-15 has no task
 left: waves 1 and 2 closed every item it named. Superseded by the release plan
 below, opened the next day.
 
-### Release plan (tasks 33-39) — in progress
+### Release plan (tasks 33-39) — done. The release plan is done.
 
 Opened 2026-09-16: cutting a publishable 0.1.0. Tasks 33, 34 and 35 merged
 through protected, green pull requests (#41, #42, #43) the same day — 0.1.0
@@ -190,17 +190,36 @@ requests (#57, #58, #59) the same day — Maven Central publishing for the 12
 deployable modules (36), the fixture-free distributable server image behind
 gated, unpublished workflows (37), and the default-`mode=HTTP` non-web
 transport fail-open closed with a new `MCP_TRANSPORT_UNAVAILABLE` code (39).
-Post-merge serialized full-reactor re-run after 36/37/39: 466 tests, 0
-failures. See `docs/plan/HISTORY.md` — grep `Tasks 33, 34, 35` and
-`Tasks 36, 37, 39` — for what landed and what each cost, including the
-corrected test counts, the fail-open's dependence on three modules' tests, and
-the amended (not silently retired) task 37 refusal-code criterion.
+Task 38 merged through a protected, green pull request (#61) the next day —
+the MCP registry entry (`server.json`, `mcp-name` marker, `publish-mcp.yml`),
+which closed a defect that would have shipped a broken public onboarding
+contract: a required environment variable that does not bind under Spring
+Boot's relaxed map-key rules for a hyphenated prefix. See `docs/plan/HISTORY.md`
+— grep `Tasks 33, 34, 35`, `Tasks 36, 37, 39`, and `Task 38` — for what
+landed and what each cost, including the corrected test counts, the
+fail-open's dependence on three modules' tests, the amended task 37
+refusal-code criterion, and the env-var spelling defect.
 
-Open:
+With 38 closed, every task the release plan named is done. No task file
+remains under `docs/plan/tasks/`. **Nothing left is development work** — what
+remains is an owner-driven publish sequence, in order, because the ordering
+is load-bearing:
 
-- **Task 38 — publish the MCP registry entry with an honest env contract.**
-  Depends on 33 and 37, both now done — 38 is unblocked. Its registry
-  namespace claim is owner-only and remains outstanding.
+1. Tag `v0.1.0`. `release.yml` creates the GitHub Release; all three publish
+   workflows run their verify halves only — nothing publishes from a tag
+   alone.
+2. Manually dispatch `publish-image.yml` on that tag. Pushes
+   `ghcr.io/aindriub/data-prism-server:0.1.0`.
+3. Make the GHCR package public. Newly pushed GHCR packages are private by
+   default; until this is done, `publish-mcp.yml`'s pullability guard cannot
+   verify the image, and neither can a consumer pull it.
+4. Manually dispatch `publish-central.yml` on that tag. Stages a bundle on
+   the Central Portal; `autoPublish` is false, so the owner inspects and
+   releases it by hand. **This step is irreversible** — a released Central
+   version can never be deleted or altered.
+5. Manually dispatch `publish-mcp.yml` on that tag. Publishes the registry
+   entry; requires steps 2 and 3 to have already happened, and the workflow
+   itself refuses if the image is not yet pullable.
 
 Owner actions outstanding, none of which any agent can perform:
 
@@ -209,8 +228,13 @@ Owner actions outstanding, none of which any agent can perform:
 - `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` should move from
   repository secrets to the `central` environment's scope, now that
   `publish-central.yml`'s stage job no longer references them.
-- Task 38 needs an owner-only MCP registry namespace claim before it can
-  publish.
+- The MCP registry namespace claim (`io.github.aindriub`) happens via GitHub
+  OIDC at `publish-mcp.yml` dispatch time — no separate owner action, but the
+  dispatching identity must be the repository owner's.
+
+**Nothing is scheduled past this point in this plan.** Picking anything up
+from "Someday" below is a new planning decision, not a continuation of this
+plan.
 
 ## Remaining slices past the adopted core
 
