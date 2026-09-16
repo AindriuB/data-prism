@@ -1,0 +1,9 @@
+# Keeps the distribution image's build context small and reproducible: none
+# of this belongs in an image build, and copying it in only slows the build
+# (target/) or risks it (a worktree's own .git/.worktrees state).
+.git
+.worktrees/
+.claude/
+**/target/
+*.log
+logs/
