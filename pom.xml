@@ -12,6 +12,7 @@
 
   <name>Data Prism</name>
   <description>A privacy layer between MCP clients and enterprise APIs.</description>
+  <url>https://github.com/AindriuB/data-prism</url>
 
   <licenses>
     <license>
@@ -19,6 +20,21 @@
       <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
     </license>
   </licenses>
+
+  <developers>
+    <developer>
+      <id>AindriuB</id>
+      <name>Andrew Bannister</name>
+      <email>aindriubannister@gmail.com</email>
+      <url>https://github.com/AindriuB</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/AindriuB/data-prism.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/AindriuB/data-prism.git</developerConnection>
+    <url>https://github.com/AindriuB/data-prism</url>
+  </scm>
 
   <modules>
     <module>data-prism-annotations</module>
@@ -58,6 +74,14 @@
     <enforcer.version>3.6.3</enforcer.version>
     <compiler.version>3.16.0</compiler.version>
     <surefire.version>3.6.0</surefire.version>
+
+    <!-- Used only inside the `release` profile below: sources/javadoc jars,
+         signing and the Central Portal publishing plugin. Never resolved by
+         a plain `mvn verify`. -->
+    <source-plugin.version>3.3.1</source-plugin.version>
+    <javadoc-plugin.version>3.12.0</javadoc-plugin.version>
+    <gpg-plugin.version>3.2.8</gpg-plugin.version>
+    <central-publishing-plugin.version>0.11.0</central-publishing-plugin.version>
   </properties>
 
   <dependencyManagement>
@@ -239,5 +263,73 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <!-- Sources/javadoc jars, GPG signing and the Central Portal publishing
+           plugin all live here, not in the default build: they need a GPG
+           key and slow javadoc generation that a developer's everyday `mvn
+           verify` must not require. Activated explicitly with `-Prelease`;
+           publish-central.yml is the only caller that does so, and only
+           when triggered manually. -->
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>${source-plugin.version}</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals><goal>jar-no-fork</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>${javadoc-plugin.version}</version>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>${gpg-plugin.version}</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <!-- Replaces the classic maven-deploy-plugin/distributionManagement
+                 pair: the Central Portal is reached through this plugin alone,
+                 configured with the server id whose credentials
+                 publish-central.yml supplies from CENTRAL_TOKEN_USERNAME and
+                 CENTRAL_TOKEN_PASSWORD. autoPublish stays false so a `deploy`
+                 only stages a bundle for the owner to release by hand at
+                 central.sonatype.com — this task stops short of the first
+                 real publish, see the task's Out of scope. -->
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>${central-publishing-plugin.version}</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>false</autoPublish>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 
 </project>
