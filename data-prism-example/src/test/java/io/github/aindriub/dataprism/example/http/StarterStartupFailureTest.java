@@ -21,19 +21,11 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 class StarterStartupFailureTest {
 
     /**
-     * Until task 39, this test (and {@link #httpFixtureDevelopmentPreventsTheApplicationStarting()})
-     * ran the application at {@code WebApplicationType.NONE} on the default/explicit HTTP
-     * transport mode, and asserted the refusal each was written for —
-     * {@code UNRESOLVED_SOURCE_ADAPTER} here, {@code FIXTURE_DEVELOPMENT_STDIO_ONLY} there.
-     * Task 39 added {@code dataPrismMcpTransportPreflight}, which correctly refuses exactly
-     * that combination with {@code MCP_TRANSPORT_UNAVAILABLE} before any later singleton —
-     * including the source-adapter and fixture-development checks these two tests exist to
-     * prove — is ever reached. Both tests were themselves relying on the fail-open task 39
-     * closes: once the preflight was added they started failing with
-     * {@code MCP_TRANSPORT_UNAVAILABLE} instead of their own codes, the strongest evidence the
-     * defect was real. They now run as a genuine servlet web application on an ephemeral port
-     * ({@link #startAsServlet}), which keeps the new preflight from firing so each test still
-     * reaches, and still proves, the refusal it was written for.
+     * Runs as a genuine servlet web application ({@link #startAsServlet}), not {@code
+     * WebApplicationType.NONE}: at that type, {@code dataPrismMcpTransportPreflight}
+     * refuses with {@code MCP_TRANSPORT_UNAVAILABLE} before the source-adapter check
+     * below is ever reached. Same reasoning applies to
+     * {@link #httpFixtureDevelopmentPreventsTheApplicationStarting()}.
      */
     @Test
     void missingAdapterPreventsTheApplicationStarting() {
@@ -58,10 +50,8 @@ class StarterStartupFailureTest {
     }
 
     /**
-     * Pins task 39's own refusal directly, rather than relying on it only being exercised as
-     * a side effect of the other tests in this class: a non-web application at the default
-     * HTTP transport mode has no MCP transport bean registered at all and must refuse with
-     * {@code MCP_TRANSPORT_UNAVAILABLE}.
+     * Pins {@code MCP_TRANSPORT_UNAVAILABLE} directly, rather than only as a side effect of
+     * the other tests in this class.
      */
     @Test
     void nonWebApplicationAtDefaultHttpModeRefusesWithNoTransportAvailable() {
@@ -110,12 +100,7 @@ class StarterStartupFailureTest {
         return configuration;
     }
 
-    /**
-     * {@code validConfiguration()} plus {@code --server.port=0} (an ephemeral port), for the
-     * tests that must run as a genuine servlet web application so task 39's
-     * {@code dataPrismMcpTransportPreflight} does not fire ahead of the refusal each is
-     * written to prove. See the Javadoc on {@link #missingAdapterPreventsTheApplicationStarting()}.
-     */
+    /** {@code validConfiguration()} plus {@code --server.port=0} (an ephemeral port). */
     private static String[] servletConfiguration() {
         return withServerPort(validConfiguration());
     }

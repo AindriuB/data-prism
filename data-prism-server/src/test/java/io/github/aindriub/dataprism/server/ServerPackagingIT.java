@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -180,20 +181,13 @@ class ServerPackagingIT {
     }
 
     /**
-     * Until task 39, this ran the packaged server with {@code
-     * spring.main.web-application-type=none} and asserted only that the process
-     * exited zero — a non-web start-then-exit used purely as a cheap liveness
-     * probe. Task 39 makes exactly that combination (non-web, default {@code
-     * dataprism.transport.mode=HTTP}) refuse startup, so this test was actually
-     * relying on the fail-open shape that task closes: the strongest available
-     * evidence that defect was real, not hypothetical, is that fixing it broke
-     * this test. It now runs as a genuine servlet web application ({@code
-     * server.port=0} for an ephemeral port) and asserts on {@link
-     * ReviewedExtension#ADAPTER_LOADED_MARKER}, printed only from inside the
-     * extension's own {@code customerAdapter()} bean method — proof the
-     * loader-path extension's {@code DataSourceAdapter} bean was actually
-     * constructed, not merely that the process didn't crash or that Spring
-     * logged a generic startup banner.
+     * Runs as a genuine servlet web application ({@code server.port=0}), not {@code
+     * web-application-type=none}: at that type {@code dataPrismMcpTransportPreflight}
+     * refuses before startup completes. Asserts two things separately, since one does
+     * not imply the other: {@link ReviewedExtension#ADAPTER_LOADED_MARKER} (printed only
+     * from inside the extension's own {@code customerAdapter()} bean method) proves the
+     * loader-path extension's bean was constructed; the {@code Tomcat started on port}
+     * line proves startup went on to actually complete.
      */
     @Test
     void executableLoadsAReviewedAdapterExtensionFromLoaderPath() throws Exception {
@@ -214,13 +208,19 @@ class ServerPackagingIT {
             builder.redirectErrorStream(true);
             process = builder.start();
 
-            String output = awaitOutputContaining(process, ReviewedExtension.ADAPTER_LOADED_MARKER,
+            String output = awaitOutputMatching(process,
+                    captured -> captured.contains(ReviewedExtension.ADAPTER_LOADED_MARKER)
+                            && TOMCAT_STARTED.matcher(captured).find(),
                     Duration.ofSeconds(20));
 
             assertThat(output)
                     .as("packaged server never printed %s, so the reviewed extension's DataSourceAdapter bean "
                             + "was never constructed: %s", ReviewedExtension.ADAPTER_LOADED_MARKER, output)
                     .contains(ReviewedExtension.ADAPTER_LOADED_MARKER);
+            assertThat(TOMCAT_STARTED.matcher(output).find())
+                    .as("packaged server never logged a bound Tomcat port, so it never finished starting: %s",
+                            output)
+                    .isTrue();
         } finally {
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
@@ -229,18 +229,18 @@ class ServerPackagingIT {
         }
     }
 
+    private static final Pattern TOMCAT_STARTED = Pattern.compile("Tomcat started on port \\d+");
+
     /**
-     * Starts a daemon thread that drains {@code process}'s (merged) output into
-     * a shared buffer, then polls that buffer for {@code marker} until it
-     * appears, {@code process} exits, or {@code timeout} elapses — whichever
-     * comes first. Unlike {@code process.waitFor(...)}, this does not require
-     * the process to exit on its own: a successfully started servlet web
-     * application keeps running, so completion here is signalled by the marker
-     * appearing in output, not by process death. Returns whatever was captured,
-     * for a diagnosable failure message either way.
+     * Starts a daemon thread that drains {@code process}'s (merged) output into a shared
+     * buffer, then polls that buffer against {@code condition} until it is satisfied,
+     * {@code process} exits, or {@code timeout} elapses — whichever comes first. Unlike
+     * {@code process.waitFor(...)}, this does not require the process to exit on its own:
+     * a successfully started servlet web application keeps running. Returns whatever was
+     * captured, for a diagnosable failure message either way.
      */
-    private static String awaitOutputContaining(Process process, String marker, Duration timeout)
-            throws InterruptedException {
+    private static String awaitOutputMatching(Process process, java.util.function.Predicate<String> condition,
+            Duration timeout) throws InterruptedException {
         StringBuilder captured = new StringBuilder();
         Thread pump = new Thread(() -> {
             try (BufferedReader reader =
@@ -261,7 +261,7 @@ class ServerPackagingIT {
         Instant deadline = Instant.now().plus(timeout);
         while (Instant.now().isBefore(deadline)) {
             synchronized (captured) {
-                if (captured.indexOf(marker) >= 0) {
+                if (condition.test(captured.toString())) {
                     return captured.toString();
                 }
             }

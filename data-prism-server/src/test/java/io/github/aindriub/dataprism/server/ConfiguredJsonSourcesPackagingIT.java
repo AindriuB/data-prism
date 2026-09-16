@@ -62,36 +62,15 @@ class ConfiguredJsonSourcesPackagingIT {
     }
 
     /**
-     * Until task 39, this ran the packaged server with {@code
-     * spring.main.web-application-type=none} and asserted only that the process
-     * exited zero — a non-web start-then-exit used purely as a cheap liveness
-     * probe. Task 39 makes exactly that combination (non-web, default {@code
-     * dataprism.transport.mode=HTTP}) refuse startup, so this test was actually
-     * relying on the fail-open shape that task closes: the strongest available
-     * evidence that defect was real, not hypothetical, is that fixing it broke
-     * this test.
-     *
-     * <p>It now runs as a genuine servlet web application ({@code
-     * server.port=0} for an ephemeral port) and, once Tomcat reports the bound
-     * port, makes a real unauthenticated request to {@code /health} and asserts
-     * {@code 200}. That line ({@code Tomcat started on port ...}) is logged by
-     * {@code ServletWebServerApplicationContext.finishRefresh()}, which Spring
-     * only reaches after every singleton — including {@code
-     * DataPrismContractValidator}, which refuses startup with {@code
-     * UNRESOLVED_SOURCE_ADAPTER} unless a {@code DataSourceAdapter} bean exists
-     * for every {@code dataprism.sources} entry {@link #validArguments()}
-     * configures — has already been constructed without error. That is the same
-     * causal gate the original exit-code assertion relied on, so this keeps the
-     * same guarantee: the request can only succeed if {@code
+     * Runs as a genuine servlet web application ({@code server.port=0}), not {@code
+     * web-application-type=none}, so the new preflight does not refuse it. Once Tomcat
+     * logs its bound port — reachable only after every singleton, including the
+     * adapter-dependent {@code DataPrismContractValidator}, constructs without error —
+     * makes a real {@code GET /health} and asserts {@code 200}: proof {@code
      * ConfiguredJsonSourcesAutoConfiguration}/{@code ConfiguredJsonSourcesInitializer}
-     * actually parsed the catalogue on the loader path and registered the
-     * {@code packaging-test-api} adapter it names. Unlike task 39's own
-     * {@code ServerPackagingIT.executableLoadsAReviewedAdapterExtensionFromLoaderPath},
-     * this test cannot print an adapter-construction marker of its own: the
-     * adapter is built by {@code data-prism-connectors-rest}'s production code
-     * (via {@code ApplicationContextInitializer.registerSingleton}, not a
-     * {@code @Bean} method this file can override), which this task does not
-     * own.
+     * actually parsed the catalogue and registered the {@code packaging-test-api}
+     * adapter. Unlike {@link ServerPackagingIT}'s marker, this module doesn't own the
+     * adapter's construction code, so it can't print one of its own.
      */
     @Test
     void packagedServerStartsWithAConfiguredJsonSourceExtensionOnTheLoaderPath() throws Exception {
@@ -125,16 +104,10 @@ class ConfiguredJsonSourcesPackagingIT {
     }
 
     /**
-     * Starts the packaged server exactly as {@link #run(Path)} does, but does
-     * not wait for the process to exit — a successfully started servlet web
-     * application keeps running. Instead, waits for Tomcat's {@code Tomcat
-     * started on port ...} log line (logged only once every singleton,
-     * including the adapter-dependent {@code DataPrismContractValidator}, has
-     * already been constructed without error — see the Javadoc on {@link
-     * #packagedServerStartsWithAConfiguredJsonSourceExtensionOnTheLoaderPath()}),
-     * parses the bound port from it, and asserts an unauthenticated {@code
-     * GET /health} against that port returns {@code 200}. Always destroys the
-     * process before returning.
+     * Unlike {@link #run(Path)}, does not wait for the process to exit — a successful
+     * servlet start keeps running. Waits for Tomcat's {@code Tomcat started on port ...}
+     * line, parses the port, and asserts {@code GET /health} returns {@code 200}. Always
+     * destroys the process before returning.
      */
     private void assertServerStartsAndServesHealth(Path jsonSources) throws Exception {
         ProcessBuilder builder = buildProcess(jsonSources);
@@ -148,9 +121,11 @@ class ConfiguredJsonSourcesPackagingIT {
                     .isTrue();
             int port = Integer.parseInt(matcher.group(1));
 
-            HttpClient client = HttpClient.newHttpClient();
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
             HttpResponse<String> health = client.send(
-                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/health")).GET().build(),
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/health"))
+                            .timeout(Duration.ofSeconds(5))
+                            .GET().build(),
                     HttpResponse.BodyHandlers.ofString());
             assertThat(health.statusCode()).as("packaged server output: %s", output).isEqualTo(200);
         } finally {
