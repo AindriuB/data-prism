@@ -10,6 +10,30 @@ name: publish-image
 # this workflow by hand, choosing that tag as the ref, to publish it. A
 # dispatch left on a branch (the default when opening "Run workflow") never
 # satisfies the tag-ref check and never reaches GHCR.
+#
+# The image is published as a multi-architecture manifest list
+# (linux/amd64 + linux/arm64). A `docker save` / `docker load` tarball cannot
+# carry a manifest list, so each architecture is built, loaded and verified
+# natively — `ubuntu-latest` for amd64, `ubuntu-24.04-arm` for arm64 — inside
+# its own `build-and-verify` matrix leg, and only *that* leg's own gated steps
+# push its image, by digest, to GHCR. Because the matrix legs are now the
+# steps that write to the registry, not just the final `publish` job, every
+# guard that used to live only in `publish` — the tag-ref/dispatch condition
+# and the reactor-version comparison — is duplicated inside each matrix leg,
+# ahead of its own login step. A plain `v*` tag push, or a dispatch left on a
+# branch, must still produce no registry write of any kind, digest-only
+# pushes included: neither matrix leg's push/login/guard steps run outside
+# the gated condition, and the guard step is re-evaluated independently in
+# every job that logs in, rather than trusted from a sibling job or an
+# earlier step in the same job.
+#
+# The image is re-pushed as 0.1.0, not cut as a new version: nothing external
+# references it yet (the MCP registry entry from task 38 is merged but
+# deliberately unpublished, confirmed by a live registry search returning
+# zero results), so re-pushing a tag nobody has consumed costs nothing and
+# keeps server.json, the poms and the tag in agreement. This option expires
+# the moment the registry entry goes live — after that, a changed image needs
+# a new version.
 on:
   push:
     tags: ["v*"]
@@ -28,9 +52,29 @@ permissions:
 
 jobs:
   build-and-verify:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+
+      # The default "docker" buildx driver (what `docker buildx` uses on a
+      # freshly provisioned runner, same as on this developer's own machine)
+      # refuses `--output ...,push-by-digest=true` below with "push-by-digest
+      # is currently not implemented for docker driver" — verified locally
+      # before this step was added. A docker-container driver builder
+      # supports it. This does not touch platform emulation: no QEMU/binfmt
+      # is registered by this or any other step, so --platform below still
+      # only ever matches this leg's native runner architecture.
+      - name: Set up a buildx builder that supports push-by-digest
+        run: docker buildx create --name matrixbuilder --driver docker-container --use --bootstrap
 
       # Both ${{ }} expressions this step needs are laundered through env:
       # rather than interpolated straight into the script below.
@@ -53,18 +97,30 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # Native build, no emulation: matrix.platform always matches this leg's
+      # runner architecture (amd64 on ubuntu-latest, arm64 on
+      # ubuntu-24.04-arm), and no docker/setup-qemu-action or binfmt
+      # registration exists anywhere in this workflow. If a runner label ever
+      # resolved to the wrong host architecture, this step would fail loudly
+      # — buildx refuses a --platform it cannot satisfy natively rather than
+      # silently falling back to emulation — instead of quietly publishing an
+      # image built under QEMU.
+      #
       # steps.version.outputs.version carries the exact same dispatch-time
       # text as inputs.version above, just relayed through $GITHUB_OUTPUT —
       # laundering *where the value entered* the workflow does not launder
       # *every later place it is read*, so this step needs its own env:
-      # rather than trusting the previous step's fix to cover it.
+      # rather than trusting the earlier step's fix to cover it.
       - name: Build distributable image
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          docker build -f docker/distribution/Dockerfile \
-            -t "ghcr.io/aindriub/data-prism-server:${VERSION}" \
-            -t ghcr.io/aindriub/data-prism-server:latest \
+          docker buildx build -f docker/distribution/Dockerfile \
+            --platform "$PLATFORM" \
+            -t "ghcr.io/aindriub/data-prism-server:${VERSION}-${ARCH}" \
+            --load \
             .
 
       # A fail-open image must never reach the registry: run the image with
@@ -72,11 +128,16 @@ jobs:
       # non-zero with a named dataprism refusal, exactly the contract
       # DataPrismContractValidator and DataPrismProperties.validate() give
       # every deployment. This is the same check docs/plan/tasks/37 requires
-      # of a human running the image locally; here it gates the push.
+      # of a human running the image locally; here it gates the push — now on
+      # the native image for *this* architecture, run before any login or
+      # push step in this job.
       - name: Verify the image refuses to start with no configuration
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set +e
-          output="$(docker run --rm ghcr.io/aindriub/data-prism-server:latest 2>&1)"
+          output="$(docker run --rm "ghcr.io/aindriub/data-prism-server:${VERSION}-${ARCH}" 2>&1)"
           status=$?
           set -e
           echo "$output"
@@ -103,13 +164,91 @@ jobs:
           fi
           echo "refusal code: ${code}"
 
-      - name: Save built image for the publish job
-        run: docker save ghcr.io/aindriub/data-prism-server:latest -o /tmp/data-prism-server.tar
-
-      - uses: actions/upload-artifact@v4
+      # Everything from here down writes to the registry (a Maven download of
+      # the reactor version, a GHCR login, a digest push) and is gated on the
+      # exact condition the `publish` job below also carries at job level.
+      # It has to be repeated per step, not hoisted to a job-level `if:`,
+      # because the build and verification steps above must still run
+      # unguarded on every plain tag push — that is what proves each
+      # architecture fail-closed before anyone chooses to publish it.
+      - name: Set up JDK for reactor version check
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/setup-java@v4
         with:
-          name: data-prism-server-image
-          path: /tmp/data-prism-server.tar
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      # Repeated here rather than trusted from the `publish` job: this leg is
+      # itself a job that pushes to GHCR (by digest), so it fails closed on
+      # its own. This step's job-level trigger condition above already
+      # restricts it to a `v*` tag ref; this step additionally refuses if the
+      # version supplied at dispatch time disagrees with the reactor's own
+      # version, so a stale or mistyped dispatch input cannot publish a
+      # digest tagged with a version the jar inside it does not match.
+      - name: Guard dispatch version matches reactor version
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          if [ "$VERSION" != "$reactor_version" ]; then
+            echo "::error::dispatch version ${VERSION} does not match reactor version ${reactor_version}"
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # push-by-digest=true and name-canonical=true: this pushes the image's
+      # blobs and manifest to ghcr.io/aindriub/data-prism-server without
+      # creating any human-visible tag for this single-architecture image —
+      # only the final digest (captured below via --metadata-file) leaves
+      # this job. The `publish` job assembles the two digests (amd64, arm64)
+      # into the actual `:VERSION` and `:latest` manifest list tags; no
+      # per-architecture tag is ever published on its own. This rebuilds the
+      # image rather than re-pushing the --load result above (buildx has no
+      # "push what I already loaded" step), but reuses that build's layer
+      # cache on this same runner, so it costs a manifest push, not a
+      # rebuild.
+      - name: Push image by digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p /tmp/digest
+          docker buildx build -f docker/distribution/Dockerfile \
+            --platform "$PLATFORM" \
+            --output type=image,name=ghcr.io/aindriub/data-prism-server,push=true,push-by-digest=true,name-canonical=true \
+            --metadata-file /tmp/metadata.json \
+            .
+          digest="$(jq -r '."containerimage.digest"' /tmp/metadata.json)"
+          echo "$digest" > "/tmp/digest/${ARCH}"
+          echo "pushed digest: ${digest}"
+
+      - name: Upload digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digest/*
+          if-no-files-found: error
           retention-days: 1
 
   # Never runs from a plain tag push, and never from a workflow_dispatch off
@@ -120,6 +259,14 @@ jobs:
   # defect a review found in an earlier version of this job, which gated
   # only on workflow_dispatch and trusted the dispatch-time version input on
   # its own.
+  #
+  # `needs: build-and-verify` covers every expansion of that job's matrix:
+  # GitHub Actions only satisfies a `needs:` on a matrix job once every leg
+  # has succeeded, and neither that job nor this one uses `if: always()`,
+  # `continue-on-error` or `fail-fast: false` to let a missing or failed leg
+  # be skipped over. If the arm64 leg cannot even schedule — the
+  # `ubuntu-24.04-arm` label failing to resolve — the matrix job fails and
+  # this job never runs, so no path exists to an amd64-only manifest.
   publish:
     needs: build-and-verify
     if: >-
@@ -143,14 +290,15 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # Repeated here rather than trusted from build-and-verify: this is the
-      # job that actually pushes to GHCR, so it fails closed on its own,
-      # mirroring the guard shape used by the Maven Central publish workflow
-      # (task 36) before it deploys. The job's own `if:` above already
-      # restricts this to a `v*` tag ref; this step additionally refuses if
-      # the version supplied at dispatch time disagrees with the reactor's
-      # own version, so a stale or mistyped dispatch input cannot publish an
-      # image tagged with a version the jar inside it does not match.
+      # Repeated here rather than trusted from the matrix legs: this is the
+      # job that assembles and pushes the manifest list itself, so it fails
+      # closed on its own, mirroring the guard shape used by the Maven
+      # Central publish workflow (task 36) before it deploys. The job's own
+      # `if:` above already restricts this to a `v*` tag ref; this step
+      # additionally refuses if the version supplied at dispatch time
+      # disagrees with the reactor's own version, so a stale or mistyped
+      # dispatch input cannot publish a manifest list tagged with a version
+      # the digests underneath it do not match.
       - name: Guard dispatch version matches reactor version
         run: |
           reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
@@ -159,18 +307,16 @@ jobs:
             exit 1
           fi
 
+      # merge-multiple: true flattens both per-arch artifacts (each holding
+      # one file, named after its architecture) into a single directory
+      # rather than nesting them under artifact-name subdirectories, so the
+      # step below can read /tmp/digests/amd64 and /tmp/digests/arm64
+      # directly.
       - uses: actions/download-artifact@v4
         with:
-          name: data-prism-server-image
-          path: /tmp
-
-      - name: Load built image
-        run: docker load -i /tmp/data-prism-server.tar
-
-      - name: Tag image with the resolved version
-        run: |
-          docker tag ghcr.io/aindriub/data-prism-server:latest \
-            "ghcr.io/aindriub/data-prism-server:${VERSION}"
+          pattern: digest-*
+          path: /tmp/digests
+          merge-multiple: true
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -179,7 +325,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push linux/amd64 image
+      - name: Assemble and push manifest list
         run: |
-          docker push "ghcr.io/aindriub/data-prism-server:${VERSION}"
-          docker push ghcr.io/aindriub/data-prism-server:latest
+          amd64_digest="$(cat /tmp/digests/amd64)"
+          arm64_digest="$(cat /tmp/digests/arm64)"
+          docker buildx imagetools create \
+            -t "ghcr.io/aindriub/data-prism-server:${VERSION}" \
+            -t ghcr.io/aindriub/data-prism-server:latest \
+            "ghcr.io/aindriub/data-prism-server@${amd64_digest}" \
+            "ghcr.io/aindriub/data-prism-server@${arm64_digest}"
+
+      - name: Verify the pushed manifest lists cover both architectures
+        run: |
+          for tag in "${VERSION}" latest; do
+            archs="$(docker manifest inspect "ghcr.io/aindriub/data-prism-server:${tag}" \
+              | jq -r '.manifests[].platform.architecture' | sort)"
+            echo "${tag}: ${archs}"
+            echo "${archs}" | grep -qx amd64
+            echo "${archs}" | grep -qx arm64
+          done
