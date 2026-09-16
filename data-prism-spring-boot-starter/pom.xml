@@ -13,17 +13,25 @@
   <description>Dependency-only entry point for embedding the protected HTTP MCP endpoint.</description>
 
   <properties>
-    <!-- Sources jar generation is NOT skipped: package-info.java gives this
-         module real, non-empty sources content. Javadoc generation IS
-         skipped: this package holds only package-info.java (deliberately —
-         it is a dependency-only aggregator with no code of its own), and the
-         standard javadoc tool hard-errors "No public or protected classes
-         found to document" for a package with zero types, regardless of
-         visibility flags — confirmed directly against `javadoc` outside
-         Maven, not a doclint or plugin-config issue this pom can route
-         around. Fixing this needs one real (even trivial) public type added
-         to the package; tracked rather than silently worked around, see the
-         task 36 hand-off. -->
+    <!-- This module is a dependency-only aggregator; package-info.java is
+         deliberately its only source file, so its javadoc is genuinely
+         empty rather than merely unwritten. The standard javadoc tool
+         cannot generate even that empty page on its own: it hard-errors
+         "No public or protected classes found to document" for any package
+         holding only package-info.java, under every visibility flag
+         (-protected/-private/-public) — confirmed directly against
+         `javadoc` outside Maven, so this is a tool limitation, not a
+         doclint setting or a plugin-config gap this pom could route around
+         instead. A single real (even trivial) public type in the package
+         would satisfy the tool, but was rejected on purpose: it would put
+         real code in a module whose own package-info states it carries
+         none, purely to appease a file-presence check, which contradicts
+         the module's whole purpose. So maven-javadoc-plugin stays off for
+         this module (below), and maven-jar-plugin instead attaches a
+         second, genuinely empty archive under the `javadoc` classifier
+         (nothing but a manifest) — Central's file-presence check wants a
+         javadoc.jar to exist, and an empty one is the truthful artifact for
+         a module with no documentation to generate. -->
     <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
 
@@ -41,4 +49,28 @@
       <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+        <executions>
+          <execution>
+            <id>empty-javadoc-jar</id>
+            <phase>package</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classifier>javadoc</classifier>
+              <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+              <excludes>
+                <exclude>**/*</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
