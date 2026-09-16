@@ -81,7 +81,7 @@ class ConfiguredJsonSourcesPackagingIT {
         tempFiles.add(identityResolverExtension);
         writeIdentityResolverExtension(identityResolverExtension);
 
-        Path serverArtifact = Path.of("target", "data-prism-server-0.1.0-SNAPSHOT.jar").toAbsolutePath();
+        Path serverArtifact = Path.of("target", "data-prism-server-0.1.0.jar").toAbsolutePath();
 
         List<String> command = new ArrayList<>();
         command.add(javaCommand());
@@ -171,7 +171,7 @@ class ConfiguredJsonSourcesPackagingIT {
 
     private static Path connectorsRestJarPath() {
         Path jar = Path.of("..", "data-prism-connectors-rest", "target",
-                "data-prism-connectors-rest-0.1.0-SNAPSHOT.jar").toAbsolutePath().normalize();
+                "data-prism-connectors-rest-0.1.0.jar").toAbsolutePath().normalize();
         assertThat(Files.isRegularFile(jar))
                 .as("data-prism-connectors-rest jar not found at %s; the reactor build must produce it "
                         + "before data-prism-server's integration tests run", jar)
