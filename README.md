@@ -140,7 +140,7 @@ then load reviewed extension jars without rebuilding the server:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.1.0-SNAPSHOT.jar \
+  java -jar data-prism-server/target/data-prism-server-0.1.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 

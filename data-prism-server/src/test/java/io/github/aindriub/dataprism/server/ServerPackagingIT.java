@@ -74,7 +74,7 @@ class ServerPackagingIT {
      */
     @Test
     void executableUsesPropertiesLauncherAndContainsNoFixtureRuntime() throws IOException {
-        Path artifact = Path.of("target", "data-prism-server-0.1.0-SNAPSHOT.jar");
+        Path artifact = Path.of("target", "data-prism-server-0.1.0.jar");
         assertThat(Files.isRegularFile(artifact)).isTrue();
 
         try (JarFile jar = new JarFile(artifact.toFile())) {
@@ -177,7 +177,7 @@ class ServerPackagingIT {
 
     @Test
     void executableLoadsAReviewedAdapterExtensionFromLoaderPath() throws Exception {
-        Path artifact = Path.of("target", "data-prism-server-0.1.0-SNAPSHOT.jar").toAbsolutePath();
+        Path artifact = Path.of("target", "data-prism-server-0.1.0.jar").toAbsolutePath();
         Path extension = Files.createTempFile("data-prism-reviewed-extension-", ".jar");
         try {
             writeExtension(extension, ReviewedExtension.class);
@@ -205,7 +205,7 @@ class ServerPackagingIT {
 
     @Test
     void executableRefusesAnExtensionWithoutAnIdentityResolver() throws Exception {
-        Path artifact = Path.of("target", "data-prism-server-0.1.0-SNAPSHOT.jar").toAbsolutePath();
+        Path artifact = Path.of("target", "data-prism-server-0.1.0.jar").toAbsolutePath();
         Path extension = Files.createTempFile("data-prism-adapter-only-extension-", ".jar");
         try {
             writeExtension(extension, AdapterOnlyExtension.class);
@@ -334,7 +334,7 @@ class ServerPackagingIT {
 
         Path outer = Files.createTempFile("data-prism-packaging-positive-control-", ".jar");
         try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
-            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-example-0.1.0-SNAPSHOT.jar"));
+            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-example-0.1.0.jar"));
             outerOutput.write(Files.readAllBytes(nestedLib));
             outerOutput.closeEntry();
         } finally {
@@ -363,7 +363,7 @@ class ServerPackagingIT {
 
         Path outer = Files.createTempFile("data-prism-packaging-manifest-positive-control-", ".jar");
         try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
-            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-example-0.1.0-SNAPSHOT.jar"));
+            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-example-0.1.0.jar"));
             outerOutput.write(Files.readAllBytes(nestedLib));
             outerOutput.closeEntry();
         } finally {

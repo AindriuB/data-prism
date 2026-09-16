@@ -17,8 +17,8 @@ RUN mvn -B -q -pl data-prism-processor,data-prism-server,data-prism-quickstart-e
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-COPY --from=build /workspace/data-prism-server/target/data-prism-server-0.1.0-SNAPSHOT.jar /app/data-prism-server.jar
-COPY --from=build /workspace/data-prism-quickstart-extension/target/data-prism-quickstart-extension-0.1.0-SNAPSHOT.jar /app/data-prism-quickstart-extension.jar
+COPY --from=build /workspace/data-prism-server/target/data-prism-server-0.1.0.jar /app/data-prism-server.jar
+COPY --from=build /workspace/data-prism-quickstart-extension/target/data-prism-quickstart-extension-0.1.0.jar /app/data-prism-quickstart-extension.jar
 # Spring Boot's own convention: a jar started with working directory /app
 # auto-loads /app/config/application.yaml ahead of its own packaged defaults.
 COPY docker/server/application.yaml /app/config/application.yaml

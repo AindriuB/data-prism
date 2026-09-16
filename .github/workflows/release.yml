@@ -1,0 +1,36 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same JDK the build workflow verifies against, so a release never ships
+      # something the build check hasn't already proven compiles and passes.
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B --no-transfer-progress verify
+
+      # This workflow only turns a pushed tag into a GitHub Release. It does
+      # not publish to Maven Central (task 36) and does not build an image
+      # (task 37).
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
