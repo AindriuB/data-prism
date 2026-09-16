@@ -200,26 +200,39 @@ landed and what each cost, including the corrected test counts, the
 fail-open's dependence on three modules' tests, the amended task 37
 refusal-code criterion, and the env-var spelling defect.
 
-With 38 closed, every task the release plan named is done. No task file
-remains under `docs/plan/tasks/`. **Nothing left is development work** — what
-remains is an owner-driven publish sequence, in order, because the ordering
-is load-bearing:
+With 38 closed, every task the release plan named is done.
 
-1. Tag `v0.1.0`. `release.yml` creates the GitHub Release; all three publish
-   workflows run their verify halves only — nothing publishes from a tag
-   alone.
-2. Manually dispatch `publish-image.yml` on that tag. Pushes
-   `ghcr.io/aindriub/data-prism-server:0.1.0`.
-3. Make the GHCR package public. Newly pushed GHCR packages are private by
-   default; until this is done, `publish-mcp.yml`'s pullability guard cannot
-   verify the image, and neither can a consumer pull it.
-4. Manually dispatch `publish-central.yml` on that tag. Stages a bundle on
-   the Central Portal; `autoPublish` is false, so the owner inspects and
-   releases it by hand. **This step is irreversible** — a released Central
-   version can never be deleted or altered.
-5. Manually dispatch `publish-mcp.yml` on that tag. Publishes the registry
-   entry; requires steps 2 and 3 to have already happened, and the workflow
-   itself refuses if the image is not yet pullable.
+### Task 40 — done. No task file remains under `docs/plan/tasks/`.
+
+Opened 2026-09-16 after Maven Central 0.1.0 published: the GHCR server image
+was still amd64-only, and the (unpublished) MCP registry entry points strangers
+at it, a large share on Apple Silicon. Task 40 rebuilt `publish-image.yml` as a
+native per-architecture matrix — `ubuntu-latest` and `ubuntu-24.04-arm`, each
+verifying its own image on its own hardware before pushing by digest — with a
+final job assembling the two digests into a `linux/amd64` + `linux/arm64`
+manifest list. Merged through a protected, green pull request 2026-09-16 (#64).
+See `docs/plan/HISTORY.md` — grep `Task 40` — for what landed, the buildx
+driver bug only a real run caught, and the honest limits on what has and has
+not actually been exercised yet.
+
+**Nothing left is development work** — what remains is an owner-driven publish
+sequence, and the ordering matters:
+
+1. Manually dispatch `publish-image.yml` on the existing `v0.1.0` tag. This is
+   the first real execution of task 40's digest-push and manifest-assembly
+   steps — the only prior run of this workflow was against the old,
+   single-platform shape.
+2. Verify the manifest resolves per platform on real hardware: an x86_64
+   Ubuntu host should pull `amd64`, an Apple Silicon Mac should pull `arm64`.
+3. Manually dispatch `publish-mcp.yml` on the tag to publish the registry
+   entry, which requires the image to be pullable. The reviewer confirmed
+   `publish-mcp.yml`'s `docker manifest inspect` pullability guard is
+   satisfied by a manifest list, so no successor task is needed there.
+
+Maven Central 0.1.0 is already published and synced — repo1.maven.org serves
+`data-prism-core` and `data-prism-spring-boot-starter` 0.1.0, verified by
+building an external consumer project against an empty local repository. The
+GHCR package is already public from the prior amd64-only publish.
 
 Owner actions outstanding, none of which any agent can perform:
 
@@ -231,6 +244,24 @@ Owner actions outstanding, none of which any agent can perform:
 - The MCP registry namespace claim (`io.github.aindriub`) happens via GitHub
   OIDC at `publish-mcp.yml` dispatch time — no separate owner action, but the
   dispatching identity must be the repository owner's.
+
+### Dependabot PRs — open, unplanned, needs triage
+
+Twelve PRs (#44-#55) opened since task 34's `dependabot.yml` landed
+2026-09-16, none merged, none equally safe:
+
+- #54 bumps `spring-boot.version` 3.5.16 to 4.1.1 — a major version touching
+  the autoconfiguration ordering and `BeanFactoryPostProcessor` sequencing
+  tasks 35 and 39 just fixed.
+- #48-#53 move the Docker base images to Java 25/26 while every pom
+  deliberately targets `--release 21`.
+- #45, #47, #51 are Actions version bumps (`checkout`, `upload-artifact`,
+  `setup-java`) that would clear the Node 20 deprecation warnings and touch
+  the workflow task 40 just rewrote.
+- #55 is a `nimbus-jose-jwt` patch bump, the lowest-risk of the twelve.
+
+Not triaged here — that is a decision for whoever picks this item up, not
+something to plan in advance.
 
 **Nothing is scheduled past this point in this plan.** Picking anything up
 from "Someday" below is a new planning decision, not a continuation of this
