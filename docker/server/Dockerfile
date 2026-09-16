@@ -6,7 +6,7 @@
 # -Dloader.path at the bottom of this file — the same mechanism
 # ServerPackagingIT.executableLoadsAReviewedAdapterExtensionFromLoaderPath
 # proves in data-prism-server's own test suite.
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3-eclipse-temurin-26 AS build
 WORKDIR /workspace
 COPY . .
 # data-prism-processor is named explicitly: data-prism-quickstart-extension
