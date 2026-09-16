@@ -15,7 +15,7 @@ jobs:
 
       # Same JDK the build workflow verifies against, so a release never ships
       # something the build check hasn't already proven compiles and passes.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: "21"
           distribution: temurin

@@ -17,7 +17,7 @@ jobs:
       # Built on the version the artifacts target, so a Java 21 incompatibility
       # fails here rather than in a consumer's build. Local development on a
       # newer JDK is fine because the compiler is pinned to --release 21.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: "21"
           distribution: temurin
