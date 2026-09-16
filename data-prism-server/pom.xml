@@ -12,6 +12,16 @@
   <name>Data Prism :: Standalone server</name>
   <description>Fail-closed standalone Streamable HTTP MCP server distribution.</description>
 
+  <properties>
+    <!-- A runnable application distribution built by spring-boot-maven-plugin's
+         repackage, not a library artifact: never published to Central. -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <skipPublishing>true</skipPublishing>
+    <maven.source.skip>true</maven.source.skip>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+    <gpg.skip>true</gpg.skip>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>io.github.aindriub</groupId>
