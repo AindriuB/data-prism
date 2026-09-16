@@ -28,9 +28,7 @@ class DataPrismAutoConfigurationTest {
             .withPropertyValues(valid());
 
     @Test void boots_a_minimal_reviewed_context() {
-        context.withPropertyValues("dataprism.transport.mode=stdio",
-                "dataprism.transport.fixture-development=true")
-                .run(result -> assertThat(result).hasNotFailed());
+        context.run(result -> assertThat(result).hasNotFailed());
     }
     @Test void configured_reference_is_used_for_runtime_key_resolution() {
         context.run(result -> assertThat(new String(result.getBean(SecretKeyProvider.class).secret("v1"))).isEqualTo("DATAPRISM_HMAC_KEY_REF:v1:resolved-key-material"));
@@ -48,16 +46,33 @@ class DataPrismAutoConfigurationTest {
                     assertThat(servlet.isAsyncSupported()).isTrue();
                 });
     }
-    @Test void fixture_stdio_creates_no_http_transport_server_or_servlet_even_with_an_extractor() {
+    /**
+     * Before this refusal existed, a starter-shaped context configured this way
+     * started successfully and registered no {@link McpSyncServer} and no MCP
+     * {@code ServletRegistrationBean} at all — a running server with no transport,
+     * which is exactly the fail-open failure mode this closes. See the commit body
+     * for the mutation that reproduced that behaviour.
+     */
+    @Test void stdio_transport_refuses_startup_even_with_fixture_development() {
         new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
                 .withUserConfiguration(ReviewedHttpIntegrations.class).withPropertyValues(valid())
                 .withPropertyValues("dataprism.transport.mode=stdio",
                         "dataprism.transport.fixture-development=true")
                 .run(result -> {
-                    assertThat(result).hasNotFailed();
-                    assertThat(result).doesNotHaveBean(DataPrismMcpServer.HttpTransport.class)
-                            .doesNotHaveBean(McpSyncServer.class)
-                            .doesNotHaveBean("dataPrismMcpServlet");
+                    assertThat(result).hasFailed();
+                    Throwable failure = rootCause(result.getStartupFailure());
+                    assertThat(failure).isInstanceOf(DataPrismConfigurationException.class);
+                    assertThat(failure.getMessage()).startsWith("STDIO_TRANSPORT_UNSUPPORTED:").contains("stdio");
+                });
+    }
+    @Test void stdio_transport_refuses_startup_without_fixture_development() {
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrations.class).withPropertyValues(valid())
+                .withPropertyValues("dataprism.transport.mode=stdio",
+                        "dataprism.transport.fixture-development=false")
+                .run(result -> {
+                    assertThat(result).hasFailed();
+                    assertThat(rootMessage(result.getStartupFailure())).contains("STDIO_DEVELOPMENT_ONLY");
                 });
     }
     @Test void http_transport_refuses_a_missing_caller_context_extractor() {
@@ -112,7 +127,8 @@ class DataPrismAutoConfigurationTest {
                 });
     }
     private void fails(String code, String override) { context.withPropertyValues(override).run(result -> { assertThat(result).hasFailed(); assertThat(rootMessage(result.getStartupFailure())).contains(code); }); }
-    private static String rootMessage(Throwable failure) { Throwable current=failure; while(current.getCause()!=null) current=current.getCause(); return current.getMessage(); }
+    private static String rootMessage(Throwable failure) { return rootCause(failure).getMessage(); }
+    private static Throwable rootCause(Throwable failure) { Throwable current=failure; while(current.getCause()!=null) current=current.getCause(); return current; }
     private static String[] valid() { return new String[] {
             "dataprism.security.jwt.issuer=https://issuer.example", "dataprism.security.jwt.audience=mcp", "dataprism.security.jwt.jwk-set-uri=https://issuer.example/jwks",
             "dataprism.security.caller-claims.principal=sub", "dataprism.security.caller-claims.roles=roles", "dataprism.security.caller-claims.investigation=case_id",
