@@ -17,6 +17,99 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-16 — Tasks 36, 37, 39: Maven Central publishing, distributable server image, default-mode transport fail-open closed
+
+Closes the release wave opened the same day. All three merged through
+protected, green pull requests (#57, #58, #59).
+
+Task 39 closed the fail-open reviewer 35 found: every MCP transport bean in
+`DataPrismAutoConfiguration` is `@ConditionalOnWebApplication(SERVLET)`, so a
+non-web application at the *default* `dataprism.transport.mode=HTTP` started
+cleanly with no MCP transport and no refusal — reachable without any
+misconfiguration, unlike the stdio case task 35 closed. The fix is a
+`BeanFactoryPostProcessor`, `dataPrismMcpTransportPreflight`, refusing with a
+new code, `MCP_TRANSPORT_UNAVAILABLE`, before any DataPrism singleton is
+constructed. The fail-open was real and widespread: closing it broke tests in
+three separate modules, because `ServerPackagingIT` and
+`ConfiguredJsonSourcesPackagingIT` in `data-prism-server`, and
+`StarterStartupFailureTest` in `data-prism-example`, were each relying on a
+non-web context starting cleanly at default `mode=HTTP` — the very bug being
+closed. The test suite was depending on the defect, which is itself the
+strongest evidence it was worth fixing. All three were migrated to servlet
+contexts with every original assertion preserved; a reviewer confirmed no
+test was deleted or weakened to hold the count stable — `@Test` counts
+unchanged, zero `@Disabled`, method-name lists byte-identical. Task 39's own
+file contained a contradiction — an "Out of scope: data-prism-example" line
+alongside an acceptance bullet requiring the example suite to pass — and two
+different implementers hit it and both correctly stopped rather than picking
+a side; a task's scope and its acceptance criteria have to agree, and
+refusing to guess on a contradiction is the behaviour this plan wants. Four
+codes now name "this deployment has no usable MCP transport":
+`STDIO_DEVELOPMENT_ONLY`, `STDIO_TRANSPORT_UNSUPPORTED`,
+`STANDALONE_HTTP_ONLY`, and the new `MCP_TRANSPORT_UNAVAILABLE`; a consumer
+keying on the shared condition must match all four. `docs/configuration.md`
+now documents the new code and its table row.
+
+Task 36 wired Maven Central publishing for the 12 deployable library modules
+plus the root aggregator; `data-prism-server`, `data-prism-example`,
+`data-prism-architecture`, and the three quickstart modules are explicitly
+non-deployable. Verified both with `mvn clean verify` (no signing key) and
+`mvn -Prelease clean verify` (a throwaway key), and all 49 `.asc` signature
+files were individually `gpg`-verified rather than trusted by inspection; the
+reviewer checked the profile-merge mechanism with `mvn help:effective-pom`
+for the same reason. `data-prism-spring-boot-starter` ships a deliberately
+empty javadoc jar — a package containing only `package-info.java` cannot be
+documented by the javadoc tool at all, confirmed against the CLI with a
+minimal repro, and a marker type was rejected as dishonest. The maintainer's
+personal email is deliberately absent from `SECURITY.md` (GitHub private
+vulnerability reporting is the sole channel) and from the POM `<developers>`
+block, on the grounds that a published POM is immutable. Coordinator-granted
+extension: task 36 gained
+`data-prism-spring-boot-starter/src/main/java/.../package-info.java`, checked
+against no concurrent task owning that path.
+
+Task 37 built the fixture-free distributable server image, gated behind a
+`central` GitHub Environment and tag-plus-dispatch-plus-version-match
+publish workflows — nothing has actually been published; `publish-central.yml`
+is workflow_dispatch-only behind the `central` environment with
+`<autoPublish>false</autoPublish>` as a third layer, and `publish-image.yml`
+requires workflow_dispatch AND a `refs/tags/v*` ref AND a reactor-version
+match. Its own acceptance criteria named unreachable refusal codes — items 4
+and 5 expected `MISSING_JWT_ISSUER`/`MISSING_SOURCE_ADAPTER`, but
+`dataPrismIdentityResolverPreflight` always fires first, so the observed code
+is `MISSING_IDENTITY_RESOLVER`. This was a deliberate amendment, not a
+silent retirement: the workflow's refusal check now greps generically for
+`MISSING_[A-Z_]+`, which is also more robust against task 39 adding a fourth
+`BeanFactoryPostProcessor` to the same ordering. Three rounds of reviewer
+CHANGES, each fixing a named instance and finding a sibling of the same
+class still standing: (a) the publish job was gated on `workflow_dispatch`
+but not a tag ref, so a dispatch on untagged `main` could still push; (b) the
+ARG/ENV rework replaced a JSON-array `ENTRYPOINT` with `sh -c`, silently
+swallowing every operator-appended `docker run` argument; (c)
+`${{ inputs.version }}` shell-injection hardening landed on the publish job
+but not on build-and-verify. The final fix swept for the whole class instead
+of the named line — a programmatic YAML parse confirming zero `${{ }}`
+expressions inside any `run:` block.
+
+A single serialized full-reactor `mvn -B clean verify` from the main checkout
+after all three merges gives 466 tests, 0 failures, 0 errors, 19 modules —
++4 over 462, all from task 39's new tests.
+
+**Cost:** Both merge-branch races (PR checks reporting `pass` while GitHub's
+merge API still returned "Required status check build is expected", and two
+sequential merges each leaving the next PR's branch behind `main` and
+blocked as not-up-to-date) needed `PUT .../pulls/<n>/update-branch` and a
+wait for the re-triggered `build` run before the merge would go through —
+routine with three PRs landing in sequence against one protected branch, not
+a defect in any of the three.
+
+**Owner actions still outstanding:** the `central` GitHub Environment exists
+but has no required reviewers ticked, so it currently gates nothing;
+`CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` should move from
+repository secrets to that environment's scope now that
+`publish-central.yml`'s stage job no longer references them; task 38 will
+need an owner-only MCP registry namespace claim before it can publish.
+
 ## 2026-09-16 — Tasks 33, 34, 35: 0.1.0 cut, release hygiene files, stdio refuses instead of serving nothing
 
 Three tasks opening the release wave. All merged through protected, green pull

@@ -185,31 +185,32 @@ Opened 2026-09-16: cutting a publishable 0.1.0. Tasks 33, 34 and 35 merged
 through protected, green pull requests (#41, #42, #43) the same day — 0.1.0
 version cut plus a tag-triggered release workflow (33), release hygiene files
 (34), and `dataprism.transport.mode=stdio` refusing unconditionally instead of
-serving nothing (35). Post-merge serialized full-reactor re-run: 462 tests, 0
-failures. See `docs/plan/HISTORY.md` — grep `Tasks 33, 34, 35` — for what
-landed and what it cost, including the corrected test count and the
-planner-commit-bypassed-the-PR-flow near-miss.
+serving nothing (35). Tasks 36, 37 and 39 merged through protected, green pull
+requests (#57, #58, #59) the same day — Maven Central publishing for the 12
+deployable modules (36), the fixture-free distributable server image behind
+gated, unpublished workflows (37), and the default-`mode=HTTP` non-web
+transport fail-open closed with a new `MCP_TRANSPORT_UNAVAILABLE` code (39).
+Post-merge serialized full-reactor re-run after 36/37/39: 466 tests, 0
+failures. See `docs/plan/HISTORY.md` — grep `Tasks 33, 34, 35` and
+`Tasks 36, 37, 39` — for what landed and what each cost, including the
+corrected test counts, the fail-open's dependence on three modules' tests, and
+the amended (not silently retired) task 37 refusal-code criterion.
 
-Open, in order:
+Open:
 
-- **Task 39 — refuse a starter context that would serve no MCP transport.**
-  Depends on 35 (done, so 39 is unblocked). Reviewer 35 found this outside
-  that task's scope: every MCP HTTP transport bean in
-  `DataPrismAutoConfiguration` is `@ConditionalOnWebApplication`, so a
-  non-web starter application at the *default* `dataprism.transport.mode=HTTP`
-  starts cleanly with no transport and no refusal — the same fail-open shape
-  task 35 closed for stdio, but reachable without any misconfiguration.
-- **Task 36 — publish the library artifacts to Maven Central.** Depends on
-  33 (done, so 36 is unblocked). Every owner-only prerequisite is satisfied:
-  the `io.github.aindriub` Central namespace is verified, an RSA-4096 signing
-  key exists (primary id `FC5E68A44A325696`, public half on
-  keys.openpgp.org), and the repository secrets `CENTRAL_TOKEN_USERNAME`,
-  `CENTRAL_TOKEN_PASSWORD`, `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` are set.
-- **Task 37 — build and publish the distributable server image to GHCR.**
-  Depends on 33 (done, so 37 is unblocked).
 - **Task 38 — publish the MCP registry entry with an honest env contract.**
-  Depends on 33 (done) and 37 (open) — blocked until 37 lands. Its registry
+  Depends on 33 and 37, both now done — 38 is unblocked. Its registry
   namespace claim is owner-only and remains outstanding.
+
+Owner actions outstanding, none of which any agent can perform:
+
+- The `central` GitHub Environment exists but has no required reviewers
+  ticked, so it currently gates nothing.
+- `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` should move from
+  repository secrets to the `central` environment's scope, now that
+  `publish-central.yml`'s stage job no longer references them.
+- Task 38 needs an owner-only MCP registry namespace claim before it can
+  publish.
 
 ## Remaining slices past the adopted core
 
