@@ -22,10 +22,14 @@
   </licenses>
 
   <developers>
+    <!-- No <email>: a published pom.xml is immutable on Central and can
+         never be edited or withdrawn, unlike SECURITY.md, which is what a
+         consumer actually wants for reporting anything. GitHub issues and
+         SECURITY.md are the reachable contact points; this entry only needs
+         to say who maintains the project. -->
     <developer>
       <id>AindriuB</id>
       <name>Andrew Bannister</name>
-      <email>aindriubannister@gmail.com</email>
       <url>https://github.com/AindriuB</url>
     </developer>
   </developers>
