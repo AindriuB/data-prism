@@ -9,11 +9,15 @@ import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -175,31 +179,101 @@ class ServerPackagingIT {
         }
     }
 
+    /**
+     * Until task 39, this ran the packaged server with {@code
+     * spring.main.web-application-type=none} and asserted only that the process
+     * exited zero — a non-web start-then-exit used purely as a cheap liveness
+     * probe. Task 39 makes exactly that combination (non-web, default {@code
+     * dataprism.transport.mode=HTTP}) refuse startup, so this test was actually
+     * relying on the fail-open shape that task closes: the strongest available
+     * evidence that defect was real, not hypothetical, is that fixing it broke
+     * this test. It now runs as a genuine servlet web application ({@code
+     * server.port=0} for an ephemeral port) and asserts on {@link
+     * ReviewedExtension#ADAPTER_LOADED_MARKER}, printed only from inside the
+     * extension's own {@code customerAdapter()} bean method — proof the
+     * loader-path extension's {@code DataSourceAdapter} bean was actually
+     * constructed, not merely that the process didn't crash or that Spring
+     * logged a generic startup banner.
+     */
     @Test
     void executableLoadsAReviewedAdapterExtensionFromLoaderPath() throws Exception {
         Path artifact = Path.of("target", "data-prism-server-0.1.0.jar").toAbsolutePath();
         Path extension = Files.createTempFile("data-prism-reviewed-extension-", ".jar");
+        Process process = null;
         try {
             writeExtension(extension, ReviewedExtension.class);
-            java.util.List<String> command = new java.util.ArrayList<>();
+            List<String> command = new ArrayList<>();
             command.add(javaCommand());
             command.add("-Dloader.path=" + extension);
             command.add("-jar");
             command.add(artifact.toString());
-            command.addAll(java.util.List.of(validArguments()));
+            command.addAll(List.of(validArguments()));
             ProcessBuilder builder = new ProcessBuilder(command);
             builder.environment().put("DATAPRISM_TASK17_TEST_KEY",
                     "packaged-server-test-key-material-longer-than-thirty-two-bytes");
             builder.redirectErrorStream(true);
-            Process process = builder.start();
-            boolean exited = process.waitFor(20, TimeUnit.SECONDS);
-            if (!exited) process.destroyForcibly();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            process = builder.start();
 
-            assertThat(exited).as("packaged server did not complete its non-web startup: %s", output).isTrue();
-            assertThat(process.exitValue()).as(output).isZero();
+            String output = awaitOutputContaining(process, ReviewedExtension.ADAPTER_LOADED_MARKER,
+                    Duration.ofSeconds(20));
+
+            assertThat(output)
+                    .as("packaged server never printed %s, so the reviewed extension's DataSourceAdapter bean "
+                            + "was never constructed: %s", ReviewedExtension.ADAPTER_LOADED_MARKER, output)
+                    .contains(ReviewedExtension.ADAPTER_LOADED_MARKER);
         } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
             Files.deleteIfExists(extension);
+        }
+    }
+
+    /**
+     * Starts a daemon thread that drains {@code process}'s (merged) output into
+     * a shared buffer, then polls that buffer for {@code marker} until it
+     * appears, {@code process} exits, or {@code timeout} elapses — whichever
+     * comes first. Unlike {@code process.waitFor(...)}, this does not require
+     * the process to exit on its own: a successfully started servlet web
+     * application keeps running, so completion here is signalled by the marker
+     * appearing in output, not by process death. Returns whatever was captured,
+     * for a diagnosable failure message either way.
+     */
+    private static String awaitOutputContaining(Process process, String marker, Duration timeout)
+            throws InterruptedException {
+        StringBuilder captured = new StringBuilder();
+        Thread pump = new Thread(() -> {
+            try (BufferedReader reader =
+                    new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    synchronized (captured) {
+                        captured.append(line).append('\n');
+                    }
+                }
+            } catch (IOException ignored) {
+                // The process's output stream closed; nothing further to read.
+            }
+        }, "packaging-it-output-pump");
+        pump.setDaemon(true);
+        pump.start();
+
+        Instant deadline = Instant.now().plus(timeout);
+        while (Instant.now().isBefore(deadline)) {
+            synchronized (captured) {
+                if (captured.indexOf(marker) >= 0) {
+                    return captured.toString();
+                }
+            }
+            if (!process.isAlive()) {
+                break;
+            }
+            Thread.sleep(50);
+        }
+        // Give the pump a brief moment to flush any trailing output after exit.
+        pump.join(Duration.ofSeconds(2).toMillis());
+        synchronized (captured) {
+            return captured.toString();
         }
     }
 
@@ -392,9 +466,15 @@ class ServerPackagingIT {
         return Path.of(System.getProperty("java.home"), "bin", "java").toString();
     }
 
+    /**
+     * {@code server.port=0} (an ephemeral port), not {@code
+     * spring.main.web-application-type=none}: task 39 refuses the latter at
+     * this class's default {@code dataprism.transport.mode=HTTP}, so a servlet
+     * web application is what every test using these arguments now exercises.
+     */
     private static String[] validArguments() {
         return new String[] {
-                "--spring.main.web-application-type=none", "--spring.main.banner-mode=off",
+                "--server.port=0", "--spring.main.banner-mode=off",
                 "--dataprism.security.jwt.issuer=https://issuer.example",
                 "--dataprism.security.jwt.audience=mcp",
                 "--dataprism.security.jwt.jwk-set-uri=https://issuer.example/jwks",
@@ -416,6 +496,17 @@ class ServerPackagingIT {
 
     @AutoConfiguration
     public static class ReviewedExtension {
+        /**
+         * Printed only from inside {@link #customerAdapter()}'s body, so it can
+         * appear in the packaged process's stdout only if Spring actually
+         * constructed that bean — proof the extension loaded from {@code
+         * -Dloader.path} and registered a working {@code DataSourceAdapter}, not
+         * merely that the packaged server started successfully for some other
+         * reason. See {@link ServerPackagingIT#executableLoadsAReviewedAdapterExtensionFromLoaderPath()}.
+         */
+        static final String ADAPTER_LOADED_MARKER =
+                "DATAPRISM_TEST_MARKER::REVIEWED_EXTENSION_ADAPTER_CONSTRUCTED";
+
         @Bean
         IdentityResolver identityResolver() {
             return new PassThroughIdentityResolver();
@@ -423,6 +514,7 @@ class ServerPackagingIT {
 
         @Bean
         DataSourceAdapter<String> customerAdapter() {
+            System.out.println(ADAPTER_LOADED_MARKER);
             return new DataSourceAdapter<>() {
                 @Override public String sourceName() { return "customer"; }
                 @Override public Class<String> responseType() { return String.class; }

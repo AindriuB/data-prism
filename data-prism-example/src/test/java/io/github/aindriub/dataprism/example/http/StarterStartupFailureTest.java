@@ -20,9 +20,24 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 class StarterStartupFailureTest {
 
+    /**
+     * Until task 39, this test (and {@link #httpFixtureDevelopmentPreventsTheApplicationStarting()})
+     * ran the application at {@code WebApplicationType.NONE} on the default/explicit HTTP
+     * transport mode, and asserted the refusal each was written for —
+     * {@code UNRESOLVED_SOURCE_ADAPTER} here, {@code FIXTURE_DEVELOPMENT_STDIO_ONLY} there.
+     * Task 39 added {@code dataPrismMcpTransportPreflight}, which correctly refuses exactly
+     * that combination with {@code MCP_TRANSPORT_UNAVAILABLE} before any later singleton —
+     * including the source-adapter and fixture-development checks these two tests exist to
+     * prove — is ever reached. Both tests were themselves relying on the fail-open task 39
+     * closes: once the preflight was added they started failing with
+     * {@code MCP_TRANSPORT_UNAVAILABLE} instead of their own codes, the strongest evidence the
+     * defect was real. They now run as a genuine servlet web application on an ephemeral port
+     * ({@link #startAsServlet}), which keeps the new preflight from firing so each test still
+     * reaches, and still proves, the refusal it was written for.
+     */
     @Test
     void missingAdapterPreventsTheApplicationStarting() {
-        Throwable failure = catchThrowable(() -> start(MissingAdapterApplication.class));
+        Throwable failure = catchThrowable(() -> startAsServlet(MissingAdapterApplication.class, servletConfiguration()));
 
         assertConfigurationFailure(failure, "UNRESOLVED_SOURCE_ADAPTER");
     }
@@ -36,9 +51,23 @@ class StarterStartupFailureTest {
 
     @Test
     void httpFixtureDevelopmentPreventsTheApplicationStarting() {
-        Throwable failure = catchThrowable(() -> start(MissingAdapterApplication.class, httpFixtureConfiguration()));
+        Throwable failure =
+                catchThrowable(() -> startAsServlet(MissingAdapterApplication.class, httpFixtureServletConfiguration()));
 
         assertConfigurationFailure(failure, "FIXTURE_DEVELOPMENT_STDIO_ONLY");
+    }
+
+    /**
+     * Pins task 39's own refusal directly, rather than relying on it only being exercised as
+     * a side effect of the other tests in this class: a non-web application at the default
+     * HTTP transport mode has no MCP transport bean registered at all and must refuse with
+     * {@code MCP_TRANSPORT_UNAVAILABLE}.
+     */
+    @Test
+    void nonWebApplicationAtDefaultHttpModeRefusesWithNoTransportAvailable() {
+        Throwable failure = catchThrowable(() -> start(MissingAdapterApplication.class));
+
+        assertConfigurationFailure(failure, "MCP_TRANSPORT_UNAVAILABLE");
     }
 
     private static void start(Class<?> application) {
@@ -48,6 +77,15 @@ class StarterStartupFailureTest {
     private static void start(Class<?> application, String[] configuration) {
         try (var ignored = new SpringApplicationBuilder(application)
                 .web(WebApplicationType.NONE)
+                .logStartupInfo(false)
+                .run(configuration)) {
+            throw new AssertionError("application unexpectedly started");
+        }
+    }
+
+    private static void startAsServlet(Class<?> application, String[] configuration) {
+        try (var ignored = new SpringApplicationBuilder(application)
+                .web(WebApplicationType.SERVLET)
                 .logStartupInfo(false)
                 .run(configuration)) {
             throw new AssertionError("application unexpectedly started");
@@ -70,6 +108,27 @@ class StarterStartupFailureTest {
         configuration[valid.length] = "--dataprism.transport.mode=http";
         configuration[valid.length + 1] = "--dataprism.transport.fixture-development=true";
         return configuration;
+    }
+
+    /**
+     * {@code validConfiguration()} plus {@code --server.port=0} (an ephemeral port), for the
+     * tests that must run as a genuine servlet web application so task 39's
+     * {@code dataPrismMcpTransportPreflight} does not fire ahead of the refusal each is
+     * written to prove. See the Javadoc on {@link #missingAdapterPreventsTheApplicationStarting()}.
+     */
+    private static String[] servletConfiguration() {
+        return withServerPort(validConfiguration());
+    }
+
+    /** As {@link #servletConfiguration()}, but for {@link #httpFixtureConfiguration()}. */
+    private static String[] httpFixtureServletConfiguration() {
+        return withServerPort(httpFixtureConfiguration());
+    }
+
+    private static String[] withServerPort(String[] configuration) {
+        String[] result = java.util.Arrays.copyOf(configuration, configuration.length + 1);
+        result[configuration.length] = "--server.port=0";
+        return result;
     }
 
     private static String[] validConfiguration() {
