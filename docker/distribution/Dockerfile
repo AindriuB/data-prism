@@ -21,6 +21,15 @@ RUN mvn -B -q -pl data-prism-server -am package -DskipTests
 
 FROM eclipse-temurin:21-jre
 
+# Single source of truth for the jar's version-embedded filename: bump this
+# alongside the reactor's own <version> (task 36 owns the poms) and every
+# reference below moves with it. ENV, not just ARG: ARG values are build-time
+# only and do not persist into the running container, but the ENTRYPOINT
+# below has to re-expand ${VERSION} in a runtime shell — see its own comment
+# for why — so this also needs to still be set when the container starts.
+ARG VERSION=0.1.0
+ENV VERSION=${VERSION}
+
 LABEL io.modelcontextprotocol.server.name="io.github.aindriub/data-prism"
 
 # Non-root: the packaged jar and PropertiesLauncher never need root, and
@@ -52,11 +61,26 @@ ENV LOADER_PATH=/app/adapters
 # security configuration baked into the image is exactly what task 21's
 # fail-closed contract and this task both refuse to ship.
 
-COPY --from=build /workspace/data-prism-server/target/data-prism-server-0.1.0.jar /app/data-prism-server-0.1.0.jar
-RUN chown dataprism:dataprism /app/data-prism-server-0.1.0.jar
+COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server-${VERSION}.jar
+RUN chown dataprism:dataprism /app/data-prism-server-${VERSION}.jar
 
 USER dataprism
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "/app/data-prism-server-0.1.0.jar", "--server.port=8080"]
+# --server.port=8080 is a command-line argument, which Spring Boot ranks
+# above a mounted /app/config/application.yaml's own server.port — an
+# operator setting server.port there is silently overridden by this, not
+# read. That matches docker/server/Dockerfile's own demo entrypoint; it is
+# not changed here, only called out so it is not a surprise.
+#
+# ENTRYPOINT cannot be a plain JSON array here despite VERSION being a single
+# ARG/ENV above: Docker only expands ${VAR} at build time for a fixed list of
+# instructions (COPY, RUN's own shell, ENV, LABEL, ...), never for a JSON-array
+# ENTRYPOINT — confirmed empirically before writing this, not from memory: a
+# JSON-array ENTRYPOINT keeps the literal text "${VERSION}" in the image's
+# metadata instead of substituting it. The `sh -c` below is only there to
+# expand VERSION at container start; `exec` immediately replaces that shell
+# with the java process, so the JVM still ends up as PID 1 and signal
+# handling is unaffected.
+ENTRYPOINT ["sh", "-c", "exec java -jar /app/data-prism-server-${VERSION}.jar --server.port=8080"]

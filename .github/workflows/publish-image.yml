@@ -3,10 +3,13 @@ name: publish-image
 # Builds and verifies docker/distribution/Dockerfile on every `v*` tag, but
 # never pushes automatically: pushing a live image to
 # ghcr.io/aindriub/data-prism-server is an explicit, owner-decided action,
-# not something a tag push alone should trigger. The push step below only
-# runs for a manually-started workflow_dispatch run — see its `if:` — so a
-# tag push builds and proves the image fail-closed, and nothing more, until
-# someone re-runs this workflow by hand (after the tag exists) to publish it.
+# not something a tag push alone should trigger. The `publish` job below only
+# runs for a manually-started workflow_dispatch run made against a `v*` tag
+# ref — see its own `if:` and its version guard step — so a tag push builds
+# and proves the image fail-closed, and nothing more, until someone re-runs
+# this workflow by hand, choosing that tag as the ref, to publish it. A
+# dispatch left on a branch (the default when opening "Run workflow") never
+# satisfies the tag-ref check and never reaches GHCR.
 on:
   push:
     tags: ["v*"]
@@ -65,8 +68,17 @@ jobs:
             echo "::error::image started with no configuration; it must refuse"
             exit 1
           fi
+          # MISSING_, not a bare [A-Z_]+: every dataprism refusal code this
+          # image can hit on a fail-closed startup is named MISSING_*
+          # (MISSING_IDENTITY_RESOLVER, MISSING_JWT_ISSUER,
+          # MISSING_SOURCE_ADAPTER, ...) — see DataPrismContractValidator and
+          # DataPrismProperties.validate(). Tightening the match to that
+          # prefix means an unrelated DataPrismConfigurationException (a
+          # malformed value, say) no longer satisfies this gate by accident;
+          # it is still order-independent across whichever MISSING_* check
+          # happens to fire first.
           code="$(printf '%s\n' "$output" \
-            | grep -oE 'DataPrismConfigurationException: [A-Z_]+' \
+            | grep -oE 'DataPrismConfigurationException: MISSING_[A-Z_]+' \
             | head -n1)"
           if [ -z "$code" ]; then
             echo "::error::image exited non-zero but printed no named dataprism refusal code"
@@ -83,14 +95,45 @@ jobs:
           path: /tmp/data-prism-server.tar
           retention-days: 1
 
-  # Never runs from a plain tag push. See the header comment: publishing to
-  # GHCR is a separate, manually-triggered action (workflow_dispatch) on top
-  # of the build-and-verify job above, which every tag push still runs.
+  # Never runs from a plain tag push, and never from a workflow_dispatch off
+  # a branch either: both the trigger condition below and the guard step
+  # inside this job have to agree the ref is a `v*` tag before anything here
+  # can push. Two clicks on this workflow's "Run workflow" button, left on
+  # its default branch, must not be enough to reach GHCR — that was the
+  # defect a review found in an earlier version of this job, which gated
+  # only on workflow_dispatch and trusted the dispatch-time version input on
+  # its own.
   publish:
     needs: build-and-verify
-    if: github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      # Repeated here rather than trusted from build-and-verify: this is the
+      # job that actually pushes to GHCR, so it fails closed on its own,
+      # matching the guard shape task 36's publish-central.yml uses before
+      # it deploys to Central. The job's own `if:` above already restricts
+      # this to a `v*` tag ref; this step additionally refuses if the
+      # version supplied at dispatch time disagrees with the reactor's own
+      # version, so a stale or mistyped dispatch input cannot publish an
+      # image tagged with a version the jar inside it does not match.
+      - name: Guard dispatch version matches reactor version
+        run: |
+          reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          if [ "${{ inputs.version }}" != "$reactor_version" ]; then
+            echo "::error::dispatch version ${{ inputs.version }} does not match reactor version ${reactor_version}"
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v4
         with:
           name: data-prism-server-image
