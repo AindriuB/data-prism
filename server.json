@@ -1,0 +1,168 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.aindriub/data-prism",
+  "description": "Privacy layer for enterprise APIs; refuses to start without a reviewed adapter jar per source",
+  "title": "Data Prism",
+  "repository": {
+    "url": "https://github.com/AindriuB/data-prism",
+    "source": "github",
+    "id": "1361848414"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "oci",
+      "registryBaseUrl": "https://ghcr.io",
+      "identifier": "ghcr.io/aindriub/data-prism-server",
+      "version": "0.1.0",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8080/mcp"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-v",
+          "description": "Bind-mount at least one reviewed DataSourceAdapter/IdentityResolver jar into the loader path (LOADER_PATH=/app/adapters) for every dataprism.sources entry; absent this, DataPrismContractValidator refuses startup with MISSING_SOURCE_ADAPTER.",
+          "isRequired": true,
+          "isRepeated": true,
+          "value": "{adapter_jar_host_path}:/app/adapters/{adapter_jar_name}",
+          "variables": {
+            "adapter_jar_host_path": {
+              "description": "Absolute host path to a reviewed DataSourceAdapter/IdentityResolver jar you built and reviewed yourself",
+              "format": "filepath",
+              "isRequired": true
+            },
+            "adapter_jar_name": {
+              "description": "File name to expose for that jar inside /app/adapters",
+              "isRequired": true
+            }
+          }
+        },
+        {
+          "type": "named",
+          "name": "-v",
+          "description": "Bind-mount a deployment configuration YAML satisfying every required dataprism.* key in docs/configuration.md to the path Spring Boot auto-loads on startup; equivalent to, and combinable with, the DATAPRISM_* environment variables below. Absent both, DataPrismProperties.validate() refuses startup.",
+          "isRequired": true,
+          "value": "{config_host_path}:/app/config/application.yaml",
+          "variables": {
+            "config_host_path": {
+              "description": "Absolute host path to your dataprism.* application.yaml",
+              "format": "filepath",
+              "isRequired": true
+            }
+          }
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "LOADER_PATH",
+          "description": "Directory Spring Boot's PropertiesLauncher scans for extension jars; already set to /app/adapters by the image, but startup still fails with MISSING_SOURCE_ADAPTER until you bind-mount a reviewed DataSourceAdapter/IdentityResolver jar there (see the -v arguments above)",
+          "isRequired": true,
+          "default": "/app/adapters"
+        },
+        {
+          "name": "DATAPRISM_SECURITY_JWT_ISSUER",
+          "description": "OAuth2/OIDC issuer that mints the caller's JWT; required for every protected deployment",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SECURITY_JWT_AUDIENCE",
+          "description": "Expected JWT audience claim for this deployment; required for every protected deployment",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SECURITY_JWT_JWK_SET_URI",
+          "description": "HTTPS JWKS location used to verify caller JWTs; exactly one of this or DATAPRISM_SECURITY_JWT_ISSUER_DISCOVERY_URI is required, never both",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SECURITY_JWT_ISSUER_DISCOVERY_URI",
+          "description": "Alternative HTTPS OIDC issuer-discovery location; set this instead of DATAPRISM_SECURITY_JWT_JWK_SET_URI, never both",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_SECURITY_CALLER_CLAIMS_PRINCIPAL",
+          "description": "JWT claim name that carries the caller's principal identifier; required, must differ from the roles and investigation claims",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SECURITY_CALLER_CLAIMS_ROLES",
+          "description": "JWT claim name that carries the caller's roles; required, must differ from the principal and investigation claims",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SECURITY_CALLER_CLAIMS_INVESTIGATION",
+          "description": "JWT claim name that carries the trusted investigation/case identifier; required, must differ from the principal and roles claims",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SECURITY_POLICY_PURPOSES",
+          "description": "Comma-separated list of permitted purposes; at least one is required",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SECURITYPOLICY_ROLES_INVESTIGATOR",
+          "description": "Example only — declare DATAPRISM_SECURITYPOLICY_ROLES_<ROLE> per operator-defined role (no underscore between SECURITY and POLICY: Spring Boot's map-key enumeration under a hyphenated dataprism.security-policy.roles.<role> segment only binds the concatenated prefix, verified by binding this property directly against Spring Boot 3.5.16), a comma-separated list of known MCP tool capabilities; at least one role-to-capability mapping is required",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_PRIVACY_PROFILE",
+          "description": "Name of the reviewed privacy profile implementation to apply; required",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_PRIVACY_SCOPE_LIFETIME",
+          "description": "Positive duration (e.g. 8h) a privacy scope's synthetic identities remain valid; required",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_PRIVACY_HMAC_KEY_KEY_ID",
+          "description": "Identifier of the pinned HMAC key used to derive synthetic identities; required",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_PRIVACY_HMAC_KEY_ENVIRONMENT_VARIABLE",
+          "description": "Name of the environment variable holding the HMAC key material; exactly one of this or DATAPRISM_PRIVACY_HMAC_KEY_PROVIDER_REFERENCE is required, never both, and never a literal key value",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_PRIVACY_HMAC_KEY_PROVIDER_REFERENCE",
+          "description": "Reference to an approved secret provider holding the HMAC key material; set this instead of DATAPRISM_PRIVACY_HMAC_KEY_ENVIRONMENT_VARIABLE, never both",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_AUDIT_SINK",
+          "description": "Audit sink implementation: one of approved-sink, slf4j, hash-chained; required, never downgraded to no-op",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_AUDIT_WRITER_ID",
+          "description": "Writer/instance identity recorded on every audit entry; required",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_METRICS_SINK",
+          "description": "Metrics sink binding, currently only micrometer; required in production, never the framework no-op",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_HAZELCAST_TOPOLOGY",
+          "description": "Cluster read-budget topology: embedded (shared across the cluster) or single-node (enforced per process); required, never defaulted",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SOURCES_CUSTOMER_BASE_URL",
+          "description": "Example only — declare DATAPRISM_SOURCES_<NAME>_BASE_URL (HTTPS) per configured source; at least one source, each with its own reviewed DataSourceAdapter bean, is required",
+          "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_SOURCES_CUSTOMER_TIMEOUT",
+          "description": "Example only — declare DATAPRISM_SOURCES_<NAME>_TIMEOUT (positive duration) per configured source; required alongside its base URL",
+          "isRequired": true
+        }
+      ]
+    }
+  ]
+}

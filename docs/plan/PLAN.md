@@ -179,37 +179,93 @@ With 31 and 32 closed, the simplification plan opened 2026-09-15 has no task
 left: waves 1 and 2 closed every item it named. Superseded by the release plan
 below, opened the next day.
 
-### Release plan (tasks 33-39) — in progress
+### Release plan (tasks 33-39) — done. The release plan is done.
 
 Opened 2026-09-16: cutting a publishable 0.1.0. Tasks 33, 34 and 35 merged
 through protected, green pull requests (#41, #42, #43) the same day — 0.1.0
 version cut plus a tag-triggered release workflow (33), release hygiene files
 (34), and `dataprism.transport.mode=stdio` refusing unconditionally instead of
-serving nothing (35). Post-merge serialized full-reactor re-run: 462 tests, 0
-failures. See `docs/plan/HISTORY.md` — grep `Tasks 33, 34, 35` — for what
-landed and what it cost, including the corrected test count and the
-planner-commit-bypassed-the-PR-flow near-miss.
+serving nothing (35). Tasks 36, 37 and 39 merged through protected, green pull
+requests (#57, #58, #59) the same day — Maven Central publishing for the 12
+deployable modules (36), the fixture-free distributable server image behind
+gated, unpublished workflows (37), and the default-`mode=HTTP` non-web
+transport fail-open closed with a new `MCP_TRANSPORT_UNAVAILABLE` code (39).
+Task 38 merged through a protected, green pull request (#61) the next day —
+the MCP registry entry (`server.json`, `mcp-name` marker, `publish-mcp.yml`),
+which closed a defect that would have shipped a broken public onboarding
+contract: a required environment variable that does not bind under Spring
+Boot's relaxed map-key rules for a hyphenated prefix. See `docs/plan/HISTORY.md`
+— grep `Tasks 33, 34, 35`, `Tasks 36, 37, 39`, and `Task 38` — for what
+landed and what each cost, including the corrected test counts, the
+fail-open's dependence on three modules' tests, the amended task 37
+refusal-code criterion, and the env-var spelling defect.
 
-Open, in order:
+With 38 closed, every task the release plan named is done.
 
-- **Task 39 — refuse a starter context that would serve no MCP transport.**
-  Depends on 35 (done, so 39 is unblocked). Reviewer 35 found this outside
-  that task's scope: every MCP HTTP transport bean in
-  `DataPrismAutoConfiguration` is `@ConditionalOnWebApplication`, so a
-  non-web starter application at the *default* `dataprism.transport.mode=HTTP`
-  starts cleanly with no transport and no refusal — the same fail-open shape
-  task 35 closed for stdio, but reachable without any misconfiguration.
-- **Task 36 — publish the library artifacts to Maven Central.** Depends on
-  33 (done, so 36 is unblocked). Every owner-only prerequisite is satisfied:
-  the `io.github.aindriub` Central namespace is verified, an RSA-4096 signing
-  key exists (primary id `FC5E68A44A325696`, public half on
-  keys.openpgp.org), and the repository secrets `CENTRAL_TOKEN_USERNAME`,
-  `CENTRAL_TOKEN_PASSWORD`, `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` are set.
-- **Task 37 — build and publish the distributable server image to GHCR.**
-  Depends on 33 (done, so 37 is unblocked).
-- **Task 38 — publish the MCP registry entry with an honest env contract.**
-  Depends on 33 (done) and 37 (open) — blocked until 37 lands. Its registry
-  namespace claim is owner-only and remains outstanding.
+### Task 40 — done. No task file remains under `docs/plan/tasks/`.
+
+Opened 2026-09-16 after Maven Central 0.1.0 published: the GHCR server image
+was still amd64-only, and the (unpublished) MCP registry entry points strangers
+at it, a large share on Apple Silicon. Task 40 rebuilt `publish-image.yml` as a
+native per-architecture matrix — `ubuntu-latest` and `ubuntu-24.04-arm`, each
+verifying its own image on its own hardware before pushing by digest — with a
+final job assembling the two digests into a `linux/amd64` + `linux/arm64`
+manifest list. Merged through a protected, green pull request 2026-09-16 (#64).
+See `docs/plan/HISTORY.md` — grep `Task 40` — for what landed, the buildx
+driver bug only a real run caught, and the honest limits on what has and has
+not actually been exercised yet.
+
+**Nothing left is development work** — what remains is an owner-driven publish
+sequence, and the ordering matters:
+
+1. Manually dispatch `publish-image.yml` on the existing `v0.1.0` tag. This is
+   the first real execution of task 40's digest-push and manifest-assembly
+   steps — the only prior run of this workflow was against the old,
+   single-platform shape.
+2. Verify the manifest resolves per platform on real hardware: an x86_64
+   Ubuntu host should pull `amd64`, an Apple Silicon Mac should pull `arm64`.
+3. Manually dispatch `publish-mcp.yml` on the tag to publish the registry
+   entry, which requires the image to be pullable. The reviewer confirmed
+   `publish-mcp.yml`'s `docker manifest inspect` pullability guard is
+   satisfied by a manifest list, so no successor task is needed there.
+
+Maven Central 0.1.0 is already published and synced — repo1.maven.org serves
+`data-prism-core` and `data-prism-spring-boot-starter` 0.1.0, verified by
+building an external consumer project against an empty local repository. The
+GHCR package is already public from the prior amd64-only publish.
+
+Owner actions outstanding, none of which any agent can perform:
+
+- The `central` GitHub Environment exists but has no required reviewers
+  ticked, so it currently gates nothing.
+- `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` should move from
+  repository secrets to the `central` environment's scope, now that
+  `publish-central.yml`'s stage job no longer references them.
+- The MCP registry namespace claim (`io.github.aindriub`) happens via GitHub
+  OIDC at `publish-mcp.yml` dispatch time — no separate owner action, but the
+  dispatching identity must be the repository owner's.
+
+### Dependabot PRs — open, unplanned, needs triage
+
+Twelve PRs (#44-#55) opened since task 34's `dependabot.yml` landed
+2026-09-16, none merged, none equally safe:
+
+- #54 bumps `spring-boot.version` 3.5.16 to 4.1.1 — a major version touching
+  the autoconfiguration ordering and `BeanFactoryPostProcessor` sequencing
+  tasks 35 and 39 just fixed.
+- #48-#53 move the Docker base images to Java 25/26 while every pom
+  deliberately targets `--release 21`.
+- #45, #47, #51 are Actions version bumps (`checkout`, `upload-artifact`,
+  `setup-java`) that would clear the Node 20 deprecation warnings and touch
+  the workflow task 40 just rewrote.
+- #55 is a `nimbus-jose-jwt` patch bump, the lowest-risk of the twelve.
+
+Not triaged here — that is a decision for whoever picks this item up, not
+something to plan in advance.
+
+**Nothing is scheduled past this point in this plan.** Picking anything up
+from "Someday" below is a new planning decision, not a continuation of this
+plan.
 
 ## Remaining slices past the adopted core
 
