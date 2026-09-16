@@ -109,6 +109,14 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # Bound once, at the job level, rather than interpolating
+    # ${{ inputs.version }} straight into each step's `run:` shell text: a
+    # crafted dispatch input containing shell metacharacters would otherwise
+    # be spliced into the script before the shell ever sees "$VERSION" as a
+    # plain variable. Exploiting this needs write access to dispatch the
+    # workflow in the first place, so this is hardening, not a hole.
+    env:
+      VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -120,17 +128,17 @@ jobs:
 
       # Repeated here rather than trusted from build-and-verify: this is the
       # job that actually pushes to GHCR, so it fails closed on its own,
-      # matching the guard shape task 36's publish-central.yml uses before
-      # it deploys to Central. The job's own `if:` above already restricts
-      # this to a `v*` tag ref; this step additionally refuses if the
-      # version supplied at dispatch time disagrees with the reactor's own
-      # version, so a stale or mistyped dispatch input cannot publish an
+      # mirroring the guard shape used by the Maven Central publish workflow
+      # (task 36) before it deploys. The job's own `if:` above already
+      # restricts this to a `v*` tag ref; this step additionally refuses if
+      # the version supplied at dispatch time disagrees with the reactor's
+      # own version, so a stale or mistyped dispatch input cannot publish an
       # image tagged with a version the jar inside it does not match.
       - name: Guard dispatch version matches reactor version
         run: |
           reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
-          if [ "${{ inputs.version }}" != "$reactor_version" ]; then
-            echo "::error::dispatch version ${{ inputs.version }} does not match reactor version ${reactor_version}"
+          if [ "$VERSION" != "$reactor_version" ]; then
+            echo "::error::dispatch version ${VERSION} does not match reactor version ${reactor_version}"
             exit 1
           fi
 
@@ -145,7 +153,7 @@ jobs:
       - name: Tag image with the resolved version
         run: |
           docker tag ghcr.io/aindriub/data-prism-server:latest \
-            "ghcr.io/aindriub/data-prism-server:${{ inputs.version }}"
+            "ghcr.io/aindriub/data-prism-server:${VERSION}"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -156,5 +164,5 @@ jobs:
 
       - name: Push linux/amd64 image
         run: |
-          docker push "ghcr.io/aindriub/data-prism-server:${{ inputs.version }}"
+          docker push "ghcr.io/aindriub/data-prism-server:${VERSION}"
           docker push ghcr.io/aindriub/data-prism-server:latest

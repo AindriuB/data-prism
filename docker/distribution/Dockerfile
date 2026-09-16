@@ -21,15 +21,6 @@ RUN mvn -B -q -pl data-prism-server -am package -DskipTests
 
 FROM eclipse-temurin:21-jre
 
-# Single source of truth for the jar's version-embedded filename: bump this
-# alongside the reactor's own <version> (task 36 owns the poms) and every
-# reference below moves with it. ENV, not just ARG: ARG values are build-time
-# only and do not persist into the running container, but the ENTRYPOINT
-# below has to re-expand ${VERSION} in a runtime shell — see its own comment
-# for why — so this also needs to still be set when the container starts.
-ARG VERSION=0.1.0
-ENV VERSION=${VERSION}
-
 LABEL io.modelcontextprotocol.server.name="io.github.aindriub/data-prism"
 
 # Non-root: the packaged jar and PropertiesLauncher never need root, and
@@ -61,8 +52,18 @@ ENV LOADER_PATH=/app/adapters
 # security configuration baked into the image is exactly what task 21's
 # fail-closed contract and this task both refuse to ship.
 
-COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server-${VERSION}.jar
-RUN chown dataprism:dataprism /app/data-prism-server-${VERSION}.jar
+# VERSION only ever names the build stage's *source* jar below: the reactor
+# version (task 36 owns the poms) is embedded in the filename `mvn package`
+# actually produces, so COPY needs it once to find that file — and fails the
+# build loudly if this default ever drifts from the reactor's own version
+# without both being bumped together, rather than silently packaging nothing.
+# The image's own copy of the jar is renamed to a fixed, version-agnostic
+# path below (matching docker/server/Dockerfile's own convention) precisely
+# so nothing past this COPY step, ENTRYPOINT included, ever needs to know
+# this ARG's value.
+ARG VERSION=0.1.0
+COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server.jar
+RUN chown dataprism:dataprism /app/data-prism-server.jar
 
 USER dataprism
 
@@ -74,13 +75,16 @@ EXPOSE 8080
 # read. That matches docker/server/Dockerfile's own demo entrypoint; it is
 # not changed here, only called out so it is not a surprise.
 #
-# ENTRYPOINT cannot be a plain JSON array here despite VERSION being a single
-# ARG/ENV above: Docker only expands ${VAR} at build time for a fixed list of
-# instructions (COPY, RUN's own shell, ENV, LABEL, ...), never for a JSON-array
-# ENTRYPOINT — confirmed empirically before writing this, not from memory: a
-# JSON-array ENTRYPOINT keeps the literal text "${VERSION}" in the image's
-# metadata instead of substituting it. The `sh -c` below is only there to
-# expand VERSION at container start; `exec` immediately replaces that shell
-# with the java process, so the JVM still ends up as PID 1 and signal
-# handling is unaffected.
-ENTRYPOINT ["sh", "-c", "exec java -jar /app/data-prism-server-${VERSION}.jar --server.port=8080"]
+# Plain JSON array, deliberately: anything appended after the image name on
+# `docker run` is appended to this array and reaches the JVM directly (e.g.
+# `docker run <image> --dataprism.security.jwt.issuer=https://idp.example`),
+# which is how an operator supplies the rest of the dataprism.* configuration
+# docs/configuration.md describes without a config file. An earlier version
+# of this line read `["sh", "-c", "exec java ... ${VERSION} ..."]` to expand
+# a runtime VERSION placeholder; that shell became argv0 for every appended
+# argument instead of passing them through to java, so an operator's flags
+# were silently swallowed and the container refused as though nothing had
+# been passed. Renaming the jar to a fixed path above removes the need for
+# any runtime substitution here, so this can go back to a plain array and
+# `docker run` arguments reach the JVM again.
+ENTRYPOINT ["java", "-jar", "/app/data-prism-server.jar", "--server.port=8080"]
