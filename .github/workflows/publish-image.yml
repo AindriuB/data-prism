@@ -32,21 +32,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Both ${{ }} expressions this step needs are laundered through env:
+      # rather than interpolated straight into the script below.
+      # inputs.version is dispatch-time free text, so it becomes
+      # $DISPATCH_VERSION; github.event_name is not user-controllable (it is
+      # one of GitHub's own fixed event names), but $GITHUB_EVENT_NAME — a
+      # default environment variable GitHub Actions already sets on every
+      # job — reads the identical value without adding another ${{ }} to the
+      # script at all.
       - name: Resolve image version
         id: version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            version="${{ inputs.version }}"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$DISPATCH_VERSION"
           else
             # v0.1.0 -> 0.1.0
             version="${GITHUB_REF_NAME#v}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # steps.version.outputs.version carries the exact same dispatch-time
+      # text as inputs.version above, just relayed through $GITHUB_OUTPUT —
+      # laundering *where the value entered* the workflow does not launder
+      # *every later place it is read*, so this step needs its own env:
+      # rather than trusting the previous step's fix to cover it.
       - name: Build distributable image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker build -f docker/distribution/Dockerfile \
-            -t "ghcr.io/aindriub/data-prism-server:${{ steps.version.outputs.version }}" \
+            -t "ghcr.io/aindriub/data-prism-server:${VERSION}" \
             -t ghcr.io/aindriub/data-prism-server:latest \
             .
 
