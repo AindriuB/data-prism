@@ -176,9 +176,40 @@ now twice-confirmed unreliability of concurrent Maven builds against this
 repo's shared local repository.
 
 With 31 and 32 closed, the simplification plan opened 2026-09-15 has no task
-left: waves 1 and 2 closed every item it named. **Nothing is scheduled past
-this point** — the small open items below, plus the two new ones from task
-31's review, are debt found along the way, not scheduled work.
+left: waves 1 and 2 closed every item it named. Superseded by the release plan
+below, opened the next day.
+
+### Release plan (tasks 33-39) — in progress
+
+Opened 2026-09-16: cutting a publishable 0.1.0. Tasks 33, 34 and 35 merged
+through protected, green pull requests (#41, #42, #43) the same day — 0.1.0
+version cut plus a tag-triggered release workflow (33), release hygiene files
+(34), and `dataprism.transport.mode=stdio` refusing unconditionally instead of
+serving nothing (35). Post-merge serialized full-reactor re-run: 462 tests, 0
+failures. See `docs/plan/HISTORY.md` — grep `Tasks 33, 34, 35` — for what
+landed and what it cost, including the corrected test count and the
+planner-commit-bypassed-the-PR-flow near-miss.
+
+Open, in order:
+
+- **Task 39 — refuse a starter context that would serve no MCP transport.**
+  Depends on 35 (done, so 39 is unblocked). Reviewer 35 found this outside
+  that task's scope: every MCP HTTP transport bean in
+  `DataPrismAutoConfiguration` is `@ConditionalOnWebApplication`, so a
+  non-web starter application at the *default* `dataprism.transport.mode=HTTP`
+  starts cleanly with no transport and no refusal — the same fail-open shape
+  task 35 closed for stdio, but reachable without any misconfiguration.
+- **Task 36 — publish the library artifacts to Maven Central.** Depends on
+  33 (done, so 36 is unblocked). Every owner-only prerequisite is satisfied:
+  the `io.github.aindriub` Central namespace is verified, an RSA-4096 signing
+  key exists (primary id `FC5E68A44A325696`, public half on
+  keys.openpgp.org), and the repository secrets `CENTRAL_TOKEN_USERNAME`,
+  `CENTRAL_TOKEN_PASSWORD`, `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` are set.
+- **Task 37 — build and publish the distributable server image to GHCR.**
+  Depends on 33 (done, so 37 is unblocked).
+- **Task 38 — publish the MCP registry entry with an honest env contract.**
+  Depends on 33 (done) and 37 (open) — blocked until 37 lands. Its registry
+  namespace claim is owner-only and remains outstanding.
 
 ## Remaining slices past the adopted core
 
@@ -193,6 +224,19 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on task 35, 2026-09-16. Neither blocks anything; the
+reviewer judged both safe to leave rather than fold into 35's scope.
+
+- `dataprism.transport.mode=stdio` now refusing unconditionally
+  (`DataPrismAutoConfiguration`'s `dataPrismStdioTransportRefused`) makes
+  `dataprism.transport.fixture-development=true` unreachable everywhere in
+  the Spring surface. `ConfiguredJsonSourcesInitializer`'s plaintext-loopback
+  relaxation and `DataPrismContractValidator`'s zero-source early return are
+  consequently dead-in-effect paths — still executed, still pinned by tests,
+  but reachable by no live configuration.
+- `data-prism-connectors-rest`'s own `fixture-development` read is dead code
+  for the same reason.
 
 Found during `/verify` on task 31, 2026-09-15. Neither blocks anything; pick
 either up only if a future task already owns the file.
