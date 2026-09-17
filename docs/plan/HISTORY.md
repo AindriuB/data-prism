@@ -17,6 +17,263 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-16 — Task 40: publish the server image for linux/amd64 and linux/arm64
+
+`ghcr.io/aindriub/data-prism-server` was published amd64-only, and the
+(unpublished) MCP registry entry points strangers at exactly that coordinate —
+a large share of them on Apple Silicon. `docker save`/`load` cannot carry a
+multi-arch manifest list, so this was a rebuild of `publish-image.yml`'s
+shape, not a `--platform` flag: the old build → verify → save → artifact →
+load → push pipeline is replaced with a native per-architecture matrix
+(`ubuntu-latest` for amd64, `ubuntu-24.04-arm` for arm64), each leg building
+its own image, verifying the no-config refusal on its own native hardware,
+and pushing by digest, with a final job needing both legs and assembling the
+two digests into the `:0.1.0` and `:latest` manifest lists. No QEMU, no
+partial-publish path: if the arm64 runner is unavailable, the job fails
+outright rather than shipping an amd64-only manifest. Merged through a
+protected, green pull request (#64).
+
+GitHub Actions run 35162338759 (`workflow_dispatch` on the branch) proved two
+things local execution and code reading could not: `ubuntu-24.04-arm`
+resolves to a real GitHub arm64 runner and the no-config refusal verification
+succeeded there natively, not under emulation; and every registry-touching
+step in both matrix legs, plus the publish job, correctly skipped on a
+non-tag ref, with the publish job skipped entirely.
+
+**Cost:** the default `docker buildx` driver rejects `push-by-digest=true`
+("not implemented for docker driver") — the whole digest-push design would
+have failed on first real use. Fixed with a
+`docker buildx create --driver docker-container --use --bootstrap` step ahead
+of the build. The implementer was explicit that inspection alone would not
+have found this; it took actually running the build. The reviewer also found
+a gap worth keeping in mind rather than fixing: the image that gets pushed is
+a *second* `buildx build`, not the `--load`ed artifact that was verified —
+they are identical only because the builder's cache is warm, seconds apart in
+the same job. The guarantee this workflow gives is "verified a build that
+should be byte-identical to the one pushed", not "the verified bytes were
+pushed"; low risk, but a real distinction. Two paths remain undemonstrated by
+any actual run rather than merely reasoned about: the tag-push no-write case
+(the only `v*`-tag run, 35153755398, was against the *old* workflow), and the
+digest-push/`jq`/`--metadata-file` steps themselves (skipped in the only run
+that exercised this workflow, since it ran on a branch) — the first real
+release-tag dispatch will be their first execution. The image is re-pushed as
+`:0.1.0` rather than cut as a new version, because nothing external
+references it yet: the MCP registry entry is unpublished and the only puller
+so far is this project's own demo; that option expires once the registry
+entry goes live. The reviewer separately confirmed, rather than assumed, that
+`publish-mcp.yml`'s `docker manifest inspect` pullability guard is satisfied
+by a manifest list, so no successor task is needed there. `server.json`
+needed no platform change; only `README.md` did.
+
+## 2026-09-16 — Task 38: the MCP registry entry, and the release plan is complete
+
+Closes the release plan opened 2026-09-16 (tasks 33-39). Merged through a
+protected, green pull request (#61). Adds `server.json`, the `mcp-name`
+marker and a registry-arrival section in `README.md`, and
+`.github/workflows/publish-mcp.yml`, all gated on `workflow_dispatch` plus a
+`refs/tags/v*` ref like the other two publish workflows.
+
+The reviewer found a defect that would have shipped a broken public listing:
+`server.json` originally declared `DATAPRISM_SECURITY_POLICY_ROLES_INVESTIGATOR`
+as a required environment variable, and it does not bind. On Spring Boot
+3.5.16, map keys under a hyphenated prefix (`dataprism.security-policy.roles`)
+are discovered by enumerating `SystemEnvironmentPropertySource`, which splits
+`SECURITY_POLICY` into `security.policy` rather than `security-policy`, so a
+consumer setting exactly the variable the entry marked required would get
+`MISSING_ROLE_POLICY` and no startup. The implementer confirmed the correct
+spelling empirically, against Spring Boot's real `Binder` and
+`SystemEnvironmentPropertySource`, testing three candidate spellings rather
+than reasoning about it:
+`DATAPRISM_SECURITYPOLICY_ROLES_INVESTIGATOR` is the one that binds. The
+entry also contradicted itself, claiming elsewhere that the role map could
+not come from an environment variable at all; that was resolved rather than
+left standing. `DataPrismProperties` has exactly two `Map` fields — `sources`
+(unhyphenated prefix, POJO value type, unaffected) and `roles` (under the
+hyphenated `security-policy`, affected); `caller-claims` and `hmac-key` are
+fixed POJOs so their underscore-split spellings bind normally, and
+`purposes` is a `List` and binds directly. Only `roles` needed the fix.
+
+`publish-mcp.yml` also gained an ordering guard: two independently-dispatched
+workflows have no ordering guarantee in GitHub Actions, so it runs `docker
+manifest inspect` against the image tag first and refuses to publish the
+registry entry unless the image is already pullable, and it asserts
+`server.json`'s `.version` equals `.packages[0].version` before either guard,
+so a drifted file fails loudly instead of publishing an entry pointing at a
+stale image.
+
+Nothing is published. Confirmed at record time:
+`curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.aindriub/data-prism"`
+returns `{"servers":[],"metadata":{"count":0}}`. All three publish workflows
+(central, image, mcp) remain gated on `workflow_dispatch` and a
+`refs/tags/v*` ref, so nothing fires until the owner tags a release and
+dispatches each workflow by hand, in order — see `PLAN.md`'s "Release the
+tagged version" section for that sequence.
+
+**Cost:** the env-var spelling defect was reasoned-then-verified, not
+reasoned-and-trusted — the implementer built a throwaway harness against
+Spring Boot's real `Binder`/`SystemEnvironmentPropertySource` rather than
+inferring the relaxed-binding rule from documentation, because a wrong guess
+here ships silently as a broken public onboarding instruction, not a test
+failure. Tester validated `server.json` two independent ways (Python
+`jsonschema` against the fetched schema, and the real `mcp-publisher
+validate` CLI) rather than trusting one validator's interpretation of the
+schema.
+
+## 2026-09-16 — Tasks 36, 37, 39: Maven Central publishing, distributable server image, default-mode transport fail-open closed
+
+Closes the release wave opened the same day. All three merged through
+protected, green pull requests (#57, #58, #59).
+
+Task 39 closed the fail-open reviewer 35 found: every MCP transport bean in
+`DataPrismAutoConfiguration` is `@ConditionalOnWebApplication(SERVLET)`, so a
+non-web application at the *default* `dataprism.transport.mode=HTTP` started
+cleanly with no MCP transport and no refusal — reachable without any
+misconfiguration, unlike the stdio case task 35 closed. The fix is a
+`BeanFactoryPostProcessor`, `dataPrismMcpTransportPreflight`, refusing with a
+new code, `MCP_TRANSPORT_UNAVAILABLE`, before any DataPrism singleton is
+constructed. The fail-open was real and widespread: closing it broke tests in
+three separate modules, because `ServerPackagingIT` and
+`ConfiguredJsonSourcesPackagingIT` in `data-prism-server`, and
+`StarterStartupFailureTest` in `data-prism-example`, were each relying on a
+non-web context starting cleanly at default `mode=HTTP` — the very bug being
+closed. The test suite was depending on the defect, which is itself the
+strongest evidence it was worth fixing. All three were migrated to servlet
+contexts with every original assertion preserved; a reviewer confirmed no
+test was deleted or weakened to hold the count stable — `@Test` counts
+unchanged, zero `@Disabled`, method-name lists byte-identical. Task 39's own
+file contained a contradiction — an "Out of scope: data-prism-example" line
+alongside an acceptance bullet requiring the example suite to pass — and two
+different implementers hit it and both correctly stopped rather than picking
+a side; a task's scope and its acceptance criteria have to agree, and
+refusing to guess on a contradiction is the behaviour this plan wants. Four
+codes now name "this deployment has no usable MCP transport":
+`STDIO_DEVELOPMENT_ONLY`, `STDIO_TRANSPORT_UNSUPPORTED`,
+`STANDALONE_HTTP_ONLY`, and the new `MCP_TRANSPORT_UNAVAILABLE`; a consumer
+keying on the shared condition must match all four. `docs/configuration.md`
+now documents the new code and its table row.
+
+Task 36 wired Maven Central publishing for the 12 deployable library modules
+plus the root aggregator; `data-prism-server`, `data-prism-example`,
+`data-prism-architecture`, and the three quickstart modules are explicitly
+non-deployable. Verified both with `mvn clean verify` (no signing key) and
+`mvn -Prelease clean verify` (a throwaway key), and all 49 `.asc` signature
+files were individually `gpg`-verified rather than trusted by inspection; the
+reviewer checked the profile-merge mechanism with `mvn help:effective-pom`
+for the same reason. `data-prism-spring-boot-starter` ships a deliberately
+empty javadoc jar — a package containing only `package-info.java` cannot be
+documented by the javadoc tool at all, confirmed against the CLI with a
+minimal repro, and a marker type was rejected as dishonest. The maintainer's
+personal email is deliberately absent from `SECURITY.md` (GitHub private
+vulnerability reporting is the sole channel) and from the POM `<developers>`
+block, on the grounds that a published POM is immutable. Coordinator-granted
+extension: task 36 gained
+`data-prism-spring-boot-starter/src/main/java/.../package-info.java`, checked
+against no concurrent task owning that path.
+
+Task 37 built the fixture-free distributable server image, gated behind a
+`central` GitHub Environment and tag-plus-dispatch-plus-version-match
+publish workflows — nothing has actually been published; `publish-central.yml`
+is workflow_dispatch-only behind the `central` environment with
+`<autoPublish>false</autoPublish>` as a third layer, and `publish-image.yml`
+requires workflow_dispatch AND a `refs/tags/v*` ref AND a reactor-version
+match. Its own acceptance criteria named unreachable refusal codes — items 4
+and 5 expected `MISSING_JWT_ISSUER`/`MISSING_SOURCE_ADAPTER`, but
+`dataPrismIdentityResolverPreflight` always fires first, so the observed code
+is `MISSING_IDENTITY_RESOLVER`. This was a deliberate amendment, not a
+silent retirement: the workflow's refusal check now greps generically for
+`MISSING_[A-Z_]+`, which is also more robust against task 39 adding a fourth
+`BeanFactoryPostProcessor` to the same ordering. Three rounds of reviewer
+CHANGES, each fixing a named instance and finding a sibling of the same
+class still standing: (a) the publish job was gated on `workflow_dispatch`
+but not a tag ref, so a dispatch on untagged `main` could still push; (b) the
+ARG/ENV rework replaced a JSON-array `ENTRYPOINT` with `sh -c`, silently
+swallowing every operator-appended `docker run` argument; (c)
+`${{ inputs.version }}` shell-injection hardening landed on the publish job
+but not on build-and-verify. The final fix swept for the whole class instead
+of the named line — a programmatic YAML parse confirming zero `${{ }}`
+expressions inside any `run:` block.
+
+A single serialized full-reactor `mvn -B clean verify` from the main checkout
+after all three merges gives 466 tests, 0 failures, 0 errors, 19 modules —
++4 over 462, all from task 39's new tests.
+
+**Cost:** Both merge-branch races (PR checks reporting `pass` while GitHub's
+merge API still returned "Required status check build is expected", and two
+sequential merges each leaving the next PR's branch behind `main` and
+blocked as not-up-to-date) needed `PUT .../pulls/<n>/update-branch` and a
+wait for the re-triggered `build` run before the merge would go through —
+routine with three PRs landing in sequence against one protected branch, not
+a defect in any of the three.
+
+**Owner actions still outstanding:** the `central` GitHub Environment exists
+but has no required reviewers ticked, so it currently gates nothing;
+`CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD` should move from
+repository secrets to that environment's scope now that
+`publish-central.yml`'s stage job no longer references them; task 38 will
+need an owner-only MCP registry namespace claim before it can publish.
+
+## 2026-09-16 — Tasks 33, 34, 35: 0.1.0 cut, release hygiene files, stdio refuses instead of serving nothing
+
+Three tasks opening the release wave. All merged through protected, green pull
+requests (#41, #42, #43).
+
+Task 33 cut the 0.1.0 release version across the reactor and added a
+tag-triggered GitHub Release workflow. `release.yml` has no deploy phase and no
+`packages:`/`id-token:` permission, so it cannot publish to Maven Central or a
+container registry on its own — that is left to tasks 36 and 37, which now
+have a version to publish.
+
+Task 34 added `CHANGELOG.md`, `SECURITY.md`, `dependabot.yml`, and a
+`CONTRIBUTING.md` security section. The branch shipped with a personal email
+as `SECURITY.md`'s fallback contact; the reviewer caught it and it was fixed
+by an amendment on the same branch before merge — GitHub private vulnerability
+reporting is now the sole channel, `rg -i 'aindriubannister|@gmail'` over the
+worktree returned no matches, and the supported-version table row was
+generalised to "Latest released version".
+
+Task 35 made `dataprism.transport.mode=stdio` refuse startup unconditionally
+in the shared Spring auto-configuration (`DataPrismAutoConfiguration`'s new
+`dataPrismStdioTransportRefused` bean, `STDIO_TRANSPORT_UNSUPPORTED`), closing
+the fail-open where a starter or standalone-server context configured for
+stdio previously started with no MCP transport at all. `docs/configuration.md`
+line 55 (the `dataprism.transport` vocabulary row) said `stdio` was
+fixture-development-reachable; that is now false and has been corrected here.
+`dataprism.transport.fixture-development=true` is consequently unreachable
+everywhere in the Spring surface — `ConfiguredJsonSourcesInitializer`'s
+plaintext-loopback relaxation and `DataPrismContractValidator`'s zero-source
+early return are dead-in-effect paths (still executed, still pinned by tests,
+judged safe to leave as debt rather than removed here), and
+`data-prism-connectors-rest`'s own `fixture-development` read is dead code.
+Reviewer 35 also found a second fail-open outside this task's scope: the MCP
+HTTP transport beans are `@ConditionalOnWebApplication`, so a non-web starter
+application at the *default* `mode=HTTP` starts with no transport and no
+refusal either. That is now task 39, opened depending on 35.
+
+A single serialized full-reactor `mvn -B clean verify` from the main checkout
+after all three merges — not any individual tester's run — gives 462 tests, 0
+failures, 0 errors, 19 modules.
+
+**Cost:** One tester (34) reported "920 passed"; that number is a double-count
+of surefire and failsafe report files on a branch that touches no test code at
+all, and was not used. Testers 33 and 35, run on the same reactor, correctly
+reported 460 and 462. The serialized re-run here (`find ... surefire-reports
+... failsafe-reports`, summed per-module aggregate lines only, not per-class
+lines, to avoid the same double-count) confirms 462. Do not sum per-class
+`Tests run:` lines from a `mvn` log across both report directories — count the
+one aggregate line per module instead, or the failsafe integration-test
+modules get counted twice.
+
+The planner's task-file commit for this wave (`1c22663`, adding task files
+33-38) was made directly to a local `main` that had already diverged from
+`origin/main`, rather than through a PR — inconsistent with this repository's
+protected-branch flow (`docs/workflow.md`, Phase 4). It reached `origin/main`
+only because one of the three worktrees (task 35's) happened to be branched
+from that local `main` after the stray commit landed, carrying it along
+through PR #43's merge. It worked here by coincidence, not by design; a wave
+whose worktrees are all branched before a stray local commit would leave that
+commit permanently unreachable from `origin/main`. Planner commits need the
+same PR discipline as every other change to this repository.
+
 ## 2026-09-15 — Simplification wave 2 (tasks 31-32): descriptor resolver wired, data-prism-audit merged into core
 
 Two tasks closing the remaining dead-code and module-count debt from the

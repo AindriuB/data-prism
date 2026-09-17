@@ -1,0 +1,107 @@
+name: publish-mcp
+
+# Validates server.json against the schema it names on every tag push and
+# every manual dispatch, but only ever registers the entry with
+# registry.modelcontextprotocol.io on a manually-started workflow_dispatch
+# run made against a `v*` tag ref — the same guard shape publish-image.yml
+# and publish-central.yml use for their own gated publish steps. A tag push
+# alone proves the entry is well-formed and stops there; a dispatch left on
+# a branch (the default when opening "Run workflow") never satisfies the
+# tag-ref check below and never reaches the registry either.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      # Schema compliance checked by a command, not by eye: this fails the
+      # run on any structural error, not only when someone happens to read
+      # the diff carefully.
+      - name: Validate server.json against its declared schema
+        run: ./mcp-publisher validate server.json
+
+  # Never runs from a plain tag push, and never from a workflow_dispatch off
+  # a branch either: both the trigger condition above and this job's own
+  # `if:` have to agree the ref is a `v*` tag before anything here can reach
+  # the registry. Mirrors the two-click defect publish-image.yml's own
+  # publish job guards against.
+  publish:
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag guard below only reads .version, and the image guard further
+      # down only reads .packages[0].version — two independent fields that
+      # both have to name the same release. Asserting they agree first means
+      # a drifted server.json (say, .version bumped to 0.2.0 without bumping
+      # the packages entry) fails loudly here instead of letting the tag
+      # guard pass on the stale .packages[0].version and publish an entry
+      # pointing at the wrong image.
+      - name: Assert server.json's top-level and package versions agree
+        run: |
+          top_version="$(jq -r '.version' server.json)"
+          package_version="$(jq -r '.packages[0].version' server.json)"
+          if [ "$top_version" != "$package_version" ]; then
+            echo "::error::server.json .version (${top_version}) and .packages[0].version (${package_version}) disagree"
+            exit 1
+          fi
+
+      # A tag whose name disagrees with server.json's own version would
+      # register a mislabelled entry. Bound once via env: rather than
+      # interpolating ${{ }} straight into the script.
+      - name: Guard tag matches server.json version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag_version="${REF_NAME#v}"
+          server_version="$(jq -r '.version' server.json)"
+          if [ "$tag_version" != "$server_version" ]; then
+            echo "::error::tag ${REF_NAME} does not match server.json version ${server_version}"
+            exit 1
+          fi
+
+      # This workflow only ever references the image task 37's own gated
+      # publish-image.yml produces; it never builds or pushes one itself.
+      # The two workflows are dispatched independently by a human, so
+      # nothing in GitHub Actions orders them for us — this step is the
+      # ordering guarantee: it refuses to register the entry unless the
+      # exact coordinate server.json names is already pullable from GHCR,
+      # which is only true once someone has manually dispatched
+      # publish-image.yml for this tag and its publish job has finished.
+      - name: Verify the referenced image is already published
+        run: |
+          image="ghcr.io/aindriub/data-prism-server:$(jq -r '.packages[0].version' server.json)"
+          if ! docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "::error::${image} is not pullable anonymously. Either publish-image.yml has not been dispatched for this tag yet, or the ghcr.io/aindriub/data-prism-server package is not public — check both before retrying."
+            exit 1
+          fi
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      # OIDC needs no stored secret: the `id-token: write` permission above
+      # lets mcp-publisher mint a short-lived token scoped to this repo and
+      # exchange it for a registry token authorised for io.github.aindriub/*.
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server to MCP Registry
+        run: ./mcp-publisher publish

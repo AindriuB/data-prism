@@ -293,6 +293,73 @@ public class DataPrismAutoConfiguration {
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
+    /**
+     * The Spring auto-configuration has no stdio transport of its own: every
+     * {@code @Bean} below this point is gated on {@code mode=HTTP}, and nothing
+     * here ever calls {@code DataPrismMcpServer.stdio()} — that stays the hand-built
+     * {@code data-prism-example} entry point's job. Without this refusal,
+     * {@code dataprism.transport.mode=stdio} with {@code fixture-development=true}
+     * passes {@link DataPrismProperties#validate()} and the context would start
+     * successfully while serving no MCP transport at all — fail-open. Unconditional,
+     * like {@link #dataPrismPropertiesValidated}, so every consumer of the starter
+     * inherits it rather than only the standalone server's own
+     * {@code standaloneTransportValidated} bean.
+     */
+    @Bean
+    Object dataPrismStdioTransportRefused(DataPrismProperties properties) {
+        if (properties.getTransport().getMode() == DataPrismProperties.Transport.Mode.STDIO) {
+            throw new DataPrismConfigurationException("STDIO_TRANSPORT_UNSUPPORTED",
+                    "the stdio transport has no Spring auto-configuration; dataprism.transport.mode=stdio is refused here");
+        }
+        return new Object();
+    }
+
+    /**
+     * Resolve this before singleton creation, same reasoning as
+     * {@link #dataPrismIdentityResolverPreflight()}. Checks whether the {@link
+     * #dataPrismHttpTransportValidated} bean definition exists after conditions are
+     * evaluated, rather than re-deriving the servlet/property check directly, so it
+     * also catches a WebFlux application and a missing servlet dependency, not only
+     * {@code spring.main.web-application-type=none}. Not a check for {@link
+     * McpSyncServer} itself: that bean is additionally gated on an {@link
+     * McpTransportContextExtractor}, and a servlet application missing only that
+     * already gets the more specific {@code MISSING_CALLER_CONTEXT_EXTRACTOR} from
+     * {@link #dataPrismHttpTransportValidated} instead — this preflight must not
+     * shadow that. Excludes {@code dataprism.transport.mode=stdio}, which {@link
+     * #dataPrismStdioTransportRefused} already refuses with a more specific message.
+     *
+     * <p>Four codes now mean "this deployment has no usable MCP transport", each at
+     * a different layer with different remediation advice:
+     * <ul>
+     *   <li>{@code STDIO_DEVELOPMENT_ONLY} ({@link DataPrismProperties#validate()})
+     *       — stdio requested without {@code fixture-development=true}.
+     *   <li>{@code STDIO_TRANSPORT_UNSUPPORTED} ({@link #dataPrismStdioTransportRefused})
+     *       — stdio requested inside a Spring context, which has no stdio wiring.
+     *   <li>{@code STANDALONE_HTTP_ONLY} ({@code ServerIntegrationsConfiguration}
+     *       in {@code data-prism-server}) — the standalone server only supports
+     *       protected HTTP deployments.
+     *   <li>{@code MCP_TRANSPORT_UNAVAILABLE} (here) — HTTP requested or defaulted,
+     *       but this application is not a servlet web application.
+     * </ul>
+     * A consumer keying on "no usable MCP transport" must match all four.
+     */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismMcpTransportPreflight(Environment environment) {
+        return factory -> {
+            String mode = environment.getProperty("dataprism.transport.mode");
+            boolean stdio = mode != null
+                    && DataPrismProperties.Transport.Mode.STDIO.name().equalsIgnoreCase(mode.trim());
+            if (stdio) {
+                return;
+            }
+            if (!factory.containsBeanDefinition("dataPrismHttpTransportValidated")) {
+                throw new DataPrismConfigurationException("MCP_TRANSPORT_UNAVAILABLE",
+                        "no MCP transport is registered for this application: the HTTP transport requires"
+                                + " a servlet web application");
+            }
+        };
+    }
+
     @Bean
     @ConditionalOnProperty(prefix = "dataprism.transport", name = "mode", havingValue = "HTTP",
             matchIfMissing = true)

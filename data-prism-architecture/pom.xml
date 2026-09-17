@@ -18,6 +18,15 @@
     on both data-prism-server and data-prism-example even though their
     application.yaml resources would collide on one classpath.
   </description>
+  <properties>
+    <!-- Test-only architecture rules with no production code, not a library
+         artifact: never published to Central. -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <skipPublishing>true</skipPublishing>
+    <maven.source.skip>true</maven.source.skip>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+    <gpg.skip>true</gpg.skip>
+  </properties>
   <dependencies>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-annotations</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-processor</artifactId><scope>test</scope></dependency>

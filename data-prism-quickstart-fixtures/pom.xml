@@ -20,6 +20,16 @@
     making data-prism-example itself runnable.
   </description>
 
+  <properties>
+    <!-- A runnable quickstart fixture server, not a library artifact: never
+         published to Central. -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <skipPublishing>true</skipPublishing>
+    <maven.source.skip>true</maven.source.skip>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+    <gpg.skip>true</gpg.skip>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.springframework.boot</groupId>

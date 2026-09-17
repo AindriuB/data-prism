@@ -9,7 +9,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -86,10 +86,19 @@ class SharedReadBudgetTest {
                 });
     }
 
-    private static ApplicationContextRunner runner(String topology, String... extra) {
-        ApplicationContextRunner runner = new ApplicationContextRunner()
+    /**
+     * Migrated from {@code ApplicationContextRunner} to {@link
+     * WebApplicationContextRunner} (task 39): the new {@code
+     * dataPrismMcpTransportPreflight} refuses a non-web context at the default
+     * {@code dataprism.transport.mode=HTTP}. Every assertion in this class is
+     * unchanged; only the runner type and the fixture — {@code ReviewedIntegrations}
+     * swapped for {@code ReviewedHttpIntegrations}, which adds the caller-context
+     * extractor the HTTP transport requires — changed.
+     */
+    private static WebApplicationContextRunner runner(String topology, String... extra) {
+        WebApplicationContextRunner runner = new WebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
-                .withUserConfiguration(DataPrismAutoConfigurationTest.ReviewedIntegrations.class)
+                .withUserConfiguration(DataPrismAutoConfigurationTest.ReviewedHttpIntegrations.class)
                 .withPropertyValues(
                         "dataprism.security.jwt.issuer=https://issuer.example",
                         "dataprism.security.jwt.audience=mcp",
