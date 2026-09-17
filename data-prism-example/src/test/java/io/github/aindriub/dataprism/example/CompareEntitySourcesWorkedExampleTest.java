@@ -103,7 +103,7 @@ class CompareEntitySourcesWorkedExampleTest {
     @Test
     @DisplayName("compare_entity_sources reports the disputed name, keyed by the real field names, "
             + "without leaking any raw fixture value")
-    void comparesCustomer123WithoutLeakingRawValues() {
+    void comparesCustomer123WithoutLeakingRawValues() throws com.fasterxml.jackson.core.JsonProcessingException {
         Set<String> capabilities = Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES);
         AuthorizationService authorizationService = authorizationServiceGranting(capabilities);
         ScopeResolver scopeResolver = scopeResolverFor(assembly);
@@ -136,6 +136,12 @@ class CompareEntitySourcesWorkedExampleTest {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> structured = (Map<String, Object>) compareResult.structuredContent();
+        // Re-serialised independently of the tool's own mapper call, so this is
+        // a check of the structured content itself -- not a re-read of `text`.
+        String structuredJson = DataPrismObjectMapper.create().writeValueAsString(structured);
+        assertThat(structuredJson)
+                .doesNotContain("Patrick Murphy").doesNotContain("Pat Murphy").doesNotContain("P. Murphy")
+                .doesNotContain("patrick.murphy@example.invalid").doesNotContain("\"123\"");
         assertThat(String.valueOf(structured.get("subject")))
                 .as("the subject in structured content is the pseudonym, never the raw subject id")
                 .doesNotContain("123").startsWith("SUBJ-");
