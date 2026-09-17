@@ -65,18 +65,38 @@ jobs:
       - uses: actions/checkout@v4
 
       # The tag guard below only reads .version, and the image guard further
-      # down only reads .packages[0].version — two independent fields that
-      # both have to name the same release. Asserting they agree first means
-      # a drifted server.json (say, .version bumped to 0.2.0 without bumping
-      # the packages entry) fails loudly here instead of letting the tag
-      # guard pass on the stale .packages[0].version and publish an entry
-      # pointing at the wrong image.
-      - name: Assert server.json's top-level and package versions agree
+      # down derives its coordinate from .packages[0].identifier — two
+      # independent places that both have to name the same release. The
+      # registry forbids a `version` field on OCI packages (task 48: the tag
+      # must live in the canonical `identifier` reference instead), so
+      # .packages[0].version no longer exists to compare against .version —
+      # this now compares .version against the tag embedded in
+      # .packages[0].identifier, which is where that release version now
+      # actually lives. Asserting they agree first means a drifted
+      # server.json (say, .version bumped without the identifier's tag
+      # following it) fails loudly here instead of letting the tag guard pass
+      # on a stale identifier and publish an entry pointing at the wrong
+      # image. The path is checked here too, not just the tag: an identifier
+      # pointing at the wrong repository but the right tag would otherwise
+      # pass this step and only surface later as a false "image not
+      # pullable" from the anonymous-pull check further down, sending
+      # whoever reads that toward a GHCR visibility problem that does not
+      # exist. Splitting on the last colon (not the first) is deliberate —
+      # it is the only split that is still correct if the registry host ever
+      # carries a port.
+      - name: Assert server.json's top-level version agrees with the OCI identifier tag and path
         run: |
           top_version="$(jq -r '.version' server.json)"
-          package_version="$(jq -r '.packages[0].version' server.json)"
-          if [ "$top_version" != "$package_version" ]; then
-            echo "::error::server.json .version (${top_version}) and .packages[0].version (${package_version}) disagree"
+          identifier="$(jq -r '.packages[0].identifier' server.json)"
+          identifier_path="${identifier%:*}"
+          identifier_tag="${identifier##*:}"
+          expected_path="ghcr.io/aindriub/data-prism-server"
+          if [ "$identifier_path" != "$expected_path" ]; then
+            echo "::error::server.json .packages[0].identifier path (${identifier_path}) is not ${expected_path}"
+            exit 1
+          fi
+          if [ "$top_version" != "$identifier_tag" ]; then
+            echo "::error::server.json .version (${top_version}) and .packages[0].identifier tag (${identifier_tag}) disagree"
             exit 1
           fi
 
@@ -104,7 +124,7 @@ jobs:
       # publish-image.yml for this tag and its publish job has finished.
       - name: Verify the referenced image is already published
         run: |
-          image="ghcr.io/aindriub/data-prism-server:$(jq -r '.packages[0].version' server.json)"
+          image="$(jq -r '.packages[0].identifier' server.json)"
           if ! docker manifest inspect "$image" >/dev/null 2>&1; then
             echo "::error::${image} is not pullable anonymously. Either publish-image.yml has not been dispatched for this tag yet, or the ghcr.io/aindriub/data-prism-server package is not public — check both before retrying."
             exit 1
