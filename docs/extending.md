@@ -26,7 +26,8 @@ That mode has a real limit worth knowing before choosing it: its resolver
 never descends into a nested object — `descendable` always returns `false`,
 by design, because there is no reviewed Java type behind a configured source
 to say what a nested structure means — so it only covers a source whose
-response is one flat JSON object of scalar fields
+response is one flat JSON object: scalar fields, or arrays of them, but no
+nested objects
 (`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonFieldMetadataResolver.java:56-65`).
 If your source's response nests objects, needs custom fetch logic beyond a
 single templated `GET`, or needs a model no flat catalogue can express, that
@@ -384,16 +385,21 @@ names `${project.version}`:
 `data-prism-quickstart-extension/pom.xml:38-58`
 
 That works inside this repository, and only inside it, because this module
-inherits versions from the reactor's own parent pom
+inherits from the reactor's own parent pom
 (`data-prism-quickstart-extension/pom.xml:7-11`), which pins every
-`io.github.aindriub` artifact to `${project.version}` and imports
+`io.github.aindriub` artifact to `${project.version}`, imports
 `spring-boot-dependencies` to pin `spring-web` and
-`spring-boot-autoconfigure`. A consumer project has no relationship to that
-parent. Copying the block above as shown gets a missing-version error for
-the two `io.github.aindriub` dependencies, and copying
-`${project.version}` into `annotationProcessorPaths` (below) asks for a
-`data-prism-processor` at *the consumer's own project version* — an
-artifact that does not exist.
+`spring-boot-autoconfigure`, and sets `<maven.compiler.release>21</maven.compiler.release>`
+(`pom.xml:67`). A consumer project has no relationship to that parent, and
+loses all three inherited settings, not just the versions: copying the
+dependency block above as shown gets a missing-version error for the two
+`io.github.aindriub` dependencies; copying `${project.version}` into
+`annotationProcessorPaths` (below) asks for a `data-prism-processor` at *the
+consumer's own project version*, an artifact that does not exist; and with
+no `release` set at all, `maven-compiler-plugin` falls back to its own
+default of `1.8`, at which point a `record` (used below) is a syntax error
+and `data-prism-core-0.2.0.class` files — compiled for 21 — fail to load
+with `class file has wrong version 65.0`.
 
 The version-complete equivalent, standing alone, with no parent from this
 repository. It assumes your own pom already has the usual top-level
@@ -403,6 +409,7 @@ depending on Data Prism:
 
 ```xml
   <properties>
+    <maven.compiler.release>21</maven.compiler.release>
     <data-prism.version>0.2.0</data-prism.version>
     <spring-boot.version>3.5.16</spring-boot.version>
   </properties>
@@ -445,8 +452,8 @@ depending on Data Prism:
   </dependencies>
 ```
 
-`spring-boot.version` (`3.5.16`) is the exact Spring Boot version the
-published `data-prism-server-0.2.0` was built against — importing its
+`spring-boot.version` (`3.5.16`) is the exact Spring Boot version the 0.2.0
+server distribution was built against — importing its
 `spring-boot-dependencies` BOM is what lets `spring-web` and
 `spring-boot-autoconfigure` above go unversioned safely, resolving to the
 same versions already on the running server's classpath, which is the whole
@@ -461,15 +468,18 @@ dependencies at lines 60-94 — those exist only so the Maven reactor builds
 the packaged artifacts this module's own smoke test starts as
 subprocesses; a consumer's extension pom has no reason to carry them.)
 
-This was verified, not assumed: a throwaway project using exactly the block
-above, plus a minimal `DataSourceAdapter` and an `@LlmExposedModel` record,
-was built with `mvn package` against a clean local repository with no other
+This was verified, not assumed: a throwaway project's pom was assembled by
+pasting the two fenced blocks above unmodified into a pom whose only other
+content is the top-level fields already assumed (`groupId`, `artifactId`,
+`version`, `packaging`) — nothing added, nothing implied. Alongside a
+minimal `DataSourceAdapter` and an `@LlmExposedModel` record, it was built
+with `mvn package` against a clean local repository with no other
 data-prism artifacts in it, resolving `data-prism-core`,
 `data-prism-annotations` and `data-prism-processor` `0.2.0` from Maven
 Central and `spring-web` `6.2.19`/`spring-boot-autoconfigure` `3.5.16` from
-the imported BOM — the same Spring Boot version `data-prism-server-0.2.0`
-itself was built against. The build produced a jar; nothing in this
-paragraph is aspirational.
+the imported BOM — the same Spring Boot version the 0.2.0 server
+distribution itself was built against. The build produced a jar; nothing in
+this paragraph is aspirational.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above:
