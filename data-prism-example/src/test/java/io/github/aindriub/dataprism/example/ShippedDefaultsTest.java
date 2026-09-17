@@ -23,22 +23,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ShippedDefaultsTest {
 
     @Test
-    @DisplayName("the shipped investigation context never holds EXPOSE_SOURCE_NAMES")
+    @DisplayName("the shipped investigation context holds exactly GET_ENTITY_CONTEXT and COMPARE_ENTITY_SOURCES, "
+            + "never EXPOSE_SOURCE_NAMES")
     void standardAssemblyContextIsMasked() {
         var context = DataPrismAssembly.standard().investigationContext();
 
-        assertThat(context.capabilities()).isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT));
+        assertThat(context.capabilities())
+                .isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES));
         assertThat(context.has(Capability.EXPOSE_SOURCE_NAMES)).isFalse();
     }
 
     @Test
-    @DisplayName("the shipped developer role holds only GET_ENTITY_CONTEXT")
+    @DisplayName("the shipped developer role holds exactly GET_ENTITY_CONTEXT and COMPARE_ENTITY_SOURCES")
     void shippedDeveloperRoleIsNarrow() {
         SecurityPolicy policy = ExampleApplication.shippedSecurityPolicy();
 
         Set<String> capabilities = policy.capabilitiesFor(Set.of("developer"));
 
-        assertThat(capabilities).isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT));
+        assertThat(capabilities).isEqualTo(Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES));
         assertThat(capabilities).doesNotContain(Capability.EXPOSE_SOURCE_NAMES);
     }
 }

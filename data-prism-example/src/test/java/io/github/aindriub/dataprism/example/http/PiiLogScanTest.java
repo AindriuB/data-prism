@@ -6,6 +6,7 @@ import io.github.aindriub.dataprism.core.Capability;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.example.DataPrismAssembly;
+import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -332,16 +333,19 @@ class PiiLogScanTest {
     }
 
     /**
-     * Three calls through the real pipeline — {@code DataPrismAssembly},
-     * {@code GetEntityContextTool}, a real {@code AuditRecorder} over
-     * {@link Slf4jAuditSink} — covering both fixture subjects and one refusal,
-     * the same shape {@code EndToEndTest} and {@code WorkedExampleTest} already
-     * drive the pipeline through, just captured rather than left to the
-     * console. A fourth call supplies a reserved argument name, which
-     * {@code DefaultContextOrchestrator} logs as a plain application warning —
-     * never shaped like a {@code dataprism.audit} record — so the captured
-     * output actually exercises both scanning paths rather than only the
-     * audit one.
+     * Three {@code get_entity_context} calls through the real pipeline —
+     * {@code DataPrismAssembly}, {@code GetEntityContextTool}, a real
+     * {@code AuditRecorder} over {@link Slf4jAuditSink} — covering both fixture
+     * subjects and one refusal, the same shape {@code EndToEndTest} and
+     * {@code WorkedExampleTest} already drive the pipeline through, just
+     * captured rather than left to the console. A fourth call supplies a
+     * reserved argument name, which {@code DefaultContextOrchestrator} logs as a
+     * plain application warning — never shaped like a {@code dataprism.audit}
+     * record — so the captured output actually exercises both scanning paths
+     * rather than only the audit one. A fifth call drives
+     * {@code compare_entity_sources} for the same disputed subject, under the
+     * same policy, now granting both capabilities — the shape task 43 adds —
+     * so the leak scan also covers the comparison path's own serialised output.
      */
     private static void runFullIntegrationRun() {
         Clock clock = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), java.time.ZoneOffset.UTC);
@@ -350,14 +354,17 @@ class PiiLogScanTest {
 
         DataPrismAssembly assembly = DataPrismAssembly.standard();
         AuditRecorder toolAudit = new AuditRecorder(new Slf4jAuditSink(), clock, "pii-scan-mcp");
-        SecurityPolicy policy =
-                new SecurityPolicy(Set.of(purpose), Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT)));
+        SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
+                Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
         AuthorizationService authorizationService =
                 new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                 new PurposeValidator(Set.of(purpose)));
         GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
                 scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock);
+        CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
+                authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
+                toolAudit, clock);
 
         AuthenticatedCaller caller = new AuthenticatedCaller(
                 "pii-scan-principal", "pii-scan-client", Set.of(role), purpose, "CASE-PII-SCAN-1", null);
@@ -379,6 +386,10 @@ class PiiLogScanTest {
         tool.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(
                 GetEntityContextTool.NAME,
                 Map.of("entityType", "CUSTOMER", "subjectId", "123", "purpose", "not-the-callers-to-set")));
+        // The comparison path: same disputed subject, three-way disagreement,
+        // now captured and scanned exactly like get_entity_context's output.
+        compareTool.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(
+                CompareEntitySourcesTool.NAME, Map.of("entityType", "CUSTOMER", "subjectId", "123")));
     }
 
     /** Runs {@code action} with both {@link System#out} and {@link System#err} captured and restored. */

@@ -105,10 +105,12 @@ public final class DataPrismAssembly {
         // (task 06). No EXPOSE_SOURCE_NAMES: this factory hands the context to
         // anything that asks (WorkedExampleTest, EndToEndTest), so it mints the
         // same masked default a real deployment ships, rather than an unmasking
-        // grant nothing here re-checks who is asking for.
+        // grant nothing here re-checks who is asking for. GET_ENTITY_CONTEXT and
+        // COMPARE_ENTITY_SOURCES only, mirroring ExampleApplication's shipped
+        // developer role.
         this.investigationContext = new InvestigationContext(
                 "stdio-development", "stdio-development", "CASE-DEMO-1",
-                Set.of(Capability.GET_ENTITY_CONTEXT));
+                Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES));
 
         this.clock = clock;
     }
