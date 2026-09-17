@@ -17,6 +17,126 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — Tasks 42 and 44: the second MCP tool, and the registry namespace corrected
+
+Task 42 shipped `compare_entity_sources`, the second MCP tool: per-field
+`identity` plus findings that distinguish agreement, disagreement
+(`INCONSISTENT`/`FORMATTING_ONLY`/`ABBREVIATION`) and
+`MISSING_IN_SOME_SOURCES` by an explicit discriminator, over the same
+correlated, scrubbed `ContextResponse` that `get_entity_context` already
+builds. Task 44 corrected the MCP registry namespace from
+`io.github.aindriub/data-prism` to `io.github.AindriuB/data-prism`, the casing
+the registry actually grants for the GitHub login, in the three strings that
+carry it, and added a guard so they cannot drift apart again. Both merged
+2026-09-17 through protected, green pull requests (#69, #68); full reactor
+`mvn -B clean verify` green at 483 tests (466 baseline, +17).
+
+**The defect, and why three tests missed it — the most valuable thing in this
+wave.** `CompareEntitySourcesTool` looked up `entity.get(finding.field())`
+using the *namespace* name a `ConsistencyFinding` carries (e.g.
+`PERSON_NAME`), but the scrubbed tree `ContextResponse.entity()` is keyed by
+each model's *serialised field name* (e.g. `customerName`). Two sources can
+and do use different field names for the same namespace, so this lookup
+matched nothing for any realistic model: `identity` was silently empty every
+time, present in the tree but never found. It failed closed — no leak — but
+the contract's second item was effectively unimplemented, and the tool
+shipped that way past its own test suite. All three tests that covered
+`identity` shared the implementation's assumption rather than checking it:
+one declared a record component literally named `PERSON_NAME` so the
+namespace name and the field name happened to coincide, and the other two
+hand-built response fixtures whose keys were already chosen to match the
+lookup. A test written alongside the implementation it tests tends to encode
+that implementation's assumptions rather than challenge them; a test that has
+never been run against a deliberately broken version of the code it covers
+has not been shown capable of failing, and proves nothing about the code
+being right. The fix adds `ContextResponse.fieldsFor(...)`, backed by the new
+`fieldsByNamespace` component, to translate a finding's namespace to the real
+per-source field name(s) the tree holds it under, tried alongside the direct
+lookup for every finding. It was accepted only after the regression test was
+run against the pre-fix code and reproduced the reviewer's exact failure,
+then passed after the fix.
+
+**Binary compatibility, checked twice with `javap` against the published
+jar, not assumed.** `data-prism-orchestration` is on Maven Central at 0.1.0
+and 0.1.1, immutably. Both `ContextRequest` and `ContextResponse` gained a new
+record component for this task (`fieldsByNamespace` on the response; an
+equivalent addition on the request), which changes each record's canonical
+constructor — normally a linkage break for anything compiled against the
+published jar. Both records got an explicit legacy constructor reproducing
+the old parameter list and descriptor, confirmed twice by decompiling the
+published 0.1.1 jar's class files with `javap` and diffing the method
+descriptor against the new build's, not by reasoning about it. Recorded
+because adding a component to an already-published record is a trap worth
+checking every single time, not something to eyeball.
+
+**Agreement is computed pre-scrub, and has to be.** After pseudonymisation,
+two genuinely different values that collapse onto the same pseudonym are
+indistinguishable from two identical ones — visible today in the GitHub demo,
+where a profile name and a differing commit-author name for the same subject
+both render as one pseudonym and only the finding itself reveals they
+differed. So `compare_entity_sources`'s agreement findings come from
+`NamespaceCorrelationService`, on the trusted side, over raw values, before
+scrubbing — not reconstructed from the already-scrubbed `ContextResponse` in
+the MCP layer, which would be too late to see the difference. Getting this
+backwards would have produced a tool that silently reports everything
+consistent, a failure mode a naive equality-on-pseudonyms test would not have
+caught either.
+
+**The spec was superseded; the amendment is recorded, not the sketch.**
+`docs/pack.md:1436-1471` (§42) predates the privacy engine: its example
+response shows a raw internal id, a raw personal name and raw source-system
+names, all three of which would breach CLAUDE.md rule 5 if shipped literally.
+Its *shape* — entity type, subject, an identity block, per-field findings — is
+authoritative; its *values* are not. The amendment is recorded in
+`docs/design-review.md`, section E, which is the file that amends `pack.md`
+where the two disagree.
+
+**Owner decisions recorded during this wave:** the tool's argument and
+response field is `subjectId`, not the spec's `idInternal` — consistency with
+the shipped `get_entity_context` tool an MCP client sees alongside it, which
+already uses `subjectId` across its surface; `identity` carries pseudonymised
+values copied verbatim out of the scrubbed tree, never raw and never
+re-derived; and findings report agreement and disagreement and
+missing-in-some-sources, each distinguishable by an explicit discriminator
+rather than by absence, because silence would leave a caller unable to tell
+"compared and consistent" from "never compared".
+
+**Three namespaces differ in casing, each correct in its own system, and a
+naive consistency sweep across them would break two already-published
+artifacts.** MCP registry: `io.github.AindriuB/data-prism` (GitHub login
+casing, what the registry actually grants). Maven Central:
+`io.github.aindriub` (published immutably at 0.1.0 and 0.1.1, must stay
+lowercase). GHCR: `ghcr.io/aindriub/data-prism-server` (Docker repository
+paths must be lowercase). Task 44 changed only the first, in exactly the
+three files that carry it (`server.json`, `README.md`'s marker,
+`docker/distribution/Dockerfile`'s label), and added a step to
+`publish-mcp.yml`'s validate job that extracts the name from all three and
+fails with `::error::` if they are not byte-identical — proven non-vacuous
+independently by the reviewer, not just by the implementer's own paste.
+
+**Task 44 does not clear the 403 on its own.** The MCP server-name label is
+baked into the GHCR image at build time, so the corrected namespace only
+takes effect once `publish-image.yml` rebuilds and re-pushes the image under
+the next version (task 45's 0.2.0). `mcp-publisher publish` failed 403
+against `v0.1.1` during this wave and nothing was published; that remains
+true after this merge.
+
+**Cost:** the sequential-merge race predicted going in happened exactly as
+expected — task 44's PR (#68) was already open and merged first, carrying the
+previously-unpushed `plan: tasks 42-45` commit `main` was already sitting on
+(same handling as tasks 40 and 41's equivalent situation); task 42's branch
+had to be pushed fresh, opened as PR #69, then updated (`gh pr update-branch`)
+once main moved out from under it and its `build` check re-run green before
+it could merge. Tasks 43 and 45 stay open: 43 is now unblocked (42 merged)
+but still needs an explicit criterion proving `identity`'s field-name keying
+against the *real* `ScrubbingEngine`, not the stub task 42's own tests used;
+45 needs a `CHANGELOG.md` line about `ContextResponse.equals`/`hashCode`/
+`toString` now including the new component, and inherits the documented
+(not yet exercised) gap that any `ContextOrchestrator` other than
+`DefaultContextOrchestrator` gets an empty `identity` via the legacy
+5-arg constructor. See `docs/plan/PLAN.md`'s task 42-45 section for the full
+carry-forward detail on both.
+
 ## 2026-09-17 — Task 41: cut version 0.1.1, and a planning false premise caught at review
 
 Moved the whole tree from `0.1.0` to `0.1.1` — 18 module poms plus root, both

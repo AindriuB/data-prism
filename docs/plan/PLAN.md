@@ -309,9 +309,87 @@ file mistakenly credited with reaching the server image, see above) and #45,
 #47, #51 (`actions/checkout`, `actions/upload-artifact`, `actions/setup-java`
 version bumps).
 
-**Nothing is scheduled past this point in this plan.** Picking anything up
-from "Someday" below is a new planning decision, not a continuation of this
-plan.
+### Tasks 42-45 — second MCP tool, registry casing, 0.2.0
+
+Opened 2026-09-17. Tasks 42 and 44 are done, merged through protected, green
+pull requests the same day (#69, #68). Tasks 43 and 45 are still open; see
+below.
+
+**Task 42 — done. No task file remains under `docs/plan/tasks/`.**
+
+Shipped `compare_entity_sources`, the second MCP tool: per-field agreement,
+disagreement (`INCONSISTENT`/`FORMATTING_ONLY`/`ABBREVIATION`) and
+`MISSING_IN_SOME_SOURCES` findings over the same correlated, scrubbed
+`ContextResponse` that `get_entity_context` already builds. Argument and
+response field are `subjectId`, not the spec's `idInternal` — consistency with
+the shipped tool an MCP client sees alongside it. `identity` carries
+pseudonymised values copied verbatim from the scrubbed tree, never raw.
+Agreement is computed pre-scrub, in `NamespaceCorrelationService`, because two
+genuinely different values collapse to the same pseudonym after scrubbing and
+become indistinguishable from two identical ones — recorded as an amendment to
+§42 in `docs/design-review.md`. Both `ContextRequest` and `ContextResponse`
+gained record components on a record type already published to Maven Central
+(0.1.0 and 0.1.1, immutable); both got explicit constructors preserving the
+old canonical-constructor descriptor, checked twice with `javap` against the
+published jar rather than assumed safe. Full reactor `mvn -B clean verify`
+green, 483 tests (466 baseline, +17). Merged 2026-09-17 (#69). See
+`docs/plan/HISTORY.md` — grep `Task 42` — for what landed and what it cost,
+including a defect three of the task's own tests missed and why.
+
+**Task 44 — done. No task file remains under `docs/plan/tasks/`.**
+
+Corrected the MCP registry namespace to `io.github.AindriuB/data-prism`,
+matching the casing the registry actually grants for the GitHub login — the
+server declared the lowercase `io.github.aindriub/data-prism` and
+`mcp-publisher publish` returned 403 against it. Fixed in the three strings
+that carry the name (`server.json`, `README.md`'s marker,
+`docker/distribution/Dockerfile`'s label) and nowhere else; Maven Central's
+`io.github.aindriub` coordinates are a different, correctly-lowercase
+identifier and are untouched. Added a cross-file guard to `publish-mcp.yml`
+that fails the workflow if the three strings drift apart again, proven
+non-vacuous by the reviewer independently. Merged 2026-09-17 (#68). See
+`docs/plan/HISTORY.md` — grep `Task 44` — for what landed and what it cost.
+
+**Does not clear the 403 on its own.** The MCP label is baked into the GHCR
+image at build time, so the corrected namespace takes effect only once
+`publish-image.yml` rebuilds and re-pushes the image under 0.2.0 (task 45,
+then an owner-dispatched `publish-mcp.yml` run). `mcp-publisher publish`
+failed 403 against `v0.1.1` during this wave and nothing was published.
+
+**Task 43 — open. Depends on 42 (done).** No longer blocked.
+
+Puts `compare_entity_sources` on the real assembly — real stub adapters, real
+scrubbing engine, real audit — and proves no raw fixture value reaches its
+output.
+
+Carry-forward from task 42's review, not yet in the task file: task 42's own
+tests covering `identity` all ran against a scrubber **stub** that already
+keyed its tree the way the implementation expected — one declared a record
+component literally named `PERSON_NAME`, the other two hand-built responses
+whose keys already matched — so none of them could have caught (and didn't
+catch) that the real scrubbed tree is keyed by the model's serialised field
+name (`FieldMetadata.fieldName()`, e.g. `customerName`), not by the namespace
+constant (`PERSON_NAME`). The whole `identity` fix rests on that claim being
+true against the real `ScrubbingEngine`, and task 43 is the first task
+positioned to check it. **Add this as an explicit acceptance criterion**: the
+real end-to-end run (`DataPrismAssembly.standard()`, not a stub) must assert
+`identity` is non-empty and contains the disputed field for subject `123`.
+
+**Task 45 — open. Depends on 42 (done), 43, 44 (done).**
+
+Cuts version 0.2.0 across the reactor once 43 lands. Two items for its
+`CHANGELOG.md` entry, both surfaced during task 42's review and deliberately
+left for this task:
+
+- `ContextResponse` gained a record component; its `equals`/`hashCode`/
+  `toString` now include it. Not a linkage break — the canonical constructor
+  was preserved and checked with `javap` — but a behavioural change consumers
+  should be told about.
+- The legacy 5-arg `ContextResponse` constructor leaves `fieldsByNamespace`
+  empty, so any `ContextOrchestrator` other than `DefaultContextOrchestrator`
+  would silently get an empty `identity` from `compare_entity_sources`.
+  Documented in javadoc on that constructor; confirmed by grep that nothing
+  outside tests uses that path today.
 
 ## Remaining slices past the adopted core
 
