@@ -21,7 +21,7 @@ RUN mvn -B -q -pl data-prism-server -am package -DskipTests
 
 FROM eclipse-temurin:21-jre
 
-LABEL io.modelcontextprotocol.server.name="io.github.aindriub/data-prism"
+LABEL io.modelcontextprotocol.server.name="io.github.AindriuB/data-prism"
 
 # Non-root: the packaged jar and PropertiesLauncher never need root, and
 # running as root in a container is a needless privilege to hand an operator's
