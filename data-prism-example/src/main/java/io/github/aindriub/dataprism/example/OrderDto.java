@@ -25,5 +25,8 @@ public record OrderDto(
         String customerName,
 
         @NonSensitive(reason = "Free-text note; carried so injection heuristics have something real to look at")
-        String note) {
+        String note,
+
+        @NonSensitive(reason = "Structure reviewed separately; @SensitiveObject on DeliveryDto annotates its own fields")
+        DeliveryDto delivery) {
 }
