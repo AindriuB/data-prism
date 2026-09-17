@@ -8,9 +8,32 @@ about this codebase beyond what `README.md` already says: Data Prism is a
 privacy layer between MCP clients and your API, and it never exposes a field
 nobody classified.
 
-Until the separately reviewed generic-JSON mode ships, this Java-first path —
-implementing the two SPIs directly — is the only way to protect a new source
-(`README.md:156-158`).
+This is not the only way to protect a source. A configuration-driven JSON
+REST mode is real and already shipped, as a normal published artifact,
+`data-prism-connectors-rest` — no annotated Java model, no `pom.xml`, no
+compiled adapter class. An operator loads that jar the same way as any
+reviewed extension (`-Dloader.path`) and writes a YAML catalogue instead:
+`dataprism.json-sources.config-location` names a file whose `json-sources:`
+entries state a transport (`base-url`, a `path` template, `timeout`), a
+`model-version` tag, and a flat, allowlisted `fields:` catalogue — one entry
+per JSON property, each an identifier, `nonSensitive`, or classified, the
+same vocabulary `@SensitiveData`/`@NonSensitive`/`@InternalIdentifier` express
+below
+(`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSource.java:8-34`,
+`.../ConfiguredJsonSourcesAutoConfiguration.java:82`).
+
+That mode has a real limit worth knowing before choosing it: its resolver
+never descends into a nested object — `descendable` always returns `false`,
+by design, because there is no reviewed Java type behind a configured source
+to say what a nested structure means — so it only covers a source whose
+response is one flat JSON object of scalar fields
+(`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonFieldMetadataResolver.java:56-65`).
+If your source's response nests objects, needs custom fetch logic beyond a
+single templated `GET`, or needs a model no flat catalogue can express, that
+limit is why this guide exists: the Java-first path below has no such
+ceiling. Configuration for the JSON REST mode is not covered further here —
+see [`docs/configuration.md`](configuration.md) — because this guide is
+about the path that requires writing code.
 
 The worked example this guide cites throughout is
 `data-prism-quickstart-extension`, a real module in this repository that CI
@@ -145,16 +168,18 @@ final class QuickstartCustomerAdapter implements DataSourceAdapter<CustomerModel
 }
 ```
 
-`data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartCustomerAdapter.java:22-57`
+`data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartCustomerAdapter.java:22-58`
 
 Two things worth carrying over even though they are not enforced by the
 platform: the subject id is passed as a URI *template variable*
 (`"/customers/{id}"`, `request.subjectId()`) so `RestClient` encodes it,
 rather than being concatenated into the path; and a 404 is treated as data —
 this source has nothing for the subject — by returning `null`, not by
-throwing, which is what lets the orchestrator record a `NO_DATA` finding
-instead of tripping this source's circuit breaker
-(`QuickstartCustomerAdapter.java:12-21`).
+throwing. That is what lets the orchestrator record this source's outcome as
+`NO_DATA` — a per-source status surfaced next to the result, not a
+consistency finding — instead of tripping this source's circuit breaker
+(`data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceOutcome.java:19-23`,
+`QuickstartCustomerAdapter.java:12-21`).
 
 ## Implement `IdentityResolver`
 
@@ -196,7 +221,7 @@ public final class PassThroughIdentityResolver implements IdentityResolver {
 }
 ```
 
-`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/PassThroughIdentityResolver.java:14-25`
+`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/PassThroughIdentityResolver.java:14-26`
 
 Use it **only** when every configured source genuinely keys its records on
 the same identifier (`README.md:160-163`): it does nothing, treating the
@@ -255,7 +280,7 @@ public record CustomerModel(
 }
 ```
 
-`data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/CustomerModel.java:17-36`
+`data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/CustomerModel.java:17-37`
 
 - `@InternalIdentifier` marks the field holding this record's own correlation
   id — the default pseudonymisation subject for any `@SensitiveData` field on
@@ -327,8 +352,10 @@ the whole class (`LlmExposedModelProcessor.java:58-64`).
 
 ## The pom shape
 
-`data-prism-quickstart-extension/pom.xml` is the shape to copy. Its
-dependencies:
+`data-prism-quickstart-extension/pom.xml` is where the shape below comes
+from, but it cannot be copied verbatim into a pom outside this repository.
+Its dependencies carry no `<version>`, and its `annotationProcessorPaths`
+names `${project.version}`:
 
 ```xml
   <dependencies>
@@ -356,37 +383,122 @@ dependencies:
 
 `data-prism-quickstart-extension/pom.xml:38-58`
 
-All four are `provided`, for the reason the trap section above already gave:
-`data-prism-server` carries all four on its own classpath already, so
-`-Dloader.path` never needs to supply them, and a real (non-`provided`) scope
-would bundle a redundant copy this jar does not need to ship. (The same
-module's pom also carries three `test`-scope dependencies and two MCP SDK
-`test`-scope dependencies at lines 60-94 — those exist only so the Maven
-reactor builds the packaged artifacts this module's own smoke test starts as
+That works inside this repository, and only inside it, because this module
+inherits versions from the reactor's own parent pom
+(`data-prism-quickstart-extension/pom.xml:7-11`), which pins every
+`io.github.aindriub` artifact to `${project.version}` and imports
+`spring-boot-dependencies` to pin `spring-web` and
+`spring-boot-autoconfigure`. A consumer project has no relationship to that
+parent. Copying the block above as shown gets a missing-version error for
+the two `io.github.aindriub` dependencies, and copying
+`${project.version}` into `annotationProcessorPaths` (below) asks for a
+`data-prism-processor` at *the consumer's own project version* — an
+artifact that does not exist.
+
+The version-complete equivalent, standing alone, with no parent from this
+repository. It assumes your own pom already has the usual top-level
+`<modelVersion>`, `groupId`, `artifactId`, `version` and
+`<packaging>jar</packaging>` — only the three blocks below are specific to
+depending on Data Prism:
+
+```xml
+  <properties>
+    <data-prism.version>0.2.0</data-prism.version>
+    <spring-boot.version>3.5.16</spring-boot.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-core</artifactId>
+      <version>${data-prism.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-annotations</artifactId>
+      <version>${data-prism.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-web</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+```
+
+`spring-boot.version` (`3.5.16`) is the exact Spring Boot version the
+published `data-prism-server-0.2.0` was built against — importing its
+`spring-boot-dependencies` BOM is what lets `spring-web` and
+`spring-boot-autoconfigure` above go unversioned safely, resolving to the
+same versions already on the running server's classpath, which is the whole
+point of marking them `provided` in the first place. The reason for
+`provided` itself is otherwise unchanged from the trap section above:
+`data-prism-server` already carries all four dependencies on its own
+classpath, `-Dloader.path` never supplies them, and a real
+(non-`provided`) scope would bundle a redundant copy this jar does not need
+to ship. (The in-repo module also
+carries three `test`-scope dependencies and two MCP SDK `test`-scope
+dependencies at lines 60-94 — those exist only so the Maven reactor builds
+the packaged artifacts this module's own smoke test starts as
 subprocesses; a consumer's extension pom has no reason to carry them.)
 
-The annotation processor is configured separately, and only here:
+This was verified, not assumed: a throwaway project using exactly the block
+above, plus a minimal `DataSourceAdapter` and an `@LlmExposedModel` record,
+was built with `mvn package` against a clean local repository with no other
+data-prism artifacts in it, resolving `data-prism-core`,
+`data-prism-annotations` and `data-prism-processor` `0.2.0` from Maven
+Central and `spring-web` `6.2.19`/`spring-boot-autoconfigure` `3.5.16` from
+the imported BOM — the same Spring Boot version `data-prism-server-0.2.0`
+itself was built against. The build produced a jar; nothing in this
+paragraph is aspirational.
+
+The annotation processor is configured separately, and only here — with an
+explicit version, not `${project.version}`, for the reason above:
 
 ```xml
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <!-- On the processor path, not the compile classpath: this module
-               depends on the @LlmExposedModel classification check running,
-               not on the checker's own classes. -->
           <annotationProcessorPaths>
             <path>
               <groupId>io.github.aindriub</groupId>
               <artifactId>data-prism-processor</artifactId>
-              <version>${project.version}</version>
+              <version>${data-prism.version}</version>
             </path>
           </annotationProcessorPaths>
         </configuration>
       </plugin>
 ```
 
-`data-prism-quickstart-extension/pom.xml:98-113`
+Adapted from `data-prism-quickstart-extension/pom.xml:98-113`, which reads
+identically except for the version, and explains the placement in its own
+comment:
+
+> On the processor path, not the compile classpath: this module depends on
+> the `@LlmExposedModel` classification check running, not on the checker's
+> own classes.
+
+— `data-prism-quickstart-extension/pom.xml:102-104`
 
 `data-prism-processor` must never appear as a `<dependency>` — only under
 `annotationProcessorPaths`, as above. It is a build-time tool that runs
