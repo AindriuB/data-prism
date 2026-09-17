@@ -27,10 +27,10 @@ A second MCP tool, `compare_entity_sources`, and no other new feature.
   `ghcr.io/aindriub/data-prism-server` are different identifiers, each
   correct in its own system and untouched by this correction — do not
   "fix" the casing inconsistency between them; doing so would break two
-  already-published artifacts. This correction takes effect for MCP clients
-  only once the server image is rebuilt and republished under this version;
-  the label is baked in at build time. `server.json`'s OCI package reference
-  is also corrected to the canonical form the registry requires: no
+  already-published artifacts. No MCP registry listing for this server exists
+  yet; this corrected namespace, and the label it is checked against, is what
+  the first successful publish will use. `server.json`'s OCI package
+  reference is also corrected to the canonical form the registry requires: no
   `registryBaseUrl`, and `identifier` now carries the image tag directly
   (`ghcr.io/aindriub/data-prism-server:0.2.0`) rather than a bare path paired
   with a separate `version` field.

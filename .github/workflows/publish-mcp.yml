@@ -76,12 +76,25 @@ jobs:
       # server.json (say, .version bumped without the identifier's tag
       # following it) fails loudly here instead of letting the tag guard pass
       # on a stale identifier and publish an entry pointing at the wrong
-      # image.
-      - name: Assert server.json's top-level version agrees with the OCI identifier tag
+      # image. The path is checked here too, not just the tag: an identifier
+      # pointing at the wrong repository but the right tag would otherwise
+      # pass this step and only surface later as a false "image not
+      # pullable" from the anonymous-pull check further down, sending
+      # whoever reads that toward a GHCR visibility problem that does not
+      # exist. Splitting on the last colon (not the first) is deliberate —
+      # it is the only split that is still correct if the registry host ever
+      # carries a port.
+      - name: Assert server.json's top-level version agrees with the OCI identifier tag and path
         run: |
           top_version="$(jq -r '.version' server.json)"
           identifier="$(jq -r '.packages[0].identifier' server.json)"
+          identifier_path="${identifier%:*}"
           identifier_tag="${identifier##*:}"
+          expected_path="ghcr.io/aindriub/data-prism-server"
+          if [ "$identifier_path" != "$expected_path" ]; then
+            echo "::error::server.json .packages[0].identifier path (${identifier_path}) is not ${expected_path}"
+            exit 1
+          fi
           if [ "$top_version" != "$identifier_tag" ]; then
             echo "::error::server.json .version (${top_version}) and .packages[0].identifier tag (${identifier_tag}) disagree"
             exit 1
