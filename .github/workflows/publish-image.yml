@@ -27,13 +27,21 @@ name: publish-image
 # every job that logs in, rather than trusted from a sibling job or an
 # earlier step in the same job.
 #
-# The image is re-pushed as 0.1.0, not cut as a new version: nothing external
-# references it yet (the MCP registry entry from task 38 is merged but
-# deliberately unpublished, confirmed by a live registry search returning
-# zero results), so re-pushing a tag nobody has consumed costs nothing and
-# keeps server.json, the poms and the tag in agreement. This option expires
-# the moment the registry entry goes live — after that, a changed image needs
-# a new version.
+# An earlier decision here (recorded through task 40) was to re-push the
+# already-released version's tag rather than cut a new one: main and the
+# release tag were then the same tree, and the decision was conditioned on
+# nothing external referencing the image yet. It was revisited on
+# 2026-09-17 and reversed, for two reasons. First, the release tag predates
+# this multi-architecture publish pipeline: workflow_dispatch reads the
+# workflow file from the ref it is dispatched on, so dispatching against
+# that tag would silently re-run the old single-architecture pipeline
+# instead of publishing a multi-arch image. Second, main has since diverged
+# from the tag (CI action bumps, documentation, a quickstart dependency
+# pin), so an image built from main and labelled with the old version would
+# not correspond to the tagged tree. Cutting a patch version is cheaper and
+# more honest than force-moving a tag a published GitHub Release already
+# points at, and keeps the image tag, server.json and the poms in
+# agreement with what is actually in the tree.
 on:
   push:
     tags: ["v*"]
@@ -42,9 +50,9 @@ on:
       version:
         description: >-
           Image tag to publish (must match the reactor version in pom.xml,
-          e.g. 0.1.0). Only used for the workflow_dispatch push step.
+          e.g. 0.1.1). Only used for the workflow_dispatch push step.
         required: true
-        default: "0.1.0"
+        default: "0.1.1"
 
 permissions:
   contents: read
@@ -92,7 +100,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             version="$DISPATCH_VERSION"
           else
-            # v0.1.0 -> 0.1.0
+            # v1.2.3 -> 1.2.3
             version="${GITHUB_REF_NAME#v}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
