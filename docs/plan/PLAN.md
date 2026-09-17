@@ -463,39 +463,54 @@ clean `git merge origin/main`). Post-merge full-reactor re-run:
 `Tasks 49, 50, 51` — for what landed and what it cost, including the
 copyable-snippet lesson from task 50's pom block.
 
-### Task 52 — open, unblocked
+### Task 52 — done. No task file remains under `docs/plan/tasks/`.
 
-Reconciles the documentation this wave left stale or newly-relevant, now
-that `docs/extending.md` and `docs/tools.md` exist and `data-prism-example`
-has been renamed. Its scope is bigger than originally planned:
+Reconciled the documentation this wave left stale or newly-relevant.
+The most consequential fix: `README.md` had said "Until Task 20
+delivers…" the configuration-driven JSON REST mode since before that task
+shipped — a stranger reading it would be told to write a Java adapter when
+a configuration-only path may serve them. Corrected from the code, not the
+old claim: `data-prism-connectors-rest` carries no `maven.deploy.skip`, so
+it is a normally published, self-registering artifact needing no Java from
+an operator, and `ConfiguredJsonFieldMetadataResolver.descendable()`
+returns `false` unconditionally, so it covers only flat JSON — scalar
+fields and arrays of them, never nested objects. `README.md` and
+`docs/extending.md` now agree, both written from the code independently.
 
-- Every documentation reference to `data-prism-example` (task 49 explicitly
-  left all of `docs/` and `README.md` untouched).
-- The four stale "only one MCP tool" claims: `README.md:16`,
-  `docs/architecture.md:91-92`, `docs/quickstart.md:81`,
-  `docs/agents/README.md:29`.
-- A fifth, found by a reviewer during task 51: `docs/agents/stdio.md` says
-  the fixture caller holds only `GET_ENTITY_CONTEXT`, but
-  `ExampleApplication.shippedSecurityPolicy()` grants both tools.
-- `README.md:156-158`'s stale "Until Task 20 delivers…" claim about the
-  configuration-driven JSON REST mode. It shipped;
-  `data-prism-connectors-rest` is a published, self-registering artifact
-  that needs no Java at all for a flat-JSON source — but
-  `ConfiguredJsonFieldMetadataResolver.descendable()` always returns
-  `false`, so it covers only flat JSON (scalars and arrays of scalars, no
-  nested objects). `docs/extending.md` already points flat-source readers
-  at it; the README does not yet reflect that the mode exists.
-- The `docs/architecture.md:52,167-174` drift claiming the renamed module
-  owns `ArchitectureTest`, when it lives in `data-prism-architecture`.
-- Linking `README.md` to the two new guides (neither 50 nor 51 added that
-  link themselves, by design, to avoid this exact collision).
+The task was planned against four stale "only one tool ships" claims; the
+count grew twice under examination. A reviewer found a fifth during task
+51 (`docs/agents/stdio.md` claiming the fixture caller holds only
+`GET_ENTITY_CONTEXT`), and the executing scribe found a sixth
+independently — `docs/architecture.md`'s Deployment paragraph calling
+configuration-driven JSON sources "deferred", the same defect as the
+README line. All six are corrected, using tool names taken from a real
+`tools/list` response captured by driving the compiled fixture over a
+FIFO stdio session, not inferred from `Capability.java`. The task file's
+own cited line numbers were stale in three places, including
+`docs/quickstart.md:81`, which named a section header rather than the
+claim — the real one was at `:113`; re-derived with `rg -n` rather than
+trusted.
 
-Not in scope: the external consumer demo at
-`/Users/Andrew/workspace/data-prism-github-demo` is not a public
-repository (`github.com/AindriuB/data-prism-github-demo` returns 404), so
-task 50 could not and did not link it. If the owner publishes it, the
-adapter guide would be improved by linking a complete worked example
-against a real API — but that is a future task, not part of 52.
+A first pass wrote that both tools appear in `tools/list` "because this
+fixture's caller holds both capabilities", implying the tool list is
+capability-filtered. It is not: both tool specs register
+unconditionally, which is exactly why the Compose quickstart's caller can
+list `compare_entity_sources` and not call it. Caught at review before
+merge, since the false causal link contradicted both `docs/quickstart.md`
+and the grant-before-call rule `docs/tools.md` teaches. That grant-before-
+call behaviour is now stated rather than left to surprise a reader:
+`docker/server/application.yaml` grants the quickstart's `investigator`
+role only `GET_ENTITY_CONTEXT`, so a new user following the Compose
+quickstart sees both tools listed and gets `TOOL_NOT_PERMITTED` calling
+the second.
+
+Also carried: every remaining `data-prism-example` reference across the
+owned files renamed and re-characterised as the reactor's integration
+test suite; `ArchitectureTest`'s ownership re-pointed to
+`data-prism-architecture`; `docs/extending.md` and `docs/tools.md` linked
+from `README.md`, `docs/quickstart.md` and `docs/agents/README.md`. Merged
+2026-09-17 (#84). See `docs/plan/HISTORY.md` — grep `Task 52` — for what
+landed and what it cost, including the line-number-staleness lesson.
 
 ### Known open items at release, none scheduled
 
@@ -534,6 +549,21 @@ work.
   scheduled as their own task and remain outstanding. Listed here because the
   release makes it visible to anyone integrating this as a dependency, not
   because it is newly found.
+
+Added 2026-09-17, out of task 52's wave. Neither blocks anything; pick either
+up only as its own planned work.
+
+- The external consumer demo at
+  `/Users/Andrew/workspace/data-prism-github-demo` is not a public
+  repository — `github.com/AindriuB/data-prism-github-demo` returns 404 —
+  so `docs/extending.md` deliberately references no worked external
+  example. If the owner publishes it, the adapter guide would be improved
+  by linking a complete example against a real public API.
+- `docs/agents/**` documents only one verified MCP client, the Claude Code
+  CLI. Now that two consumer guides exist (`docs/extending.md`,
+  `docs/tools.md`) and the server is listed on the MCP registry, other
+  clients (any other MCP-capable agent) are unverified territory — nothing
+  claims they work, but nothing has checked either.
 
 ## Remaining slices past the adopted core
 

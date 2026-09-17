@@ -17,6 +17,61 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — Task 52: the shipped docs reconciled — module rename, six stale tool/mode claims, and a false causal claim caught at review
+
+`README.md` had said "Until Task 20 delivers…" the configuration-driven
+JSON REST mode since before that task shipped, and it cost readers real
+work: it told a stranger to write a Java adapter when a configuration-only
+path may already serve them. The fix was established from the code, not
+from the stale claim or the task file: `data-prism-connectors-rest` carries
+no `maven.deploy.skip`, so it is a normally published artifact; it
+self-registers via `AutoConfiguration.imports`, so it needs no Java from an
+operator; and `ConfiguredJsonFieldMetadataResolver.descendable()` returns
+`false` unconditionally, so it covers only flat JSON — scalar fields and
+arrays of them, never nested objects. `README.md` and `docs/extending.md`
+now agree, both written from the code independently rather than one copied
+from the other.
+
+The task was planned against four stale "only one tool ships" claims. The
+count grew twice under examination: a reviewer found a fifth during task 51
+(`docs/agents/stdio.md` claiming the fixture caller holds only
+`GET_ENTITY_CONTEXT`), and the executing scribe found a sixth
+independently — `docs/architecture.md`'s Deployment paragraph calling
+configuration-driven JSON sources "deferred", the same defect as the README
+line. All six are corrected using tool names taken from a real `tools/list`
+response captured by driving the compiled fixture over a FIFO stdio
+session, not inferred from reading `Capability.java`'s registration code.
+
+**A false causal claim was caught at review, not planning.** The first pass
+wrote that both tools appear in `tools/list` "because this fixture's caller
+holds both capabilities", implying the tool listing is capability-filtered.
+It is not: both tool specs register unconditionally, which is exactly why
+the Compose quickstart's caller can *list* `compare_entity_sources` and not
+*call* it. The underlying policy fact was true; the causal link was false,
+and it contradicted both `docs/quickstart.md` and the grant-before-call
+rule `docs/tools.md` now teaches. Fixed before merge. That grant-before-call
+behaviour is now stated rather than left to surprise a new user:
+`docker/server/application.yaml` grants the quickstart's `investigator`
+role only `GET_ENTITY_CONTEXT`, so a reader following the Compose quickstart
+sees both tools listed and gets `TOOL_NOT_PERMITTED` calling the second —
+live in the first thing a new user runs.
+
+Also carried: every remaining `data-prism-example` module reference across
+the seven owned files renamed to `data-prism-integration-tests`;
+`ArchitectureTest`'s ownership re-pointed from the renamed module to
+`data-prism-architecture`; `docs/extending.md` and `docs/tools.md` linked
+from `README.md`, `docs/quickstart.md` and `docs/agents/README.md`. Merged
+2026-09-17 (#84).
+
+**Cost:** the task file's own cited line numbers were stale in three
+places, including `docs/quickstart.md:81`, which the task file named as
+the one-tool claim's location — it was a section header, not the claim; the
+real one was at `:113`. Small standing lesson: a line number cited in a
+task file ages between planning and execution, and an executor that trusts
+it without re-deriving (`rg -n`) edits the wrong line. Re-derive every cited
+line before editing rather than assuming the coordinating brief is still
+accurate.
+
 ## 2026-09-17 — Tasks 49, 50, 51: `data-prism-example` renamed to `data-prism-integration-tests`, and the first two consumer guides ship
 
 `data-prism-example` was never an example: it is the reactor's integration
