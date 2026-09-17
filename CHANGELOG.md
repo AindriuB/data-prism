@@ -7,18 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.1] - 2026-09-17
 
-A dependency and infrastructure patch, no features. 0.1.1 supersedes 0.1.0 for
-the published image: an image built from this tree carries a different JWT
-library than the 0.1.0 artifacts already on Maven Central, so re-tagging the
-image as 0.1.0 would have made the version label lie about its contents.
+A release-plumbing patch, no features. 0.1.1 supersedes 0.1.0 for the
+published image: the `v0.1.0` tag predates the multi-architecture publish
+pipeline, so a dispatch against that tag would silently re-run the old
+single-architecture workflow rather than publish a multi-arch image. `main`
+has also diverged from the tag since (CI action bumps, documentation, a
+quickstart dependency pin), so an image built from `main` and labelled
+0.1.0 would not correspond to the tagged tree. Cutting a patch version is
+cheaper and more honest than force-moving a tag a published GitHub Release
+already points at.
 
 ### Changed
 
-- nimbus-jose-jwt bumped to 10.9.1, a security patch on the JWT verification
-  path.
 - The server image is now published as a multi-architecture manifest list
   (`linux/amd64` + `linux/arm64`) instead of `linux/amd64` only.
 - Three GitHub Actions dependency bumps in CI workflows.
+- nimbus-jose-jwt bumped to 10.9.1 in `data-prism-quickstart-issuer`. This
+  affects the quickstart issuer only, not the published server or library
+  artifacts, which never depend on it directly.
 
 ## [0.1.0] - 2026-09-16
 

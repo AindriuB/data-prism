@@ -31,13 +31,17 @@ name: publish-image
 # already-released version's tag rather than cut a new one: main and the
 # release tag were then the same tree, and the decision was conditioned on
 # nothing external referencing the image yet. It was revisited on
-# 2026-09-17 and reversed: main has since diverged from that tag — most
-# notably the nimbus-jose-jwt 10.9.1 security patch on the JWT verification
-# path — so an image built from main but tagged with the old version would
-# carry different dependencies than the artifacts of that version already
-# published to Maven Central. Task 41 cut a new patch version instead, so
-# the image tag, server.json and the poms stay in agreement with what is
-# actually in the tree.
+# 2026-09-17 and reversed, for two reasons. First, the release tag predates
+# this multi-architecture publish pipeline: workflow_dispatch reads the
+# workflow file from the ref it is dispatched on, so dispatching against
+# that tag would silently re-run the old single-architecture pipeline
+# instead of publishing a multi-arch image. Second, main has since diverged
+# from the tag (CI action bumps, documentation, a quickstart dependency
+# pin), so an image built from main and labelled with the old version would
+# not correspond to the tagged tree. Cutting a patch version is cheaper and
+# more honest than force-moving a tag a published GitHub Release already
+# points at, and keeps the image tag, server.json and the poms in
+# agreement with what is actually in the tree.
 on:
   push:
     tags: ["v*"]
