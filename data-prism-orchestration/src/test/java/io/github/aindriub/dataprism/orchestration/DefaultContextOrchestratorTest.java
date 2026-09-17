@@ -1,7 +1,15 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.aindriub.dataprism.annotations.DataClassification;
+import io.github.aindriub.dataprism.annotations.InternalIdentifier;
+import io.github.aindriub.dataprism.annotations.LlmExposedModel;
+import io.github.aindriub.dataprism.annotations.PrivacyAction;
+import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.annotations.SensitiveData;
+import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
@@ -31,6 +39,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +56,15 @@ class DefaultContextOrchestratorTest {
             StaticSecretKeyProvider.of("development-only-key-not-for-any-real-data");
 
     private record Thing(String id, String value) {
+    }
+
+    /** A namespaced field, so two sources can genuinely agree before scrubbing. */
+    @LlmExposedModel
+    private record NamedThing(
+            @InternalIdentifier String id,
+            @SensitiveData(classifications = DataClassification.PII, namespace = PrivacyNamespace.PERSON_NAME,
+                    suggestedAction = PrivacyAction.SYNTHESIZE)
+            String name) {
     }
 
     private static PrivacyContext context() {
@@ -96,6 +114,52 @@ class DefaultContextOrchestratorTest {
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
                 metrics);
+    }
+
+    private static DataSourceAdapter<NamedThing> answeringNamed(String name, NamedThing thing) {
+        return new DataSourceAdapter<>() {
+            @Override
+            public String sourceName() {
+                return name;
+            }
+
+            @Override
+            public Class<NamedThing> responseType() {
+                return NamedThing.class;
+            }
+
+            @Override
+            public NamedThing fetch(DataRequest request) {
+                return thing;
+            }
+        };
+    }
+
+    /**
+     * Two sources that hold the same namespaced value for the same subject, so
+     * real correlation produces a {@link ConsistencyFinding.Kind#CONSISTENT}
+     * finding — the fixture both pinned-output tests below need.
+     */
+    private static DefaultContextOrchestrator orchestratorWithAgreeingSources(AuditRecorder audit) {
+        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
+        ObjectMapper mapper = new ObjectMapper();
+        ScrubbingEngine scrubber = (source, ctx) ->
+                new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of());
+        LlmResponseValidator alwaysOk = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
+
+        return new DefaultContextOrchestrator(
+                List.of(answeringNamed("source-a", new NamedThing("1", "Patrick Murphy")),
+                        answeringNamed("source-b", new NamedThing("1", "Patrick Murphy"))),
+                scrubber, resolver, List.of(alwaysOk, new SensitivePatternValidator()),
+                (subjectId, namespace, ctx) -> "SUBJ-1",
+                new ParameterFingerprinter(KEYS),
+                audit,
+                new PassThroughIdentityResolver(),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new InMemoryScopeBudget(), RequestLimits.DEFAULT,
+                new NamespaceCorrelationService(resolver),
+                new SourceAliasing(new HmacValueTokenSource(KEYS)),
+                PrivacyMetrics.none());
     }
 
     private static final class RecordingMetrics implements PrivacyMetrics {
@@ -175,5 +239,40 @@ class DefaultContextOrchestratorTest {
         assertThatThrownBy(() -> orchestrator.buildContext(
                 ContextRequest.of("THING", "1"), context(), caller()))
                 .isInstanceOf(PrivacyRefusedException.class);
+    }
+
+    @Test
+    @DisplayName("get_entity_context's own output is unchanged: no agreement finding reaches "
+            + "a ContextResponse built for the existing tool's request, even when two sources genuinely agree")
+    void agreementFindingsDoNotReachTheExistingTool() {
+        List<AuditEvent> audited = new ArrayList<>();
+        AuditRecorder audit = new AuditRecorder(audited::add, CLOCK, "test-1");
+
+        ContextResponse response = orchestratorWithAgreeingSources(audit)
+                .buildContext(ContextRequest.of("THING", "1"), context(), caller());
+
+        // Pinned: the fixture genuinely produces a CONSISTENT finding once asked
+        // for (see agreementFindingsReachTheComparisonPath below) -- it is this
+        // call, not the correlation service, that must not carry it through.
+        assertThat(response.findings())
+                .noneMatch(f -> f.kind() == ConsistencyFinding.Kind.CONSISTENT);
+        assertThat(audited).singleElement()
+                .satisfies(e -> assertThat(e.tool()).isEqualTo("get_entity_context"));
+    }
+
+    @Test
+    @DisplayName("a comparison request keeps agreement findings and is audited under its own tool name")
+    void agreementFindingsReachTheComparisonPath() {
+        List<AuditEvent> audited = new ArrayList<>();
+        AuditRecorder audit = new AuditRecorder(audited::add, CLOCK, "test-1");
+
+        ContextResponse response = orchestratorWithAgreeingSources(audit).buildContext(
+                ContextRequest.comparison("THING", "1", Set.of(), "compare_entity_sources"),
+                context(), caller());
+
+        assertThat(response.findings())
+                .anyMatch(f -> f.kind() == ConsistencyFinding.Kind.CONSISTENT);
+        assertThat(audited).singleElement()
+                .satisfies(e -> assertThat(e.tool()).isEqualTo("compare_entity_sources"));
     }
 }

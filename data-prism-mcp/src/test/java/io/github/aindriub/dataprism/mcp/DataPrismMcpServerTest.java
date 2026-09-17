@@ -98,7 +98,7 @@ class DataPrismMcpServerTest {
                 developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED);
         try {
             assertThat(server.listTools()).extracting(McpSchema.Tool::name)
-                    .containsExactly(GetEntityContextTool.NAME);
+                    .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
         } finally {
             server.closeGracefully();
         }
@@ -156,7 +156,7 @@ class DataPrismMcpServerTest {
         assertThat(transport.server()).isNotNull();
         assertThat(transport.transportProvider()).isNotNull();
         assertThat(transport.server().listTools()).extracting(McpSchema.Tool::name)
-                .containsExactly(GetEntityContextTool.NAME);
+                .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
     }
 
     private static McpSyncServerExchange emptyExchange() {

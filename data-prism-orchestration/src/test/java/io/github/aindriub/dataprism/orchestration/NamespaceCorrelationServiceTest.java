@@ -81,11 +81,17 @@ class NamespaceCorrelationServiceTest {
     }
 
     @Test
-    @DisplayName("agreement is silent")
-    void identicalValuesProduceNoFinding() {
+    @DisplayName("agreement is reported, not silent: it is the only way to tell \"compared and consistent\" "
+            + "from \"never compared\" (docs/pack.md §42)")
+    void identicalValuesProduceAConsistentFinding() {
         assertThat(nameFinding(List.of(
                 new SourceRecord("a", new Person("1", "Patrick Murphy", null)),
-                new SourceRecord("b", new Holder("1", "Patrick Murphy"))))).isEmpty();
+                new SourceRecord("b", new Holder("1", "Patrick Murphy")))))
+                .get().satisfies(f -> {
+                    assertThat(f.kind()).isEqualTo(ConsistencyFinding.Kind.CONSISTENT);
+                    assertThat(f.disagreement()).isFalse();
+                    assertThat(f.toString()).doesNotContain("Patrick Murphy");
+                });
     }
 
     @Test
