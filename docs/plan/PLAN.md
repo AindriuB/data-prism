@@ -441,8 +441,61 @@ Environment still has no required reviewers ticked, and
 secrets rather than the `central` environment's scope — see task 41's section
 above for the original recording of both.
 
-**No task file remains open anywhere in `docs/plan/tasks/`.** The items below
-are debt found along the way, not scheduled work.
+### Tasks 49, 50, 51 — done
+
+Opened 2026-09-17 after an architect established that `data-prism-example`
+was never an example — it is the reactor's integration test suite, hosting
+`PiiLogScanTest`, the sole enforcement of privacy rule 7, and a name that
+invited deletion. Task 49 renamed it to `data-prism-integration-tests`
+(`git mv`, nothing removed), proving by mutation and instrumented printing —
+not by a green run alone — that `ArchitectureCoverageTest`'s dynamically
+computed module list still saw the renamed module, since that class's own
+javadoc records a prior silent narrowing from exactly this kind of miss.
+Six `data-prism-example` strings (the JWT issuer and audit writer-id config
+values, and the tests asserting on them) were left alone deliberately:
+changing them changes observable audit output. Tasks 50 and 51 shipped the
+first consumer guides this repository has had, `docs/extending.md` and
+`docs/tools.md`, built entirely from real captures rather than transcribed
+examples. Merged through protected, green pull requests 2026-09-17 (#80,
+#82, #81 — the sequential-merge race hit twice, resolved each time by a
+clean `git merge origin/main`). Post-merge full-reactor re-run:
+`BUILD SUCCESS`, 0 failures, 0 errors. See `docs/plan/HISTORY.md` — grep
+`Tasks 49, 50, 51` — for what landed and what it cost, including the
+copyable-snippet lesson from task 50's pom block.
+
+### Task 52 — open, unblocked
+
+Reconciles the documentation this wave left stale or newly-relevant, now
+that `docs/extending.md` and `docs/tools.md` exist and `data-prism-example`
+has been renamed. Its scope is bigger than originally planned:
+
+- Every documentation reference to `data-prism-example` (task 49 explicitly
+  left all of `docs/` and `README.md` untouched).
+- The four stale "only one MCP tool" claims: `README.md:16`,
+  `docs/architecture.md:91-92`, `docs/quickstart.md:81`,
+  `docs/agents/README.md:29`.
+- A fifth, found by a reviewer during task 51: `docs/agents/stdio.md` says
+  the fixture caller holds only `GET_ENTITY_CONTEXT`, but
+  `ExampleApplication.shippedSecurityPolicy()` grants both tools.
+- `README.md:156-158`'s stale "Until Task 20 delivers…" claim about the
+  configuration-driven JSON REST mode. It shipped;
+  `data-prism-connectors-rest` is a published, self-registering artifact
+  that needs no Java at all for a flat-JSON source — but
+  `ConfiguredJsonFieldMetadataResolver.descendable()` always returns
+  `false`, so it covers only flat JSON (scalars and arrays of scalars, no
+  nested objects). `docs/extending.md` already points flat-source readers
+  at it; the README does not yet reflect that the mode exists.
+- The `docs/architecture.md:52,167-174` drift claiming the renamed module
+  owns `ArchitectureTest`, when it lives in `data-prism-architecture`.
+- Linking `README.md` to the two new guides (neither 50 nor 51 added that
+  link themselves, by design, to avoid this exact collision).
+
+Not in scope: the external consumer demo at
+`/Users/Andrew/workspace/data-prism-github-demo` is not a public
+repository (`github.com/AindriuB/data-prism-github-demo` returns 404), so
+task 50 could not and did not link it. If the owner publishes it, the
+adapter guide would be improved by linking a complete worked example
+against a real API — but that is a future task, not part of 52.
 
 ### Known open items at release, none scheduled
 
