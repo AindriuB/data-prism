@@ -12,9 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "registryBaseUrl": "https://ghcr.io",
-      "identifier": "ghcr.io/aindriub/data-prism-server",
-      "version": "0.2.0",
+      "identifier": "ghcr.io/aindriub/data-prism-server:0.2.0",
       "runtimeHint": "docker",
       "transport": {
         "type": "streamable-http",
