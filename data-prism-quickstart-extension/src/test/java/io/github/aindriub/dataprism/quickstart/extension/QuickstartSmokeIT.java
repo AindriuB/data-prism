@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * exact mechanism {@code ServerPackagingIT} in {@code data-prism-server}
  * proves — as three real OS subprocesses, then drives {@code /mcp} with the
  * MCP SDK's own client transport, the same way {@code McpHttpEndToEndTest}
- * (data-prism-example) drives the embedded server. Task 21 gives the
+ * (data-prism-integration-tests) drives the embedded server. Task 21 gives the
  * standalone server no fixture-development bypass, so every token here is
  * minted by a real, running issuer process signing with a key nobody but that
  * process ever holds — never a token this test constructs itself.
@@ -345,7 +345,7 @@ class QuickstartSmokeIT {
      * Generates one self-signed PKCS12 keystore, with a Subject Alternative
      * Name covering both loopback forms this test's subprocesses bind to, and
      * a matching truststore holding its public certificate. The same
-     * mechanism {@code McpHttpEndToEndTest} (data-prism-example) uses for its
+     * mechanism {@code McpHttpEndToEndTest} (data-prism-integration-tests) uses for its
      * in-test JWKS server, promoted here to cover three real subprocesses
      * instead of one in-process one. Written only under {@code @TempDir},
      * which JUnit deletes when this class finishes; nothing generated here is

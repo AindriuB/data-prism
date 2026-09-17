@@ -45,10 +45,10 @@ class ServerPackagingIT {
      * list, or this scan silently stops covering it.
      */
     private static final List<String> DEVELOPMENT_KEY_MARKERS = List.of(
-            // DataPrismAssembly.DEV_KEY, data-prism-example/src/main/java/io/github/aindriub/
+            // DataPrismAssembly.DEV_KEY, data-prism-integration-tests/src/main/java/io/github/aindriub/
             // dataprism/example/DataPrismAssembly.java:55 — the fixture-only stdio assembly's
             // hardcoded development HMAC key material. data-prism-server does not depend on
-            // data-prism-example today, so this marker should never appear in the packaged
+            // data-prism-integration-tests today, so this marker should never appear in the packaged
             // jar; it exists so an accidental future dependency, or a copy of the key into
             // this module, is caught here rather than relying on the dependency graph never
             // changing.
@@ -89,7 +89,7 @@ class ServerPackagingIT {
                     .isEqualTo("io.github.aindriub.dataprism.server.DataPrismServerApplication");
 
             var names = jar.stream().map(entry -> entry.getName()).toList();
-            assertThat(names).noneMatch(name -> name.contains("data-prism-example")
+            assertThat(names).noneMatch(name -> name.contains("data-prism-integration-tests")
                     || (name.startsWith("BOOT-INF/classes/") && name.contains("/Stub"))
                     || name.contains("ExampleApplication"));
         }
@@ -408,7 +408,7 @@ class ServerPackagingIT {
 
         Path outer = Files.createTempFile("data-prism-packaging-positive-control-", ".jar");
         try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
-            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-example-0.2.0.jar"));
+            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-integration-tests-0.2.0.jar"));
             outerOutput.write(Files.readAllBytes(nestedLib));
             outerOutput.closeEntry();
         } finally {
@@ -437,7 +437,7 @@ class ServerPackagingIT {
 
         Path outer = Files.createTempFile("data-prism-packaging-manifest-positive-control-", ".jar");
         try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
-            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-example-0.2.0.jar"));
+            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-integration-tests-0.2.0.jar"));
             outerOutput.write(Files.readAllBytes(nestedLib));
             outerOutput.closeEntry();
         } finally {
