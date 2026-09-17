@@ -17,6 +17,74 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — Task 41: cut version 0.1.1, and a planning false premise caught at review
+
+Moved the whole tree from `0.1.0` to `0.1.1` — 18 module poms plus root, both
+`server.json` version fields, the two MCP `serverInfo` handshake literals in
+`DataPrismMcpServer.java`, all four Dockerfiles, and `publish-image.yml`'s
+comment — plus a `CHANGELOG.md` entry, with `git diff` otherwise touching no
+dependency version, no production code path, and no file added or removed.
+`mvn -B clean verify` stayed at 466 tests. Merged through a protected, green
+pull request (#66), which also carried the previously-unpushed `plan: task
+41` commit `main` was already sitting on — same handling as task 40's
+equivalent situation, confirmed by checking that the merge base of the task
+branch and `origin/main` predated that commit, so the PR's diff picked it up
+along with the task's own three commits.
+
+**Why 0.1.1, for the record — the task file states a different, false reason
+and must not be the surviving account.** The `v0.1.0` tag predates the
+multi-architecture publish pipeline: `git show
+v0.1.0:.github/workflows/publish-image.yml` contains no matrix and no arm64
+leg, so dispatching `workflow_dispatch` against that tag would silently
+re-run the old single-architecture pipeline instead of task 40's work —
+`workflow_dispatch` reads the workflow file from the ref it targets, not from
+`main`. Separately, `main` has diverged from the tag: `git diff --stat
+v0.1.0..main` touches CI workflows, documentation, and
+`data-prism-quickstart-issuer/pom.xml` only — no production source, no other
+module pom. Force-moving a tag a published GitHub Release already points at
+is possible but dishonest; cutting a patch version is cheaper and more
+honest than either.
+
+**The false premise, and how it got caught.** The brief this task was
+planned from claimed `main` carried a nimbus-jose-jwt security patch (PR #55)
+reaching the shipped server image, so an image tagged `:0.1.0` built from
+current `main` would carry a different JWT library than the artifacts
+already on Maven Central — the stated justification for cutting a new
+version at all. That is not true. PR #55's only dependency change is a
+version pin in `data-prism-quickstart-issuer/pom.xml`; `data-prism-server`
+receives nimbus transitively through `spring-security-oauth2-jose`,
+untouched by that PR, and neither the server nor the distribution image
+builds the issuer module. The task file
+(`docs/plan/tasks/41-cut-version-0-1-1.md`, now deleted) asserted the false
+claim at its old lines 33-40 and required the `CHANGELOG.md` entry to repeat
+it at lines 97-102 — which would have told users 0.1.1 fixed a JWT
+vulnerability it did not fix. The planner and implementer both wrote the
+claim in faithfully; the reviewer caught it on the first round and required
+a correction commit (`9ad2dfa`, "correct rationale — 0.1.1 is release
+plumbing, not a JWT security fix") before approving. The branch was right to
+contradict its own task file.
+
+**Process lesson, worth keeping.** This is the second time in this release
+cycle a reviewer has caught a false premise supplied by the coordinator
+planning the task, rather than a defect introduced by an implementer
+executing it. Both times, the planner and implementer downstream did exactly
+what they were briefed to do and had no mechanism to challenge a factual
+claim handed to them as context — the verification chain caught it, but only
+at review, after the false claim had already been written into two files.
+That is a gap in the loop, not a one-off implementer error, and it is worth
+naming plainly rather than filing under "reviewer did its job."
+
+**Cost:** the real cost was not the version bump — that part was mechanical
+and the acceptance criteria (`rg` sweep for surviving `0.1.0` hits, jar/image
+builds, MCP handshake check) worked as designed. The cost was diagnosing that
+the premise motivating the whole task was wrong, which took a dependency-tree
+read (`mvn dependency:tree` on `data-prism-server`, confirming nimbus arrives
+via `spring-security-oauth2-jose` with no path through the issuer pin) plus
+confirming which images actually build the issuer module (neither). Do not
+trust a coordinator-supplied claim about what a dependency bump affects
+without tracing the actual dependency path for the artifact in question —
+"the pom changed" is not evidence that a specific shipped jar changed.
+
 ## 2026-09-16 — Task 40: publish the server image for linux/amd64 and linux/arm64
 
 `ghcr.io/aindriub/data-prism-server` was published amd64-only, and the

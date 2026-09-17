@@ -215,26 +215,71 @@ See `docs/plan/HISTORY.md` — grep `Task 40` — for what landed, the buildx
 driver bug only a real run caught, and the honest limits on what has and has
 not actually been exercised yet.
 
-**Nothing left is development work** — what remains is an owner-driven publish
-sequence, and the ordering matters:
+**The publish sequence below is superseded by task 41's, immediately after.**
+Task 40 planned to re-push the image as `:0.1.0`; task 41 reversed that
+decision the next day. Left unedited above as the record of what task 40
+actually closed with — do not follow it.
 
-1. Manually dispatch `publish-image.yml` on the existing `v0.1.0` tag. This is
-   the first real execution of task 40's digest-push and manifest-assembly
-   steps — the only prior run of this workflow was against the old,
-   single-platform shape.
-2. Verify the manifest resolves per platform on real hardware: an x86_64
-   Ubuntu host should pull `amd64`, an Apple Silicon Mac should pull `arm64`.
-3. Manually dispatch `publish-mcp.yml` on the tag to publish the registry
-   entry, which requires the image to be pullable. The reviewer confirmed
+### Task 41 — done. No task file remains under `docs/plan/tasks/`.
+
+Opened and closed 2026-09-17: `publish-image.yml`'s own comment (written by
+task 40) still planned to re-push the GHCR image as `:0.1.0` once multi-arch
+landed, on the reasoning that `main` and the `v0.1.0` tag were the same tree.
+They no longer are, and for a sharper reason than drift: `git show
+v0.1.0:.github/workflows/publish-image.yml` shows the tag predates the
+multi-architecture pipeline entirely, so dispatching `workflow_dispatch`
+against `v0.1.0` would silently re-run the old single-architecture workflow,
+not task 40's matrix — `workflow_dispatch` reads the workflow file from the
+ref it targets. Separately, `git diff --stat v0.1.0..main` confirms `main`
+has moved: CI workflows, documentation, and `data-prism-quickstart-issuer/pom.xml`
+only, no production source and no other module pom. Force-moving a tag a
+published GitHub Release already points at is possible but dishonest; cutting
+a patch version is cheaper. Task 41 moved the whole tree from 0.1.0 to 0.1.1
+— 18 module poms plus root, both `server.json` version fields, the MCP
+`serverInfo` handshake literals in `DataPrismMcpServer.java`, all four
+Dockerfiles, and the stale `publish-image.yml` comment — with a `CHANGELOG.md`
+entry and nothing else. Merged through a protected, green pull request
+2026-09-17 (#66), which also carried the previously-unpushed `plan: task 41`
+commit `main` was already sitting on. `mvn -B clean verify` green at 466
+tests, the same count as before.
+
+**Planned on a false premise, caught only at review.** The brief handed to
+this task claimed `main` carried a nimbus-jose-jwt security patch reaching
+the shipped server image, so an image tagged `:0.1.0` from current `main`
+would ship a different JWT library than the Central 0.1.0 artifacts. That is
+false: PR #55's only change is a version pin in
+`data-prism-quickstart-issuer/pom.xml`; `data-prism-server` gets nimbus
+transitively through `spring-security-oauth2-jose`, untouched by that PR, and
+neither published image builds the issuer module. The task file (now
+deleted) asserted this at its old lines 33-40 and 97-102, and required the
+CHANGELOG to repeat it. The implementer wrote the false claim in faithfully,
+exactly as briefed; the reviewer caught it and required a correction commit
+before approving. The branch was right to contradict its own task file. This
+is the second time this release cycle a reviewer has caught a false premise
+supplied by planning rather than a defect introduced by an implementer — both
+times the agents downstream had no way to challenge a factual claim handed to
+them as context, and the verification chain is what caught it, only at the
+last step. See `docs/plan/HISTORY.md` — grep `Task 41` — for the full
+account.
+
+**Nothing left is development work** — the owner-driven publish sequence:
+
+1. Tag `v0.1.1`. `release.yml` creates the GitHub Release from it.
+2. Manually dispatch `publish-image.yml` on `v0.1.1` for the multi-arch
+   manifest — the first real execution of task 40's digest-push and
+   manifest-assembly steps against a ref that actually carries them.
+3. Manually dispatch `publish-central.yml` on `v0.1.1` and approve the Portal
+   bundle. Maven Central 0.1.0 is already published and immutable; 0.1.1 is a
+   second, additional release, not a replacement.
+4. Verify the manifest resolves per platform on real hardware: an x86_64 host
+   should pull `amd64`, an Apple Silicon Mac should pull `arm64`.
+5. Manually dispatch `publish-mcp.yml` on `v0.1.1` for the registry entry,
+   which requires the image to be pullable. The reviewer confirmed
    `publish-mcp.yml`'s `docker manifest inspect` pullability guard is
    satisfied by a manifest list, so no successor task is needed there.
 
-Maven Central 0.1.0 is already published and synced — repo1.maven.org serves
-`data-prism-core` and `data-prism-spring-boot-starter` 0.1.0, verified by
-building an external consumer project against an empty local repository. The
-GHCR package is already public from the prior amd64-only publish.
-
-Owner actions outstanding, none of which any agent can perform:
+Owner actions outstanding, unchanged by task 41, none of which any agent can
+perform:
 
 - The `central` GitHub Environment exists but has no required reviewers
   ticked, so it currently gates nothing.
@@ -245,23 +290,24 @@ Owner actions outstanding, none of which any agent can perform:
   OIDC at `publish-mcp.yml` dispatch time — no separate owner action, but the
   dispatching identity must be the repository owner's.
 
-### Dependabot PRs — open, unplanned, needs triage
+### Dependabot PRs — closed
 
-Twelve PRs (#44-#55) opened since task 34's `dependabot.yml` landed
-2026-09-16, none merged, none equally safe:
+All twelve PRs opened since task 34's `dependabot.yml` landed (#44-#55) are
+resolved; zero remain open. Eight closed without merging, each with recorded
+reasoning:
 
-- #54 bumps `spring-boot.version` 3.5.16 to 4.1.1 — a major version touching
-  the autoconfiguration ordering and `BeanFactoryPostProcessor` sequencing
-  tasks 35 and 39 just fixed.
-- #48-#53 move the Docker base images to Java 25/26 while every pom
-  deliberately targets `--release 21`.
-- #45, #47, #51 are Actions version bumps (`checkout`, `upload-artifact`,
-  `setup-java`) that would clear the Node 20 deprecation warnings and touch
-  the workflow task 40 just rewrote.
-- #55 is a `nimbus-jose-jwt` patch bump, the lowest-risk of the twelve.
+- #54 (`spring-boot.version` 3.5.16 to 4.1.1) — a major version bringing
+  Jackson 3 transitively; two Jackson majors on one classpath would open a
+  path around the scrubbing engine, breaching rule 5.
+- #44, #46, #50, #52 (Docker base image JRE 21 to 25) and #48, #49, #53
+  (build image 21 to 26) — every pom deliberately targets `--release 21`,
+  and separately `build.yml` never builds a Docker image, so these PRs' green
+  checks were vacuous regardless.
 
-Not triaged here — that is a decision for whoever picks this item up, not
-something to plan in advance.
+Four merged: #55 (`nimbus-jose-jwt` patch — the dependency task 41's own task
+file mistakenly credited with reaching the server image, see above) and #45,
+#47, #51 (`actions/checkout`, `actions/upload-artifact`, `actions/setup-java`
+version bumps).
 
 **Nothing is scheduled past this point in this plan.** Picking anything up
 from "Someday" below is a new planning decision, not a continuation of this
@@ -280,6 +326,17 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on task 41, 2026-09-17. Does not block anything; not
+picked up by task 41 because moving the version bump's own criterion is a
+different-shaped change than making one.
+
+- Nothing asserts on the MCP `serverInfo` handshake version string
+  (`DataPrismMcpServer.java:86,127`). It is the one value every MCP client
+  reads on `initialize`, and today it is corroborated only indirectly by
+  packaging tests that check jar paths, not the string a client actually
+  sees. A future version bump could leave it stale and every existing check
+  would still pass.
 
 Found during `/verify` on task 35, 2026-09-16. Neither blocks anything; the
 reviewer judged both safe to leave rather than fold into 35's scope.
