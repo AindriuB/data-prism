@@ -80,10 +80,23 @@ public record ConsistencyFinding(
          * from the person best placed to notice it. The model sees it as data,
          * with a finding saying so. See docs/design-review.md §D3.
          */
-        SUSPECTED_INSTRUCTION_CONTENT
+        SUSPECTED_INSTRUCTION_CONTENT,
+
+        /**
+         * More than one source held this field, and their raw values matched
+         * exactly. Reported explicitly rather than by the field's absence from
+         * every other finding: without it a caller cannot tell "compared across
+         * sources and consistent" from "never compared", which is the exact
+         * ambiguity docs/pack.md §42 exists to remove. Like every other kind,
+         * this carries no value — only that the sources agreed.
+         */
+        CONSISTENT
     }
 
+    private static final java.util.Set<Kind> NON_DISAGREEMENT =
+            java.util.Set.of(Kind.SUSPECTED_INSTRUCTION_CONTENT, Kind.CONSISTENT);
+
     public boolean disagreement() {
-        return kind != Kind.SUSPECTED_INSTRUCTION_CONTENT;
+        return !NON_DISAGREEMENT.contains(kind);
     }
 }

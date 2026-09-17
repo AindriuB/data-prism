@@ -177,6 +177,15 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             // subject, so once these records are scrubbed every source's version
             // of a name is the same string and there is nothing left to compare.
             findings = correlation.correlate(fetched.raw(), context);
+            if (!request.includeAgreementFindings()) {
+                // get_entity_context's response must not change: agreement
+                // findings are for the comparison path only, asked for on the
+                // request rather than inferred, so this filter is the one place
+                // that decides and every caller of buildContext shares it.
+                findings = findings.stream()
+                        .filter(f -> f.kind() != ConsistencyFinding.Kind.CONSISTENT)
+                        .toList();
+            }
 
             if (merged == null) {
                 throw new PrivacyRefusedException("NO_SOURCE_DATA", request.entityType(),
@@ -289,7 +298,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 .map(outcome -> outcome.sourceName() + ":" + outcome.status())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         audit.record(investigationContext.principalId(), investigationContext.clientId(),
-                "get_entity_context", request.entityType(), subjectToken, fingerprint,
+                request.toolName(), request.entityType(), subjectToken, fingerprint,
                 context.redactionProfile(), context.scopeId(), context.purpose(),
                 investigationContext.caseId(), decision, names, request.rejectedArguments(),
                 correlationId);

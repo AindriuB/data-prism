@@ -87,7 +87,9 @@ public final class DataPrismMcpServer {
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper,
-                        metrics, audit, clock, developmentCaller).specification())
+                        metrics, audit, clock, developmentCaller).specification(),
+                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper,
+                                metrics, audit, clock, developmentCaller).specification())
                 .build();
     }
 
@@ -128,7 +130,9 @@ public final class DataPrismMcpServer {
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper,
-                        metrics, audit, clock).specification())
+                        metrics, audit, clock).specification(),
+                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper,
+                                metrics, audit, clock).specification())
                 .build();
 
         return new HttpTransport(server, transport);

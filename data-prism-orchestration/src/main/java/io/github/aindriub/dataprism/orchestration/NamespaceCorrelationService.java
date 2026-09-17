@@ -111,7 +111,12 @@ public final class NamespaceCorrelationService implements EntityCorrelationServi
         values.forEach((source, value) ->
                 exact.computeIfAbsent(value, v -> new ArrayList<>()).add(source));
         if (exact.size() == 1) {
-            return java.util.Optional.empty();
+            // Every source that held this field agreed, exactly, before scrubbing —
+            // the only point at which that is knowable. Reported explicitly rather
+            // than by silence: silence is indistinguishable from "never compared".
+            return java.util.Optional.of(new ConsistencyFinding(namespace.name(), namespace,
+                    ConsistencyFinding.Kind.CONSISTENT, List.of(List.copyOf(values.keySet())), 1,
+                    "all sources holding this field agreed"));
         }
 
         // Groups are emitted, values are not: a reader learns which systems agree
