@@ -4,6 +4,7 @@ import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.Map;
 
 /** Stands in for an account API. Invented data; no real person is described. */
@@ -27,5 +28,15 @@ public final class StubAccountAdapter implements DataSourceAdapter<AccountDto> {
     @Override
     public AccountDto fetch(DataRequest request) {
         return RECORDS.get(request.subjectId());
+    }
+
+    /**
+     * The fixture records themselves, for tests that need to enumerate what
+     * this stub actually holds — {@code PiiLogScanTest} derives its banned
+     * value set from this rather than keeping a second, hand-written copy of
+     * it. Exposes fixture data only; {@link #fetch} is unchanged.
+     */
+    public static Collection<AccountDto> fixtureRecords() {
+        return RECORDS.values();
     }
 }
