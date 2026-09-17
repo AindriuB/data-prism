@@ -394,22 +394,24 @@ left for this task:
   Documented in javadoc on that constructor; confirmed by grep that nothing
   outside tests uses that path today.
 
-**Task 46 — open. Depends on 43 (done).** No longer blocked.
+Task 46 (test-only, `PiiLogScanTest`'s banned values derived from fixtures)
+merged 2026-09-17; see `docs/plan/HISTORY.md`, grep `Task 46`. It touches no
+shipped artifact, so it never blocked this cut — the owner may cut 0.2.0
+before or after task 47 below.
 
-Derives `PiiLogScanTest`'s `BANNED_VALUES` from the stub adapters' own fixture
-records instead of a hand-written literal list. Found reviewing task 43: the
-list omits `Pat Murphy` and `P. Murphy` (the account-api and order-api
-spellings `get_entity_context`'s merged tree already carries) and also
-`ACC-1`, `ORD-9`, the account balance and the order note — a regression
-logging a raw `customerName` or `holderName` from those adapters would leave
-the scan GREEN today. Nothing is leaking; this is degradation of a control,
-not a breach, and the fix is derivation, not patching in the missing
-literals, which would leave the drift mechanism in place. Test-only — touches
-no shipped artifact — so it does not block a 0.2.0 cut if the owner wants 45
-first; recommended to run before 45 regardless, since 45 is the version cut
-and reads best last. The task file's premise that `PiiLogScanTest` is a costly
-HTTP integration run was checked and corrected by the planner before this task
-opened: it drives the tool in-process at 0.022s for the whole class.
+**Task 47 — open. Depends on 46 (done).**
+
+Closes the two holes a reviewer found in the same control task 46 fixed, both
+the same shape — a control that narrows itself with no signal: the banned-value
+derivation reflects only one level deep, so a nested record or collection
+component would enter the set as its own `toString` and leave its leaf values
+silently unbanned; and `findLeaked`'s trailing `\b` bound makes a banned value
+ending in punctuation unmatchable on an ordinary (non-audit) log line, which
+today silently exempts both order notes from the plain leak path. Adds one
+nested `DeliveryDto` component to `OrderDto` so the recursion is falsifiable
+against a real fixture, and switches `findLeaked`'s bounds to `(?<!\w)`/`(?!\w)`
+lookarounds, pinning first the hex/UUID-collision defence the `\b` bound
+existed for. Test-only, no shipped artifact — does not block 45.
 
 ## Remaining slices past the adopted core
 
