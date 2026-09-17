@@ -17,6 +17,52 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — Task 46: PiiLogScanTest's banned values derived from the stub fixtures
+
+`PiiLogScanTest`'s banned set is no longer a hand-maintained literal list. It
+is derived from `Stub{Customer,Account,Order}Adapter`'s own `RECORDS` via a
+minimal `fixtureRecords()` accessor, so adding or changing a fixture value
+automatically extends what the scan looks for. The derivation yields 16
+values, including the six the hand-maintained list omitted —
+`Pat Murphy`, `P. Murphy`, `ACC-1`, `ORD-9`, `4200.55`, `18.00` — plus both
+order notes. Proven by mutation: logging a raw record from `SourceFanOut`, a
+production fetch path, turned the scan red naming 14 leaked values, including
+exactly those six; under the old list it would have stayed green. Merged
+through a protected, green pull request 2026-09-17 (#73). Full reactor
+`mvn -B clean verify` green, 488 tests, re-confirmed independently after
+merge.
+
+`CustomerDto.status` is excluded from the derived set, and that exclusion was
+challenged during review: was the scan green WITH `status` included, or did
+excluding it silence a real redness — the latter being the exact failure this
+task existed to fix? The implementer tested it in an isolated clone: green
+with `status` included, so the exclusion is pre-emptive against future false
+positives, not a silencing, and it corrected its own comment, which had
+originally been written from reasoning rather than observation. The `AUDIT_KEYS`
+javadoc's placeholder count was also corrected, verified against
+`Slf4jAuditSink`: twenty `{}` placeholders, nineteen named fields, with
+`seq={}/{}` folding two.
+
+Two holes remain in the same control, the same shape as the bug this task
+fixed — a control that narrows itself with no signal — and are recorded as
+task 47: the reflection is one level deep, so a future nested record or
+collection component would enter the banned set as its `toString`, leaving
+the leaf values silently unbanned; and `findLeaked`'s `\b` word-boundary bound
+makes a value ending in punctuation unmatchable at end-of-line or before a
+space on the plain (non-audit) path, which is why the two order notes — both
+in the derived set — went unflagged during this task's own mutation proof.
+
+**Cost:** the implementer's close-out reported 462 tests before its change and
+463 after. The real figures are 487 and 488 — its delta was right, its
+absolute count was low by 25, because it ran a restricted reactor
+(`-pl data-prism-example -am`) rather than a full `mvn -B clean verify`. A
+restricted reactor silently skips whole modules (hazelcast, connectors-rest,
+server, the quickstart modules, architecture-rules). This is the second
+distinct test-counting error recorded in this repository, after the earlier
+surefire/failsafe double-count (tasks 21-24); both were caught only because a
+tester re-counted independently rather than trusting the report. A test count
+in a close-out is not evidence until someone reproduces it.
+
 ## 2026-09-17 — Task 43: compare_entity_sources wired into the example, and the identity assumption task 42 could not prove is now proven
 
 `compare_entity_sources` now runs on the real assembly — real stub adapters,
