@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `data-prism-example` is renamed to `data-prism-integration-tests`: it hosts
+  11 integration test classes with no duplicate elsewhere, including
+  `PiiLogScanTest`, the sole enforcement of privacy rule 7, and was never a
+  demo. Package `io.github.aindriub.dataprism.example` and `ExampleApplication`
+  are unchanged. Six `data-prism-example` strings survive deliberately inside
+  `data-prism-integration-tests` — its own JWT `issuer` and audit `writer-id`
+  config values, and the tests asserting on them — because they are
+  observable audit output, not a module identifier.
+- Documentation reconciled against the shipped code rather than the plan that
+  preceded it: two consumer guides, `docs/extending.md` and `docs/tools.md`,
+  are now linked from `README.md`, `docs/quickstart.md` and
+  `docs/agents/README.md`; every stale "one tool" claim across those files and
+  `docs/architecture.md` is corrected to name both shipped tools,
+  `get_entity_context` and `compare_entity_sources`; `docs/architecture.md`
+  now attributes `ArchitectureTest` to `data-prism-architecture`, where task 23
+  moved it, instead of the renamed module; and `README.md`'s "Until Task 20
+  delivers…" claim is replaced — the configuration-driven JSON REST mode
+  shipped as the published `data-prism-connectors-rest` artefact, self-
+  registering via Spring's `AutoConfiguration.imports`, requiring no Java, but
+  covering only flat JSON (`ConfiguredJsonFieldMetadataResolver.descendable()`
+  always returns `false`, so a nested object is never covered).
+
 ## [0.2.0] - 2026-09-17
 
 A second MCP tool, `compare_entity_sources`, and no other new feature.

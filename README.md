@@ -17,8 +17,9 @@ Not built: the re-identification operator surface (deferred past V1 by
 decision, see `docs/architecture.md#decisions-worth-knowing`), the
 Elasticsearch connector and its search tools, and the append-only audit sink
 with hash-chain verifier (a file/SLF4J sink exists; the append-only sink is
-deliberately deferred). Only one MCP tool exists today, `get_entity_context`
-— the other three named in the design review are not yet built. See
+deliberately deferred). Two MCP tools ship today, `get_entity_context` and
+`compare_entity_sources` — the other two named in the design review,
+`search_entity_data` and `describe_entity_model`, are not yet built. See
 `docs/plan/PLAN.md` for what is open.
 
 ## The problem
@@ -114,6 +115,8 @@ fixture for evaluation, not this image or that configuration.
 |---|---|
 | `docs/quickstart.md` | One-command local Compose demonstration — start here |
 | `docs/agents/` | Connecting an MCP agent client, local fixture or authenticated remote |
+| `docs/tools.md` | What each shipped MCP tool takes and returns, worked examples |
+| `docs/extending.md` | Protecting a new source: a reviewed Java adapter, or the configuration-driven JSON REST mode |
 | `docs/architecture.md` | Module map, dependency rules, the boundaries that must not be crossed, dated decisions |
 | `docs/design-review.md` | Amendments to the specification, with reasoning. **Authoritative** |
 | `docs/development-plan.md` | Slice order, sizing, and the decisions that block the first one |
@@ -152,10 +155,15 @@ single Jackson major.
 liveness probe is public and carries no deployment detail; its configured MCP
 path (normally `/mcp`) requires a verified bearer JWT. It deliberately contains
 no source schema, fixture adapter, or key. Supply configuration described in
-[`docs/configuration.md`](docs/configuration.md), plus a reviewed Java adapter
-extension for each configured source. Until Task 20 delivers the separately
-reviewed generic-JSON mode, protecting a new source requires Java code with an
-annotated response model.
+[`docs/configuration.md`](docs/configuration.md), plus a reviewed adapter for
+each configured source. Two ways to get one: a Java adapter extension with an
+annotated response model (the general case — nested objects, any transport),
+or, when the source's response is one flat JSON object, the published
+`data-prism-connectors-rest` artefact — loaded via `-Dloader.path`, configured
+entirely in YAML, no Java required. See
+[`docs/extending.md`](docs/extending.md) for both paths and exactly where the
+configuration-driven one's coverage ends (it never descends into a nested
+object).
 
 Adapter extensions are ordinary jars containing Spring Boot auto-configuration
 that declares the required `DataSourceAdapter` beans and an explicit reviewed
@@ -171,10 +179,11 @@ LOADER_PATH=/opt/data-prism/extensions \
 ```
 
 The process refuses startup if configuration, secrets, operational bindings, or
-the exact configured adapter set is missing. `data-prism-example` remains a
-fixture-only demonstration and is not a server dependency. Container
-packaging and Compose orchestration for a real, locally runnable instance of
-this exist too — see "Try it" above and `docs/quickstart.md`.
+the exact configured adapter set is missing. `data-prism-integration-tests` is
+the reactor's cross-module integration test suite, not a fixture-only demo,
+and is never packaged into a deployable artefact. Container packaging and
+Compose orchestration for a real, locally runnable instance of this exist too
+— see "Try it" above and `docs/quickstart.md`.
 
 ## Contributing
 
