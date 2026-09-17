@@ -17,6 +17,86 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — 0.2.0 release complete: GitHub Release, Maven Central, GHCR multi-arch, and the first successful MCP registry publish
+
+Task 48 corrected `server.json`'s OCI package block after `mcp-publisher
+publish` returned 400 against the `v0.2.0` tag: "OCI packages must not have
+'registryBaseUrl' field - use canonical reference in 'identifier' instead".
+With that fixed and the tag moved, the publish succeeded, and every artifact
+0.2.0 was cut for is now live: the GitHub Release, Maven Central (all
+modules, synced roughly 12 minutes after the Portal press, confirmed by HTTP
+200 on `repo1.maven.org`), the GHCR multi-arch image (verified resolving
+`linux/arm64` on an Apple Silicon Mac and `linux/amd64` on an x86_64 Ubuntu
+host from the same tag, both failing closed with `MISSING_IDENTITY_RESOLVER`
+absent a mounted adapter jar), and the MCP registry entry —
+`io.github.AindriuB/data-prism` version `0.2.0`, status `active`, published
+2026-09-17T18:59:49Z, pointing at `ghcr.io/aindriub/data-prism-server:0.2.0`.
+Merged through a protected, green pull request 2026-09-17 (#78). Tester: PASS,
+492 tests unchanged. Reviewer: APPROVE. No task file remains under
+`docs/plan/tasks/`.
+
+**Three publish attempts, three different failures, and what each taught.**
+First, 403: the registry preserves the GitHub login's casing
+(`io.github.AindriuB`) in the granted namespace, Maven Central's coordinates
+use lowercase (`io.github.aindriub`), and GHCR requires a lowercase image
+path — three different identifiers in three different systems, each correct
+as written once distinguished. Fixed by task 44. Second, 400:
+`registryBaseUrl` is forbidden on an OCI package; the canonical reference,
+tag included, belongs in `identifier` alone. Fixed by task 48. The decisive
+move in task 48 was reading the registry's server-side validator source
+(`internal/validators/registries/oci.go`, `ValidateOCI`) instead of inferring
+the whole contract from the 400's error text, which named only
+`registryBaseUrl`. The validator source showed `version` is *also* rejected
+on an OCI package once `identifier` carries the tag — never mentioned by the
+error. Fixing only what the 400 named would have produced a third failed
+publish over a field the message never flagged.
+
+**A green `mcp-publisher validate` predicted neither failure.** The
+2025-12-11 schema this repository declares still lists `registryBaseUrl` and
+`version` as valid optional package properties, and `validate` passed before
+both the 403 and the 400. The registry enforces server-side rules the schema
+does not express. Recorded here plainly because the assumption that a green
+local validate meant a publish would succeed cost two real release attempts,
+each needing an owner-dispatched workflow to discover.
+
+**The `v0.2.0` tag was force-moved, deliberately, and it does not
+misrepresent anything already shipped.** The tag originally pointed at
+`196a4f1`, the commit carrying the rejected package block; `workflow_dispatch`
+reads both the workflow file and `server.json` from the ref it is dispatched
+against, so re-dispatching against the old tag would have republished the
+same rejected block. The tag was moved to `ff11e0e`, PR #78's merge commit.
+The only files that differ between those two commits are `server.json`,
+`.github/workflows/publish-mcp.yml` and `CHANGELOG.md` — none of them inputs
+to the published Docker image or the Maven Central jars, both already live
+for 0.2.0 and not rebuilt by this move. Contrast with the 0.1.1 decision
+(task 41): there, a tag move was rejected because `main` had diverged in ways
+that would change the built artifacts. The two situations differ because
+what changed differs, not because moving a published tag is more acceptable
+this time.
+
+**The guard task 48 added.** Folding the tag into `identifier` put the
+version in two places inside one string — `.version` and the tag suffix of
+`.packages[0].identifier` — which task 45's version sweep, built to find
+version literals as whole tokens, would not have caught inside a longer
+string. `publish-mcp.yml` now asserts both the identifier's repository path
+(`ghcr.io/aindriub/data-prism-server`) and its tag against `.version`, each
+proven non-vacuous by editing the value wrong, running the guard's script
+body, and observing the `::error::` line before reverting. Parsing was
+probed independently against a tagless reference, an `@sha256:` digest
+reference, and a host with a port, so no shape of `identifier` produces a
+false pass.
+
+**Cost:** the two-round failure was expensive mainly in owner time — each
+round trip needed a manual `workflow_dispatch` and a wait for the rejection,
+and the schema's own optimism (`validate` green both times) meant nothing
+short of dispatching against the real registry could have surfaced either
+error sooner. The lesson that generalizes: for any registry or API with a
+published JSON Schema and separate server-side business rules, treat the
+schema as necessary and not sufficient, and go straight to the server
+implementation's own validator source once an error message names only part
+of the rejection — inferring the rest from prose cost this release its
+second failed attempt.
+
 ## 2026-09-17 — Task 47: the PII scan's reflection-depth and word-boundary holes closed
 
 `PiiLogScanTest`'s banned-value derivation now recurses through `Record`
