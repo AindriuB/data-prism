@@ -31,8 +31,10 @@ dataprism:
     roles:
       investigator:
         - GET_ENTITY_CONTEXT
+        - COMPARE_ENTITY_SOURCES
       privileged-investigator:
         - GET_ENTITY_CONTEXT
+        - COMPARE_ENTITY_SOURCES
         - EXPOSE_SOURCE_NAMES
   privacy:
     profile: DEFAULT

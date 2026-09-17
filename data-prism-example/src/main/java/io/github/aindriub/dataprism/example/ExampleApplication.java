@@ -30,9 +30,10 @@ import java.util.Set;
  * is attributed to one development caller — explicitly acknowledged as such via
  * {@link DataPrismMcpServer#stdio}'s {@code singlePrincipalDevelopmentMode}
  * argument, never a default a caller could reach by omission. That caller holds
- * {@code GET_ENTITY_CONTEXT} and nothing more: no {@code EXPOSE_SOURCE_NAMES},
- * so this example shows the same scope-local source aliases a real deployment
- * would show a caller not granted that capability.
+ * {@code GET_ENTITY_CONTEXT} and {@code COMPARE_ENTITY_SOURCES}, and nothing
+ * more: no {@code EXPOSE_SOURCE_NAMES}, so this example shows the same
+ * scope-local source aliases a real deployment would show a caller not granted
+ * that capability.
  */
 public final class ExampleApplication {
 
@@ -56,7 +57,7 @@ public final class ExampleApplication {
         McpSyncServer server = buildServer(activeProfiles());
 
         Runtime.getRuntime().addShutdownHook(new Thread(server::closeGracefully));
-        System.err.println("data-prism listening on stdio; tool: get_entity_context");
+        System.err.println("data-prism listening on stdio; tools: get_entity_context, compare_entity_sources");
 
         Thread.currentThread().join();
     }
@@ -89,14 +90,16 @@ public final class ExampleApplication {
 
     /**
      * The shipped stdio development policy: one role, {@code developer}, holding
-     * only {@link Capability#GET_ENTITY_CONTEXT}. A named factory rather than a
+     * exactly {@link Capability#GET_ENTITY_CONTEXT} and
+     * {@link Capability#COMPARE_ENTITY_SOURCES} — never
+     * {@link Capability#EXPOSE_SOURCE_NAMES}. A named factory rather than a
      * value built inline in {@link #buildServer}, so {@code ShippedDefaultsTest}
      * can assert on the same policy {@code main} actually runs, instead of a
      * lookalike the test builds itself.
      */
     static SecurityPolicy shippedSecurityPolicy() {
         return new SecurityPolicy(Set.of(DEVELOPMENT_PURPOSE),
-                Map.of(DEVELOPMENT_ROLE, Set.of(Capability.GET_ENTITY_CONTEXT)));
+                Map.of(DEVELOPMENT_ROLE, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
     }
 
     /**
