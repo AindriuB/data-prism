@@ -469,7 +469,8 @@ the packaged artifacts this module's own smoke test starts as
 subprocesses; a consumer's extension pom has no reason to carry them.)
 
 This was verified, not assumed: a throwaway project's pom was assembled by
-pasting the two fenced blocks above unmodified into a pom whose only other
+pasting the `<properties>`/`<dependencyManagement>`/`<dependencies>` block
+above and the `<plugin>` block below unmodified into a pom whose only other
 content is the top-level fields already assumed (`groupId`, `artifactId`,
 `version`, `packaging`) — nothing added, nothing implied. Alongside a
 minimal `DataSourceAdapter` and an `@LlmExposedModel` record, it was built
@@ -482,9 +483,13 @@ distribution itself was built against. The build produced a jar; nothing in
 this paragraph is aspirational.
 
 The annotation processor is configured separately, and only here — with an
-explicit version, not `${project.version}`, for the reason above:
+explicit version, not `${project.version}`, for the reason above. If your
+pom already has a `<build><plugins>` section, add this `<plugin>` inside it
+instead of duplicating the wrapper:
 
 ```xml
+  <build>
+    <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -498,11 +503,15 @@ explicit version, not `${project.version}`, for the reason above:
           </annotationProcessorPaths>
         </configuration>
       </plugin>
+    </plugins>
+  </build>
 ```
 
-Adapted from `data-prism-quickstart-extension/pom.xml:98-113`, which reads
-identically except for the version, and explains the placement in its own
-comment:
+The `<plugin>` itself is adapted from
+`data-prism-quickstart-extension/pom.xml:98-113`, which reads identically
+except for the version (the `<build><plugins>` wrapper around it is already
+present elsewhere in that module's pom, so its own citation does not include
+one). That module's own comment explains the placement:
 
 > On the processor path, not the compile classpath: this module depends on
 > the `@LlmExposedModel` classification check running, not on the checker's
