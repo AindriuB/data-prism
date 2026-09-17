@@ -411,29 +411,76 @@ See `docs/plan/HISTORY.md` — grep `Task 47`.
 
 With 42-47 all closed, no task file remains under `docs/plan/tasks/`.
 
-**Nothing left is development work** — the owner-driven 0.2.0 publish
-sequence:
+**Task 48 — done. No task file remains under `docs/plan/tasks/`.** The
+0.2.0 publish sequence's registry-dispatch step (step 5 below, as it read
+before this update) returned 400: OCI packages must not carry
+`registryBaseUrl`, and `identifier` must be a canonical reference. Task 48
+corrected `server.json`'s package block and extended `publish-mcp.yml`'s
+version-agreement guard to a moved `v0.2.0` tag. Merged 2026-09-17 (#78).
+See `docs/plan/HISTORY.md` — grep `Task 48` — for what landed, including why
+the fix was found by reading the registry's server-side validator rather than
+the error text, and why the tag had to move.
 
-1. Tag `v0.2.0`. `release.yml` creates the GitHub Release from it.
-2. Manually dispatch `publish-image.yml` on `v0.2.0` for the multi-arch
-   manifest, now carrying task 44's corrected MCP registry namespace label —
-   the label is baked in at build time, so this is the first image build that
-   carries the correction.
-3. Manually dispatch `publish-central.yml` on `v0.2.0` and approve the Portal
-   bundle.
-4. Verify the manifest resolves per platform on real hardware: an x86_64 host
-   should pull `amd64`, an Apple Silicon Mac should pull `arm64`.
-5. Manually dispatch `publish-mcp.yml` on `v0.2.0` for the registry entry.
-   `mcp-publisher publish` returned 403 against `v0.1.1` this wave because the
-   image still carried the old, wrongly-cased namespace label; this release is
-   the one that clears it, since it is the first image built after task 44's
-   correction.
+### 0.2.0 release — done. Every artifact is live.
+
+Closed 2026-09-17. GitHub Release v0.2.0, Maven Central 0.2.0 (all modules),
+the GHCR multi-arch image (verified `arm64` and `amd64` from the same tag on
+real hardware), and the MCP registry entry
+(`io.github.AindriuB/data-prism@0.2.0`, status `active`, published
+2026-09-17T18:59:49Z) are all published. The registry entry is the first
+successful publish after two failed attempts (403 namespace casing, fixed by
+task 44; 400 forbidden OCI fields, fixed by task 48). See
+`docs/plan/HISTORY.md` — grep `0.2.0 release complete` — for the full account
+of both failures, why a green local `mcp-publisher validate` did not predict
+either, and why the `v0.2.0` tag was force-moved to the PR #78 merge commit
+without misrepresenting any already-published artifact.
 
 Owner actions outstanding, unchanged by this wave: the `central` GitHub
 Environment still has no required reviewers ticked, and
 `CENTRAL_TOKEN_USERNAME`/`CENTRAL_TOKEN_PASSWORD` still live as repository
 secrets rather than the `central` environment's scope — see task 41's section
 above for the original recording of both.
+
+**No task file remains open anywhere in `docs/plan/tasks/`.** The items below
+are debt found along the way, not scheduled work.
+
+### Known open items at release, none scheduled
+
+Recorded 2026-09-17 alongside the 0.2.0 release close-out, so they are found
+in one place rather than scattered across dated `/verify` findings below.
+None blocks anything already shipped; pick any up only as its own planned
+work.
+
+- The two latent `PiiLogScanTest` traps from task 47's `/verify` — see
+  "Small open items, unscheduled" below (dated 2026-09-17, found on task 47)
+  for both.
+- Nothing asserts on the MCP `serverInfo` handshake version string — see the
+  same "Small open items, unscheduled" section below (dated 2026-09-17, found
+  on task 41) for the detail.
+- Three MCP tools named across this plan and never built.
+  `compare_entity_sources` and `get_entity_context` are the only two shipped.
+  `search_entity_data` has a full spec, `pack.md:1475-1499` (§43): signature
+  `search_entity_data(entityType, idInternal, query)`, with the explicit
+  constraint that server-side policy must translate the query rather than
+  passing any backend query language (Elasticsearch DSL, SQL, JPQL, Mongo)
+  through to the LLM. `describe_entity_model` is named in this file's Someday
+  list (S11) and in `docs/design-review.md:175-179` (§B5), but neither gives
+  more than intent — a one-paragraph amendment saying it should return field
+  names, namespaces and which fields are pseudonymised or redacted, with no
+  parameter list, response shape or error codes. `describe_entity_model`
+  needs a spec written before a task file for it would be buildable;
+  `search_entity_data` does not.
+- The append-only audit sink and its hash-chain verifier are still missing.
+  The hash chain itself exists and is exercised (`AuditRecorder`,
+  `data-prism-core/src/main/java/.../audit/`), but the only shipped
+  `AuditSink` is `Slf4jAuditSink` — there is no durable sink and nothing
+  verifies a stored chain for tampering. S9 as scoped in "Someday" below
+  named both the chain and "append-only sink"; only the cheap half (real
+  principal in audit, metrics, a PII log scan able to fail) was ever picked
+  up, by task 07 on 2026-09-09. The durable sink and its verifier were never
+  scheduled as their own task and remain outstanding. Listed here because the
+  release makes it visible to anyone integrating this as a dependency, not
+  because it is newly found.
 
 ## Remaining slices past the adopted core
 
