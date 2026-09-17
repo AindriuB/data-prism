@@ -23,6 +23,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The registry cross-checks the published name against the image's own
+      # label, so server.json, the README marker and the Dockerfile LABEL
+      # have to agree exactly or the eventual publish fails with a 403 the
+      # way task 44 diagnosed. Runs on every tag push as well as on dispatch
+      # — unlike the version-agreement guards below in the gated publish
+      # job — because a drift here is visible, and worth failing loudly on,
+      # long before anyone dispatches a real publish.
+      - name: Assert the MCP registry name agrees across server.json, README.md and the Dockerfile LABEL
+        run: |
+          server_json_name="$(jq -r '.name' server.json)"
+          readme_name="$(sed -n 's/^<!-- mcp-name: \(.*\) -->$/\1/p' README.md)"
+          dockerfile_name="$(sed -n 's/^LABEL io\.modelcontextprotocol\.server\.name="\(.*\)"$/\1/p' docker/distribution/Dockerfile)"
+          if [ "$server_json_name" != "$readme_name" ] || [ "$server_json_name" != "$dockerfile_name" ]; then
+            echo "::error::MCP registry name disagrees across files: server.json=${server_json_name} README.md=${readme_name} Dockerfile=${dockerfile_name}"
+            exit 1
+          fi
+
       - name: Install mcp-publisher
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher

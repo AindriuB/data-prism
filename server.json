@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.aindriub/data-prism",
+  "name": "io.github.AindriuB/data-prism",
   "description": "Privacy layer for enterprise APIs; refuses to start without a reviewed adapter jar per source",
   "title": "Data Prism",
   "repository": {

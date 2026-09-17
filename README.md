@@ -1,6 +1,6 @@
 # Data Prism
 
-<!-- mcp-name: io.github.aindriub/data-prism -->
+<!-- mcp-name: io.github.AindriuB/data-prism -->
 
 A privacy layer between MCP clients and enterprise APIs.
 
