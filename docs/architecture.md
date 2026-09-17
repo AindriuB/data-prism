@@ -49,7 +49,7 @@ review.
 | `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding, validation, privacy-pipeline wiring, MCP lifecycle and servlet registration |
 | `spring-boot-starter` | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
 | `server` | `spring-boot-autoconfigure` | Primary executable Streamable HTTP MCP server, JWT boundary, health endpoint, production integrations and privacy metrics |
-| `example` | everything, and declares `security` directly | Fixture-only demo application, three stub sources with divergent representations, worked examples and embedded-integration tests |
+| `integration-tests` | everything, and declares `security` directly | The reactor's cross-module integration test suite: 11 test classes exercising three stub sources with divergent representations end to end, including `PiiLogScanTest`, the sole enforcement of boundary 7 below |
 
 Two directions matter and are easy to get backwards:
 
@@ -88,12 +88,11 @@ not edited. `docs/design-review.md` amends it and wins wherever the two disagree
 **Inbound.** Protected APIs use Streamable HTTP behind an OAuth2 resource
 server. Stdio is fixture-only, single-principal development transport; it is
 never a route to a protected API. The rule is a closed tool set, not an open
-one: only
-`get_entity_context` exists today; `compare_entity_sources`, `search_entity_data`
-and `describe_entity_model` are designed (§B5) but not built, and none of the
-four is a ceiling that gets relaxed by adding a tool nobody reviewed. Backend
-endpoints are never exposed one-to-one — that would hand privacy and correlation
-decisions to the caller.
+one: `get_entity_context` and `compare_entity_sources` exist today;
+`search_entity_data` and `describe_entity_model` are designed (§B5) but not
+built, and none of the four is a ceiling that gets relaxed by adding a tool
+nobody reviewed. Backend endpoints are never exposed one-to-one — that would
+hand privacy and correlation decisions to the caller.
 
 **Outbound.** `RestClient` over mTLS to enterprise APIs, one adapter per source,
 endpoints configured server-side only. Elasticsearch through an adapter that
@@ -104,8 +103,14 @@ existing APIs; the Spring Boot starter is the embedded integration option. Both
 consume the single validated `dataprism.*` contract in
 `configuration.md`. Configuration parameterises reviewed adapters but does not
 infer classifications, create arbitrary JSON mappings, or let MCP callers
-choose a backend. Java-first adapters and annotated models are supported now;
-configuration-driven generic JSON sources are deferred.
+choose a backend. Java-first adapters and annotated models are the general
+case, supported now. A configuration-driven JSON REST mode also ships today —
+the separately published `connectors-rest` artefact, opted into via
+`-Dloader.path`, no Java required — but its allowlisted `fields:` catalogue is
+flat by design (`ConfiguredJsonFieldMetadataResolver.descendable()` always
+returns `false`), so it covers only a source whose response is scalar fields
+and arrays of them, never a nested object. See `configuration.md` and
+`docs/extending.md`.
 
 **Sideways.** An embedded Hazelcast member holding the identity cache, the shared
 read budget and — only where a deployment enables it — the re-identification
@@ -164,20 +169,30 @@ the boundary is crossed; catching a violation depends on review.
    fixture identifying values. Metric labels, trace attributes and audit
    records are not scanned by any test.
 8. **The core carries no business domain.** No `Customer`, `Taxpayer`,
-   `Employee` or `Account` type outside `example/`. **Partially enforced** —
-   `ArchitectureTest.coreDoesNotDependOnOuterLayers` checks the dependency
-   direction (core cannot depend on `mcp`, `orchestration`, `example` or
-   `pseudonymisation`), but nothing scans `core` for a business-domain type
-   directly; a domain type added to `core` that no outer module happened to
-   import would pass this rule.
+   `Employee` or `Account` type outside the `io.github.aindriub.dataprism.example`
+   package (hosted in `data-prism-integration-tests`; task 49 renamed the
+   module but deliberately left this package name unchanged).
+   **Partially enforced** — `ArchitectureTest.coreDoesNotDependOnOuterLayers`
+   checks the dependency direction (core cannot depend on `mcp`,
+   `orchestration`, the `example` package or `pseudonymisation`), but nothing
+   scans `core` for a business-domain type directly; a domain type added to
+   `core` that no outer module happened to import would pass this rule.
 
-`ArchitectureTest` (in `example`, the only module that sees the whole graph)
-also enforces two rules not tied to a numbered boundary above:
-`securityDoesNotDependOnOuterLayers` (`security` must work the same from any
-transport, so it cannot depend on `mcp`, `orchestration`, a connector or
-`example`) and `onlyTheExampleDependsOnSpringSecurity` (Spring Security is the
-example's own choice for turning a verified JWT into an `AuthenticatedCaller`;
-`data-prism-security` itself must stay framework-agnostic).
+`ArchitectureTest` lives in `data-prism-architecture`, not `example` —
+task 23 moved these rules into their own scanning module, built specifically
+to see the whole graph: its own javadoc records that `CLASSES` is imported
+from every other module's compiled `target/classes` directly, including
+`data-prism-connectors-rest`, `data-prism-hazelcast`,
+`data-prism-spring-boot-autoconfigure` and `data-prism-server`, none of which
+were reachable from the module these rules used to live in.
+`ArchitectureCoverageTest`, alongside it, checks that this module list stays
+complete. `ArchitectureTest` also enforces two rules not tied to a numbered
+boundary above: `securityDoesNotDependOnOuterLayers` (`security` must work
+the same from any transport, so it cannot depend on `mcp`, `orchestration`, a
+connector or the `example` package) and `onlyTheExampleDependsOnSpringSecurity`
+(Spring Security is the example application's own choice for turning a
+verified JWT into an `AuthenticatedCaller`; `data-prism-security` itself must
+stay framework-agnostic).
 
 ## Decisions worth knowing
 

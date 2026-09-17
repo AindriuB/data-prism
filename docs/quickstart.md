@@ -78,7 +78,7 @@ curl -sk -X POST https://localhost:8544/token \
   -d '{"roles":["investigator"],"purpose":"investigation","caseId":"CASE-DEMO-1"}'
 ```
 
-## Discover the tool
+## Discover the tools
 
 MCP's Streamable HTTP transport is a JSON-RPC exchange, not a plain REST
 call: the first response carries an `Mcp-Session-Id` header every later
@@ -110,10 +110,15 @@ curl -s -X POST http://localhost:8080/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-The one tool the platform ships today, `get_entity_context`, comes back with
-its input schema: `entityType` and `subjectId`, both required, nothing else —
-an MCP argument can never choose a host, a path, a source or a caller
-identity (see `docs/configuration.md`).
+Both tools the platform ships today come back — `get_entity_context` and
+`compare_entity_sources` — each with the same input schema: `entityType` and
+`subjectId`, both required, nothing else — an MCP argument can never choose a
+host, a path, a source or a caller identity (see `docs/configuration.md`).
+Listing a tool is not the same as being allowed to call it: this quickstart's
+`investigator` role (`docker/server/application.yaml`) is granted
+`GET_ENTITY_CONTEXT` only, so the worked call below uses `get_entity_context`.
+See [`docs/tools.md`](tools.md) for what `compare_entity_sources` returns,
+worked against this repository's own fixture data.
 
 ## Invoke it
 
