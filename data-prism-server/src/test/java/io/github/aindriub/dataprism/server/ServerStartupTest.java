@@ -78,6 +78,56 @@ class ServerStartupTest {
     }
 
     @Test
+    void stdioTransportModeRefusesStartup() {
+        String[] stdioConfiguration = java.util.stream.Stream.concat(
+                java.util.Arrays.stream(validConfiguration()),
+                java.util.stream.Stream.of("--dataprism.transport.mode=stdio",
+                        "--dataprism.transport.fixture-development=true"))
+                .toArray(String[]::new);
+        Throwable failure = catchThrowable(() -> {
+            try (var ignored = start(true, stdioConfiguration)) { }
+        });
+
+        assertConfigurationFailure(failure, "STANDALONE_HTTP_ONLY");
+    }
+
+    /**
+     * data-prism-server never wires a non-servlet MCP transport, so a
+     * {@code spring.main.web-application-type=none} deployment at the default
+     * {@code dataprism.transport.mode=HTTP} would previously start with no MCP
+     * transport registered at all (task 39). The starter's {@code
+     * dataPrismMcpTransportPreflight} refuses before any DataPrism singleton is
+     * built, which is why this fires with {@code MCP_TRANSPORT_UNAVAILABLE}
+     * rather than {@code ServerIntegrationsConfiguration}'s
+     * {@code STANDALONE_HTTP_ONLY}: that bean is never reached on this path.
+     */
+    @Test
+    void webApplicationTypeNoneRefusesStartupWithNoMcpTransport() {
+        Throwable failure = catchThrowable(() -> {
+            try (var ignored = startNone(validConfiguration())) { }
+        });
+
+        assertConfigurationFailure(failure, "MCP_TRANSPORT_UNAVAILABLE");
+    }
+
+    private static ConfigurableApplicationContext startNone(String[] configuration) {
+        SpringApplicationBuilder application = new SpringApplicationBuilder(DataPrismServerApplication.class)
+                .web(WebApplicationType.NONE)
+                .logStartupInfo(false)
+                .initializers(context -> {
+                    var beans = context.getBeanFactory();
+                    beans.registerSingleton("testKeys", (HmacKeyReferenceResolver) (keyId, reference) ->
+                            "task-17-test-only-key-material-longer-than-thirty-two-bytes"
+                                    .getBytes(StandardCharsets.UTF_8));
+                    beans.registerSingleton("testAudit", (AuditSink) event -> { });
+                    beans.registerSingleton("testMetrics", PrivacyMetrics.none());
+                    beans.registerSingleton("testIdentityResolver", (IdentityResolver) new PassThroughIdentityResolver());
+                    beans.registerSingleton("testCustomerAdapter", testAdapter());
+                });
+        return application.run(configuration);
+    }
+
+    @Test
     void providerReferenceWithoutAReviewedResolverRefusesStartup() {
         Throwable failure = catchThrowable(() -> {
             try (var ignored = start(true, false, true, validConfiguration())) { }

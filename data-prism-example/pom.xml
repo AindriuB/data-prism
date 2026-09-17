@@ -20,6 +20,16 @@
     check.
   </description>
 
+  <properties>
+    <!-- The demonstration business-domain module, not a library artifact for
+         consumers: never published to Central. -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <skipPublishing>true</skipPublishing>
+    <maven.source.skip>true</maven.source.skip>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+    <gpg.skip>true</gpg.skip>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>io.github.aindriub</groupId>
