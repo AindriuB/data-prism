@@ -5,6 +5,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-17
+
+A second MCP tool, `compare_entity_sources`, and no other new feature.
+
+### Added
+
+- `compare_entity_sources`, the second MCP tool: per-field `identity` plus
+  findings over the same correlated, scrubbed `ContextResponse`
+  `get_entity_context` already builds. Findings report agreement,
+  disagreement (`INCONSISTENT`/`FORMATTING_ONLY`/`ABBREVIATION`) and
+  `MISSING_IN_SOME_SOURCES`, each distinguishable by an explicit
+  discriminator rather than by absence, so a caller can tell "compared and
+  consistent" from "never compared".
+
+### Changed
+
+- The MCP registry namespace is corrected to `io.github.AindriuB/data-prism`,
+  matching the casing the registry actually grants for the GitHub login.
+  Maven Central's `io.github.aindriub` and the GHCR path
+  `ghcr.io/aindriub/data-prism-server` are different identifiers, each
+  correct in its own system and untouched by this correction — do not
+  "fix" the casing inconsistency between them; doing so would break two
+  already-published artifacts. This correction takes effect for MCP clients
+  only once the server image is rebuilt and republished under this version;
+  the label is baked in at build time.
+
+### Behavioural change for API consumers
+
+- `ContextResponse` gained a new record component (`fieldsByNamespace`), so
+  its `equals`, `hashCode` and `toString` now include it. This is not a
+  linkage break — binary compatibility was verified with `javap` against the
+  published 0.1.1 jar, and the old constructor signature still works — but
+  two `ContextResponse` values that compared equal under 0.1.1 may no longer
+  compare equal under 0.2.0.
+
+### Not changed
+
+- The privacy engine, pseudonymisation and security modules: no behaviour
+  change in this release.
+
 ## [0.1.1] - 2026-09-17
 
 A release-plumbing patch, no features. 0.1.1 supersedes 0.1.0 for the
@@ -60,5 +100,6 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.2.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.2.0
 [0.1.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.1
 [0.1.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.0
