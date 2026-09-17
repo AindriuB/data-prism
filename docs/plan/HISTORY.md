@@ -17,6 +17,73 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — Task 43: compare_entity_sources wired into the example, and the identity assumption task 42 could not prove is now proven
+
+`compare_entity_sources` now runs on the real assembly — real stub adapters,
+the real `JsonTreeScrubbingEngine`, the real `AuthorizationService`, real audit
+— instead of only the stubbed orchestrators task 42's own tests used. The
+shipped example/fixture-development role is pinned to exactly
+`{GET_ENTITY_CONTEXT, COMPARE_ENTITY_SOURCES}` in all three places that grant
+it. Merged through a protected, green pull request 2026-09-17 (#71). Full
+reactor `mvn -B clean verify` green, 487 tests. Tester reproduced the mutation
+proof independently: changing `JsonTreeScrubbingEngine`'s SYNTHESIZE case to
+pass raw values through reddened two of the three end-to-end tests, then
+reverted byte-identical.
+
+**The assumption task 42 could not prove is now proven.** Task 42's `identity`
+implementation rests on the real `ScrubbingEngine` keying the scrubbed tree by
+`FieldMetadata.fieldName()`, not by the namespace constant. All of task 42's
+own tests ran against a scrubber *stub* that already modelled that keying, so
+the assumption was asserted, never tested. Task 43's end-to-end test drives
+the real `JsonTreeScrubbingEngine` via `DataPrismAssembly.standard()` over
+`CustomerDto.customerName` and `AccountDto.holderName` — both classified
+`PERSON_NAME`, neither named `PERSON_NAME` — and gets a non-empty `identity`
+keyed by the real serialised field names.
+`JsonTreeScrubbingEngine.scrubObject` (`data-prism-core/.../JsonTreeScrubbingEngine.java:143-168`)
+writes `out.set(field, scrubbed)` under the source's own field name, which is
+exactly what the test now exercises. The assumption holds, and is checked
+rather than believed — and only a test that can be broken by mutating the real
+engine could have settled that; the stub-based tests never could.
+
+**All three sources of the shipped role are now pinned, not two.** The example
+grants its role in three places — `ExampleApplication`, `DataPrismAssembly`,
+and `application.yaml`. `ShippedDefaultsTest` previously pinned only the two
+Java factories, so a widening introduced only in the YAML would have failed
+nothing. A new test binds the YAML through the same `Binder` +
+`YamlPropertySourceLoader` path `DataPrismAutoConfiguration` uses at startup,
+and pins both roles by equality. This is the same shape of defect task 09
+exists to fix — a shipped default that did not match what was tested — caught
+before it shipped this time.
+
+**Cost:** none in effort — the real cost of this task is what it exposed, not
+what it took to build. Two findings carried forward rather than fixed here:
+
+- **The PII log scan is a weakened control, opened as task 46.**
+  `PiiLogScanTest.BANNED_VALUES` is hand-maintained literals. It omits `Pat
+  Murphy` and `P. Murphy` — the account-api and order-api spellings
+  `get_entity_context`'s merged tree already carries — and also `ACC-1`,
+  `ORD-9`, the account balance and the order note. A regression that logged a
+  raw `customerName` or `holderName` from those adapters would leave the scan
+  GREEN today. Nothing is leaking; this is degradation of a control, not a
+  breach. The fix is to *derive* the banned set from the stub fixtures, not to
+  patch in the missing literals — patching closes today's six omissions and
+  leaves the drift mechanism that produced them exactly where it is.
+- **A coordinator premise corrected before it could mislead an implementer.**
+  Task 46 was briefed on the premise that `PiiLogScanTest` is a costly HTTP
+  integration run. It is not: it drives the tool handler in-process, and the
+  whole class runs in 0.022s. The planner checked and corrected the premise
+  before task 46 opened. This is the third time this release cycle a
+  downstream agent has corrected a factual premise supplied by the
+  coordinator rather than a defect it introduced (the first two: task 41's
+  false nimbus-jose-jwt claim, task 42's own record-compatibility risk) —
+  worth recording alongside those two because the pattern, not any one
+  instance, is the point.
+
+**Unconfirmed, not fixed:** `QuickstartSmokeIT` failed once with an
+SSL-handshake timeout under full-reactor load during implementation, but did
+not reproduce across two subsequent full runs by the tester. Recorded as
+suspected-environmental, not as a known bug and not as resolved.
+
 ## 2026-09-17 — Tasks 42 and 44: the second MCP tool, and the registry namespace corrected
 
 Task 42 shipped `compare_entity_sources`, the second MCP tool: per-field

@@ -309,11 +309,14 @@ file mistakenly credited with reaching the server image, see above) and #45,
 #47, #51 (`actions/checkout`, `actions/upload-artifact`, `actions/setup-java`
 version bumps).
 
-### Tasks 42-45 — second MCP tool, registry casing, 0.2.0
+### Tasks 42-46 — second MCP tool, registry casing, 0.2.0, and a scan hardening found along the way
 
-Opened 2026-09-17. Tasks 42 and 44 are done, merged through protected, green
-pull requests the same day (#69, #68). Tasks 43 and 45 are still open; see
-below.
+Opened 2026-09-17. Tasks 42, 43 and 44 are done, merged through protected,
+green pull requests the same day (#69, #71, #68). Tasks 45 and 46 are still
+open; see below. **Recommend running 46 before 45** — 45 is the version cut
+and reads best as the last thing this wave does, and 46 is test-only (it
+touches no shipped artifact), so it is not a release blocker if the owner
+wants 0.2.0 sooner and would rather take 46 in a later wave.
 
 **Task 42 — done. No task file remains under `docs/plan/tasks/`.**
 
@@ -356,26 +359,26 @@ image at build time, so the corrected namespace takes effect only once
 then an owner-dispatched `publish-mcp.yml` run). `mcp-publisher publish`
 failed 403 against `v0.1.1` during this wave and nothing was published.
 
-**Task 43 — open. Depends on 42 (done).** No longer blocked.
+**Task 43 — done. No task file remains under `docs/plan/tasks/`.**
 
-Puts `compare_entity_sources` on the real assembly — real stub adapters, real
-scrubbing engine, real audit — and proves no raw fixture value reaches its
-output.
+Put `compare_entity_sources` on the real assembly — real stub adapters, the
+real `JsonTreeScrubbingEngine`, real audit — and proved no raw fixture value
+reaches its output. Settled the assumption task 42's tests could only assert,
+never test: the real scrubbed tree is keyed by
+`FieldMetadata.fieldName()` (e.g. `customerName`), not by the namespace
+constant (`PERSON_NAME`), proven against the real engine via
+`DataPrismAssembly.standard()`, not a stub — and confirmed by mutation, not
+argument: flipping `JsonTreeScrubbingEngine`'s SYNTHESIZE case to pass raw
+values through reddened two of three end-to-end tests, reverted
+byte-identical. Pinned the shipped example role in all three places it is
+granted (`ExampleApplication`, `DataPrismAssembly`, `application.yaml`), where
+previously only the two Java factories were pinned. Merged 2026-09-17 (#71).
+Full reactor `mvn -B clean verify` green, 487 tests. See `docs/plan/HISTORY.md`
+— grep `Task 43` — for what landed and what it cost, including the PII-scan
+weakness it surfaced (now task 46) and a third instance this cycle of a
+downstream agent correcting a coordinator's factual premise.
 
-Carry-forward from task 42's review, not yet in the task file: task 42's own
-tests covering `identity` all ran against a scrubber **stub** that already
-keyed its tree the way the implementation expected — one declared a record
-component literally named `PERSON_NAME`, the other two hand-built responses
-whose keys already matched — so none of them could have caught (and didn't
-catch) that the real scrubbed tree is keyed by the model's serialised field
-name (`FieldMetadata.fieldName()`, e.g. `customerName`), not by the namespace
-constant (`PERSON_NAME`). The whole `identity` fix rests on that claim being
-true against the real `ScrubbingEngine`, and task 43 is the first task
-positioned to check it. **Add this as an explicit acceptance criterion**: the
-real end-to-end run (`DataPrismAssembly.standard()`, not a stub) must assert
-`identity` is non-empty and contains the disputed field for subject `123`.
-
-**Task 45 — open. Depends on 42 (done), 43, 44 (done).**
+**Task 45 — open. Depends on 42, 43, 44 (all done).**
 
 Cuts version 0.2.0 across the reactor once 43 lands. Two items for its
 `CHANGELOG.md` entry, both surfaced during task 42's review and deliberately
@@ -390,6 +393,23 @@ left for this task:
   would silently get an empty `identity` from `compare_entity_sources`.
   Documented in javadoc on that constructor; confirmed by grep that nothing
   outside tests uses that path today.
+
+**Task 46 — open. Depends on 43 (done).** No longer blocked.
+
+Derives `PiiLogScanTest`'s `BANNED_VALUES` from the stub adapters' own fixture
+records instead of a hand-written literal list. Found reviewing task 43: the
+list omits `Pat Murphy` and `P. Murphy` (the account-api and order-api
+spellings `get_entity_context`'s merged tree already carries) and also
+`ACC-1`, `ORD-9`, the account balance and the order note — a regression
+logging a raw `customerName` or `holderName` from those adapters would leave
+the scan GREEN today. Nothing is leaking; this is degradation of a control,
+not a breach, and the fix is derivation, not patching in the missing
+literals, which would leave the drift mechanism in place. Test-only — touches
+no shipped artifact — so it does not block a 0.2.0 cut if the owner wants 45
+first; recommended to run before 45 regardless, since 45 is the version cut
+and reads best last. The task file's premise that `PiiLogScanTest` is a costly
+HTTP integration run was checked and corrected by the planner before this task
+opened: it drives the tool in-process at 0.022s for the whole class.
 
 ## Remaining slices past the adopted core
 
