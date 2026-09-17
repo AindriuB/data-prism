@@ -16,8 +16,8 @@
     A synthetic HTTP source for the local Compose quickstart (task 18). Every
     record this process can return is invented for this repository; nothing
     resembling a real person belongs here. This is not the platform's business
-    domain module — that remains data-prism-example, and out of scope here is
-    making data-prism-example itself runnable.
+    domain module — that remains data-prism-integration-tests, and out of
+    scope here is making data-prism-integration-tests itself runnable.
   </description>
 
   <properties>
