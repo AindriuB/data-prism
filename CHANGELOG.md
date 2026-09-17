@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-17
+
+A dependency and infrastructure patch, no features. 0.1.1 supersedes 0.1.0 for
+the published image: an image built from this tree carries a different JWT
+library than the 0.1.0 artifacts already on Maven Central, so re-tagging the
+image as 0.1.0 would have made the version label lie about its contents.
+
+### Changed
+
+- nimbus-jose-jwt bumped to 10.9.1, a security patch on the JWT verification
+  path.
+- The server image is now published as a multi-architecture manifest list
+  (`linux/amd64` + `linux/arm64`) instead of `linux/amd64` only.
+- Three GitHub Actions dependency bumps in CI workflows.
+
 ## [0.1.0] - 2026-09-16
 
 First release: the walking skeleton and every slice through S9a.
@@ -35,4 +50,5 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.1.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.1
 [0.1.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.0

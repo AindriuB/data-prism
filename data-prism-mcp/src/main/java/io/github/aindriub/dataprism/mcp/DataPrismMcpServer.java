@@ -83,7 +83,7 @@ public final class DataPrismMcpServer {
         var transport = new StdioServerTransportProvider(json);
 
         return McpServer.sync(transport)
-                .serverInfo("data-prism", "0.1.0")
+                .serverInfo("data-prism", "0.1.1")
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper,
@@ -124,7 +124,7 @@ public final class DataPrismMcpServer {
                 .build();
 
         McpSyncServer server = McpServer.sync(transport)
-                .serverInfo("data-prism", "0.1.0")
+                .serverInfo("data-prism", "0.1.1")
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper,
