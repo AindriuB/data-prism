@@ -20,9 +20,16 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 class StarterStartupFailureTest {
 
+    /**
+     * Runs as a genuine servlet web application ({@link #startAsServlet}), not {@code
+     * WebApplicationType.NONE}: at that type, {@code dataPrismMcpTransportPreflight}
+     * refuses with {@code MCP_TRANSPORT_UNAVAILABLE} before the source-adapter check
+     * below is ever reached. Same reasoning applies to
+     * {@link #httpFixtureDevelopmentPreventsTheApplicationStarting()}.
+     */
     @Test
     void missingAdapterPreventsTheApplicationStarting() {
-        Throwable failure = catchThrowable(() -> start(MissingAdapterApplication.class));
+        Throwable failure = catchThrowable(() -> startAsServlet(MissingAdapterApplication.class, servletConfiguration()));
 
         assertConfigurationFailure(failure, "UNRESOLVED_SOURCE_ADAPTER");
     }
@@ -36,9 +43,21 @@ class StarterStartupFailureTest {
 
     @Test
     void httpFixtureDevelopmentPreventsTheApplicationStarting() {
-        Throwable failure = catchThrowable(() -> start(MissingAdapterApplication.class, httpFixtureConfiguration()));
+        Throwable failure =
+                catchThrowable(() -> startAsServlet(MissingAdapterApplication.class, httpFixtureServletConfiguration()));
 
         assertConfigurationFailure(failure, "FIXTURE_DEVELOPMENT_STDIO_ONLY");
+    }
+
+    /**
+     * Pins {@code MCP_TRANSPORT_UNAVAILABLE} directly, rather than only as a side effect of
+     * the other tests in this class.
+     */
+    @Test
+    void nonWebApplicationAtDefaultHttpModeRefusesWithNoTransportAvailable() {
+        Throwable failure = catchThrowable(() -> start(MissingAdapterApplication.class));
+
+        assertConfigurationFailure(failure, "MCP_TRANSPORT_UNAVAILABLE");
     }
 
     private static void start(Class<?> application) {
@@ -48,6 +67,15 @@ class StarterStartupFailureTest {
     private static void start(Class<?> application, String[] configuration) {
         try (var ignored = new SpringApplicationBuilder(application)
                 .web(WebApplicationType.NONE)
+                .logStartupInfo(false)
+                .run(configuration)) {
+            throw new AssertionError("application unexpectedly started");
+        }
+    }
+
+    private static void startAsServlet(Class<?> application, String[] configuration) {
+        try (var ignored = new SpringApplicationBuilder(application)
+                .web(WebApplicationType.SERVLET)
                 .logStartupInfo(false)
                 .run(configuration)) {
             throw new AssertionError("application unexpectedly started");
@@ -70,6 +98,22 @@ class StarterStartupFailureTest {
         configuration[valid.length] = "--dataprism.transport.mode=http";
         configuration[valid.length + 1] = "--dataprism.transport.fixture-development=true";
         return configuration;
+    }
+
+    /** {@code validConfiguration()} plus {@code --server.port=0} (an ephemeral port). */
+    private static String[] servletConfiguration() {
+        return withServerPort(validConfiguration());
+    }
+
+    /** As {@link #servletConfiguration()}, but for {@link #httpFixtureConfiguration()}. */
+    private static String[] httpFixtureServletConfiguration() {
+        return withServerPort(httpFixtureConfiguration());
+    }
+
+    private static String[] withServerPort(String[] configuration) {
+        String[] result = java.util.Arrays.copyOf(configuration, configuration.length + 1);
+        result[configuration.length] = "--server.port=0";
+        return result;
     }
 
     private static String[] validConfiguration() {

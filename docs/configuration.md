@@ -28,6 +28,20 @@ variable, Compose file, or agent configuration cannot turn it into a production
 transport. Protected APIs use authenticated Streamable HTTP behind an OAuth2
 resource server.
 
+A non-servlet Spring application (`spring.main.web-application-type=none` or
+WebFlux) using the starter at the default or explicit `mode: http` also
+refuses startup rather than running with no MCP transport registered at all:
+the Spring auto-configuration's `dataPrismMcpTransportPreflight` bean refuses
+with `MCP_TRANSPORT_UNAVAILABLE` before any DataPrism singleton is
+constructed. Four codes now mean "this deployment has no usable MCP
+transport", each at a different layer: `STDIO_DEVELOPMENT_ONLY` (stdio
+requested without fixture development), `STDIO_TRANSPORT_UNSUPPORTED` (stdio
+requested inside a Spring context), `STANDALONE_HTTP_ONLY` (the standalone
+server only supports protected HTTP), and `MCP_TRANSPORT_UNAVAILABLE` (HTTP
+requested or defaulted, but the application is not a servlet web
+application). A consumer keying on "no usable MCP transport" must match all
+four.
+
 ## Configuration rules
 
 - Configuration is server/operator controlled. MCP arguments cannot select a
@@ -52,7 +66,7 @@ for the relevant group.
 
 | Group | Required/default | Secret-bearing | Invalid or absent value |
 |---|---|---|---|
-| `dataprism.transport` | `mode` is `http` for protected deployments; `http.path` defaults to `/mcp`; `stdio` is fixture-development only and requires an explicit development profile plus fixture mode | No | Refuse startup for an unknown mode, a non-rooted/invalid path, or `stdio` outside fixture development |
+| `dataprism.transport` | `mode` is `http` for protected deployments; `http.path` defaults to `/mcp`; `mode: stdio` is refused unconditionally by the Spring auto-configuration, so it is not a reachable value for either the standalone server or the Spring Boot starter — the fixture-development stdio path is `data-prism-example`'s hand-built entry point, which never goes through this property | No | Refuse startup for an unknown mode, a non-rooted/invalid path, `mode: stdio` (`STDIO_TRANSPORT_UNSUPPORTED`), or `mode: http`/default on a non-servlet application, which has no MCP transport bean at all (`MCP_TRANSPORT_UNAVAILABLE`) |
 | `dataprism.security.jwt` | `issuer`, `audience`, and exactly one trusted JWKS/issuer-discovery location are required for HTTP | Location is not a secret; any client secret is out of scope and forbidden here | Refuse startup for a missing issuer/audience/location, invalid HTTPS URI (except explicitly local test fixtures), or an unreachable/mismatched issuer at validation time |
 | `dataprism.security.caller-claims` | Required mappings for principal, roles, and the trusted investigation/case attribute; purpose remains server policy, not a caller-selected mapping | No | Refuse startup for blank, duplicate, or reserved mappings, or mappings that would derive scope/purpose/case from tool arguments |
 | `dataprism.security-policy` | At least one permitted purpose and one role-to-known-capability mapping are required | No | Refuse startup for an empty purpose list, an unknown capability, blank role/purpose, or a role with no capabilities |
