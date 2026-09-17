@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.core;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * One observation about how the sources disagree.
@@ -93,8 +94,8 @@ public record ConsistencyFinding(
         CONSISTENT
     }
 
-    private static final java.util.Set<Kind> NON_DISAGREEMENT =
-            java.util.Set.of(Kind.SUSPECTED_INSTRUCTION_CONTENT, Kind.CONSISTENT);
+    private static final Set<Kind> NON_DISAGREEMENT =
+            Set.of(Kind.SUSPECTED_INSTRUCTION_CONTENT, Kind.CONSISTENT);
 
     public boolean disagreement() {
         return !NON_DISAGREEMENT.contains(kind);

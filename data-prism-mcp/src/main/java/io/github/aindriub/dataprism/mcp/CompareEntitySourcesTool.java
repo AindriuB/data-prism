@@ -213,17 +213,47 @@ public final class CompareEntitySourcesTool {
      * that same name — copied, never re-derived. A field named by a finding but
      * absent from the tree (redacted, unclassified, dropped) is left out rather
      * than defaulted.
+     *
+     * <p>A namespace-compared finding's {@link ConsistencyFinding#field()} is
+     * the namespace's own name (e.g. {@code "PERSON_NAME"}), not a serialised
+     * field name — {@code entity} is keyed by whatever field name each source's
+     * model actually used ({@code customerName}, {@code holderName}, ...), which
+     * commonly differs from the namespace and from source to source. Looking up
+     * {@code finding.field()} directly only ever matches a
+     * {@code SUSPECTED_INSTRUCTION_CONTENT} finding, whose field already is a
+     * serialised field name; every other kind needs
+     * {@link ContextResponse#fieldsFor} to translate the namespace to the
+     * field name(s) the tree actually holds it under. Both are tried, in order,
+     * for every finding, and every match found is copied.
      */
     private ObjectNode identity(ContextResponse response) {
         ObjectNode identity = mapper.createObjectNode();
         ObjectNode entity = response.entity();
+        if (entity == null) {
+            return identity;
+        }
         for (ConsistencyFinding finding : response.findings()) {
-            JsonNode node = entity == null ? null : entity.get(finding.field());
-            if (node != null && !node.isNull() && !node.isMissingNode()) {
-                identity.set(finding.field(), node.deepCopy());
+            for (String fieldName : fieldNames(response, finding)) {
+                JsonNode node = entity.get(fieldName);
+                if (node != null && !node.isNull() && !node.isMissingNode()) {
+                    identity.set(fieldName, node.deepCopy());
+                }
             }
         }
         return identity;
+    }
+
+    /**
+     * Every serialised field name a finding could be about: the namespace's own
+     * field name(s), if any source's model declared one, plus {@code field()}
+     * itself as a direct fallback — the shape a {@code SUSPECTED_INSTRUCTION_CONTENT}
+     * finding already uses. A {@link java.util.LinkedHashSet} so a coincidental
+     * overlap is copied once rather than twice.
+     */
+    private static Set<String> fieldNames(ContextResponse response, ConsistencyFinding finding) {
+        Set<String> names = new java.util.LinkedHashSet<>(response.fieldsFor(finding.namespace()));
+        names.add(finding.field());
+        return names;
     }
 
     /**

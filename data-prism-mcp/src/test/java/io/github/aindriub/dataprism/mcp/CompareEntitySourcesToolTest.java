@@ -93,6 +93,30 @@ class CompareEntitySourcesToolTest {
             String PERSON_NAME) {
     }
 
+    /**
+     * Shaped like a real model: {@code customerName}, not {@code PERSON_NAME}.
+     * Paired with {@link AccountLike} below, this is the reviewer's exact
+     * repro — two sources, same namespace, two different field names — used to
+     * prove {@link #identityResolvesFieldNamesThatDifferFromTheNamespace} would
+     * fail against {@code entity.get(finding.field())} alone.
+     */
+    @LlmExposedModel
+    private record CustomerLike(
+            @InternalIdentifier String id,
+            @SensitiveData(classifications = DataClassification.PII, namespace = PrivacyNamespace.PERSON_NAME,
+                    suggestedAction = PrivacyAction.SYNTHESIZE)
+            String customerName) {
+    }
+
+    /** The same namespace as {@link CustomerLike}, under a different field name -- {@code holderName}. */
+    @LlmExposedModel
+    private record AccountLike(
+            @InternalIdentifier String id,
+            @SensitiveData(classifications = DataClassification.PII, namespace = PrivacyNamespace.PERSON_NAME,
+                    suggestedAction = PrivacyAction.SYNTHESIZE)
+            String holderName) {
+    }
+
     private static AuthenticatedCaller caller(Set<String> roles) {
         return new AuthenticatedCaller("principal-1", "client-1", roles, "demonstration", "case-1", null);
     }
@@ -184,9 +208,28 @@ class CompareEntitySourcesToolTest {
     }
 
     @Test
-    @DisplayName("a reserved argument is never read for its value, only its name is noted")
+    @DisplayName("a reserved argument is never read for its value, and its name reaches the audit event")
     void reservedArgumentsAreIgnoredAndReported() {
-        RecordingOrchestrator orchestrator = new RecordingOrchestrator();
+        ObjectMapper mapper = new ObjectMapper();
+        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
+        ScrubbingEngine scrubber = (source, ctx) -> new ScrubResult(
+                mapper.createObjectNode().put("PERSON_NAME", "PSEUDONYM-FOR-" + ((NamedThing) source).id()),
+                Set.of());
+        LlmResponseValidator alwaysOk = (resp, prohibited, emitted, ctx) -> ValidationResult.ok();
+        // A real orchestrator, so the audit event asserted on below is the one
+        // production code actually writes on an accepted call -- not a stub's
+        // approximation of it.
+        DefaultContextOrchestrator orchestrator = new DefaultContextOrchestrator(
+                List.of(answeringNamed("source-a", new NamedThing("123", "Patrick Murphy"))),
+                scrubber, resolver, List.of(alwaysOk, new SensitivePatternValidator()),
+                (subjectId, namespace, ctx) -> "SUBJ-1",
+                new ParameterFingerprinter(KEYS), audit,
+                new PassThroughIdentityResolver(),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new InMemoryScopeBudget(), RequestLimits.DEFAULT,
+                new NamespaceCorrelationService(resolver),
+                new SourceAliasing(new HmacValueTokenSource(KEYS)),
+                PrivacyMetrics.none());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
@@ -204,10 +247,9 @@ class CompareEntitySourcesToolTest {
         // never produce byte-identical output to the unadulterated call.
         assertThat(withReservedArgument.isError()).isNotEqualTo(Boolean.TRUE);
         assertThat(withReservedArgument.content()).isEqualTo(withoutReservedArgument.content());
-        // The value never reaches the request that goes on to the orchestrator
-        // (and, from there, to the audit event DefaultContextOrchestratorTest
-        // already pins) -- only the reserved argument's name does.
-        assertThat(orchestrator.requests).extracting(ContextRequest::rejectedArguments)
+        // The value never reaches the audit event either -- only the reserved
+        // argument's name does.
+        assertThat(audited).extracting(AuditEvent::rejectedArguments)
                 .satisfiesExactly(first -> assertThat(first).isEmpty(),
                         second -> assertThat(second).containsExactly("scopeId"));
     }
@@ -400,12 +442,77 @@ class CompareEntitySourcesToolTest {
         assertThat(audited).anySatisfy(e -> assertThat(e.tool()).isEqualTo("compare_entity_sources"));
     }
 
+    /**
+     * The reviewer's repro: two sources holding the same namespace under two
+     * different field names — {@code CustomerLike.customerName} and
+     * {@code AccountLike.holderName} — the way any real pair of models does.
+     * {@code entity.get(finding.field())} alone finds neither, because a
+     * namespace-compared finding's {@code field()} is the namespace's own name
+     * ({@code "PERSON_NAME"}), never a serialised field name. Run against the
+     * tool before this fix, {@code identity} came back {@code {}} and this test
+     * failed on the {@code containsEntry} assertions below (captured failure in
+     * the PR description); {@link ContextResponse#fieldsFor} is what makes it
+     * find the right node now.
+     */
+    @Test
+    @DisplayName("identity resolves the model's own field name, not the namespace name a finding carries")
+    void identityResolvesFieldNamesThatDifferFromTheNamespace() {
+        ObjectMapper mapper = new ObjectMapper();
+        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
+        // A real scrubbing engine, keyed by each source's own field name --
+        // exactly what JsonTreeScrubbingEngine does, and exactly why
+        // "PERSON_NAME" (the namespace) is never itself a key in a real
+        // scrubbed tree.
+        ScrubbingEngine scrubber = (source, ctx) -> source instanceof CustomerLike customer
+                ? new ScrubResult(mapper.createObjectNode()
+                        .put("customerName", "PSEUDONYM-FOR-" + customer.id()), Set.of())
+                : new ScrubResult(mapper.createObjectNode()
+                        .put("holderName", "PSEUDONYM-FOR-" + ((AccountLike) source).id()), Set.of());
+        LlmResponseValidator alwaysOk = (resp, prohibited, emitted, ctx) -> ValidationResult.ok();
+
+        DefaultContextOrchestrator orchestrator = new DefaultContextOrchestrator(
+                List.of(answeringAs("customer-api", CustomerLike.class, new CustomerLike("1", "Patrick Murphy")),
+                        answeringAs("account-api", AccountLike.class, new AccountLike("1", "Bridget Kelly"))),
+                scrubber, resolver, List.of(alwaysOk, new SensitivePatternValidator()),
+                (subjectId, namespace, ctx) -> "SUBJ-1",
+                new ParameterFingerprinter(KEYS), audit,
+                new PassThroughIdentityResolver(),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new InMemoryScopeBudget(), RequestLimits.DEFAULT,
+                new NamespaceCorrelationService(resolver),
+                new SourceAliasing(new HmacValueTokenSource(KEYS)),
+                PrivacyMetrics.none());
+        CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
+                authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+
+        McpSchema.CallToolResult result = tool.specification().callHandler().apply(
+                exchangeFor(caller(Set.of("investigator"))),
+                request(Map.of("entityType", "CUSTOMER", "subjectId", "1")));
+
+        assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) result.structuredContent();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> identity = (Map<String, Object>) body.get("identity");
+
+        // The pseudonym is genuinely sitting in the tree, under both sources'
+        // own field names.
+        assertThat(identity).containsEntry("customerName", "PSEUDONYM-FOR-1");
+        assertThat(identity).containsEntry("holderName", "PSEUDONYM-FOR-1");
+        assertThat(soleText(result)).doesNotContain("Patrick Murphy").doesNotContain("Bridget Kelly");
+    }
+
     private static Map<String, Object> byField(List<Map<String, Object>> findings, String field) {
         return findings.stream().filter(f -> field.equals(f.get("field"))).findFirst()
                 .orElseThrow(() -> new AssertionError("no finding for field " + field));
     }
 
     private static DataSourceAdapter<NamedThing> answeringNamed(String name, NamedThing thing) {
+        return answeringAs(name, NamedThing.class, thing);
+    }
+
+    private static <T> DataSourceAdapter<T> answeringAs(String name, Class<T> type, T value) {
         return new DataSourceAdapter<>() {
             @Override
             public String sourceName() {
@@ -413,13 +520,13 @@ class CompareEntitySourcesToolTest {
             }
 
             @Override
-            public Class<NamedThing> responseType() {
-                return NamedThing.class;
+            public Class<T> responseType() {
+                return type;
             }
 
             @Override
-            public NamedThing fetch(DataRequest request) {
-                return thing;
+            public T fetch(DataRequest request) {
+                return value;
             }
         };
     }

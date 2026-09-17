@@ -7,6 +7,7 @@ import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
+import io.github.aindriub.dataprism.core.FieldMetadata;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.InvestigationContext;
@@ -153,6 +154,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
         List<SourceOutcome> sources = new ArrayList<>();
         List<ConsistencyFinding> findings = List.of();
+        List<EntityCorrelationService.SourceRecord> raw = List.of();
         Set<String> prohibited = new LinkedHashSet<>();
         // Never logged and never audited: this is every synthetic value the
         // response contains, and it is only ever read by the validators.
@@ -172,6 +174,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             FetchOutcome fetched = fetchScrubAndMerge(request, context, investigationContext,
                     sources, prohibited, emitted);
             merged = fetched.merged();
+            raw = fetched.raw();
 
             // Before scrubbing, and it has to be: the pseudonym is keyed on the
             // subject, so once these records are scrubbed every source's version
@@ -217,7 +220,33 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
                 correlationId);
         return ContextResponse.of(request.entityType(), subjectToken, sources,
-                findings, merged, aliasing, investigationContext, context);
+                findings, merged, fieldsByNamespace(raw), aliasing, investigationContext, context);
+    }
+
+    /**
+     * The serialised field name(s) each namespace appeared under, across every
+     * source that answered — the same filter {@code NamespaceCorrelationService}
+     * applies (namespaced, non-identifier fields), read from the same raw
+     * records it correlates. {@code entity} is keyed by these field names, never
+     * by a namespace's own name, so this is how {@code compare_entity_sources}
+     * finds the node a namespace-compared finding is about without ever reading
+     * a raw value itself.
+     */
+    private Map<PrivacyNamespace, List<String>> fieldsByNamespace(
+            List<EntityCorrelationService.SourceRecord> raw) {
+        Map<PrivacyNamespace, List<String>> out = new LinkedHashMap<>();
+        for (EntityCorrelationService.SourceRecord source : raw) {
+            for (FieldMetadata field : resolver.resolve(source.record().getClass())) {
+                if (field.namespace() == PrivacyNamespace.NONE || field.identifier()) {
+                    continue;
+                }
+                List<String> names = out.computeIfAbsent(field.namespace(), namespace -> new ArrayList<>());
+                if (!names.contains(field.fieldName())) {
+                    names.add(field.fieldName());
+                }
+            }
+        }
+        return out;
     }
 
     /**
