@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Built on the version the artifacts target, so a Java 21 incompatibility
       # fails here rather than in a consumer's build. Local development on a
