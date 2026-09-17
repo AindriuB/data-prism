@@ -316,3 +316,16 @@ not a malicious one.
 - Add **golden-vector tests**: a checked-in file of `(scopeId, subjectId, namespace, key) -> expected
   output` for algorithm v1, so any accidental change to the generator breaks the build. This is what
   actually enforces §83.
+- §42 `compare_entity_sources`'s example response is a pre-privacy-engine sketch and its **values**, not
+  its shape, are superseded: `"idInternal": "idInternal_98745"` is a raw internal id, `"identity": {"name":
+  "Alex Murphy"}` is a raw personal name, and `"sources": ["customer-api", "account-api"]` are raw
+  source-system names — all three would breach rule 5 if shipped literally. The shape (entity type,
+  subject, an identity block, per-field findings) stands. As built (task 42, 2026-09-17): the argument and
+  response field is `subjectId`, matching the shipped `get_entity_context` rather than the spec's
+  `idInternal`; `identity` holds values copied verbatim from the already-scrubbed `ContextResponse.entity()`,
+  never raw and never re-derived; and findings report agreement as well as disagreement, with
+  `MISSING_IN_SOME_SOURCES` as a third, explicit state — because reporting disagreement alone leaves a
+  caller unable to tell "compared and consistent" from "never compared". Agreement is computed on the
+  trusted side, pre-scrub, in `NamespaceCorrelationService` — it cannot be reconstructed from an already-
+  scrubbed response, since two genuinely different values that collapse to the same pseudonym become
+  indistinguishable from two identical ones after scrubbing.
