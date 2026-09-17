@@ -88,15 +88,14 @@ class PiiLogScanTest {
      * justified — an omission by silent default is exactly the drift this
      * class exists to stop.
      *
-     * <p>{@code CustomerDto.status} is the only one: {@code "ACTIVE"} and
-     * {@code "DORMANT"} are enumerated lifecycle markers, not identifying
-     * values (confirmed non-sensitive by {@code @NonSensitive} on the field
-     * itself), and either word is common enough in ordinary log prose —
-     * "ACTIVE" not least — that banning it would make this scan fail on
-     * coincidence rather than on an actual leak, the opposite of what
-     * {@link #wellFormedHexFieldIsExempt()} and
-     * {@link #wellFormedTimestampFieldIsExempt()} exist to prevent for other
-     * fields.
+     * <p>{@code CustomerDto.status} is the only one. Verified, not assumed:
+     * the scan stays green with {@code status} included in the derived set —
+     * neither {@code "ACTIVE"} nor {@code "DORMANT"} appears anywhere in
+     * today's captured output. It is excluded anyway, pre-emptively, against
+     * a future false positive: both are enumerated lifecycle markers, not
+     * identifying values ({@code @NonSensitive} on the field itself agrees),
+     * and "ACTIVE" in particular is common enough in ordinary log prose that
+     * banning it risks a coincidental match unrelated to any actual leak.
      */
     private static final Map<Class<?>, Set<String>> EXCLUDED_FIXTURE_FIELDS =
             Map.of(CustomerDto.class, Set.of("status"));
