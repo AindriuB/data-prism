@@ -17,6 +17,80 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — Tasks 49, 50, 51: `data-prism-example` renamed to `data-prism-integration-tests`, and the first two consumer guides ship
+
+`data-prism-example` was never an example: it is the reactor's integration
+test suite, 11 test classes with no duplicate anywhere else, including
+`PiiLogScanTest`, which `docs/architecture.md:156-159` names as the sole
+enforcement of privacy rule 7. An architect raised the question after the
+owner asked whether the module was still required — a name that says
+"example" invites deletion of the thing actually guarding a privacy rule.
+Task 49 renamed it to `data-prism-integration-tests`, `git mv`'d so history
+still follows every file; nothing was removed. Tasks 50 and 51 then shipped
+the first consumer-facing documentation this repository has had for
+extending it: `docs/extending.md`, the adapter developer guide, and
+`docs/tools.md`, the reference for both shipped MCP tools. Merged through
+protected, green pull requests 2026-09-17 (#80, #82, #81 — 51 before 50,
+see below). Post-merge full-reactor re-run: `BUILD SUCCESS`, 0 failures, 0
+errors.
+
+**A green build was treated as insufficient evidence for the rename.**
+`ArchitectureCoverageTest` derives its module list dynamically from the root
+`pom.xml` at runtime; its own javadoc records `data-prism-connectors-rest`
+once silently dropping out of every whole-graph architecture rule this way —
+a rename that misses a reference does not fail, it quietly narrows what
+every rule checks, with nothing red to say so. Both the implementer and the
+tester instrumented the test to print its computed module list, confirmed
+the renamed module was present and the count was 18 on both the branch and
+`main`, then reverted the instrumentation byte-identical.
+
+**Six `data-prism-example` strings were left alone, deliberately.** The
+rename's own sweep excludes the JWT `issuer` and audit `writer-id`
+configuration values (and the tests asserting on them): these are observable
+audit output, not a module name, so changing them would have been a
+behaviour change disguised as a refactor. The `docs/`-facing sweep is task
+52's, not 49's.
+
+**Both guides were executed, not described.** Task 50 compiled a
+deliberately-unclassified `@LlmExposedModel` field outside the repository to
+capture the real annotation-processor `error:` line, and ran the packaged
+server with a mismatched source name to capture a real
+`UNRESOLVED_SOURCE_ADAPTER` refusal. Task 51 drove the shipped stdio fixture
+over real JSON-RPC for every case it could vary, and wrote a small harness
+from the repository's own public classes for the cases the fixture could
+not — including reproducing a real `TOOL_NOT_PERMITTED` refusal and the
+pseudonym-collapse case (two sources, different values, same pseudonym,
+distinguishable only by the finding's `kind`). Both close-outs report which
+examples were captured versus transcribed from a test.
+
+**Cost:** The most transferable lesson is task 50's, and it cost three
+review rounds. The guide's pom snippet was "verified" by building a
+throwaway external project against it — and still shipped a defect, because
+that project was not byte-identical to the block the guide displayed: it
+silently carried `maven.compiler.release=21`, which the guide never told a
+reader to add. A reader pasting exactly what was shown would have hit
+`records are not supported in -source 8`. The fix was to reproduce that
+failure first, then extract the guide's fences *programmatically* rather
+than retype them, so the built artifact is provably identical to what a
+reader sees; the reviewer independently reassembled and rebuilt the fences
+to confirm. Verifying a neighbouring artifact is not verifying the artifact
+— the same shape of mistake as a test that shares its implementation's
+assumptions. Separately, the expected sequential-merge race showed up twice,
+not once: after 49 merged, both 50 and 51 went `BEHIND`; 51 was updated and
+merged first since its checks finished first, which put 50 `BEHIND` a
+second time against 51's own merge before it, too, could go green and
+merge. Each cycle was a plain `git merge origin/main` with no conflicts,
+since 50 and 51 touch only `docs/extending.md` and `docs/tools.md`
+respectively and 49 touches no file under `docs/`. Found but not fixed here,
+because it belongs to task 52: `README.md:156-158` still says "Until Task 20
+delivers…" the configuration-driven JSON REST mode, which shipped in task
+20 and needs no Java for a flat-JSON source — `docs/extending.md` now points
+flat-source readers at it, but the README itself remains stale until 52
+corrects it. Also not referenced by task 50: the external consumer demo at
+`/Users/Andrew/workspace/data-prism-github-demo` is not a public
+repository (`github.com/AindriuB/data-prism-github-demo` returns 404), so no
+link to it would have resolved.
+
 ## 2026-09-17 — 0.2.0 release complete: GitHub Release, Maven Central, GHCR multi-arch, and the first successful MCP registry publish
 
 Task 48 corrected `server.json`'s OCI package block after `mcp-publisher
