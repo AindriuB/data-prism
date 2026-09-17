@@ -297,7 +297,7 @@ public class DataPrismAutoConfiguration {
      * The Spring auto-configuration has no stdio transport of its own: every
      * {@code @Bean} below this point is gated on {@code mode=HTTP}, and nothing
      * here ever calls {@code DataPrismMcpServer.stdio()} — that stays the hand-built
-     * {@code data-prism-example} entry point's job. Without this refusal,
+     * {@code data-prism-integration-tests} entry point's job. Without this refusal,
      * {@code dataprism.transport.mode=stdio} with {@code fixture-development=true}
      * passes {@link DataPrismProperties#validate()} and the context would start
      * successfully while serving no MCP transport at all — fail-open. Unconditional,
