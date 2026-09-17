@@ -17,6 +17,127 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-17 — Task 47: the PII scan's reflection-depth and word-boundary holes closed
+
+`PiiLogScanTest`'s banned-value derivation now recurses through `Record`
+components and `Collection` elements to arbitrary depth (depth-capped, and
+proven to terminate against a self-referential structure) instead of stopping
+one level deep and banning a nested component's `toString()`. `findLeaked`'s
+bounds changed from `\b` to `(?<!\w)`/`(?!\w)` lookarounds, closing the case
+where a banned value ending in punctuation — both fixture order notes — could
+never match at end-of-line or before a space. `OrderDto` gained one nested
+component, `DeliveryDto` (a courier reference plus a notes collection,
+`@SensitiveObject`-annotated), so the recursion is falsifiable against a real
+fixture rather than a record declared inside the test file. Merged through a
+protected, green pull request 2026-09-17 (#76, after a merge of main/task 45
+to land on top of it — no file overlap between the two tasks). Full reactor
+`mvn -B clean verify` green, 492 tests, `PiiLogScanTest` itself still well
+under a second. See `docs/plan/HISTORY-INDEX.md` for the row.
+
+**Both holes were proven real, not just closed, by watching the old code
+leak.** For hole 1, a production code path logging a raw `DeliveryDto` leaf
+went RED under the recursive derivation, naming the leaf; the same mutation
+with the descent reverted to one level deep went GREEN with the raw leaf
+still sitting in the log, still-mutated, still leaking — that second run,
+not the first, is the evidence the hole was real. For hole 2, a raw order
+note ("No issues raised.") on an ordinary application log line went GREEN
+under the pre-fix `\b` bounds — the hole itself — and RED under the
+lookaround bounds. Both mutations were reverted; tree byte-identical after
+each. The standard this repository is holding itself to now: a leak-test fix
+is not proven by the new code passing, only by the old code demonstrably
+failing to catch what it should have.
+
+**The defence being replaced was characterised before it was touched, not
+guessed at.** The `\b` bounds existed so that a banned three-digit id
+(`"123"`, `"456"`) could not match by coincidence inside a hex run where
+every neighbour is a word character — an event UUID, the 24-hex fingerprint,
+the 64-hex hash chain. A new test pins that: it is shown RED under a
+`contains`-based `findLeaked` (proving it isn't vacuous), and GREEN under
+both the old `\b` version and the new lookaround version (proving the
+lookaround constrains the boundary in both directions, the same as `\b` does
+for a value whose first and last characters are word characters). Replacing
+a guard whose purpose nobody had written down would have traded a known hole
+for an unknown one; this is the alternative.
+
+**A design decision worth restating because it will be questioned again: the
+banned set task 46 derived, and this task extended, is classification-blind.**
+It bans every fixture leaf regardless of whether the field carrying it is
+`@SensitiveData` or `@NonSensitive` — the live set includes several
+`@NonSensitive` values (`ACC-1`, `ORD-9`, both order notes, `CR-771`, now the
+delivery notes). `@NonSensitive` authorises a value into the tool's
+*response*; it says nothing about the *log*. A payload value appearing on a
+log line means the pipeline is dumping payload, which is a defect regardless
+of that value's classification. The one existing exclusion,
+`CustomerDto.status` ("ACTIVE"), is not a counter-example: task 46 recorded
+that its exclusion is about prose-collision risk against ordinary log text,
+not about classification-based entitlement to appear in a log. It is not a
+precedent for excluding a value because its field is `@NonSensitive`.
+
+**Cost:** the coordinator-supplied fact "adding a nested block to `OrderDto`
+adds no consistency finding and perturbs no existing assertion" was a
+prediction, not a given — the implementer verified it rather than trusting
+it, and it held: `EndToEndTest`, `WorkedExampleTest`,
+`CompareEntitySourcesWorkedExampleTest` and `McpHttpEndToEndTest` are green
+and byte-identical, all four outside this task's `Owns`. Also known and
+deliberately unfixed here: `docs/agents/stdio.md:102` printed the merged
+entity tree verbatim and drifted once `delivery` existed on subject `123`'s
+order record. Both the implementer and reviewer flagged it rather than
+editing a doc outside their `Owns`; fixed at record time by actually driving
+the stdio fixture server end to end and capturing the real response rather
+than hand-writing the expected shape — the same discipline the doc's own
+prose claims for its captures.
+
+## 2026-09-17 — Task 45: version 0.2.0 cut, and a sweep that had been running blind to `.github/`
+
+Moved the tree from 0.1.1 to 0.2.0 — 19 module poms plus root, both
+`server.json` version fields, the two `serverInfo` literals in
+`DataPrismMcpServer.java`, all four Dockerfiles, `README.md`, and the three
+PackagingIT/SmokeIT tests — so the second MCP tool (`compare_entity_sources`,
+task 42/43) and the corrected MCP registry namespace (task 44) can ship.
+`CHANGELOG.md` gained a 0.2.0 entry naming both changes plus the
+`ContextResponse` record-component addition, and stating explicitly that the
+privacy engine, pseudonymisation and security modules did not change
+behaviour — every claim checked against the diffs of tasks 42-44 before being
+written. Merged through a protected, green pull request 2026-09-17 (#75).
+Full reactor `mvn -B clean verify` green, 488 tests, unchanged from task 46's
+baseline, as expected for a version-literal-only cut. See
+`docs/plan/HISTORY-INDEX.md` for the row.
+
+**A verification method had a blind spot, and this task found it.** Every
+repo-wide "no old version literal remains" sweep run in this repository has
+been `rg`-based, and `rg` skips dotdirectories by default — so every sweep
+that has ever signed off a version bump has been running blind to
+`.github/`. Adding `--hidden` to the sweep this task's acceptance criteria
+required turned up two stale `0.1.1` literals in
+`.github/workflows/publish-image.yml` (the `workflow_dispatch` input's
+example text and its `default:` value, lines 53 and 55) that task 41's
+0.1.1 cut had missed the same way. The stale default was not a safety hole —
+`publish-image.yml`'s version guard fails closed regardless of what the
+input defaults to — but dispatching it unedited would have wasted a release
+attempt, and a future reader finding a workflow that silently defaults to
+the wrong version is exactly the kind of thing that invites someone to "fix"
+it by weakening the guard instead. Every sweep this plan credits as having
+verified "no old version remains" from here on should be read as having
+verified that only for the paths `rg` shows by default, unless `--hidden` is
+named explicitly.
+
+**The task file said no workflow edits; the merged diff has two lines of
+one.** Task 45's `Owns` list and its "Out of scope" section both barred
+workflow edits — written before anyone knew a version literal was hiding in
+one. The coordinator authorized a scope extension limited to exactly the two
+literals at `publish-image.yml:53,55`, recorded in the branch's own second
+commit rather than folded into the first so the extension is visible in the
+history, not just asserted. The reviewer confirmed the guards, the
+per-architecture matrix, the digest-push steps and the manifest-assembly job
+are byte-identical to `main` apart from those two lines. Recorded here so the
+now-deleted task file and the merged diff do not read as disagreeing with
+each other.
+
+**Cost:** none beyond the `--hidden` discovery above — this is the same
+mechanical sweep task 41 ran one version earlier, and the CHANGELOG claims
+were checkable line by line against tasks 42-44's diffs before being
+written, so there was no second false-premise incident this cycle.
+
 ## 2026-09-17 — Task 46: PiiLogScanTest's banned values derived from the stub fixtures
 
 `PiiLogScanTest`'s banned set is no longer a hand-maintained literal list. It

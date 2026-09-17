@@ -262,6 +262,13 @@ them as context, and the verification chain is what caught it, only at the
 last step. See `docs/plan/HISTORY.md` — grep `Task 41` — for the full
 account.
 
+**Superseded by the 0.2.0 publish sequence in the "Tasks 42-47" section
+below.** Left unedited here as the record of what task 41 actually closed
+with — do not follow it. `v0.1.1` was tagged and released, and
+`publish-mcp.yml` was dispatched against it but returned 403 (see task 44
+below); do not re-dispatch any `v0.1.1` step now that 0.2.0 is the version to
+publish.
+
 **Nothing left is development work** — the owner-driven publish sequence:
 
 1. Tag `v0.1.1`. `release.yml` creates the GitHub Release from it.
@@ -309,14 +316,13 @@ file mistakenly credited with reaching the server image, see above) and #45,
 #47, #51 (`actions/checkout`, `actions/upload-artifact`, `actions/setup-java`
 version bumps).
 
-### Tasks 42-46 — second MCP tool, registry casing, 0.2.0, and a scan hardening found along the way
+### Tasks 42-47 — done. Second MCP tool, registry casing, a scan hardening found along the way, and 0.2.0 cut
 
-Opened 2026-09-17. Tasks 42, 43 and 44 are done, merged through protected,
-green pull requests the same day (#69, #71, #68). Tasks 45 and 46 are still
-open; see below. **Recommend running 46 before 45** — 45 is the version cut
-and reads best as the last thing this wave does, and 46 is test-only (it
-touches no shipped artifact), so it is not a release blocker if the owner
-wants 0.2.0 sooner and would rather take 46 in a later wave.
+Opened 2026-09-17. All six tasks are done, merged through protected, green
+pull requests the same day: 42 (#69), 44 (#68), 43 (#71), 46 (#73), 45 (#75),
+47 (#76, landed on top of 45 after main advanced under it — the expected
+sequential-merge race, resolved by merging main into 47's branch before
+opening its PR). No task file remains under `docs/plan/tasks/`.
 
 **Task 42 — done. No task file remains under `docs/plan/tasks/`.**
 
@@ -378,40 +384,56 @@ Full reactor `mvn -B clean verify` green, 487 tests. See `docs/plan/HISTORY.md`
 weakness it surfaced (now task 46) and a third instance this cycle of a
 downstream agent correcting a coordinator's factual premise.
 
-**Task 45 — open. Depends on 42, 43, 44 (all done).**
+**Task 45 — done.** Cut version 0.2.0 across the reactor — 19 module poms plus
+root, `server.json`, the MCP `serverInfo` literals, four Dockerfiles,
+`README.md`, three PackagingIT/SmokeIT tests — plus a `CHANGELOG.md` entry
+checked claim-by-claim against tasks 42-44's diffs, and a coordinator-
+authorized two-line fix to two stale `0.1.1` literals in
+`publish-image.yml` that a `--hidden` sweep found and a default `rg` sweep
+never could have. Merged #75, 488 tests unchanged. See `docs/plan/HISTORY.md`
+— grep `Task 45` — for what landed and what it cost, including the sweep
+blind spot every prior version-literal sweep in this repository shared.
 
-Cuts version 0.2.0 across the reactor once 43 lands. Two items for its
-`CHANGELOG.md` entry, both surfaced during task 42's review and deliberately
-left for this task:
+**Task 46 — done.** `PiiLogScanTest`'s banned values derived from the stub
+adapters' own fixtures instead of a hand-maintained list. Merged #73, 488
+tests. See `docs/plan/HISTORY.md` — grep `Task 46`.
 
-- `ContextResponse` gained a record component; its `equals`/`hashCode`/
-  `toString` now include it. Not a linkage break — the canonical constructor
-  was preserved and checked with `javap` — but a behavioural change consumers
-  should be told about.
-- The legacy 5-arg `ContextResponse` constructor leaves `fieldsByNamespace`
-  empty, so any `ContextOrchestrator` other than `DefaultContextOrchestrator`
-  would silently get an empty `identity` from `compare_entity_sources`.
-  Documented in javadoc on that constructor; confirmed by grep that nothing
-  outside tests uses that path today.
+**Task 47 — done.** Closed the two holes a reviewer found in the control task
+46 fixed: the banned-value derivation now recurses through `Record`
+components and `Collection` elements to arbitrary depth instead of stopping
+one level deep, and `findLeaked`'s bounds moved from `\b` to `(?<!\w)`/`(?!\w)`
+lookarounds so a banned value ending in punctuation (both order notes) can no
+longer pass unmatched on an ordinary log line. `OrderDto` gained one nested
+`DeliveryDto` component so the recursion is falsifiable against a real
+fixture. Both holes proven by mutation, and the hex-collision defence the old
+bound existed for was pinned before it was replaced. Merged #76, 492 tests.
+See `docs/plan/HISTORY.md` — grep `Task 47`.
 
-Task 46 (test-only, `PiiLogScanTest`'s banned values derived from fixtures)
-merged 2026-09-17; see `docs/plan/HISTORY.md`, grep `Task 46`. It touches no
-shipped artifact, so it never blocked this cut — the owner may cut 0.2.0
-before or after task 47 below.
+With 42-47 all closed, no task file remains under `docs/plan/tasks/`.
 
-**Task 47 — open. Depends on 46 (done).**
+**Nothing left is development work** — the owner-driven 0.2.0 publish
+sequence:
 
-Closes the two holes a reviewer found in the same control task 46 fixed, both
-the same shape — a control that narrows itself with no signal: the banned-value
-derivation reflects only one level deep, so a nested record or collection
-component would enter the set as its own `toString` and leave its leaf values
-silently unbanned; and `findLeaked`'s trailing `\b` bound makes a banned value
-ending in punctuation unmatchable on an ordinary (non-audit) log line, which
-today silently exempts both order notes from the plain leak path. Adds one
-nested `DeliveryDto` component to `OrderDto` so the recursion is falsifiable
-against a real fixture, and switches `findLeaked`'s bounds to `(?<!\w)`/`(?!\w)`
-lookarounds, pinning first the hex/UUID-collision defence the `\b` bound
-existed for. Test-only, no shipped artifact — does not block 45.
+1. Tag `v0.2.0`. `release.yml` creates the GitHub Release from it.
+2. Manually dispatch `publish-image.yml` on `v0.2.0` for the multi-arch
+   manifest, now carrying task 44's corrected MCP registry namespace label —
+   the label is baked in at build time, so this is the first image build that
+   carries the correction.
+3. Manually dispatch `publish-central.yml` on `v0.2.0` and approve the Portal
+   bundle.
+4. Verify the manifest resolves per platform on real hardware: an x86_64 host
+   should pull `amd64`, an Apple Silicon Mac should pull `arm64`.
+5. Manually dispatch `publish-mcp.yml` on `v0.2.0` for the registry entry.
+   `mcp-publisher publish` returned 403 against `v0.1.1` this wave because the
+   image still carried the old, wrongly-cased namespace label; this release is
+   the one that clears it, since it is the first image built after task 44's
+   correction.
+
+Owner actions outstanding, unchanged by this wave: the `central` GitHub
+Environment still has no required reviewers ticked, and
+`CENTRAL_TOKEN_USERNAME`/`CENTRAL_TOKEN_PASSWORD` still live as repository
+secrets rather than the `central` environment's scope — see task 41's section
+above for the original recording of both.
 
 ## Remaining slices past the adopted core
 
@@ -426,6 +448,20 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found by the reviewer during `/verify` on task 47, 2026-09-17. Neither is
+reachable today; pick either up only if a future task already owns the file.
+
+- `PiiLogScanTest`'s `EXCLUDED_FIXTURE_FIELDS` is consulted only for the
+  top-level fixture record's own components, not for a nested type's. An
+  exclusion keyed on a nested type (e.g. `DeliveryDto`) would be silently
+  ignored — accepted by whatever registers it, applied to nothing — with no
+  signal to whoever wrote it. Not reachable today because no nested type
+  currently needs an exclusion.
+- A `null` leaf in a fixture record would enter the derived banned-value set
+  as the literal string `"null"`, which would almost certainly false-positive
+  against ordinary log prose (`if (result == null) log.warn(...)` and
+  similar are common). No fixture is null today, so this has not fired.
 
 Found during `/verify` on task 41, 2026-09-17. Does not block anything; not
 picked up by task 41 because moving the version bump's own criterion is a
