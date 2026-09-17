@@ -15,7 +15,7 @@
     scope only, purely so the whole-graph boundary rules have the whole graph
     to check rather than whatever subset happened to be on some other
     module's classpath. Runs no Spring context, which is what lets it depend
-    on both data-prism-server and data-prism-example even though their
+    on both data-prism-server and data-prism-integration-tests even though their
     application.yaml resources would collide on one classpath.
   </description>
   <properties>
@@ -42,11 +42,12 @@
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-spring-boot-starter</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-server</artifactId><scope>test</scope></dependency>
     <!-- Not in the parent's dependencyManagement: nothing else is meant to
-         depend on the example, so its version is given directly here rather
-         than adding it there for this one, test-scope consumer. -->
+         depend on the integration-test suite, so its version is given
+         directly here rather than adding it there for this one, test-scope
+         consumer. -->
     <dependency>
       <groupId>io.github.aindriub</groupId>
-      <artifactId>data-prism-example</artifactId>
+      <artifactId>data-prism-integration-tests</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launches data-prism-example's stdio MCP server (ExampleApplication) for a
+# Launches data-prism-integration-tests's stdio MCP server (ExampleApplication) for a
 # local agent client.
 #
 # What this is: the fixture-development transport described in
@@ -7,7 +7,7 @@
 # It carries one fixed development principal, holding only
 # GET_ENTITY_CONTEXT, against three in-memory stub adapters
 # (StubCustomerAdapter, StubAccountAdapter, StubOrderAdapter — see
-# data-prism-example/src/main/java/.../Stub*Adapter.java). Nothing here
+# data-prism-integration-tests/src/main/java/.../Stub*Adapter.java). Nothing here
 # reaches a network, a real API, or a real credential.
 #
 # What this is not: this is not how a protected deployment is reached. It
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-module="data-prism-example"
+module="data-prism-integration-tests"
 classpath_file="$(mktemp)"
 trap 'rm -f "$classpath_file"' EXIT
 

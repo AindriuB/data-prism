@@ -10,14 +10,15 @@
     <version>0.2.0</version>
   </parent>
 
-  <artifactId>data-prism-example</artifactId>
-  <name>Data Prism :: Example</name>
+  <artifactId>data-prism-integration-tests</artifactId>
+  <name>Data Prism :: Integration tests</name>
   <description>
-    A stub source and a runnable server, proving the thread end to end. This is
-    the only module permitted to contain a business domain type, and nothing
-    depends on it except data-prism-architecture, which depends on every
-    module at test scope only, to see the whole graph the boundary rules
-    check.
+    The reactor's cross-module integration test suite: a stub source and a
+    runnable server, proving the thread end to end. This is still the only
+    module permitted to contain a business domain type, which is what
+    ArchitectureTest keys on, and nothing depends on it except
+    data-prism-architecture, which depends on every module at test scope
+    only, to see the whole graph the boundary rules check.
   </description>
 
   <properties>
