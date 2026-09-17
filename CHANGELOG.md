@@ -15,7 +15,11 @@ has also diverged from the tag since (CI action bumps, documentation, a
 quickstart dependency pin), so an image built from `main` and labelled
 0.1.0 would not correspond to the tagged tree. Cutting a patch version is
 cheaper and more honest than force-moving a tag a published GitHub Release
-already points at.
+already points at. No production source differs from 0.1.0, so the library
+artifacts on Maven Central are functionally identical and consumers of
+those jars have no functional reason to upgrade; 0.1.1 exists for the image
+and the publish pipeline, where multi-architecture support is a real
+improvement for anyone running the image.
 
 ### Changed
 
