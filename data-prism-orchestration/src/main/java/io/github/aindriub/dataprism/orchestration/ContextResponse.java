@@ -59,7 +59,13 @@ public record ContextResponse(
         fieldsByNamespace = Map.copyOf(copy);
     }
 
-    /** Pre-task-42 shape: no namespace/field-name bookkeeping. */
+    /**
+     * Pre-task-42 shape: leaves {@code fieldsByNamespace} empty, so a
+     * {@code compare_entity_sources} response built from this carries an empty
+     * {@code identity}. {@link DefaultContextOrchestrator} is what populates it;
+     * use that, not this, unless a bare {@code ContextResponse} is genuinely all
+     * that's needed.
+     */
     public ContextResponse(String entityType, String subject, Map<String, String> sources,
                            List<ConsistencyFinding> findings, ObjectNode entity) {
         this(entityType, subject, sources, findings, entity, Map.of());
