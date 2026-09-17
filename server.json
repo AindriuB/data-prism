@@ -8,13 +8,13 @@
     "source": "github",
     "id": "1361848414"
   },
-  "version": "0.1.1",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "oci",
       "registryBaseUrl": "https://ghcr.io",
       "identifier": "ghcr.io/aindriub/data-prism-server",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "runtimeHint": "docker",
       "transport": {
         "type": "streamable-http",
