@@ -21,6 +21,7 @@ public class DataPrismProperties {
     private Audit audit = new Audit();
     private Metrics metrics = new Metrics();
     private Hazelcast hazelcast = new Hazelcast();
+    private Identity identity = new Identity();
     private Map<String, Source> sources = new LinkedHashMap<>();
 
     public Transport getTransport() {
@@ -77,6 +78,14 @@ public class DataPrismProperties {
 
     public void setHazelcast(Hazelcast v) {
         hazelcast = v == null ? new Hazelcast() : v;
+    }
+
+    public Identity getIdentity() {
+        return identity;
+    }
+
+    public void setIdentity(Identity v) {
+        identity = v == null ? new Identity() : v;
     }
 
     public Map<String, Source> getSources() {
@@ -624,6 +633,27 @@ public class DataPrismProperties {
 
         public void setReidentificationControlsReference(String v) {
             reidentificationControlsReference = v;
+        }
+    }
+
+    /**
+     * Selects the built-in {@code IdentityResolver} for operators with no
+     * Java to write, rather than one being inferred from other configuration.
+     * Absent (the default), nothing is selected here: an {@code IdentityResolver}
+     * bean must still come from the application, or
+     * {@code DataPrismAutoConfiguration#dataPrismIdentityResolverPreflight}
+     * refuses startup with {@code MISSING_IDENTITY_RESOLVER}, exactly as before
+     * this property existed.
+     */
+    public static class Identity {
+        private String resolver;
+
+        public String getResolver() {
+            return resolver;
+        }
+
+        public void setResolver(String v) {
+            resolver = v;
         }
     }
 
