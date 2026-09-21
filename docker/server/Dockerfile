@@ -17,8 +17,13 @@ RUN mvn -B -q -pl data-prism-processor,data-prism-server,data-prism-quickstart-e
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-COPY --from=build /workspace/data-prism-server/target/data-prism-server-0.2.0.jar /app/data-prism-server.jar
-COPY --from=build /workspace/data-prism-quickstart-extension/target/data-prism-quickstart-extension-0.2.0.jar /app/data-prism-quickstart-extension.jar
+# VERSION only ever names the build stage's *source* jars: the reactor
+# version is embedded in the filenames `mvn package` produces, so COPY needs
+# it once to find them — matching docker/distribution/Dockerfile's own
+# convention. Nothing past these COPY steps needs to know this ARG's value.
+ARG VERSION=0.2.0
+COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server.jar
+COPY --from=build /workspace/data-prism-quickstart-extension/target/data-prism-quickstart-extension-${VERSION}.jar /app/data-prism-quickstart-extension.jar
 # Spring Boot's own convention: a jar started with working directory /app
 # auto-loads /app/config/application.yaml ahead of its own packaged defaults.
 COPY docker/server/application.yaml /app/config/application.yaml

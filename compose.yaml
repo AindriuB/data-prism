@@ -1,6 +1,6 @@
 # Local Compose quickstart (task 18): the standalone server, a synthetic
 # fixture API and a local token issuer, wired together for one command —
-# `docker compose up --build` — to bring up. See docs/quickstart.md for the
+# `docker compose up` — to bring up. See docs/quickstart.md for the
 # guided walkthrough and docs/configuration.md for what a production
 # deployment would set instead of every value labelled "fixture-only" below.
 #
@@ -9,6 +9,15 @@
 # certificate and key here is generated at first run into the `certs`
 # volume — a location Docker itself owns, never a path in this repository —
 # and nothing generated is ever committed (CLAUDE.md rule 7).
+#
+# Every service below pulls its image, tagged at the reactor version (or
+# QUICKSTART_IMAGE_TAG, default `latest`), from the same GHCR namespace as
+# the published distribution image (task 55) — no service here carries a
+# `build:` block, so a cold `docker compose up` never runs a Maven build on
+# the reader's own machine. To build every image from source instead — for
+# local development, or before those images have ever been published — run
+# `docker compose -f compose.yaml -f compose.build.yaml up --build`, which
+# layers each service's `build:` block back on top of this file.
 
 name: data-prism-quickstart
 
@@ -22,9 +31,7 @@ services:
   # locally trusted TLS keystore/truststore into the `certs` volume before
   # anything else starts, and exiting. See docker/certs-init/generate-certs.sh.
   cert-init:
-    build:
-      context: .
-      dockerfile: docker/certs-init/Dockerfile
+    image: ghcr.io/aindriub/data-prism-quickstart-certs-init:${QUICKSTART_IMAGE_TAG:-latest}
     environment:
       CERT_PASSWORD: ${QUICKSTART_CERT_PASSWORD:-quickstart-only-not-for-production}
     volumes:
@@ -33,10 +40,11 @@ services:
   # The local token issuer (data-prism-quickstart-issuer). The standalone
   # server has no fixture-development bypass (task 21), so this is the
   # quickstart's only path to a usable, real, signature-verified JWT.
+  # fixture-only evaluation issuer: see docker/issuer/Dockerfile's own
+  # comment — it mints tokens for this Compose network's synthetic
+  # issuer/audience only, and is never a general-purpose identity provider.
   issuer:
-    build:
-      context: .
-      dockerfile: docker/issuer/Dockerfile
+    image: ghcr.io/aindriub/data-prism-quickstart-issuer:${QUICKSTART_IMAGE_TAG:-latest}
     depends_on:
       cert-init:
         condition: service_completed_successfully
@@ -62,9 +70,7 @@ services:
   # The synthetic customer API (data-prism-quickstart-fixtures). Every record
   # it can return is invented; see its own Javadoc.
   fixtures:
-    build:
-      context: .
-      dockerfile: docker/fixtures/Dockerfile
+    image: ghcr.io/aindriub/data-prism-quickstart-fixtures:${QUICKSTART_IMAGE_TAG:-latest}
     depends_on:
       cert-init:
         condition: service_completed_successfully
@@ -85,9 +91,7 @@ services:
   # docs/quickstart.md for why the very first request after `up` can need a
   # retry.
   server:
-    build:
-      context: .
-      dockerfile: docker/server/Dockerfile
+    image: ghcr.io/aindriub/data-prism-quickstart-server:${QUICKSTART_IMAGE_TAG:-latest}
     depends_on:
       cert-init:
         condition: service_completed_successfully
