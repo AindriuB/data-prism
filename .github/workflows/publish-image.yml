@@ -11,6 +11,16 @@ name: publish-image
 # dispatch left on a branch (the default when opening "Run workflow") never
 # satisfies the tag-ref check and never reaches GHCR.
 #
+# Task 55 extends this same shape to publish the Compose quickstart's own
+# four images (data-prism-quickstart-server, -fixtures, -issuer and
+# -certs-init — the four services compose.yaml's own `build:` blocks used to
+# build from source, see docker/server, docker/fixtures, docker/issuer and
+# docker/certs-init) under the same GHCR namespace, at the same reactor
+# version, gated by the exact same conditions as the distribution image. Its
+# build/verify steps are unguarded like the distribution image's own; its
+# push/login/manifest-assembly steps carry the identical `if:` guarding the
+# distribution image's own registry-touching steps.
+#
 # The image is published as a multi-architecture manifest list
 # (linux/amd64 + linux/arm64). A `docker save` / `docker load` tarball cannot
 # carry a manifest list, so each architecture is built, loaded and verified
@@ -172,6 +182,72 @@ jobs:
           fi
           echo "refusal code: ${code}"
 
+      # Task 55: the three quickstart images built from source in
+      # compose.yaml's own from-source path (compose.build.yaml), plus the
+      # certs-init helper image that same file also builds, published here
+      # so the default compose.yaml can pull all four instead. Built
+      # unguarded, on every plain tag push, same as the distribution image
+      # above — this only builds and loads locally; nothing here touches the
+      # registry yet. None of these carries a no-configuration refusal
+      # contract (that check is specific to docker/distribution/Dockerfile's
+      # DataPrismContractValidator gate), so none is verified the way the
+      # distribution image is above.
+      - name: Build quickstart server image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker buildx build -f docker/server/Dockerfile \
+            --platform "$PLATFORM" \
+            --build-arg "VERSION=$VERSION" \
+            -t "ghcr.io/aindriub/data-prism-quickstart-server:${VERSION}-${ARCH}" \
+            --load \
+            .
+
+      - name: Build quickstart fixtures image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker buildx build -f docker/fixtures/Dockerfile \
+            --platform "$PLATFORM" \
+            --build-arg "VERSION=$VERSION" \
+            -t "ghcr.io/aindriub/data-prism-quickstart-fixtures:${VERSION}-${ARCH}" \
+            --load \
+            .
+
+      - name: Build quickstart issuer image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker buildx build -f docker/issuer/Dockerfile \
+            --platform "$PLATFORM" \
+            --build-arg "VERSION=$VERSION" \
+            -t "ghcr.io/aindriub/data-prism-quickstart-issuer:${VERSION}-${ARCH}" \
+            --load \
+            .
+
+      # certs-init ships no jar and carries no VERSION build-arg: it copies a
+      # shell script (docker/certs-init/generate-certs.sh), not a Maven
+      # artifact, so nothing about its image content depends on the reactor
+      # version — only its published *tag* is the reactor version, to keep
+      # it releasing in lockstep with the other three images.
+      - name: Build quickstart certs-init image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker buildx build -f docker/certs-init/Dockerfile \
+            --platform "$PLATFORM" \
+            -t "ghcr.io/aindriub/data-prism-quickstart-certs-init:${VERSION}-${ARCH}" \
+            --load \
+            .
+
       # Everything from here down writes to the registry (a Maven download of
       # the reactor version, a GHCR login, a digest push) and is gated on the
       # exact condition the `publish` job below also carries at job level.
@@ -256,6 +332,137 @@ jobs:
         with:
           name: digest-${{ matrix.arch }}
           path: /tmp/digest/*
+          if-no-files-found: error
+          retention-days: 1
+
+      # Task 55: the same push-by-digest/assemble-manifest split as the
+      # distribution image above, for the three quickstart images and the
+      # certs-init helper image, gated identically. Written into their own
+      # /tmp/digest-quickstart directory, not /tmp/digest, so none of these
+      # four uploads' files are ever swept up by the distribution image's own
+      # `path: /tmp/digest/*` upload above — that upload's contents, and the
+      # distribution manifest assembled from them below in `publish`, stay
+      # exactly what they were before this task.
+      - name: Push quickstart server image by digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p /tmp/digest-quickstart
+          docker buildx build -f docker/server/Dockerfile \
+            --platform "$PLATFORM" \
+            --build-arg "VERSION=$VERSION" \
+            --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-server,push=true,push-by-digest=true,name-canonical=true \
+            --metadata-file /tmp/metadata-quickstart-server.json \
+            .
+          digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-server.json)"
+          echo "$digest" > "/tmp/digest-quickstart/server-${ARCH}"
+          echo "pushed digest: ${digest}"
+
+      - name: Upload quickstart server digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-quickstart-server-${{ matrix.arch }}
+          path: /tmp/digest-quickstart/server-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Push quickstart fixtures image by digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p /tmp/digest-quickstart
+          docker buildx build -f docker/fixtures/Dockerfile \
+            --platform "$PLATFORM" \
+            --build-arg "VERSION=$VERSION" \
+            --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-fixtures,push=true,push-by-digest=true,name-canonical=true \
+            --metadata-file /tmp/metadata-quickstart-fixtures.json \
+            .
+          digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-fixtures.json)"
+          echo "$digest" > "/tmp/digest-quickstart/fixtures-${ARCH}"
+          echo "pushed digest: ${digest}"
+
+      - name: Upload quickstart fixtures digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-quickstart-fixtures-${{ matrix.arch }}
+          path: /tmp/digest-quickstart/fixtures-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Push quickstart issuer image by digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p /tmp/digest-quickstart
+          docker buildx build -f docker/issuer/Dockerfile \
+            --platform "$PLATFORM" \
+            --build-arg "VERSION=$VERSION" \
+            --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-issuer,push=true,push-by-digest=true,name-canonical=true \
+            --metadata-file /tmp/metadata-quickstart-issuer.json \
+            .
+          digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-issuer.json)"
+          echo "$digest" > "/tmp/digest-quickstart/issuer-${ARCH}"
+          echo "pushed digest: ${digest}"
+
+      - name: Upload quickstart issuer digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-quickstart-issuer-${{ matrix.arch }}
+          path: /tmp/digest-quickstart/issuer-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Push quickstart certs-init image by digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p /tmp/digest-quickstart
+          docker buildx build -f docker/certs-init/Dockerfile \
+            --platform "$PLATFORM" \
+            --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-certs-init,push=true,push-by-digest=true,name-canonical=true \
+            --metadata-file /tmp/metadata-quickstart-certs-init.json \
+            .
+          digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-certs-init.json)"
+          echo "$digest" > "/tmp/digest-quickstart/certs-init-${ARCH}"
+          echo "pushed digest: ${digest}"
+
+      - name: Upload quickstart certs-init digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-quickstart-certs-init-${{ matrix.arch }}
+          path: /tmp/digest-quickstart/certs-init-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 1
 
@@ -347,6 +554,92 @@ jobs:
         run: |
           for tag in "${VERSION}" latest; do
             archs="$(docker manifest inspect "ghcr.io/aindriub/data-prism-server:${tag}" \
+              | jq -r '.manifests[].platform.architecture' | sort)"
+            echo "${tag}: ${archs}"
+            echo "${archs}" | grep -qx amd64
+            echo "${archs}" | grep -qx arm64
+          done
+
+      # Task 55: the same digest-assembly-into-manifest-list step as the
+      # distribution image above, repeated once per quickstart image, each
+      # reading its own two per-architecture digest files out of
+      # /tmp/digests (downloaded once, above, by the same `digest-*` pattern
+      # that already covers these four images' own artifact names) rather
+      # than the distribution image's `amd64`/`arm64` files.
+      - name: Assemble and push quickstart server manifest list
+        run: |
+          amd64_digest="$(cat /tmp/digests/server-amd64)"
+          arm64_digest="$(cat /tmp/digests/server-arm64)"
+          docker buildx imagetools create \
+            -t "ghcr.io/aindriub/data-prism-quickstart-server:${VERSION}" \
+            -t ghcr.io/aindriub/data-prism-quickstart-server:latest \
+            "ghcr.io/aindriub/data-prism-quickstart-server@${amd64_digest}" \
+            "ghcr.io/aindriub/data-prism-quickstart-server@${arm64_digest}"
+
+      - name: Verify the pushed quickstart server manifest lists cover both architectures
+        run: |
+          for tag in "${VERSION}" latest; do
+            archs="$(docker manifest inspect "ghcr.io/aindriub/data-prism-quickstart-server:${tag}" \
+              | jq -r '.manifests[].platform.architecture' | sort)"
+            echo "${tag}: ${archs}"
+            echo "${archs}" | grep -qx amd64
+            echo "${archs}" | grep -qx arm64
+          done
+
+      - name: Assemble and push quickstart fixtures manifest list
+        run: |
+          amd64_digest="$(cat /tmp/digests/fixtures-amd64)"
+          arm64_digest="$(cat /tmp/digests/fixtures-arm64)"
+          docker buildx imagetools create \
+            -t "ghcr.io/aindriub/data-prism-quickstart-fixtures:${VERSION}" \
+            -t ghcr.io/aindriub/data-prism-quickstart-fixtures:latest \
+            "ghcr.io/aindriub/data-prism-quickstart-fixtures@${amd64_digest}" \
+            "ghcr.io/aindriub/data-prism-quickstart-fixtures@${arm64_digest}"
+
+      - name: Verify the pushed quickstart fixtures manifest lists cover both architectures
+        run: |
+          for tag in "${VERSION}" latest; do
+            archs="$(docker manifest inspect "ghcr.io/aindriub/data-prism-quickstart-fixtures:${tag}" \
+              | jq -r '.manifests[].platform.architecture' | sort)"
+            echo "${tag}: ${archs}"
+            echo "${archs}" | grep -qx amd64
+            echo "${archs}" | grep -qx arm64
+          done
+
+      - name: Assemble and push quickstart issuer manifest list
+        run: |
+          amd64_digest="$(cat /tmp/digests/issuer-amd64)"
+          arm64_digest="$(cat /tmp/digests/issuer-arm64)"
+          docker buildx imagetools create \
+            -t "ghcr.io/aindriub/data-prism-quickstart-issuer:${VERSION}" \
+            -t ghcr.io/aindriub/data-prism-quickstart-issuer:latest \
+            "ghcr.io/aindriub/data-prism-quickstart-issuer@${amd64_digest}" \
+            "ghcr.io/aindriub/data-prism-quickstart-issuer@${arm64_digest}"
+
+      - name: Verify the pushed quickstart issuer manifest lists cover both architectures
+        run: |
+          for tag in "${VERSION}" latest; do
+            archs="$(docker manifest inspect "ghcr.io/aindriub/data-prism-quickstart-issuer:${tag}" \
+              | jq -r '.manifests[].platform.architecture' | sort)"
+            echo "${tag}: ${archs}"
+            echo "${archs}" | grep -qx amd64
+            echo "${archs}" | grep -qx arm64
+          done
+
+      - name: Assemble and push quickstart certs-init manifest list
+        run: |
+          amd64_digest="$(cat /tmp/digests/certs-init-amd64)"
+          arm64_digest="$(cat /tmp/digests/certs-init-arm64)"
+          docker buildx imagetools create \
+            -t "ghcr.io/aindriub/data-prism-quickstart-certs-init:${VERSION}" \
+            -t ghcr.io/aindriub/data-prism-quickstart-certs-init:latest \
+            "ghcr.io/aindriub/data-prism-quickstart-certs-init@${amd64_digest}" \
+            "ghcr.io/aindriub/data-prism-quickstart-certs-init@${arm64_digest}"
+
+      - name: Verify the pushed quickstart certs-init manifest lists cover both architectures
+        run: |
+          for tag in "${VERSION}" latest; do
+            archs="$(docker manifest inspect "ghcr.io/aindriub/data-prism-quickstart-certs-init:${tag}" \
               | jq -r '.manifests[].platform.architecture' | sort)"
             echo "${tag}: ${archs}"
             echo "${archs}" | grep -qx amd64
