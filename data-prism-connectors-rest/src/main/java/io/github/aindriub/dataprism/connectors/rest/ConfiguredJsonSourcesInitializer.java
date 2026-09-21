@@ -76,18 +76,22 @@ public final class ConfiguredJsonSourcesInitializer
 
     /**
      * {@code DataPrismContractValidator} (owned by the base auto-configuration
-     * module, not this one) requires every {@code DataSourceAdapter} bean's name
-     * to also appear under {@code dataprism.sources}, so a configured JSON
-     * source's transport is necessarily stated twice: once, authoritatively,
-     * here; once more, only to satisfy that unrelated name/adapter cross-check.
-     * Two statements of one fact can drift, and the validated one is not the one
-     * {@link ConfiguredJsonDataSourceAdapter} actually dials — so rather than
-     * let the two disagree silently, refuse startup the moment they do, naming
-     * both values. Removing the {@code dataprism.sources} entry's URL
-     * requirement outright would be the more thorough fix, but that field is
-     * declared in a module this task does not own; refusing on disagreement is
-     * achievable entirely within this one, and closes the actual hazard: the
-     * validated URL always being the one that also gets dialled.
+     * module, not this one) no longer requires a {@code dataprism.sources}
+     * entry for a {@code DataSourceAdapter} bean this initializer registers: a
+     * configured JSON source's transport is stated exactly once, here,
+     * authoritatively, in {@code json-sources:}. An earlier task made the
+     * cross-name check unconditional and could not relax it without editing a
+     * module it did not own; this one owns both, and the cross-check itself
+     * has been narrowed instead (see {@code DataPrismContractValidator
+     * .validateIntegrations}) so the duplicate entry is no longer needed to
+     * satisfy it.
+     *
+     * <p>Nothing stops an operator from also naming the source under {@code
+     * dataprism.sources} — the field still exists, unconditionally optional now
+     * rather than required — and if they do, this method still refuses startup
+     * the moment the two disagree, naming both values, since the validated URL
+     * silently losing to the one {@link ConfiguredJsonDataSourceAdapter}
+     * actually dials would otherwise go unnoticed.
      */
     private static void rejectTransportDisagreement(Environment environment, ConfiguredJsonSourcesConfig config) {
         for (Map.Entry<String, ConfiguredJsonSource> entry : config.sources().entrySet()) {

@@ -113,10 +113,11 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
     }
 
     /**
-     * The base distribution's contract validator requires a {@code
-     * dataprism.sources.<name>} entry alongside every {@code DataSourceAdapter}
-     * bean's name, so this source's transport is stated twice; when the two
-     * agree, startup proceeds.
+     * The base distribution's contract validator no longer requires a {@code
+     * dataprism.sources.<name>} entry for this adapter's name (see {@link
+     * #registersAdaptersAndReplacesTheOrchestrator}, which sets none), but
+     * nothing forbids an operator from stating one anyway; when they do and it
+     * agrees with {@code json-sources}, startup still proceeds.
      */
     @Test
     @DisplayName("a dataprism.sources entry whose base-url agrees with json-sources does not refuse")
