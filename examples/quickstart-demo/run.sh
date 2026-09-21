@@ -56,8 +56,22 @@ response="$(mcp_call_get_entity_context "$mcp_url" "$token" "$MCP_SESSION" "$ent
 parsed="$(printf '%s' "$response" | python3 -c '
 import json, sys
 
+raw = sys.stdin.read()
+
+# The server negotiates SSE for tools/call when the Accept header offers
+# both application/json and text/event-stream (it always does here), so the
+# body usually arrives frame-wrapped ("id: ...\nevent: message\ndata:
+# {...}") rather than as bare JSON. Pull the JSON out of the first "data:"
+# field if present; fall back to treating the whole body as JSON so this
+# still works if the server ever answers with a plain application/json body.
+body = raw
+for line in raw.splitlines():
+    if line.startswith("data:"):
+        body = line[len("data:"):].strip()
+        break
+
 try:
-    doc = json.load(sys.stdin)
+    doc = json.loads(body)
 except Exception:
     print("PARSE_ERROR")
     sys.exit(0)

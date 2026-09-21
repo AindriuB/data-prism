@@ -15,8 +15,12 @@
 # token anywhere but stdout.
 mcp_mint_token() {
   local issuer_url="$1"
-  curl -sk -X POST "$issuer_url" \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null
+  curl -sk -X POST "$issuer_url" 2>/dev/null \
+    | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("access_token",""))
+except Exception:
+    print("")' 2>/dev/null || true
 }
 
 # mcp_initialize <mcp_url> <token>
@@ -31,8 +35,8 @@ mcp_initialize() {
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -H "Authorization: Bearer $token" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"quickstart-demo","version":"1.0.0"}}}')"
-  MCP_SESSION="$(grep -i '^Mcp-Session-Id:' "$headers" | tr -d '\r' | cut -d' ' -f2)"
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"quickstart-demo","version":"1.0.0"}}}' || true)"
+  MCP_SESSION="$(grep -i '^Mcp-Session-Id:' "$headers" 2>/dev/null | tr -d '\r' | cut -d' ' -f2 || true)"
   rm -f "$headers"
 }
 
@@ -46,7 +50,7 @@ mcp_notify_initialized() {
     -H 'Accept: application/json, text/event-stream' \
     -H "Authorization: Bearer $token" \
     -H "Mcp-Session-Id: $session" \
-    -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
+    -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null || true
 }
 
 # mcp_call_get_entity_context <mcp_url> <token> <session> <entity_type> <subject_id>
@@ -58,5 +62,5 @@ mcp_call_get_entity_context() {
     -H 'Accept: application/json, text/event-stream' \
     -H "Authorization: Bearer $token" \
     -H "Mcp-Session-Id: $session" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_entity_context\",\"arguments\":{\"entityType\":\"$entity_type\",\"subjectId\":\"$subject_id\"}}}"
+    -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_entity_context\",\"arguments\":{\"entityType\":\"$entity_type\",\"subjectId\":\"$subject_id\"}}}" || true
 }
