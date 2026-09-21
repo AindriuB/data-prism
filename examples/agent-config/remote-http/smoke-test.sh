@@ -32,6 +32,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 server_name="data-prism-remote-smoke-test"
 skip_exit_code=77
 
+# The initialize / notifications/initialized handshake and the
+# get_entity_context call below are the same sequence
+# examples/quickstart-demo/run.sh runs as one command; shared here so the
+# JSON-RPC payloads exist in exactly one place.
+. "$repo_root/examples/quickstart-demo/mcp-handshake.sh"
+
 if ! command -v claude >/dev/null 2>&1; then
   echo "SKIP: the 'claude' CLI is not on PATH; nothing to smoke test here." >&2
   echo "See docs/agents/remote-http.md for the manual procedure for other clients." >&2
@@ -61,7 +67,7 @@ done
 token=""
 attempts=15
 until [ -n "$token" ]; do
-  token="$(curl -sk -X POST "$issuer_url" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || true)"
+  token="$(mcp_mint_token "$issuer_url" || true)"
   if [ -n "$token" ]; then
     break
   fi
@@ -91,34 +97,17 @@ fi
 # used, the same handshake docs/quickstart.md walks through by hand, and
 # assert on the pseudonymisation itself.
 mcp_url="http://localhost:8080/mcp"
-init_headers="$(mktemp)"
-init_body="$(curl -sD "$init_headers" -X POST "$mcp_url" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H "Authorization: Bearer $token" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke-test","version":"1.0.0"}}}')"
-session="$(grep -i '^Mcp-Session-Id:' "$init_headers" | tr -d '\r' | cut -d' ' -f2)"
-rm -f "$init_headers"
 
-if [ -z "$session" ]; then
+mcp_initialize "$mcp_url" "$token"
+if [ -z "$MCP_SESSION" ]; then
   echo "FAIL: no Mcp-Session-Id from initialize; response was:" >&2
-  echo "$init_body" >&2
+  echo "$MCP_INIT_BODY" >&2
   exit 1
 fi
 
-curl -s -X POST "$mcp_url" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H "Authorization: Bearer $token" \
-  -H "Mcp-Session-Id: $session" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
+mcp_notify_initialized "$mcp_url" "$token" "$MCP_SESSION"
 
-call_response="$(curl -s -X POST "$mcp_url" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -H "Authorization: Bearer $token" \
-  -H "Mcp-Session-Id: $session" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_entity_context","arguments":{"entityType":"CUSTOMER","subjectId":"1001"}}}')"
+call_response="$(mcp_call_get_entity_context "$mcp_url" "$token" "$MCP_SESSION" CUSTOMER 1001)"
 
 # The raw values data-prism-quickstart-fixtures' CustomerController ships for
 # subject 1001 (see docs/quickstart.md), plus the raw correlation id itself —
