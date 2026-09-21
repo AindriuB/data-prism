@@ -1,0 +1,34 @@
+# From-source override for the Compose quickstart (task 55): layers a
+# `build:` block back onto every service compose.yaml otherwise pulls
+# pre-built from GHCR, so the images can still be built and run entirely
+# from the working tree — before a version has been published, or while
+# developing against a Dockerfile change of your own.
+#
+#   docker compose -f compose.yaml -f compose.build.yaml up --build
+#
+# is the exact command: Compose merges this file on top of compose.yaml, so
+# every service keeps that file's environment, volumes, ports and
+# depends_on, and additionally builds its image locally from the matching
+# Dockerfile rather than pulling the published tag. `--build` forces the
+# image to be (re)built even if a same-named image already exists locally.
+
+services:
+  cert-init:
+    build:
+      context: .
+      dockerfile: docker/certs-init/Dockerfile
+
+  issuer:
+    build:
+      context: .
+      dockerfile: docker/issuer/Dockerfile
+
+  fixtures:
+    build:
+      context: .
+      dockerfile: docker/fixtures/Dockerfile
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
