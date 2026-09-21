@@ -565,6 +565,40 @@ up only as its own planned work.
   clients (any other MCP-capable agent) are unverified territory — nothing
   claims they work, but nothing has checked either.
 
+### Wave 1 (tasks 53, 54, 56, 57) — done. Task 55 verified but held.
+
+Opened from a measured UX review 2026-09-21: the Compose quickstart demos
+well but onboards nobody, since `QuickstartCustomerAdapter` hardcodes
+`SOURCE_NAME="customer"` and `CustomerModel.class` into the image, and the
+configuration-driven REST connector (task 20) had no `IdentityResolver`
+supplied anywhere, so it was not actually no-code. Task 53 adds opt-in
+`dataprism.identity.resolver: pass-through`; task 54 collapses the
+duplicate `dataprism.sources` base-url check; task 56 extracts a
+one-command demo out of `smoke-test.sh` (its first attempt failed
+verification — see `docs/plan/HISTORY.md`, grep `Wave 1 (tasks 53, 54, 56,
+57)`, for why); task 57 renders every configuration refusal as an
+operator-facing block with no stack trace. All four merged locally
+2026-09-21, no conflicts. See `docs/plan/HISTORY.md` — grep `Wave 1 (tasks
+53, 54, 56, 57)` — for what landed and what it cost.
+
+**Task 55 (publish the quickstart images) is verified PASS/APPROVE and
+deliberately not merged.** Held: task 55's `compose.yaml` pulls
+`ghcr.io/aindriub/data-prism-quickstart-{server,fixtures,issuer,certs-init}`,
+none of which are published yet — merging it would break `docker compose
+up` (the command both `README.md` and `docs/quickstart.md` tell a new user
+to run) for everyone until a `v*` tag is pushed and `publish-image.yml` is
+dispatched. Owner decision: publish the images first, then merge 55. Its
+branch (`task/55-publish-quickstart-images`) and worktree
+(`.worktrees/data-prism/55-publish-quickstart-images`) are left intact; its
+task file remains under `docs/plan/tasks/`. Unblock condition: a `v*` tag
+exists and `publish-image.yml` has been dispatched for the four quickstart
+images, at which point 55 can merge as-is.
+
+**Wave 2 (tasks 58, 59) has not started.** Task files exist
+(`docs/plan/tasks/58-protect-your-own-api-walkthrough.md`,
+`docs/plan/tasks/59-quickstart-exit-ramp-and-reference.md`) but no
+worktree, branch or implementation work has begun.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
@@ -578,6 +612,63 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on tasks 53, 54, 55, 56, 57, 2026-09-21. None blocks
+anything already merged; the first is the most important of the six.
+
+- **(53's review, most important.)** The new `IdentityResolver` bean is
+  placed on a nested `@Import`ed static configuration class, which keeps it
+  outside `AutoConfiguredBeanClassificationTest`'s reflection sweep over
+  `DataPrismAutoConfiguration.class.getDeclaredMethods()`. The reviewer
+  ruled this a guardrail evasion — acceptable on that branch only because
+  its `Owns` list forbade editing `PrivacyExtensionPoints.java`, not
+  acceptable to leave standing. A follow-up owning `PrivacyExtensionPoints.java`
+  must do two things: add the row for `dataPrismPassThroughIdentityResolver`
+  (`REPLACEABLE` / `Guard.NONE`), and widen the sweep to nested/imported
+  configuration classes — otherwise this wave leaves a documented escape
+  hatch any future privacy-relevant bean can use to dodge classification.
+  Also fix the javadoc at `DataPrismAutoConfiguration.java:117-126`, which
+  overstates the necessity of the nested placement — it claims
+  `@ConditionalOnBean` visibility required it, but a `@Bean` method declared
+  above its dependants would have been visible too — and will mislead
+  whoever picks this up.
+- (54's review.) The subset relaxation lost a property nobody has restored:
+  `dataprism.sources` was also the operator's allow-list, and any
+  `DataSourceAdapter` bean on the classpath is now implicitly approved
+  without appearing anywhere an operator reviewed. Not a fail-closed
+  breach — the reviewer could not construct a misconfiguration the subset
+  test lets through that exact match caught — but a real weakening of the
+  reviewed-adapter posture. Owner-scheduled narrow fix: exclude exactly the
+  names the JSON-catalogue mechanism supplies, via a marker or
+  catalogue-names bean visible to both `data-prism-connectors-rest` and
+  `data-prism-spring-boot-autoconfigure`. Task 54's own summary described
+  the change as guarantee-preserving, which was stronger than warranted —
+  do not repeat that framing.
+- (55's review, for whoever merges 55.) `compose.yaml:12-13`'s comment
+  contradicts itself — it says images are "tagged at the reactor version
+  (or `QUICKSTART_IMAGE_TAG`, default `latest`)" but the default resolves
+  to `latest`, never the reactor version. Also: four unguarded `--load`
+  builds in `publish-image.yml` have no consumer, costing three extra Maven
+  builds per arch on every plain tag push as a build-breakage smoke test
+  only; and a tag pushed ahead of a pom bump fails at `COPY
+  ...-${VERSION}.jar` with a raw buildx error rather than the guard's named
+  message (fails closed, cosmetic).
+- (56's re-review.) `run.sh:68-71` takes the first `data:` frame; if the
+  server ever emits a progress or log notification before the result,
+  fields come back empty and the demo fails with "missing an expected
+  field" rather than parsing the frame whose id is 2. Not reachable against
+  today's server and it fails closed, so a robustness nit rather than a
+  defect. Also `mcp-handshake.sh:44` hardcodes `clientInfo.name` to
+  `quickstart-demo`, so the smoke test now identifies itself as the demo in
+  server-side logs.
+- (57's review.) `ConfigurationRefusalMessageIT.java:133-138` reads process
+  output only after `waitFor`, so a startup log exceeding the ~64KB OS pipe
+  buffer would deadlock until the 20s timeout. Latent, not live.
+- (minor, from 54's review.) `DataPrismContractValidatorTest.java:47` and
+  `:78` have byte-identical bodies — one behaviour asserted twice under two
+  names. That file also sits outside task 54's declared `Owns` list, but it
+  was compelled by the acceptance criterion and collides with nothing, so
+  this is recorded rather than treated as a violation.
 
 Found by the reviewer during `/verify` on task 47, 2026-09-17. Neither is
 reachable today; pick either up only if a future task already owns the file.

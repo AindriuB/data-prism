@@ -17,7 +17,70 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
-## 2026-09-17 — Task 52: the shipped docs reconciled — module rename, six stale tool/mode claims, and a false causal claim caught at review
+## 2026-09-21 — Wave 1 (tasks 53, 54, 56, 57): the no-code path made real, and the demo's transport bug that a stub had hidden
+
+The wave opened from a measured UX review, not a guess: `docker compose up
+--build` cold took 5m44s (329.8s of it the server image's own Maven build);
+warm `up` was 1.9s with a correct pseudonymised answer 6s later; a bare
+`docker run ghcr.io/aindriub/data-prism-server:0.2.0` died in ~1.5s with a
+20-line Spring stack trace ending in `MISSING_IDENTITY_RESOLVER`. The
+Compose quickstart demos well but onboarded nobody, because
+`QuickstartCustomerAdapter` hardcodes `SOURCE_NAME="customer"` and
+`CustomerModel.class` into the image — there was no path from the demo to a
+user's own API. The configuration-driven REST connector (task 20) already
+protected a flat JSON API in ~20 lines of YAML, but nothing supplied an
+`IdentityResolver` bean, so it was not actually no-code, had no walkthrough,
+and its only example was a test fixture.
+
+Task 53 adds an opt-in `dataprism.identity.resolver: pass-through` property
+selecting `PassThroughIdentityResolver`, with `UNSUPPORTED_IDENTITY_RESOLVER`
+for an unrecognised value and `@ConditionalOnMissingBean` so an
+app-supplied resolver still wins. Absent the property, `MISSING_IDENTITY_RESOLVER`
+stands unchanged — proven by a test asserting zero `IdentityResolver` bean
+definitions exist at preflight, plus a `matchIfMissing=true` mutation run.
+This is what makes the no-Java path real. Task 54 collapses the duplicate
+base-url: `DataPrismContractValidator`'s cross-check moved from
+`supplied.equals(configured)` to `supplied.containsAll(configured)`, so a
+configured JSON source's adapter can exist with no matching
+`dataprism.sources` entry, with paired positive/negative mutation tests on
+both refusals. Task 56 extracts a one-command demo
+(`examples/quickstart-demo/run.sh`, `mcp-handshake.sh`) out of
+`smoke-test.sh`. Task 57 adds a Spring `FailureAnalyzer` that renders every
+`DataPrismConfigurationException` as an operator block naming the code,
+what to supply, and the two docs pages, with no stack frame — the refusal
+itself untouched (`git diff` over `DataPrismAutoConfiguration.java`,
+`DataPrismProperties.java` and `DataPrismContractValidator.java` is empty).
+Verified on the real packaged jar: exit 1, operator block present, zero
+stack frames.
+
+Task 55 (publish the quickstart images so `compose.yaml` can pull them) is
+verified PASS/APPROVE but deliberately **not merged** — see `PLAN.md`,
+"Held: task 55", for why.
+
+**Cost:** task 56's first attempt failed verification outright, and the
+failure mode is the lesson: it was tested only against stub HTTP servers
+returning plain JSON, but the real MCP server returns SSE-framed
+`tools/call` bodies, so the demo never worked against the real stack it was
+built to demonstrate — a stub standing in for the real transport hid a
+total failure of the task's central claim. It also had a `set -euo
+pipefail` bug where the one-line failure reason was unreachable on the
+commonest failure (issuer down). Attempt 2 fixed both and was verified
+against a live Compose stack, not a stub. Task 53's review also caught a
+guardrail evasion worth naming honestly: the new resolver bean sits on a
+nested `@Import`ed static configuration class, which keeps it outside
+`AutoConfiguredBeanClassificationTest`'s reflection sweep over
+`DataPrismAutoConfiguration.class.getDeclaredMethods()` — acceptable on that
+branch only because its `Owns` list forbade editing
+`PrivacyExtensionPoints.java`, and not acceptable to leave; see PLAN.md's
+open item for the two-part fix required. Task 54's own summary described
+the base-url relaxation as guarantee-preserving, which review judged
+stronger than warranted: `dataprism.sources` was also the operator's
+allow-list, and any `DataSourceAdapter` bean on the classpath is now
+implicitly approved without appearing anywhere an operator reviewed — not
+a fail-closed breach, but a real weakening, with a narrow fix scheduled
+rather than done here.
+
+
 
 `README.md` had said "Until Task 20 delivers…" the configuration-driven
 JSON REST mode since before that task shipped, and it cost readers real
