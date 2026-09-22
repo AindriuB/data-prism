@@ -1,15 +1,26 @@
 # Extending Data Prism: writing a reviewed adapter
 
-This is the path a consumer walks to point Data Prism at their own API: write
-a `DataSourceAdapter`, write (or reuse) an `IdentityResolver`, classify the
-response model with `@LlmExposedModel`, shape the pom, register the
-extension, load it into the server, and configure it. It assumes nothing
+If your source is a flat JSON REST API — one JSON object per response, no
+nested objects — you almost certainly do not need this guide. Read
+[`docs/protect-your-own-api.md`](protect-your-own-api.md) instead: a
+YAML-only walkthrough that protects such a source with no Java class, no
+`pom.xml`, and no `META-INF` registration step, using the same
+`data-prism-connectors-rest` configuration-driven JSON REST mode summarised
+below.
+
+This guide is for the three cases that YAML-only path cannot cover: a
+response that nests objects, custom fetch logic beyond a single templated
+`GET`, or a model no flat allowlisted catalogue can express. For any of
+those, this is the path a consumer walks to point Data Prism at their own
+API: write a `DataSourceAdapter`, write (or reuse) an `IdentityResolver`,
+classify the response model with `@LlmExposedModel`, shape the pom, register
+the extension, load it into the server, and configure it. It assumes nothing
 about this codebase beyond what `README.md` already says: Data Prism is a
 privacy layer between MCP clients and your API, and it never exposes a field
 nobody classified.
 
-This is not the only way to protect a source. A configuration-driven JSON
-REST mode is real and already shipped, as a normal published artifact,
+The configuration-driven JSON REST mode `docs/protect-your-own-api.md` walks
+through is real and already shipped, as a normal published artifact,
 `data-prism-connectors-rest` — no annotated Java model, no `pom.xml`, no
 compiled adapter class. An operator loads that jar the same way as any
 reviewed extension (`-Dloader.path`) and writes a YAML catalogue instead:
@@ -33,8 +44,10 @@ If your source's response nests objects, needs custom fetch logic beyond a
 single templated `GET`, or needs a model no flat catalogue can express, that
 limit is why this guide exists: the Java-first path below has no such
 ceiling. Configuration for the JSON REST mode is not covered further here —
-see [`docs/configuration.md`](configuration.md) — because this guide is
-about the path that requires writing code.
+see [`docs/protect-your-own-api.md`](protect-your-own-api.md) for the
+worked walkthrough and [`docs/configuration.md`](configuration.md) for its
+full configuration vocabulary — because this guide is about the path that
+requires writing code.
 
 The worked example this guide cites throughout is
 `data-prism-quickstart-extension`, a real module in this repository that CI

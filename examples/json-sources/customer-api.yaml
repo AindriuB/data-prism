@@ -1,0 +1,77 @@
+# A commented template for `data-prism-connectors-rest`'s configuration-driven
+# JSON REST mode: point Data Prism at your own flat JSON REST API with YAML
+# only, no Java class and no `META-INF` registration. Walked through end to
+# end, against exactly this file, in `docs/protect-your-own-api.md`.
+#
+# This mode only covers a source whose response is one flat JSON object:
+# scalar fields, or arrays of them, but no nested objects. If your response
+# nests objects, needs custom fetch logic beyond a single templated GET, or
+# needs a model this flat catalogue cannot express, see `docs/extending.md`
+# instead.
+#
+# Every host below is a loopback fixture (`data-prism-quickstart-fixtures`,
+# already built by this repository's own `mvn package`), not a real one:
+# swap `base-url` for your own API's real address and adjust `fields:` to
+# your own response shape; nothing else about this file's structure changes.
+
+json-sources:
+
+  # The name this source is addressed by. Free text; it never has to match
+  # anything in `dataprism.sources` (task 54 removed that duplication — see
+  # docs/protect-your-own-api.md).
+  customer-api:
+
+    # base-url + path + timeout: the transport, identical in kind to a
+    # Java-first source's. `path` is a fixed template with exactly one
+    # `{subject}` segment, filled in with the subject id an MCP caller asked
+    # for. `timeout` is never defaulted in this mode — it must be stated
+    # explicitly, as an ISO-8601 duration.
+    base-url: https://127.0.0.1:8543
+    path: /customers/{subject}
+    timeout: PT5S
+
+    # An explicit, non-blank tag you commit to, reviewed alongside the
+    # `fields:` catalogue below. It is a deployment-time contract, not a
+    # runtime check against the response body: a REST API rarely states its
+    # own schema version on every payload.
+    model-version: customer-v1
+
+    # The response field carrying this source's own correlation id — a bare
+    # property name, no dots, no scheme, no query. It must name an entry in
+    # `fields:` below marked `identifier: true`.
+    subject-json-path: customerId
+
+    # The allowlisted field classification catalogue, keyed by exact JSON
+    # property name. Every field this source may ever emit — including its
+    # subject field — must be named here with exactly one of `identifier:
+    # true`, `nonSensitive: <reason>`, or `classifications` (with optional
+    # `namespace` and `action`). A property present in a response but absent
+    # from this map is refused before it reaches the scrubbing engine.
+    fields:
+
+      # The subject field named above. Never emitted in the response.
+      customerId:
+        identifier: true
+
+      # A classified field: `classifications` says what kind of data it is,
+      # `namespace` is what makes the same person's name synthesize to the
+      # same value across sources, and `action` is what happens to it on the
+      # way to the model. See docs/configuration.md for the full
+      # classification/namespace/action vocabulary.
+      customerName:
+        classifications: [PII]
+        namespace: PERSON_NAME
+        action: SYNTHESIZE
+
+      # Redacted outright rather than synthesized: the field stays, a fixed
+      # marker replaces its value.
+      email:
+        classifications: [CONTACT]
+        namespace: EMAIL
+        action: REDACT
+
+      # `nonSensitive` asserts a field is safe to emit unchanged and requires
+      # a reason — that string is the review artefact; "not sensitive" is not
+      # a reason.
+      status:
+        nonSensitive: "enumerated lifecycle state"
