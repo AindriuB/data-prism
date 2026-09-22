@@ -360,7 +360,8 @@ the `PERSON_NAME` namespace (the catalogue's own `namespace:` above), `email`
 is redacted outright per its `action: REDACT`, and `status` passes through
 unchanged because the catalogue marked it `nonSensitive`. The subject itself
 (`SUBJ-3WR4`) is a pseudonym too, not `1001`. This ran with
-`-Dloader.path=data-prism-connectors-rest-0.2.0.jar` alone — no second jar,
+`-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar`
+alone — no second jar,
 no custom extension, no `IdentityResolver` bean compiled anywhere — and
 against the catalogue exactly as it is committed in
 `examples/json-sources/customer-api.yaml`, comments included: the transport
