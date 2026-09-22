@@ -1,7 +1,7 @@
 # 59 — Give the demo an exit ramp and bring the reference docs up to the new path
 
 **Repo:** .
-**Depends on:** 53, 54, 55, 56
+**Depends on:** 53, 54, 55, 56, 71
 **Owns:**
 - docs/quickstart.md
 - docs/configuration.md
@@ -33,6 +33,12 @@ configured source's transport, and the published evaluation issuer image.
 - [ ] `docs/quickstart.md` states the `docker compose up` (pull) default and the
       from-source override command exactly as task 55 landed them, and the stated
       command was run.
+- [ ] The two stale pseudonym literals in `docs/quickstart.md` — `SUBJ-AE9Y` at :146
+      and `Rowan Okafor (2TV5)` at :150 — are refreshed to the eight-character forms
+      task 71 produces. The replacements are pasted from a real run against the built
+      artifact, not hand-edited: an invented pseudonym is worse than a stale one,
+      because nothing can falsify it. (Task 71 widens the discriminator, so the correct
+      values do not exist until it lands — hence the dependency.)
 - [ ] `docs/configuration.md` documents `dataprism.identity.resolver`, including the
       accepted values, the `UNSUPPORTED_IDENTITY_RESOLVER` refusal, and that absence
       still yields `MISSING_IDENTITY_RESOLVER`.
