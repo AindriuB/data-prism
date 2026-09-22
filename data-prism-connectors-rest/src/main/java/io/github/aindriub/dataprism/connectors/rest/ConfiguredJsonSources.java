@@ -14,7 +14,9 @@ import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,11 +53,22 @@ public final class ConfiguredJsonSources {
     private static final Pattern FIELD_NAME = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]*$");
 
     private static final Set<String> SOURCE_KEYS =
-            Set.of("base-url", "path", "timeout", "model-version", "subject-json-path", "fields");
+            Set.of("base-url", "path", "timeout", "model-version", "subject-json-path", "fields",
+                    "nested-catalogues");
     private static final Set<String> IDENTIFIER_FIELD_KEYS = Set.of("identifier");
     private static final Set<String> NON_SENSITIVE_FIELD_KEYS = Set.of("nonSensitive");
     private static final Set<String> SENSITIVE_FIELD_KEYS =
             Set.of("classifications", "namespace", "action");
+    private static final Set<String> NESTED_FIELD_KEYS = Set.of("nested");
+
+    /**
+     * The fixed prefix a {@code nested:} field's {@code FieldMetadata.nonSensitiveReason()}
+     * always carries, followed by the catalogue's own name. {@link
+     * ConfiguredJsonFieldMetadataResolver} reads this back to rebuild its
+     * {@code Class}-token index without {@link ConfiguredJsonSource} needing a
+     * second public component to carry that index.
+     */
+    static final String NESTED_FIELD_REASON_PREFIX = "nested catalogue ";
 
     // Reuses RestSources.YAML rather than constructing a second ObjectMapper:
     // see that field's Javadoc.
@@ -167,6 +180,9 @@ public final class ConfiguredJsonSources {
                     + " field name, never a host, a query, a nested path or an expression");
         }
 
+        Map<String, Map<String, FieldMetadata>> nestedCatalogues =
+                nestedCatalogues(name, body.get("nested-catalogues"));
+
         Object fieldsNode = body.get("fields");
         if (!(fieldsNode instanceof Map<?, ?> fieldsMap) || fieldsMap.isEmpty()) {
             throw new IllegalArgumentException("json source " + name + " has no fields catalogue;"
@@ -174,6 +190,7 @@ public final class ConfiguredJsonSources {
                     + " must be named here");
         }
 
+        Set<String> referencedNestedCatalogues = new LinkedHashSet<>();
         Map<String, FieldMetadata> fields = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : fieldsMap.entrySet()) {
             String fieldName = String.valueOf(entry.getKey());
@@ -185,23 +202,180 @@ public final class ConfiguredJsonSources {
                 throw new IllegalArgumentException(
                         "json source " + name + " field " + fieldName + " is not a mapping");
             }
-            fields.put(fieldName, field(name, fieldName, (Map<String, Object>) fieldBody));
+            fields.put(fieldName, field(name, fieldName, (Map<String, Object>) fieldBody, true,
+                    nestedCatalogues.keySet(), referencedNestedCatalogues));
         }
 
-        return new ConfiguredJsonSource(transport, modelVersion, subjectJsonPath, fields);
+        for (String catalogueName : nestedCatalogues.keySet()) {
+            if (!referencedNestedCatalogues.contains(catalogueName)) {
+                throw new IllegalArgumentException("json source " + name + " nested catalogue '"
+                        + catalogueName + "' is declared but referenced by no field's `nested:`");
+            }
+        }
+
+        // Tokens are assigned last, only once every field -- root and nested --
+        // has already passed every other shape and reference check. A config
+        // that is going to be refused never reaches here, so a rejected config
+        // never consumes a pool slot for a catalogue it would not have kept.
+        fields = assignNestedTokens(name, fields, nestedCatalogues);
+
+        return new ConfiguredJsonSource(transport, modelVersion, subjectJsonPath, fields, nestedCatalogues);
     }
 
-    private static FieldMetadata field(String sourceName, String fieldName, Map<String, Object> body) {
+    /**
+     * Replaces each nested-pointing root field's placeholder {@code
+     * FieldMetadata} with one carrying a real token from {@link
+     * ConfiguredJsonNestedCatalogueTokens}, one per declared catalogue name.
+     *
+     * <p>Ordinals are assigned over the catalogue names sorted into natural
+     * ({@code String}) order, never over {@code nestedCatalogues.keySet()}
+     * itself: that map is built via {@code Map.copyOf}, whose iteration order
+     * is randomised per JVM run (a fresh salt is drawn once per process to
+     * resist hash-flooding, see {@code java.util.ImmutableCollections}). Two
+     * runs of the identical YAML would otherwise mint the same catalogue a
+     * different ordinal, and therefore a different, operator-visible slot
+     * name, in different runs. Sorting the name list makes the assignment a
+     * pure function of the declared name set alone, independent of both
+     * declaration order and map iteration order, so it really is identical
+     * across runs.
+     */
+    private static Map<String, FieldMetadata> assignNestedTokens(String sourceName,
+            Map<String, FieldMetadata> fields, Map<String, Map<String, FieldMetadata>> nestedCatalogues) {
+        if (nestedCatalogues.isEmpty()) {
+            return fields;
+        }
+        List<String> sortedCatalogueNames = new ArrayList<>(nestedCatalogues.keySet());
+        sortedCatalogueNames.sort(Comparator.naturalOrder());
+
+        Map<String, Class<?>> tokenByCatalogueName = new LinkedHashMap<>();
+        int ordinal = 0;
+        for (String catalogueName : sortedCatalogueNames) {
+            tokenByCatalogueName.put(catalogueName, ConfiguredJsonNestedCatalogueTokens.mint(sourceName, ordinal));
+            ordinal++;
+        }
+
+        Map<String, FieldMetadata> out = new LinkedHashMap<>();
+        for (Map.Entry<String, FieldMetadata> entry : fields.entrySet()) {
+            FieldMetadata md = entry.getValue();
+            String reason = md.nonSensitiveReason();
+            if (reason != null && reason.startsWith(NESTED_FIELD_REASON_PREFIX)) {
+                String catalogueName = reason.substring(NESTED_FIELD_REASON_PREFIX.length());
+                Class<?> token = tokenByCatalogueName.get(catalogueName);
+                md = new FieldMetadata(md.fieldName(), false, null, List.of(), PrivacyNamespace.NONE,
+                        null, "", reason, token, token);
+            }
+            out.put(entry.getKey(), md);
+        }
+        return out;
+    }
+
+    /**
+     * Parses the top-level {@code nested-catalogues:} map, if the source
+     * declares one. Each entry is itself a flat {@code fields:}-shaped
+     * catalogue using the existing three leaf shapes; {@code nested:} and
+     * {@code identifier: true} are refused inside one, since nesting is
+     * exactly one level deep and a nested catalogue carries no identifier of
+     * its own. Mints no tokens: that happens once every field in this source
+     * has been validated, see {@link #assignNestedTokens}.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Map<String, FieldMetadata>> nestedCatalogues(String sourceName, Object rawNode) {
+        if (rawNode == null) {
+            return Map.of();
+        }
+        if (!(rawNode instanceof Map<?, ?> raw)) {
+            throw new IllegalArgumentException("json source " + sourceName + " nested-catalogues is not a mapping");
+        }
+        Map<String, Map<String, FieldMetadata>> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : raw.entrySet()) {
+            String catalogueName = String.valueOf(entry.getKey());
+            if (!FIELD_NAME.matcher(catalogueName).matches()) {
+                throw new IllegalArgumentException("json source " + sourceName + " nested catalogue name '"
+                        + catalogueName + "' is not a bare property name");
+            }
+            if (!(entry.getValue() instanceof Map<?, ?> catalogueMap) || catalogueMap.isEmpty()) {
+                throw new IllegalArgumentException("json source " + sourceName + " nested catalogue '"
+                        + catalogueName + "' has no fields; every property it may ever carry must be named here");
+            }
+
+            Map<String, FieldMetadata> catalogueFields = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> fieldEntry : catalogueMap.entrySet()) {
+                String fieldName = String.valueOf(fieldEntry.getKey());
+                if (!FIELD_NAME.matcher(fieldName).matches()) {
+                    throw new IllegalArgumentException("json source " + sourceName + " nested catalogue '"
+                            + catalogueName + "' field '" + fieldName + "' is not a bare property name");
+                }
+                if (!(fieldEntry.getValue() instanceof Map<?, ?> fieldBody)) {
+                    throw new IllegalArgumentException("json source " + sourceName + " nested catalogue '"
+                            + catalogueName + "' field " + fieldName + " is not a mapping");
+                }
+                catalogueFields.put(fieldName,
+                        field(sourceName, fieldName, (Map<String, Object>) fieldBody, false, null, null));
+            }
+
+            out.put(catalogueName, Map.copyOf(catalogueFields));
+        }
+        return Map.copyOf(out);
+    }
+
+    /**
+     * @param topLevel   whether this field is being parsed as part of a
+     *                   source's root {@code fields:} catalogue (where {@code
+     *                   nested:} and {@code identifier: true} are legal) or
+     *                   as part of a nested catalogue's own entries (where
+     *                   neither is, since nesting goes exactly one level and
+     *                   a nested catalogue has no identifier of its own)
+     * @param declaredNestedCatalogueNames only consulted when {@code
+     *                   topLevel}; the set of names legally usable after
+     *                   {@code nested:} for this source
+     * @param referencedNestedCatalogues only consulted when {@code
+     *                   topLevel}; a {@code nested:} field records its
+     *                   catalogue name here, so the caller can refuse a
+     *                   catalogue declared but never referenced
+     */
+    private static FieldMetadata field(String sourceName, String fieldName, Map<String, Object> body,
+                                       boolean topLevel, Set<String> declaredNestedCatalogueNames,
+                                       Set<String> referencedNestedCatalogues) {
         String where = "json source " + sourceName + " field " + fieldName;
         boolean identifier = body.containsKey("identifier");
         boolean nonSensitive = body.containsKey("nonSensitive");
         boolean sensitive = body.containsKey("classifications") || body.containsKey("namespace")
                 || body.containsKey("action");
+        boolean nested = body.containsKey("nested");
 
-        if ((identifier ? 1 : 0) + (nonSensitive ? 1 : 0) + (sensitive ? 1 : 0) != 1) {
+        if (nested && !topLevel) {
+            throw new IllegalArgumentException(where + " states `nested:` inside a nested catalogue;"
+                    + " nesting is exactly one level deep, so a nested catalogue's own entries must be scalar");
+        }
+        if (identifier && !topLevel) {
+            throw new IllegalArgumentException(where
+                    + " marks identifier: true inside a nested catalogue; a nested catalogue carries"
+                    + " no identifier of its own, and inherits its subject from the enclosing record");
+        }
+
+        if ((identifier ? 1 : 0) + (nonSensitive ? 1 : 0) + (sensitive ? 1 : 0) + (nested ? 1 : 0) != 1) {
             throw new IllegalArgumentException(where + " must state exactly one of:"
                     + " `identifier: true`, `nonSensitive: <reason>`,"
-                    + " or classifications (with optional namespace/action)");
+                    + " classifications (with optional namespace/action), or `nested: <name>`");
+        }
+
+        if (nested) {
+            rejectUnknownKeys(body.keySet(), NESTED_FIELD_KEYS, where);
+            String catalogueName = String.valueOf(body.get("nested"));
+            if (!FIELD_NAME.matcher(catalogueName).matches()) {
+                throw new IllegalArgumentException(where + " nested catalogue name '" + catalogueName
+                        + "' is not a bare property name");
+            }
+            if (!declaredNestedCatalogueNames.contains(catalogueName)) {
+                throw new IllegalArgumentException(where + " nested: '" + catalogueName
+                        + "' does not name an entry declared under this source's nested-catalogues");
+            }
+            referencedNestedCatalogues.add(catalogueName);
+            // No token yet: minted only once every field in this source has been
+            // validated (see assignNestedTokens). This placeholder is patched with
+            // the real token before ConfiguredJsonSource is ever constructed.
+            return new FieldMetadata(fieldName, false, null, List.of(), PrivacyNamespace.NONE, null, "",
+                    NESTED_FIELD_REASON_PREFIX + catalogueName, null, null);
         }
 
         if (identifier) {
@@ -219,6 +393,19 @@ public final class ConfiguredJsonSources {
             String reason = String.valueOf(body.get("nonSensitive"));
             if (reason.isBlank()) {
                 throw new IllegalArgumentException(where + " has a blank nonSensitive reason");
+            }
+            if (reason.startsWith(NESTED_FIELD_REASON_PREFIX)) {
+                // Reserved: ConfiguredJsonFieldMetadataResolver rebuilds its
+                // Class-token index by recognising this exact prefix on a
+                // `nested:` field's own nonSensitiveReason (see
+                // buildNestedByToken). If an operator's own reason happened to
+                // start with it, this plain scalar field would be silently
+                // treated as a nested-catalogue pointer and become descendable,
+                // producing an undiagnosable refusal when the wire carries a
+                // scalar there. Refuse it at startup instead, naming the field.
+                throw new IllegalArgumentException(where + " has a nonSensitive reason '" + reason
+                        + "' that begins with the reserved marker '" + NESTED_FIELD_REASON_PREFIX
+                        + "'; choose a different reason so this field cannot be mistaken for a `nested:` pointer");
             }
             return new FieldMetadata(fieldName, false, null, List.of(), PrivacyNamespace.NONE,
                     null, "", reason, String.class, null);
