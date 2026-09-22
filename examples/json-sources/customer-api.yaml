@@ -54,7 +54,7 @@ json-sources:
         identifier: true
 
       # A classified field: `classifications` says what kind of data it is,
-      # `namespace` is what makes the same person's name synthesize to the
+      # `namespace` is what makes the same person's name synthesise to the
       # same value across sources, and `action` is what happens to it on the
       # way to the model. See docs/configuration.md for the full
       # classification/namespace/action vocabulary.
@@ -63,7 +63,7 @@ json-sources:
         namespace: PERSON_NAME
         action: SYNTHESIZE
 
-      # Redacted outright rather than synthesized: the field stays, a fixed
+      # Redacted outright rather than synthesised: the field stays, a fixed
       # marker replaces its value.
       email:
         classifications: [CONTACT]

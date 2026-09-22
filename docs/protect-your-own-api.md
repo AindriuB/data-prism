@@ -35,6 +35,9 @@ destination, without writing code.
   `data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar`),
   which is exactly the artifact Maven Central serves under the same
   coordinates and version — nothing here is specific to a from-source build.
+  "Build the jars, then start the two fixtures" below gives the exact build
+  command; every path in this walkthrough is relative to the repository
+  root, and every command below is run from there.
 - Your own flat JSON REST API. This walkthrough stands in
   `data-prism-quickstart-fixtures` for it — a real, already-built HTTPS
   service in this repository with a `/customers/{id}` endpoint and two
@@ -48,6 +51,89 @@ destination, without writing code.
   `dataprism.security.jwt.jwk-set-uri` at its own identity provider instead —
   see `docs/configuration.md`; nothing about the JSON REST connector changes
   that.
+
+## Build the jars, then start the two fixtures
+
+Everything below is run from the repository root. Build the jars for the
+server, the connector, and the two fixtures this walkthrough stands in your
+own API and identity provider for, once:
+
+```sh
+mvn -q -DskipTests package
+```
+
+Both fixtures speak TLS only — the standalone server refuses a plaintext
+`http://` source `base-url` and a plaintext `http://` JWKS location outright
+(task 21), fixture or not — so this walkthrough needs one throwaway,
+self-signed keystore and a matching truststore before either process starts.
+These are the same three `keytool` invocations `QuickstartSmokeIT`
+(`data-prism-quickstart-extension`) and `docker/certs-init/generate-certs.sh`
+both run, adapted to loopback-only use here:
+
+```sh
+keytool -genkeypair -alias walkthrough -keyalg RSA -keysize 2048 -validity 2 \
+  -keystore walkthrough.p12 -storetype PKCS12 \
+  -storepass walkthrough-demo-only -keypass walkthrough-demo-only \
+  -dname "CN=data-prism-walkthrough" \
+  -ext "san=ip:127.0.0.1,dns:localhost"
+
+keytool -exportcert -alias walkthrough -keystore walkthrough.p12 \
+  -storetype PKCS12 -storepass walkthrough-demo-only -file walkthrough.cer
+
+keytool -importcert -alias walkthrough -file walkthrough.cer \
+  -keystore walkthrough-trust.p12 -storetype PKCS12 \
+  -storepass walkthrough-demo-only -noprompt
+```
+
+`walkthrough.p12` is the keystore the two fixtures serve HTTPS from;
+`walkthrough-trust.p12` is the truststore the server trusts it with below.
+Neither is committed or reused anywhere else — delete all three generated
+files (`walkthrough.p12`, `walkthrough.cer`, `walkthrough-trust.p12`) once
+you are done with this walkthrough.
+
+Start `data-prism-quickstart-fixtures` — the flat JSON REST API this
+walkthrough stands in for your own — on port 8543:
+
+```sh
+java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.2.0.jar \
+  --server.port=8543 \
+  --server.ssl.key-store=file:walkthrough.p12 \
+  --server.ssl.key-store-password=walkthrough-demo-only \
+  --server.ssl.key-store-type=PKCS12 \
+  --server.ssl.key-alias=walkthrough
+```
+
+```sh
+curl -sk https://127.0.0.1:8543/health
+```
+
+```json
+{"status":"UP"}
+```
+
+Start `data-prism-quickstart-issuer` — the JWT issuer this walkthrough mints
+tokens from — on port 8544, in a second terminal:
+
+```sh
+java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.2.0.jar \
+  --server.port=8544 \
+  --server.ssl.key-store=file:walkthrough.p12 \
+  --server.ssl.key-store-password=walkthrough-demo-only \
+  --server.ssl.key-store-type=PKCS12 \
+  --server.ssl.key-alias=walkthrough \
+  --quickstart.issuer.issuer-id=https://issuer.walkthrough.invalid \
+  --quickstart.issuer.audience=data-prism-walkthrough
+```
+
+```sh
+curl -sk https://127.0.0.1:8544/health
+```
+
+```json
+{"status":"UP"}
+```
+
+Leave both running for the rest of this walkthrough.
 
 ## The catalogue
 
@@ -99,7 +185,7 @@ classpath, the same mechanism any reviewed adapter extension uses (see
 the one property this mode reads:
 
 ```sh
--Dloader.path=data-prism-connectors-rest-0.2.0.jar
+-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar
 -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml
 ```
 
@@ -125,24 +211,51 @@ this either:
 This is an explicit opt-in, not a default: omit it and startup refuses with
 `MISSING_IDENTITY_RESOLVER`. Name anything other than `pass-through` and it
 refuses with `UNSUPPORTED_IDENTITY_RESOLVER` rather than falling back
-silently. Both are proven below, not just asserted. If your sources disagree
-about identity — different customer numbers across systems, a probabilistic
-match — this property cannot express that; you still need a real
-`IdentityResolver` and the Java path in `docs/extending.md`.
+silently. Both are proven below, not just asserted. `pass-through` means the
+source's own record key — here, `customerId`, the field `subject-json-path`
+names above — *is* the canonical subject id, used as-is, with no lookup or
+matching step in between. If your sources disagree about identity —
+different customer numbers across systems, a probabilistic match — this
+property cannot express that; you still need a real `IdentityResolver` and
+the Java path in `docs/extending.md`.
 
 **PROOF: omitting the property refuses startup.** The same server command as
 below (see "Run it"), with `--dataprism.identity.resolver=pass-through`
 deleted and nothing else changed:
 
 ```
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Data Prism refused to start: a required piece of deployment configuration is missing, invalid, or unsafe.
+
 Refusal: DataPrismConfigurationException: MISSING_IDENTITY_RESOLVER
+
+Action:
+
+Supply the configuration this refusal names. See the deployment contract in docs/configuration.md for what `MISSING_IDENTITY_RESOLVER` requires, and docs/quickstart.md for a runnable, fully-configured demo to compare against.
 ```
 
 **PROOF: an unrecognised value refuses startup.** The same command with
 `--dataprism.identity.resolver=probabilistic-match` instead:
 
 ```
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Data Prism refused to start: a required piece of deployment configuration is missing, invalid, or unsafe.
+
 Refusal: DataPrismConfigurationException: UNSUPPORTED_IDENTITY_RESOLVER
+
+Action:
+
+Supply the configuration this refusal names. See the deployment contract in docs/configuration.md for what `UNSUPPORTED_IDENTITY_RESOLVER` requires, and docs/quickstart.md for a runnable, fully-configured demo to compare against.
 ```
 
 ## Run it
@@ -158,12 +271,12 @@ the JVM's own trust store system properties.
 export DATAPRISM_WALKTHROUGH_HMAC_KEY=walkthrough-demo-hmac-key-material-32-bytes-plus
 
 java \
-  -Djavax.net.ssl.trustStore=walkthrough.p12 \
+  -Djavax.net.ssl.trustStore=walkthrough-trust.p12 \
   -Djavax.net.ssl.trustStorePassword=walkthrough-demo-only \
   -Djavax.net.ssl.trustStoreType=PKCS12 \
-  -Dloader.path=data-prism-connectors-rest-0.2.0.jar \
+  -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar \
   -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml \
-  -jar data-prism-server-0.2.0.jar \
+  -jar data-prism-server/target/data-prism-server-0.2.0.jar \
   --server.port=8080 \
   --dataprism.identity.resolver=pass-through \
   --dataprism.security.jwt.issuer=https://issuer.walkthrough.invalid \
@@ -231,10 +344,15 @@ curl -s -X POST http://127.0.0.1:8080/mcp \
 
 The fixture API's own record for subject `1001` (see its `CustomerController`)
 has real name `Fixture Person One` and real email
-`fixture.person.one@example.invalid`. What actually came back:
+`fixture.person.one@example.invalid`. The `tools/call` curl above sends
+`Accept: text/event-stream`, so what actually came back is SSE-framed, not
+bare JSON — one `id:`/`event:`/`data:` frame, the JSON-RPC response inside
+`data:`:
 
-```json
-{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-3WR4\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":\"ANSWERED\"},\"findings\":[],\"entity\":{\"customerName\":\"Casey Okafor (5K38)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-3WR4","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":"ANSWERED"},"findings":[],"entity":{"customerName":"Casey Okafor (5K38)","email":"[REDACTED]","status":"ACTIVE"}}}}
+```
+id: 6967a06e-8550-4d0c-88e7-f1879e688c19
+event: message
+data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-3WR4\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":\"ANSWERED\"},\"findings\":[],\"entity\":{\"customerName\":\"Casey Okafor (5K38)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-3WR4","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":"ANSWERED"},"findings":[],"entity":{"customerName":"Casey Okafor (5K38)","email":"[REDACTED]","status":"ACTIVE"}}}}
 ```
 
 Neither raw value appears. `customerName` is a stable synthetic substitute in
@@ -272,18 +390,20 @@ Every code fence above was executed, not transcribed:
 
 | What it shows | Command that produced it |
 |---|---|
-| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=... -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server-0.2.0.jar ...` (server log, "Started DataPrismServerApplication") |
+| The two fixtures' health checks | `curl -sk https://127.0.0.1:8543/health` and `curl -sk https://127.0.0.1:8544/health`, against processes started with the `java -jar data-prism-quickstart-fixtures/...`/`data-prism-quickstart-issuer/...` commands in "Build the jars, then start the two fixtures" |
+| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server/target/data-prism-server-0.2.0.jar ...` (server log, "Started DataPrismServerApplication") |
 | `GET /health` | `curl -s http://127.0.0.1:8080/health` |
 | `MISSING_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=pass-through` removed |
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |
-| The pseudonymised `get_entity_context` response | the `initialize` / `notifications/initialized` / `tools/call` sequence in "Get a token and call it", run against a token freshly minted by `curl -sk -X POST https://127.0.0.1:8544/token` |
+| The pseudonymised `get_entity_context` response, SSE frame included | the `initialize` / `notifications/initialized` / `tools/call` sequence in "Get a token and call it", run against a token freshly minted by `curl -sk -X POST https://127.0.0.1:8544/token` |
 | The missing-`timeout` refusal | the same server command, catalogue copy with `timeout:` deleted |
 
 `walkthrough.p12`/`walkthrough-trust.p12` above are a throwaway self-signed
-keystore and truststore generated with `keytool -genkeypair`/`-exportcert`/
-`-importcert` the same way `QuickstartSmokeIT`
-(`data-prism-quickstart-extension`) generates its own — never committed,
-never reused. `data-prism-quickstart-fixtures` and `data-prism-quickstart-issuer`
+keystore and truststore generated with the `keytool -genkeypair`/`-exportcert`/
+`-importcert` commands in "Build the jars, then start the two fixtures" — the
+same three invocations `QuickstartSmokeIT` (`data-prism-quickstart-extension`)
+and `docker/certs-init/generate-certs.sh` both run — never committed, never
+reused. `data-prism-quickstart-fixtures` and `data-prism-quickstart-issuer`
 were started as plain `java -jar` processes on `127.0.0.1`, standing in for
 your own API and your own identity provider respectively; nothing about the
 JSON REST connector itself depends on either being a Data Prism fixture
