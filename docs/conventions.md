@@ -104,9 +104,21 @@ No sleeps, no wall-clock dependence, no test that passes on a second run because
 of state the first run left. Anything time-dependent takes an injected `Clock`.
 
 Determinism tests are load-bearing and cannot be quarantined. The golden-vector
-file pinning algorithm v1 outputs is checked in; a diff that edits it must say in
-its commit body why the algorithm version changed, and a diff that edits it
-without bumping the version is a finding.
+file pinning algorithm v1 outputs is checked in; a diff that edits it must say
+in its commit body why the algorithm version changed, and a diff that edits it
+without bumping the version is a finding. The one exception is an owner
+decision to hold the version at its current number anyway, and that decision
+cannot live in the commit body — a commit asserting its own exception is not
+an exception, it is the diff excusing itself. The decision must be recorded
+outside the diff first, as a dated entry in `docs/plan/PLAN.md` or
+`docs/plan/HISTORY.md`, and that entry must say plainly what holding the
+version costs: every pseudonym issued before the change will no longer
+reproduce, which is exactly what the version exists to identify. The commit
+body then cites that entry by reference in place of a version bump — it does
+not repeat the reasoning, it points at where the reasoning was already
+settled. A diff that edits the golden vectors without bumping the version and
+without citing such an entry is a finding, the same as one that bumps the
+version for no stated reason.
 
 Leak tests assert on absence, which is easy to write vacuously. Every leak test
 is accompanied by a mutation proving it non-vacuous — remove the annotation, or
