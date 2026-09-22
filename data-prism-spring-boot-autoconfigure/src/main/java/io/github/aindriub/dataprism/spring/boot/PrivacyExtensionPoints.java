@@ -68,7 +68,8 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismHttpTransportValidated", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismHttpTransport", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpSyncServer", Classification.REPLACEABLE, Guard.NONE),
-            entry("dataPrismMcpServlet", Classification.REPLACEABLE, Guard.NONE));
+            entry("dataPrismMcpServlet", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismPassThroughIdentityResolver", Classification.REPLACEABLE, Guard.NONE));
 
     /** @throws IllegalStateException if {@code beanMethodName} has no checked-in row. */
     public static BeanContract contractOf(String beanMethodName) {
