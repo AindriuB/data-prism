@@ -49,7 +49,7 @@ public final class AuditRecordFormat {
     public static String serialize(AuditEvent event) {
         StringBuilder line = new StringBuilder();
         appendField(line, event.eventId());
-        appendField(line, event.timestamp().toString());
+        appendField(line, event.timestamp() == null ? null : event.timestamp().toString());
         appendField(line, event.principalId());
         appendField(line, event.clientId());
         appendField(line, event.tool());
