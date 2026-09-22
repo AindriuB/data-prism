@@ -25,8 +25,14 @@ final class DataPrismContractValidator implements InitializingBean {
         if (properties.getTransport().isFixtureDevelopment()
                 && properties.getTransport().getMode() == DataPrismProperties.Transport.Mode.STDIO) return;
         Set<String> configured=properties.getSources().keySet(); Set<String> supplied=adapterList.stream().map(DataSourceAdapter::sourceName).collect(Collectors.toSet());
-        if(configured.isEmpty()) throw new DataPrismConfigurationException("MISSING_SOURCE_ADAPTER","dataprism.sources must name at least one reviewed adapter");
-        if(!configured.equals(supplied)) throw new DataPrismConfigurationException("UNRESOLVED_SOURCE_ADAPTER","configured sources and DataSourceAdapter beans differ");
+        // A configured JSON source (io.github.aindriub.dataprism.connectors.rest)
+        // registers a DataSourceAdapter bean with no matching dataprism.sources
+        // entry at all -- its transport lives solely in its own catalogue, not
+        // here -- so `supplied` legitimately outgrows `configured`. Only the other
+        // direction is still a contract violation: an operator naming a source
+        // under dataprism.sources for which no adapter bean actually exists.
+        if(configured.isEmpty() && supplied.isEmpty()) throw new DataPrismConfigurationException("MISSING_SOURCE_ADAPTER","dataprism.sources must name at least one reviewed adapter, or a configured JSON source must supply one");
+        if(!supplied.containsAll(configured)) throw new DataPrismConfigurationException("UNRESOLVED_SOURCE_ADAPTER","configured sources and DataSourceAdapter beans differ");
         if(identities.getIfAvailable()==null) throw new DataPrismConfigurationException("MISSING_IDENTITY_RESOLVER","provide an IdentityResolver bean");
         if(keys.getIfAvailable()==null) throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER","provide an HmacKeyReferenceResolver bean for the configured reference");
         if(audit.getIfAvailable()==null) throw new DataPrismConfigurationException("MISSING_AUDIT_SINK","provide an AuditSink bean");

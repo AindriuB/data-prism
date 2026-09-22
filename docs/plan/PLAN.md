@@ -565,6 +565,183 @@ up only as its own planned work.
   clients (any other MCP-capable agent) are unverified territory — nothing
   claims they work, but nothing has checked either.
 
+### Wave 1 (tasks 53, 54, 56, 57) — done. Task 55 verified but held.
+
+Opened from a measured UX review 2026-09-21: the Compose quickstart demos
+well but onboards nobody, since `QuickstartCustomerAdapter` hardcodes
+`SOURCE_NAME="customer"` and `CustomerModel.class` into the image, and the
+configuration-driven REST connector (task 20) had no `IdentityResolver`
+supplied anywhere, so it was not actually no-code. Task 53 adds opt-in
+`dataprism.identity.resolver: pass-through`; task 54 collapses the
+duplicate `dataprism.sources` base-url check; task 56 extracts a
+one-command demo out of `smoke-test.sh` (its first attempt failed
+verification — see `docs/plan/HISTORY.md`, grep `Wave 1 (tasks 53, 54, 56,
+57)`, for why); task 57 renders every configuration refusal as an
+operator-facing block with no stack trace. All four merged locally
+2026-09-21, no conflicts. See `docs/plan/HISTORY.md` — grep `Wave 1 (tasks
+53, 54, 56, 57)` — for what landed and what it cost.
+
+**Task 55 (publish the quickstart images) is verified PASS/APPROVE and
+deliberately not merged.** Held: task 55's `compose.yaml` pulls
+`ghcr.io/aindriub/data-prism-quickstart-{server,fixtures,issuer,certs-init}`,
+none of which are published yet — merging it would break `docker compose
+up` (the command both `README.md` and `docs/quickstart.md` tell a new user
+to run) for everyone until a `v*` tag is pushed and `publish-image.yml` is
+dispatched. Owner decision: publish the images first, then merge 55. Its
+branch (`task/55-publish-quickstart-images`) and worktree
+(`.worktrees/data-prism/55-publish-quickstart-images`) are left intact; its
+task file remains under `docs/plan/tasks/`. Unblock condition: a `v*` tag
+exists and `publish-image.yml` has been dispatched for the four quickstart
+images, at which point 55 can merge as-is.
+
+### Task 58 — done. No task file remains under `docs/plan/tasks/`.
+
+Shipped `docs/protect-your-own-api.md`, a YAML-only walkthrough taking a
+reader with a flat JSON REST API to a pseudonymised MCP response without
+writing Java — `data-prism-connectors-rest` plus
+`dataprism.identity.resolver: pass-through` (task 53) and the
+single-statement transport (task 54). Publishes the former test-only
+catalogue as `examples/json-sources/customer-api.yaml`, fully commented,
+and repositions `docs/extending.md` from the front door to the escape
+hatch for nested responses, custom fetch logic and models a flat
+catalogue cannot express. Merged 2026-09-22 (`bfabcb1`). See
+`docs/plan/HISTORY.md` — grep `Task 58` — for what landed and the six
+verification attempts it cost, including two lessons worth carrying
+forward: a documentation task needs both a literal-reader tester and a
+rules-reading reviewer, since neither method alone would have caught what
+the other did; and this is the second task this wave (after 56) to assume
+a bare JSON body from an endpoint that actually negotiates SSE, caught
+only by exercising the real server both times.
+
+**Task 59 has not started, blocked on 55, and is now also blocked on the
+v0.3.0 wave below.** Task file exists
+(`docs/plan/tasks/59-quickstart-exit-ramp-and-reference.md`), unedited.
+Its acceptance criteria already require documenting
+`dataprism.identity.resolver` in `docs/configuration.md`, which task 58
+found undocumented there despite being the property the whole no-code
+path depends on. Recorded here because 59 has not started, so its
+criteria are not frozen: it must gain two more items before it starts,
+on top of that one — the nested-catalogue grammar reference in
+`docs/configuration.md` (task 60) and the `dataprism.audit.sink:
+hash-chained` property plus its file-path property (task 67). Do not
+edit the task file to add these until 59 is actually picked up; this is
+the planning record, not a criteria change in flight.
+
+### v0.3.0 plan (tasks 60-70) — opened 2026-09-22, none started
+
+Thesis: "protect a real API, without Java, and prove what happened."
+Follows from the 2026-09-21/22 onboarding work (wave 1 above and task 58,
+both closed) plus two architect spikes run 2026-09-22, both owner-confirmed,
+whose conclusions this section records because they shape every task below.
+Task files for all eleven exist under `docs/plan/tasks/` (60-70); none has
+been edited to add anything beyond what is recorded here.
+
+**Nested JSON — bounded, and why.** One level only: named sub-catalogues
+declared in the same YAML file, no dotted paths, no JSONPath, no wildcard
+descent, no inferring structure from the wire. `subject-json-path` is
+untouched; nested objects never carry their own subject. The reasoning that
+unlocked this after task 20 shipped only a flat catalogue: the
+reviewed-adapter boundary is "nobody may assert a classification without a
+reviewed artefact behind it", not "the artefact must be a compiled Java
+class" — the YAML catalogue already is that artefact for the flat case, and
+a named sub-catalogue applies the same review surface once more. Arbitrary
+depth or JSONPath addressing is the arbitrary-JSON-mapping outcome
+`docs/architecture.md:104-113` rejects and must not be built at any
+increment size. Owner decision: the descend-key mechanism stays entirely
+inside `data-prism-connectors-rest` — core's `FieldMetadataResolver` and
+`FieldMetadata` do not grow a second string-keyed resolution path, because
+that SPI is shared with the Java-first path that works correctly today and
+must not carry a concept only one implementation uses. This is why 60 and
+61 are both needed rather than one task: `ConfiguredJsonScrubbingEngine`'s
+raw-value leak check (`SourceValues.prohibited`, `:93`) must walk the same
+nested structure the engine now descends, or it silently stops covering
+nested fields — a fail-open, with no annotation-processor backstop for YAML
+the way there is for Java models — and 61 is what exercises that through
+the real MCP transport rather than trusting the parser alone.
+
+**Audit — a file sink and an offline verifier, not an endpoint.** Ship a
+single-file, append-mode, fsync-per-record `FileAuditSink` with no rotation
+(rotation is operational, not a correctness question) wired via the
+already-reserved `hash-chained` property value, plus an offline verifier
+CLI — deliberately not an Actuator endpoint and not a startup check,
+because an in-process endpoint conflates "the running instance says its own
+log is fine" with independent verification. Owner decision on what it
+claims, binding on every task and document in this wave: the verifier
+cannot detect truncation of the most recent records. Deleting the tail of
+an append-only file leaves a chain that verifies perfectly end to end, and a
+crash mid-write is indistinguishable from a malicious truncation from
+inside the file. Detecting that needs an external checkpoint held outside
+the operator's control, which v0.3.0 does not build. The verifier must
+print that limitation on every run, and the documentation must state that
+tamper-evidence here means intra-writer edit/delete detection, with durable
+append-only-ness left an operator responsibility (`O_APPEND`, WORM, object
+lock). No task in this wave may produce a doc or output string claiming
+more. Do not ship a verifier over `Slf4jAuditSink` output — log
+infrastructure reorders, compresses and ships lines outside this
+application's control.
+
+Two live bugs the audit spike found in existing code, now owned by 63 and
+67 respectively:
+- `AuditRecorder.java:59-60` advances `previousHash` before `sink.record(event)`
+  succeeds, so a throwing sink leaves the in-memory chain head past an event
+  never durably written; the next successful write chains against a hash for
+  a record that does not exist. Harmless while the only sink is SLF4J; a
+  real corruption path the moment a durable sink exists.
+- `DataPrismProperties.java:167-170` validates and accepts `approved-sink`
+  and `hash-chained` with no bean behind either, so an operator configuring
+  `sink: hash-chained` passes config validation and only hits
+  `MISSING_AUDIT_SINK` at a later startup phase — accidental fail-closed via
+  a missing bean, not designed fail-closed.
+- Also worth recording: no call site wraps `audit.record(...)`, so a sink
+  exception aborts the response — accidentally fail-closed today, matching
+  rule 2; task 63 turns that into an explicit tested guarantee rather than
+  leaving it accidental. Catch-and-continue would be the actual rule 2
+  violation, and must not be introduced while fixing the ordering bug.
+
+**Waves, in order:**
+- **Wave 1 — no cross-dependencies:** 60 (nested JSON catalogues), 63 (audit
+  chain write ordering), 64 (file audit sink), 68 (bean classification
+  escape hatch — closes the task-53-review item above: the
+  `dataPrismPassThroughIdentityResolver` row plus the sweep widened to
+  nested/imported configs, and the `DataPrismAutoConfiguration:117-126`
+  javadoc correction).
+- **Wave 2 — depends on wave 1:** 61 (nested JSON through the real MCP
+  HTTP/SSE transport, deps 60), 65 (file sink PII scan, deps 64), 66 (audit
+  chain verifier CLI, deps 64), 67 (wire `hash-chained` to `FileAuditSink`,
+  deps 64 and 68).
+- **Wave 3 — depends on waves 1-2:** 62 (corrects `architecture.md`'s
+  flat-by-design and boundary-7 claims, new `docs/audit.md`, nested example
+  and walkthrough; deps 60, 64, 66), 69 (restore the reviewed-adapter
+  allow-list task 54's review flagged above, via a catalogue-names bean from
+  the connector, without reinstating the exact-match duplication task 54
+  removed; deps 60, 67).
+- **Wave 4:** 70 (cut 0.3.0 across poms, `server.json`, `serverInfo`
+  literals, four Dockerfiles, `publish-image.yml`, docs, with a CHANGELOG
+  built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69).
+
+**Risks flagged by the planner, both open:**
+- The per-nested-catalogue `Class` token task 60 introduces is the only
+  unproven mechanism in the plan. If no route keeps `core` unchanged, 60
+  stops and reports rather than widening core's SPI.
+- Task 69 sits behind two dependency edges on one file (60, then 67); a slip
+  in 67 delays the allow-list fix, not the release, since 69 is wave 3 and
+  70 waits on both.
+
+**Release sequence — order is load-bearing, do not compress it:**
+1. Waves 1-3 merge.
+2. 70 merges (0.3.0 on `main`, CHANGELOG written from the real diffs).
+3. Push the `v0.3.0` tag and dispatch `publish-image.yml` for the four
+   quickstart images. Task 55 cannot merge before those images exist on
+   `ghcr.io`, or `docker compose up` — the command both `README.md` and
+   `docs/quickstart.md` tell a new user to run — breaks for everyone.
+4. Merge 55 — unchanged from its held state above, now explicitly riding on
+   the `v0.3.0` tag rather than getting its own release. The owner deferred
+   the v0.2.1 tag decision for exactly this reason.
+5. Run 59 against the published result (with the two extra criteria items
+   recorded above) and merge it.
+6. Maven Central and MCP registry publish. `server.json`'s shape follows
+   task 48's history entry: no `registryBaseUrl`, no per-package version.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
@@ -578,6 +755,71 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on task 58, 2026-09-22. Does not block anything; polish,
+not a defect.
+
+- `docs/protect-your-own-api.md:132, :157, :337, :351` — four verification/curl
+  fences follow foreground processes without naming a terminal, unlike the
+  server section, which says "a third terminal". A reader must infer a spare
+  shell; no wrong output can result.
+
+Found during `/verify` on tasks 53, 54, 55, 56, 57, 2026-09-21. None blocks
+anything already merged; the first is the most important of the six.
+
+- **(53's review, most important.)** The new `IdentityResolver` bean is
+  placed on a nested `@Import`ed static configuration class, which keeps it
+  outside `AutoConfiguredBeanClassificationTest`'s reflection sweep over
+  `DataPrismAutoConfiguration.class.getDeclaredMethods()`. The reviewer
+  ruled this a guardrail evasion — acceptable on that branch only because
+  its `Owns` list forbade editing `PrivacyExtensionPoints.java`, not
+  acceptable to leave standing. A follow-up owning `PrivacyExtensionPoints.java`
+  must do two things: add the row for `dataPrismPassThroughIdentityResolver`
+  (`REPLACEABLE` / `Guard.NONE`), and widen the sweep to nested/imported
+  configuration classes — otherwise this wave leaves a documented escape
+  hatch any future privacy-relevant bean can use to dodge classification.
+  Also fix the javadoc at `DataPrismAutoConfiguration.java:117-126`, which
+  overstates the necessity of the nested placement — it claims
+  `@ConditionalOnBean` visibility required it, but a `@Bean` method declared
+  above its dependants would have been visible too — and will mislead
+  whoever picks this up.
+- (54's review.) The subset relaxation lost a property nobody has restored:
+  `dataprism.sources` was also the operator's allow-list, and any
+  `DataSourceAdapter` bean on the classpath is now implicitly approved
+  without appearing anywhere an operator reviewed. Not a fail-closed
+  breach — the reviewer could not construct a misconfiguration the subset
+  test lets through that exact match caught — but a real weakening of the
+  reviewed-adapter posture. Owner-scheduled narrow fix: exclude exactly the
+  names the JSON-catalogue mechanism supplies, via a marker or
+  catalogue-names bean visible to both `data-prism-connectors-rest` and
+  `data-prism-spring-boot-autoconfigure`. Task 54's own summary described
+  the change as guarantee-preserving, which was stronger than warranted —
+  do not repeat that framing.
+- (55's review, for whoever merges 55.) `compose.yaml:12-13`'s comment
+  contradicts itself — it says images are "tagged at the reactor version
+  (or `QUICKSTART_IMAGE_TAG`, default `latest`)" but the default resolves
+  to `latest`, never the reactor version. Also: four unguarded `--load`
+  builds in `publish-image.yml` have no consumer, costing three extra Maven
+  builds per arch on every plain tag push as a build-breakage smoke test
+  only; and a tag pushed ahead of a pom bump fails at `COPY
+  ...-${VERSION}.jar` with a raw buildx error rather than the guard's named
+  message (fails closed, cosmetic).
+- (56's re-review.) `run.sh:68-71` takes the first `data:` frame; if the
+  server ever emits a progress or log notification before the result,
+  fields come back empty and the demo fails with "missing an expected
+  field" rather than parsing the frame whose id is 2. Not reachable against
+  today's server and it fails closed, so a robustness nit rather than a
+  defect. Also `mcp-handshake.sh:44` hardcodes `clientInfo.name` to
+  `quickstart-demo`, so the smoke test now identifies itself as the demo in
+  server-side logs.
+- (57's review.) `ConfigurationRefusalMessageIT.java:133-138` reads process
+  output only after `waitFor`, so a startup log exceeding the ~64KB OS pipe
+  buffer would deadlock until the 20s timeout. Latent, not live.
+- (minor, from 54's review.) `DataPrismContractValidatorTest.java:47` and
+  `:78` have byte-identical bodies — one behaviour asserted twice under two
+  names. That file also sits outside task 54's declared `Owns` list, but it
+  was compelled by the acceptance criterion and collides with nothing, so
+  this is recorded rather than treated as a violation.
 
 Found by the reviewer during `/verify` on task 47, 2026-09-17. Neither is
 reachable today; pick either up only if a future task already owns the file.

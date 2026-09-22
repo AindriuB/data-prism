@@ -207,12 +207,12 @@ class ConfiguredJsonSourcesPackagingIT {
 
     /**
      * A minimal, self-contained catalogue: base URL and path are never dialled
-     * in this test, only parsed and wired, so an unreachable host is fine. The
-     * base URL here must be identical to {@code
-     * dataprism.sources.packaging-test-api.base-url} in {@link #validArguments()}
-     * — {@link ConfiguredJsonSourcesInitializer} refuses startup if the two
-     * disagree, and it must, since a mismatch between them is exactly the
-     * hazard of stating one source's transport twice.
+     * in this test, only parsed and wired, so an unreachable host is fine.
+     * {@link #validArguments()} deliberately states no {@code
+     * dataprism.sources.packaging-test-api} entry at all — this catalogue is
+     * this source's only statement of its transport, proving the packaged
+     * server starts and serves traffic without the duplicate task 54 removed
+     * the requirement for.
      */
     private Path validJsonSourcesFile() throws IOException {
         Path file = Files.createTempFile("task20-valid-json-sources-", ".yaml");
@@ -239,14 +239,13 @@ class ConfiguredJsonSourcesPackagingIT {
     /**
      * {@code dataprism.sources} is the Java-first vocabulary and this feature
      * deliberately never reads it (see docs/configuration.md, "Java-first now;
-     * generic JSON later"), but the base distribution's own contract validator
-     * still requires every {@code DataSourceAdapter} bean's name to appear
-     * there too, regardless of which mechanism supplied the adapter. Naming the
-     * configured source here as well is what satisfies that check for this
-     * test; it states no transport details {@code
-     * ConfiguredJsonSourcesAutoConfiguration} does not already own, since the
-     * base validator does not read past the key's presence for a name it
-     * cannot otherwise resolve.
+     * generic JSON later"). Deliberately no {@code
+     * dataprism.sources.packaging-test-api} entry appears here: the base
+     * distribution's contract validator no longer requires one for a {@code
+     * DataSourceAdapter} bean this mechanism supplies (task 54), so this test
+     * proves the packaged server starts and serves {@code /health} with {@code
+     * packaging-test-api}'s transport stated exactly once, in the catalogue
+     * {@link #validJsonSourcesFile()} writes.
      *
      * <p>{@code server.port=0} (an ephemeral port), not {@code
      * spring.main.web-application-type=none}: task 39 refuses the latter at
@@ -269,9 +268,7 @@ class ConfiguredJsonSourcesPackagingIT {
                 "--dataprism.privacy.hmac-key.environment-variable=DATAPRISM_TASK17_TEST_KEY",
                 "--dataprism.audit.sink=slf4j", "--dataprism.audit.writer-id=packaging-test",
                 "--dataprism.metrics.sink=micrometer",
-                "--dataprism.hazelcast.topology=single-node",
-                "--dataprism.sources.packaging-test-api.base-url=https://packaging-test.example",
-                "--dataprism.sources.packaging-test-api.timeout=2s"
+                "--dataprism.hazelcast.topology=single-node"
         };
     }
 

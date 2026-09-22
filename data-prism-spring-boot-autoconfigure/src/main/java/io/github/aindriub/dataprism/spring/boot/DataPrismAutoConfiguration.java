@@ -9,6 +9,7 @@ import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.IdentityResolver;
+import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptors;
@@ -60,6 +61,8 @@ import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -80,15 +83,54 @@ import java.util.Arrays;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(DataPrismProperties.class)
+@Import(DataPrismAutoConfiguration.IdentityResolverSelection.class)
 public class DataPrismAutoConfiguration {
-    /** Resolve this before singleton creation: an empty protected pipeline is never valid. */
+    /**
+     * Resolve this before singleton creation: an empty protected pipeline is never
+     * valid. Also refuses an unrecognised {@code dataprism.identity.resolver}
+     * value outright rather than silently falling back to pass-through, or to the
+     * generic {@code MISSING_IDENTITY_RESOLVER} below. A recognised value never
+     * reaches this check with no {@link IdentityResolver} bean present: see
+     * {@link IdentityResolverSelection}, imported ahead of this class so its
+     * conditional bean is a definition visible here, and to every other bean
+     * method gated on {@code @ConditionalOnBean(IdentityResolver.class)} — not a
+     * late registration.
+     */
     @Bean
-    static BeanFactoryPostProcessor dataPrismIdentityResolverPreflight() {
+    static BeanFactoryPostProcessor dataPrismIdentityResolverPreflight(Environment environment) {
         return factory -> {
+            String resolver = environment.getProperty("dataprism.identity.resolver");
+            if (resolver != null && !resolver.isBlank() && !"pass-through".equals(resolver)) {
+                throw new DataPrismConfigurationException("UNSUPPORTED_IDENTITY_RESOLVER",
+                        "dataprism.identity.resolver must be one of: pass-through");
+            }
             if (factory.getBeanNamesForType(IdentityResolver.class, true, false).length == 0) {
                 throw new DataPrismConfigurationException("MISSING_IDENTITY_RESOLVER", "provide an IdentityResolver bean");
             }
         };
+    }
+
+    /**
+     * Selects the built-in {@link PassThroughIdentityResolver} for an operator
+     * with no Java to write, opt-in only. Its own {@code @Bean} method is
+     * deliberately not declared directly on {@link DataPrismAutoConfiguration}:
+     * imported ahead of it (see the class-level {@code @Import} above), its bean
+     * definition — when the property selects it — is registered while
+     * {@code DataPrismAutoConfiguration}'s own {@code @Bean} methods are still
+     * being processed, which is what lets {@code dataPrismScopeBudget} and every
+     * other {@code @ConditionalOnBean(IdentityResolver.class)} method see it, not
+     * only the preflight above. {@code @ConditionalOnMissingBean} is the
+     * deliberate choice for acceptance item 4: an application-supplied
+     * {@link IdentityResolver} always wins over this one, never producing two.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class IdentityResolverSelection {
+        @Bean
+        @ConditionalOnMissingBean(IdentityResolver.class)
+        @ConditionalOnProperty(prefix = "dataprism.identity", name = "resolver", havingValue = "pass-through")
+        IdentityResolver dataPrismPassThroughIdentityResolver() {
+            return new PassThroughIdentityResolver();
+        }
     }
     @Bean
     Object dataPrismPropertiesValidated(DataPrismProperties properties, List<DataSourceAdapter<?>> adapters,

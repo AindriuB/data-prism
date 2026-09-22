@@ -17,7 +17,152 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
-## 2026-09-17 — Task 52: the shipped docs reconciled — module rename, six stale tool/mode claims, and a false causal claim caught at review
+## 2026-09-22 — Task 58: a walkthrough for a stranger's own API, and six attempts to make it both work and not write key material into the repo
+
+A YAML-only walkthrough, `docs/protect-your-own-api.md`, that takes a reader
+with a flat JSON REST API from nothing to a pseudonymised MCP response
+without writing Java — using `data-prism-connectors-rest` plus
+`dataprism.identity.resolver: pass-through` (task 53) and the
+single-statement transport (task 54). It publishes the former test-only
+catalogue as `examples/json-sources/customer-api.yaml`, fully commented,
+and repositions `docs/extending.md` from the front door to the escape
+hatch for nested responses, custom fetch logic and models a flat
+catalogue cannot express. This is what makes the no-code path discoverable:
+before this wave the path existed, shipped and published, but had no
+walkthrough, its only example was a test fixture named after an internal
+task number, and it was not actually no-code because nothing supplied an
+`IdentityResolver` bean.
+
+**Cost:** six attempts. Each failed round found a real defect that the
+previous round's method could not see.
+
+- Attempt 1: reviewer APPROVE, tester FAIL. The document read well and did
+  not work. Four completeness defects: no build command; a run command
+  whose jar paths and repo-root-relative config-location could not both be
+  satisfied from any single working directory; no start instructions at all
+  for the two dependent fixture services, including no `keytool` invocation,
+  so the tester had to open `QuickstartSmokeIT` and reverse-engineer alias,
+  SAN and `--server.ssl.*` flags; and a quoted `tools/call` response shown as
+  bare JSON when the document's own curl headers produce an SSE frame.
+- Attempt 2: tester PASS, reviewer CHANGES. The document worked and
+  instructed the reader to write private key material into the repository
+  working tree, where `.gitignore` covered none of it — a CLAUDE.md rule 3
+  breach. Both precedents the document itself cited (`QuickstartSmokeIT`'s
+  `@TempDir`, `generate-certs.sh`'s Docker volume) deliberately contain
+  theirs; the document borrowed the invocations and dropped the
+  containment.
+- Attempt 3: both FAIL/CHANGES. The `mktemp -d` fix closed rule 3 properly
+  but used session-scoped shell state, while the document itself tells the
+  reader to open a second terminal. Reproduced:
+  `java.io.FileNotFoundException: /walkthrough.p12`.
+- Attempt 4: tester PASS, reviewer CHANGES. `${KS_DIR:-...}` honoured a
+  reader's pre-set variable: a reader with `KS_DIR=certs` would get a
+  keystore in the repo root, and one with `KS_DIR=$HOME/.keystores` would
+  have the document's own `rm -rf` delete their real keystores. Also an
+  undocumented `keytool` failure on re-run, now that the directory persists
+  by design.
+- Attempt 5: tester PASS, reviewer CHANGES. Attempt 5's own tidy was
+  half-done — the fails-closed fence restated one variable but the command
+  used two, so the attempt-3 failure mode survived at the variable the
+  inlining missed. The tester passed it only because it carried the
+  variable across from the sed step rather than using a genuinely separate
+  shell, as the document instructs.
+- Attempt 6: APPROVE.
+
+Two lessons worth recording as lessons, not just events. First, a
+documentation task needs a tester that follows the document literally —
+using only what it says, not substituting knowledge of the codebase — and a
+reviewer reading it against the project's own rules. Neither method alone
+would have caught what the other did: attempt 1 was approved on a
+read-through and did not work; attempt 2 passed testing cleanly and
+breached rule 3. Second, two separate tasks this wave (56 and 58) both
+assumed a bare JSON body from the MCP endpoint, which negotiates SSE. Both
+were caught only by exercising the real server. That is a recurring trap,
+not two coincidences.
+
+**Verification note.** No tester ran attempt 6. Attempt 5 passed
+independent end-to-end testing under multi-shell execution (happy path
+byte-for-byte including `SUBJ-3WR4` and "Casey Okafor (5K38)", all three
+refusals verbatim, rule 3 clean by `git status --short`,
+`git status --ignored --short` and a filename search, cleanup leaving
+nothing under `$HOME`). Attempt 6 added only restatement lines inside
+existing fences plus a rephrased sentence; its implementer ran the
+separate-shell check, the reviewer confirmed the diff touches no output
+fence and swept the whole defect class across all eight variable-using
+fences, and the main session verified the three edits directly. Solid, but
+not a full independent test run of the final commit.
+
+Left open: four verification/curl fences (`docs/protect-your-own-api.md:132,
+:157, :337, :351`) follow foreground processes without naming a terminal,
+unlike the server section's "a third terminal" — polish, not a defect. And
+`docs/configuration.md` still does not document `dataprism.identity.resolver`
+at all, despite it being the property the entire no-code path depends on —
+task 59's acceptance criteria already require this.
+
+## 2026-09-21 — Wave 1 (tasks 53, 54, 56, 57): the no-code path made real, and the demo's transport bug that a stub had hidden
+
+The wave opened from a measured UX review, not a guess: `docker compose up
+--build` cold took 5m44s (329.8s of it the server image's own Maven build);
+warm `up` was 1.9s with a correct pseudonymised answer 6s later; a bare
+`docker run ghcr.io/aindriub/data-prism-server:0.2.0` died in ~1.5s with a
+20-line Spring stack trace ending in `MISSING_IDENTITY_RESOLVER`. The
+Compose quickstart demos well but onboarded nobody, because
+`QuickstartCustomerAdapter` hardcodes `SOURCE_NAME="customer"` and
+`CustomerModel.class` into the image — there was no path from the demo to a
+user's own API. The configuration-driven REST connector (task 20) already
+protected a flat JSON API in ~20 lines of YAML, but nothing supplied an
+`IdentityResolver` bean, so it was not actually no-code, had no walkthrough,
+and its only example was a test fixture.
+
+Task 53 adds an opt-in `dataprism.identity.resolver: pass-through` property
+selecting `PassThroughIdentityResolver`, with `UNSUPPORTED_IDENTITY_RESOLVER`
+for an unrecognised value and `@ConditionalOnMissingBean` so an
+app-supplied resolver still wins. Absent the property, `MISSING_IDENTITY_RESOLVER`
+stands unchanged — proven by a test asserting zero `IdentityResolver` bean
+definitions exist at preflight, plus a `matchIfMissing=true` mutation run.
+This is what makes the no-Java path real. Task 54 collapses the duplicate
+base-url: `DataPrismContractValidator`'s cross-check moved from
+`supplied.equals(configured)` to `supplied.containsAll(configured)`, so a
+configured JSON source's adapter can exist with no matching
+`dataprism.sources` entry, with paired positive/negative mutation tests on
+both refusals. Task 56 extracts a one-command demo
+(`examples/quickstart-demo/run.sh`, `mcp-handshake.sh`) out of
+`smoke-test.sh`. Task 57 adds a Spring `FailureAnalyzer` that renders every
+`DataPrismConfigurationException` as an operator block naming the code,
+what to supply, and the two docs pages, with no stack frame — the refusal
+itself untouched (`git diff` over `DataPrismAutoConfiguration.java`,
+`DataPrismProperties.java` and `DataPrismContractValidator.java` is empty).
+Verified on the real packaged jar: exit 1, operator block present, zero
+stack frames.
+
+Task 55 (publish the quickstart images so `compose.yaml` can pull them) is
+verified PASS/APPROVE but deliberately **not merged** — see `PLAN.md`,
+"Held: task 55", for why.
+
+**Cost:** task 56's first attempt failed verification outright, and the
+failure mode is the lesson: it was tested only against stub HTTP servers
+returning plain JSON, but the real MCP server returns SSE-framed
+`tools/call` bodies, so the demo never worked against the real stack it was
+built to demonstrate — a stub standing in for the real transport hid a
+total failure of the task's central claim. It also had a `set -euo
+pipefail` bug where the one-line failure reason was unreachable on the
+commonest failure (issuer down). Attempt 2 fixed both and was verified
+against a live Compose stack, not a stub. Task 53's review also caught a
+guardrail evasion worth naming honestly: the new resolver bean sits on a
+nested `@Import`ed static configuration class, which keeps it outside
+`AutoConfiguredBeanClassificationTest`'s reflection sweep over
+`DataPrismAutoConfiguration.class.getDeclaredMethods()` — acceptable on that
+branch only because its `Owns` list forbade editing
+`PrivacyExtensionPoints.java`, and not acceptable to leave; see PLAN.md's
+open item for the two-part fix required. Task 54's own summary described
+the base-url relaxation as guarantee-preserving, which review judged
+stronger than warranted: `dataprism.sources` was also the operator's
+allow-list, and any `DataSourceAdapter` bean on the classpath is now
+implicitly approved without appearing anywhere an operator reviewed — not
+a fail-closed breach, but a real weakening, with a narrow fix scheduled
+rather than done here.
+
+
 
 `README.md` had said "Until Task 20 delivers…" the configuration-driven
 JSON REST mode since before that task shipped, and it cost readers real
