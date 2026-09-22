@@ -627,13 +627,13 @@ hash-chained` property plus its file-path property (task 67). Do not
 edit the task file to add these until 59 is actually picked up; this is
 the planning record, not a criteria change in flight.
 
-### v0.3.0 plan (tasks 60-70) — opened 2026-09-22, none started
+### v0.3.0 plan (tasks 60-71) — opened 2026-09-22, none started
 
 Thesis: "protect a real API, without Java, and prove what happened."
 Follows from the 2026-09-21/22 onboarding work (wave 1 above and task 58,
 both closed) plus two architect spikes run 2026-09-22, both owner-confirmed,
 whose conclusions this section records because they shape every task below.
-Task files for all eleven exist under `docs/plan/tasks/` (60-70); none has
+Task files for all twelve exist under `docs/plan/tasks/` (60-71); none has
 been edited to add anything beyond what is recorded here.
 
 **Nested JSON — bounded, and why.** One level only: named sub-catalogues
@@ -698,13 +698,49 @@ Two live bugs the audit spike found in existing code, now owned by 63 and
   leaving it accidental. Catch-and-continue would be the actual rule 2
   violation, and must not be introduced while fixing the ordering bug.
 
+**Owner decision, recorded 2026-09-22: pseudonym discriminator widens from 20
+to 40 bits; `PseudonymisationVersion.version` stays at v1.** Task 71
+(`docs/plan/tasks/71-widen-pseudonym-discriminator.md`) widens the
+pseudonymisation discriminator from 20 bits to 40, because at 20 bits two
+subjects in one scope collide with 50% probability at roughly 1,205 subjects
+for the namespaces where the discriminator tag is the whole rendered
+pseudonym (`EMAIL`, `NONE`, and the default branch), and at roughly 400
+subjects for `ADDRESS`, which today carries no tag at all — `ADDRESS` gains
+one as part of this change. `NONE` is the scope-local subject token audit
+records in place of the real identifier, so a collision there means two
+different subjects share one audit identity. Widening the discriminator
+changes every namespace's rendered pseudonym, so both golden-vector files —
+`data-prism-pseudonymisation/src/test/resources/golden-vectors-v1.tsv` and
+`golden-vectors-western-v2.tsv` — are regenerated as part of this task, which
+is why this entry exists: `docs/conventions.md`'s determinism-test rule
+requires either bumping `PseudonymisationVersion.version` or a recorded
+decision to hold it, cited by the diff that edits the vectors.
+`PseudonymisationVersion.version` deliberately stays at `v1` rather than
+bumping to `v2` — the owner's reasoning is that nothing durable depends on v1
+output yet, so a version bump would buy nothing a wider discriminator does
+not already deliver. The explicit cost, stated per the rule: any pseudonym
+issued before this change will not reproduce afterwards. Task 71's own commit
+body must cite this entry rather than restate the reasoning.
+
+Two smaller items the planner surfaced reviewing task 71, neither blocking it:
+- Task 71's new `PseudonymisationVersion` compact-constructor check rejects
+  an algorithm value a consumer of the published `data-prism-core` record
+  could previously construct successfully. That is a breaking change to a
+  public API arriving in 0.3.0 and wants a `CHANGELOG.md` line; task 70 owns
+  `CHANGELOG.md` and should carry it when it cuts the version.
+- Task 71's collision test runs the generator roughly 80,000 times, with the
+  subject count as its tuning knob. Below roughly 5,000 subjects the mutation
+  proof stops being decisive for the 2^20 case — worth knowing before anyone
+  is tempted to shrink the loop count for speed.
+
 **Waves, in order:**
 - **Wave 1 — no cross-dependencies:** 60 (nested JSON catalogues), 63 (audit
   chain write ordering), 64 (file audit sink), 68 (bean classification
   escape hatch — closes the task-53-review item above: the
   `dataPrismPassThroughIdentityResolver` row plus the sweep widened to
   nested/imported configs, and the `DataPrismAutoConfiguration:117-126`
-  javadoc correction).
+  javadoc correction), 71 (widen the pseudonym discriminator from 20 to 40
+  bits, per the owner decision recorded above).
 
   **Wave 1 is complete — 60, 63, 64, 68 all merged.** 63, 64, 68 merged
   locally 2026-09-22; task 64's task file was retired with its attempt-1/
@@ -719,8 +755,10 @@ Two live bugs the audit spike found in existing code, now owned by 63 and
   1018 tests, 0 failures, 0 errors.
 
   **Task 71 (widen the pseudonym discriminator) belongs to wave 1 and has
-  not been started.** No task file exists for it yet — record it here so it
-  is not lost, and write its task file before picking it up.
+  not been started.** Its task file exists at
+  `docs/plan/tasks/71-widen-pseudonym-discriminator.md`, merged via PR #87
+  together with the `docs/conventions.md` amendment its golden-vector
+  criterion cites.
 
   **Task 66's task file was written before this wave discovered four
   ordinary failure modes whose output resembles tampering** (see
