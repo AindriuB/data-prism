@@ -706,24 +706,45 @@ Two live bugs the audit spike found in existing code, now owned by 63 and
   nested/imported configs, and the `DataPrismAutoConfiguration:117-126`
   javadoc correction).
 
-  **63, 64, 68 done, merged locally 2026-09-22.** No task file remains for
-  63 or 68; task 64's task file is also retired, but its attempt-1/attempt-2
-  failure records are mined into `docs/plan/HISTORY.md` — grep `v0.3.0 wave
-  1` — before deletion, since they are this wave's cost account. **60 is
-  still open, in rework at attempt 3** (a fail-open on a scalar arriving
-  where the catalogue declared `nested:`, then a non-deterministic slot
-  ordinal assigned from `Map.copyOf` iteration order) — its task file stays
-  under `docs/plan/tasks/` with both failed attempts recorded, and its
-  branch/worktree stay open. Do not start wave 2 tasks that depend on 60
-  until it merges.
-- **Wave 2 — depends on wave 1:** 61 (nested JSON through the real MCP
-  HTTP/SSE transport, deps 60 — **still blocked**, 60 not merged), 65 (file
-  sink PII scan, deps 64 — **unblocked**), 66 (audit chain verifier CLI, deps
-  64 — **unblocked**, and see the "four tampering-shaped failure modes"
-  note in `docs/plan/HISTORY.md`'s wave-1 entry before starting), 67 (wire
-  `hash-chained` to `FileAuditSink`, deps 64 and 68 — **unblocked**, and see
-  follow-up item 6 below on the path-disclosure fix that belongs where the
-  sink exception maps to an MCP response, not in the sink).
+  **Wave 1 is complete — 60, 63, 64, 68 all merged.** 63, 64, 68 merged
+  locally 2026-09-22; task 64's task file was retired with its attempt-1/
+  attempt-2 failure records mined into `docs/plan/HISTORY.md` — grep `v0.3.0
+  wave 1` — before deletion. **60 merged 2026-09-22 at attempt 3** (fixed a
+  fail-open on a scalar arriving where the catalogue declared `nested:`,
+  then a non-deterministic slot ordinal assigned from `Map.copyOf` iteration
+  order, now a pure function of the sorted catalogue-name set) — its task
+  file was retired with both failed attempts mined into
+  `docs/plan/HISTORY.md`, grep `Task 60`. Post-merge full-reactor
+  `mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19 modules,
+  1018 tests, 0 failures, 0 errors.
+
+  **Task 71 (widen the pseudonym discriminator) belongs to wave 1 and has
+  not been started.** No task file exists for it yet — record it here so it
+  is not lost, and write its task file before picking it up.
+
+  **Task 66's task file was written before this wave discovered four
+  ordinary failure modes whose output resembles tampering** (see
+  `docs/plan/HISTORY.md`, grep `v0.3.0 wave 1`, for the account); amend 66's
+  acceptance criteria to address them before starting it.
+- **Wave 2 — depends on wave 1, now unblocked:** 61 (nested JSON through the
+  real MCP HTTP/SSE transport, deps 60 — unblocked now that 60 has merged),
+  65 (file sink PII scan, deps 64 — unblocked), 66 (audit chain verifier CLI,
+  deps 64 — unblocked, and see the "four tampering-shaped failure modes"
+  note above and in `docs/plan/HISTORY.md`'s wave-1 entry before starting),
+  67 (wire `hash-chained` to `FileAuditSink`, deps 64 and 68 — unblocked, and
+  see follow-up item 6 below on the path-disclosure fix that belongs where
+  the sink exception maps to an MCP response, not in the sink).
+
+  Task 60's durable caveats, load-bearing for 62 and 69: the fail-open is
+  fenced by `ConfiguredJsonNestedLeafShapeGuard` running before
+  `engine.scrub`, not structurally removed — any future path that hands a
+  `ConfiguredJsonFieldMetadataResolver` to `JsonTreeScrubbingEngine` without
+  calling the guard first reopens it; ordinals are per-source and assigned
+  over sorted catalogue names, so task 69 must read names off
+  `nestedCatalogues()` and never re-derive slots; core's `UNKNOWN_FIELD`
+  message interpolates the slot class name
+  (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name —
+  task 62 owns documenting the slot-to-catalogue mapping.
 - **Wave 3 — depends on waves 1-2:** 62 (corrects `architecture.md`'s
   flat-by-design and boundary-7 claims, new `docs/audit.md`, nested example
   and walkthrough; deps 60, 64, 66), 69 (restore the reviewed-adapter
@@ -825,6 +846,18 @@ Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
    the module is one careless new test away from the same failure.
    Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
    and retire the trustStore property.
+
+Found on task 60 (nested JSON catalogues), merged 2026-09-22. None blocks the
+merge; pick any up only if a future task already owns the file.
+
+10. `ConfiguredJsonNestedCatalogueOrdinalDeterminismTest` asserts with
+    `contains("Slot1")`, which also matches `Slot10`-`Slot15`; harmless at
+    three catalogues today, but an exact suffix match would be tighter.
+11. The reserved-prefix refusal (a `nonSensitive:` reason beginning with the
+    nested-pointer token) is asserted only for a top-level field; a case
+    inside a nested catalogue would pin both call sites.
+12. The null-nested-object passthrough has no named test — a tester verified
+    it with a throwaway and deleted it.
 
 Found during `/verify` on task 58, 2026-09-22. Does not block anything; polish,
 not a defect.

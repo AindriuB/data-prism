@@ -17,6 +17,100 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-22 — Task 60: one level of named nested JSON catalogues, after three attempts and a task-file amendment
+
+An operator with a flat-but-for-one-level JSON API can now protect it in
+YAML without writing Java. A field gains a fourth shape, `nested: <name>`,
+pointing at an entry in a top-level nested-catalogues map whose own fields
+use the same three-shape vocabulary that flat catalogues already have. No
+dotted paths, no JSONPath, no wildcard descent, no inferring structure from
+the wire — the reviewed artefact stays the operator-authored, startup-
+validated catalogue, and `data-prism-core` is unchanged, the binding
+constraint. `subject-json-path` is untouched; nested objects never carry
+their own subject. The descend key is a bounded pool of 16 pre-declared,
+package-private, final marker classes assigned per source, with a
+fail-closed startup refusal naming the source when it declares more
+catalogues than the pool holds. Ordinals are a pure function of the sorted
+catalogue-name set, not of YAML declaration order or map iteration order.
+Merged 2026-09-22, closing the last open task in v0.3.0 wave 1. Post-merge
+full-reactor `mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19
+modules, 1018 tests, 0 failures, 0 errors.
+
+**Cost:** three attempts, and the task file's own acceptance criteria had a
+gap the first attempt's tester could not have caught.
+
+Attempt 1 (tester PASS, reviewer REQUEST CHANGES) shipped a fail-open, the
+most serious defect class in this product: a `nested:` field was
+constructed with `"nested catalogue " + name` as its `nonSensitiveReason`,
+so `ProfilePrivacyPolicyResolver` returned `PASS_THROUGH` unconditionally;
+the shape guard's `isObject`/`isArray` check had no `else`, so a scalar
+there was skipped, and `SourceValues.descend` skipped it too — the engine
+fell through to `scalar()`. A response carrying
+`{"id":"C1","address":"123-45-6789"}` against a `nested: address` catalogue
+emitted that SSN-shaped value verbatim under every profile including the
+strictest. The task file's own acceptance criteria only required refusing a
+response nesting *deeper* than declared and never mentioned shallower, so
+the attempt-1 tester passed the branch having probed only the specified
+direction — the gap was in the contract, not only the code, and the file
+was amended in the attempt-1 record rather than just the implementation.
+Attempt 1 also satisfied "do not change data-prism-core" by generating
+classes at runtime via `MethodHandles.Lookup.defineHiddenClass`, the
+approach an architect spike had explicitly rejected in advance as "worse
+than the problem it solves". No automated rule caught it —
+`PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` does not scope to
+`connectors` and its predicate names `findGetter`/`findSetter`/
+`findVarHandle`/`unreflect*`, not `defineHiddenClass` — and the full build
+including ArchUnit passed regardless. The reviewer's concrete evidence: a
+privacy decision (descend or not) keyed on an object with no stable name or
+auditable identity, leaking into operator-facing output because core's
+`UNKNOWN_FIELD` interpolates `type.getName()`, rendering as
+`...Template/0x00007f...`, a different string every run.
+
+Attempt 2 (tester PASS, reviewer REQUEST CHANGES) closed the fail-open and
+replaced the hidden classes with the slot pool, but two defects survived.
+Ordinals were assigned by iterating a `Map.copyOf` keySet, whose iteration
+order is randomised per JVM — one run refused naming `Slot0`, the next
+`Slot1`, for identical input, defeating the entire reason the slot pool
+replaced the hidden classes (cross-run stability). The attempt-2
+determinism test was shaped like the bug: it parsed the same catalogue
+twice inside one JVM, which cannot observe per-JVM randomisation. Separately,
+a `nonSensitive:` reason beginning with the reserved nested-pointer prefix
+was silently mistaken for a nested pointer: the field was rewritten to
+carry the token and became descendable, so a scalar there refused with a
+code unrelated to anything the operator wrote.
+
+Attempt 3 (PASS + APPROVE) made ordinals a pure function of the declared
+name set — sorted into natural order before minting, so neither YAML
+declaration order nor map iteration order reaches the assignment — and
+refused the reserved prefix at startup, naming source and field. The
+determinism test now forks genuinely separate JVM processes, proven by the
+implementer removing the sort and watching it fail; an independent tester
+ran its own probe across eight separate JVM processes in two declaration
+orders and got identical mappings. Two previously safe-by-construction,
+untested properties are now pinned with executed mutation proofs by both
+implementer and tester independently: cross-source slot sharing (two
+sources whose same-ordinal catalogues declare different field sets each
+scrub against their own, and a field from one refuses as `UNKNOWN_FIELD` in
+the other) fails when the resolver's per-source snapshot is made static.
+
+**Durable caveats, load-bearing for tasks 62 and 69:**
+1. The fail-open is fenced, not structurally removed. `nested:` fields still
+   carry a `nonSensitiveReason`, so core would still resolve `PASS_THROUGH`
+   for a scalar there; it is fenced by
+   `ConfiguredJsonNestedLeafShapeGuard` running before `engine.scrub`. Two
+   reviewers traced every construction site and confirmed no path bypasses
+   it — the only resolver constructor takes the whole `ConfiguredJsonSource`.
+   Any future path that hands a `ConfiguredJsonFieldMetadataResolver` to
+   `JsonTreeScrubbingEngine` without calling the guard first reopens it.
+2. Ordinals are per-source and assigned over sorted names, so adding an
+   alphabetically-earlier catalogue shifts every later slot name. Task 69
+   must read names off `nestedCatalogues()` and never re-derive slots.
+3. Core's `UNKNOWN_FIELD` message interpolates the slot class name
+   (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name
+   — the path component does carry e.g. `address.country`, but operator
+   documentation (task 62) must explain the slot-to-catalogue mapping.
+   Closing this fully needs a core change that was out of scope here.
+
 ## 2026-09-22 — v0.3.0 wave 1 (tasks 63, 64, 68): the audit chain's write ordering fixed, a durable file sink shipped after three attempts, and a bean-classification escape hatch closed
 
 Task 63 stops `AuditRecorder` from advancing `previousHash` before
