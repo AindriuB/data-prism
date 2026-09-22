@@ -17,6 +17,151 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-22 — v0.3.0 wave 1 (tasks 63, 64, 68): the audit chain's write ordering fixed, a durable file sink shipped after three attempts, and a bean-classification escape hatch closed
+
+Task 63 stops `AuditRecorder` from advancing `previousHash` before
+`sink.record` succeeds: a throwing sink used to leave the in-memory chain
+head past an event that was never durably written, so the next successful
+write chained against a hash for a record that does not exist. Now the
+sequence counter and `previousHash` only advance once the sink returns, and a
+throwing sink rolls the recorder back to byte-identical prior state. The
+canonical hash join moved into a new public `AuditEventHash`, verified
+byte-identical to `main`'s old inline join by both tester and reviewer
+independently, for task 66 to reuse. A real-HTTP integration test now pins
+that a throwing `AuditSink` aborts `get_entity_context` rather than returning
+data, paired with a non-vacuity test proving the same denial through a
+non-throwing sink returns an ordinary error instead — turning an accidental
+fail-closed (nobody had wrapped `audit.record` in try/catch) into an
+explicit, tested guarantee.
+
+Task 64 ships `FileAuditSink`: one file, append-only, fsync per record, no
+rotation, plus `AuditRecordFormat`, an escaped one-line-per-event format that
+round-trips every `AuditEvent` component. Task 68 classifies the
+`dataPrismPassThroughIdentityResolver` bean task 53 had placed on a nested
+`@Import`ed configuration class specifically to dodge
+`AutoConfiguredBeanClassificationTest`'s sweep, and widens that sweep to walk
+nested and `@Import`ed classes recursively — proven non-vacuous by a canary
+`@Bean` planted inside the real nested class, which produced three failures
+before the fix and disabling the recursive walk turning the test red two
+separate ways. The overstated javadoc claiming `@ConditionalOnBean`
+visibility required the nested placement was corrected to the real reason
+(`@ConditionalOnMissingBean` plus bean-definition ordering).
+
+**Cost:** two of the four wave-1 tasks merged first time (63, 68); task 64
+took three attempts, and a fourth wave-1 task (60, nested JSON catalogues)
+was still in rework at its third attempt when this wave closed and does not
+merge here.
+
+Three defects in this wave were concealed by a green suite, a passing
+ArchUnit run, and self-reported full acceptance, each found only because a
+reviewer judged a mechanism instead of confirming it, or a tester probed a
+direction nobody had specified:
+
+- Task 64 attempt 1: `escape(null)` NPE'd, so any `AuditEvent` with a null
+  component threw out of `record()` — reachable today via
+  `GetEntityContextTool` auditing a null `entityType` for a missing argument
+  from an unauthenticated caller, exactly the event an audit trail exists to
+  capture. Fixed with unforgeable `NULL_TOKEN`/`EMPTY_SET_TOKEN` sentinels
+  (`escape()` only ever emits a backslash followed by `\`, `n`, `r`, `f` or
+  `s`; `decode` compares with `equals`, not `startsWith`), survived an
+  adversarial forging harness.
+- Task 64 attempt 2: a short write that threw left a fragment in the page
+  cache; the next successful record appended directly after it, and
+  `force(true)` made the concatenation durable as one newline-terminated
+  line — a field-count error **mid-file**, the false tampering signal the
+  `\n`-termination contract had just been added to prevent. Fixed by
+  poisoning the sink on any write *or* force failure (once `record()` has
+  thrown, the class cannot know the channel's state is sane, and IOException
+  behaviour is unspecified across platforms) — proved with a `FileChannel`
+  subclass that writes five bytes then throws without closing itself, so the
+  OS does not rescue it.
+- Task 60 (not merged here, still in rework) attempt 1: a fail-open where a
+  scalar arriving where the catalogue declared `nested:` was marked
+  non-sensitive and emitted verbatim under every profile — an SSN-shaped
+  value reaching the model raw. The task file's own acceptance criteria had
+  the gap: it required refusing a response nesting DEEPER than declared and
+  never mentioned shallower, so the attempt-1 tester passed the branch
+  because it probed only the specified direction.
+- Task 60 attempt 2: slot ordinals assigned from a `Map.copyOf` keySet, whose
+  iteration order is randomised per JVM — defeating the entire reason the
+  slot pool replaced runtime-generated hidden classes (cross-run stability).
+  The test could not catch it because it parsed twice inside ONE JVM; the
+  test was shaped like the bug.
+
+A pattern worth naming for task 66 (the audit chain verifier): four separate
+ordinary failure modes in this wave produce output that looks like
+tampering — a torn trailing record, a mid-file concatenation after a short
+write, a post-restart append after a fragment, and a duplicate sequence
+number under a write-then-throw sink. Three are now closed; the fourth
+(below) is a documented operator responsibility. Task 66's verifier must
+distinguish all of them from genuine tampering, and its task file was written
+before any of this was known.
+
+Also worth recording: task 60 attempt 1 satisfied the binding constraint "do
+not change data-prism-core" by generating classes at runtime via
+`MethodHandles.Lookup.defineHiddenClass` — the approach an architect spike
+had explicitly rejected in advance. No automated rule caught it:
+`PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` scopes to
+`..core..`, `..pseudonymisation..`, `..validation..`, `..orchestration..` —
+`connectors` is not in scope — and its `methodHandleFieldAccess()` predicate
+names `findGetter`/`findSetter`/`findVarHandle`/`unreflect*` but not
+`defineHiddenClass`.
+
+Follow-ups recorded to `docs/plan/PLAN.md`'s unscheduled open items rather
+than fixed here:
+
+1. `FileAuditSink`'s poison is per instance: after a torn write an operator
+   restarts, the new sink opens `APPEND` on the same path, and its first
+   record lands directly after the fragment, recreating the concatenated
+   mid-file line. Closing it needs inspecting the file's last byte at open,
+   deliberately left an operator responsibility this release — not a defect,
+   but must be written down for task 66.
+2. Tasks 63 and 64's contracts now interlock (63's rollback-on-throw, 64's
+   poisoning) and the reasoning depends on chains being per-writer with a
+   fresh `instanceId` per process (`docs/architecture.md` §A6). Re-establish
+   the interlock if either changes.
+3. `AuditSink`'s own javadoc still says nothing about the all-or-nothing
+   requirement the recorder's rollback implicitly imposes — it lives only in
+   `AuditRecorder`'s javadoc and task 64's (now retired) task file.
+4. `AuditRecorder` catches `RuntimeException` but not `Error`; a sink
+   throwing `AssertionError` or OOM leaves the sequence consumed. A gap, not
+   corruption.
+5. `FileAuditSink` catches `IOException` and `RuntimeException` but an
+   `Error` from inside the write loop escapes unpoisoned.
+6. `AuditSinkFailureAbortsResponseTest` pins the sink's raw exception message
+   reaching the MCP client. With the file sink that message would name a
+   server filesystem path — a disclosure to a client in a product whose
+   premise is controlling what reaches the model. Two reviewers agreed the
+   disclosure originates in the propagation path that maps a sink exception
+   into an MCP response, not in the sink. Fix it there, before task 67 wires
+   the sink.
+7. `PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` should cover
+   `..connectors..` and name `defineHiddenClass`/`defineClass`. Nothing stops
+   a future connector reintroducing runtime class generation.
+   `data-prism-architecture` was not in any wave-1 task's `Owns`, so this
+   needs its own task.
+8. Test coverage still missing for properties currently safe by construction
+   but unasserted: an already-closed channel followed by a second `record()`
+   throwing `PoisonedException`; `ClosedByInterruptException`; a second sink
+   opened on a path after the first was poisoned.
+9. `data-prism-integration-tests` shares a surefire fork, and
+   `java.net.http.HttpClient`'s default builder eagerly calls
+   `SSLContext.getDefault()`, a JVM-wide singleton cached on first use. Any
+   test building a default-SSLContext client before `McpHttpEndToEndTest`
+   sets its own `javax.net.ssl.trustStore` poisons the cache and breaks that
+   test's self-signed JWKS handshake for the rest of the fork. Task 63
+   worked around it with an explicit non-default `SSLContext` for its own
+   client, but `McpHttpEndToEndTest` still owns the shared default, so the
+   module is one careless new test away from the same failure. Recommended
+   fix: give `McpHttpEndToEndTest` its own explicit `SSLContext` and retire
+   the trustStore property.
+
+Merged locally 2026-09-22 (task 63, task 64, task 68); task file for each
+retired except 64's, whose attempt-1/attempt-2 records are mined above — see
+that history rather than the deleted file. Task 60's task file is not
+retired: it is still in rework at attempt 3 and its branch is not merged.
+Task 55 remains held, unchanged, pending image publication.
+
 ## 2026-09-22 — Task 58: a walkthrough for a stranger's own API, and six attempts to make it both work and not write key material into the repo
 
 A YAML-only walkthrough, `docs/protect-your-own-api.md`, that takes a reader
