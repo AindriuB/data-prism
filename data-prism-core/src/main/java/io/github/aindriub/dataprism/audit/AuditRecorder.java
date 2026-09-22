@@ -1,10 +1,6 @@
 package io.github.aindriub.dataprism.audit;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
-import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -16,6 +12,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>The chain is per instance. Each event hashes its own content together with
  * the previous event's hash, so a deletion or edit breaks the link from that
  * point on. Ordering across instances is the sink's problem, not this class's.
+ *
+ * <p>{@code previousHash} only advances, and the sequence counter only stays
+ * advanced, once {@code sink.record(event)} has returned without throwing. A
+ * throwing sink leaves this recorder's state byte-identical to what it was
+ * before the call — the sequence number handed out for the failed event is
+ * rolled back rather than left consumed, so the next successful write reuses
+ * it and chains against the same {@code previousHash} the failed attempt did.
+ * Task 66's verifier therefore never has to tolerate a gap: a failed write
+ * leaves no trace in either this recorder's state or the sink's own output.
  */
 public final class AuditRecorder {
 
@@ -43,30 +48,27 @@ public final class AuditRecorder {
         long seq = sequence.incrementAndGet();
         String id = UUID.randomUUID().toString();
         String prior = previousHash;
-        // Sorted so the hash does not depend on the iteration order of whatever
-        // Set implementation the caller happened to pass in.
-        String rejected = String.join(",", rejectedArguments.stream().sorted().toList());
-        String body = String.join("|", id, instanceId, Long.toString(seq), principalId, clientId, tool,
-                entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose,
-                caseId, policyDecision, correlationId, rejected, prior);
-        String hash = sha256(body);
+        String hash = AuditEventHash.compute(id, instanceId, seq, principalId, clientId, tool, entityType,
+                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision,
+                correlationId, rejectedArguments, prior);
 
         AuditEvent event = new AuditEvent(id, clock.instant(), principalId, clientId, tool, entityType,
                 subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
                 policyDecision, sourceSystems, rejectedArguments, correlationId, instanceId, seq, prior,
                 hash);
 
-        previousHash = hash;
-        sink.record(event);
-        return event;
-    }
-
-    private static String sha256(String value) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
+            sink.record(event);
+        } catch (RuntimeException e) {
+            // Roll back exactly what was tentatively advanced above: the
+            // sequence counter and, since previousHash has not moved yet, no
+            // further undo is needed for the chain head. The next call sees
+            // the same seq and the same previousHash a retried write of this
+            // very event would need.
+            sequence.decrementAndGet();
+            throw e;
         }
+        previousHash = hash;
+        return event;
     }
 }
