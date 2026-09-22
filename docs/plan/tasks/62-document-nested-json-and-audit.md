@@ -1,7 +1,7 @@
 # 62 — Document nested catalogues and the durable audit chain
 
 **Repo:** .
-**Depends on:** 60, 64, 66
+**Depends on:** 60, 64, 66, 71
 **Owns:**
 - docs/architecture.md
 - docs/protect-your-own-api.md
@@ -60,6 +60,15 @@ exactly what the audit chain's tamper-evidence does and does not prove.
 - [ ] `docs/protect-your-own-api.md` shows the nested case end to end — the YAML,
       the response, the scrubbed result — and names the deeper-than-declared refusal
       code from task 60.
+- [ ] The three stale pseudonym literals in `docs/protect-your-own-api.md` —
+      `SUBJ-3WR4` and `Casey Okafor (5K38)` at :387, and `SUBJ-3WR4` again at :394 —
+      are refreshed to the eight-character forms task 71 produces, and the address in
+      that output carries the tag task 71 gives `ADDRESS`. The replacements are pasted
+      from a real run, not hand-edited: this walkthrough is verified by following it
+      literally end to end, so its quoted output must match what the commands actually
+      print, and an invented pseudonym is unfalsifiable. (Task 71 widens the
+      discriminator, so the correct values do not exist until it lands — hence the
+      dependency.)
 - [ ] `docs/extending.md` no longer lists "a nested response" as a reason to leave
       the configuration-driven path; it lists two levels or more, custom fetch
       logic, and models a catalogue cannot express.
