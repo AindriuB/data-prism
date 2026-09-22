@@ -10,9 +10,10 @@
 # instead.
 #
 # Every host below is a loopback fixture (`data-prism-quickstart-fixtures`,
-# already built by this repository's own `mvn package`), not a real one:
-# swap `base-url` for your own API's real address and adjust `fields:` to
-# your own response shape; nothing else about this file's structure changes.
+# built by the `mvn -q -DskipTests package` command in
+# `docs/protect-your-own-api.md`), not a real one: swap `base-url` for your
+# own API's real address and adjust `fields:` to your own response shape;
+# nothing else about this file's structure changes.
 
 json-sources:
 

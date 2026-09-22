@@ -68,11 +68,17 @@ Both fixtures speak TLS only — the standalone server refuses a plaintext
 self-signed keystore and a matching truststore before either process starts.
 Like `QuickstartSmokeIT`'s `@TempDir` and `docker/certs-init/generate-certs.sh`'s
 Docker volume, this key material is generated outside the repository working
-tree, so it is never at risk of being committed. Capture a scratch directory
-once, then reuse it for every command below:
+tree, so it is never at risk of being committed. It also has to survive the
+fixtures and server below running in three separate terminals, so it lives
+at a fixed, re-derivable path under `$HOME` rather than a one-off `mktemp -d`
+that only the terminal which created it would know: every command below that
+touches this key material restates the same line first, so a fresh terminal
+that has not seen any earlier command still resolves `$KS_DIR` to the same
+place.
 
 ```sh
-KS_DIR=$(mktemp -d)
+KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+mkdir -p "$KS_DIR"
 ```
 
 These are the same three `keytool` invocations `QuickstartSmokeIT`
@@ -80,6 +86,9 @@ These are the same three `keytool` invocations `QuickstartSmokeIT`
 both run, adapted to loopback-only use here:
 
 ```sh
+KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+mkdir -p "$KS_DIR"
+
 keytool -genkeypair -alias walkthrough -keyalg RSA -keysize 2048 -validity 2 \
   -keystore "$KS_DIR/walkthrough.p12" -storetype PKCS12 \
   -storepass walkthrough-demo-only -keypass walkthrough-demo-only \
@@ -97,13 +106,14 @@ keytool -importcert -alias walkthrough -file "$KS_DIR/walkthrough.cer" \
 `$KS_DIR/walkthrough.p12` is the keystore the two fixtures serve HTTPS from;
 `$KS_DIR/walkthrough-trust.p12` is the truststore the server trusts it with
 below. Neither is committed or reused anywhere else — remove the whole
-scratch directory (`rm -rf "$KS_DIR"`) once you are done with this
-walkthrough.
+directory (`rm -rf "$KS_DIR"`) once you are done with this walkthrough.
 
 Start `data-prism-quickstart-fixtures` — the flat JSON REST API this
 walkthrough stands in for your own — on port 8543:
 
 ```sh
+KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+
 java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.2.0.jar \
   --server.port=8543 \
   --server.ssl.key-store="file:$KS_DIR/walkthrough.p12" \
@@ -121,9 +131,12 @@ curl -sk https://127.0.0.1:8543/health
 ```
 
 Start `data-prism-quickstart-issuer` — the JWT issuer this walkthrough mints
-tokens from — on port 8544, in a second terminal:
+tokens from — on port 8544, in a second terminal. This terminal has not run
+any earlier command in this walkthrough, so restate `KS_DIR` before using it:
 
 ```sh
+KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+
 java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.2.0.jar \
   --server.port=8544 \
   --server.ssl.key-store="file:$KS_DIR/walkthrough.p12" \
@@ -274,9 +287,13 @@ and Hazelcast configuration any protected deployment needs — see
 `docs/configuration.md` for that vocabulary in full; none of it is specific
 to this connector. Trust for the server's own outbound calls (the fixture
 API, JWKS discovery) is set the same way `docs/quickstart.md` sets it, via
-the JVM's own trust store system properties.
+the JVM's own trust store system properties. Both fixtures above are
+foreground processes occupying their own terminals, so run the server itself
+in a third terminal, restating `KS_DIR` again:
 
 ```sh
+KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+
 export DATAPRISM_WALKTHROUGH_HMAC_KEY=walkthrough-demo-hmac-key-material-32-bytes-plus
 
 java \
@@ -380,18 +397,23 @@ this response actually dialled is stated in that one file, once.
 
 An incomplete catalogue — the same file with `timeout:` deleted — refuses at
 startup, before any traffic reaches the source, naming the offending source
-and the missing key. Produce that variant into the scratch directory used
-above:
+and the missing key. This is a catalogue variant, not key material, so it
+gets its own scratch directory rather than sharing `$KS_DIR`; the same
+re-derivable-path shape applies, so it also survives a fresh terminal:
 
 ```sh
+SCRATCH_DIR=${SCRATCH_DIR:-$HOME/data-prism-walkthrough-scratch}
+mkdir -p "$SCRATCH_DIR"
+
 sed '/timeout: PT5S/d' examples/json-sources/customer-api.yaml \
-  > "$KS_DIR/customer-api-no-timeout.yaml"
+  > "$SCRATCH_DIR/customer-api-no-timeout.yaml"
 ```
 
-Start the server with the same command as "Run it", with
+Start the server with the same command as "Run it" (restating `KS_DIR` too,
+since this is again its own terminal), with
 `-Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml`
 replaced by
-`-Ddataprism.json-sources.config-location=file:$KS_DIR/customer-api-no-timeout.yaml`
+`-Ddataprism.json-sources.config-location=file:$SCRATCH_DIR/customer-api-no-timeout.yaml`
 and nothing else changed:
 
 ```
@@ -418,18 +440,26 @@ Every code fence above was executed, not transcribed:
 | `MISSING_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=pass-through` removed |
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |
 | The pseudonymised `get_entity_context` response, SSE frame included | the `initialize` / `notifications/initialized` / `tools/call` sequence in "Get a token and call it", run against a token freshly minted by `curl -sk -X POST https://127.0.0.1:8544/token` |
-| The missing-`timeout` refusal | the same server command, config-location pointed at the `sed`-produced `$KS_DIR/customer-api-no-timeout.yaml` |
+| The missing-`timeout` refusal | the same server command, config-location pointed at the `sed`-produced `$SCRATCH_DIR/customer-api-no-timeout.yaml` |
 | *(no captured output)* | `mvn -q -DskipTests package` and the three `keytool` commands in "Build the jars, then start the two fixtures" ran, but produce nothing worth capturing — a quiet build and key material respectively, not output that documents behaviour |
 
 `$KS_DIR/walkthrough.p12`/`$KS_DIR/walkthrough-trust.p12` above are a
 throwaway self-signed keystore and truststore generated with the
 `keytool -genkeypair`/`-exportcert`/`-importcert` commands in "Build the jars,
-then start the two fixtures", inside a `mktemp -d` scratch directory outside
-this repository's working tree — the same three invocations `QuickstartSmokeIT`
-(`data-prism-quickstart-extension`) and `docker/certs-init/generate-certs.sh`
-both run, kept out of the tree the same way those two precedents do — never
-committed, never reused. `data-prism-quickstart-fixtures` and
-`data-prism-quickstart-issuer`
+then start the two fixtures", inside `$HOME/data-prism-walkthrough-certs`, a
+directory outside this repository's working tree — the same three
+invocations `QuickstartSmokeIT` (`data-prism-quickstart-extension`) and
+`docker/certs-init/generate-certs.sh` both run, kept out of the tree the same
+way those two precedents do — never committed, never reused. Its path is
+fixed rather than a fresh `mktemp -d` each time precisely so that the second
+and third terminals this walkthrough uses can restate `$KS_DIR` and resolve
+to the same directory without inheriting it from the terminal that created
+it. `$SCRATCH_DIR/customer-api-no-timeout.yaml` in "Prove it fails closed" is
+a catalogue variant, not key material, so it lives in its own directory,
+`$HOME/data-prism-walkthrough-scratch`, for the same reason. `rm -rf
+"$KS_DIR" "$SCRATCH_DIR"` (both under `$HOME`, restated above if needed)
+removes everything either directory holds once you are done with this
+walkthrough. `data-prism-quickstart-fixtures` and `data-prism-quickstart-issuer`
 were started as plain `java -jar` processes on `127.0.0.1`, standing in for
 your own API and your own identity provider respectively; nothing about the
 JSON REST connector itself depends on either being a Data Prism fixture
