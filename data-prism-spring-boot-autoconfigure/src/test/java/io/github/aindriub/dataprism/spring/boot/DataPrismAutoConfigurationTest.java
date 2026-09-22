@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.audit.FileAuditSink;
+import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.IdentityResolver;
@@ -12,12 +14,15 @@ import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
+
+import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -175,6 +180,57 @@ class DataPrismAutoConfigurationTest {
                     assertThat(result).hasFailed(); assertThat(rootMessage(result.getStartupFailure())).contains("UNRESOLVED_SOURCE_ADAPTER");
                 });
     }
+    /**
+     * Task 67: {@code dataprism.audit.sink=hash-chained} resolves to task 64's
+     * {@link FileAuditSink}, bound to the configured {@code
+     * dataprism.audit.file-path}, rather than passing config validation with no
+     * bean behind it. Uses {@link ReviewedHttpIntegrationsWithoutAudit} — no
+     * application-supplied {@link AuditSink} — so the bean under test is the
+     * autoconfiguration's own, not one {@code @ConditionalOnMissingBean} would
+     * have suppressed.
+     */
+    @Test void hash_chained_sink_produces_a_file_audit_sink_bound_to_the_configured_path(@TempDir Path tempDir) {
+        Path file = tempDir.resolve("audit.log");
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrationsWithoutAudit.class).withPropertyValues(valid())
+                .withPropertyValues("dataprism.audit.sink=hash-chained", "dataprism.audit.file-path=" + file)
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result).hasSingleBean(AuditSink.class);
+                    assertThat(result.getBean(AuditSink.class)).isInstanceOf(FileAuditSink.class);
+                    assertThat(result.getBeansOfType(Slf4jAuditSink.class)).isEmpty();
+                });
+    }
+    /** The file path is required only when {@code hash-chained} is selected, and refused at the same phase as the rest of {@link DataPrismProperties#validate()} rather than surfacing as a {@code NullPointerException} once the bean is built. */
+    @Test void refuses_hash_chained_sink_without_a_configured_file_path() {
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrationsWithoutAudit.class).withPropertyValues(valid())
+                .withPropertyValues("dataprism.audit.sink=hash-chained")
+                .run(result -> {
+                    assertThat(result).hasFailed();
+                    Throwable failure = rootCause(result.getStartupFailure());
+                    assertThat(failure).isInstanceOf(DataPrismConfigurationException.class);
+                    assertThat(failure.getMessage()).startsWith("MISSING_AUDIT_FILE_PATH:")
+                            .contains("dataprism.audit.file-path");
+                });
+    }
+    /**
+     * {@code slf4j} still produces {@link Slf4jAuditSink} and never {@link
+     * FileAuditSink}, and the two are never both registered: {@code
+     * hasSingleBean(AuditSink.class)} fails outright if both conditional beans
+     * were somehow active at once.
+     */
+    @Test void slf4j_sink_produces_slf4j_audit_sink_and_never_a_file_audit_sink() {
+        new WebApplicationContextRunner().withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrationsWithoutAudit.class).withPropertyValues(valid())
+                .withPropertyValues("dataprism.audit.sink=slf4j")
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result).hasSingleBean(AuditSink.class);
+                    assertThat(result.getBean(AuditSink.class)).isInstanceOf(Slf4jAuditSink.class);
+                    assertThat(result.getBeansOfType(FileAuditSink.class)).isEmpty();
+                });
+    }
     private void fails(String code, String override) { context.withPropertyValues(override).run(result -> { assertThat(result).hasFailed(); assertThat(rootMessage(result.getStartupFailure())).contains(code); }); }
     private static String rootMessage(Throwable failure) { return rootCause(failure).getMessage(); }
     private static Throwable rootCause(Throwable failure) { Throwable current=failure; while(current.getCause()!=null) current=current.getCause(); return current; }
@@ -197,6 +253,23 @@ class DataPrismAutoConfigurationTest {
     }
     @Configuration(proxyBeanMethods = false)
     static class ReviewedHttpIntegrations extends ReviewedIntegrations {
+        @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor() {
+            return request -> McpTransportContext.EMPTY;
+        }
+    }
+    /**
+     * {@link ReviewedHttpIntegrations} minus its {@code AuditSink} bean, so
+     * {@code dataprism.audit.sink}'s own conditional beans in {@link
+     * DataPrismAutoConfiguration.AuditSinkSelection} are the ones actually
+     * exercised, rather than being suppressed by an application-supplied bean
+     * via {@code @ConditionalOnMissingBean}.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class ReviewedHttpIntegrationsWithoutAudit {
+        @Bean DataSourceAdapter<String> customerAdapter() { return new ReviewedIntegrations().customerAdapter(); }
+        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.PassThroughIdentityResolver(); }
+        @Bean HmacKeyReferenceResolver keys() { return new ReviewedIntegrations().keys(); }
+        @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
         @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor() {
             return request -> McpTransportContext.EMPTY;
         }

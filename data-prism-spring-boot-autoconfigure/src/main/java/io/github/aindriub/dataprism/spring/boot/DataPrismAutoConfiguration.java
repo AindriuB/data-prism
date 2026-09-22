@@ -4,6 +4,8 @@ import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.audit.FileAuditSink;
+import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
@@ -83,7 +85,7 @@ import java.util.Arrays;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(DataPrismProperties.class)
-@Import(DataPrismAutoConfiguration.IdentityResolverSelection.class)
+@Import({DataPrismAutoConfiguration.IdentityResolverSelection.class, DataPrismAutoConfiguration.AuditSinkSelection.class})
 public class DataPrismAutoConfiguration {
     /**
      * Resolve this before singleton creation: an empty protected pipeline is never
@@ -129,6 +131,78 @@ public class DataPrismAutoConfiguration {
         @ConditionalOnProperty(prefix = "dataprism.identity", name = "resolver", havingValue = "pass-through")
         IdentityResolver dataPrismPassThroughIdentityResolver() {
             return new PassThroughIdentityResolver();
+        }
+    }
+
+    /**
+     * Selects a built-in {@link AuditSink} for an operator with no Java to
+     * write, mirroring {@link IdentityResolverSelection} exactly, including
+     * why its {@code @Bean} methods live here rather than directly on {@link
+     * DataPrismAutoConfiguration}: without the same import-ordering trick,
+     * {@link #dataPrismAuditRecorder}'s own {@code
+     * @ConditionalOnBean(AuditSink.class)} would be evaluated before either
+     * bean below is registered, and would never see the one the configured
+     * sink value should have produced.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class AuditSinkSelection {
+        /**
+         * Nothing read from a source payload reaches this sink; see {@link
+         * Slf4jAuditSink}'s own class Javadoc for why that is what makes it
+         * safe to ship to ordinary log infrastructure.
+         */
+        @Bean
+        @ConditionalOnMissingBean(AuditSink.class)
+        @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "slf4j")
+        AuditSink dataPrismSlf4jAuditSink() {
+            return new Slf4jAuditSink();
+        }
+
+        /**
+         * Wires {@code dataprism.audit.sink=hash-chained} to task 64's {@link
+         * FileAuditSink}, bound to {@code dataprism.audit.file-path}. A blank
+         * or missing path is already refused earlier, at {@link
+         * DataPrismProperties#validate()}, with {@code
+         * MISSING_AUDIT_FILE_PATH} — this method only ever runs with a
+         * non-blank value. A path that cannot actually be opened (a parent
+         * directory that does not exist, or one this process cannot write
+         * to) is refused here instead, at startup, rather than surfacing on
+         * the first audited request: {@link FileAuditSink.OpenFailedException}
+         * is caught and re-thrown as a {@link DataPrismConfigurationException}
+         * with a stable code, deliberately without repeating the configured
+         * path in the message — the same choice {@link
+         * #dataPrismModelDescriptors} already makes for {@code
+         * dataprism.privacy.descriptor-file} — so a value an operator chose
+         * never reaches whatever renders this refusal.
+         *
+         * <p><b>What this does not close.</b> This bean's own construction
+         * failure is a startup refusal: it is never reachable by an MCP
+         * client, because the application never finishes starting. A
+         * <em>runtime</em> write failure from the sink this method returns is
+         * a different matter, and this task does not close it: {@link
+         * FileAuditSink}'s own exceptions deliberately name the configured
+         * path — its own acceptance list requires that — and the code that
+         * turns a thrown {@link AuditSink} exception into an MCP tool
+         * failure response propagates a sink's raw exception message
+         * verbatim to the client, proven by {@code
+         * AuditSinkFailureAbortsResponseTest} in {@code
+         * data-prism-integration-tests}. Wiring a real file path behind
+         * {@code hash-chained} makes that latent disclosure reachable for
+         * the first time in a default deployment; the file that would need
+         * to change to close it is the response-mapping code that test
+         * pins, which this task does not own.
+         */
+        @Bean
+        @ConditionalOnMissingBean(AuditSink.class)
+        @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
+        AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties) {
+            Path path = Path.of(properties.getAudit().getFilePath());
+            try {
+                return new FileAuditSink(path);
+            } catch (FileAuditSink.OpenFailedException e) {
+                throw new DataPrismConfigurationException("AUDIT_SINK_FILE_UNUSABLE",
+                        "dataprism.audit.file-path could not be opened for the hash-chained audit sink");
+            }
         }
     }
     @Bean

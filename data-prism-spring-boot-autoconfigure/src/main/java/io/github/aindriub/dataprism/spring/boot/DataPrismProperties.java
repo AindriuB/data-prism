@@ -168,6 +168,14 @@ public class DataPrismProperties {
         if (!Set.of("approved-sink", "slf4j", "hash-chained").contains(audit.sink)) {
             refuse("UNKNOWN_AUDIT_SINK", audit.sink);
         }
+        // Only hash-chained resolves to a bean that needs a file: see
+        // DataPrismAutoConfiguration#dataPrismHashChainedAuditSink. Refusing here,
+        // at property-validation time, means a missing path is a startup refusal
+        // with a stable code rather than a NullPointerException once that bean is
+        // actually constructed.
+        if ("hash-chained".equals(audit.sink)) {
+            required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
+        }
         required(audit.writerId, "MISSING_AUDIT_WRITER", "dataprism.audit.writer-id");
         if (audit.credentialReference != null && audit.credentialReference.isBlank()) {
             refuse("INVALID_AUDIT_REFERENCE", "dataprism.audit.credential-reference");
@@ -519,7 +527,7 @@ public class DataPrismProperties {
     }
 
     public static class Audit {
-        private String sink, writerId, credentialReference;
+        private String sink, writerId, credentialReference, filePath;
 
         public String getSink() {
             return sink;
@@ -543,6 +551,20 @@ public class DataPrismProperties {
 
         public void setCredentialReference(String v) {
             credentialReference = v;
+        }
+
+        /**
+         * The file the {@code hash-chained} sink appends to. Required only when
+         * {@code dataprism.audit.sink=hash-chained}; see
+         * {@code DataPrismAutoConfiguration#dataPrismHashChainedAuditSink}. Unused,
+         * and left unset, by every other sink value.
+         */
+        public String getFilePath() {
+            return filePath;
+        }
+
+        public void setFilePath(String v) {
+            filePath = v;
         }
     }
 
