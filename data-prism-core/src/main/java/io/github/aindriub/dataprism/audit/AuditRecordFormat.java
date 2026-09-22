@@ -17,12 +17,30 @@ import java.util.Set;
  * separated by an ASCII Record Separator (0x1E). Both control characters, and
  * the backslash and newline that could otherwise be mistaken for them, are
  * escaped in every component value, so a component containing any of them
- * still produces exactly one line.
+ * still produces exactly one line. A {@code null} component is encoded as a
+ * distinct sentinel, never as the empty string, so the two round-trip to
+ * different values; a component whose real content happens to equal the
+ * sentinel text still round-trips correctly, because {@link #escape(String)}
+ * never produces that sentinel for non-null input. The same distinction
+ * applies to an empty set versus a set holding a single empty string.
+ *
+ * <p>A record is complete, and safe to treat as such, only if its line is
+ * terminated by a newline. A trailing chunk of file content with no
+ * terminating newline — for example a process killed mid-write — is an
+ * in-progress write, not a record: it must not be parsed, and must not be
+ * compared against an expected {@code eventHash}, because it never finished
+ * being written. Recognising "no newline yet" as distinct from "tampered
+ * after being written" is exactly as far as this format's tamper-evidence
+ * goes; it does not, by itself, detect truncation of records that were
+ * previously complete — that needs an external checkpoint outside this
+ * class.
  */
 public final class AuditRecordFormat {
 
     private static final char FIELD_SEP = '';
     private static final char SET_SEP = '';
+    private static final String NULL_TOKEN = "\\0";
+    private static final String EMPTY_SET_TOKEN = "\\e";
 
     private AuditRecordFormat() {
     }
@@ -49,7 +67,7 @@ public final class AuditRecordFormat {
         appendField(line, event.instanceId());
         appendField(line, Long.toString(event.sequence()));
         appendField(line, event.previousHash());
-        appendRawField(line, escape(event.eventHash()), false);
+        appendRawField(line, encodeField(event.eventHash()), false);
         return line.toString();
     }
 
@@ -84,6 +102,9 @@ public final class AuditRecordFormat {
     }
 
     private static String encodeSet(Set<String> values) {
+        if (values.isEmpty()) {
+            return EMPTY_SET_TOKEN;
+        }
         StringBuilder encoded = new StringBuilder();
         boolean first = true;
         for (String value : values) {
@@ -98,7 +119,7 @@ public final class AuditRecordFormat {
 
     private static Set<String> decodeSet(String raw) {
         Set<String> values = new LinkedHashSet<>();
-        if (raw.isEmpty()) {
+        if (raw.equals(EMPTY_SET_TOKEN)) {
             return values;
         }
         for (String item : splitRaw(raw, SET_SEP, -1)) {
@@ -108,7 +129,17 @@ public final class AuditRecordFormat {
     }
 
     private static void appendField(StringBuilder line, String value) {
-        appendRawField(line, escape(value), true);
+        appendRawField(line, encodeField(value), true);
+    }
+
+    /**
+     * Encodes {@code value} for use as a field's already-escaped content: a
+     * {@code null} value becomes {@link #NULL_TOKEN}, which {@link
+     * #escape(String)} never produces from a non-null value, so the two are
+     * always distinguishable on decode.
+     */
+    private static String encodeField(String value) {
+        return value == null ? NULL_TOKEN : escape(value);
     }
 
     /**
@@ -142,6 +173,9 @@ public final class AuditRecordFormat {
     }
 
     private static String decode(String raw) {
+        if (raw.equals(NULL_TOKEN)) {
+            return null;
+        }
         StringBuilder decoded = new StringBuilder(raw.length());
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
