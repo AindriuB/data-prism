@@ -415,11 +415,14 @@ sed '/timeout: PT5S/d' examples/json-sources/customer-api.yaml \
   > "$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml"
 ```
 
-Start the server with the same command as "Run it", since this is again its
-own terminal restating `DP_WALKTHROUGH_CERT_DIR` first:
+Start the server with the same command as "Run it". This is again its own
+terminal, so restate both variables it needs first: `DP_WALKTHROUGH_CERT_DIR`
+for the keystore/truststore, and `DP_WALKTHROUGH_SCRATCH_DIR` for the
+catalogue variant the `sed` command above just produced:
 
 ```sh
 DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
+DP_WALKTHROUGH_SCRATCH_DIR=$HOME/data-prism-walkthrough-scratch
 ```
 
 with
@@ -468,8 +471,14 @@ and third terminals this walkthrough uses can restate `$DP_WALKTHROUGH_CERT_DIR`
 to the same directory without inheriting it from the terminal that created
 it. `$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml` in "Prove it fails closed" is
 a catalogue variant, not key material, so it lives in its own directory,
-`$HOME/data-prism-walkthrough-scratch`, for the same reason. `rm -rf
-"$DP_WALKTHROUGH_CERT_DIR" "$DP_WALKTHROUGH_SCRATCH_DIR"` (both under `$HOME`, restated above if needed)
+`$HOME/data-prism-walkthrough-scratch`, for the same reason.
+
+```sh
+DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
+DP_WALKTHROUGH_SCRATCH_DIR=$HOME/data-prism-walkthrough-scratch
+rm -rf "$DP_WALKTHROUGH_CERT_DIR" "$DP_WALKTHROUGH_SCRATCH_DIR"
+```
+
 removes everything either directory holds once you are done with this
 walkthrough. `data-prism-quickstart-fixtures` and `data-prism-quickstart-issuer`
 were started as plain `java -jar` processes on `127.0.0.1`, standing in for
