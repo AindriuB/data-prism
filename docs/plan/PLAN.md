@@ -741,16 +741,67 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   nested/imported configs, and the `DataPrismAutoConfiguration:117-126`
   javadoc correction), 71 (widen the pseudonym discriminator from 20 to 40
   bits, per the owner decision recorded above).
-- **Wave 2 — depends on wave 1:** 61 (nested JSON through the real MCP
-  HTTP/SSE transport, deps 60), 65 (file sink PII scan, deps 64), 66 (audit
-  chain verifier CLI, deps 64), 67 (wire `hash-chained` to `FileAuditSink`,
-  deps 64 and 68).
-- **Wave 3 — depends on waves 1-2:** 62 (corrects `architecture.md`'s
-  flat-by-design and boundary-7 claims, new `docs/audit.md`, nested example
-  and walkthrough; deps 60, 64, 66), 69 (restore the reviewed-adapter
-  allow-list task 54's review flagged above, via a catalogue-names bean from
-  the connector, without reinstating the exact-match duplication task 54
-  removed; deps 60, 67).
+
+  **Wave 1 is complete — 60, 63, 64, 68 all merged.** 63, 64, 68 merged
+  locally 2026-09-22; task 64's task file was retired with its attempt-1/
+  attempt-2 failure records mined into `docs/plan/HISTORY.md` — grep `v0.3.0
+  wave 1` — before deletion. **60 merged 2026-09-22 at attempt 3** (fixed a
+  fail-open on a scalar arriving where the catalogue declared `nested:`,
+  then a non-deterministic slot ordinal assigned from `Map.copyOf` iteration
+  order, now a pure function of the sorted catalogue-name set) — its task
+  file was retired with both failed attempts mined into
+  `docs/plan/HISTORY.md`, grep `Task 60`. Post-merge full-reactor
+  `mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19 modules,
+  1018 tests, 0 failures, 0 errors.
+
+  **Task 71 (widen the pseudonym discriminator) belongs to wave 1 and has
+  not been started.** Its task file exists at
+  `docs/plan/tasks/71-widen-pseudonym-discriminator.md`, merged via PR #87
+  together with the `docs/conventions.md` amendment its golden-vector
+  criterion cites.
+
+  **Task 66's task file was written before this wave discovered four
+  ordinary failure modes whose output resembles tampering** (see
+  `docs/plan/HISTORY.md`, grep `v0.3.0 wave 1`, for the account); amend 66's
+  acceptance criteria to address them before starting it.
+- **Wave 2 — depends on wave 1, now unblocked:** 61 (nested JSON through the
+  real MCP HTTP/SSE transport, deps 60 — unblocked now that 60 has merged),
+  65 (file sink PII scan, deps 64 — unblocked), 66 (audit chain verifier CLI,
+  deps 64 — unblocked, and see the "four tampering-shaped failure modes"
+  note above and in `docs/plan/HISTORY.md`'s wave-1 entry before starting),
+  67 (wire `hash-chained` to `FileAuditSink`, deps 64 and 68 — unblocked, and
+  see follow-up item 6 below on the path-disclosure fix that belongs where
+  the sink exception maps to an MCP response, not in the sink).
+
+  **61 and 65 merged 2026-09-22, both PASS + APPROVE.** 61's task file was
+  retired; 65 took two attempts (see `docs/plan/HISTORY.md`, grep `v0.3.0
+  wave 2`, for both). **66 is PASS but REQUEST CHANGES, in rework at attempt
+  2** — its task file stays under `docs/plan/tasks/` carrying the attempt-1
+  failure record (head-deletion reads as intact; the limitation text claims
+  more than `AuditEventHash` covers). Its branch and worktree are held, not
+  merged. **67 is PASS but REQUEST CHANGES for bookkeeping, not code** — see
+  follow-up item 1 below; its branch and worktree are held pending that task
+  being filed, unchanged by this close-out.
+
+  Task 60's durable caveats, load-bearing for 62 and 69: the fail-open is
+  fenced by `ConfiguredJsonNestedLeafShapeGuard` running before
+  `engine.scrub`, not structurally removed — any future path that hands a
+  `ConfiguredJsonFieldMetadataResolver` to `JsonTreeScrubbingEngine` without
+  calling the guard first reopens it; ordinals are per-source and assigned
+  over sorted catalogue names, so task 69 must read names off
+  `nestedCatalogues()` and never re-derive slots; core's `UNKNOWN_FIELD`
+  message interpolates the slot class name
+  (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name —
+  task 62 owns documenting the slot-to-catalogue mapping.
+- **Wave 3 — depends on waves 1-2, blocked on 66:** 62 (corrects
+  `architecture.md`'s flat-by-design and boundary-7 claims, new
+  `docs/audit.md`, nested example and walkthrough; deps 60, 64, 66), 69
+  (restore the reviewed-adapter allow-list task 54's review flagged above,
+  via a catalogue-names bean from the connector, without reinstating the
+  exact-match duplication task 54 removed; deps 60, 67). 62 additionally
+  carries the hard precondition in follow-up item 2 below (the sink-
+  exception-to-MCP-response path disclosure) before either 62 or 59 may tell
+  an operator to use `hash-chained`.
 - **Wave 4:** 70 (cut 0.3.0 across poms, `server.json`, `serverInfo`
   literals, four Dockerfiles, `publish-image.yml`, docs, with a CHANGELOG
   built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69).
@@ -762,6 +813,61 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
 - Task 69 sits behind two dependency edges on one file (60, then 67); a slip
   in 67 delays the allow-list fix, not the release, since 69 is wave 3 and
   70 waits on both.
+
+**Follow-ups filed from wave 2 (61, 65, 66, 67), 2026-09-22. None blocks 61
+or 65, both merged. Item 1 is a hard blocker on recording 67 done, and item 2
+is a hard precondition on 62 and 59 (see wave 3 above).**
+
+1. **Blocks recording task 67 done.** `approved-sink` is still accepted by
+   `DataPrismProperties.validate()` with no bean behind it, refusing later
+   via `MISSING_AUDIT_SINK` at contract-validator construction instead of at
+   config validation. 67's reviewer judged this inelegance rather than a
+   defect (nothing unsafe is reachable) and approved stopping there, since
+   the fix needs eight test files outside 67's `Owns`:
+   `data-prism-server/ServerStartupTest`, `ConfiguredIdentityResolverTest`,
+   `ModelDescriptorsConfigurationTest`, `PrivacyExtensionPointsTest`,
+   `SharedReadBudgetTest`, `FixtureDevelopmentRefusalTest`,
+   `ServerSecurityBoundaryTest`, `StarterStartupFailureTest`. File it as its
+   own task owning those files.
+2. **Hard precondition on tasks 62 and 59.** The sink-exception-to-MCP-
+   response path disclosure: `FileAuditSink`'s `PoisonedException` names the
+   file path by design, and `AuditSinkFailureAbortsResponseTest` pins a
+   sink's raw exception message reaching the MCP client, so a server
+   filesystem path can now reach a client. Two reviewers established the
+   disclosure originates in the response mapping, not the sink. 67's
+   reviewer ruled merging 67 acceptable without it, on condition that this
+   is filed before either 62 or 59 tells an operator to use `hash-chained`.
+3. The two PII scans have already drifted. `PiiLogScanTest` matches banned
+   values at token boundaries (lookaround-bounded since task 47, so bare ids
+   `123`/`456` cannot collide with hex); `AuditFilePiiScanTest`'s copy uses
+   plain `String.contains`. Stricter today so it cannot miss a leak, and the
+   derivations are byte-identical — but two definitions of "what counts as a
+   leak" will drift further. Share one derivation and one matcher; needs
+   `PiiLogScanTest`, which task 65 did not own.
+4. `AuditFilePiiScanTest`'s `leaksIn` dispatches `instanceof String` /
+   `instanceof Collection<?>` / else-throw, so a `null`-valued `String`
+   component falls to the else branch and NPEs on `value.getClass()` rather
+   than being skipped. Found independently by both 65's reviewer and
+   tester. Latent — production uses `""` sentinels — but `AuditRecordFormat`
+   round-trips nulls by design, so the path exists.
+5. `ConfiguredJsonNestedHttpTest` (task 61) leaves a non-daemon thread
+   (likely its per-test `java.net.http.HttpClient`), so
+   `data-prism-integration-tests` now ends with surefire's "going to kill
+   self fork JVM ... 30 seconds after System.exit(0)" — about 30 seconds and
+   an ERROR line added to every build. A baseline run on `main` does not
+   produce it. Reusing or closing one client fixes it.
+6. `data-prism-integration-tests/pom.xml` (task 61) introduces a second TLS-
+   password env var with the same literal as the existing
+   `DATA_PRISM_TEST_TLS_PASSWORD`; reuse the existing name.
+7. Two platform constraints worth recording for future tasks, both
+   confirmed from source by 61's tester: `dataprism.transport.fixture-
+   development` is refused unless `transport.mode=stdio`
+   (`DataPrismProperties:123`), so an HTTP-mode configured JSON source must
+   use a real TLS upstream; and `dataprism.json-sources.config-location`
+   must be passed as a JVM system property, not a `--` command-line arg,
+   because `DataPrismProperties` binds `ignoreUnknownFields=false` and
+   Spring Boot's unbound-elements check exempts system properties but not
+   command-line args — which is also how the packaged distribution wires it.
 
 **Release sequence — order is load-bearing, do not compress it:**
 1. Waves 1-3 merge.
@@ -792,6 +898,73 @@ system with users.
 
 ### Small open items, unscheduled
 
+Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
+64 or 68, all merged; several are load-bearing for the wave-2 tasks named.
+
+1. `FileAuditSink`'s poison is per instance, so after a torn write an
+   operator restarts, the new sink opens `APPEND` on the same path, and its
+   first record lands directly after the fragment — recreating the
+   concatenated mid-file line the poisoning exists to prevent. Closing it
+   needs inspecting the file's last byte at open, which this release
+   deliberately makes an operator responsibility instead. Not a defect;
+   task 66's verifier and its documentation must say so rather than
+   rediscover it.
+2. Tasks 63 and 64's contracts now interlock: 63's rollback-on-throw and
+   64's poisoning are jointly correct only because chains are per-writer
+   with a fresh `instanceId` per process (`docs/architecture.md` §A6). If
+   either changes, re-establish the interlock explicitly.
+3. `AuditSink`'s own javadoc still says nothing about the all-or-nothing
+   requirement `AuditRecorder`'s rollback implicitly imposes on any
+   implementation — it lives only in `AuditRecorder`'s javadoc and task 64's
+   now-deleted task file, neither of which a future sink implementor reads.
+4. `AuditRecorder` catches `RuntimeException` but not `Error`; a sink
+   throwing `AssertionError` or an `OutOfMemoryError` leaves the sequence
+   consumed. A gap, not corruption.
+5. `FileAuditSink` catches `IOException` and `RuntimeException` but an
+   `Error` thrown from inside the write loop escapes unpoisoned.
+6. `AuditSinkFailureAbortsResponseTest` pins the sink's raw exception
+   message reaching the MCP client. With the file sink, that message would
+   name a server filesystem path — a disclosure to a client in a product
+   whose premise is controlling what reaches the model. Two reviewers agreed
+   the disclosure originates in the propagation path that maps a sink
+   exception into an MCP response, not in the sink itself. Fix it where that
+   mapping lives, before task 67 wires the sink.
+7. `PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` scopes to
+   `..core..`, `..pseudonymisation..`, `..validation..`, `..orchestration..`
+   — `connectors` is not in scope, and its `methodHandleFieldAccess()`
+   predicate names `findGetter`/`findSetter`/`findVarHandle`/`unreflect*`,
+   not `defineHiddenClass`/`defineClass`. Nothing stops a future connector
+   reintroducing runtime class generation the way task 60's attempt 1 did.
+   `data-prism-architecture` was not in any wave-1 task's `Owns`, so this
+   needs its own task.
+8. Test coverage still missing for properties currently safe by construction
+   but unasserted in `FileAuditSink`: an already-closed channel followed by
+   a second `record()` throwing `PoisonedException`; `ClosedByInterruptException`;
+   a second sink opened on a path after the first was poisoned.
+9. `data-prism-integration-tests` shares a surefire fork, and
+   `java.net.http.HttpClient`'s default builder eagerly calls
+   `SSLContext.getDefault()`, a JVM-wide singleton cached on first use. Any
+   test building a default-SSLContext client before `McpHttpEndToEndTest`
+   sets its own `javax.net.ssl.trustStore` poisons the cache and breaks that
+   test's self-signed JWKS handshake for the rest of the fork. Task 63
+   worked around it by giving its own client an explicit non-default
+   `SSLContext`, but `McpHttpEndToEndTest` still owns the shared default, so
+   the module is one careless new test away from the same failure.
+   Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
+   and retire the trustStore property.
+
+Found on task 60 (nested JSON catalogues), merged 2026-09-22. None blocks the
+merge; pick any up only if a future task already owns the file.
+
+10. `ConfiguredJsonNestedCatalogueOrdinalDeterminismTest` asserts with
+    `contains("Slot1")`, which also matches `Slot10`-`Slot15`; harmless at
+    three catalogues today, but an exact suffix match would be tighter.
+11. The reserved-prefix refusal (a `nonSensitive:` reason beginning with the
+    nested-pointer token) is asserted only for a top-level field; a case
+    inside a nested catalogue would pin both call sites.
+12. The null-nested-object passthrough has no named test — a tester verified
+    it with a throwaway and deleted it.
+
 Found during `/verify` on task 58, 2026-09-22. Does not block anything; polish,
 not a defect.
 
@@ -803,22 +976,11 @@ not a defect.
 Found during `/verify` on tasks 53, 54, 55, 56, 57, 2026-09-21. None blocks
 anything already merged; the first is the most important of the six.
 
-- **(53's review, most important.)** The new `IdentityResolver` bean is
+- ~~**(53's review, most important.)** The new `IdentityResolver` bean is
   placed on a nested `@Import`ed static configuration class, which keeps it
-  outside `AutoConfiguredBeanClassificationTest`'s reflection sweep over
-  `DataPrismAutoConfiguration.class.getDeclaredMethods()`. The reviewer
-  ruled this a guardrail evasion — acceptable on that branch only because
-  its `Owns` list forbade editing `PrivacyExtensionPoints.java`, not
-  acceptable to leave standing. A follow-up owning `PrivacyExtensionPoints.java`
-  must do two things: add the row for `dataPrismPassThroughIdentityResolver`
-  (`REPLACEABLE` / `Guard.NONE`), and widen the sweep to nested/imported
-  configuration classes — otherwise this wave leaves a documented escape
-  hatch any future privacy-relevant bean can use to dodge classification.
-  Also fix the javadoc at `DataPrismAutoConfiguration.java:117-126`, which
-  overstates the necessity of the nested placement — it claims
-  `@ConditionalOnBean` visibility required it, but a `@Bean` method declared
-  above its dependants would have been visible too — and will mislead
-  whoever picks this up.
+  outside `AutoConfiguredBeanClassificationTest`'s reflection sweep.~~
+  **Resolved 2026-09-22 by task 68** — see v0.3.0 wave 1 above and
+  `docs/plan/HISTORY.md` (grep `v0.3.0 wave 1`).
 - (54's review.) The subset relaxation lost a property nobody has restored:
   `dataprism.sources` was also the operator's allow-list, and any
   `DataSourceAdapter` bean on the classpath is now implicitly approved

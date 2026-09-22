@@ -91,10 +91,7 @@ public class DataPrismAutoConfiguration {
      * value outright rather than silently falling back to pass-through, or to the
      * generic {@code MISSING_IDENTITY_RESOLVER} below. A recognised value never
      * reaches this check with no {@link IdentityResolver} bean present: see
-     * {@link IdentityResolverSelection}, imported ahead of this class so its
-     * conditional bean is a definition visible here, and to every other bean
-     * method gated on {@code @ConditionalOnBean(IdentityResolver.class)} — not a
-     * late registration.
+     * {@link IdentityResolverSelection}.
      */
     @Bean
     static BeanFactoryPostProcessor dataPrismIdentityResolverPreflight(Environment environment) {
@@ -112,16 +109,18 @@ public class DataPrismAutoConfiguration {
 
     /**
      * Selects the built-in {@link PassThroughIdentityResolver} for an operator
-     * with no Java to write, opt-in only. Its own {@code @Bean} method is
-     * deliberately not declared directly on {@link DataPrismAutoConfiguration}:
-     * imported ahead of it (see the class-level {@code @Import} above), its bean
-     * definition — when the property selects it — is registered while
-     * {@code DataPrismAutoConfiguration}'s own {@code @Bean} methods are still
-     * being processed, which is what lets {@code dataPrismScopeBudget} and every
-     * other {@code @ConditionalOnBean(IdentityResolver.class)} method see it, not
-     * only the preflight above. {@code @ConditionalOnMissingBean} is the
+     * with no Java to write, opt-in only. {@code @ConditionalOnMissingBean} is the
      * deliberate choice for acceptance item 4: an application-supplied
      * {@link IdentityResolver} always wins over this one, never producing two.
+     * Its own {@code @Bean} method is declared on this nested, imported class —
+     * rather than directly on {@link DataPrismAutoConfiguration} — purely for
+     * bean-definition ordering: imported ahead of it (see the class-level
+     * {@code @Import} above), its conditional bean definition, when the property
+     * selects it, is registered before {@code DataPrismAutoConfiguration}'s own
+     * {@code @Bean} methods run, so {@code @ConditionalOnMissingBean} here and
+     * {@code @ConditionalOnBean(IdentityResolver.class)} on beans declared below
+     * it both see the correct, final state rather than racing bean processing
+     * order.
      */
     @Configuration(proxyBeanMethods = false)
     static class IdentityResolverSelection {

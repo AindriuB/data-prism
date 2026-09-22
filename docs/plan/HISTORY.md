@@ -17,6 +17,310 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-22 — v0.3.0 wave 2 (tasks 61, 65): nested JSON proven through the real MCP transport, and the file sink's PII scan closed after an empty-derivation hole
+
+Task 61 proves the nested-catalogue path (task 60) through the real MCP
+HTTP/SSE transport rather than trusting the parser alone: it boots a real
+`ResourceServerApplication` on an ephemeral port and drives it with the MCP
+SDK's own `McpSyncClient` over `HttpClientStreamableHttpTransport` — real
+Accept negotiation, real SSE frame parsing — against a real mTLS HTTPS
+upstream with `keytool`-generated material in a `@TempDir`. Asserts the
+successful nested scrub plus all three task-60 refusals
+(`NESTED_LEAF_NOT_SCALAR`, `NESTED_FIELD_NOT_STRUCTURED`, `UNKNOWN_FIELD`)
+by stable code string, with the raw fixture values proven absent. Config
+loads through the production `ConfiguredJsonSourcesInitializer`; the only
+stubs are `JwtDecoder` and `HmacKeyReferenceResolver`, both orthogonal to
+nesting and already precedented. The reviewer confirmed every value asserted
+absent is genuinely present in its fixture, and the scalar-at-a-nested-field
+test runs under `profile=DEFAULT`, where non-sensitive leaves return
+verbatim — so if task 60's fail-open ever returned, the raw value would
+appear literally and the assertion would fire. No literal pseudonym is
+pinned anywhere, deliberately, so task 71's discriminator widening will not
+break it. Merged 2026-09-22.
+
+Task 65 shipped the file sink's PII scan, keeping `docs/architecture.md`
+boundary 7 enforced now that `FileAuditSink` is a second sink: a real
+integration flow through a real `FileAuditSink` to a real file, scanning
+that file's bytes. Took two attempts. Attempt 1 (tester PASS, reviewer
+REQUEST CHANGES) had `BANNED_VALUES` consumed only by the main leak test
+while the non-vacuity companion used its own literal, so an empty derivation
+would have passed green scanning for nothing — the eighth assertion-that-
+cannot-fail counted in this repository. Attempt 2 added the non-empty-plus-
+known-values guard (character-for-character the `PiiLogScanTest` reference),
+tightened "at least one record" to require an ALLOW line with a populated
+`subjectPseudonym`, and replaced a hand-enumerated component list with
+reflection over `AuditEvent.class.getRecordComponents()`, throwing on any
+unsupported type so a future component fails loudly instead of going
+unscanned. Verified independently: reflection scans exactly the same 18
+components the hand list did; the guard catches a shrunken-but-non-empty
+derivation on its `.contains` assertion, not merely an empty one; both
+attempt-1 non-vacuity mutations (a raw value through `subjectPseudonym`,
+and through `sourceSystems`) still turn it red after the refactor. Merged
+2026-09-22, task file retired.
+
+Wave 2 also ran 66 (audit chain verifier CLI) and 67 (wire `hash-chained`),
+neither merged here. Every one of the four passed its own tests; three of
+four were rejected on review — the wave's lesson, matching wave 1's: a
+green suite is evidence an implementer believes it finished, not that it
+did. 66 attempt 1 reports "intact" for head deletion (a first-seen writer
+skips the link check without asserting `previousHash == GENESIS`), and its
+limitation text claims to detect "an edit of a record already written" when
+`AuditEventHash` covers neither `timestamp` nor `sourceSystems` — both
+probed against real files, held for attempt 2, task file kept with the
+attempt-1 record. 67 was PARTIAL by its own report (5/7), stopping at its
+`Owns` boundary rather than widening into eight test files outside it; its
+reviewer judged the remaining gap inelegance rather than a defect, and held
+it on bookkeeping grounds — see `PLAN.md`'s wave-2 follow-up items.
+
+**Cost:** the closing-out session's own verification, run without `clean`,
+hit a stale incremental-compile artefact (`NoClassDefFoundError` on
+`MutualTlsRestClientsHttpsTest$1`) on a full reactor `verify` — pre-existing,
+not introduced by 61, but it means a plain `verify` in a dirty tree is not
+trustworthy; `clean verify` is. Also found: `AuditFilePiiScanTest`'s matcher
+(plain `String.contains`) has already drifted from `PiiLogScanTest`'s
+token-boundary lookaround match, even though both derivations are still
+byte-identical — recorded as its own follow-up rather than fixed here, since
+sharing one matcher needs `PiiLogScanTest`, which task 65 does not own.
+
+## 2026-09-22 — Task 60: one level of named nested JSON catalogues, after three attempts and a task-file amendment
+
+An operator with a flat-but-for-one-level JSON API can now protect it in
+YAML without writing Java. A field gains a fourth shape, `nested: <name>`,
+pointing at an entry in a top-level nested-catalogues map whose own fields
+use the same three-shape vocabulary that flat catalogues already have. No
+dotted paths, no JSONPath, no wildcard descent, no inferring structure from
+the wire — the reviewed artefact stays the operator-authored, startup-
+validated catalogue, and `data-prism-core` is unchanged, the binding
+constraint. `subject-json-path` is untouched; nested objects never carry
+their own subject. The descend key is a bounded pool of 16 pre-declared,
+package-private, final marker classes assigned per source, with a
+fail-closed startup refusal naming the source when it declares more
+catalogues than the pool holds. Ordinals are a pure function of the sorted
+catalogue-name set, not of YAML declaration order or map iteration order.
+Merged 2026-09-22, closing the last open task in v0.3.0 wave 1. Post-merge
+full-reactor `mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19
+modules, 1018 tests, 0 failures, 0 errors.
+
+**Cost:** three attempts, and the task file's own acceptance criteria had a
+gap the first attempt's tester could not have caught.
+
+Attempt 1 (tester PASS, reviewer REQUEST CHANGES) shipped a fail-open, the
+most serious defect class in this product: a `nested:` field was
+constructed with `"nested catalogue " + name` as its `nonSensitiveReason`,
+so `ProfilePrivacyPolicyResolver` returned `PASS_THROUGH` unconditionally;
+the shape guard's `isObject`/`isArray` check had no `else`, so a scalar
+there was skipped, and `SourceValues.descend` skipped it too — the engine
+fell through to `scalar()`. A response carrying
+`{"id":"C1","address":"123-45-6789"}` against a `nested: address` catalogue
+emitted that SSN-shaped value verbatim under every profile including the
+strictest. The task file's own acceptance criteria only required refusing a
+response nesting *deeper* than declared and never mentioned shallower, so
+the attempt-1 tester passed the branch having probed only the specified
+direction — the gap was in the contract, not only the code, and the file
+was amended in the attempt-1 record rather than just the implementation.
+Attempt 1 also satisfied "do not change data-prism-core" by generating
+classes at runtime via `MethodHandles.Lookup.defineHiddenClass`, the
+approach an architect spike had explicitly rejected in advance as "worse
+than the problem it solves". No automated rule caught it —
+`PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` does not scope to
+`connectors` and its predicate names `findGetter`/`findSetter`/
+`findVarHandle`/`unreflect*`, not `defineHiddenClass` — and the full build
+including ArchUnit passed regardless. The reviewer's concrete evidence: a
+privacy decision (descend or not) keyed on an object with no stable name or
+auditable identity, leaking into operator-facing output because core's
+`UNKNOWN_FIELD` interpolates `type.getName()`, rendering as
+`...Template/0x00007f...`, a different string every run.
+
+Attempt 2 (tester PASS, reviewer REQUEST CHANGES) closed the fail-open and
+replaced the hidden classes with the slot pool, but two defects survived.
+Ordinals were assigned by iterating a `Map.copyOf` keySet, whose iteration
+order is randomised per JVM — one run refused naming `Slot0`, the next
+`Slot1`, for identical input, defeating the entire reason the slot pool
+replaced the hidden classes (cross-run stability). The attempt-2
+determinism test was shaped like the bug: it parsed the same catalogue
+twice inside one JVM, which cannot observe per-JVM randomisation. Separately,
+a `nonSensitive:` reason beginning with the reserved nested-pointer prefix
+was silently mistaken for a nested pointer: the field was rewritten to
+carry the token and became descendable, so a scalar there refused with a
+code unrelated to anything the operator wrote.
+
+Attempt 3 (PASS + APPROVE) made ordinals a pure function of the declared
+name set — sorted into natural order before minting, so neither YAML
+declaration order nor map iteration order reaches the assignment — and
+refused the reserved prefix at startup, naming source and field. The
+determinism test now forks genuinely separate JVM processes, proven by the
+implementer removing the sort and watching it fail; an independent tester
+ran its own probe across eight separate JVM processes in two declaration
+orders and got identical mappings. Two previously safe-by-construction,
+untested properties are now pinned with executed mutation proofs by both
+implementer and tester independently: cross-source slot sharing (two
+sources whose same-ordinal catalogues declare different field sets each
+scrub against their own, and a field from one refuses as `UNKNOWN_FIELD` in
+the other) fails when the resolver's per-source snapshot is made static.
+
+**Durable caveats, load-bearing for tasks 62 and 69:**
+1. The fail-open is fenced, not structurally removed. `nested:` fields still
+   carry a `nonSensitiveReason`, so core would still resolve `PASS_THROUGH`
+   for a scalar there; it is fenced by
+   `ConfiguredJsonNestedLeafShapeGuard` running before `engine.scrub`. Two
+   reviewers traced every construction site and confirmed no path bypasses
+   it — the only resolver constructor takes the whole `ConfiguredJsonSource`.
+   Any future path that hands a `ConfiguredJsonFieldMetadataResolver` to
+   `JsonTreeScrubbingEngine` without calling the guard first reopens it.
+2. Ordinals are per-source and assigned over sorted names, so adding an
+   alphabetically-earlier catalogue shifts every later slot name. Task 69
+   must read names off `nestedCatalogues()` and never re-derive slots.
+3. Core's `UNKNOWN_FIELD` message interpolates the slot class name
+   (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name
+   — the path component does carry e.g. `address.country`, but operator
+   documentation (task 62) must explain the slot-to-catalogue mapping.
+   Closing this fully needs a core change that was out of scope here.
+
+## 2026-09-22 — v0.3.0 wave 1 (tasks 63, 64, 68): the audit chain's write ordering fixed, a durable file sink shipped after three attempts, and a bean-classification escape hatch closed
+
+Task 63 stops `AuditRecorder` from advancing `previousHash` before
+`sink.record` succeeds: a throwing sink used to leave the in-memory chain
+head past an event that was never durably written, so the next successful
+write chained against a hash for a record that does not exist. Now the
+sequence counter and `previousHash` only advance once the sink returns, and a
+throwing sink rolls the recorder back to byte-identical prior state. The
+canonical hash join moved into a new public `AuditEventHash`, verified
+byte-identical to `main`'s old inline join by both tester and reviewer
+independently, for task 66 to reuse. A real-HTTP integration test now pins
+that a throwing `AuditSink` aborts `get_entity_context` rather than returning
+data, paired with a non-vacuity test proving the same denial through a
+non-throwing sink returns an ordinary error instead — turning an accidental
+fail-closed (nobody had wrapped `audit.record` in try/catch) into an
+explicit, tested guarantee.
+
+Task 64 ships `FileAuditSink`: one file, append-only, fsync per record, no
+rotation, plus `AuditRecordFormat`, an escaped one-line-per-event format that
+round-trips every `AuditEvent` component. Task 68 classifies the
+`dataPrismPassThroughIdentityResolver` bean task 53 had placed on a nested
+`@Import`ed configuration class specifically to dodge
+`AutoConfiguredBeanClassificationTest`'s sweep, and widens that sweep to walk
+nested and `@Import`ed classes recursively — proven non-vacuous by a canary
+`@Bean` planted inside the real nested class, which produced three failures
+before the fix and disabling the recursive walk turning the test red two
+separate ways. The overstated javadoc claiming `@ConditionalOnBean`
+visibility required the nested placement was corrected to the real reason
+(`@ConditionalOnMissingBean` plus bean-definition ordering).
+
+**Cost:** two of the four wave-1 tasks merged first time (63, 68); task 64
+took three attempts, and a fourth wave-1 task (60, nested JSON catalogues)
+was still in rework at its third attempt when this wave closed and does not
+merge here.
+
+Three defects in this wave were concealed by a green suite, a passing
+ArchUnit run, and self-reported full acceptance, each found only because a
+reviewer judged a mechanism instead of confirming it, or a tester probed a
+direction nobody had specified:
+
+- Task 64 attempt 1: `escape(null)` NPE'd, so any `AuditEvent` with a null
+  component threw out of `record()` — reachable today via
+  `GetEntityContextTool` auditing a null `entityType` for a missing argument
+  from an unauthenticated caller, exactly the event an audit trail exists to
+  capture. Fixed with unforgeable `NULL_TOKEN`/`EMPTY_SET_TOKEN` sentinels
+  (`escape()` only ever emits a backslash followed by `\`, `n`, `r`, `f` or
+  `s`; `decode` compares with `equals`, not `startsWith`), survived an
+  adversarial forging harness.
+- Task 64 attempt 2: a short write that threw left a fragment in the page
+  cache; the next successful record appended directly after it, and
+  `force(true)` made the concatenation durable as one newline-terminated
+  line — a field-count error **mid-file**, the false tampering signal the
+  `\n`-termination contract had just been added to prevent. Fixed by
+  poisoning the sink on any write *or* force failure (once `record()` has
+  thrown, the class cannot know the channel's state is sane, and IOException
+  behaviour is unspecified across platforms) — proved with a `FileChannel`
+  subclass that writes five bytes then throws without closing itself, so the
+  OS does not rescue it.
+- Task 60 (not merged here, still in rework) attempt 1: a fail-open where a
+  scalar arriving where the catalogue declared `nested:` was marked
+  non-sensitive and emitted verbatim under every profile — an SSN-shaped
+  value reaching the model raw. The task file's own acceptance criteria had
+  the gap: it required refusing a response nesting DEEPER than declared and
+  never mentioned shallower, so the attempt-1 tester passed the branch
+  because it probed only the specified direction.
+- Task 60 attempt 2: slot ordinals assigned from a `Map.copyOf` keySet, whose
+  iteration order is randomised per JVM — defeating the entire reason the
+  slot pool replaced runtime-generated hidden classes (cross-run stability).
+  The test could not catch it because it parsed twice inside ONE JVM; the
+  test was shaped like the bug.
+
+A pattern worth naming for task 66 (the audit chain verifier): four separate
+ordinary failure modes in this wave produce output that looks like
+tampering — a torn trailing record, a mid-file concatenation after a short
+write, a post-restart append after a fragment, and a duplicate sequence
+number under a write-then-throw sink. Three are now closed; the fourth
+(below) is a documented operator responsibility. Task 66's verifier must
+distinguish all of them from genuine tampering, and its task file was written
+before any of this was known.
+
+Also worth recording: task 60 attempt 1 satisfied the binding constraint "do
+not change data-prism-core" by generating classes at runtime via
+`MethodHandles.Lookup.defineHiddenClass` — the approach an architect spike
+had explicitly rejected in advance. No automated rule caught it:
+`PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` scopes to
+`..core..`, `..pseudonymisation..`, `..validation..`, `..orchestration..` —
+`connectors` is not in scope — and its `methodHandleFieldAccess()` predicate
+names `findGetter`/`findSetter`/`findVarHandle`/`unreflect*` but not
+`defineHiddenClass`.
+
+Follow-ups recorded to `docs/plan/PLAN.md`'s unscheduled open items rather
+than fixed here:
+
+1. `FileAuditSink`'s poison is per instance: after a torn write an operator
+   restarts, the new sink opens `APPEND` on the same path, and its first
+   record lands directly after the fragment, recreating the concatenated
+   mid-file line. Closing it needs inspecting the file's last byte at open,
+   deliberately left an operator responsibility this release — not a defect,
+   but must be written down for task 66.
+2. Tasks 63 and 64's contracts now interlock (63's rollback-on-throw, 64's
+   poisoning) and the reasoning depends on chains being per-writer with a
+   fresh `instanceId` per process (`docs/architecture.md` §A6). Re-establish
+   the interlock if either changes.
+3. `AuditSink`'s own javadoc still says nothing about the all-or-nothing
+   requirement the recorder's rollback implicitly imposes — it lives only in
+   `AuditRecorder`'s javadoc and task 64's (now retired) task file.
+4. `AuditRecorder` catches `RuntimeException` but not `Error`; a sink
+   throwing `AssertionError` or OOM leaves the sequence consumed. A gap, not
+   corruption.
+5. `FileAuditSink` catches `IOException` and `RuntimeException` but an
+   `Error` from inside the write loop escapes unpoisoned.
+6. `AuditSinkFailureAbortsResponseTest` pins the sink's raw exception message
+   reaching the MCP client. With the file sink that message would name a
+   server filesystem path — a disclosure to a client in a product whose
+   premise is controlling what reaches the model. Two reviewers agreed the
+   disclosure originates in the propagation path that maps a sink exception
+   into an MCP response, not in the sink. Fix it there, before task 67 wires
+   the sink.
+7. `PRIVACY_MODULES_DO_NOT_MUTATE_OBJECT_GRAPHS_REFLECTIVELY` should cover
+   `..connectors..` and name `defineHiddenClass`/`defineClass`. Nothing stops
+   a future connector reintroducing runtime class generation.
+   `data-prism-architecture` was not in any wave-1 task's `Owns`, so this
+   needs its own task.
+8. Test coverage still missing for properties currently safe by construction
+   but unasserted: an already-closed channel followed by a second `record()`
+   throwing `PoisonedException`; `ClosedByInterruptException`; a second sink
+   opened on a path after the first was poisoned.
+9. `data-prism-integration-tests` shares a surefire fork, and
+   `java.net.http.HttpClient`'s default builder eagerly calls
+   `SSLContext.getDefault()`, a JVM-wide singleton cached on first use. Any
+   test building a default-SSLContext client before `McpHttpEndToEndTest`
+   sets its own `javax.net.ssl.trustStore` poisons the cache and breaks that
+   test's self-signed JWKS handshake for the rest of the fork. Task 63
+   worked around it with an explicit non-default `SSLContext` for its own
+   client, but `McpHttpEndToEndTest` still owns the shared default, so the
+   module is one careless new test away from the same failure. Recommended
+   fix: give `McpHttpEndToEndTest` its own explicit `SSLContext` and retire
+   the trustStore property.
+
+Merged locally 2026-09-22 (task 63, task 64, task 68); task file for each
+retired except 64's, whose attempt-1/attempt-2 records are mined above — see
+that history rather than the deleted file. Task 60's task file is not
+retired: it is still in rework at attempt 3 and its branch is not merged.
+Task 55 remains held, unchanged, pending image publication.
+
 ## 2026-09-22 — Task 58: a walkthrough for a stranger's own API, and six attempts to make it both work and not write key material into the repo
 
 A YAML-only walkthrough, `docs/protect-your-own-api.md`, that takes a reader

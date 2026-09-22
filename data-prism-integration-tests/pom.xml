@@ -68,6 +68,16 @@
       <artifactId>spring-boot-test</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!-- Task 61: proves task 60's nested-catalogue refusals through the real
+         MCP HTTP transport, not just against the engine directly. Test-scoped
+         only: the shipped example server never opts into configured JSON
+         sources on its own. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-connectors-rest</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -85,6 +95,20 @@
               <version>${project.version}</version>
             </path>
           </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- The literal here must match STORE_PASSWORD in
+               ConfiguredJsonNestedHttpTest, which generates a throwaway mTLS
+               key pair per test run for its own upstream fixture; the same
+               precedent is data-prism-connectors-rest's own POM, next to
+               MutualTlsRestClientsHttpsTest. -->
+          <environmentVariables>
+            <TASK61_TLS_PASSWORD>dp-test-only-not-a-real-secret</TASK61_TLS_PASSWORD>
+          </environmentVariables>
         </configuration>
       </plugin>
     </plugins>
