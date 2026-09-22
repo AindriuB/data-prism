@@ -50,6 +50,7 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
     private final ScrubbingEngine javaFirst;
     private final Map<String, JsonTreeScrubbingEngine> engines;
     private final Map<String, ConfiguredJsonFieldMetadataResolver> resolvers;
+    private final Map<String, ConfiguredJsonSource> sources;
     private final RawValueLeakValidator leakCheck = new RawValueLeakValidator();
 
     public ConfiguredJsonScrubbingEngine(ScrubbingEngine javaFirst,
@@ -67,12 +68,13 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
         Map<String, ConfiguredJsonFieldMetadataResolver> builtResolvers = new LinkedHashMap<>();
         for (Map.Entry<String, ConfiguredJsonSource> entry : sources.entrySet()) {
             ConfiguredJsonFieldMetadataResolver resolver =
-                    new ConfiguredJsonFieldMetadataResolver(entry.getValue().fields());
+                    new ConfiguredJsonFieldMetadataResolver(entry.getValue());
             builtResolvers.put(entry.getKey(), resolver);
             builtEngines.put(entry.getKey(), new JsonTreeScrubbingEngine(resolver, policy, synthetics, tokens));
         }
         this.engines = Map.copyOf(builtEngines);
         this.resolvers = Map.copyOf(builtResolvers);
+        this.sources = Map.copyOf(sources);
     }
 
     @Override
@@ -88,6 +90,9 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
                 throw new PrivacyRefusedException("UNKNOWN_CONFIGURED_SOURCE", payload.sourceName(),
                         "no reviewed catalogue is registered for this source");
             }
+
+            ConfiguredJsonNestedLeafShapeGuard.check(payload.sourceName(), payload.body(),
+                    sources.get(payload.sourceName()).fields(), resolver);
 
             ScrubResult scrubbed = engine.scrub(payload.body(), context);
             Set<String> prohibited = SourceValues.prohibited(payload.body(), resolver);

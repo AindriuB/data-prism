@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -299,5 +300,143 @@ class ConfiguredJsonSourcesTest {
         assertThatThrownBy(() -> load(yaml))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("exactly one is required");
+    }
+
+    // --- one level of named nested catalogues -----------------------------
+
+    private static final String VALID_WITH_NESTED = """
+            json-sources:
+              customer-api:
+                base-url: https://customer.example
+                path: /v1/customers/{subject}
+                timeout: PT2S
+                model-version: customer-v1
+                subject-json-path: customerId
+                fields:
+                  customerId:
+                    identifier: true
+                  customerName:
+                    classifications: [PII]
+                    namespace: PERSON_NAME
+                    action: SYNTHESIZE
+                  email:
+                    classifications: [CONTACT]
+                    namespace: EMAIL
+                    action: REDACT
+                  status:
+                    nonSensitive: "enumerated lifecycle state"
+                  address:
+                    nested: address
+                nested-catalogues:
+                  address:
+                    line1:
+                      nonSensitive: "street address line, reviewed as inert structure"
+                    postalCode:
+                      classifications: [PII]
+                      namespace: ADDRESS
+                      action: REDACT
+            """;
+
+    @Test
+    @DisplayName("a field naming a declared nested catalogue parses, and the catalogue holds exactly its declared entries")
+    void nestedCatalogueParses() {
+        ConfiguredJsonSourcesConfig config = load(VALID_WITH_NESTED);
+        ConfiguredJsonSource source = config.sources().get("customer-api");
+
+        assertThat(source.fields()).containsKey("address");
+        assertThat(source.nestedCatalogues()).containsOnlyKeys("address");
+
+        Map<String, FieldMetadata> address = source.nestedCatalogues().get("address");
+        assertThat(address).containsOnlyKeys("line1", "postalCode");
+
+        FieldMetadata line1 = address.get("line1");
+        assertThat(line1.declared()).isTrue();
+        assertThat(line1.nonSensitiveReason()).isEqualTo("street address line, reviewed as inert structure");
+
+        FieldMetadata postalCode = address.get("postalCode");
+        assertThat(postalCode.classifications()).containsExactly(DataClassification.PII);
+        assertThat(postalCode.namespace()).isEqualTo(PrivacyNamespace.ADDRESS);
+    }
+
+    @Test
+    @DisplayName("startup refusal: `nested:` names no declared nested-catalogues entry")
+    void nestedFieldWithNoMatchingCatalogueRefuses() {
+        String yaml = VALID_WITH_NESTED.replace("nested: address", "nested: doesNotExist");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("doesNotExist")
+                .hasMessageContaining("does not name an entry declared");
+    }
+
+    @Test
+    @DisplayName("startup refusal: a nested catalogue is declared but referenced by no field")
+    void nestedCatalogueDeclaredButUnreferencedRefuses() {
+        String yaml = VALID_WITH_NESTED.replace("      address:\n        nested: address\n", "");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("address")
+                .hasMessageContaining("referenced by no field");
+    }
+
+    @Test
+    @DisplayName("startup refusal: a nested catalogue entry states `nested:`, which is not one more level")
+    void nestedCatalogueCannotContainNested() {
+        String yaml = VALID_WITH_NESTED.replace(
+                "      address:\n        line1:\n"
+                        + "          nonSensitive: \"street address line, reviewed as inert structure\"\n",
+                "      address:\n        line1:\n          nested: address\n");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("nested catalogue")
+                .hasMessageContaining("nesting is exactly one level deep");
+    }
+
+    @Test
+    @DisplayName("startup refusal: a nested catalogue entry states more than one shape")
+    void nestedCatalogueEntryMustStateExactlyOneShape() {
+        String yaml = VALID_WITH_NESTED.replace(
+                "        line1:\n"
+                        + "          nonSensitive: \"street address line, reviewed as inert structure\"\n",
+                "        line1:\n"
+                        + "          nonSensitive: \"street address line, reviewed as inert structure\"\n"
+                        + "          classifications: [PII]\n");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("exactly one of");
+    }
+
+    @Test
+    @DisplayName("startup refusal: a nested catalogue entry marks identifier: true")
+    void nestedCatalogueEntryCannotBeIdentifier() {
+        String yaml = VALID_WITH_NESTED.replace(
+                "        line1:\n"
+                        + "          nonSensitive: \"street address line, reviewed as inert structure\"\n",
+                "        line1:\n          identifier: true\n");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("nested catalogue")
+                .hasMessageContaining("no identifier of its own");
+    }
+
+    @Test
+    @DisplayName("startup refusal: a nested catalogue name is outside the bounded FIELD_NAME grammar")
+    void nestedCatalogueNameMustBeABareName() {
+        String yaml = VALID_WITH_NESTED.replace("      address:\n        line1:",
+                "      address.sub:\n        line1:");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("not a bare property name");
     }
 }

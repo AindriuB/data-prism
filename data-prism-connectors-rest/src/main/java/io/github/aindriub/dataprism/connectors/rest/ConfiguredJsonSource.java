@@ -31,9 +31,34 @@ import java.util.Objects;
  *                       about it is special-cased beyond that
  * @param fields         the allowlisted catalogue, keyed by the exact JSON
  *                       property name it classifies
+ * @param nestedCatalogues the named sub-catalogues this source declared under
+ *                       {@code nested-catalogues:}, keyed by name, each itself
+ *                       a flat allowlisted catalogue of the kind {@code
+ *                       fields} is. Exposed so a consumer -- notably task 69 --
+ *                       can read the source's declared nested-catalogue names
+ *                       straight off this record rather than re-parsing the
+ *                       YAML. Carries no {@code Class} token: that mechanism
+ *                       is this module's own business, kept out of any public
+ *                       shape core or a caller might read
+ * @param nestedCatalogueResolutions the same catalogues as {@code
+ *                       nestedCatalogues}, indexed instead by the {@code
+ *                       Class} token {@link ConfiguredJsonSources} minted for
+ *                       each one and wrote into the pointing field's {@code
+ *                       FieldMetadata.valueType()}/{@code elementType()}. This
+ *                       is what lets {@link ConfiguredJsonFieldMetadataResolver}
+ *                       answer {@code resolve}/{@code descendable} for a
+ *                       nested catalogue exactly the way it answers for the
+ *                       root one, entirely by {@code Class} identity
  */
 public record ConfiguredJsonSource(RestSource transport, String modelVersion,
-                                    String subjectField, Map<String, FieldMetadata> fields) {
+                                    String subjectField, Map<String, FieldMetadata> fields,
+                                    Map<String, Map<String, FieldMetadata>> nestedCatalogues,
+                                    Map<Class<?>, Map<String, FieldMetadata>> nestedCatalogueResolutions) {
+
+    public ConfiguredJsonSource(RestSource transport, String modelVersion,
+                                String subjectField, Map<String, FieldMetadata> fields) {
+        this(transport, modelVersion, subjectField, fields, Map.of(), Map.of());
+    }
 
     public ConfiguredJsonSource {
         Objects.requireNonNull(transport, "transport");
@@ -46,6 +71,9 @@ public record ConfiguredJsonSource(RestSource transport, String modelVersion,
                     "source " + safeName(transport) + " has no fields catalogue");
         }
         fields = Map.copyOf(fields);
+        nestedCatalogues = nestedCatalogues == null ? Map.of() : Map.copyOf(nestedCatalogues);
+        nestedCatalogueResolutions = nestedCatalogueResolutions == null
+                ? Map.of() : Map.copyOf(nestedCatalogueResolutions);
         if (subjectField == null || subjectField.isBlank()) {
             throw new IllegalArgumentException(
                     "source " + safeName(transport) + " has no subject-json-path");
