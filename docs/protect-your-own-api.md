@@ -73,12 +73,12 @@ fixtures and server below running in three separate terminals, so it lives
 at a fixed, re-derivable path under `$HOME` rather than a one-off `mktemp -d`
 that only the terminal which created it would know: every command below that
 touches this key material restates the same line first, so a fresh terminal
-that has not seen any earlier command still resolves `$KS_DIR` to the same
+that has not seen any earlier command still resolves `$DP_WALKTHROUGH_CERT_DIR` to the same
 place.
 
 ```sh
-KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
-mkdir -p "$KS_DIR"
+DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
+mkdir -p "$DP_WALKTHROUGH_CERT_DIR"
 ```
 
 These are the same three `keytool` invocations `QuickstartSmokeIT`
@@ -86,37 +86,43 @@ These are the same three `keytool` invocations `QuickstartSmokeIT`
 both run, adapted to loopback-only use here:
 
 ```sh
-KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
-mkdir -p "$KS_DIR"
+DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
+mkdir -p "$DP_WALKTHROUGH_CERT_DIR"
 
 keytool -genkeypair -alias walkthrough -keyalg RSA -keysize 2048 -validity 2 \
-  -keystore "$KS_DIR/walkthrough.p12" -storetype PKCS12 \
+  -keystore "$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" -storetype PKCS12 \
   -storepass walkthrough-demo-only -keypass walkthrough-demo-only \
   -dname "CN=data-prism-walkthrough" \
   -ext "san=ip:127.0.0.1,dns:localhost"
 
-keytool -exportcert -alias walkthrough -keystore "$KS_DIR/walkthrough.p12" \
-  -storetype PKCS12 -storepass walkthrough-demo-only -file "$KS_DIR/walkthrough.cer"
+keytool -exportcert -alias walkthrough -keystore "$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
+  -storetype PKCS12 -storepass walkthrough-demo-only -file "$DP_WALKTHROUGH_CERT_DIR/walkthrough.cer"
 
-keytool -importcert -alias walkthrough -file "$KS_DIR/walkthrough.cer" \
-  -keystore "$KS_DIR/walkthrough-trust.p12" -storetype PKCS12 \
+keytool -importcert -alias walkthrough -file "$DP_WALKTHROUGH_CERT_DIR/walkthrough.cer" \
+  -keystore "$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12" -storetype PKCS12 \
   -storepass walkthrough-demo-only -noprompt
 ```
 
-`$KS_DIR/walkthrough.p12` is the keystore the two fixtures serve HTTPS from;
-`$KS_DIR/walkthrough-trust.p12` is the truststore the server trusts it with
+If `$DP_WALKTHROUGH_CERT_DIR` already holds a keystore from an earlier run of
+this walkthrough, skip the `keytool` block above — reusing the existing
+material is fine — or delete the directory first to start fresh; re-running
+it against an alias that already exists fails with `keytool error:
+java.lang.Exception: Key pair not generated, alias walkthrough already exists`.
+
+`$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12` is the keystore the two fixtures serve HTTPS from;
+`$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12` is the truststore the server trusts it with
 below. Neither is committed or reused anywhere else — remove the whole
-directory (`rm -rf "$KS_DIR"`) once you are done with this walkthrough.
+directory (`rm -rf "$DP_WALKTHROUGH_CERT_DIR"`) once you are done with this walkthrough.
 
 Start `data-prism-quickstart-fixtures` — the flat JSON REST API this
 walkthrough stands in for your own — on port 8543:
 
 ```sh
-KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
 java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.2.0.jar \
   --server.port=8543 \
-  --server.ssl.key-store="file:$KS_DIR/walkthrough.p12" \
+  --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
   --server.ssl.key-store-type=PKCS12 \
   --server.ssl.key-alias=walkthrough
@@ -132,14 +138,14 @@ curl -sk https://127.0.0.1:8543/health
 
 Start `data-prism-quickstart-issuer` — the JWT issuer this walkthrough mints
 tokens from — on port 8544, in a second terminal. This terminal has not run
-any earlier command in this walkthrough, so restate `KS_DIR` before using it:
+any earlier command in this walkthrough, so restate `DP_WALKTHROUGH_CERT_DIR` before using it:
 
 ```sh
-KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
 java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.2.0.jar \
   --server.port=8544 \
-  --server.ssl.key-store="file:$KS_DIR/walkthrough.p12" \
+  --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
   --server.ssl.key-store-type=PKCS12 \
   --server.ssl.key-alias=walkthrough \
@@ -289,15 +295,15 @@ to this connector. Trust for the server's own outbound calls (the fixture
 API, JWKS discovery) is set the same way `docs/quickstart.md` sets it, via
 the JVM's own trust store system properties. Both fixtures above are
 foreground processes occupying their own terminals, so run the server itself
-in a third terminal, restating `KS_DIR` again:
+in a third terminal, restating `DP_WALKTHROUGH_CERT_DIR` again:
 
 ```sh
-KS_DIR=${KS_DIR:-$HOME/data-prism-walkthrough-certs}
+DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
 export DATAPRISM_WALKTHROUGH_HMAC_KEY=walkthrough-demo-hmac-key-material-32-bytes-plus
 
 java \
-  -Djavax.net.ssl.trustStore="$KS_DIR/walkthrough-trust.p12" \
+  -Djavax.net.ssl.trustStore="$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12" \
   -Djavax.net.ssl.trustStorePassword=walkthrough-demo-only \
   -Djavax.net.ssl.trustStoreType=PKCS12 \
   -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar \
@@ -398,22 +404,28 @@ this response actually dialled is stated in that one file, once.
 An incomplete catalogue — the same file with `timeout:` deleted — refuses at
 startup, before any traffic reaches the source, naming the offending source
 and the missing key. This is a catalogue variant, not key material, so it
-gets its own scratch directory rather than sharing `$KS_DIR`; the same
+gets its own scratch directory rather than sharing `$DP_WALKTHROUGH_CERT_DIR`; the same
 re-derivable-path shape applies, so it also survives a fresh terminal:
 
 ```sh
-SCRATCH_DIR=${SCRATCH_DIR:-$HOME/data-prism-walkthrough-scratch}
-mkdir -p "$SCRATCH_DIR"
+DP_WALKTHROUGH_SCRATCH_DIR=$HOME/data-prism-walkthrough-scratch
+mkdir -p "$DP_WALKTHROUGH_SCRATCH_DIR"
 
 sed '/timeout: PT5S/d' examples/json-sources/customer-api.yaml \
-  > "$SCRATCH_DIR/customer-api-no-timeout.yaml"
+  > "$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml"
 ```
 
-Start the server with the same command as "Run it" (restating `KS_DIR` too,
-since this is again its own terminal), with
+Start the server with the same command as "Run it", since this is again its
+own terminal restating `DP_WALKTHROUGH_CERT_DIR` first:
+
+```sh
+DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
+```
+
+with
 `-Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml`
 replaced by
-`-Ddataprism.json-sources.config-location=file:$SCRATCH_DIR/customer-api-no-timeout.yaml`
+`-Ddataprism.json-sources.config-location=file:$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml`
 and nothing else changed:
 
 ```
@@ -440,10 +452,10 @@ Every code fence above was executed, not transcribed:
 | `MISSING_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=pass-through` removed |
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |
 | The pseudonymised `get_entity_context` response, SSE frame included | the `initialize` / `notifications/initialized` / `tools/call` sequence in "Get a token and call it", run against a token freshly minted by `curl -sk -X POST https://127.0.0.1:8544/token` |
-| The missing-`timeout` refusal | the same server command, config-location pointed at the `sed`-produced `$SCRATCH_DIR/customer-api-no-timeout.yaml` |
+| The missing-`timeout` refusal | the same server command, config-location pointed at the `sed`-produced `$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml` |
 | *(no captured output)* | `mvn -q -DskipTests package` and the three `keytool` commands in "Build the jars, then start the two fixtures" ran, but produce nothing worth capturing — a quiet build and key material respectively, not output that documents behaviour |
 
-`$KS_DIR/walkthrough.p12`/`$KS_DIR/walkthrough-trust.p12` above are a
+`$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12`/`$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12` above are a
 throwaway self-signed keystore and truststore generated with the
 `keytool -genkeypair`/`-exportcert`/`-importcert` commands in "Build the jars,
 then start the two fixtures", inside `$HOME/data-prism-walkthrough-certs`, a
@@ -452,12 +464,12 @@ invocations `QuickstartSmokeIT` (`data-prism-quickstart-extension`) and
 `docker/certs-init/generate-certs.sh` both run, kept out of the tree the same
 way those two precedents do — never committed, never reused. Its path is
 fixed rather than a fresh `mktemp -d` each time precisely so that the second
-and third terminals this walkthrough uses can restate `$KS_DIR` and resolve
+and third terminals this walkthrough uses can restate `$DP_WALKTHROUGH_CERT_DIR` and resolve
 to the same directory without inheriting it from the terminal that created
-it. `$SCRATCH_DIR/customer-api-no-timeout.yaml` in "Prove it fails closed" is
+it. `$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml` in "Prove it fails closed" is
 a catalogue variant, not key material, so it lives in its own directory,
 `$HOME/data-prism-walkthrough-scratch`, for the same reason. `rm -rf
-"$KS_DIR" "$SCRATCH_DIR"` (both under `$HOME`, restated above if needed)
+"$DP_WALKTHROUGH_CERT_DIR" "$DP_WALKTHROUGH_SCRATCH_DIR"` (both under `$HOME`, restated above if needed)
 removes everything either directory holds once you are done with this
 walkthrough. `data-prism-quickstart-fixtures` and `data-prism-quickstart-issuer`
 were started as plain `java -jar` processes on `127.0.0.1`, standing in for
