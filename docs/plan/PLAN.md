@@ -773,6 +773,16 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   see follow-up item 6 below on the path-disclosure fix that belongs where
   the sink exception maps to an MCP response, not in the sink).
 
+  **61 and 65 merged 2026-09-22, both PASS + APPROVE.** 61's task file was
+  retired; 65 took two attempts (see `docs/plan/HISTORY.md`, grep `v0.3.0
+  wave 2`, for both). **66 is PASS but REQUEST CHANGES, in rework at attempt
+  2** — its task file stays under `docs/plan/tasks/` carrying the attempt-1
+  failure record (head-deletion reads as intact; the limitation text claims
+  more than `AuditEventHash` covers). Its branch and worktree are held, not
+  merged. **67 is PASS but REQUEST CHANGES for bookkeeping, not code** — see
+  follow-up item 1 below; its branch and worktree are held pending that task
+  being filed, unchanged by this close-out.
+
   Task 60's durable caveats, load-bearing for 62 and 69: the fail-open is
   fenced by `ConfiguredJsonNestedLeafShapeGuard` running before
   `engine.scrub`, not structurally removed — any future path that hands a
@@ -783,12 +793,15 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   message interpolates the slot class name
   (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name —
   task 62 owns documenting the slot-to-catalogue mapping.
-- **Wave 3 — depends on waves 1-2:** 62 (corrects `architecture.md`'s
-  flat-by-design and boundary-7 claims, new `docs/audit.md`, nested example
-  and walkthrough; deps 60, 64, 66), 69 (restore the reviewed-adapter
-  allow-list task 54's review flagged above, via a catalogue-names bean from
-  the connector, without reinstating the exact-match duplication task 54
-  removed; deps 60, 67).
+- **Wave 3 — depends on waves 1-2, blocked on 66:** 62 (corrects
+  `architecture.md`'s flat-by-design and boundary-7 claims, new
+  `docs/audit.md`, nested example and walkthrough; deps 60, 64, 66), 69
+  (restore the reviewed-adapter allow-list task 54's review flagged above,
+  via a catalogue-names bean from the connector, without reinstating the
+  exact-match duplication task 54 removed; deps 60, 67). 62 additionally
+  carries the hard precondition in follow-up item 2 below (the sink-
+  exception-to-MCP-response path disclosure) before either 62 or 59 may tell
+  an operator to use `hash-chained`.
 - **Wave 4:** 70 (cut 0.3.0 across poms, `server.json`, `serverInfo`
   literals, four Dockerfiles, `publish-image.yml`, docs, with a CHANGELOG
   built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69).
@@ -800,6 +813,61 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
 - Task 69 sits behind two dependency edges on one file (60, then 67); a slip
   in 67 delays the allow-list fix, not the release, since 69 is wave 3 and
   70 waits on both.
+
+**Follow-ups filed from wave 2 (61, 65, 66, 67), 2026-09-22. None blocks 61
+or 65, both merged. Item 1 is a hard blocker on recording 67 done, and item 2
+is a hard precondition on 62 and 59 (see wave 3 above).**
+
+1. **Blocks recording task 67 done.** `approved-sink` is still accepted by
+   `DataPrismProperties.validate()` with no bean behind it, refusing later
+   via `MISSING_AUDIT_SINK` at contract-validator construction instead of at
+   config validation. 67's reviewer judged this inelegance rather than a
+   defect (nothing unsafe is reachable) and approved stopping there, since
+   the fix needs eight test files outside 67's `Owns`:
+   `data-prism-server/ServerStartupTest`, `ConfiguredIdentityResolverTest`,
+   `ModelDescriptorsConfigurationTest`, `PrivacyExtensionPointsTest`,
+   `SharedReadBudgetTest`, `FixtureDevelopmentRefusalTest`,
+   `ServerSecurityBoundaryTest`, `StarterStartupFailureTest`. File it as its
+   own task owning those files.
+2. **Hard precondition on tasks 62 and 59.** The sink-exception-to-MCP-
+   response path disclosure: `FileAuditSink`'s `PoisonedException` names the
+   file path by design, and `AuditSinkFailureAbortsResponseTest` pins a
+   sink's raw exception message reaching the MCP client, so a server
+   filesystem path can now reach a client. Two reviewers established the
+   disclosure originates in the response mapping, not the sink. 67's
+   reviewer ruled merging 67 acceptable without it, on condition that this
+   is filed before either 62 or 59 tells an operator to use `hash-chained`.
+3. The two PII scans have already drifted. `PiiLogScanTest` matches banned
+   values at token boundaries (lookaround-bounded since task 47, so bare ids
+   `123`/`456` cannot collide with hex); `AuditFilePiiScanTest`'s copy uses
+   plain `String.contains`. Stricter today so it cannot miss a leak, and the
+   derivations are byte-identical — but two definitions of "what counts as a
+   leak" will drift further. Share one derivation and one matcher; needs
+   `PiiLogScanTest`, which task 65 did not own.
+4. `AuditFilePiiScanTest`'s `leaksIn` dispatches `instanceof String` /
+   `instanceof Collection<?>` / else-throw, so a `null`-valued `String`
+   component falls to the else branch and NPEs on `value.getClass()` rather
+   than being skipped. Found independently by both 65's reviewer and
+   tester. Latent — production uses `""` sentinels — but `AuditRecordFormat`
+   round-trips nulls by design, so the path exists.
+5. `ConfiguredJsonNestedHttpTest` (task 61) leaves a non-daemon thread
+   (likely its per-test `java.net.http.HttpClient`), so
+   `data-prism-integration-tests` now ends with surefire's "going to kill
+   self fork JVM ... 30 seconds after System.exit(0)" — about 30 seconds and
+   an ERROR line added to every build. A baseline run on `main` does not
+   produce it. Reusing or closing one client fixes it.
+6. `data-prism-integration-tests/pom.xml` (task 61) introduces a second TLS-
+   password env var with the same literal as the existing
+   `DATA_PRISM_TEST_TLS_PASSWORD`; reuse the existing name.
+7. Two platform constraints worth recording for future tasks, both
+   confirmed from source by 61's tester: `dataprism.transport.fixture-
+   development` is refused unless `transport.mode=stdio`
+   (`DataPrismProperties:123`), so an HTTP-mode configured JSON source must
+   use a real TLS upstream; and `dataprism.json-sources.config-location`
+   must be passed as a JVM system property, not a `--` command-line arg,
+   because `DataPrismProperties` binds `ignoreUnknownFields=false` and
+   Spring Boot's unbound-elements check exempts system properties but not
+   command-line args — which is also how the packaged distribution wires it.
 
 **Release sequence — order is load-bearing, do not compress it:**
 1. Waves 1-3 merge.

@@ -134,3 +134,81 @@ detect.
 - Reading or verifying `Slf4jAuditSink` output.
 - An external checkpoint, anchoring, or signing scheme.
 - Documentation (task 62 owns `docs/audit.md` and `docs/architecture.md`).
+
+## Attempt 1 — failed
+
+Tester: PASS (full reactor, 572 tests, all 19 modules). Reviewer: REQUEST
+CHANGES — two defects, both probed against real files, both cases where the
+artifact would tell a compliance reader "intact" about genuine tampering.
+
+Most of this attempt is right and must be kept. The four wave-1 failure modes
+are each distinguished from a break, on real bytes rather than hand-built
+strings, including a genuine short-write-then-throw FileChannel fault injection
+to produce real torn fragments. Exit codes are distinct and documented, with
+structural anomalies never sharing the break code. One CLI test forks a real
+`java -cp` process against a file from an actual AuditRecorder + FileAuditSink
+run. AuditEventHash is reused, never re-derived. The limitation prints on every
+path including --help. No output contains "tamper-proof", "immutable" or
+"completeness".
+
+The attack analysis is worth keeping in full. CANNOT be hidden: a mid-chain
+deletion masked by an appended malformed fragment (skipped lines do not advance
+lastHash, so the next record still breaks — probed, exit 2, break beats anomaly);
+duplicate-sequence lines never advance the chain; a forged instanceId cannot
+mask a mid-chain break. CAN be hidden: tail truncation (disclosed), head
+truncation (defect 1, NOT disclosed), timestamp/sourceSystems edits (defect 2,
+NOT disclosed).
+
+### Defect 1 — head deletion reads as intact, and the limitation does not cover it
+
+`AuditChainVerifier.java:127` — the first record seen for a writer skips the
+link check without asserting `previousHash == GENESIS`. Deleting a writer's
+first two records yields "sequence count: 2 / intact", exit 0. Probed on a real
+FileAuditSink file.
+
+This is worse than a missing feature. The printed limitation disclaims only
+truncation of the MOST RECENT records, so a reader is entitled to conclude that
+earlier deletion would have been caught. The artifact actively explains away
+real tampering it does not disclose.
+
+Fix, entirely within this task's Owns: assert GENESIS on a first-seen writer
+and print that writer's first sequence number so a reader can see where each
+chain starts.
+
+### Defect 2 — the limitation claims more than the hash covers
+
+`AuditChainVerifierCli.java:44` — the limitation says the tool "detects an edit
+of a record already written". `AuditEventHash.compute` joins seventeen fields
+and `timestamp` and `sourceSystems` are not among them (confirmed directly
+against `data-prism-core/src/main/java/.../audit/AuditEventHash.java:28-40`).
+Editing a mid-chain record's timestamp prints intact, exit 0. Probed.
+
+THE ROOT CAUSE IS NOT IN THIS TASK. The hash is task 63's, already merged. An
+audit hash that omits the timestamp means a record can be backdated and the
+chain still verifies, which is most of what "tamper-evident" means to a
+compliance reader. Two ways forward, and the owner's decision was pending when
+this was recorded:
+- Widen `AuditEventHash` to cover timestamp and sourceSystems, in a new task
+  owning that file and AuditRecorder. Invalidates any chain already written;
+  nothing durable exists yet.
+- Leave the hash and narrow this limitation to name exactly which fields the
+  check covers.
+Either way defect 1 is fixed here. This task's wording must match whatever the
+hash actually covers when it lands — do not restate "detects an edit" without
+qualification.
+
+### Suggestions
+- `AuditChainVerifier.java:146-160` — `cause.getClass() == IllegalArgumentException.class`
+  is sound today but couples the benign classification to an unowned class's
+  exception type. If `AuditRecordFormat` later throws a different type for the
+  same condition, interrupted writes would be silently reclassified as
+  tampering — the cry-wolf defect arriving by the back door, with no test
+  failing to announce it. Counting unescaped 0x1F separators (!= 19) would test
+  the shape itself and cannot silently flip.
+- `AuditChainVerifier.java:100` — on a duplicate sequence the FIRST occurrence
+  becomes canonical, so a forged record inserted before the real one makes the
+  real record the reported anomaly. The message names both offsets so a reader
+  can still tell, but which is treated as canonical should be stated.
+- No test covers the narrower parse-failure path the implementer flagged
+  (DateTimeParseException / NumberFormatException escalating to break severity
+  rather than the benign bucket). Add one.

@@ -17,6 +17,71 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-22 — v0.3.0 wave 2 (tasks 61, 65): nested JSON proven through the real MCP transport, and the file sink's PII scan closed after an empty-derivation hole
+
+Task 61 proves the nested-catalogue path (task 60) through the real MCP
+HTTP/SSE transport rather than trusting the parser alone: it boots a real
+`ResourceServerApplication` on an ephemeral port and drives it with the MCP
+SDK's own `McpSyncClient` over `HttpClientStreamableHttpTransport` — real
+Accept negotiation, real SSE frame parsing — against a real mTLS HTTPS
+upstream with `keytool`-generated material in a `@TempDir`. Asserts the
+successful nested scrub plus all three task-60 refusals
+(`NESTED_LEAF_NOT_SCALAR`, `NESTED_FIELD_NOT_STRUCTURED`, `UNKNOWN_FIELD`)
+by stable code string, with the raw fixture values proven absent. Config
+loads through the production `ConfiguredJsonSourcesInitializer`; the only
+stubs are `JwtDecoder` and `HmacKeyReferenceResolver`, both orthogonal to
+nesting and already precedented. The reviewer confirmed every value asserted
+absent is genuinely present in its fixture, and the scalar-at-a-nested-field
+test runs under `profile=DEFAULT`, where non-sensitive leaves return
+verbatim — so if task 60's fail-open ever returned, the raw value would
+appear literally and the assertion would fire. No literal pseudonym is
+pinned anywhere, deliberately, so task 71's discriminator widening will not
+break it. Merged 2026-09-22.
+
+Task 65 shipped the file sink's PII scan, keeping `docs/architecture.md`
+boundary 7 enforced now that `FileAuditSink` is a second sink: a real
+integration flow through a real `FileAuditSink` to a real file, scanning
+that file's bytes. Took two attempts. Attempt 1 (tester PASS, reviewer
+REQUEST CHANGES) had `BANNED_VALUES` consumed only by the main leak test
+while the non-vacuity companion used its own literal, so an empty derivation
+would have passed green scanning for nothing — the eighth assertion-that-
+cannot-fail counted in this repository. Attempt 2 added the non-empty-plus-
+known-values guard (character-for-character the `PiiLogScanTest` reference),
+tightened "at least one record" to require an ALLOW line with a populated
+`subjectPseudonym`, and replaced a hand-enumerated component list with
+reflection over `AuditEvent.class.getRecordComponents()`, throwing on any
+unsupported type so a future component fails loudly instead of going
+unscanned. Verified independently: reflection scans exactly the same 18
+components the hand list did; the guard catches a shrunken-but-non-empty
+derivation on its `.contains` assertion, not merely an empty one; both
+attempt-1 non-vacuity mutations (a raw value through `subjectPseudonym`,
+and through `sourceSystems`) still turn it red after the refactor. Merged
+2026-09-22, task file retired.
+
+Wave 2 also ran 66 (audit chain verifier CLI) and 67 (wire `hash-chained`),
+neither merged here. Every one of the four passed its own tests; three of
+four were rejected on review — the wave's lesson, matching wave 1's: a
+green suite is evidence an implementer believes it finished, not that it
+did. 66 attempt 1 reports "intact" for head deletion (a first-seen writer
+skips the link check without asserting `previousHash == GENESIS`), and its
+limitation text claims to detect "an edit of a record already written" when
+`AuditEventHash` covers neither `timestamp` nor `sourceSystems` — both
+probed against real files, held for attempt 2, task file kept with the
+attempt-1 record. 67 was PARTIAL by its own report (5/7), stopping at its
+`Owns` boundary rather than widening into eight test files outside it; its
+reviewer judged the remaining gap inelegance rather than a defect, and held
+it on bookkeeping grounds — see `PLAN.md`'s wave-2 follow-up items.
+
+**Cost:** the closing-out session's own verification, run without `clean`,
+hit a stale incremental-compile artefact (`NoClassDefFoundError` on
+`MutualTlsRestClientsHttpsTest$1`) on a full reactor `verify` — pre-existing,
+not introduced by 61, but it means a plain `verify` in a dirty tree is not
+trustworthy; `clean verify` is. Also found: `AuditFilePiiScanTest`'s matcher
+(plain `String.contains`) has already drifted from `PiiLogScanTest`'s
+token-boundary lookaround match, even though both derivations are still
+byte-identical — recorded as its own follow-up rather than fixed here, since
+sharing one matcher needs `PiiLogScanTest`, which task 65 does not own.
+
 ## 2026-09-22 — Task 60: one level of named nested JSON catalogues, after three attempts and a task-file amendment
 
 An operator with a flat-but-for-one-level JSON API can now protect it in
