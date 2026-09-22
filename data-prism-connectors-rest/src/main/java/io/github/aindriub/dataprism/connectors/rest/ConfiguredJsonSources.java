@@ -14,6 +14,7 @@ import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -224,17 +225,31 @@ public final class ConfiguredJsonSources {
     /**
      * Replaces each nested-pointing root field's placeholder {@code
      * FieldMetadata} with one carrying a real token from {@link
-     * ConfiguredJsonNestedCatalogueTokens}, one per declared catalogue name, in
-     * declaration order.
+     * ConfiguredJsonNestedCatalogueTokens}, one per declared catalogue name.
+     *
+     * <p>Ordinals are assigned over the catalogue names sorted into natural
+     * ({@code String}) order, never over {@code nestedCatalogues.keySet()}
+     * itself: that map is built via {@code Map.copyOf}, whose iteration order
+     * is randomised per JVM run (a fresh salt is drawn once per process to
+     * resist hash-flooding, see {@code java.util.ImmutableCollections}). Two
+     * runs of the identical YAML would otherwise mint the same catalogue a
+     * different ordinal, and therefore a different, operator-visible slot
+     * name, in different runs. Sorting the name list makes the assignment a
+     * pure function of the declared name set alone, independent of both
+     * declaration order and map iteration order, so it really is identical
+     * across runs.
      */
     private static Map<String, FieldMetadata> assignNestedTokens(String sourceName,
             Map<String, FieldMetadata> fields, Map<String, Map<String, FieldMetadata>> nestedCatalogues) {
         if (nestedCatalogues.isEmpty()) {
             return fields;
         }
+        List<String> sortedCatalogueNames = new ArrayList<>(nestedCatalogues.keySet());
+        sortedCatalogueNames.sort(Comparator.naturalOrder());
+
         Map<String, Class<?>> tokenByCatalogueName = new LinkedHashMap<>();
         int ordinal = 0;
-        for (String catalogueName : nestedCatalogues.keySet()) {
+        for (String catalogueName : sortedCatalogueNames) {
             tokenByCatalogueName.put(catalogueName, ConfiguredJsonNestedCatalogueTokens.mint(sourceName, ordinal));
             ordinal++;
         }
@@ -378,6 +393,19 @@ public final class ConfiguredJsonSources {
             String reason = String.valueOf(body.get("nonSensitive"));
             if (reason.isBlank()) {
                 throw new IllegalArgumentException(where + " has a blank nonSensitive reason");
+            }
+            if (reason.startsWith(NESTED_FIELD_REASON_PREFIX)) {
+                // Reserved: ConfiguredJsonFieldMetadataResolver rebuilds its
+                // Class-token index by recognising this exact prefix on a
+                // `nested:` field's own nonSensitiveReason (see
+                // buildNestedByToken). If an operator's own reason happened to
+                // start with it, this plain scalar field would be silently
+                // treated as a nested-catalogue pointer and become descendable,
+                // producing an undiagnosable refusal when the wire carries a
+                // scalar there. Refuse it at startup instead, naming the field.
+                throw new IllegalArgumentException(where + " has a nonSensitive reason '" + reason
+                        + "' that begins with the reserved marker '" + NESTED_FIELD_REASON_PREFIX
+                        + "'; choose a different reason so this field cannot be mistaken for a `nested:` pointer");
             }
             return new FieldMetadata(fieldName, false, null, List.of(), PrivacyNamespace.NONE,
                     null, "", reason, String.class, null);

@@ -350,6 +350,105 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
                 .hasMessageNotContaining("123-45-6789");
     }
 
+    /**
+     * A second, independent source whose Nth nested catalogue shares the exact
+     * same minted {@code Class} token as {@link #sourceWithAddress()}'s Nth
+     * catalogue -- by design, since each source's own {@code
+     * assignNestedTokens} counts ordinals from zero (docs/plan/tasks/60-*.md).
+     * Its {@code address} catalogue declares a deliberately different field
+     * set ({@code city}/{@code taxId} rather than {@code line1}/{@code ssn}),
+     * so a test can prove each source's resolver only ever consults its own
+     * catalogue for that shared token, never the other source's.
+     */
+    private static ConfiguredJsonSource anotherSourceSharingTheSameSlot() {
+        RestSource transport = new RestSource("supplier-with-address",
+                URI.create("https://supplier.example"), "/v1/suppliers/{subject}", Duration.ofSeconds(2));
+
+        Map<String, FieldMetadata> addressCatalogue = Map.of(
+                "city", new FieldMetadata("city", false, null, List.of(), PrivacyNamespace.NONE,
+                        null, "", "city name, reviewed as inert structure", String.class, null),
+                "taxId", new FieldMetadata("taxId", false, null, List.of(DataClassification.PII),
+                        PrivacyNamespace.PERSON_IDENTITY, PrivacyAction.SYNTHESIZE, "", null, String.class, null));
+
+        // Ordinal 0 within this source, exactly like sourceWithAddress()'s own
+        // "address" catalogue -- both resolve to the same POOL slot.
+        Class<?> addressToken = ConfiguredJsonNestedCatalogueTokens.mint("supplier-with-address", 0);
+        Map<String, FieldMetadata> fields = Map.of(
+                "id", new FieldMetadata("id", true, FieldMetadata.SELF, List.of(),
+                        PrivacyNamespace.NONE, null, "", null, String.class, null),
+                "address", new FieldMetadata("address", false, null, List.of(), PrivacyNamespace.NONE,
+                        null, "", ConfiguredJsonSources.NESTED_FIELD_REASON_PREFIX + "address",
+                        addressToken, addressToken));
+
+        return new ConfiguredJsonSource(transport, "supplier-v1", "id", fields,
+                Map.of("address", addressCatalogue));
+    }
+
+    private static ConfiguredJsonScrubbingEngine engineForBoth(
+            ConfiguredJsonSource first, ConfiguredJsonSource second, Vocabulary vocabulary) {
+        PrivacyPolicyResolver policy = defaultProfilePolicy();
+        SyntheticValueSource synthetics = new HmacSyntheticGenerator(KEYS, vocabulary);
+        ValueTokenSource tokens = new HmacValueTokenSource(KEYS);
+        return new ConfiguredJsonScrubbingEngine(UNREACHABLE_JAVA_FIRST,
+                Map.of(first.transport().name(), first, second.transport().name(), second),
+                policy, synthetics, tokens);
+    }
+
+    @Test
+    @DisplayName("SLOT SHARING IS SAFE: two sources whose Nth nested catalogue shares the same "
+            + "minted token each scrub against their own declared field set, not the other's")
+    void twoSourcesSharingTheSameSlotScrubAgainstTheirOwnCatalogue() {
+        ConfiguredJsonSource address = sourceWithAddress();
+        ConfiguredJsonSource supplier = anotherSourceSharingTheSameSlot();
+        // Same POOL slot, different sources: the sharpest untested property in
+        // the design (docs/plan/tasks/60-*.md, attempt 2's "also add").
+        assertThat(address.fields().get("address").valueType())
+                .isEqualTo(supplier.fields().get("address").valueType());
+
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve("und");
+        ConfiguredJsonScrubbingEngine engine = engineForBoth(address, supplier, vocabulary);
+
+        ScrubResult addressResult = engine.scrub(new ConfiguredJsonPayload("customer-with-address", body("""
+                {"id":"CUST-1","address":{"line1":"123 Main St","ssn":"123-45-6789"}}
+                """)), context(vocabulary));
+        assertThat(addressResult.tree().at("/address/line1").asText()).isEqualTo("123 Main St");
+        assertThat(addressResult.tree().at("/address/ssn").asText()).isNotEqualTo("123-45-6789");
+
+        ScrubResult supplierResult = engine.scrub(new ConfiguredJsonPayload("supplier-with-address", body("""
+                {"id":"SUP-1","address":{"city":"Springfield","taxId":"98-7654321"}}
+                """)), context(vocabulary));
+        assertThat(supplierResult.tree().at("/address/city").asText()).isEqualTo("Springfield");
+        assertThat(supplierResult.tree().at("/address/taxId").asText()).isNotEqualTo("98-7654321");
+    }
+
+    @Test
+    @DisplayName("SLOT SHARING IS SAFE: a field declared in one source's same-slot nested catalogue "
+            + "but absent from the other's is refused as UNKNOWN_FIELD when it shows up in the wrong source")
+    void fieldFromOneSourceSCatalogueRefusesInTheOtherSourceSharingTheSameSlot() {
+        ConfiguredJsonSource address = sourceWithAddress();
+        ConfiguredJsonSource supplier = anotherSourceSharingTheSameSlot();
+
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve("und");
+        ConfiguredJsonScrubbingEngine engine = engineForBoth(address, supplier, vocabulary);
+
+        // "ssn" is declared only in sourceWithAddress()'s "address" catalogue.
+        // If the resolver's nestedByToken were not scoped per source -- e.g. if
+        // the shared slot token resolved to whichever catalogue was built last
+        // -- this would either scrub "ssn" using the wrong metadata or pass it
+        // through silently instead of refusing it as an undeclared property of
+        // supplier-with-address's own catalogue.
+        ObjectNode wrongSourceBody = body("""
+                {"id":"SUP-1","address":{"city":"Springfield","ssn":"123-45-6789"}}
+                """);
+
+        assertThatThrownBy(() -> engine.scrub(
+                new ConfiguredJsonPayload("supplier-with-address", wrongSourceBody), context(vocabulary)))
+                .isInstanceOf(PrivacyRefusedException.class)
+                .hasMessageContaining("UNKNOWN_FIELD")
+                .hasMessageContaining("address.ssn")
+                .hasMessageNotContaining("123-45-6789");
+    }
+
     @Test
     @DisplayName("the deeper-than-declared refusal message names a stable type, not a hidden class's random address")
     void refusalMessageNamesAStableTypeAcrossRuns() {

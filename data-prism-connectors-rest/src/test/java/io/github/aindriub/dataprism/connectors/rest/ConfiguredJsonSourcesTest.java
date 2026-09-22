@@ -414,6 +414,35 @@ class ConfiguredJsonSourcesTest {
     }
 
     @Test
+    @DisplayName("startup refusal: a nested catalogue entry states none of the three shapes")
+    void nestedCatalogueEntryMustStateSomething() {
+        String yaml = VALID_WITH_NESTED.replace(
+                "        line1:\n"
+                        + "          nonSensitive: \"street address line, reviewed as inert structure\"\n",
+                "        line1: {}\n");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("exactly one of");
+    }
+
+    @Test
+    @DisplayName("startup refusal: an operator nonSensitive reason that begins with the reserved "
+            + "nested-catalogue marker refuses, naming the source and field")
+    void nonSensitiveReasonCannotBeMistakenForANestedPointer() {
+        String yaml = VALID_WITH_NESTED.replace(
+                "      status:\n        nonSensitive: \"enumerated lifecycle state\"\n",
+                "      status:\n        nonSensitive: \"nested catalogue address\"\n");
+        assertThatThrownBy(() -> load(yaml))
+                .as("source customer-api, field status")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("customer-api")
+                .hasMessageContaining("status")
+                .hasMessageContaining("reserved marker");
+    }
+
+    @Test
     @DisplayName("startup refusal: a nested catalogue entry marks identifier: true")
     void nestedCatalogueEntryCannotBeIdentifier() {
         String yaml = VALID_WITH_NESTED.replace(
