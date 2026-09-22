@@ -439,4 +439,52 @@ class ConfiguredJsonSourcesTest {
                 .hasMessageContaining("customer-api")
                 .hasMessageContaining("not a bare property name");
     }
+
+    @Test
+    @DisplayName("equals/hashCode are identical between two independent parses of identical YAML")
+    void equalsAndHashCodeAreParseIndependent() {
+        // ConfiguredJsonSource no longer carries a second, Class-keyed copy of
+        // the nested catalogue index on its public shape (see docs/plan/tasks/
+        // 60-*.md attempt 1, defect 3); nestedCatalogues() alone determines
+        // equality, so two parses of the same YAML must compare equal.
+        ConfiguredJsonSource first = load(VALID_WITH_NESTED).sources().get("customer-api");
+        ConfiguredJsonSource second = load(VALID_WITH_NESTED).sources().get("customer-api");
+
+        assertThat(first).isEqualTo(second);
+        assertThat(first.hashCode()).isEqualTo(second.hashCode());
+    }
+
+    @Test
+    @DisplayName("startup refusal: a source declaring more nested catalogues than the "
+            + "pre-declared token pool holds is refused, naming the source")
+    void moreNestedCataloguesThanThePoolHoldsRefuses() {
+        int poolSize = ConfiguredJsonNestedCatalogueTokens.POOL.size();
+        StringBuilder yaml = new StringBuilder();
+        yaml.append("json-sources:\n")
+                .append("  overflowing-source:\n")
+                .append("    base-url: https://customer.example\n")
+                .append("    path: /v1/customers/{subject}\n")
+                .append("    timeout: PT2S\n")
+                .append("    model-version: customer-v1\n")
+                .append("    subject-json-path: customerId\n")
+                .append("    fields:\n")
+                .append("      customerId:\n")
+                .append("        identifier: true\n");
+        for (int i = 0; i <= poolSize; i++) {
+            yaml.append("      cat").append(i).append(":\n")
+                    .append("        nested: cat").append(i).append("\n");
+        }
+        yaml.append("    nested-catalogues:\n");
+        for (int i = 0; i <= poolSize; i++) {
+            yaml.append("      cat").append(i).append(":\n")
+                    .append("        leaf:\n")
+                    .append("          nonSensitive: \"inert\"\n");
+        }
+
+        assertThatThrownBy(() -> load(yaml.toString()))
+                .as("source overflowing-source")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("overflowing-source")
+                .hasMessageContaining(String.valueOf(poolSize));
+    }
 }

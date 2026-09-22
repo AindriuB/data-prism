@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.connectors.rest;
 import io.github.aindriub.dataprism.core.FieldMetadata;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,7 +54,37 @@ final class ConfiguredJsonFieldMetadataResolver implements FieldMetadataResolver
             throw new IllegalArgumentException("a configured JSON source needs a non-empty catalogue");
         }
         this.fields = List.copyOf(rootFields.values());
-        this.nestedByToken = Map.copyOf(source.nestedCatalogueResolutions());
+        this.nestedByToken = buildNestedByToken(rootFields, source.nestedCatalogues());
+    }
+
+    /**
+     * Rebuilds the {@code Class} token index from {@link
+     * ConfiguredJsonSource#nestedCatalogues()} and the tokens {@link
+     * ConfiguredJsonSources} already wrote into each nested-pointing root
+     * field's own {@code valueType()}/{@code elementType()}, rather than the
+     * record carrying that index as a second public component. A field points
+     * at a nested catalogue exactly when {@link ConfiguredJsonSources} gave it
+     * {@link FieldMetadata#nonSensitiveReason()} of {@link
+     * ConfiguredJsonSources#NESTED_FIELD_REASON_PREFIX} followed by the
+     * catalogue's name -- the same string a human reads in a stack trace or a
+     * dump of the catalogue, repurposed here as the one place this module
+     * still remembers which token belongs to which name.
+     */
+    private static Map<Class<?>, Map<String, FieldMetadata>> buildNestedByToken(
+            Map<String, FieldMetadata> rootFields, Map<String, Map<String, FieldMetadata>> nestedCatalogues) {
+        Map<Class<?>, Map<String, FieldMetadata>> out = new LinkedHashMap<>();
+        for (FieldMetadata md : rootFields.values()) {
+            String reason = md.nonSensitiveReason();
+            if (reason == null || !reason.startsWith(ConfiguredJsonSources.NESTED_FIELD_REASON_PREFIX)) {
+                continue;
+            }
+            String catalogueName = reason.substring(ConfiguredJsonSources.NESTED_FIELD_REASON_PREFIX.length());
+            Map<String, FieldMetadata> catalogue = nestedCatalogues.get(catalogueName);
+            if (catalogue != null && md.valueType() != null) {
+                out.put(md.valueType(), catalogue);
+            }
+        }
+        return Map.copyOf(out);
     }
 
     @Override

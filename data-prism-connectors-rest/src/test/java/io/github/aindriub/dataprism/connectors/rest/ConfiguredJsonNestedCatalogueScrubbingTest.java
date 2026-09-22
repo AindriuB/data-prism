@@ -87,15 +87,16 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
                 "ssn", new FieldMetadata("ssn", false, null, List.of(DataClassification.PII),
                         PrivacyNamespace.PERSON_IDENTITY, PrivacyAction.SYNTHESIZE, "", null, String.class, null));
 
-        Class<?> addressToken = ConfiguredJsonNestedCatalogueTokens.mint("address");
+        Class<?> addressToken = ConfiguredJsonNestedCatalogueTokens.mint("customer-with-address", 0);
         Map<String, FieldMetadata> fields = Map.of(
                 "id", new FieldMetadata("id", true, FieldMetadata.SELF, List.of(),
                         PrivacyNamespace.NONE, null, "", null, String.class, null),
                 "address", new FieldMetadata("address", false, null, List.of(), PrivacyNamespace.NONE,
-                        null, "", "nested catalogue address", addressToken, addressToken));
+                        null, "", ConfiguredJsonSources.NESTED_FIELD_REASON_PREFIX + "address",
+                        addressToken, addressToken));
 
         return new ConfiguredJsonSource(transport, "customer-v1", "id", fields,
-                Map.of("address", addressCatalogue), Map.of(addressToken, addressCatalogue));
+                Map.of("address", addressCatalogue));
     }
 
     private static ConfiguredJsonScrubbingEngine engineFor(ConfiguredJsonSource source, Vocabulary vocabulary) {
@@ -176,7 +177,13 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
                 new ConfiguredJsonPayload("customer-with-address", body), context(vocabulary)))
                 .isInstanceOf(PrivacyRefusedException.class)
                 .hasMessageContaining("UNKNOWN_FIELD")
-                .hasMessageContaining("address.country");
+                .hasMessageContaining("address.country")
+                // core's UNKNOWN_FIELD message interpolates type.getName() for the
+                // descended nested type -- this must be a stable, greppable name
+                // (a pre-declared marker slot), never a hidden class's per-run address.
+                .hasMessageContaining("ConfiguredJsonNestedCatalogueSlot")
+                .hasMessageNotContaining("0x")
+                .hasMessageNotContaining("/");
     }
 
     @Test
@@ -300,5 +307,61 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
         } catch (Throwable t) {
             return t;
         }
+    }
+
+    @Test
+    @DisplayName("FAIL-OPEN CLOSED: a scalar where the catalogue declares `nested:` refuses under "
+            + "the strictest profile rather than being emitted verbatim")
+    void scalarAtNestedFieldRefusesInsteadOfLeaking() {
+        ConfiguredJsonSource source = sourceWithAddress();
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve("und");
+        ConfiguredJsonScrubbingEngine engine = engineFor(source, vocabulary);
+
+        // The exact worked case from the attempt-1 write-up: "address" is
+        // declared `nested:`, but the wire carries a bare SSN-shaped string.
+        ObjectNode body = body("""
+                {"id":"CUST-1","address":"123-45-6789"}
+                """);
+
+        assertThatThrownBy(() -> engine.scrub(
+                new ConfiguredJsonPayload("customer-with-address", body), context(vocabulary)))
+                .isInstanceOf(PrivacyRefusedException.class)
+                .hasMessageContaining(ConfiguredJsonNestedLeafShapeGuard.STRUCTURE_CODE)
+                .hasMessageNotContaining("123-45-6789");
+    }
+
+    @Test
+    @DisplayName("FAIL-OPEN CLOSED: a scalar array element where the catalogue declares `nested:` "
+            + "refuses, naming the element's index")
+    void scalarArrayElementAtNestedFieldRefuses() {
+        ConfiguredJsonSource source = sourceWithAddress();
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve("und");
+        ConfiguredJsonScrubbingEngine engine = engineFor(source, vocabulary);
+
+        ObjectNode body = body("""
+                {"id":"CUST-1","address":[{"line1":"123 Main St","ssn":"111-11-1111"},"123-45-6789"]}
+                """);
+
+        assertThatThrownBy(() -> engine.scrub(
+                new ConfiguredJsonPayload("customer-with-address", body), context(vocabulary)))
+                .isInstanceOf(PrivacyRefusedException.class)
+                .hasMessageContaining(ConfiguredJsonNestedLeafShapeGuard.STRUCTURE_CODE)
+                .hasMessageContaining("address[1]")
+                .hasMessageNotContaining("123-45-6789");
+    }
+
+    @Test
+    @DisplayName("the deeper-than-declared refusal message names a stable type, not a hidden class's random address")
+    void refusalMessageNamesAStableTypeAcrossRuns() {
+        ConfiguredJsonSource firstParse = sourceWithAddress();
+        ConfiguredJsonSource secondParse = sourceWithAddress();
+
+        // The same catalogue, parsed twice independently -- simulating two
+        // separate runs of the same configuration -- must resolve the same
+        // ordinal to the same, stably-named token both times.
+        Class<?> firstToken = firstParse.fields().get("address").valueType();
+        Class<?> secondToken = secondParse.fields().get("address").valueType();
+        assertThat(firstToken.getName()).isEqualTo(secondToken.getName());
+        assertThat(firstToken.getName()).doesNotContain("0x").doesNotContain("/");
     }
 }

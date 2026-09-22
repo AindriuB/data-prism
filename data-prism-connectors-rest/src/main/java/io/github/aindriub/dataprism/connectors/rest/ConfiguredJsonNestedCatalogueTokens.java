@@ -1,12 +1,11 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.lang.invoke.MethodHandles;
+import java.util.List;
 
 /**
- * Mints one distinct {@code Class} token per named nested JSON catalogue.
+ * Assigns one distinct {@code Class} token per named nested JSON catalogue,
+ * from a bounded, fixed pool of pre-declared marker types ({@link
+ * ConfiguredJsonNestedCatalogueSlot0} and its siblings).
  *
  * <p>Core's {@link io.github.aindriub.dataprism.core.FieldMetadata} and {@link
  * io.github.aindriub.dataprism.core.FieldMetadataResolver} key everything on
@@ -14,46 +13,68 @@ import java.lang.invoke.MethodHandles;
  * this feature is allowed to change (see docs/plan/tasks/60-*.md). A
  * configuration-driven JSON source has no compiled Java type to hand core for
  * a nested catalogue the way an annotated model has one for a nested field --
- * so this mints one, at parse time, via {@link
- * MethodHandles.Lookup#defineHiddenClass}: the same fixed template bytes,
- * redefined as a brand new hidden class on every call, produce a fresh {@code
- * Class} object each time. Holding that object anywhere (a {@code
- * FieldMetadata.valueType()}, a resolver's lookup map) is what keeps it alive;
- * nothing about the class itself is ever used besides its identity.
+ * so this connector needs its own tokens. An earlier attempt minted a fresh
+ * {@code Class} at parse time via {@code
+ * MethodHandles.Lookup#defineHiddenClass}. That was rejected: a privacy
+ * decision (descend or refuse) must not be keyed on an object with no stable
+ * name, no deterministic identity across runs, and nothing an auditor can
+ * point at -- and it leaked, since core's {@code UNKNOWN_FIELD} message
+ * interpolates {@code type.getName()}, which for a hidden class renders as a
+ * different string every run.
+ *
+ * <p>A bounded pool of compiled, named marker types fixes all three: every
+ * assignment is deterministic and reviewable, {@code getName()} is identical
+ * across runs, and there is a hard, fail-closed limit on how many nested
+ * catalogues a single source may declare, named in the exception a source
+ * that exceeds it gets at startup.
  */
 final class ConfiguredJsonNestedCatalogueTokens {
 
-    private static final byte[] TEMPLATE = readTemplate();
+    /**
+     * Sixteen slots -- the same bound core's own {@code
+     * JsonTreeScrubbingEngine}/{@code SourceValues} place on tree depth
+     * ({@code MAX_DEPTH}). A single reviewed REST response with more than
+     * sixteen independently named nested sub-catalogues is not a shape this
+     * connector's no-code path is meant to cover; a source that needs more
+     * than that is better served by a Java-first model.
+     */
+    static final List<Class<?>> POOL = List.of(
+            ConfiguredJsonNestedCatalogueSlot0.class,
+            ConfiguredJsonNestedCatalogueSlot1.class,
+            ConfiguredJsonNestedCatalogueSlot2.class,
+            ConfiguredJsonNestedCatalogueSlot3.class,
+            ConfiguredJsonNestedCatalogueSlot4.class,
+            ConfiguredJsonNestedCatalogueSlot5.class,
+            ConfiguredJsonNestedCatalogueSlot6.class,
+            ConfiguredJsonNestedCatalogueSlot7.class,
+            ConfiguredJsonNestedCatalogueSlot8.class,
+            ConfiguredJsonNestedCatalogueSlot9.class,
+            ConfiguredJsonNestedCatalogueSlot10.class,
+            ConfiguredJsonNestedCatalogueSlot11.class,
+            ConfiguredJsonNestedCatalogueSlot12.class,
+            ConfiguredJsonNestedCatalogueSlot13.class,
+            ConfiguredJsonNestedCatalogueSlot14.class,
+            ConfiguredJsonNestedCatalogueSlot15.class);
 
     private ConfiguredJsonNestedCatalogueTokens() {
     }
 
     /**
-     * @param catalogueName purely for the exception message if minting fails;
-     *                      the returned token carries no memory of this name,
-     *                      since nothing downstream is allowed to resolve on
-     *                      a string
+     * @param sourceName the source declaring the catalogue, named in the
+     *                   exception message if the pool is exhausted
+     * @param ordinal    this catalogue's position among the source's own
+     *                   nested catalogues (0-based); each source starts
+     *                   counting from zero, so the pool bounds how many
+     *                   catalogues one source may declare, not how many exist
+     *                   across every configured source
      */
-    static Class<?> mint(String catalogueName) {
-        try {
-            return MethodHandles.lookup().defineHiddenClass(TEMPLATE, false).lookupClass();
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException(
-                    "could not mint a Class token for nested catalogue '" + catalogueName + "'", e);
+    static Class<?> mint(String sourceName, int ordinal) {
+        if (ordinal < 0 || ordinal >= POOL.size()) {
+            throw new IllegalArgumentException("json source " + sourceName + " declares more than "
+                    + POOL.size() + " nested catalogues, which is more than this connector supports;"
+                    + " reduce the number of named nested-catalogues entries or model this source"
+                    + " Java-first instead");
         }
-    }
-
-    private static byte[] readTemplate() {
-        String resource = ConfiguredJsonNestedCatalogueTemplate.class.getName().replace('.', '/') + ".class";
-        ClassLoader loader = ConfiguredJsonNestedCatalogueTemplate.class.getClassLoader();
-        try (InputStream in = loader.getResourceAsStream(resource)) {
-            if (in == null) {
-                throw new IllegalStateException("nested-catalogue token template not found on the classpath: "
-                        + resource);
-            }
-            return in.readAllBytes();
-        } catch (IOException e) {
-            throw new UncheckedIOException("could not read nested-catalogue token template", e);
-        }
+        return POOL.get(ordinal);
     }
 }
