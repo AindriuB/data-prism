@@ -594,10 +594,31 @@ task file remains under `docs/plan/tasks/`. Unblock condition: a `v*` tag
 exists and `publish-image.yml` has been dispatched for the four quickstart
 images, at which point 55 can merge as-is.
 
-**Wave 2 (tasks 58, 59) has not started.** Task files exist
-(`docs/plan/tasks/58-protect-your-own-api-walkthrough.md`,
-`docs/plan/tasks/59-quickstart-exit-ramp-and-reference.md`) but no
-worktree, branch or implementation work has begun.
+### Task 58 — done. No task file remains under `docs/plan/tasks/`.
+
+Shipped `docs/protect-your-own-api.md`, a YAML-only walkthrough taking a
+reader with a flat JSON REST API to a pseudonymised MCP response without
+writing Java — `data-prism-connectors-rest` plus
+`dataprism.identity.resolver: pass-through` (task 53) and the
+single-statement transport (task 54). Publishes the former test-only
+catalogue as `examples/json-sources/customer-api.yaml`, fully commented,
+and repositions `docs/extending.md` from the front door to the escape
+hatch for nested responses, custom fetch logic and models a flat
+catalogue cannot express. Merged 2026-09-22 (`bfabcb1`). See
+`docs/plan/HISTORY.md` — grep `Task 58` — for what landed and the six
+verification attempts it cost, including two lessons worth carrying
+forward: a documentation task needs both a literal-reader tester and a
+rules-reading reviewer, since neither method alone would have caught what
+the other did; and this is the second task this wave (after 56) to assume
+a bare JSON body from an endpoint that actually negotiates SSE, caught
+only by exercising the real server both times.
+
+**Task 59 has not started, blocked on 55.** Task file exists
+(`docs/plan/tasks/59-quickstart-exit-ramp-and-reference.md`). Its
+acceptance criteria already require documenting
+`dataprism.identity.resolver` in `docs/configuration.md`, which task 58
+found undocumented there despite being the property the whole no-code
+path depends on — a pointer for whoever picks 59 up, not a new item.
 
 ## Remaining slices past the adopted core
 
@@ -612,6 +633,14 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+Found during `/verify` on task 58, 2026-09-22. Does not block anything; polish,
+not a defect.
+
+- `docs/protect-your-own-api.md:132, :157, :337, :351` — four verification/curl
+  fences follow foreground processes without naming a terminal, unlike the
+  server section, which says "a third terminal". A reader must infer a spare
+  shell; no wrong output can result.
 
 Found during `/verify` on tasks 53, 54, 55, 56, 57, 2026-09-21. None blocks
 anything already merged; the first is the most important of the six.
