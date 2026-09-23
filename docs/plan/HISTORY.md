@@ -17,6 +17,100 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 67: `dataprism.audit.sink=hash-chained` wired to `FileAuditSink`
+
+The release's centrepiece. `dataprism.audit.sink: hash-chained` now produces a
+`FileAuditSink` bean bound to the required `dataprism.audit.file-path`
+property, so an operator who selects it gets a durable, append-only,
+hash-chained audit file rather than tripping a later `MISSING_AUDIT_SINK` by
+accident. Omitting the file path refuses at the same `DataPrismProperties`
+validation phase as every other misconfiguration
+(`MISSING_AUDIT_FILE_PATH`, naming the property); a configured path this
+process cannot open — no parent directory, unwritable — refuses at startup
+with `AUDIT_SINK_FILE_UNUSABLE` rather than degrading silently to no
+auditing or surfacing on the first audited request. `slf4j` still produces
+only `Slf4jAuditSink`, never both. `PrivacyExtensionPoints` gained the new
+`@Bean`'s row. Because task 72 merged first, this is the first durable
+hash-chained audit file ever written under the nineteen-field hash
+(`timestamp` and `sourceSystems` included) from its very first record —
+nothing to migrate, no earlier chain invalidated. That ordering was the
+point of sequencing 72 ahead of 67, and it held. Verified PASS (tester) and
+APPROVE (reviewer) on attempt 2; merged onto
+`v0.3.0/audit-trail-and-nested-json`, squashing the wiring commit and its
+attempt-2 correction into one so history does not carry the corrected
+commit's false claims.
+
+**What this does not close, stated plainly so it is not oversold:** the
+trail is durable and tamper-evident against an outside forger. It does not
+resist the operator — `AuditEventHash` is unkeyed SHA-256, so anyone with
+write access to the file can recompute the whole chain. That gap is
+recorded in `docs/architecture.md` and `PLAN.md` and deliberately
+deprioritised by the owner. Nothing here should be read as, or later
+rewritten to say, that the audit file is tamper-proof, immutable, or
+evidence against the operator.
+
+**Cost — attempt 1 was rejected on review, and it is worth recording why,
+honestly: the wiring was correct throughout, both times.** It was rejected
+because two claims it carried had gone false while it sat verified-but-
+blocked on a base that moved beneath it — the PASS/APPROVE had been earned
+against base `36ee57d`, and five tasks (66, 71, 72, 73, 74) merged under it
+before it was re-verified:
+- Its javadoc claimed the response mapper leaks a sink's raw exception
+  message to the client and cited `AuditSinkFailureAbortsResponseTest` as
+  proof. Task 74 had closed exactly that, and the cited test now asserted
+  the inverse — a false security claim citing its own refutation.
+- `HashChainedAuditSinkTest` replayed the hash chain by hand on the stated
+  grounds that task 66 was unmerged. Task 66 had merged; `AuditChainVerifier`
+  existed and the acceptance criterion asked for it to be used.
+
+Attempt 2 fixed both claims, switched the test to
+`AuditChainVerifier.verify(file)`, added the missing test for the
+`AUDIT_SINK_FILE_UNUSABLE` refusal — proven by mutation that swallowing
+`OpenFailedException` and falling back to `Slf4jAuditSink` turns the test
+red — and stopped discarding `OpenFailedException`'s cause: it is now
+logged server-side at the catch site (the same sanctioned "catch block logs
+the object it caught" exception `docs/conventions.md` already recorded for
+two `data-prism-mcp` tools), while the thrown `DataPrismConfigurationException`
+message stays fixed and path-free.
+
+**The general lesson, worth carrying forward: a PASS expires when its base
+does.** Task 67 sat verified against a base that moved five tasks in five
+merges before it was re-verified, and two of its claims did not survive the
+move. Task 55's held worktree is in the same position as this was written —
+verified against a base that has since moved — and needs the same
+re-verification before anything is recorded against it, not a re-merge on
+trust.
+
+**Two follow-ups recorded durably, not fixed in scope of the tasks that own
+them:**
+- `docs/conventions.md:62`'s "deliberate, reviewed exception to no `catch`
+  block logs the object it caught" paragraph named only
+  `GetEntityContextTool` and `CompareEntitySourcesTool`. This task's
+  `dataPrismHashChainedAuditSink` bean is a third site doing the same
+  thing, so the paragraph is rewritten to state the rule ("sanctioned
+  wherever a caught exception could disclose server-side detail that must
+  not reach the client-visible exception") with the sites as illustrations
+  rather than the exhaustive gate — this is the second time the list needed
+  widening, and enumeration does not scale.
+- `dataprism.audit.file-path` and `AUDIT_SINK_FILE_UNUSABLE` appear nowhere
+  in `docs/`, joining `PLAN.md` follow-up item 8's existing gap
+  (`docs/configuration.md` has no `AUDIT_SINK_BEAN_REQUIRED` entry either).
+  Item 8 is extended to name both concretely; both remain owned by
+  tasks 59/62, not fixed here.
+
+Minor fixes folded into the squashed commit: an unused `import java.util.List`
+left in `HashChainedAuditSinkTest` after the hand-rolled replay was deleted,
+and `DataPrismAutoConfigurationTest`'s `AUDIT_SINK_FILE_UNUSABLE` javadoc,
+which called the startup refusal message "client-visible" when its only
+audience is the operator's console at startup — no MCP client exists yet at
+that point.
+
+Also recorded, not fixed here: the generic `MISSING_AUDIT_SINK` arm in
+`DataPrismContractValidator` is now unreachable dead code — `validate()`
+admits only three sink values, `approved-sink` takes task 73's specific
+arm, and `slf4j`/`hash-chained` always resolve a bean now. Harmless; owned
+by task 69.
+
 ## 2026-09-23 — Task 71: pseudonym discriminator widens from 20 to 40 bits, and `ADDRESS` gains one
 
 `HmacSyntheticGenerator`'s discriminator now derives 40 bits from eight

@@ -60,15 +60,28 @@ rejects a diff that breaks one, whatever else it does.
   or PPSN in a test file is itself the leak.
 
 **Deliberate, reviewed exception to "no `catch` block logs the object it
-caught":** `GetEntityContextTool` and `CompareEntitySourcesTool`
-(`data-prism-mcp`) call `LOG.error(msg, auditFailure)` at the `audit.record(...)`
-call sites task 74 added. This is sanctioned, not an oversight: task 74 requires
-the audit sink's exception (which can name a server filesystem path, e.g.
-`FileAuditSink`'s `PoisonedException`) to stay server-side only, never reach the
-client-visible `AuditUnavailableException`. Keeping it in the server log via the
-caught object is how "operator detail preserved, client detail withheld" is
-satisfied. Do not "fix" this back to a bare code-only log line, and do not read
-a future privacy-log scan flagging it as a real leak — check it against this
+caught":** the rule, not just the sites below — logging the caught object is
+sanctioned wherever a caught exception could disclose server-side detail (a
+filesystem path, a sink's internal message) that must not reach the
+client-visible exception, and the code preserves that split: the caught
+object goes only to the server log, and the exception thrown or rethrown to
+the caller carries a fixed, code-only message with no text derived from the
+caught object. This has been widened twice as new sites earned it, so treat
+the list as illustrative, not exhaustive, and check new sites against the
+rule above before assuming they need adding here individually:
+- `GetEntityContextTool` and `CompareEntitySourcesTool` (`data-prism-mcp`)
+  call `LOG.error(msg, auditFailure)` at the `audit.record(...)` call sites
+  task 74 added, keeping a sink exception that can name a server filesystem
+  path (e.g. `FileAuditSink`'s `PoisonedException`) out of the client-visible
+  `AuditUnavailableException`.
+- `dataPrismHashChainedAuditSink` (`DataPrismAutoConfiguration`,
+  `data-prism-spring-boot-autoconfigure`, task 67) calls
+  `LOG.error(msg, e)` on `FileAuditSink.OpenFailedException` at startup,
+  keeping the same kind of path-bearing detail out of the client-visible
+  `DataPrismConfigurationException` message.
+
+Do not "fix" either site back to a bare code-only log line, and do not read a
+future privacy-log scan flagging one as a real leak — check it against this
 paragraph first.
 
 ## Naming

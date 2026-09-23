@@ -833,10 +833,26 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   `FileAuditSink` path. See `docs/plan/HISTORY.md`, grep `Task 73` and
   `Task 74`.
 
-  **Both of task 67's held-pending conditions are now closed — task 67 is
-  unblocked.** Its branch and worktree (`task/67-wire-hash-chained-sink`,
-  `.worktrees/data-prism/67-wire-hash-chained-sink`) can proceed to merge and
-  be recorded done; no further filing is owed.
+  **Task 67 (wire `dataprism.audit.sink=hash-chained` to `FileAuditSink`)
+  merged 2026-09-23, PASS + APPROVE on attempt 2, onto
+  `v0.3.0/audit-trail-and-nested-json`.** Attempt 1 was rejected on review
+  not for broken wiring — the wiring was correct throughout — but because
+  two claims it carried went false while it sat verified against base
+  `36ee57d`, which five tasks (66, 71, 72, 73, 74) then merged beneath:
+  a javadoc claim of a client-visible leak task 74 had already closed, and
+  a hand-rolled hash-chain replay task 66's now-merged `AuditChainVerifier`
+  made unnecessary. Attempt 2 corrected both and is the version that
+  merged, squashed into one commit so history does not carry the corrected
+  commit's false claims. Task file retired; see `docs/plan/HISTORY.md`,
+  grep `Task 67`.
+
+  **The general lesson: a PASS expires when its base does.** Task 67 sat
+  verified against a base that moved five merges before re-verification,
+  and two of its claims did not survive the move. **Task 55's held
+  worktree is in the same position right now** — verified PASS/APPROVE
+  against a base that has since moved under it — and needs re-verification
+  against current `main`, not a merge on trust, before anything is recorded
+  against it. Do not re-merge 55 without re-running its tester and reviewer.
 
   **Task 72 (widen the audit hash to cover `timestamp` and `sourceSystems`)
   merged 2026-09-23, PASS + APPROVE, fast-forward onto
@@ -878,9 +894,10 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
 - The per-nested-catalogue `Class` token task 60 introduces is the only
   unproven mechanism in the plan. If no route keeps `core` unchanged, 60
   stops and reports rather than widening core's SPI.
-- Task 69 sits behind two dependency edges on one file (60, then 67); a slip
-  in 67 delays the allow-list fix, not the release, since 69 is wave 3 and
-  70 waits on both.
+- ~~Task 69 sits behind two dependency edges on one file (60, then 67); a
+  slip in 67 delays the allow-list fix, not the release, since 69 is wave 3
+  and 70 waits on both.~~ Both 60 and 67 merged 2026-09-23; task 69 is
+  unblocked. No slip occurred.
 
 **Follow-ups filed from wave 2 (61, 65, 66, 67), 2026-09-22. Items 1 and 2 are
 resolved below (tasks 73 and 74, merged 2026-09-23).**
@@ -946,13 +963,22 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
    because `DataPrismProperties` binds `ignoreUnknownFields=false` and
    Spring Boot's unbound-elements check exempts system properties but not
    command-line args — which is also how the packaged distribution wires it.
-8. **Owed to tasks 59/62, filed 2026-09-23 alongside task 73.**
-   `DataPrismConfigurationFailureAnalyzer` prints the refusal code and
-   points an operator at `docs/configuration.md`. That file has no entry for
+8. **Owed to tasks 59/62, filed 2026-09-23 alongside task 73, extended
+   2026-09-23 alongside task 67.** `DataPrismConfigurationFailureAnalyzer`
+   prints the refusal code and points an operator at
+   `docs/configuration.md`. That file has no entry for
    `AUDIT_SINK_BEAN_REQUIRED` (task 73), so an operator who hits it today is
    sent to a document that never mentions the code they were just given.
-   Whichever of 59 or 62 documents `dataprism.audit.sink` must add this
-   code, not just `MISSING_AUDIT_SINK` and `UNKNOWN_AUDIT_SINK`.
+   Task 67 adds two more operator-facing configuration items that are
+   equally undocumented: the `dataprism.audit.file-path` property itself
+   (required when `dataprism.audit.sink: hash-chained` is selected) and its
+   own refusal code, `AUDIT_SINK_FILE_UNUSABLE` (a configured path this
+   process cannot open at startup — no parent directory, unwritable —
+   refuses rather than degrading silently to no auditing).
+   Whichever of 59 or 62 documents `dataprism.audit.sink` must add all
+   three concretely: `AUDIT_SINK_BEAN_REQUIRED`, `AUDIT_SINK_FILE_UNUSABLE`,
+   and `dataprism.audit.file-path` itself — not just `MISSING_AUDIT_SINK`
+   and `UNKNOWN_AUDIT_SINK`.
 9. **Known, documented, currently non-firing race — not scheduled.**
    `AuditSinkFailureAbortsResponseTest`'s own javadoc records a JVM-wide
    default-`SSLContext` singleton race against `McpHttpEndToEndTest` (and
