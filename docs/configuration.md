@@ -152,6 +152,13 @@ supplied one — startup refuses with `MISSING_IDENTITY_RESOLVER`.
 
 ### `dataprism.audit`
 
+This section describes the protected-deployment path (`mode: http`, or
+`mode: stdio` without `fixture-development=true`). The stdio
+fixture-development path (`dataprism.transport.fixture-development=true` with
+`mode: stdio`) skips this validation entirely — `DataPrismProperties#validate`
+only runs it when the deployment is not that fixture-only combination — so
+none of the codes below is reachable from it.
+
 `sink` is required; a missing value refuses startup with `MISSING_AUDIT_SINK`.
 It accepts exactly three values:
 
@@ -179,8 +186,8 @@ contain `/` — `AuditRecorder` splits `instanceId` on that character, so a
 refuses startup with `INVALID_AUDIT_WRITER`. `${HOSTNAME}` in the example
 above is one convenient, non-unique-per-boot choice; it is not a requirement.
 
-An `audit.credential-reference`, when configured, must not be blank; a blank
-one refuses startup with `INVALID_AUDIT_REFERENCE`.
+A `dataprism.audit.credential-reference`, when configured, must not be
+blank; a blank one refuses startup with `INVALID_AUDIT_REFERENCE`.
 
 ## Java-first now; generic JSON as a separately reviewed extension
 
@@ -233,14 +240,15 @@ under `json-sources:` states, and only states:
 
 A response whose shape no longer matches a source's declared nesting is a
 request-time privacy refusal, not a startup refusal — the catalogue was valid
-at load time; the wire shape drifted from what it declared. `data-prism-core`
+at load time; the wire shape drifted from what it declared. `data-prism-connectors-rest`
 raises `NESTED_LEAF_NOT_SCALAR` when a nested catalogue's own leaf field (one
 with no `nested:` of its own) turns up as a structure in the response, and
 `NESTED_FIELD_NOT_STRUCTURED` when a root field declared `nested:` turns up as
 a scalar instead of the structure the catalogue expects. See
 [`docs/protect-your-own-api.md`](protect-your-own-api.md)'s "A nested
-response" section for a worked example of both, against a real running
-adapter.
+response" section, which works `NESTED_LEAF_NOT_SCALAR` through a direct scrub
+call (`NestedCatalogueWalkthrough.java`) rather than a running adapter, and
+names `NESTED_FIELD_NOT_STRUCTURED` without a worked example of it.
 
 An optional top-level `tls:` block, identical in shape to the one `RestSource`
 already supports, requires every source in the file to use `https`.

@@ -79,9 +79,9 @@ below); `curl` does not trust it by default, so every command against
 reached over a certificate that is trusted for real.
 
 With no request body, `POST /token` mints a token for a fixture development
-principal, in the `investigator` role, for purpose `investigation` — enough
-to call `get_entity_context`. To mint one for a different role, purpose or
-case, POST a JSON body instead:
+principal, in the `investigator` role, for purpose `investigation` and case
+`CASE-QUICKSTART-1` — enough to call `get_entity_context`. To mint one for a
+different role, purpose or case, POST a JSON body instead:
 
 ```sh
 curl -sk -X POST https://localhost:8544/token \
@@ -89,8 +89,13 @@ curl -sk -X POST https://localhost:8544/token \
   -d '{"roles":["investigator"],"purpose":"investigation","caseId":"CASE-DEMO-1"}'
 ```
 
-The demo command below mints and uses its own token; you do not need to run
-either curl above first.
+The demo command below mints and uses its own token, always for case
+`CASE-QUICKSTART-1` (`run.sh` has no way to take a token minted for a
+different case); to see a call made under a different case, drive the
+JSON-RPC exchange yourself with the token above, following
+[`examples/quickstart-demo/mcp-handshake.sh`](../examples/quickstart-demo/mcp-handshake.sh)'s
+calls. You do not need to run the curl above first to run the demo command
+below.
 
 ## Run the demo
 
@@ -114,8 +119,7 @@ for the underlying JSON-RPC requests if you want to see the exchange itself.
 examples/quickstart-demo/run.sh
 ```
 
-prints (this is one real run's output; the pseudonymised values change on
-every run — see below):
+prints (this is real output from an actual run against this stack):
 
 ```
 PASS: get_entity_context for CUSTOMER 1001 returned a pseudonymised response.
@@ -127,19 +131,45 @@ PASS: get_entity_context for CUSTOMER 1001 returned a pseudonymised response.
   email         fixture.person.one@example.invalid     [REDACTED]
 ```
 
-The fixture customer API holds a record for subject `1001` (also try
-`examples/quickstart-demo/run.sh CUSTOMER 1002`) whose real name is
-`Fixture Person One` and whose real email is
-`fixture.person.one@example.invalid` — see
-`data-prism-quickstart-fixtures`' own `CustomerController`. Neither value
-appears in the response: `customerName` is a synthetic value, not the
-fixture's own, stable within a case but different for a different case ID or
-a different run of this demo; `email` is redacted outright; `status`, not
-shown above but present in the raw MCP response, passes through because it
-was classified `@NonSensitive`, a decision
-`data-prism-quickstart-extension`'s `CustomerModel` states explicitly (see
-`docs/configuration.md` and pack.md §30 on why a field nobody classified is
-never exposed at all, rather than being disclosed by default).
+With the defaults above, these pseudonyms are the same every time you run
+this: `customerName` and `subjectId` are derived by a keyed HMAC over the
+case id and the subject id (`ScopeResolver`, `HmacSyntheticGenerator`), and
+`run.sh` always mints a token for the same default case,
+`CASE-QUICKSTART-1`. They change only for a different case id or a different
+HMAC key — never merely from running the demo again.
+
+The fixture customer API holds a second record, for subject `1002`:
+
+```sh
+examples/quickstart-demo/run.sh CUSTOMER 1002
+```
+
+```
+PASS: get_entity_context for CUSTOMER 1002 returned a pseudonymised response.
+
+  field         real fixture value                     pseudonymised response
+  ------------  -------------------------------------  --------------------------
+  subjectId     1002                                   SUBJ-F08KVXP6
+  customerName  Fixture Person Two                     Oakley Castellano (KKHAGCFX)
+  email         fixture.person.two@example.invalid     [REDACTED]
+```
+
+Neither subject's real name nor real email — `Fixture Person One` /
+`fixture.person.one@example.invalid` for `1001`, `Fixture Person Two` /
+`fixture.person.two@example.invalid` for `1002`, per
+`data-prism-quickstart-fixtures`' own `CustomerController` — appears in
+either response: `customerName` is a synthetic value, not the fixture's own;
+`email` is redacted outright; `status`, not shown above but present in the
+raw MCP response, passes through because it was classified `@NonSensitive`,
+a decision `data-prism-quickstart-extension`'s `CustomerModel` states
+explicitly (see `docs/configuration.md` and pack.md §30 on why a field
+nobody classified is never exposed at all, rather than being disclosed by
+default). `run.sh` checks this itself — it fails loudly if a response ever
+carries the subject it was asked about's own raw name or email — and that
+check is real: forcing the script to treat 1001's or 1002's own raw values
+as the "pseudonymised" result (simulating a leak) makes it print `FAIL:
+get_entity_context returned the fixture's raw value, unpseudonymised` and
+exit non-zero for each, in place of the `PASS` lines above.
 
 Both tools the platform ships today are reachable this way — this demo calls
 `get_entity_context`; `compare_entity_sources` takes the same input schema

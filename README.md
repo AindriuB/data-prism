@@ -79,11 +79,12 @@ docker compose up
 ```
 
 pulls the published `ghcr.io/aindriub/data-prism-quickstart-<name>` images
-(pin one with `QUICKSTART_IMAGE_TAG=0.3.0`; add `-f compose.yaml -f
-compose.build.yaml up --build` to build every image from source instead) and
-brings up the standalone server, a synthetic fixture API and a local HTTPS
-JWT issuer, proving an agent-compatible `get_entity_context` call returns a
-pseudonymised response. Walk through it in
+(pin one with `QUICKSTART_IMAGE_TAG=0.3.0`; run
+`docker compose -f compose.yaml -f compose.build.yaml up --build` instead to
+build every image from source) and brings up the standalone server, a
+synthetic fixture API and a local HTTPS JWT issuer, proving an
+agent-compatible `get_entity_context` call returns a pseudonymised response.
+Walk through it in
 [`docs/quickstart.md`](docs/quickstart.md); connect your own agent client to
 either that stack or a real deployment via
 [`docs/agents/`](docs/agents/README.md).
