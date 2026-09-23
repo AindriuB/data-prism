@@ -1098,6 +1098,26 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
 **No open tasks remain after this.** No task file remains under
 `docs/plan/tasks/`; everything left is the owner steps listed above.
 
+### Discoverability (tasks 76-83)
+
+Design: `docs/plan/specs/2026-09-23-discoverability.md` (binding — read
+"Decisions" and the per-task "T*" sections before touching any of these).
+Makes Data Prism findable by search engines and citable by AI assistants,
+without publishing any claim the code does not back. Local branch
+`discoverability` (not pushed, not `main`) is the integration branch every
+task below merges onto; task worktrees are reset onto it, not `main`.
+
+- **Task 79 — done.** Reproducible social card (`docs/assets/social-card.png`,
+  1280x640, tagline T, regenerated from `docs-site/social-card/`). Merged
+  `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md` — grep
+  `Task 79`.
+- **Tasks 76 (canonical identity), 77 (FAQ and comparison page), 78 (use-case
+  pages), 80 (measurement), 81 (outreach drafts)** — in flight, each in its
+  own worktree off `discoverability`.
+- **Tasks 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)
+  and 83 (go-live wiring)** — pending, blocked on the tasks above they
+  depend on.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)

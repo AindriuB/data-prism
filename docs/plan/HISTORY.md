@@ -17,6 +17,35 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 79: the site gets a reproducible social card
+
+Adds `docs/assets/social-card.png` (1280x640 PNG, 32KB, carrying tagline T —
+"Fail-closed privacy layer that pseudonymises enterprise API data for LLM
+agents and MCP clients." — plus "Data Prism" and nothing else) and
+`docs-site/social-card/{make_card.py,requirements.txt,README.md}` that
+generate it. This is the input task 82 wires into the site's `og:image` and
+Twitter card meta tags, and the file the owner uploads as the repo's GitHub
+social preview. Regenerating from the pinned `requirements.txt` in a fresh
+venv reproduces the committed PNG byte-for-byte, confirmed independently on
+Python 3.14 (the host) and `python:3.12-slim` (Docker), so anyone can
+reproduce it without trusting the committed binary. Uses Pillow's own
+built-in scalable default font (`ImageFont.load_default(size=…)`, available
+since Pillow 10.1) rather than committing a font file, so there is no font
+licence to track.
+
+**Cost:** `requirements.txt` pins Pillow 11.3.0, not the 10.1.0 the task file
+suggested as the minimum — 10.1.0 ships no `cp314` wheel, so a fresh venv on
+the host's Python 3.14 would fail to install it; 11.3.0 is the earliest
+pinned version that installs on both the host and the Docker verification
+image. PASS + APPROVE on attempt 1; the diff touches only the two paths this
+task owns (`docs/assets/**`, `docs-site/social-card/**`), confirmed by `git
+diff --stat` on the merge. Reviewer left two optional, not-required
+suggestions for a future pass: record which platform/Python the committed
+PNG was generated on, and align the docstring's stated run-from directory
+with the README's. Merged `--no-ff` onto the local `discoverability`
+branch, not `main` — task 82 depends on this file's path but not on this
+merge landing anywhere further yet.
+
 ## 2026-09-23 — Task 59: the quickstart gets an exit ramp, and the reference docs catch up to v0.3.0
 
 `docs/quickstart.md` no longer dead-ends at `docker compose down`: it ends with a
