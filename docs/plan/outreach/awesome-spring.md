@@ -48,9 +48,12 @@ framing, not this project's — see the verdict below for what it means here.
 
 Section: `#### MCP Servers for Spring Projects`, under `### Model Context Protocol`, under `## Code & Examples`.
 
-Existing entries in that subsection: `- [Name](url) - Description.` Two of its current entries (a Swagger→MCP
-bridge and a JVM diagnostics MCP server) do not depend on the Spring AI library themselves, so the subsection
-is not exclusively for Spring-AI-dependent projects — it is "MCP servers that live in the Spring ecosystem."
+Existing entries in that subsection: `- [Name](url) - Description.` Checked two of its current entries against
+their own build files at execution time: the Swagger→MCP bridge (`Neo1228/spring-boot-starter-swagger-mcp`)
+depends on `org.springframework.ai:spring-ai-starter-mcp-server-webmvc`, and the JVM diagnostics MCP server
+(`brunoborges/jvm-diagnostics-mcp`) depends on `org.springframework.ai:spring-ai-mcp-server-spring-boot-starter`.
+Both build on that framework. This subsection is "MCP servers built with it," not merely "MCP servers that
+happen to be Java/Spring" — which is exactly why this project doesn't fit yet (see the verdict below).
 
 ## Exact entry line
 
@@ -60,7 +63,7 @@ is not exclusively for Spring-AI-dependent projects — it is "MCP servers that 
 
 ## PR title
 
-`Add Data Prism to MCP Servers for Spring Projects`
+`Add Data Prism (MCP privacy layer) to MCP Servers for Spring Projects`
 
 ## PR body
 
@@ -76,22 +79,21 @@ License: Apache-2.0
 Disclosure: I am the maintainer of Data Prism.
 
 Note for maintainers: this project does not build on top of the framework this list is named for — it is a
-plain Spring Boot / standalone Java MCP server. I'm opening this because the "MCP Servers for Spring Projects"
-subsection already includes a couple of entries with the same characteristic, but please close this without
-ceremony if that subsection is meant to stay scoped more narrowly than its current contents suggest.
+plain Spring Boot / standalone Java MCP server. Please close this without ceremony if the "MCP Servers for
+Spring Projects" subsection is meant to stay scoped to servers built with that framework, as its current
+entries suggest.
 ```
 
 ## Eligibility verdict: hold
 
 This list's own description scopes it to "building generative AI applications using Spring AI" (the
-framework). This project has no dependency on, or integration with, that framework — it is a Java/Spring Boot
-MCP server that does not use it at all, and nothing in its entry may claim otherwise. Two existing entries in
-the target subsection suggest a plain-Spring MCP server can fit there, but that reading is not confirmed by
-any written rule (there is none) or by a maintainer, and the repository's own framing points the other way.
-Given the goodwill cost of submitting to the wrong shelf of a list before eligibility is clear (see the design
-spec's reputation risk), hold this one until either this project takes on a real integration with the
-framework this list covers, or a maintainer confirms the broader subsection is intentional — whichever comes
-first. Do not post without that.
+framework), and checking the target subsection's own entries confirms that framing rather than
+contradicting it: both examined entries in "MCP Servers for Spring Projects" declare a dependency on it in
+their own build files. This project has no dependency on, or integration with, that framework — it is a
+Java/Spring Boot MCP server that does not use it at all, and nothing in its entry may claim otherwise. Given
+the goodwill cost of submitting to the wrong shelf of a list before eligibility is clear (see the design
+spec's reputation risk), hold this one until this project takes on a real integration with the framework this
+list covers, or a maintainer confirms otherwise. Do not post without that.
 
 ## Pre-post checklist
 

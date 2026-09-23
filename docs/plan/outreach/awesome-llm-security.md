@@ -35,7 +35,7 @@ decorative, not required.
 
 ## PR title
 
-`Add Data Prism to Tools`
+`Add Data Prism (MCP privacy layer) to Tools`
 
 ## PR body
 
@@ -54,18 +54,24 @@ Disclosure: I am the maintainer of Data Prism.
 ## Eligibility verdict: hold
 
 CONTRIBUTING sets no eligibility rule beyond "submit a PR" — there is no formal blocker. The open question is
-fit, not process: every other entry in the Tools section is an attack, defence or red-teaming tool for LLMs
-themselves (prompt-injection detection, jailbreak evaluation, fuzzing, vulnerability scanning). Data Prism is a
-data-privacy/pseudonymisation control at the boundary between an internal API and an LLM/MCP client — a
-different, if adjacent, concern, and the entry line above says plainly that it is not the kind of defence most
+fit, not process: most entries in the Tools section are attack, defence or red-teaming tools for LLMs
+themselves (prompt-injection detection, jailbreak evaluation, fuzzing, vulnerability scanning). One existing
+entry is a partial precedent rather than a clean one: [LLM Guard](https://github.com/laiyer-ai/llm-guard),
+already listed here, ships `Anonymize`/`Deanonymize` PII scanners alongside its many other scanners — so a
+PII-handling capability has been accepted in this section before. But LLM Guard is a multi-purpose security
+toolkit where anonymisation is one scanner among many attack/defence ones, not a dedicated data-privacy layer
+the way Data Prism is; that's a weaker precedent than "this section already lists tools like this one," not a
+settled one. Data Prism is a data-privacy/pseudonymisation control at the boundary between an internal API and
+an LLM/MCP client, and the entry line above says plainly that it is not the kind of attack/defence tool most
 neighbouring entries provide. Submitting before that fit is clearer risks looking like scope-stretching for
 visibility, which is exactly the goodwill cost the project's own reputation risk calls out. Hold until either
-this list's maintainer has accepted a comparable data-privacy-for-LLMs tool (setting a precedent this entry can
-point to), or the project adds a capability that is unambiguously "LLM security" in the sense the rest of the
-section uses.
+this list's maintainer has accepted a dedicated data-privacy-for-LLMs tool (a stronger precedent than LLM
+Guard's one scanner among many), or the project adds a capability that is unambiguously "LLM security" in the
+sense the rest of the section uses.
 
 ## Pre-post checklist
 
-- [ ] Before posting, check whether any comparable data-privacy/pseudonymisation tool has since been accepted
-      into the Tools section; if so, cite it in the PR body as precedent.
+- [ ] Before posting, check whether a dedicated data-privacy/pseudonymisation tool (not a multi-purpose
+      toolkit like LLM Guard) has since been accepted into the Tools section; if so, cite it in the PR body as
+      a stronger precedent than the one noted above.
 - [ ] Site is not live yet (task 82). This draft has no site links to swap.

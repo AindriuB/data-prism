@@ -41,6 +41,31 @@ Source: <https://github.com/akullpp/awesome-java/blob/main/CONTRIBUTING.md>, fet
 No star-count or age threshold is stated. The bar is the four bullet points above, plus documentation/license
 clarity.
 
+## PR template (quoted)
+
+There is also a live pull request template that every PR is opened against.
+
+Source: <https://github.com/akullpp/awesome-java/blob/main/.github/pull_request_template.md>, fetched
+2026-09-23 via `gh api repos/akullpp/awesome-java/contents/.github/pull_request_template.md --jq .content | base64 -d`.
+
+> ## Suggestion type
+>
+> - [ ] Project
+> - [ ] Resource
+>
+> ## Checklist
+>
+> - [ ] I searched the list and existing issues for duplicates.
+> - [ ] I changed `README_SOURCE.md`, not the generated `README.md`.
+> - [ ] This pull request contains one suggestion.
+> - [ ] The suggestion is relevant to Java or the JVM and fits its chosen category.
+> - [ ] I used the canonical project or resource link.
+> - [ ] The suggestion is current and maintained.
+> - [ ] The concise, neutral description explains its distinguishing value and ends with punctuation.
+> - [ ] Licensing is clear and any restrictive terms are disclosed where applicable.
+
+The PR body below is filled in against this template, not left blank.
+
 ## Section and format
 
 File: `README_SOURCE.md` (not the generated `README.md`). Section: `### Security`.
@@ -55,13 +80,15 @@ Insert alphabetically by project name — between "Cryptomator" and "Dependency-
 section (`Data Prism` < `Dependency-Track` alphabetically; re-check the exact neighbours at post time, since
 the section is not perfectly sorted today):
 
+Description is the project's own tagline (T, 96 chars, ends with a period, per the required format):
+
 ```markdown
-- [Data Prism](https://github.com/AindriuB/data-prism) - Fail-closed privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs that hold customer data; pseudonymises personal data per privacy scope and can keep a hash-chained audit trail.
+- [Data Prism](https://github.com/AindriuB/data-prism) - Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents and MCP clients.
 ```
 
 ## PR title
 
-`Add Data Prism to Security`
+`Add Data Prism (MCP privacy layer) to Security`
 
 ## PR body
 
@@ -77,9 +104,25 @@ primary runtime; a Spring Boot starter is one of its two supported deployment su
 Repo: https://github.com/AindriuB/data-prism
 License: Apache-2.0 (free, no commercial tier)
 
-Disclosure: I am the maintainer of Data Prism. I've read CONTRIBUTING.md and searched existing entries for
-duplicates; I did not find another entry covering this niche (a fail-closed, privacy-scoped pseudonymisation
-layer specifically for the MCP/LLM-agent access path).
+Disclosure: I am the maintainer of Data Prism.
+
+## Suggestion type
+
+- [x] Project
+- [ ] Resource
+
+## Checklist
+
+- [x] I searched the list and existing issues for duplicates. I did not find another entry covering this
+      niche (a fail-closed, privacy-scoped pseudonymisation layer for the MCP/LLM-agent access path).
+- [x] I changed `README_SOURCE.md`, not the generated `README.md`.
+- [x] This pull request contains one suggestion.
+- [x] The suggestion is relevant to Java or the JVM and fits its chosen category. Java is the primary
+      implementation language and runtime; Security fits better than any other existing category.
+- [x] I used the canonical project or resource link.
+- [x] The suggestion is current and maintained.
+- [x] The concise, neutral description explains its distinguishing value and ends with punctuation.
+- [x] Licensing is clear (Apache-2.0) and there are no restrictive terms to disclose.
 ```
 
 ## Eligibility verdict: ready

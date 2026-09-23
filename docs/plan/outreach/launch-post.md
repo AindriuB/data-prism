@@ -37,12 +37,19 @@ It fails closed: [the privacy path refuses rather than passing through anything 
 classify](https://github.com/AindriuB/data-prism/blob/main/docs/conventions.md#errors), and every refusal is
 audited with the classification and the path, never the value.
 
-It can also keep a durable, hash-chained audit trail of what was recorded and released — one file per writer,
-append-only, with an offline verifier that replays the chain. That's opt-in
-(`dataprism.audit.sink: hash-chained`), and shipped in 0.3.0.
+It can also keep a durable, hash-chained audit trail of what was recorded and released — a single file, no
+rotation, with a separate hash chain per writer inside it, and an offline verifier that replays each chain.
+That's opt-in (`dataprism.audit.sink: hash-chained`), and shipped in 0.3.0.
 ([`FileAuditSink` and the offline verifier](https://github.com/AindriuB/data-prism/blob/main/docs/audit.md);
 [CHANGELOG](https://github.com/AindriuB/data-prism/blob/main/CHANGELOG.md)) Read the Limits section below
 before treating that trail as more than it is.
+
+It also scans every response for a fixed set of identifier shapes — IBAN, payment card, Irish PPSN, US SSN,
+email, international phone, JWT, API key — wherever they appear, free-text fields included, and refuses if one
+turns up somewhere nothing declared as sensitive. That is shape detection, not general PII or name detection:
+everything else is classified from what a deployment's own field metadata (annotations or its YAML catalogue)
+declares, not from reading the text. ([`SensitiveDataScanner`](https://github.com/AindriuB/data-prism/blob/main/data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/SensitiveDataScanner.java),
+[Components](https://github.com/AindriuB/data-prism/blob/main/docs/architecture.md#components))
 
 Two deployment surfaces ship today: a standalone Streamable HTTP MCP server (the primary target), and a Spring
 Boot starter for embedding the same pipeline in an existing application. A one-command local Compose
@@ -68,10 +75,10 @@ Read this before treating anything above as more than it is.
   the privacy engine; it does not inspect model output or tool-call arguments for injected instructions, and
   makes no claim to.
 - **Not yet built:** the re-identification operator surface (deferred past V1 by decision — see
-  [Components](https://github.com/AindriuB/data-prism/blob/main/docs/architecture.md#components)); the
-  Elasticsearch connector and its search tools; and two of the four MCP tools named in the original design,
-  `search_entity_data` and `describe_entity_model` — only `get_entity_context` and `compare_entity_sources`
-  ship today.
+  [Decisions worth knowing](https://github.com/AindriuB/data-prism/blob/main/docs/architecture.md#decisions-worth-knowing));
+  the Elasticsearch connector and its search tools; and two of the four MCP tools named in the original
+  design, `search_entity_data` and `describe_entity_model` — only `get_entity_context` and
+  `compare_entity_sources` ship today.
   ([Not yet built](https://github.com/AindriuB/data-prism/blob/main/docs/tools.md#not-yet-built))
 - **What the audit trail does not prove, deliberately, not as an oversight:** truncating a writer's most
   recent records is structurally undetectable — an append-only file with its tail removed replays perfectly,
@@ -81,13 +88,15 @@ Read this before treating anything above as more than it is.
   the file is actually append-only in practice, and who else can open it, is a property of the deployment's
   storage and access control, not of this code. None of this should be read as a claim that the durable audit
   log can't have been altered by someone with write access to it, or that it is independently complete on its
-  own — it is evidence for what an offline verifier can actually check, within the boundary just described.
+  own — it is evidence for what an offline verifier can actually check, within the boundary just described. It
+  also says nothing about metric labels or trace attributes: this release's PII scan tests cover logs and the
+  audit file itself, not those two.
   ([What this does and does not prove](https://github.com/AindriuB/data-prism/blob/main/docs/audit.md#what-this-does-and-does-not-prove))
 
 ## Show HN
 
 - `Show HN: Data Prism, a fail-closed MCP privacy layer for Spring Boot` (68 chars)
-- `Show HN: Data Prism – pseudonymise data for LLM agents, Java/Spring` (69 chars)
+- `Show HN: Data Prism, an MCP privacy layer for Java/Spring Boot` (62 chars)
 
 First-comment guidance for whoever posts: lead with the angle line, then the "Limits" section verbatim or
 close to it — Show HN audiences downvote posts that read as overclaiming once someone checks, and this project
