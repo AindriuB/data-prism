@@ -141,6 +141,11 @@
           "isRequired": true
         },
         {
+          "name": "DATAPRISM_AUDIT_FILE_PATH",
+          "description": "Path to the durable, hash-chained audit log; required when DATAPRISM_AUDIT_SINK=hash-chained, refused as MISSING_AUDIT_FILE_PATH if absent for that sink, ignored otherwise",
+          "isRequired": false
+        },
+        {
           "name": "DATAPRISM_METRICS_SINK",
           "description": "Metrics sink binding, currently only micrometer; required in production, never the framework no-op",
           "isRequired": true
