@@ -82,3 +82,41 @@ exactly what the audit chain's tamper-evidence does and does not prove.
   and the `dataprism.audit.sink: hash-chained` properties there.
 - `CHANGELOG.md` and `server.json` (task 70).
 - Any source change.
+
+## Attempt 1 — failed on review (2026-09-23)
+
+Tester: PASS. Build and full suite green (603 tests). The walkthrough in
+`docs/protect-your-own-api.md` was executed against real processes and the
+quoted SSE frame matched byte for byte, including the refreshed pseudonyms
+`SUBJ-VHK4SXCQ`, `ORGANISATION_IDENTITY-6BE1NJ46`, `Casey Okafor (G2C8D3R4)`.
+The `docs/audit.md` verifier cases were run for real: intact → exit 0,
+same-length edit of a middle record → `CHAIN BREAK at sequence 2`, exit 2,
+tail deletion → intact, exit 0 (the stated limitation, demonstrated).
+`customer-api-nested.yaml` loads and scrubs as documented. Keep all of that.
+
+Reviewer: CHANGES. Owner decisions all hold (no truncation-detection claim,
+one level only, no Slf4j verification offered). Follow-up item 8
+(`AUDIT_SINK_BEAN_REQUIRED`, `AUDIT_SINK_FILE_UNUSABLE`,
+`dataprism.audit.file-path`) belongs to task 59, not here. WHAT FAILED:
+
+1. `docs/audit.md:63-64` says the bring-your-own sink is "named by
+   `dataprism.audit.credential-reference` (`APPROVED_SINK`)". Wrong: it is
+   selected by `dataprism.audit.sink: approved-sink` and requires an
+   `AuditSink` bean, else startup refuses with `AUDIT_SINK_BEAN_REQUIRED`
+   (`DataPrismProperties.java:177`, `DataPrismContractValidator.java:72-75`).
+   An operator setting credential-reference gets no custom sink. Naming the
+   refusal code in that clause is welcome.
+2. `docs/audit.md:122-124` says the verifier "refuses outright" to read
+   `Slf4jAuditSink` output. It has no such check: log lines become
+   `UNPARSEABLE_RECORD` and the run exits 2, "break detected"
+   (`AuditChainVerifier.java:266,371`), which `audit.md:165` tells the reader
+   to treat as edit/deletion evidence. Describe what actually happens — a
+   false tamper alarm — and say plainly not to point it at log output.
+3. `docs/protect-your-own-api.md:420-431` shows loading the nested example
+   via a Java fence with its wiring elided (`// ... wire ...`), while the
+   close-out table at `:570` claims every fence was run. Either make the
+   fence something a reader can run as written (complete program or jshell
+   script — a new test is outside Owns), or drop the "every fence run" claim
+   for that fence.
+4. `docs/audit.md:191-196`, the "What it proves" sentence ("that this check
+   did not also have to recompute past to reach...") does not parse. Rewrite.
