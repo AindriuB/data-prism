@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-23
+
+Nested JSON catalogues, one level deep, and a durable, hash-chained audit
+trail — protect a real API without writing Java, and prove what happened.
+
+### Added
+
+- The configuration-driven JSON REST connector gains one level of named
+  nested catalogues: a field can declare `nested: <name>`, pointing at an
+  entry in a top-level nested-catalogues map whose own fields use the same
+  three-shape vocabulary flat catalogues already have. No dotted paths, no
+  JSONPath, no wildcard descent, no inferring structure from the wire —
+  `subject-json-path` is untouched and a nested object never carries its own
+  subject. A response nesting deeper than declared — a leaf the catalogue
+  says is a scalar turning up as a structure — refuses with the new,
+  distinct `NESTED_LEAF_NOT_SCALAR` code rather than falling through to
+  core's generic `UNCLASSIFIED_STRUCTURE`; the mirror case, a declared
+  structure that turns up as a scalar, refuses with `NESTED_FIELD_NOT_STRUCTURED`.
+- A durable, append-only, hash-chained audit sink. Selecting
+  `dataprism.audit.sink: hash-chained`, alongside the now-required
+  `dataprism.audit.file-path`, produces a `FileAuditSink` bean: one file,
+  fsync per record, no rotation. Omitting the file path refuses at startup
+  with `MISSING_AUDIT_FILE_PATH`; a path this process cannot open refuses
+  with `AUDIT_SINK_FILE_UNUSABLE`, instead of degrading silently to no
+  auditing. The canonical audit-record hash covers nineteen fields,
+  including `timestamp` and `sourceSystems`.
+- An offline `AuditChainVerifier` CLI replays a hash-chained audit file and
+  reports what it finds: exit 0 intact, 1 unreadable input, 2 a detected
+  break, 3 a tail that may simply be in flight, 4 a structural anomaly (never
+  returned together with 2). It distinguishes several ordinary,
+  non-tampering failure modes — a torn trailing record, a mid-file
+  concatenation after a restarted sink, a new writer's chain starting fresh
+  after a process restart — from genuine tampering, but it is unable to rule
+  out truncation of the most recent record or records: a chain that simply
+  stops cannot be told apart from one an attacker cut short, which is why
+  that case exits 3 rather than 0.
+
+### Fixed
+
+- `AuditRecorder` no longer advances its in-memory `previousHash` until the
+  sink's `record` call actually succeeds. Previously, a throwing sink still
+  left the chain head pointing past an event that was never durably
+  written, so the next successful write chained against a hash for a record
+  that does not exist; a throwing sink now rolls the recorder back to
+  byte-identical prior state instead.
+- `AutoConfiguredBeanClassificationTest`'s sweep now walks `@Import`ed and
+  nested configuration classes recursively, closing a gap that let a bean be
+  placed specifically to dodge classification.
+- The reviewed-adapter allow-list is restored: `DataPrismContractValidator`
+  again refuses, with the stable code `UNREVIEWED_SOURCE_ADAPTER`, any
+  `DataSourceAdapter` bean named by neither `dataprism.sources` nor the JSON
+  catalogue's own source names. This closes a rule-1 enforcement gap task
+  54's earlier relaxation had silently dropped.
+
 ### Changed
 
 - `data-prism-example` is renamed to `data-prism-integration-tests`: it hosts
@@ -30,6 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registering via Spring's `AutoConfiguration.imports`, requiring no Java, but
   covering only flat JSON (`ConfiguredJsonFieldMetadataResolver.descendable()`
   always returns `false`, so a nested object is never covered).
+
+### Not changed
+
+- The hash-chained audit trail is durable and tamper-evident against an
+  outside forger, and no more than that. `AuditEventHash` is unkeyed
+  SHA-256, so anyone with write access to the audit file can recompute the
+  whole chain; the trail does not resist the operator. Nothing here should
+  be read as, or later restated as, a claim that the audit log is
+  tamper-proof, immutable, or independently complete.
 
 ## [0.2.0] - 2026-09-17
 
@@ -130,6 +193,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.3.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.2.0
 [0.1.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.1
 [0.1.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.0
