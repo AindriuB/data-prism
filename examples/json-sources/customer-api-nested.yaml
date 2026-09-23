@@ -59,7 +59,7 @@ json-sources:
 
     # Declared once here, referenced by the `nested:` field above. A catalogue
     # declared here but never referenced by any field's `nested:` is refused
-    # at load time -- see docs/architecture.md.
+    # at load time by the loader (`ConfiguredJsonSources`).
     nested-catalogues:
       address:
 
