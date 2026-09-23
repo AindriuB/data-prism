@@ -261,3 +261,34 @@ attempt 6 until 75 has merged. Then `docs/audit.md` must describe the real
 instanceId shape and state plainly, alongside the truncation limitation, that
 deleting ALL of one boot's records is undetectable from inside the file. Do
 not document the pre-75 behaviour.
+
+## Attempt 6 — failed on review (2026-09-23)
+
+Every WHAT FAILED item from attempts 1-5 is resolved; keep them. The real
+`<writer-id>/<uuid>` shape (`audit.md:55-68`) and the whole-boot-deletion
+limitation (`:246-251`) are in. Tester: PASS. Full-reactor verify green. Two
+boots against the real packaged server; middle edit / last edit → exit 2; tail
+deletion and whole-boot deletion → exit 0, undetected; Slf4j console line →
+INTERRUPTED WRITE, exit 4; walkthrough byte-identical. But the tester compared
+the verifier runs by SHAPE, which is how it missed defect 2. WHAT FAILED,
+both breaking attempt 5's "no pre-75 behaviour documented":
+
+1. `docs/audit.md:117`, exit-code table row 4, still says exit 4 covers "a
+   writer's chain not starting at `GENESIS` (an ordinary restart, ...)". That
+   is the pre-75 `--help` wording task 75 removed; since 75 every boot starts
+   at GENESIS (`AuditChainVerifierCli.java:167-171`). It is also wrong on the
+   code: a writer whose first record is not GENESIS gives CHAIN BREAK, exit 2
+   (`AuditChainVerifier.java:189-196`), unless the IMMEDIATELY PRECEDING line
+   was itself a structural anomaly, in which case it is reported at exit 4
+   (`:174-187`). Say exactly that.
+2. `docs/audit.md:121-143` and `:160-172`: three quoted verifier runs print
+   `Writer walkthrough-writer-1:` with no `/<uuid>` suffix (lines 124, 136,
+   164). The current code cannot produce that output. Re-run all three on the
+   current code and paste the real output; head hashes and byte offsets will
+   change. Then check every quoted verifier block on the page BY TEXT against
+   a real run, not by shape: every `Writer ...:` line must carry a suffix.
+3. Optional, take if cheap: `audit.md:95-97` "never ... as any other kind of
+   failure" overstates it (log input exits 4) — "never as a break" suffices;
+   `audit.md:57` may note a writer-id containing `/` is refused at startup
+   with `INVALID_AUDIT_WRITER`; `audit.md:21` implies `AuditRecorder` backs
+   only `hash-chained`, but it backs every sink.
