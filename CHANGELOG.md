@@ -141,9 +141,9 @@ trail — protect a real API without writing Java, and prove what happened.
   `pseudonymisation.algorithm-digest-too-short`, rather than surfacing an
   `ArrayIndexOutOfBoundsException` later; `HmacMD5` and `HmacSHA1` are both
   now rejected, so an operator configured with either must move to an
-  algorithm whose MAC output is at least 24 bytes (`HmacSHA256` and wider
-  qualify). This reduces collision probability substantially; it does not
-  make collisions impossible, and no such claim is made.
+  algorithm whose MAC output is at least 24 bytes. This reduces collision
+  probability substantially; it does not make collisions impossible, and no
+  such claim is made.
 - `AuditRecorder` now derives `instanceId` as `<writer-id>/<per-boot random
   UUID>` instead of the writer-id alone, so a restart under the same
   writer-id is reported as a new writer starting at `GENESIS` rather than a
@@ -157,6 +157,16 @@ trail — protect a real API without writing Java, and prove what happened.
   for the separate case of an absent or blank `dataprism.audit.sink`
   property. Anything keyed on the old code for the bean-absent case must
   switch to the new one.
+- In 0.2.0, `DataPrismContractValidator` compared `dataprism.sources` and the
+  supplied `DataSourceAdapter` beans for exact equality, so an adapter bean
+  present on the classpath with no matching `dataprism.sources` entry refused
+  with `UNRESOLVED_SOURCE_ADAPTER`. In 0.3.0 that same case — an adapter
+  named by neither `dataprism.sources` nor the JSON-catalogue mechanism —
+  refuses instead with the new code `UNREVIEWED_SOURCE_ADAPTER` (see the
+  Changed entry above); `UNRESOLVED_SOURCE_ADAPTER` is retained, unchanged,
+  for the other direction: a `dataprism.sources` entry with no adapter bean
+  supplied for it. Anything keyed on the old code for the adapter-present
+  case must switch to the new one.
 
 ### Not changed
 
