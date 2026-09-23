@@ -1107,6 +1107,16 @@ without publishing any claim the code does not back. Local branch
 `discoverability` (not pushed, not `main`) is the integration branch every
 task below merges onto; task worktrees are reset onto it, not `main`.
 
+- **Task 77 — done.** `docs/faq.md` (seven questions: anonymity per Art.
+  4(5), how pseudonyms are made and scoped, fixed identifier-shape scanning
+  rather than general PII/name detection, YAML path vs Java, what the audit
+  trail proves and does not prove, prompt injection flagged but not
+  defended against, not production-ready pre-1.0) and `docs/comparison.md`
+  (Presidio, LLM Guard, NeMo Guardrails, Docker MCP Gateway; "different
+  layers" table, "use X instead when", "where Data Prism does not fit";
+  every claim about another tool sourced to that tool's own docs with an
+  access date). Merged `--no-ff` onto `discoverability`. See
+  `docs/plan/HISTORY.md` — grep `Task 77`.
 - **Task 79 — done.** Reproducible social card (`docs/assets/social-card.png`,
   1280x640, tagline T, regenerated from `docs-site/social-card/`). Merged
   `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md` — grep
@@ -1129,10 +1139,11 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   `docs/extending.md`'s README line-number citations replaced by section
   names. Merged `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md`
   — grep `Task 76`.
-- **Tasks 77 (FAQ and comparison page), 81 (outreach drafts)** — in flight,
-  each in its own worktree off `discoverability`.
+- **Task 81 (outreach drafts)** — in flight, in its own worktree off
+  `discoverability`.
 - **Task 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)**
-  — next once task 77 lands (82 needs the FAQ page it adds).
+  — unblocked now that task 77 has landed (82 needs the FAQ page it adds);
+  starting.
 - **Task 83 (go-live wiring)** — pending, blocked on 82.
 
 ## Remaining slices past the adopted core
@@ -1203,6 +1214,20 @@ Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
    the module is one careless new test away from the same failure.
    Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
    and retire the trustStore property.
+
+Found on task 77 (FAQ and comparison page), merged 2026-09-23. None blocks
+the merge; all three are wording gaps in `docs/faq.md`.
+
+1. `docs/faq.md:125-126` sources "deferred by design" for the
+   re-identification surface only — the Elasticsearch connector is also not
+   built, but for a different reason (task 78/S11 scope, not a deferral
+   decision), and the FAQ does not distinguish the two.
+2. `docs/faq.md:41` (does it detect PII in free text) omits the scanner's
+   depth cap of 16, beyond which it fails closed. Worth adding since a
+   reader could otherwise assume unbounded scanning.
+3. `docs/faq.md:68-70` (do I need Java) cites the README's MCP-registry
+   section, which names only the adapter path — it does not by itself rule
+   out every non-adapter, non-Java route a reader might ask about.
 
 Found on task 69 (restore the reviewed-adapter allow-list), merged
 2026-09-23. Neither blocks the merge; the first item matters more than it

@@ -17,6 +17,53 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 77: an FAQ and a fair, sourced comparison page
+
+Adds `docs/faq.md` (seven H2 questions phrased and ending as questions,
+answered first-sentence-first so an assistant can quote them standalone):
+is the output anonymous (no, and why — GDPR Art. 4(5)), how pseudonyms are
+made and scoped, whether it detects PII in free text (fixed identifier-shape
+scanning, not general PII/name detection), whether Java is required (a
+YAML-only path exists alongside the Java adapter), what the audit trail
+proves and does not prove (quotes `docs/audit.md`'s "does not prove" list),
+whether it stops prompt injection (`InstructionContentHeuristic` flags
+instruction-like content and is deliberately not a defence), and whether
+it's production-ready (0.3.0, pre-1.0, per `SECURITY.md`). Adds
+`docs/comparison.md`, maintainer-authored and dated 2026-09-23, placing Data
+Prism next to Microsoft Presidio, LLM Guard, NeMo Guardrails and the Docker
+MCP Gateway: a "different layers" table, a "use X instead when…" section per
+tool, and a "where Data Prism does not fit" section. Every sentence about
+another tool links to that tool's own documentation with an access date; no
+claim is made about another tool's quality or performance.
+
+**Cost:** two attempts, both on sourcing accuracy in the comparison page.
+Attempt 1 claimed the Docker MCP Gateway does not inspect tool responses,
+but its own security documentation says `--block-secrets` scans them by
+default; invented a scanner history ("an earlier allowlist-free version
+deadlocked") that never happened; cited Presidio's operator list and
+`presidio-structured` to the wrong page and understated Presidio's
+structured-data scope; left the Data Prism claims in "does not fit"
+unlinked, blurring re-identification into something other than what it is
+(never an MCP tool — boundary 5); and linked an internal doc
+(`design-review.md`) that the docs site's strict build excludes. Attempt 2
+fixed all of these and switched internal-doc links that the site excludes
+to absolute GitHub URLs so the build does not break. Lesson for future
+comparison pages: absence from a tool's README is not evidence of absence —
+cite what the other tool's own docs say, not what they happen to omit.
+Verified: `git diff --name-only discoverability` limited to the two owned
+files; every honesty-check grep from the task's acceptance criteria; every
+external link opened and read against the sentence it supports. PASS +
+APPROVE on attempt 2, merged `--no-ff` onto the local `discoverability`
+branch, not `main`.
+
+Three wording gaps found while writing the FAQ were left as unscheduled
+follow-ups rather than fixed here (`docs/plan/PLAN.md`, "Small open items,
+unscheduled", "Found on task 77"): the "deferred by design" sourcing at
+`docs/faq.md:125-126` covers re-identification only, not the Elasticsearch
+connector; `docs/faq.md:41` omits the scanner's depth cap of 16; and
+`docs/faq.md:68-70` cites a README section that names only the adapter
+path, not every non-Java route.
+
 ## 2026-09-23 — Task 76: one canonical identity across README, poms, registry and image metadata
 
 Applies the canonical tagline T and description D from
