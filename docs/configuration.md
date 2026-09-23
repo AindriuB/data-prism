@@ -161,21 +161,6 @@ inside a Spring application, the Spring auto-configuration always refuses
 with `STDIO_TRANSPORT_UNSUPPORTED` regardless of what is configured here —
 that combination never reaches a usable, protected deployment either.
 
-Before that unconditional refusal is reached, most of this section's checks
-do not run at all in that stdio-fixture-development combination, verified
-against a Spring `ApplicationContextRunner`: `DataPrismProperties#validate()`
-skips its own audit checks entirely, so `MISSING_AUDIT_SINK` (the one
-`validate()` raises), `UNKNOWN_AUDIT_SINK`, `MISSING_AUDIT_FILE_PATH`,
-`MISSING_AUDIT_WRITER`, `INVALID_AUDIT_WRITER`, and `INVALID_AUDIT_REFERENCE`
-are all unreachable there. `DataPrismContractValidator`'s own checks —
-`AUDIT_SINK_BEAN_REQUIRED` and its separate, otherwise-unreachable
-`MISSING_AUDIT_SINK` arm — return immediately for that same combination, so
-neither fires either. Exactly one of this section's codes still fires in
-stdio fixture-development mode: `AUDIT_SINK_FILE_UNUSABLE`, thrown directly by
-the `hash-chained` sink's own bean factory method rather than by either of the
-above, so a `sink: hash-chained` deployment with an unopenable `file-path`
-still refuses at that point even here.
-
 `sink` is required; a missing value refuses startup with `MISSING_AUDIT_SINK`.
 It accepts exactly three values:
 
