@@ -17,6 +17,56 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 80: discoverability gets a tracker-free measurement setup
+
+Adds `docs/plan/discoverability/`: `questions.md` (15 questions an
+enterprise-Java/MCP audience would actually ask, e.g. "How do I stop an LLM
+agent seeing customer PII from our internal REST APIs?", "Presidio
+alternative for Java", "GDPR data minimisation MCP tools" — none names Data
+Prism, so the monthly check measures unprompted citation, not a leading
+question); `runs/TEMPLATE.md` (a 15x4 grid — ChatGPT, Claude, Perplexity,
+Copilot — recording date, model, mode, cited Y/N, the URL cited and other
+tools named, with citation rate defined as cited cells / 60); `snapshot.sh`
+(bash + `gh` + `jq` only, every call a read-only `gh api` GET, writing
+`snapshots/YYYY-MM-DD.json` via `mktemp` + `mv` under `set -euo pipefail` so
+a failed call never leaves a partial file); `baseline.md` plus the committed
+`snapshots/2026-09-23.json` and its five raw JSON files (1 star, 0 forks, 7
+open issues; 318 views / 9 unique and 1,358 clones / 346 unique over a
+window that includes the v0.3.0 release and is mostly owner/CI traffic, not
+real readers; github.com the only referrer); and a `README.md` giving the
+monthly assistant-check and 14-day snapshot procedure, plus the numbers that
+must still be read by hand (Central Portal downloads, GHCR pulls, Search
+Console/Bing Webmaster once verified). Nothing here is published on the
+site or is a tracker — it is purely for telling, after the fact, whether the
+discoverability work has any effect.
+
+**Cost:** attempt 1 passed both test and review, but the closing session
+found and required three fixes to `snapshot.sh` before merge, all invisible
+to a script-only read: it inferred the target repo from the working
+directory via `gh repo view`, so running it from inside a different repo
+silently recorded that repo's traffic into data-prism's snapshots; it
+silently overwrote a same-day snapshot, and a live verification run had
+already clobbered the committed baseline this way, which the tester had to
+restore from git; and its header comment overstated the access it needed
+("read-only", "GET-only") without noting GitHub's traffic endpoints in fact
+require push access, which is exactly the kind of gap that surfaces only by
+trying to run it as a genuinely read-only collaborator would. Attempt 2
+fixed all three — fixed `AindriuB/data-prism` default (override via
+`DATA_PRISM_REPO`), an output directory resolved from the script's own
+location rather than the working directory, a `--force`-gated refusal to
+overwrite an existing dated snapshot, and a header that states the push-
+access requirement plus the GET-only guarantee — reverified by running it
+from `/home/andrew/homelab`, a different repo entirely, and confirming
+nothing under data-prism's `snapshots/` changed unexpectedly. The committed
+raw `repo.json` keeps its live `permissions` block and an empty
+`temp_clone_token`; reviewed and accepted as-is, since the repo is public,
+the token field is already empty, and `snapshot.sh` itself never stores or
+reads either. One suggestion not taken: have the discoverability `README.md`
+mention `--force` and the same-day refusal explicitly rather than leaving
+them to the script's own `--help`-less error message. PASS + APPROVE on
+attempt 2; the merge diff touches only `docs/plan/discoverability/**`.
+Merged `--no-ff` onto the local `discoverability` branch, not `main`.
+
 ## 2026-09-23 — Task 79: the site gets a reproducible social card
 
 Adds `docs/assets/social-card.png` (1280x640 PNG, 32KB, carrying tagline T —

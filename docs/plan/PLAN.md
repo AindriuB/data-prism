@@ -1111,9 +1111,14 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   1280x640, tagline T, regenerated from `docs-site/social-card/`). Merged
   `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md` — grep
   `Task 79`.
+- **Task 80 — done.** Discoverability measurement: 15-question assistant
+  check, run template, `snapshot.sh` (bash+gh+jq, GET-only, fixed repo
+  target, refuses to clobber a same-day snapshot), and the 2026-09-23
+  baseline (`docs/plan/discoverability/`). Merged `--no-ff` onto
+  `discoverability`. See `docs/plan/HISTORY.md` — grep `Task 80`.
 - **Tasks 76 (canonical identity), 77 (FAQ and comparison page), 78 (use-case
-  pages), 80 (measurement), 81 (outreach drafts)** — in flight, each in its
-  own worktree off `discoverability`.
+  pages), 81 (outreach drafts)** — in flight, each in its own worktree off
+  `discoverability`.
 - **Tasks 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)
   and 83 (go-live wiring)** — pending, blocked on the tasks above they
   depend on.
