@@ -1,0 +1,69 @@
+# Title and description for existing user docs, which carry no front matter
+# of their own (docs/extending.md and PLAN.md cite line numbers inside them,
+# so front matter would shift those citations). The `site.py` hook injects
+# these as if they were front matter, and fails the build if a listed doc
+# has no entry here, if a description is longer than 155 characters, or if
+# two descriptions are identical.
+#
+# New pages (docs/faq.md, docs/comparison.md, docs/use-cases/**,
+# docs/index.md, docs/changelog.md) carry their own front matter instead and
+# have no entry here.
+quickstart.md:
+  title: Local Compose quickstart
+  description: >-
+    Bring up Data Prism's standalone server and a fixture API with one
+    Docker Compose command, and see a pseudonymised MCP response.
+
+protect-your-own-api.md:
+  title: "Protect your own API: a YAML-only walkthrough"
+  description: >-
+    A YAML-only walkthrough from a real JSON REST API to a working,
+    pseudonymised get_entity_context MCP call.
+
+configuration.md:
+  title: Configuration contract
+  description: >-
+    The deployment configuration contract for Data Prism's standalone
+    server and Spring Boot starter.
+
+tools.md:
+  title: Tool reference
+  description: >-
+    Reference for Data Prism's two MCP tools, get_entity_context and
+    compare_entity_sources, and their arguments.
+
+extending.md:
+  title: "Extending Data Prism: writing a reviewed adapter"
+  description: >-
+    How to write a reviewed source adapter for Data Prism when a JSON REST
+    API doesn't fit the built-in connector.
+
+audit.md:
+  title: The durable audit chain
+  description: >-
+    What Data Prism's opt-in, hash-chained audit trail records, and
+    precisely what it does and does not prove.
+
+architecture.md:
+  title: Architecture
+  description: >-
+    The module boundaries, data flow and design decisions behind Data
+    Prism's privacy engine and connectors.
+
+agents/README.md:
+  title: Connecting an agent client to Data Prism
+  description: >-
+    Two workflows for connecting an MCP agent client to Data Prism: local
+    stdio or remote Streamable HTTP.
+
+agents/stdio.md:
+  title: "Local stdio workflow: the fixture example"
+  description: >-
+    Connect an MCP client to Data Prism's local stdio fixture launcher for
+    development, without a real deployment.
+
+agents/remote-http.md:
+  title: "Remote workflow: authenticated Streamable HTTP"
+  description: >-
+    Connect an MCP client to a real Data Prism deployment over
+    authenticated Streamable HTTP.

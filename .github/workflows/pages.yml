@@ -1,0 +1,112 @@
+name: pages
+
+# Builds the MkDocs Material site on every pull request that touches it, and
+# deploys it to GitHub Pages only from a push to main. Deliberately not a
+# required check (task 82): a docs regression should be visible, not block
+# every unrelated merge.
+#
+# The `deploy` job assumes GitHub Pages is already enabled with
+# `build_type=workflow` — an owner action (see
+# docs/plan/specs/2026-09-23-discoverability.md, "Owner actions"), run once,
+# separately from this workflow.
+on:
+  push:
+    branches: ["main"]
+    paths: &docs-site-paths
+      - "docs/**"
+      - "docs-site/**"
+      - "mkdocs.yml"
+      - "README.md"
+      - "CHANGELOG.md"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths: *docs-site-paths
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs-site/requirements.txt
+
+      - name: Install the pinned MkDocs toolchain
+        run: pip install --no-cache-dir -r docs-site/requirements.txt
+
+      # --strict turns every `validation.links.*` / `validation.nav.*` warn
+      # into a build failure, alongside the site.py hook's own errors for a
+      # missing, duplicate or over-length page description.
+      - name: Build the site
+        run: mkdocs build --strict
+
+      # mkdocs writes root-relative links as `/data-prism/…` (from site_url's
+      # own path), which lychee can only resolve given a `--root-dir` whose
+      # `data-prism` child is the site itself — hence the bind mount below,
+      # rather than mounting `site/` at the container's filesystem root.
+      - name: Check links offline (no network access, so a real 404 elsewhere never fails this job)
+        run: |
+          docker run --rm -v "${{ github.workspace }}/site:/data-root/data-prism" -w /data-root \
+            lycheeverse/lychee:0.24.2 --offline --no-progress --root-dir /data-root data-prism
+
+      - name: No excluded path leaked into the built site
+        run: |
+          set -euo pipefail
+          hits="$(find site -path '*/plan/*' -o -path '*/adr/*' -o -name 'pack*' -o -name 'conventions*' -o -name 'workflow*' -o -name 'development-plan*' -o -name 'design-review*')"
+          if [ -n "$hits" ]; then
+            echo "::error::excluded path present in site/:"
+            echo "$hits"
+            exit 1
+          fi
+
+      # Sitemap-vs-nav agreement, one non-empty <=155-char meta description
+      # per page with no page sharing another's, a canonical link under
+      # site_url, and the OG/Twitter/social-card tags. The tester runs this
+      # same script over the same build.
+      - name: Sitemap, meta description, canonical and social tags
+        run: python3 docs-site/hooks/check_site.py
+
+      - name: llms.txt exists and its summary is the canonical description
+        run: |
+          set -euo pipefail
+          test -s site/llms.txt
+          test -s site/llms-full.txt
+          D="Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail."
+          grep -F "$D" site/llms.txt
+
+      - name: No Google Fonts or analytics/trackers
+        run: |
+          set -euo pipefail
+          if grep -rEl 'fonts.googleapis|fonts.gstatic|googletagmanager|google-analytics' site/; then
+            echo "::error::found a Google Fonts or analytics reference in site/"
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/configure-pages@v6
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
