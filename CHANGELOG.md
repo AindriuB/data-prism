@@ -16,11 +16,14 @@ trail — protect a real API without writing Java, and prove what happened.
 
 - The configuration-driven JSON REST connector gains one level of named
   nested catalogues: a field can declare `nested: <name>`, pointing at an
-  entry in a top-level nested-catalogues map whose own fields use the same
-  three-shape vocabulary flat catalogues already have. No dotted paths, no
-  JSONPath, no wildcard descent, no inferring structure from the wire —
-  `subject-json-path` is untouched and a nested object never carries its own
-  subject. A response nesting deeper than declared — a leaf the catalogue
+  entry in a top-level nested-catalogues map whose own leaves may be
+  `nonSensitive` or classified only — a nested leaf carries no identifier of
+  its own (it inherits its subject from the enclosing record), so
+  `identifier: true` and a further `nested:` are both refused there. No
+  dotted paths, no JSONPath, no wildcard descent, no inferring structure
+  from the wire — `subject-json-path` is untouched and a nested object never
+  carries its own subject. A response nesting deeper than declared — a leaf
+  the catalogue
   says is a scalar turning up as a structure — refuses with the new,
   distinct `NESTED_LEAF_NOT_SCALAR` code rather than falling through to
   core's generic `UNCLASSIFIED_STRUCTURE`; the mirror case, a declared
@@ -33,16 +36,38 @@ trail — protect a real API without writing Java, and prove what happened.
   with `AUDIT_SINK_FILE_UNUSABLE`, instead of degrading silently to no
   auditing. The canonical audit-record hash covers nineteen fields,
   including `timestamp` and `sourceSystems`.
-- An offline `AuditChainVerifier` CLI replays a hash-chained audit file and
-  reports what it finds: exit 0 intact, 1 unreadable input, 2 a detected
-  break, 3 a tail that may simply be in flight, 4 a structural anomaly (never
-  returned together with 2). It distinguishes several ordinary,
-  non-tampering failure modes — a torn trailing record, a mid-file
-  concatenation after a restarted sink, a new writer's chain starting fresh
-  after a process restart — from genuine tampering, but it is unable to rule
-  out truncation of the most recent record or records: a chain that simply
-  stops cannot be told apart from one an attacker cut short, which is why
-  that case exits 3 rather than 0.
+- An offline `AuditChainVerifier` CLI replays a hash-chained audit file's
+  writers from a copy and reports one of five outcomes: exit 0 intact; 1
+  unreadable input; 2 a detected break — an edit or deletion inside one
+  writer's chain, caught even on that chain's own last record; 3 the final
+  record has no terminating newline, reported as possibly in flight, which
+  is proof of neither health nor tampering; and 4 a structural anomaly (an
+  interrupted-write fragment, a duplicate sequence, or a chain not starting
+  at `GENESIS` immediately after another anomaly), never returned together
+  with a break. Exit codes 3 and 4 name shapes ordinary operation can also
+  produce; neither rules out tampering. The verifier cannot detect
+  truncation of a writer's most recent records at all — a file with its
+  tail removed verifies intact at exit 0, because nothing remains in the
+  file to disagree with — and the same blind spot extends to a whole
+  process boot: deleting every record of one boot leaves the surviving
+  writers reporting intact and never mentions the deleted one,
+  indistinguishable from that boot never having run.
+- An opt-in `dataprism.identity.resolver: pass-through` property selects
+  `PassThroughIdentityResolver`, refusing an unrecognised value with
+  `UNSUPPORTED_IDENTITY_RESOLVER`; an application-supplied `IdentityResolver`
+  bean still wins. Combined with the configuration-driven JSON REST
+  connector, this makes protecting a flat JSON API genuinely possible with
+  no Java class. A Spring `FailureAnalyzer` now renders every
+  `DataPrismConfigurationException` as an operator-facing block naming the
+  refusal code, what to supply, and the relevant docs page, with no stack
+  frame. A new walkthrough, `docs/protect-your-own-api.md`, takes a reader
+  with a flat JSON REST API from nothing to a pseudonymised MCP response
+  using only YAML.
+- The four Compose quickstart images (server-with-extension, fixtures,
+  issuer, certs-init) are now published as multi-architecture GHCR
+  manifests; `docker compose up` pulls them by default, with the
+  from-source build path moved to `docker compose -f compose.yaml -f
+  compose.build.yaml up --build`.
 
 ### Fixed
 
@@ -58,8 +83,19 @@ trail — protect a real API without writing Java, and prove what happened.
 - The reviewed-adapter allow-list is restored: `DataPrismContractValidator`
   again refuses, with the stable code `UNREVIEWED_SOURCE_ADAPTER`, any
   `DataSourceAdapter` bean named by neither `dataprism.sources` nor the JSON
-  catalogue's own source names. This closes a rule-1 enforcement gap task
-  54's earlier relaxation had silently dropped.
+  catalogue's own source names. This closes a rule-1 enforcement gap left by
+  an earlier change that widened the adapter-name cross-check from an exact
+  match against `dataprism.sources` to a subset match, which let an adapter
+  bean on the classpath go unreviewed as long as some `dataprism.sources`
+  entry existed.
+- A sink failure raised while recording an audit event no longer reaches the
+  MCP client carrying its own exception text. `GetEntityContextTool` and
+  `CompareEntitySourcesTool` now catch only the audit-record failure and
+  rethrow it as `AuditUnavailableException`, exposed to the client as the
+  stable code `AUDIT_UNAVAILABLE` with no text derived from the caught
+  exception — closing a path by which a hash-chained sink's failure could
+  disclose the server-side audit file's path to the MCP client. The response
+  is still refused, exactly as before; only what the client is told changed.
 
 ### Changed
 
@@ -81,18 +117,47 @@ trail — protect a real API without writing Java, and prove what happened.
   moved it, instead of the renamed module; and `README.md`'s "Until Task 20
   delivers…" claim is replaced — the configuration-driven JSON REST mode
   shipped as the published `data-prism-connectors-rest` artefact, self-
-  registering via Spring's `AutoConfiguration.imports`, requiring no Java, but
-  covering only flat JSON (`ConfiguredJsonFieldMetadataResolver.descendable()`
-  always returns `false`, so a nested object is never covered).
+  registering via Spring's `AutoConfiguration.imports` and requiring no Java.
 
 ### Not changed
 
-- The hash-chained audit trail is durable and tamper-evident against an
-  outside forger, and no more than that. `AuditEventHash` is unkeyed
-  SHA-256, so anyone with write access to the audit file can recompute the
-  whole chain; the trail does not resist the operator. Nothing here should
-  be read as, or later restated as, a claim that the audit log is
-  tamper-proof, immutable, or independently complete.
+- What the hash-chained audit trail's tamper-evidence covers, stated
+  precisely: an edit or deletion of a record inside one writer's chain,
+  including that writer's own last record. It does not cover truncation of a
+  writer's most recent records, or deletion of an entire process boot's
+  records — both are undetectable from inside the file alone (see the
+  verifier entry above). `AuditEventHash` is also unkeyed SHA-256, so anyone
+  with write access to the audit file can recompute the whole chain after
+  tampering with it; the trail does not resist an operator, or anyone else
+  who already has that access. Nothing here should be read as, or later
+  restated as, a claim that the audit log is tamper-proof, immutable, or
+  independently complete.
+
+### Behavioural change for API consumers
+
+- `HmacSyntheticGenerator`'s discriminator widens from 20 bits (one masked
+  byte, four Crockford base32 characters) to 40 bits (eight distinct digest
+  bytes, eight characters), and `ADDRESS` — which previously rendered no
+  discriminator at all — now carries one like every other namespace. Every
+  pseudonym this generator produces changes as a result. `PseudonymisationVersion`
+  now rejects a MAC algorithm whose digest is too short for the generator's
+  own reads at construction time, with the stable code
+  `pseudonymisation.algorithm-digest-too-short`, rather than surfacing an
+  `ArrayIndexOutOfBoundsException` later; `HmacMD5` and `HmacSHA1` are both
+  now rejected. This reduces collision probability substantially; it does
+  not make collisions impossible, and no such claim is made.
+- `AuditRecorder` now derives `instanceId` as `<writer-id>/<per-boot random
+  UUID>` instead of the writer-id alone, so a restart under the same
+  writer-id is reported as a new writer starting at `GENESIS` rather than a
+  false chain break. `instanceId` values recorded before this change are not
+  comparable to ones recorded after it. A writer-id containing `/` is now
+  refused at startup with the new code `INVALID_AUDIT_WRITER`.
+- Configuring `dataprism.audit.sink: approved-sink` with no matching
+  `AuditSink` bean now refuses with the new code `AUDIT_SINK_BEAN_REQUIRED`
+  instead of the generic `MISSING_AUDIT_SINK`, which is retained unchanged
+  for the separate case of an absent or blank `dataprism.audit.sink`
+  property. Anything keyed on the old code for the bean-absent case must
+  switch to the new one.
 
 ## [0.2.0] - 2026-09-17
 
