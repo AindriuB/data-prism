@@ -190,3 +190,38 @@ are resolved; keep all of it. WHAT FAILED:
    so. `:496` says "install both modules first" but the `-am` command
    installs every upstream module; say that, and note that it overwrites the
    reader's local `0.2.0` artifacts in `~/.m2`.
+
+## Attempt 4 — failed on review (2026-09-23)
+
+Tester: PASS. Build and full suite green; the walkthrough output still
+matches verbatim. The new leaf-grammar claim holds by execution: scratch
+catalogues with `identifier: true` or `nested:` inside a nested catalogue are
+refused with the loader's messages, while `nonSensitive` and classified
+leaves load. The three attempt-3 locations are fixed; keep them.
+
+Process note: attempt 4 rebased onto `origin/v0.3.0/audit-trail-and-nested-json`,
+which is 25 commits behind the LOCAL branch of that name, producing duplicate
+copies of base history. The branch was rebuilt by hand as local base + the
+four task-62 commits. Rebase onto the LOCAL `v0.3.0/audit-trail-and-nested-json`
+ref only, and afterwards check that
+`git log --oneline v0.3.0/audit-trail-and-nested-json..HEAD` lists only
+commits starting `62:`.
+
+WHAT FAILED:
+
+1. The same leaf-grammar error in a fourth place: `docs/architecture.md:111-113`
+   says a nested catalogue's leaves have "exactly the same three leaf shapes
+   as the root". The root's three include `identifier`, which is refused
+   there, and the very next sentence says so, so the paragraph contradicts
+   itself. Say "the root's `nonSensitive` and classified leaf shapes".
+   Then grep EVERY file in the diff for "three", "same", "shapes", "leaf" and
+   "identifier" and check each hit near a statement about nesting.
+2. `docs/protect-your-own-api.md:549-551` still says the raw field name from
+   the response body does not appear in the refusal. It does: names match
+   exactly, so `postcode` in `$.address.postcode` IS the wire name
+   (`ConfiguredJsonNestedLeafShapeGuard.java:92-94`). Attempt 3 asked for "raw
+   values". Say that no raw value, and nothing from inside the unexpected
+   structure, appears in the message.
+3. Minor: the intro's statement of limits (`docs/protect-your-own-api.md:18-20`)
+   names only the `nested:` refusal inside a nested catalogue; add "or
+   `identifier: true`" to match the other statements.
