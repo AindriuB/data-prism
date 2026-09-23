@@ -10,17 +10,40 @@
 # Read-only: every call below is a `gh api` GET. Nothing here writes to
 # the API, and nothing here should ever be changed to do so.
 #
-# Requires: bash, gh (authenticated with repo read access), jq. Uses
-# nothing else.
+# Requires: bash, gh (authenticated as a user with push access to the
+# repo — the traffic endpoints require that, not just read access; see
+# README.md), jq. Uses nothing else.
+#
+# The target repo is fixed (below), never inferred from the working
+# directory, so running this from inside a different checkout never
+# silently snapshots the wrong repo. Override only with DATA_PRISM_REPO.
+# The output directory is resolved from this script's own location, not
+# the working directory, for the same reason.
 set -euo pipefail
+
+repo="${DATA_PRISM_REPO:-AindriuB/data-prism}"
+force=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) force=1 ;;
+    *)
+      echo "snapshot.sh: unknown argument: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 out_dir="$here/snapshots"
-repo="${DATA_PRISM_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 date_utc="$(date -u +%F)"
 out_file="$out_dir/${date_utc}.json"
 
 mkdir -p "$out_dir"
+
+if [ -e "$out_file" ] && [ "$force" -ne 1 ]; then
+  echo "snapshot.sh: $out_file already exists; refusing to overwrite it (pass --force to replace it)" >&2
+  exit 1
+fi
 
 tmp_file="$(mktemp "$out_dir/.snapshot.XXXXXX")"
 trap 'rm -f "$tmp_file"' EXIT
