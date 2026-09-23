@@ -8,11 +8,11 @@
     "source": "github",
     "id": "1361848414"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/aindriub/data-prism-server:0.2.0",
+      "identifier": "ghcr.io/aindriub/data-prism-server:0.3.0",
       "runtimeHint": "docker",
       "transport": {
         "type": "streamable-http",
@@ -139,6 +139,11 @@
           "name": "DATAPRISM_AUDIT_WRITER_ID",
           "description": "Writer/instance identity recorded on every audit entry; required",
           "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_AUDIT_FILE_PATH",
+          "description": "Path to the durable, hash-chained audit log; required when DATAPRISM_AUDIT_SINK=hash-chained, refused as MISSING_AUDIT_FILE_PATH if absent for that sink, ignored otherwise",
+          "isRequired": false
         },
         {
           "name": "DATAPRISM_METRICS_SINK",
