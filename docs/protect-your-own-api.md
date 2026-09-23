@@ -482,10 +482,11 @@ own:
           action: SYNTHESIZE
 ```
 
-Nesting goes exactly one level: `address`'s own leaves may be `identifier`,
-`nonSensitive` or classified, but never `nested:` themselves — a second level
-is refused when the catalogue loads, not silently flattened. This is loaded
-and scrubbed below by the real engine, not asserted in prose:
+Nesting goes exactly one level: `address` carries no identifier of its own —
+it inherits its subject from the enclosing record — so its own leaves may be
+`nonSensitive` or classified only; `identifier: true` and a further `nested:`
+are both refused when the catalogue loads, not silently flattened. This is
+loaded and scrubbed below by the real engine, not asserted in prose:
 [`examples/json-sources/NestedCatalogueWalkthrough.java`](../examples/json-sources/NestedCatalogueWalkthrough.java)
 is a complete, runnable program, `public` but living in
 `io.github.aindriub.dataprism.connectors.rest` (the exact package
@@ -494,11 +495,14 @@ is a complete, runnable program, `public` but living in
 `ConfiguredJsonSources.fromYaml` this connector uses to read every
 `json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine` that
 test drives directly. Its own header comment gives the exact `javac`/`java`
-invocation; in short, `install` both modules first — `package` alone leaves
+invocation; in short, `install` first — `package` alone leaves
 `data-prism-pseudonymisation` and `data-prism-orchestration` (imported here
 transitively) unresolved from this reactor, so `mvn dependency:build-classpath`
-falls back to whatever was last published to Maven Central —
-(`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`), then
+falls back to whatever was last published to Maven Central. The `-am` flag
+installs every upstream module this one depends on, not just those two
+(`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`) — note this
+overwrites any `0.2.0` artifacts already sitting in the reader's local
+`~/.m2` repository with this branch's build. Then
 compile and run this one file against `data-prism-core`'s and
 `data-prism-connectors-rest`'s `target/classes` plus
 `data-prism-connectors-rest`'s Maven dependency classpath (`mvn -q
@@ -542,8 +546,9 @@ scrub call, against that stale-shaped body, prints:
 REFUSED: NESTED_LEAF_NOT_SCALAR at customer-api-with-address$.address.postcode: nested catalogue leaf field is declared scalar/classified but the response carries a structure there; the catalogue is stale against the wire shape
 ```
 
-Neither the fixture's field name nor the unexpected structure's contents
-appear in that message. The mirror-image failure — a scalar arriving where
+Neither the raw field name from the response body nor the unexpected
+structure's contents appear in that message — only the catalogue-declared path
+`$.address.postcode` does. The mirror-image failure — a scalar arriving where
 `nested:` itself is declared — is `NESTED_FIELD_NOT_STRUCTURED`, and a
 property inside the nested object that its own catalogue never named is
 refused as `UNKNOWN_FIELD`, the identical code the root catalogue's own

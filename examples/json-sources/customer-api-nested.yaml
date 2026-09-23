@@ -6,8 +6,9 @@
 # file -- it is not committed only in prose.
 #
 # Nesting in this mode goes exactly one level deep: a `nested-catalogues:`
-# entry's own fields may be `identifier`, `nonSensitive` or classified, but
-# never `nested:` themselves -- a second level of nesting is refused when this
+# entry carries no identifier of its own -- it inherits its subject from the
+# enclosing record -- so its own fields may be `nonSensitive` or classified
+# only; `identifier: true` and a further `nested:` are both refused when this
 # file is loaded, not silently flattened or dropped. Every field name, at
 # either level, plus `subject-json-path` itself, is still a single bare,
 # exact-match property name: no dotted path, no JSONPath, no array index

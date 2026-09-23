@@ -35,9 +35,11 @@ below
 `.../ConfiguredJsonSourcesAutoConfiguration.java:82`).
 
 That mode has a real limit worth knowing before choosing it: a `nested:`
-field's own catalogue is exactly one level deep — its leaves may be
-`identifier`, `nonSensitive` or classified, but never `nested:` themselves —
-so `descendable` only ever answers true for one of a source's own minted
+field's own catalogue is exactly one level deep, and it carries no identifier
+of its own — it inherits its subject from the enclosing record — so its
+leaves may be `nonSensitive` or classified only; `identifier: true` and a
+further `nested:` are both refused there. `descendable` only ever answers
+true for one of a source's own minted
 nested-catalogue tokens, never recursively
 (`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonFieldMetadataResolver.java`).
 There is also no dotted path or JSONPath anywhere in this grammar: every
