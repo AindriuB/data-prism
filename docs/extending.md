@@ -243,7 +243,7 @@ public final class PassThroughIdentityResolver implements IdentityResolver {
 `data-prism-core/src/main/java/io/github/aindriub/dataprism/core/PassThroughIdentityResolver.java:14-26`
 
 Use it **only** when every configured source genuinely keys its records on
-the same identifier (`README.md:160-163`): it does nothing, treating the
+the same identifier (see the README's "Building and running" section): it does nothing, treating the
 subject id you were asked for as every source's own key. If your sources
 disagree about identity — different customer numbers, a probabilistic match
 on name and date of birth, a master data service you must call first — write
@@ -600,15 +600,13 @@ choose a host or path.
 
 With the jar built (`mvn package` in your extension module), two equivalent
 ways to load it into the packaged server exist, both documented already in
-`README.md:160-176`:
+the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
   java -jar data-prism-server/target/data-prism-server-0.3.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
-
-`README.md:167-171`
 
 — `LOADER_PATH` names a directory; every `*.jar` placed directly inside it is
 added. The single-jar form used directly is `-Dloader.path=/path/to/your-extension.jar`
