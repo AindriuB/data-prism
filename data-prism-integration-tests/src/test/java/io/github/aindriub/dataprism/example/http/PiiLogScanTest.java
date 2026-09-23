@@ -291,11 +291,28 @@ class PiiLogScanTest {
             Pattern.compile("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.(\\d{3}|\\d{6}|\\d{9}))?Z");
 
     /**
+     * {@code AuditRecorder}'s own instanceId shape: a configured writer-id
+     * (never containing the {@code /} separator), a {@code /}, and a
+     * canonical-form {@code UUID.randomUUID()} minted once per process
+     * lifetime. {@code seq} folds this instanceId together with the sequence
+     * number (see the field note above), so the whole value is
+     * {@code <instanceId>/<sequence digits>}. Pinned this precisely, not
+     * merely "a UUID somewhere in there", for the same reason every other
+     * shape here is pinned precisely: the per-boot UUID is as good as random,
+     * and its hex digits coincidentally spelling a banned digit run must not
+     * redden this test with no leak anywhere near it.
+     */
+    private static final Pattern SEQ_SHAPE =
+            Pattern.compile("[^/]+/" + UUID_SHAPE.pattern() + "/\\d+");
+
+    /**
      * The fields {@code Slf4jAuditSink} fills with nothing but a UUID, a run
-     * of hex, or a system timestamp: {@code event} and {@code correlation}
-     * (UUIDs), {@code params} (a twelve-byte HMAC fingerprint), {@code hash}
-     * and {@code prev} (a SHA-256 hex digest), and {@code ts} — the wall clock
-     * at the moment of the call, via {@code Clock.systemUTC()} in
+     * of hex, an instanceId/sequence pair, or a system timestamp:
+     * {@code event} and {@code correlation} (UUIDs), {@code params} (a
+     * twelve-byte HMAC fingerprint), {@code hash} and {@code prev} (a
+     * SHA-256 hex digest), {@code seq} (a writer-id, a per-boot UUID, and a
+     * sequence number), and {@code ts} — the wall clock at the moment of the
+     * call, via {@code Clock.systemUTC()} in
      * {@code DataPrismAssembly.standard()}, so its nanosecond digits are as
      * good as random and were observed, empirically, to coincidentally spell
      * a banned digit run and redden this test with no leak anywhere near it.
@@ -308,6 +325,7 @@ class PiiLogScanTest {
             "params", HEX24_SHAPE,
             "hash", HEX64_SHAPE,
             "prev", HEX64_SHAPE,
+            "seq", SEQ_SHAPE,
             "ts", INSTANT_SHAPE);
 
     @Test
@@ -547,6 +565,52 @@ class PiiLogScanTest {
 
         assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123", "456")))
                 .isEmpty();
+    }
+
+    /**
+     * {@code seq} folds {@code instanceId} together with the sequence number
+     * (see the field note above {@link #AUDIT_KEYS}), and {@code instanceId}
+     * carries a {@code UUID.randomUUID()} minted once per process lifetime,
+     * so its hex digits are effectively random and, over enough runs, do
+     * coincidentally spell a banned digit run with no leak anywhere near it
+     * — the same false-positive class {@link #wellFormedTimestampFieldIsExempt()}
+     * exists for. The raw value below already contains both {@code "123"}
+     * and {@code "456"} — what a plain per-field {@code contains} scan would
+     * have reported as leaked before this fix — yet the field-aware scan
+     * reports nothing once the whole value matches {@link #SEQ_SHAPE}.
+     */
+    @Test
+    @DisplayName("a well-formed seq field is exempt even where its instanceId's UUID coincidentally spells a banned digit run")
+    void wellFormedSeqFieldIsExempt() {
+        String seqContainingCoincidentalDigits =
+                "example-1/01234567-89ab-cdef-0123-456789abcdef/42";
+        assertThat(seqContainingCoincidentalDigits).containsPattern(SEQ_SHAPE);
+        assertThat(seqContainingCoincidentalDigits).contains("123", "456");
+
+        String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: seq={}", seqContainingCoincidentalDigits));
+
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123", "456")))
+                .isEmpty();
+    }
+
+    /**
+     * The other half of the exemption: a {@code seq} value that does not
+     * conform to {@link #SEQ_SHAPE} — here, an instanceId that is not a
+     * well-formed UUID — is scanned like any other field, so a real leak
+     * riding along in a malformed seq value is still caught.
+     */
+    @Test
+    @DisplayName("a seq field whose value does not match its pinned shape is scanned like any other")
+    void nonConformingSeqFieldIsScanned() {
+        String malformedSeq = "example-1/not-a-uuid-123/42";
+        assertThat(malformedSeq).doesNotMatch(SEQ_SHAPE.pattern());
+
+        String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: seq={}", malformedSeq));
+
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123")))
+                .containsExactly("123");
     }
 
     /**
