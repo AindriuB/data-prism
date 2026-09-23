@@ -812,11 +812,33 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   wave 2`, for both). **66 merged 2026-09-23 at attempt 4, PASS + APPROVE** —
   three earlier attempts each relocated the same defect (the tool asserting
   benignity it could not support); task file retired, mined into
-  `docs/plan/HISTORY.md`, grep `Task 66`. **67 is PASS but REQUEST CHANGES
-  for bookkeeping, not code** — see follow-up item 1 below; its branch and
-  worktree are held pending tasks 73 and 74 (the approved-sink refusal, and
-  the sink-exception-to-MCP-response path disclosure) being filed and
-  closed. 73 is now filed; 74 is not yet.
+  `docs/plan/HISTORY.md`, grep `Task 66`. **67 was PASS but REQUEST CHANGES
+  for bookkeeping, not code** — its branch and worktree were held pending
+  tasks 73 and 74 (the approved-sink refusal, and the sink-exception-to-MCP-
+  response path disclosure) being filed and closed.
+
+  **Tasks 73 and 74 both merged 2026-09-23, PASS + APPROVE, onto
+  `v0.3.0/audit-trail-and-nested-json`.** Task 73 raises a new
+  `AUDIT_SINK_BEAN_REQUIRED` code, naming
+  `dataprism.audit.sink=approved-sink` and the required bean, when that
+  specific configured value has no `AuditSink` bean at
+  `dataPrismContractValidator` construction; `MISSING_AUDIT_SINK` stays for
+  every other case reaching the same branch, deliberately not narrowed to
+  assume `approved-sink` is the only value that can, since `hash-chained`
+  reaches it too until 67 merges. Task 74 stops a throwing `AuditSink`'s raw
+  exception message reaching the MCP client: `GetEntityContextTool` and
+  `CompareEntitySourcesTool` now catch only the `audit.record(...)` failure
+  and rethrow `AuditUnavailableException` (code `AUDIT_UNAVAILABLE`), with
+  the caught exception attached via `addSuppressed` rather than as a cause —
+  proven by mutation that restoring a normal cause lets the MCP SDK's
+  `aggregateExceptionMessages` walk it back onto the wire, disclosing a real
+  `FileAuditSink` path. See `docs/plan/HISTORY.md`, grep `Task 73` and
+  `Task 74`.
+
+  **Both of task 67's held-pending conditions are now closed — task 67 is
+  unblocked.** Its branch and worktree (`task/67-wire-hash-chained-sink`,
+  `.worktrees/data-prism/67-wire-hash-chained-sink`) can proceed to merge and
+  be recorded done; no further filing is owed.
 
   **Task 72 (widen the audit hash to cover `timestamp` and `sourceSystems`)
   merged 2026-09-23, PASS + APPROVE, fast-forward onto
@@ -842,10 +864,14 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   `docs/audit.md`, nested example and walkthrough; deps 60, 64, 66), 69
   (restore the reviewed-adapter allow-list task 54's review flagged above,
   via a catalogue-names bean from the connector, without reinstating the
-  exact-match duplication task 54 removed; deps 60, 67). 62 additionally
-  carries the hard precondition in follow-up item 2 below (the sink-
-  exception-to-MCP-response path disclosure) before either 62 or 59 may tell
-  an operator to use `hash-chained`.
+  exact-match duplication task 54 removed; deps 60, 67). 62's hard
+  precondition — the sink-exception-to-MCP-response path disclosure — is now
+  closed by task 74 (merged 2026-09-23); 62 and 59 may document
+  `hash-chained`. One new item is owed instead: `docs/configuration.md` has
+  no entry for `AUDIT_SINK_BEAN_REQUIRED` (task 73), so
+  `DataPrismConfigurationFailureAnalyzer`'s pointer at that document is
+  currently a dead end for an operator who hits the refusal. See follow-up
+  item 8 below, filed for 59/62.
 - **Wave 4:** 70 (cut 0.3.0 across poms, `server.json`, `serverInfo`
   literals, four Dockerfiles, `publish-image.yml`, docs, with a CHANGELOG
   built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69).
@@ -858,29 +884,39 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   in 67 delays the allow-list fix, not the release, since 69 is wave 3 and
   70 waits on both.
 
-**Follow-ups filed from wave 2 (61, 65, 66, 67), 2026-09-22. None blocks 61
-or 65, both merged. Item 1 is a hard blocker on recording 67 done, and item 2
-is a hard precondition on 62 and 59 (see wave 3 above).**
+**Follow-ups filed from wave 2 (61, 65, 66, 67), 2026-09-22. Items 1 and 2 are
+resolved below (tasks 73 and 74, merged 2026-09-23).**
 
-1. **Blocks recording task 67 done.** `approved-sink` is still accepted by
+~~1. **Blocks recording task 67 done.** `approved-sink` is still accepted by
    `DataPrismProperties.validate()` with no bean behind it, refusing later
    via `MISSING_AUDIT_SINK` at contract-validator construction instead of at
-   config validation. 67's reviewer judged this inelegance rather than a
-   defect (nothing unsafe is reachable) and approved stopping there, since
-   the fix needs eight test files outside 67's `Owns`:
-   `data-prism-server/ServerStartupTest`, `ConfiguredIdentityResolverTest`,
-   `ModelDescriptorsConfigurationTest`, `PrivacyExtensionPointsTest`,
-   `SharedReadBudgetTest`, `FixtureDevelopmentRefusalTest`,
-   `ServerSecurityBoundaryTest`, `StarterStartupFailureTest`. File it as its
-   own task owning those files.
-2. **Hard precondition on tasks 62 and 59.** The sink-exception-to-MCP-
+   config validation. ... File it as its own task owning those files.~~
+   **Resolved 2026-09-23 by task 73.** `DataPrismContractValidator` now
+   raises `AUDIT_SINK_BEAN_REQUIRED`, whose message names
+   `dataprism.audit.sink=approved-sink` and the required bean type, for
+   exactly that value with no bean; `MISSING_AUDIT_SINK` is retained for the
+   absent-or-blank-property case and for any other accepted value reaching
+   the bean-absent branch (still `hash-chained`, until 67 merges). All eight
+   named fixtures still configure `approved-sink` and still exercise the
+   path they were written for. See `docs/plan/HISTORY.md`, grep `Task 73`.
+2. ~~**Hard precondition on tasks 62 and 59.** The sink-exception-to-MCP-
    response path disclosure: `FileAuditSink`'s `PoisonedException` names the
    file path by design, and `AuditSinkFailureAbortsResponseTest` pins a
    sink's raw exception message reaching the MCP client, so a server
-   filesystem path can now reach a client. Two reviewers established the
-   disclosure originates in the response mapping, not the sink. 67's
-   reviewer ruled merging 67 acceptable without it, on condition that this
-   is filed before either 62 or 59 tells an operator to use `hash-chained`.
+   filesystem path can now reach a client. ... on condition that this
+   is filed before either 62 or 59 tells an operator to use `hash-chained`.~~
+   **Resolved 2026-09-23 by task 74.** `GetEntityContextTool` and
+   `CompareEntitySourcesTool` catch only the `audit.record(...)` call sites
+   and rethrow `AuditUnavailableException` (code `AUDIT_UNAVAILABLE`, no
+   text derived from the caught exception), with the cause kept only via
+   `addSuppressed` for the server-side log — proven by mutation that a plain
+   `initCause`/constructor-cause wiring lets the MCP SDK's
+   `aggregateExceptionMessages` disclose the real `FileAuditSink` path
+   through the client-visible `McpError` `data` field. The abort itself is
+   unchanged: every new `catch` logs and rethrows, none returns a result.
+   `docs/conventions.md` records the resulting `LOG.error(msg, cause)` calls
+   as a deliberate, reviewed exception to its own "no catch block logs the
+   object it caught" rule. See `docs/plan/HISTORY.md`, grep `Task 74`.
 3. The two PII scans have already drifted. `PiiLogScanTest` matches banned
    values at token boundaries (lookaround-bounded since task 47, so bare ids
    `123`/`456` cannot collide with hex); `AuditFilePiiScanTest`'s copy uses
@@ -912,6 +948,13 @@ is a hard precondition on 62 and 59 (see wave 3 above).**
    because `DataPrismProperties` binds `ignoreUnknownFields=false` and
    Spring Boot's unbound-elements check exempts system properties but not
    command-line args — which is also how the packaged distribution wires it.
+8. **Owed to tasks 59/62, filed 2026-09-23 alongside task 73.**
+   `DataPrismConfigurationFailureAnalyzer` prints the refusal code and
+   points an operator at `docs/configuration.md`. That file has no entry for
+   `AUDIT_SINK_BEAN_REQUIRED` (task 73), so an operator who hits it today is
+   sent to a document that never mentions the code they were just given.
+   Whichever of 59 or 62 documents `dataprism.audit.sink` must add this
+   code, not just `MISSING_AUDIT_SINK` and `UNKNOWN_AUDIT_SINK`.
 
 **Release sequence — order is load-bearing, do not compress it:**
 1. Waves 1-3 merge.

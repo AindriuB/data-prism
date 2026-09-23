@@ -59,6 +59,18 @@ rejects a diff that breaks one, whatever else it does.
   synthetic, and leak fixtures use documented invalid check digits — a valid IBAN
   or PPSN in a test file is itself the leak.
 
+**Deliberate, reviewed exception to "no `catch` block logs the object it
+caught":** `GetEntityContextTool` and `CompareEntitySourcesTool`
+(`data-prism-mcp`) call `LOG.error(msg, auditFailure)` at the `audit.record(...)`
+call sites task 74 added. This is sanctioned, not an oversight: task 74 requires
+the audit sink's exception (which can name a server filesystem path, e.g.
+`FileAuditSink`'s `PoisonedException`) to stay server-side only, never reach the
+client-visible `AuditUnavailableException`. Keeping it in the server log via the
+caught object is how "operator detail preserved, client detail withheld" is
+satisfied. Do not "fix" this back to a bare code-only log line, and do not read
+a future privacy-log scan flagging it as a real leak — check it against this
+paragraph first.
+
 ## Naming
 
 Java conventions throughout: `PascalCase` types, `camelCase` members,
@@ -315,6 +327,18 @@ mutate and rebuild to prove a test can fail, which makes them writers of
 `target/` even though they touch no tracked file. Either the reviewer clones
 first, always, or the two run in sequence. A contended `target/` does not fail
 loudly — it produces a wrong test result.
+
+Separately, every agent in this workspace shares one `~/.m2` local repository,
+which is a second contention surface from the `target/` one above: build with
+`-am` so a task's dependencies compile from the checkout in front of you rather
+than resolving as already-installed jars from `~/.m2`. A bare `-pl` build can
+silently resolve a stale installed artifact left by a sibling worktree's
+concurrent build and fail with what reads exactly like a source defect — three
+agents verifying tasks 73 and 74 hit this in one wave, producing a phantom
+`cannot find symbol NameSet` in `data-prism-pseudonymisation` (a module task 71
+was rebuilding concurrently in a sibling worktree) and one spurious leak
+reproduction. If a failure surfaces in a module neither task you are verifying
+owns, re-run in isolation before believing it.
 
 Task 07's `PiiLogScanTest` failed intermittently with paired stub subject ids
 appearing to leak into a log line — the one test whose job is to catch exactly

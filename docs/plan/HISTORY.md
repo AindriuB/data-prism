@@ -17,6 +17,111 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 74: a sink's exception no longer reaches the MCP client verbatim
+
+`GetEntityContextTool` and `CompareEntitySourcesTool` each caught nothing
+around their `audit.record(...)` call sites, so an `AuditSink` that throws at
+record time (correctly aborting the response, per task 63) let its own
+exception message travel out through the MCP SDK's rendering and reach the
+client as an `McpError`. With task 67 wiring `dataprism.audit.sink:
+hash-chained` to `FileAuditSink`, that message can be `PoisonedException`
+naming the configured audit file's server-side path — a filesystem-path
+disclosure to whatever model is on the other end of the MCP session, in a
+product whose premise is controlling what reaches that model. Both call sites
+now catch only the audit-record failure and rethrow a new
+`AuditUnavailableException` carrying a stable code, `AUDIT_UNAVAILABLE`, with
+no text derived from the caught exception — not its message, not its class
+name, not its cause's message.
+
+The caught exception is kept for the server-side log via `addSuppressed`,
+deliberately not as a `cause`. That distinction is load-bearing, not stylistic:
+the MCP SDK's `McpError.aggregateExceptionMessages` walks the `getCause()`
+chain into the client-visible `data` field, so a plain cause wiring would carry
+the sink's path back out exactly the way `addSuppressed` does not. Proven by
+mutation — restoring a normal cause turns the disclosure test red, with the
+temp file's path visible in `data`, and reverting to `addSuppressed` turns it
+green again. A new case in `AuditSinkFailureAbortsResponseTest` wires a real
+`FileAuditSink` over a real temporary file, poisons it so `record(...)` throws
+the path-naming `PoisonedException`, drives the same denial through the real
+booted MCP transport, and asserts neither the temp directory nor the file name
+appear anywhere in the `McpError` the client observes. The abort itself is
+unchanged and re-asserted: no new `catch` returns a result, logs and
+continues, or lets an unaudited decision reach the client; the paired
+non-throwing-sink case still returns an ordinary `isError` result with the
+sink recorded.
+
+Closes the hard precondition on tasks 62 and 59 recorded when task 67 merged:
+neither may document `dataprism.audit.sink: hash-chained` until a sink's
+exception cannot disclose a server path to the client, and it now cannot.
+Also unblocks task 67 itself, whose reviewer held it PASS/REQUEST CHANGES on
+bookkeeping pending exactly this and task 73 (below). Verified PASS (tester)
+and APPROVE (reviewer); merged onto `v0.3.0/audit-trail-and-nested-json`.
+
+**Cost:** the correct fix location was already settled by two prior
+reviewers (the response-mapping boundary in the two tools, not
+`FileAuditSink`, which is correct as written), so this task's own cost was
+proving the `addSuppressed`-vs-`cause` distinction rather than finding it —
+the SDK's cause-chain walk is not obvious from the tool code alone, and would
+have reopened the same disclosure silently if assumed rather than mutated.
+Left as a recorded exception rather than a defect: `GetEntityContextTool` and
+`CompareEntitySourcesTool` now call `LOG.error(msg, auditFailure)`, which
+`docs/conventions.md`'s "no `catch` block logs the object it caught" rule
+forbids in its literal form. Sanctioned here because the requirement is
+exactly "keep full detail server-side, disclose none client-side" — recorded
+as a named exception in `docs/conventions.md` so a future privacy-log scan
+does not flag it as a leak or "fix" it back into one. A second gap surfaced
+but not closed here: `docs/configuration.md` will have no entry for task 73's
+new `AUDIT_SINK_BEAN_REQUIRED` code until tasks 59/62 add one — filed as
+follow-up item 8 in `docs/plan/PLAN.md`.
+
+## 2026-09-23 — Task 73: `AUDIT_SINK_BEAN_REQUIRED` names the cause instead of the symptom
+
+`dataprism.audit.sink=approved-sink` passes `DataPrismProperties.validate()`
+by design — it is the contract for "this deployment supplies its own
+reviewed `AuditSink` bean" — but previously refused later, at
+`dataPrismContractValidator` construction, with the generic
+`MISSING_AUDIT_SINK`, a code shared with the unrelated absent-or-blank
+`dataprism.audit.sink` property case and naming the symptom ("no bean") not
+the cause ("this value requires you to supply one"). `DataPrismProperties`
+gained a named `APPROVED_SINK` constant with javadoc stating the contract, and
+`DataPrismContractValidator` now raises a new code, `AUDIT_SINK_BEAN_REQUIRED`,
+whose message contains the literal `dataprism.audit.sink=approved-sink` and
+names the bean type required, precisely when that configured value reaches
+the bean-absent branch. `MISSING_AUDIT_SINK` is retained, unchanged, for the
+absent-or-blank-property case at `validate()` and pinned there by its own
+test, so the two failures stay distinguishable in a dashboard.
+
+The split is value-based — an equals check against `APPROVED_SINK` — rather
+than "anything reaching the bean-absent branch is `approved-sink`", checked
+against `DataPrismAutoConfiguration` as merged: `hash-chained` reaches the
+same branch too, until task 67 merges and gives it a bean. An operator who
+has configured `hash-chained` is therefore never told to fix `approved-sink`.
+Verified forward: once 67 lands, `hash-chained` gains a bean, stops reaching
+the bean-absent branch, and this logic needs no change. All eight fixtures
+task 67's reviewer named — `ServerStartupTest`,
+`ConfiguredIdentityResolverTest`, `ModelDescriptorsConfigurationTest`,
+`PrivacyExtensionPointsTest`, `SharedReadBudgetTest`,
+`FixtureDevelopmentRefusalTest`, `ServerSecurityBoundaryTest`,
+`StarterStartupFailureTest` — still configure `approved-sink` and still
+exercise the path each was written for; none dropped the line to pass.
+`DataPrismContractValidatorTest` gained a direct pair: the refusal asserted
+with a bean absent, and its sibling asserting no exception with a bean
+present, so the first cannot pass for an unrelated reason. This is the task
+task 67's reviewer required filed before recording 67 done — it now is.
+Verified PASS (tester) and APPROVE (reviewer); merged onto
+`v0.3.0/audit-trail-and-nested-json`.
+
+**Cost:** none of substance in the code — the reachability question the task
+brief flagged as the one thing to verify before renaming (whether
+`approved-sink` is the *only* accepted value reaching the bean-absent branch
+post-67) was confirmed false rather than assumed, which is why the split
+stayed value-based instead of "else branch = `approved-sink`". Left owed, not
+closed here: `docs/configuration.md` has no entry naming
+`AUDIT_SINK_BEAN_REQUIRED`, so `DataPrismConfigurationFailureAnalyzer`'s
+existing pointer at that document is a dead end for an operator who hits this
+refusal today — named explicitly for tasks 59/62 in `docs/plan/PLAN.md`
+rather than left as a general reminder.
+
 ## 2026-09-23 — Task 72: `timestamp` and `sourceSystems` brought inside the audit hash
 
 `AuditEventHash.compute` now joins nineteen fields instead of seventeen,
