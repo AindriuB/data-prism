@@ -22,9 +22,11 @@ RUN mvn -B -q -pl data-prism-processor,data-prism-server,data-prism-quickstart-e
 # docs/plan/tasks/55-publish-quickstart-images.md), find the two repackaged
 # jars Maven actually produced and give them fixed names. The
 # spring-boot-maven-plugin repackage goal leaves the pre-repackage jar
-# alongside data-prism-server's as *.jar.original, so that suffix is
-# excluded explicitly; data-prism-quickstart-extension is not repackaged,
-# so it has no such sibling.
+# alongside data-prism-server's as *.jar.original — `-name '*.jar'` already
+# excludes that file on its own (it does not end in .jar), so the trailing
+# `! -name '*.original'` is redundant there, kept only as a defensive
+# belt-and-braces; data-prism-quickstart-extension is not repackaged, so it
+# has no such sibling to begin with.
 RUN find data-prism-server/target -maxdepth 1 -name '*.jar' ! -name '*.original' \
       -exec cp {} /workspace/data-prism-server.jar \; \
     && find data-prism-quickstart-extension/target -maxdepth 1 -name '*.jar' ! -name '*.original' \

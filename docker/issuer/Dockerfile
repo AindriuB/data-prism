@@ -18,7 +18,10 @@ RUN mvn -B -q -pl data-prism-quickstart-issuer -am package -DskipTests
 # new version (see docs/plan/tasks/55-publish-quickstart-images.md), find
 # the one repackaged jar Maven actually produced and give it a fixed name.
 # The spring-boot-maven-plugin repackage goal leaves the pre-repackage jar
-# alongside it as *.jar.original, so that suffix is excluded explicitly.
+# alongside it as *.jar.original — `-name '*.jar'` already excludes that
+# file on its own (it does not end in .jar), so the trailing
+# `! -name '*.original'` is redundant, kept only as a defensive belt-and-
+# braces in case a future build produces some other *.original sibling.
 RUN find data-prism-quickstart-issuer/target -maxdepth 1 -name '*.jar' ! -name '*.original' \
       -exec cp {} /workspace/app.jar \;
 

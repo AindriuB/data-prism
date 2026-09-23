@@ -200,7 +200,6 @@ jobs:
         run: |
           docker buildx build -f docker/server/Dockerfile \
             --platform "$PLATFORM" \
-            --build-arg "VERSION=$VERSION" \
             -t "ghcr.io/aindriub/data-prism-quickstart-server:${VERSION}-${ARCH}" \
             --load \
             .
@@ -213,7 +212,6 @@ jobs:
         run: |
           docker buildx build -f docker/fixtures/Dockerfile \
             --platform "$PLATFORM" \
-            --build-arg "VERSION=$VERSION" \
             -t "ghcr.io/aindriub/data-prism-quickstart-fixtures:${VERSION}-${ARCH}" \
             --load \
             .
@@ -226,7 +224,6 @@ jobs:
         run: |
           docker buildx build -f docker/issuer/Dockerfile \
             --platform "$PLATFORM" \
-            --build-arg "VERSION=$VERSION" \
             -t "ghcr.io/aindriub/data-prism-quickstart-issuer:${VERSION}-${ARCH}" \
             --load \
             .
@@ -355,7 +352,6 @@ jobs:
           mkdir -p /tmp/digest-quickstart
           docker buildx build -f docker/server/Dockerfile \
             --platform "$PLATFORM" \
-            --build-arg "VERSION=$VERSION" \
             --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-server,push=true,push-by-digest=true,name-canonical=true \
             --metadata-file /tmp/metadata-quickstart-server.json \
             .
@@ -386,7 +382,6 @@ jobs:
           mkdir -p /tmp/digest-quickstart
           docker buildx build -f docker/fixtures/Dockerfile \
             --platform "$PLATFORM" \
-            --build-arg "VERSION=$VERSION" \
             --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-fixtures,push=true,push-by-digest=true,name-canonical=true \
             --metadata-file /tmp/metadata-quickstart-fixtures.json \
             .
@@ -417,7 +412,6 @@ jobs:
           mkdir -p /tmp/digest-quickstart
           docker buildx build -f docker/issuer/Dockerfile \
             --platform "$PLATFORM" \
-            --build-arg "VERSION=$VERSION" \
             --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-issuer,push=true,push-by-digest=true,name-canonical=true \
             --metadata-file /tmp/metadata-quickstart-issuer.json \
             .
