@@ -161,3 +161,32 @@ BUILD INSTALLED. Scope clean, no secrets. WHAT FAILED:
    (`Instant.parse("2030-01-01T00:00:00Z")`, as the mirrored test does) rather
    than `Instant.now()` (`:93`). The close-out row at `:563` says "run once
    per shown output" but one run prints all three; name the file.
+
+## Attempt 3 — failed on review (2026-09-23)
+
+Tester: PASS. Build and full suite green. The nested walkthrough's exact
+commands, run against a fresh empty local repo (`-Dmaven.repo.local=<empty>`),
+reproduce the quoted output byte for byte, twice. Real Slf4jAuditSink-format
+lines give `INTERRUPTED WRITE, not tampering`, exit 4, exactly as
+`docs/audit.md:79-90` now says. Every exit code (0-4) and anomaly name in
+`docs/audit.md` matches `AuditChainVerifierCli`. All three attempt-2 findings
+are resolved; keep all of it. WHAT FAILED:
+
+1. Wrong grammar claim, present since attempt 1, in three places:
+   `docs/extending.md:38-39`, `docs/protect-your-own-api.md:485`,
+   `examples/json-sources/customer-api-nested.yaml:8-9` all say a nested
+   catalogue's leaves "may be `identifier`, `nonSensitive` or classified".
+   The loader refuses `identifier: true` inside a nested catalogue
+   (`ConfiguredJsonSources.java:349-353`: "a nested catalogue carries no
+   identifier of its own, and inherits its subject from the enclosing record";
+   pinned by `ConfiguredJsonSourcesTest.nestedCatalogueEntryCannotBeIdentifier`).
+   It also contradicts `docs/architecture.md:114` and the same YAML's own
+   comment at `:66-67`. Say `nonSensitive` or classified only, and that
+   `identifier` and `nested:` are both refused there. Grep the whole diff for
+   any other place stating the leaf grammar.
+2. Minor, fix while there: `docs/protect-your-own-api.md:545` says neither the
+   fixture's field name nor ... appears in the refusal message, but the
+   quoted refusal contains `$.address.postcode` — it means the raw values; say
+   so. `:496` says "install both modules first" but the `-am` command
+   installs every upstream module; say that, and note that it overwrites the
+   reader's local `0.2.0` artifacts in `~/.m2`.
