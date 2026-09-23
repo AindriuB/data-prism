@@ -162,7 +162,7 @@ class QuickstartSmokeIT {
             JsonNode response = MAPPER.readTree(body);
             assertThat(response.path("subject").asText()).startsWith("SUBJ-").isNotEqualTo("1001");
             assertThat(response.path("entity").path("customerName").asText())
-                    .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{4}\\)$");
+                    .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
             assertThat(response.path("entity").path("email").asText()).isEqualTo("[REDACTED]");
             assertThat(response.path("entity").path("status").asText()).isEqualTo("ACTIVE");
         } finally {
