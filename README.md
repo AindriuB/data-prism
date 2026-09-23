@@ -75,15 +75,23 @@ The fastest way to see a real MCP call answered by the real privacy engine —
 no local JDK, no Maven install, one command:
 
 ```bash
-docker compose up --build
+docker compose up
 ```
 
+pulls the published `ghcr.io/aindriub/data-prism-quickstart-<name>` images
+(pin one with `QUICKSTART_IMAGE_TAG=0.3.0`; add `-f compose.yaml -f
+compose.build.yaml up --build` to build every image from source instead) and
 brings up the standalone server, a synthetic fixture API and a local HTTPS
-JWT issuer, and proves an agent-compatible `get_entity_context` call returns
-a pseudonymised response. Walk through it in
+JWT issuer, proving an agent-compatible `get_entity_context` call returns a
+pseudonymised response. Walk through it in
 [`docs/quickstart.md`](docs/quickstart.md); connect your own agent client to
 either that stack or a real deployment via
 [`docs/agents/`](docs/agents/README.md).
+
+Once you have seen the demo, protect your own API: `docs/quickstart.md` ends
+with a "What next" section pointing at
+[`docs/protect-your-own-api.md`](docs/protect-your-own-api.md), a YAML-only
+walkthrough from a real JSON REST API to a working `get_entity_context` call.
 
 ## If you found this on the MCP registry
 
