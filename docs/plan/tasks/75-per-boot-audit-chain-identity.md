@@ -134,3 +134,38 @@ random per-boot UUID into it. Owns now covers that file's `instanceId` scan
 shape. Pin it to exactly `<writer-id>/<uuid>` the same way, with the same
 two-sided proof (a UUID containing a banned value passes; a banned value
 outside the pinned shape is still caught).
+
+## Attempt 2 — failed on review (2026-09-23)
+
+Tester: PASS. Full-reactor `mvn -B verify` green. The flake is gone:
+`PiiLogScanTest` 30/30 and `AuditFilePiiScanTest` 30/30 green in repeated
+isolated runs against the branch build. The well-formed-exempt and
+non-conforming-scanned test pairs pass. Reviewer: every chain-behaviour
+criterion is met, the blank-writer test and boot-B edit are in, both
+exemptions are anchored full matches on a canonical lowercase UUID. Keep all
+of it. WHAT FAILED:
+
+1. BLOCKING, fail-open in both leak scans.
+   `AuditFilePiiScanTest.java:180` (`INSTANCE_ID_SHAPE = "[^/]+/" + UUID`) and
+   `PiiLogScanTest.java:305` (`SEQ_SHAPE = "[^/]+/" + UUID + "/\d+"`) skip the
+   WHOLE field on a full match, so the writer-id part is never scanned.
+   Counter-examples from the reviewer:
+   `leaksIn(eventWithInstanceId("4111111111111111/01234567-89ab-cdef-0123-456789abcdef"), List.of("4111111111111111"))`
+   returns `[]`, and nothing else in that scanner would catch it; in
+   `PiiLogScanTest`, `seq=acct_123/<uuid>/1` with `123` banned returns `[]`,
+   because the field is exempt and the whole-line word-boundary fallback
+   misses it (`_` is a word character). The writer-id comes from config and
+   may be anything without `/`, so it cannot be exempted by pattern. Exempt
+   ONLY the `/<uuid>` suffix (and `/<digits>` for `seq`): strip exactly that
+   anchored suffix, then `contains`-scan the remaining writer-id part as any
+   other field is scanned. Add, in each file, a test where a banned value sits
+   INSIDE an otherwise well-formed writer-id (e.g. `acct_123/<uuid>/1`,
+   `4111111111111111/<uuid>`) and is reported. The existing non-conforming
+   tests only break the UUID, which is why they missed this. Keep the
+   well-formed-exempt tests: a UUID containing `123`/`456` must still pass.
+2. Minor, still owed from attempt 1: `McpHttpEndToEndTest.java:63-64` still
+   cites "task 75's per-boot suffix". Say what the code does instead.
+   Shorten the new 10-13-line javadocs in both scans
+   (`AuditFilePiiScanTest.java:170-179,:322-335`,
+   `PiiLogScanTest.java:293-304,:570-581`) to a line or two each, per
+   `docs/conventions.md` "Code comments".
