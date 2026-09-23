@@ -92,6 +92,14 @@ plus, on failure, the first failing test name and its assertion — never the
 log. `reviewer` reads the diff against the task's acceptance criteria and
 returns a verdict per criterion.
 
+Never wait for a build process with `pgrep -f <pattern>` (or `ps | grep
+<pattern>`) from a shell whose own command line contains that pattern — the
+loop matches itself and never exits. Wait on a captured PID (`cmd & pid=$!;
+wait $pid`) instead, or bound the wait with `timeout`. On 2026-09-23, nine
+tester wait-loops from tasks 59–75 kept running for 2–7 hours after their
+builds had already finished, because `pgrep -f "mvn -B verify"` matched the
+waiting loop itself; the main session found and killed them.
+
 A failing task goes back to phase 2 with the failure appended to its task file.
 It does not get "fixed inline" — that is how the main context blows up.
 
