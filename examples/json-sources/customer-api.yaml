@@ -1,13 +1,17 @@
 # A commented template for `data-prism-connectors-rest`'s configuration-driven
-# JSON REST mode: point Data Prism at your own flat JSON REST API with YAML
-# only, no Java class and no `META-INF` registration. Walked through end to
-# end, against exactly this file, in `docs/protect-your-own-api.md`.
+# JSON REST mode: point Data Prism at your own JSON REST API with YAML only,
+# no Java class and no `META-INF` registration. Walked through end to end,
+# against exactly this file, in `docs/protect-your-own-api.md`.
 #
-# This mode only covers a source whose response is one flat JSON object:
-# scalar fields, or arrays of them, but no nested objects. If your response
-# nests objects, needs custom fetch logic beyond a single templated GET, or
-# needs a model this flat catalogue cannot express, see `docs/extending.md`
-# instead.
+# This flat catalogue is the common case; see the sibling file
+# `customer-api-nested.yaml` in this directory for a source whose response
+# nests one named sub-object, using the same grammar's `nested:`/
+# `nested-catalogues:` keys. Either way, nesting goes at most one level deep,
+# and every field name -- at either level, plus `subject-json-path` itself --
+# is a single bare, exact-match property name: no dotted path, no JSONPath.
+# If your response nests two levels or more, needs custom fetch logic beyond
+# a single templated GET, or needs a model this catalogue cannot express, see
+# `docs/extending.md` instead.
 #
 # Every host below is a loopback fixture (`data-prism-quickstart-fixtures`,
 # built by the `mvn -q -DskipTests package` command in

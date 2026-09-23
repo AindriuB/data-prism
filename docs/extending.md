@@ -1,16 +1,16 @@
 # Extending Data Prism: writing a reviewed adapter
 
-If your source is a flat JSON REST API — one JSON object per response, no
-nested objects — you almost certainly do not need this guide. Read
-[`docs/protect-your-own-api.md`](protect-your-own-api.md) instead: a
+If your source is a JSON REST API whose response is either flat or nests
+objects at most one level deep, you almost certainly do not need this guide.
+Read [`docs/protect-your-own-api.md`](protect-your-own-api.md) instead: a
 YAML-only walkthrough that protects such a source with no Java class, no
 `pom.xml`, and no `META-INF` registration step, using the same
 `data-prism-connectors-rest` configuration-driven JSON REST mode summarised
 below.
 
-This guide is for the three cases that YAML-only path cannot cover: a
-response that nests objects, custom fetch logic beyond a single templated
-`GET`, or a model no flat allowlisted catalogue can express. For any of
+This guide is for the cases that YAML-only path cannot cover: a response that
+nests objects two levels or more, custom fetch logic beyond a single
+templated `GET`, or a model no allowlisted catalogue can express. For any of
 those, this is the path a consumer walks to point Data Prism at their own
 API: write a `DataSourceAdapter`, write (or reuse) an `IdentityResolver`,
 classify the response model with `@LlmExposedModel`, shape the pom, register
@@ -26,24 +26,27 @@ compiled adapter class. An operator loads that jar the same way as any
 reviewed extension (`-Dloader.path`) and writes a YAML catalogue instead:
 `dataprism.json-sources.config-location` names a file whose `json-sources:`
 entries state a transport (`base-url`, a `path` template, `timeout`), a
-`model-version` tag, and a flat, allowlisted `fields:` catalogue — one entry
-per JSON property, each an identifier, `nonSensitive`, or classified, the
-same vocabulary `@SensitiveData`/`@NonSensitive`/`@InternalIdentifier` express
+`model-version` tag, and an allowlisted `fields:` catalogue — one entry
+per JSON property, each an identifier, `nonSensitive`, classified, or a
+`nested: <name>` pointer into a `nested-catalogues:` entry — the same
+vocabulary `@SensitiveData`/`@NonSensitive`/`@InternalIdentifier` express
 below
 (`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSource.java:8-34`,
 `.../ConfiguredJsonSourcesAutoConfiguration.java:82`).
 
-That mode has a real limit worth knowing before choosing it: its resolver
-never descends into a nested object — `descendable` always returns `false`,
-by design, because there is no reviewed Java type behind a configured source
-to say what a nested structure means — so it only covers a source whose
-response is one flat JSON object: scalar fields, or arrays of them, but no
-nested objects
-(`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonFieldMetadataResolver.java:56-65`).
-If your source's response nests objects, needs custom fetch logic beyond a
-single templated `GET`, or needs a model no flat catalogue can express, that
-limit is why this guide exists: the Java-first path below has no such
-ceiling. Configuration for the JSON REST mode is not covered further here —
+That mode has a real limit worth knowing before choosing it: a `nested:`
+field's own catalogue is exactly one level deep — its leaves may be
+`identifier`, `nonSensitive` or classified, but never `nested:` themselves —
+so `descendable` only ever answers true for one of a source's own minted
+nested-catalogue tokens, never recursively
+(`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonFieldMetadataResolver.java`).
+There is also no dotted path or JSONPath anywhere in this grammar: every
+`fields:`/`nested-catalogues:` key, and `subject-json-path` itself, is a
+single bare, exact-match property name. If your source's response nests
+objects two levels or more, needs custom fetch logic beyond a single
+templated `GET`, or needs a model no such catalogue can express, that limit
+is why this guide exists: the Java-first path below has no such ceiling.
+Configuration for the JSON REST mode is not covered further here —
 see [`docs/protect-your-own-api.md`](protect-your-own-api.md) for the
 worked walkthrough and [`docs/configuration.md`](configuration.md) for its
 full configuration vocabulary — because this guide is about the path that

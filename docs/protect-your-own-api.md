@@ -1,11 +1,11 @@
 # Protect your own API: a YAML-only walkthrough
 
-You have a flat JSON REST API — one JSON object per response, no nested
-objects — and you want Data Prism to sit in front of it and answer MCP
-callers with a pseudonymised view instead of your raw data. This walkthrough
-takes you from that API to a working `get_entity_context` call, writing only
-YAML. No Java class, no `pom.xml`, no `META-INF` registration step appears
-anywhere below.
+You have a JSON REST API whose response is either flat or nests objects at
+most one level deep, and you want Data Prism to sit in front of it and answer
+MCP callers with a pseudonymised view instead of your raw data. This
+walkthrough takes you from that API to a working `get_entity_context` call,
+writing only YAML. No Java class, no `pom.xml`, no `META-INF` registration
+step appears anywhere below.
 
 That is `data-prism-connectors-rest`'s configuration-driven JSON REST mode: a
 published artifact
@@ -13,12 +13,18 @@ published artifact
 `data-prism-server` the same way any other reviewed adapter is —
 `-Dloader.path` — but configured entirely by a `json-sources:` catalogue
 instead of compiled Java. It has one real limit, stated here so you can check
-it against your own API before going further: its field resolver never
-descends into a nested object, so it only covers a source whose response is
-one flat JSON object — scalar fields, or arrays of them. If your response
-nests objects, needs custom fetch logic beyond a single templated `GET`, or
-needs a model this flat catalogue cannot express, stop here and read
-[`docs/extending.md`](extending.md) instead; nothing below lifts that limit.
+it against your own API before going further: its field resolver descends one
+level into a named nested sub-catalogue — a root field declared `nested:
+<name>` — but no further; a nested catalogue's own leaves cannot themselves
+declare `nested:`, so two levels of nesting refuses at load time rather than
+silently flattening or dropping data. There is also no dotted path or
+JSONPath anywhere in this grammar: every field name, at either level, and
+`subject-json-path` itself, is a single bare, exact-match property name. If
+your response nests objects two levels or more, needs custom fetch logic
+beyond a single templated `GET`, or needs a model this catalogue cannot
+express, stop here and read [`docs/extending.md`](extending.md) instead;
+nothing below lifts that limit. The section "A nested response" below walks
+the one-level case this mode does cover.
 
 This walkthrough does not restate the full `dataprism.*` configuration
 vocabulary — that is [`docs/configuration.md`](configuration.md) — or the two
@@ -382,16 +388,16 @@ bare JSON — one `id:`/`event:`/`data:` frame, the JSON-RPC response inside
 `data:`:
 
 ```
-id: 6967a06e-8550-4d0c-88e7-f1879e688c19
+id: 903eface-c8a4-4845-9631-aaa8fea1dc5d
 event: message
-data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-3WR4\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":\"ANSWERED\"},\"findings\":[],\"entity\":{\"customerName\":\"Casey Okafor (5K38)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-3WR4","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":"ANSWERED"},"findings":[],"entity":{"customerName":"Casey Okafor (5K38)","email":"[REDACTED]","status":"ACTIVE"}}}}
+data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-VHK4SXCQ\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":\"ANSWERED\"},\"findings\":[],\"entity\":{\"customerName\":\"Casey Okafor (G2C8D3R4)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-VHK4SXCQ","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":"ANSWERED"},"findings":[],"entity":{"customerName":"Casey Okafor (G2C8D3R4)","email":"[REDACTED]","status":"ACTIVE"}}}}
 ```
 
 Neither raw value appears. `customerName` is a stable synthetic substitute in
 the `PERSON_NAME` namespace (the catalogue's own `namespace:` above), `email`
 is redacted outright per its `action: REDACT`, and `status` passes through
 unchanged because the catalogue marked it `nonSensitive`. The subject itself
-(`SUBJ-3WR4`) is a pseudonym too, not `1001`. This ran with
+(`SUBJ-VHK4SXCQ`) is a pseudonym too, not `1001`. This ran with
 `-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar`
 alone — no second jar,
 no custom extension, no `IdentityResolver` bean compiled anywhere — and
@@ -443,6 +449,111 @@ reproduced here) in
 `data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourceEndToEndTest.java`,
 `unknownFieldFailsClosed`.
 
+## A nested response
+
+[`examples/json-sources/customer-api-nested.yaml`](../examples/json-sources/customer-api-nested.yaml)
+is `customer-api.yaml`'s sibling: the same source, plus one field, `address`,
+declared `nested: address` and pointed at a `nested-catalogues:` entry of its
+own:
+
+```yaml
+    fields:
+      customerId:
+        identifier: true
+      customerName:
+        classifications: [PII]
+        namespace: PERSON_NAME
+        action: SYNTHESIZE
+      email:
+        classifications: [CONTACT]
+        namespace: EMAIL
+        action: REDACT
+      status:
+        nonSensitive: "enumerated lifecycle state"
+      address:
+        nested: address
+    nested-catalogues:
+      address:
+        line1:
+          nonSensitive: "street address line, reviewed as inert structure"
+        postcode:
+          classifications: [PII]
+          namespace: ADDRESS
+          action: SYNTHESIZE
+```
+
+Nesting goes exactly one level: `address`'s own leaves may be `identifier`,
+`nonSensitive` or classified, but never `nested:` themselves — a second level
+is refused when the catalogue loads, not silently flattened. This is loaded
+and scrubbed below by the real engine, not asserted in prose: a small
+verification program, package-private itself
+(`io.github.aindriub.dataprism.connectors.rest`, the exact way
+`ConfiguredJsonNestedCatalogueScrubbingTest` in that module is), built
+against this module's own `target/classes` and its Maven dependency
+classpath (`mvn -q dependency:build-classpath`), calling the same public
+`ConfiguredJsonSources.fromYaml` this connector uses to read every
+`json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine` that
+test drives directly:
+
+```java
+ConfiguredJsonSourcesConfig config;
+try (var in = new FileInputStream("examples/json-sources/customer-api-nested.yaml")) {
+    config = ConfiguredJsonSources.fromYaml(in);
+}
+ConfiguredJsonSource source = config.sources().get("customer-api-with-address");
+// ... wire ConfiguredJsonScrubbingEngine with the DEFAULT profile, an
+// HmacSyntheticGenerator/HmacValueTokenSource pair and a fixed test key,
+// exactly as ConfiguredJsonNestedCatalogueScrubbingTest does, then:
+ScrubResult result = engine.scrub(
+    new ConfiguredJsonPayload("customer-api-with-address", body), context);
+```
+
+Loading `customer-api-with-address` from that file and printing its resolved
+catalogue:
+
+```
+sources: [customer-api-with-address]
+root fields: [status, customerName, email, address, customerId]
+nested catalogues: [address]
+  address.line1 -> classifications=[] namespace=NONE action=null nonSensitiveReason=street address line, reviewed as inert structure
+  address.postcode -> classifications=[PII] namespace=ADDRESS action=SYNTHESIZE nonSensitiveReason=null
+```
+
+Scrubbing the fixture-shaped response
+`{"customerId":"1001","customerName":"Fixture Person One","email":"fixture.person.one@example.invalid","status":"ACTIVE","address":{"line1":"123 Main St","postcode":"90210"}}`
+against the `DEFAULT` profile:
+
+```json
+{"customerName":"Sage Fontaine (329X1P2A)","email":"[REDACTED]","status":"ACTIVE","address":{"line1":"123 Main St","postcode":"55 Hazel Street, Dunmore (MPFX65RQ)"}}
+```
+
+`address.line1` passes through unchanged (`nonSensitive`), `address.postcode`
+is synthesised in the `ADDRESS` namespace (task 71's discriminator, the same
+eight-character Crockford base32 tag every other synthetic value in this
+walkthrough now carries) exactly like a root-level `SYNTHESIZE` field, and
+neither raw value (`90210`, `Fixture Person One`) appears anywhere in the
+result.
+
+**PROOF: the deeper-than-declared refusal.** `address` declares `postcode` a
+scalar/classified leaf. A response where that property arrives as a structure
+instead — a stale catalogue against a wire shape that changed — refuses as
+`NESTED_LEAF_NOT_SCALAR`, distinct from both `UNCLASSIFIED_STRUCTURE` and
+`UNKNOWN_FIELD`, before anything is scrubbed:
+
+```
+REFUSED: NESTED_LEAF_NOT_SCALAR at customer-api-with-address$.address.postcode: nested catalogue leaf field is declared scalar/classified but the response carries a structure there; the catalogue is stale against the wire shape
+```
+
+Neither the fixture's field name nor the unexpected structure's contents
+appear in that message. The mirror-image failure — a scalar arriving where
+`nested:` itself is declared — is `NESTED_FIELD_NOT_STRUCTURED`, and a
+property inside the nested object that its own catalogue never named is
+refused as `UNKNOWN_FIELD`, the identical code the root catalogue's own
+undeclared fields get. `ConfiguredJsonNestedCatalogueScrubbingTest` and
+`ConfiguredJsonNestedHttpTest` (`data-prism-integration-tests`, the latter
+against the real MCP HTTP/SSE transport) both drive every one of these codes
+directly.
+
 ## Close-out
 
 Every code fence above was executed, not transcribed:
@@ -456,6 +567,7 @@ Every code fence above was executed, not transcribed:
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |
 | The pseudonymised `get_entity_context` response, SSE frame included | the `initialize` / `notifications/initialized` / `tools/call` sequence in "Get a token and call it", run against a token freshly minted by `curl -sk -X POST https://127.0.0.1:8544/token` |
 | The missing-`timeout` refusal | the same server command, config-location pointed at the `sed`-produced `$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml` |
+| The nested catalogue's resolved fields, the scrubbed nested response, and the `NESTED_LEAF_NOT_SCALAR` refusal in "A nested response" | the verification program described there, built against `data-prism-connectors-rest`'s own `target/classes` plus `mvn -q dependency:build-classpath`, run once per shown output against `examples/json-sources/customer-api-nested.yaml` |
 | *(no captured output)* | `mvn -q -DskipTests package` and the three `keytool` commands in "Build the jars, then start the two fixtures" ran, but produce nothing worth capturing — a quiet build and key material respectively, not output that documents behaviour |
 
 `$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12`/`$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12` above are a
