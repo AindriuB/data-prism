@@ -225,3 +225,39 @@ WHAT FAILED:
 3. Minor: the intro's statement of limits (`docs/protect-your-own-api.md:18-20`)
    names only the `nested:` refusal inside a nested catalogue; add "or
    `identifier: true`" to match the other statements.
+
+## Attempt 5 — failed on review; now also waits on task 75 (2026-09-23)
+
+Tester: PASS. Build and full suite green; walkthrough output still verbatim.
+By execution, a distinctive raw value, key and structure at the stale nested
+leaf do not appear in the `NESTED_LEAF_NOT_SCALAR` message — only the
+catalogue-declared path does, exactly as the doc now says. All attempt-4
+findings resolved; keep them. WHAT FAILED:
+
+1. BLOCKING. `docs/audit.md:159-161` says "Editing or deleting a record
+   anywhere but the very end of a writer's chain breaks every hash after it".
+   Editing the FINAL record is caught too: the verifier recomputes each
+   record's own hash (`AuditChainVerifier.java:211-218`), so editing e.g.
+   `subjectPseudonym` in the last record gives CHAIN BREAK, exit 2. Only
+   DELETING the most recent records goes undetected. Say: edits are caught
+   anywhere, including the last record; only deleting the tail escapes.
+2. `examples/json-sources/customer-api-nested.yaml:60-62` points at
+   docs/architecture.md for the refusal of an unreferenced nested catalogue,
+   but architecture.md never mentions it (the refusal is real,
+   `ConfiguredJsonSources.java:209-213`). Drop the pointer or cite the loader.
+3. Minor, fix while there: `docs/audit.md:172` and table row 3 give "possibly
+   in flight" as exit 3 without saying that applies only when there is no
+   break or anomaly (`AuditChainVerifierCli.java:92-101`, precedence 2 > 4 >
+   3). `docs/audit.md:150` says the CLI "prints the limitation below, in
+   full", but the CLI prints its own, differently worded LIMITATION
+   paragraph; say it prints a limitation statement and the section below is
+   the full account.
+
+NEW DEPENDENCY, owner decision 2026-09-23: a hash-chained server restarted
+with the same `writer-id` currently raises a false CHAIN BREAK (every boot
+restarts at GENESIS/sequence 1 under the same instanceId). Task 75 fixes this
+in code by making instanceId `<writer-id>/<per-boot uuid>`. Do not start
+attempt 6 until 75 has merged. Then `docs/audit.md` must describe the real
+instanceId shape and state plainly, alongside the truncation limitation, that
+deleting ALL of one boot's records is undetectable from inside the file. Do
+not document the pre-75 behaviour.
