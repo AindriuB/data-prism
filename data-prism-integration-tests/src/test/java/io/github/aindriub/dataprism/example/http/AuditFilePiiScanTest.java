@@ -45,6 +45,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -168,24 +169,22 @@ class AuditFilePiiScanTest {
     private static final Pattern HEX24_SHAPE = Pattern.compile("[0-9a-f]{24}");
 
     /**
-     * {@code AuditRecorder}'s own instanceId shape: a configured writer-id
-     * (never containing the {@code /} separator), a {@code /}, and a
-     * canonical-form {@code UUID.randomUUID()} minted once per process
-     * lifetime. Pinned this precisely for the same reason {@code
-     * PiiLogScanTest.SEQ_SHAPE} is: the per-boot UUID is as good as random,
-     * and its hex digits coincidentally spelling a banned digit run must not
-     * redden this test with no leak anywhere near it.
+     * {@code AuditRecorder}'s trailing {@code /<uuid>}, minted per boot and
+     * as good as random: stripped before scanning so its hex digits cannot
+     * coincidentally spell a banned run, leaving the writer-id prefix —
+     * which is config, not random — still scanned.
      */
     private static final Pattern INSTANCE_ID_SHAPE =
             Pattern.compile("[^/]+/" + UUID_SHAPE.pattern());
+    private static final Pattern INSTANCE_ID_UUID_SUFFIX =
+            Pattern.compile("/" + UUID_SHAPE.pattern() + "$");
 
     private static final Map<String, Pattern> EXEMPT_SHAPES = Map.of(
             "eventId", UUID_SHAPE,
             "correlationId", UUID_SHAPE,
             "parameterFingerprint", HEX24_SHAPE,
             "previousHash", HEX64_SHAPE,
-            "eventHash", HEX64_SHAPE,
-            "instanceId", INSTANCE_ID_SHAPE);
+            "eventHash", HEX64_SHAPE);
 
     /**
      * Mirrors {@code PiiLogScanTest.derivedBannedSetIsNonEmptyAndCoversKnownFixtureValues}:
@@ -319,20 +318,7 @@ class AuditFilePiiScanTest {
         assertThat(leaked).containsExactly(distinctiveLeak);
     }
 
-    /**
-     * {@code instanceId} carries a {@code UUID.randomUUID()} minted once per
-     * process lifetime (see {@code AuditRecorder}), so its hex digits are
-     * effectively random and, over enough runs, do coincidentally spell a
-     * banned digit run with no leak anywhere near it -- the same
-     * false-positive class the other {@link #EXEMPT_SHAPES} entries exist
-     * for. A synthetic instanceId engineered to contain both {@code "123"}
-     * and {@code "456"} in its UUID, but otherwise a well-formed
-     * {@code <writer-id>/<uuid>} value, proves the exemption actually covers
-     * it: the raw value itself already contains both digit runs -- what an
-     * unexempted per-field scan would have reported as leaked -- yet
-     * {@link #leaksIn} reports nothing once the whole value matches
-     * {@link #INSTANCE_ID_SHAPE}.
-     */
+    /** The per-boot UUID suffix is stripped before scanning, so its coincidental digits are ignored. */
     @Test
     @DisplayName("a well-formed instanceId is exempt even where its UUID coincidentally spells a banned digit run")
     void wellFormedInstanceIdIsExempt() {
@@ -346,12 +332,20 @@ class AuditFilePiiScanTest {
         assertThat(leaksIn(event, List.of("123", "456"))).isEmpty();
     }
 
-    /**
-     * The other half of the exemption: an instanceId that does not conform
-     * to {@link #INSTANCE_ID_SHAPE} -- here, one whose suffix is not a
-     * well-formed UUID -- is scanned like any other field, so a real leak
-     * riding along in a malformed instanceId is still caught.
-     */
+    /** A banned value sitting in the writer-id part of an otherwise well-formed instanceId is still caught. */
+    @Test
+    @DisplayName("a banned value inside the writer-id part of a well-formed instanceId is still caught")
+    void bannedValueInWriterIdPartOfInstanceIdIsCaught() {
+        String instanceIdWithBannedWriterId =
+                "4111111111111111/01234567-89ab-cdef-0123-456789abcdef";
+        assertThat(instanceIdWithBannedWriterId).containsPattern(INSTANCE_ID_SHAPE);
+
+        AuditEvent event = eventWithInstanceId(instanceIdWithBannedWriterId);
+
+        assertThat(leaksIn(event, List.of("4111111111111111"))).containsExactly("4111111111111111");
+    }
+
+    /** A malformed instanceId (no exemption-eligible suffix) is scanned like any other field. */
     @Test
     @DisplayName("an instanceId that does not match its pinned shape is scanned like any other field")
     void nonConformingInstanceIdIsScanned() {
@@ -380,10 +374,11 @@ class AuditFilePiiScanTest {
      * components rather than hand-enumerating them, so a component added to
      * the record later is scanned automatically instead of silently going
      * unwatched; {@code timestamp} and {@code sequence} are skipped as the
-     * only two that carry no scannable text. A field named in
-     * {@link #EXEMPT_SHAPES} is skipped only when its whole value matches
-     * that field's pinned shape; every other field, including
-     * {@code subjectPseudonym}, is scanned unconditionally.
+     * only two that carry no scannable text. {@code instanceId} has its
+     * random per-boot {@code /<uuid>} suffix stripped and the writer-id
+     * prefix still scanned; a field named in {@link #EXEMPT_SHAPES} is
+     * skipped whole only when it matches its pinned shape; every other
+     * field, including {@code subjectPseudonym}, is scanned unconditionally.
      */
     private static List<String> leaksIn(AuditEvent event, List<String> bannedValues) {
         List<String> leaked = new ArrayList<>();
@@ -413,15 +408,25 @@ class AuditFilePiiScanTest {
         if (value == null) {
             return;
         }
-        Pattern exemptShape = EXEMPT_SHAPES.get(fieldName);
-        if (exemptShape != null && exemptShape.matcher(value).matches()) {
-            return;
+        if ("instanceId".equals(fieldName)) {
+            value = stripInstanceIdUuidSuffix(value);
+        } else {
+            Pattern exemptShape = EXEMPT_SHAPES.get(fieldName);
+            if (exemptShape != null && exemptShape.matcher(value).matches()) {
+                return;
+            }
         }
         for (String banned : bannedValues) {
             if (value.contains(banned) && !leaked.contains(banned)) {
                 leaked.add(banned);
             }
         }
+    }
+
+    /** Strips {@code instanceId}'s trailing {@code /<uuid>}, if present, leaving the writer-id prefix. */
+    private static String stripInstanceIdUuidSuffix(String value) {
+        Matcher matcher = INSTANCE_ID_UUID_SUFFIX.matcher(value);
+        return matcher.find() ? value.substring(0, matcher.start()) : value;
     }
 
     /**

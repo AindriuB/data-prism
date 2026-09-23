@@ -61,9 +61,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Every assertion about who the pipeline thinks is calling reads it from the
  * orchestrator's own audit trail — the {@code instanceId} starting with
- * {@code "data-prism-example/"} the starter wires from configuration, task
- * 75's per-boot suffix appended after the configured writer-id — rather than
- * from the response,
+ * {@code "data-prism-example/"}, the configured writer-id with a per-boot
+ * suffix appended by {@code AuditRecorder} — rather than from the response,
  * because {@link io.github.aindriub.dataprism.audit.AuditEvent} carries the
  * resolved {@code PrivacyContext}'s scope, purpose and case, and
  * {@code InvestigationContext}'s principal, verbatim. An {@code AuditSink}
