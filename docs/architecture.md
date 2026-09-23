@@ -297,3 +297,25 @@ all of these is in `design-review.md` under the section named.
 - **2026-09-08 — Build the walking skeleton first, then thicken it**
   (`development-plan.md`). Rejected: the pack's layer-by-layer Phase 1–9 order,
   which defers proving the privacy boundary end-to-end until the last phase.
+- **2026-09-23 — The audit trail's threat model is a user, an operator, AND
+  any LLMs: it must be able to trace a sensitive-data exposure back to
+  whichever of the three caused it** (§A6, `pack.md` §54). An architect spike
+  found that `pack.md` §54, `design-review.md` §A6 and the S9 owner decisions
+  all describe the per-writer hash chain mechanism without ever stating whose
+  misbehaviour it catches; this closes that gap. Consequence, not a mechanism
+  change today: the operator is now explicitly in scope, and the unkeyed
+  SHA-256 chain (`AuditEventHash`) does not resist one — anyone with write
+  access to the audit file can delete or alter a record and recompute every
+  hash after it into a chain that verifies perfectly, as a tester demonstrated
+  by injecting a fabricated writer with a self-computed `eventHash`. Rejected:
+  keying the chain via `SecretKeyProvider` (the existing precedent being
+  `parameterFingerprint`'s HMAC). The key would live in the operator's own
+  process, making "the operator cannot have forged this" circular rather than
+  a claim this software can make true, and keying would also collapse
+  independent third-party verifiability, since only a key-holder could check
+  the file. Closing the gap needs external checkpointing (periodic signed
+  roots published outside the operator's control) or asymmetric signing with
+  the private key held outside the writing process — both real design work
+  depending on an operational guarantee this library cannot itself enforce,
+  left for the owner to schedule. See `docs/plan/PLAN.md` for the consequences
+  and follow-ups this decision opens.

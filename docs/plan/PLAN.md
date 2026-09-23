@@ -698,6 +698,41 @@ Two live bugs the audit spike found in existing code, now owned by 63 and
   leaving it accidental. Catch-and-continue would be the actual rule 2
   violation, and must not be introduced while fixing the ordering bug.
 
+**Owner decision, recorded 2026-09-23: the audit trail's threat model is a
+user, an operator, AND any LLMs.** Recorded in `docs/architecture.md`'s
+decisions list (grep 2026-09-23) with the rejected alternative (an HMAC-keyed
+chain); this entry carries the consequences, which change what this wave
+does and does not deliver:
+- The operator is in scope, and the design as built does not resist one.
+  `AuditEventHash.compute` is unkeyed SHA-256, so anyone who can write the
+  audit file can delete or alter a record and recompute every hash after it
+  into a chain that verifies perfectly — demonstrated by injecting a
+  fabricated writer with a self-computed `eventHash`. Closing it needs
+  external checkpointing or asymmetric signing with the key held outside the
+  writing process; neither is a v0.3.0 increment. Not scheduled; the owner
+  has not yet said when.
+- Task 66's verifier prints its truncation-cannot-be-detected disclaimer on
+  every run; that disclaimer is now load-bearing as a disclaimer against a
+  stated requirement, not a nice-to-have caveat. Do not soften or remove it
+  when 66 comes back for rework.
+- Tasks 62 and 59 write the audit-facing documentation. Neither may state or
+  imply that `hash-chained` resists an operator with write access to the
+  audit file, in addition to the existing path-disclosure precondition
+  (follow-up item 2 above).
+- Timestamp integrity is now forensically central, not cosmetic: tracing when
+  an exposure happened depends on a timestamp that cannot be rewritten
+  without recomputing a hash. `AuditEventHash` currently excludes
+  `timestamp` and `sourceSystems` from the joined body it hashes — file a
+  task to widen coverage to both fields.
+- Open question, not yet decided by the owner: the trail records
+  `subjectPseudonym`, `parameterFingerprint`, `tool`, `sourceSystems` and the
+  policy decision — enough to reconstruct what would have been returned,
+  deterministically, without storing the payload. That ties tracing a
+  historical exposure to the pseudonymisation being reproducible, which
+  depends on the HMAC key and `PseudonymisationVersion` staying stable — a
+  key rotation or version bump could break the ability to trace an old
+  exposure. Confirm with the owner whether that coupling is intended.
+
 **Owner decision, recorded 2026-09-22: pseudonym discriminator widens from 20
 to 40 bits; `PseudonymisationVersion.version` stays at v1.** Task 71
 (`docs/plan/tasks/71-widen-pseudonym-discriminator.md`) widens the
