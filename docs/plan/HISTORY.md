@@ -17,6 +17,63 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 62: nested catalogues and the durable audit chain are documented
+
+`docs/architecture.md`'s "flat by design" and boundary-7 claims are corrected
+to what task 60 actually shipped: one level of named sub-catalogues, no
+recursion, no dotted paths or JSONPath, exact-match property names, the
+`AuditFilePiiScanTest` file scan named alongside `PiiLogScanTest`. A new
+`docs/audit.md` documents the hash chain, `FileAuditSink` (single file,
+append, fsync per record, no rotation), the offline verifier CLI, every exit
+code (0-4) and their precedence, the per-boot `<writer-id>/<uuid>` `instanceId`
+task 75 introduced, and exactly what is and is not detected: an edit anywhere
+in a writer's chain is caught, including the last record; deleting the tail of
+a chain or an entire boot's records is undetectable from inside the file; and
+pointing the verifier at `Slf4jAuditSink` (or any non-audit) output reads as a
+run of benign `INTERRUPTED WRITE, not tampering` lines (exit 4) — a false
+reassurance, not a false alarm, and the doc says plainly never to do it.
+`docs/protect-your-own-api.md` gained a nested-catalogue walkthrough with
+pseudonyms refreshed to task 71's eight-character forms and the
+`NESTED_LEAF_NOT_SCALAR` refusal code named; `docs/extending.md` no longer
+lists "a nested response" as a reason to leave the no-code path, only two-plus
+levels, custom fetch logic, or an inexpressible model. New
+`examples/json-sources/customer-api-nested.yaml` and
+`NestedCatalogueWalkthrough.java`, both reproducible from an empty local Maven
+repository, not just the author's machine.
+
+**Cost:** nine attempts, all failing on review (attempt 2 also failed on
+test). The pattern across all nine: nearly every round surfaced exactly one
+new factual error the previous round had missed, several of them introduced
+by a reviewer's own source-reading rather than caught in the implementer's
+draft — attempt 1's reviewer told attempt 2 that Slf4j-format log input makes
+the verifier exit 2 ("break detected"); the attempt-2 tester actually ran it
+and got exit 4 (`INTERRUPTED_WRITE_FRAGMENT`), the opposite hazard framing
+(false reassurance, not false alarm). The leaf-grammar claim that a nested
+catalogue's leaves take "the same three shapes as the root" (including
+`identifier`) was wrong and got restated in four different files across four
+different attempts before a grep-every-file sweep (attempt 4) found the last
+copy. Attempts 6-8 chased small drifts in the doc's own quoted verifier
+transcripts — a missing `/<uuid>` suffix, a whole-boot-deletion example with
+its counts backwards, a "LIMITATION paragraph quoted above in full" that was
+never actually quoted — none caught until a tester compared the quoted output
+BY TEXT against a real run rather than by shape (attempt 6's tester compared
+by shape and missed the missing-suffix defect entirely). What finally
+converged it: reviewers instructed to trace every claim to the enforcing code
+rather than to their own memory of it, testers diffing quoted blocks
+character-by-character against fresh runs, and prose counts (a "same" record
+count restated with a different UUID) checked against the block they
+describe. Separately, the walkthrough only ever reproduced on the author's own
+machine because a branch build was already sitting in `~/.m2`; proven
+reproducible from an isolated, empty local repository from attempt 3 onward,
+which is the bar every future runnable-example task in this repository should
+hold itself to. Task 75 (per-boot audit chain identity) was spun out of this
+task's attempt-5 review and is recorded separately above; this task's
+attempts 6-9 document the post-75 behaviour, not the bug 75 fixed. Attempt 4
+was misbased onto `origin/v0.3.0/audit-trail-and-nested-json` rather than the
+local ref and had to be rebuilt by hand as local base plus the four task
+commits — see task 75's entry above for the fuller account of that ref
+divergence.
+
 ## 2026-09-23 — Task 75: each process boot gets its own audit chain identity
 
 Found on task 62's attempt-5 review: a hash-chained server restarted with the

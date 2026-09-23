@@ -884,39 +884,23 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   message interpolates the slot class name
   (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name —
   task 62 owns documenting the slot-to-catalogue mapping.
-- **Wave 3 — depends on waves 1-2. Task 69 merged; only 62 and 59 remain:**
-  62 (corrects
-  `architecture.md`'s flat-by-design and boundary-7 claims, new
-  `docs/audit.md`, nested example and walkthrough; deps 60, 64, 66). 62's hard
-  precondition — the sink-exception-to-MCP-response path disclosure — is
-  closed by task 74 (merged 2026-09-23); 62 and 59 may document
-  `hash-chained`. One item is owed: `docs/configuration.md` has no entry for
-  `AUDIT_SINK_BEAN_REQUIRED` (task 73), so
-  `DataPrismConfigurationFailureAnalyzer`'s pointer at that document is
-  currently a dead end for an operator who hits the refusal. See follow-up
-  item 8 below, filed for 59/62. 62 and 59 both touch documentation only and
-  own disjoint files (`docs/architecture.md`/`docs/audit.md` for 62,
-  `docs/quickstart.md`/`docs/configuration.md` exit-ramp material for 59 —
-  confirm against each task file before assuming no overlap); they may run in
-  parallel, but 59 was already recorded above as blocked until the v0.3.0
-  images actually publish (release-sequence step 4), so in practice 62 has no
-  reason to wait for 59 and should not be held up by it.
+- **Wave 3 — depends on waves 1-2. 69 and 62 both merged; only 59 remains,
+  and it stays blocked until the v0.3.0 images publish (release-sequence step
+  4).** One item is still owed to 59, unchanged by 62's merge:
+  `docs/configuration.md` has no entry for `AUDIT_SINK_BEAN_REQUIRED` (task
+  73), so `DataPrismConfigurationFailureAnalyzer`'s pointer at that document
+  is currently a dead end for an operator who hits the refusal. See follow-up
+  item 8 below (extended for task 75's writer-id shape and
+  `INVALID_AUDIT_WRITER`), still owed to 59.
 
-  **Task 62 is still open, on attempt 6, now unblocked.** Its attempt-5
-  reviewer found a real code defect while reading `docs/audit.md`: a
-  hash-chained server restarted with the same `writer-id` raised a false
-  CHAIN BREAK, because every boot restarted at GENESIS/sequence 1 under one
-  config-fixed `instanceId`. Owner decision 2026-09-23: fix it in code before
-  0.3.0 rather than document the bug, filed as task 75, which blocked 62's
-  attempt 6 from starting. **Task 75 merged 2026-09-23, PASS + APPROVE on
-  attempt 3, onto `v0.3.0/audit-trail-and-nested-json`** — see
-  `docs/plan/HISTORY.md`, grep `Task 75`. 62's attempt 6 must still fix the
-  attempt-5 findings recorded in its own task file (the tail-edit-vs-tail-
-  delete claim in `docs/audit.md:159-161`, the dangling
-  `customer-api-nested.yaml` pointer, the exit-3 precedence wording) and now
-  must also document what 75 shipped: the `<writer-id>/<uuid>` `instanceId`
-  shape, and that deleting an entire boot's records is as undetectable as
-  tail truncation. Do not document the pre-75 restart behaviour.
+  **Task 62 merged 2026-09-23, PASS + APPROVE on attempt 9, onto
+  `v0.3.0/audit-trail-and-nested-json`.** Its attempt-5 reviewer found a real
+  code defect while reading `docs/audit.md`, filed and closed as task 75
+  (merged first); 62's attempts 6-9 documented the post-75 behaviour, never
+  the bug 75 fixed. Task file retired; see `docs/plan/HISTORY.md`, grep
+  `Task 62`, for what landed and the nine-attempt cost, including the
+  lesson that convergence needed testers comparing quoted output BY TEXT
+  against real runs, not by shape.
 
   **Task 69 (restore the reviewed-adapter allow-list) merged 2026-09-23,
   PASS + APPROVE on attempt 2, onto `v0.3.0/audit-trail-and-nested-json`,
@@ -940,10 +924,14 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   blind spot this is the second instance of this task cycle. The unreachable
   `MISSING_AUDIT_SINK` arm (dead since task 67) was kept as a defensive guard
   with an accurate comment — that decision stands, nothing further owed.
-- **Wave 4:** 70 (cut 0.3.0 across poms, `server.json`, `serverInfo`
-  literals, four Dockerfiles, `publish-image.yml`, docs, with a CHANGELOG
-  built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69, 75 — all
-  merged except 62 and 59, which 70 still needs before cutting the release).
+- **Wave 4: 70 is now unblocked** — every one of its dependencies (61, 62,
+  63, 65, 66, 67, 69, 75) has merged. 70 cuts 0.3.0 across poms, `server.json`,
+  `serverInfo` literals, four Dockerfiles, `publish-image.yml`, docs, with a
+  `CHANGELOG.md` built from the merged diffs, including the two items already
+  owed to it: task 71's `PseudonymisationVersion` compact-constructor breaking
+  change, and task 75's `instanceId` shape change plus the new
+  `INVALID_AUDIT_WRITER` code. 70 does not need 59, which runs after 70 and
+  the image publish, per the release sequence below.
 
 **Risks flagged by the planner, both open:**
 - The per-nested-catalogue `Class` token task 60 introduces is the only
@@ -1066,10 +1054,11 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
     then.
 
 **Release sequence — order is load-bearing, do not compress it:**
-1. Waves 1-3 merge. (Task 55 already merged onto
-   `v0.3.0/audit-trail-and-nested-json`, 2026-09-23 — its `compose.yaml`
-   change is on the integration branch now, but the images it publishes on
-   tag do not exist on `ghcr.io` until step 3 below runs on `main`.)
+1. **Done, 2026-09-23.** Waves 1-3 merged onto
+   `v0.3.0/audit-trail-and-nested-json`, except 59 which runs after publish
+   (step 4). Task 55's `compose.yaml` change is on the integration branch —
+   the images it publishes on tag do not exist on `ghcr.io` until step 3
+   below runs on `main`.
 2. 70 merges (0.3.0 on `main`, CHANGELOG written from the real diffs) —
    this is where the integration branch, carrying 55's workflow and
    compose changes, reaches `main`.
