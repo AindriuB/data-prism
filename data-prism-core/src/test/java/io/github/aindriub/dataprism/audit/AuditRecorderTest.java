@@ -314,11 +314,11 @@ class AuditRecorderTest {
     }
 
     /**
-     * The fix task 75 makes: a restart configured with the same writer-id must
-     * not collide with the previous boot's chain. Two recorders built with the
-     * identical writer-id mint distinct instance ids, each prefixed by that
-     * writer-id, so {@link AuditChainVerifier} sees them as independent
-     * writers rather than one writer whose sequence went backwards.
+     * A restart configured with the same writer-id must not collide with the
+     * previous boot's chain. Two recorders built with the identical
+     * writer-id mint distinct instance ids, each prefixed by that writer-id,
+     * so {@link AuditChainVerifier} sees them as independent writers rather
+     * than one writer whose sequence went backwards.
      */
     @Test
     @DisplayName("two recorders built with the same writer-id produce distinct instance ids, both prefixed by it")

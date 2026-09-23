@@ -186,8 +186,8 @@ public class DataPrismProperties {
             required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
         }
         required(audit.writerId, "MISSING_AUDIT_WRITER", "dataprism.audit.writer-id");
-        // AuditRecorder appends "/" plus a per-boot suffix to build its instanceId (task 75), so
-        // a writer-id containing "/" would make that split ambiguous -- refused here, at
+        // AuditRecorder appends "/" plus a per-boot suffix to build its instanceId, so a
+        // writer-id containing "/" would make that split ambiguous -- refused here, at
         // property-validation time, with a stable startup code rather than an
         // IllegalArgumentException once the AuditRecorder bean is actually constructed.
         if (!blank(audit.writerId) && audit.writerId.indexOf('/') >= 0) {
