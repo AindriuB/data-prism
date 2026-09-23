@@ -317,3 +317,25 @@ output line by line by text. Keep all of it. WHAT FAILED:
    "only after another anomaly" condition — say "a shorter summary". The
    quoted blocks omit the CLI's leading blank line and the LIMITATION
    paragraph every run prints; call them excerpts where they are introduced.
+
+## Attempt 8 — failed on test and review (2026-09-23)
+
+Everything else passes. Full-reactor verify green. All six verifier blocks
+and their prose counts reproduced word for word against the real
+recorder/sink/CLI (only UUIDs, hashes and offsets differ, all well-formed).
+Log input gives one INTERRUPTED WRITE per line, no writers, exit 4, as `:102`
+says. Every attempt 1-7 finding is resolved. The other six files are
+byte-identical to their approved attempt-7 versions. Keep all of it; change
+nothing else. WHAT FAILED, found by both tester and reviewer independently:
+
+1. `docs/audit.md:127-129` says every run prints "the same `LIMITATION`
+   paragraph quoted above in full". It is not quoted anywhere on the page
+   (only paraphrased, in "What this does and does not prove", which is BELOW,
+   from `:226`), so "above" and "quoted ... in full" are both false, and it
+   contradicts `:223-224`. The printed text is
+   `AuditChainVerifierCli.java:41-58`. Either quote that constant verbatim
+   once, or say "a `LIMITATION` paragraph, summarised under 'What this does and
+   does not prove' below".
+2. Optional, take it: `:142` and `:170` say "The same three records", but each
+   block is a fresh run with a different UUID from `:134`. Say "Three
+   records, ..." (compare "Three fresh records" at `:155`).
