@@ -216,3 +216,54 @@ is met; keep it all. WHAT FAILED:
      skips audit validation (`DataPrismProperties.java:76-78`), since
      "required for every sink" otherwise reads as unconditional. Write
      `dataprism.audit.credential-reference` in full.
+
+## Attempt 2 — failed on review (2026-09-23)
+
+Tester: PASS. Every quoted output matched byte for byte on the from-source
+path:
+- 1001 gave `SUBJ-KNSYWNZ9` / `Rowan Okafor (D1B5CR19)` identically on two
+  runs.
+- 1002 gave `SUBJ-F08KVXP6` / `Oakley Castellano (KKHAGCFX)`.
+- `run.sh CUSTOMER 9999` is refused with exit 1.
+- An instrumented copy fed each subject's own raw values FAILs with exit 1
+  for both 1001 and 1002, so the leak check is load-bearing.
+- The README's from-source command works as written.
+- Verify is green, and there are no old version literals.
+
+Reviewer: attempt-1 items 1-5 are resolved, and run.sh stays within the
+widened Owns. Keep all of it. WHAT FAILED:
+
+1. BLOCKING. The new `### dataprism.audit` intro in `docs/configuration.md`
+   says that in stdio fixture-development mode "none of the codes below is
+   reachable from it". False for the Spring auto-configuration path. Only
+   `DataPrismProperties.validate()` is skipped (`DataPrismProperties.java:126-129`;
+   the task file's earlier `:76-78` reference was stale). The contract
+   validator (`DataPrismAutoConfiguration.java:247`) and the hash-chained
+   sink bean (`:211-223`) still run, so these codes remain reachable in that
+   mode:
+   - `AUDIT_SINK_FILE_UNUSABLE`: `sink: hash-chained` with an unopenable path.
+   - `AUDIT_SINK_BEAN_REQUIRED`: `sink: approved-sink` with no bean
+     (`DataPrismContractValidator.java:72-75`).
+   - `MISSING_AUDIT_SINK`: no sink and no bean (`:87`).
+
+   Say exactly which codes are skipped: the property-validation ones
+   (`MISSING_AUDIT_SINK` from validate(), `UNKNOWN_AUDIT_SINK`,
+   `MISSING_AUDIT_FILE_PATH`, `MISSING_AUDIT_WRITER`, `INVALID_AUDIT_WRITER`,
+   `INVALID_AUDIT_REFERENCE`). Say which still fire.
+
+   NOTE: the tester "confirmed" the skip with `ExampleApplication`, which
+   builds `AuditRecorder` directly and bypasses Spring. That is not the path
+   this sentence describes. Verify the corrected sentence against a Spring
+   context in stdio fixture-development mode: an
+   `ApplicationContextRunner`-style scratch test, deleted afterwards, is
+   enough. First find out whether the packaged server can run in that mode
+   at all (`dataPrismStdioTransportRefused`), and describe it accordingly.
+2. Take these, they are cheap:
+   - `docs/quickstart.md:138` says the pseudonyms "change only for a
+     different case id or a different HMAC key". The pseudonymisation
+     version and the vocabulary also change the output
+     (`HmacSyntheticGenerator.java:62-73`). Include them, or drop "only".
+   - The audit intro's phrase "`mode: stdio` without fixture-development=true"
+     describes a mode that is itself refused with `STDIO_DEVELOPMENT_ONLY`
+     (`DataPrismProperties.java:119-120`). Do not present it as part of the
+     protected-deployment path.
