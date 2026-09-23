@@ -35,7 +35,19 @@ final class DataPrismContractValidator implements InitializingBean {
         if(!supplied.containsAll(configured)) throw new DataPrismConfigurationException("UNRESOLVED_SOURCE_ADAPTER","configured sources and DataSourceAdapter beans differ");
         if(identities.getIfAvailable()==null) throw new DataPrismConfigurationException("MISSING_IDENTITY_RESOLVER","provide an IdentityResolver bean");
         if(keys.getIfAvailable()==null) throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER","provide an HmacKeyReferenceResolver bean for the configured reference");
-        if(audit.getIfAvailable()==null) throw new DataPrismConfigurationException("MISSING_AUDIT_SINK","provide an AuditSink bean");
+        if(audit.getIfAvailable()==null) {
+            // approved-sink is validate()'s deployment-supplied-bean contract (see its
+            // Javadoc on DataPrismProperties); this is the phase that can actually see
+            // whether the deployment kept it. Any other accepted sink value reaching here
+            // ships no bean of its own either, at least until its wiring lands, so it keeps
+            // the generic code rather than being told it configured something it did not.
+            if (DataPrismProperties.APPROVED_SINK.equals(properties.getAudit().getSink())) {
+                throw new DataPrismConfigurationException("AUDIT_SINK_BEAN_REQUIRED",
+                        "dataprism.audit.sink=" + DataPrismProperties.APPROVED_SINK
+                                + " requires the deployment to supply an AuditSink bean");
+            }
+            throw new DataPrismConfigurationException("MISSING_AUDIT_SINK","provide an AuditSink bean");
+        }
         if(metrics.getIfAvailable()==null) throw new DataPrismConfigurationException("MISSING_METRICS_BINDING","provide a PrivacyMetrics bean");
     }
 }

@@ -14,6 +14,15 @@ import java.util.Set;
 /** Complete V1 {@code dataprism.*} deployment vocabulary. Reviewed Java code supplies integrations. */
 @ConfigurationProperties(prefix = "dataprism", ignoreUnknownFields = false)
 public class DataPrismProperties {
+    /**
+     * The {@code dataprism.audit.sink} value meaning "this deployment supplies its own
+     * reviewed {@code AuditSink} bean" -- no sink implementation ships for it. {@code
+     * validate()} accepts it as a known value; only {@code DataPrismContractValidator},
+     * which alone can see whether a bean was actually supplied, can tell whether the
+     * deployment kept its side of that contract.
+     */
+    public static final String APPROVED_SINK = "approved-sink";
+
     private Transport transport = new Transport();
     private Security security = new Security();
     private SecurityPolicy securityPolicy = new SecurityPolicy();
@@ -165,7 +174,7 @@ public class DataPrismProperties {
             refuse("LITERAL_SECRET_FORBIDDEN", "dataprism.privacy.hmac-key.value is forbidden");
         }
         required(audit.sink, "MISSING_AUDIT_SINK", "dataprism.audit.sink");
-        if (!Set.of("approved-sink", "slf4j", "hash-chained").contains(audit.sink)) {
+        if (!Set.of(APPROVED_SINK, "slf4j", "hash-chained").contains(audit.sink)) {
             refuse("UNKNOWN_AUDIT_SINK", audit.sink);
         }
         required(audit.writerId, "MISSING_AUDIT_WRITER", "dataprism.audit.writer-id");

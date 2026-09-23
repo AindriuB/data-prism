@@ -84,6 +84,60 @@ class DataPrismContractValidatorTest {
                 .doesNotThrowAnyException();
     }
 
+    /**
+     * Task 73: {@code approved-sink} is the deployment-supplied-bean contract, so an
+     * absent {@link io.github.aindriub.dataprism.audit.AuditSink} bean under it refuses
+     * with a code naming that cause, not the generic {@code MISSING_AUDIT_SINK}.
+     */
+    @Test
+    void approvedAuditSinkWithNoAuditSinkBeanFiresAuditSinkBeanRequired() {
+        DataPrismProperties properties = new DataPrismProperties();
+        properties.getAudit().setSink(DataPrismProperties.APPROVED_SINK);
+
+        assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(fakeAdapter("customer-api")),
+                availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                emptyProvider(), availableProvider(PrivacyMetrics.none())))
+                .isInstanceOf(DataPrismConfigurationException.class)
+                .hasMessageStartingWith("AUDIT_SINK_BEAN_REQUIRED:")
+                .hasMessageContaining("dataprism.audit.sink=approved-sink");
+    }
+
+    /**
+     * The sibling of the test above: the same {@code approved-sink} configuration with
+     * an {@code AuditSink} bean actually present must not throw at all -- so the test
+     * above cannot pass merely because construction fails for an unrelated reason.
+     */
+    @Test
+    void approvedAuditSinkWithAnAuditSinkBeanPresentDoesNotThrow() {
+        DataPrismProperties properties = new DataPrismProperties();
+        properties.getAudit().setSink(DataPrismProperties.APPROVED_SINK);
+
+        assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(fakeAdapter("customer-api")),
+                availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none())))
+                .doesNotThrowAnyException();
+    }
+
+    /**
+     * The failure {@code AUDIT_SINK_BEAN_REQUIRED} does not describe: an absent bean
+     * under any other configured sink value still raises the generic
+     * {@code MISSING_AUDIT_SINK}, so the two remain distinguishable in a dashboard.
+     */
+    @Test
+    void nonApprovedSinkWithNoAuditSinkBeanStillFiresMissingAuditSink() {
+        DataPrismProperties properties = new DataPrismProperties();
+        properties.getAudit().setSink("slf4j");
+
+        assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(fakeAdapter("customer-api")),
+                availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                emptyProvider(), availableProvider(PrivacyMetrics.none())))
+                .isInstanceOf(DataPrismConfigurationException.class)
+                .hasMessageStartingWith("MISSING_AUDIT_SINK:");
+    }
+
     private static DataSourceAdapter<String> fakeAdapter(String name) {
         return new DataSourceAdapter<>() {
             @Override public String sourceName() { return name; }

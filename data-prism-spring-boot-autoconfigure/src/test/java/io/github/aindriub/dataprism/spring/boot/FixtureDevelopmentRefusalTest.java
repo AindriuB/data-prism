@@ -1,5 +1,9 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.core.DataRequest;
+import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.IdentityResolver;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -66,6 +70,50 @@ class FixtureDevelopmentRefusalTest {
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
                 emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
                 .doesNotThrowAnyException();
+    }
+
+    /**
+     * {@link #validProperties()} configures {@code dataprism.audit.sink=approved-sink}
+     * but this file never previously drove that configuration far enough into {@link
+     * DataPrismContractValidator} to notice whether an absent {@code AuditSink} bean
+     * still refuses -- every other test here either fails earlier (at {@code validate()}
+     * or {@code UNRESOLVED_SOURCE_ADAPTER}) or takes the stdio-fixture early return.
+     * Task 73: pin the outcome explicitly rather than leave that gap.
+     */
+    @Test void approvedAuditSinkConfiguredHereStillRefusesAtTheContractValidatorWithNoBean() {
+        DataPrismProperties properties = validProperties();
+
+        assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(fakeCustomerAdapter()),
+                availableProvider(new PassThroughIdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                emptyProvider(), availableProvider(PrivacyMetrics.none())))
+                .isInstanceOf(DataPrismConfigurationException.class)
+                .hasMessageStartingWith("AUDIT_SINK_BEAN_REQUIRED:")
+                .hasMessageContaining("dataprism.audit.sink=approved-sink");
+    }
+
+    private static DataSourceAdapter<String> fakeCustomerAdapter() {
+        return new DataSourceAdapter<>() {
+            @Override public String sourceName() { return "customer"; }
+            @Override public Class<String> responseType() { return String.class; }
+            @Override public String fetch(DataRequest request) { throw new UnsupportedOperationException(); }
+        };
+    }
+
+    private static <T> ObjectProvider<T> availableProvider(T instance) {
+        return new ObjectProvider<>() {
+            @Override public T getIfAvailable() { return instance; }
+        };
+    }
+
+    private static final class PassThroughIdentityResolverStub implements IdentityResolver {
+        @Override public CanonicalId resolve(SourceRef ref) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override public List<SourceRef> expand(CanonicalId id, List<String> sourceNames) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     private static <T> ObjectProvider<T> emptyProvider() {
