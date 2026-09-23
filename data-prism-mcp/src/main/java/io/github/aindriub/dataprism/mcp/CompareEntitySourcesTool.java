@@ -25,6 +25,8 @@ import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.util.List;
@@ -63,6 +65,8 @@ import java.util.UUID;
 public final class CompareEntitySourcesTool {
 
     public static final String NAME = "compare_entity_sources";
+
+    private static final Logger LOG = LoggerFactory.getLogger(CompareEntitySourcesTool.class);
 
     /** Same key {@link GetEntityContextTool#TRANSPORT_CONTEXT_CALLER_KEY} uses: one extractor, both tools. */
     public static final String TRANSPORT_CONTEXT_CALLER_KEY = GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY;
@@ -270,21 +274,49 @@ public final class CompareEntitySourcesTool {
         return developmentCaller;
     }
 
-    /** No identity to attribute the attempt to, so audited under a fixed sentinel rather than left silent. */
+    /**
+     * No identity to attribute the attempt to, so audited under a fixed sentinel
+     * rather than left silent. A failure to record is not caught and continued
+     * past — it is rethrown as {@link AuditUnavailableException} so the call
+     * still aborts, carrying no text from the audit sink's own exception.
+     */
     private McpSchema.CallToolResult denyUnauthenticated(String entityType, Set<String> rejectedArguments) {
         metrics.increment(Metric.MCP_DENIED);
-        audit.record(UNAUTHENTICATED_PRINCIPAL, UNAUTHENTICATED_PRINCIPAL, NAME, entityType, "", "", "", "",
-                "", "", NO_AUTHENTICATED_CALLER, Set.of(), rejectedArguments, UUID.randomUUID().toString());
+        try {
+            audit.record(UNAUTHENTICATED_PRINCIPAL, UNAUTHENTICATED_PRINCIPAL, NAME, entityType, "", "", "", "",
+                    "", "", NO_AUTHENTICATED_CALLER, Set.of(), rejectedArguments, UUID.randomUUID().toString());
+        } catch (RuntimeException auditFailure) {
+            // Full detail — which can name the sink's own file path — stays in
+            // the server's own log; only the stable code below crosses to the
+            // client, via AuditUnavailableException's own message.
+            LOG.error("audit record failed for an unauthenticated denial; aborting the call rather than "
+                    + "serving an unaudited decision", auditFailure);
+            throw new AuditUnavailableException(auditFailure);
+        }
         return error(NO_AUTHENTICATED_CALLER);
     }
 
-    /** A denial carries only its code — never a value from the request that triggered it. */
+    /**
+     * A denial carries only its code — never a value from the request that
+     * triggered it. A failure to record is not caught and continued past — it
+     * is rethrown as {@link AuditUnavailableException} so the call still
+     * aborts, carrying no text from the audit sink's own exception.
+     */
     private McpSchema.CallToolResult deny(AuthenticatedCaller caller, String code, String entityType,
                                           Set<String> rejectedArguments) {
         metrics.increment(Metric.MCP_DENIED);
-        audit.record(caller.principalId(), caller.clientId(), NAME, entityType, "", "", "", "",
-                caller.purpose(), caller.caseId(), code, Set.of(), rejectedArguments,
-                UUID.randomUUID().toString());
+        try {
+            audit.record(caller.principalId(), caller.clientId(), NAME, entityType, "", "", "", "",
+                    caller.purpose(), caller.caseId(), code, Set.of(), rejectedArguments,
+                    UUID.randomUUID().toString());
+        } catch (RuntimeException auditFailure) {
+            // Full detail — which can name the sink's own file path — stays in
+            // the server's own log; only the stable code below crosses to the
+            // client, via AuditUnavailableException's own message.
+            LOG.error("audit record failed for a denial; aborting the call rather than serving an "
+                    + "unaudited decision", auditFailure);
+            throw new AuditUnavailableException(auditFailure);
+        }
         return error(code);
     }
 
