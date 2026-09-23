@@ -792,11 +792,9 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   `mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19 modules,
   1018 tests, 0 failures, 0 errors.
 
-  **Task 71 (widen the pseudonym discriminator) belongs to wave 1 and has
-  not been started.** Its task file exists at
-  `docs/plan/tasks/71-widen-pseudonym-discriminator.md`, merged via PR #87
-  together with the `docs/conventions.md` amendment its golden-vector
-  criterion cites.
+  **Task 71 (widen the pseudonym discriminator) merged 2026-09-23, PASS +
+  APPROVE, onto `v0.3.0/audit-trail-and-nested-json`.** Its task file was
+  retired; see `docs/plan/HISTORY.md`, grep `Task 71`.
 
 - **Wave 2 — depends on wave 1, now unblocked:** 61 (nested JSON through the
   real MCP HTTP/SSE transport, deps 60 — unblocked now that 60 has merged),
@@ -955,6 +953,17 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
    sent to a document that never mentions the code they were just given.
    Whichever of 59 or 62 documents `dataprism.audit.sink` must add this
    code, not just `MISSING_AUDIT_SINK` and `UNKNOWN_AUDIT_SINK`.
+9. **Known, documented, currently non-firing race — not scheduled.**
+   `AuditSinkFailureAbortsResponseTest`'s own javadoc records a JVM-wide
+   default-`SSLContext` singleton race against `McpHttpEndToEndTest` (and
+   `ConfiguredJsonNestedHttpTest`) when they share a surefire fork. Task 71's
+   implementer reported it as a flake; task 71's tester ran
+   `data-prism-integration-tests` three times plus both pairwise test
+   orderings — five runs total — and could not reproduce it, consistent with
+   the documented mitigation (each of these tests uses an explicit
+   `SSLContext` rather than the implicit default) actually holding. Recording
+   it here so that if it ever does fire, whoever sees it finds this note
+   instead of rediscovering the race from scratch.
 
 **Release sequence — order is load-bearing, do not compress it:**
 1. Waves 1-3 merge.

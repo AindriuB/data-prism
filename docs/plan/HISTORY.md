@@ -17,6 +17,67 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 71: pseudonym discriminator widens from 20 to 40 bits, and `ADDRESS` gains one
+
+`HmacSyntheticGenerator`'s discriminator now derives 40 bits from eight
+distinct digest bytes (`d[i] & 0x1F` per Crockford base32 character) instead
+of 20 bits from one masked word, rendered as eight characters instead of
+four — matching the width `HmacValueTokenSource.token` already used, so the
+two generators agree. `ADDRESS`, which previously rendered no discriminator
+at all (a pool of 200 x 24 x 24 = 115,200 distinct values, a 50% collision
+chance around 400 subjects), now carries the same tag every other namespace
+does. `PseudonymisationVersion`'s compact constructor gained a digest-length
+guard, raising `InvalidAlgorithmException` with stable codes
+(`pseudonymisation.algorithm-digest-too-short`,
+`pseudonymisation.algorithm-unavailable`) for a MAC algorithm too short for
+the generator's own reads — `HmacMD5` (16 bytes) and `HmacSHA1` (20 bytes)
+are both now rejected at construction rather than surfacing an
+`ArrayIndexOutOfBoundsException` at `address()`'s `unsigned(d, 20)` read
+against a digest that short. Both golden-vector files were regenerated under
+the dated exception at `docs/plan/PLAN.md:739-761` (grep "Owner decision,
+recorded 2026-09-22"); `PseudonymisationVersion.version` deliberately stays
+at `v1`. Pseudonym literals in `docs/tools.md`, `docs/agents/stdio.md` and
+`docs/agents/remote-http.md` were recaptured from real runs against the
+fixture server, per task 47's precedent. Verified PASS (tester) and APPROVE
+(reviewer); merged onto `v0.3.0/audit-trail-and-nested-json`.
+
+This closes a defect (the `ADDRESS` collision floor) and a latent crash path
+(the digest-length read), both found by the repository owner in review, not
+by the planning process that scoped the rest of v0.3.0.
+
+**No collision-resistance claim is made here, and none should be added
+later.** These remain HMAC-derived synthetic identities; widening the
+discriminator reduces collision probability substantially, it does not make
+collisions impossible. The reviewer confirmed the javadoc no longer claims
+collisions inside a scope "stop being a practical concern" at the new width
+— replace it with a claim of degree, not certainty, if it is ever touched
+again.
+
+**Cost:** the commit body's colliding-pair literals for the 20-bit mutation
+proof are not reproducible constants — when the tester independently
+mutated the mask back to `0xFFFFF` and the width back to four characters, it
+reproduced real collisions at the same subject volumes but different pairs
+for the tag-is-the-whole-pseudonym namespaces, because the exact pairs
+depend on precisely how the mutation is written, not just its width. Only
+the `ADDRESS` pair (`subject-300`/`subject-446`) matched exactly across
+independent mutations, because that branch's non-tag content was already
+fixed and identical, so the tag was the only degree of freedom left. Treat
+any pair cited in a commit body as illustrative of a reproduction, not as an
+expected value to assert against.
+
+A real but non-firing race was flagged during verification, not fixed here,
+and is worth keeping rather than losing:
+`AuditSinkFailureAbortsResponseTest`'s own javadoc documents a JVM-wide
+default-`SSLContext` singleton race against `McpHttpEndToEndTest` (and
+`ConfiguredJsonNestedHttpTest`) when they share a surefire fork. The
+implementer reported it as a flake; the tester ran
+`data-prism-integration-tests` three times plus both pairwise test
+orderings — five runs, all green — and could not reproduce it, consistent
+with the documented mitigation (each test using an explicit `SSLContext`
+rather than the implicit default) holding in practice. Recorded as follow-up
+item 9 in `docs/plan/PLAN.md` so a future firing finds this note instead of
+rediscovering the race.
+
 ## 2026-09-23 — Task 74: a sink's exception no longer reaches the MCP client verbatim
 
 `GetEntityContextTool` and `CompareEntitySourcesTool` each caught nothing
