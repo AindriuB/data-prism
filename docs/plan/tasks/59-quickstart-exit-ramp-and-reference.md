@@ -7,6 +7,7 @@
 - docs/quickstart.md
 - docs/configuration.md
 - README.md
+- examples/quickstart-demo/run.sh (widened after attempt 1: its per-subject fixture values, raw-value leak check and stale `docker compose up --build` wording only)
 
 ## Goal
 `docs/quickstart.md` ends at "stop and reset", so the minutes someone just spent lead
@@ -156,3 +157,62 @@ Consequences:
 - Tagging, dispatching `publish-image.yml`, or pulling published images.
 - Any code, workflow or Compose change. If a doc cannot be made true without one,
   report it rather than editing outside `Owns`.
+
+## Attempt 1 — failed on review (2026-09-23)
+
+Tester: PASS. On the from-source path, docs/quickstart.md followed top to
+bottom:
+- `run.sh` output matched the quoted block byte for byte, twice, including
+  `SUBJ-KNSYWNZ9` and `Rowan Okafor (D1B5CR19)`.
+- Both 401 checks printed `401`.
+- All ten refusal codes reproduced against the packaged 0.3.0 server.
+- `writer-id` is required even with `sink: slf4j`.
+- Both nested load-time refusals and both request-time codes reproduced.
+- `/jwks` returns 200 and `/.well-known/jwks.json` returns 404.
+- Full-reactor verify is green, and there are no 0.1.x/0.2.x literals.
+
+Reviewer: every criterion except the README command and "no unverified claims"
+is met; keep it all. WHAT FAILED:
+
+1. `docs/quickstart.md:117,136-137` say the pseudonyms "change on every run"
+   and differ on "a different run of this demo". False. With the defaults they
+   are identical run to run: a deterministic HMAC over `case:`+caseId
+   (`ScopeResolver.java:86-87`, `HmacSyntheticGenerator.java:72`), with a fixed
+   default key and case `CASE-QUICKSTART-1` (`TokenRequest.java:21`). The
+   tester confirmed this by running it twice. Say what actually changes them:
+   a different case, or a different key.
+2. `docs/quickstart.md:128-129` suggests `run.sh CUSTOMER 1002`, but
+   `run.sh:31-32` hardcodes subject 1001's raw values ("Fixture Person One",
+   person.one's email). So for 1002 it prints the wrong "real fixture value",
+   and its raw-value leak check (`run.sh:132`) would not catch a leak of
+   1002's values. 1002 is Fixture Person Two (`CustomerController.java:24-25`).
+   Owns is now widened to `run.sh`. Make the raw values follow the subject:
+   derive them per subject, or refuse any subject whose raw values the script
+   does not know. Silently comparing against the wrong subject's values is a
+   leak check that can pass vacuously. Then run `run.sh CUSTOMER 1002` for
+   real and confirm both what it prints and that its leak check is
+   load-bearing for 1002.
+3. `docs/configuration.md:236` says "`data-prism-core` raises" the NESTED_*
+   codes. They are raised in `data-prism-connectors-rest`
+   (`ConfiguredJsonNestedLeafShapeGuard.java:31,45`, whose javadoc says
+   "instead of core's").
+4. `docs/configuration.md:241-243` says protect-your-own-api.md's "A nested
+   response" has "a worked example of both, against a real running adapter".
+   That section works only `NESTED_LEAF_NOT_SCALAR`, through a scrub call in
+   `NestedCatalogueWalkthrough.java` rather than a running adapter, and only
+   names `NESTED_FIELD_NOT_STRUCTURED`. Describe exactly what is there.
+5. `README.md:82-83` tells readers to "add `-f compose.yaml -f compose.build.yaml
+   up --build`" to `docker compose up`. Taken literally that is an invalid
+   command, and the criterion requires the exact command. Write it in full:
+   `docker compose -f compose.yaml -f compose.build.yaml up --build`.
+6. Take these, they are cheap:
+   - `docs/quickstart.md:93` says "either curl above", but only one remains.
+     Also, the different-case advice gives the reader nothing to run `run.sh`
+     with, because `run.sh` cannot take a token minted for another caseId.
+     Fix both.
+   - `run.sh:11` and `:36` still say `docker compose up --build`. Now in
+     Owns: give both the pull and from-source commands, matching the docs.
+   - `docs/configuration.md:153-181`: say that stdio fixture-development mode
+     skips audit validation (`DataPrismProperties.java:76-78`), since
+     "required for every sink" otherwise reads as unconditional. Write
+     `dataprism.audit.credential-reference` in full.
