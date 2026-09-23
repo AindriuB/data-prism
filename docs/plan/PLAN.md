@@ -565,7 +565,7 @@ up only as its own planned work.
   clients (any other MCP-capable agent) are unverified territory — nothing
   claims they work, but nothing has checked either.
 
-### Wave 1 (tasks 53, 54, 56, 57) — done. Task 55 verified but held.
+### Wave 1 (tasks 53, 54, 56, 57) — done. Task 55 done.
 
 Opened from a measured UX review 2026-09-21: the Compose quickstart demos
 well but onboards nobody, since `QuickstartCustomerAdapter` hardcodes
@@ -581,18 +581,23 @@ operator-facing block with no stack trace. All four merged locally
 2026-09-21, no conflicts. See `docs/plan/HISTORY.md` — grep `Wave 1 (tasks
 53, 54, 56, 57)` — for what landed and what it cost.
 
-**Task 55 (publish the quickstart images) is verified PASS/APPROVE and
-deliberately not merged.** Held: task 55's `compose.yaml` pulls
+**Task 55 (publish the quickstart images) merged 2026-09-23, PASS/APPROVE
+re-verified against current base, onto
+`v0.3.0/audit-trail-and-nested-json`.** Originally held because its
+`compose.yaml` pulls
 `ghcr.io/aindriub/data-prism-quickstart-{server,fixtures,issuer,certs-init}`,
-none of which are published yet — merging it would break `docker compose
-up` (the command both `README.md` and `docs/quickstart.md` tell a new user
-to run) for everyone until a `v*` tag is pushed and `publish-image.yml` is
-dispatched. Owner decision: publish the images first, then merge 55. Its
-branch (`task/55-publish-quickstart-images`) and worktree
-(`.worktrees/data-prism/55-publish-quickstart-images`) are left intact; its
-task file remains under `docs/plan/tasks/`. Unblock condition: a `v*` tag
-exists and `publish-image.yml` has been dispatched for the four quickstart
-images, at which point 55 can merge as-is.
+none of which are published yet — merging to `main` today would break
+`docker compose up` (the command both `README.md` and `docs/quickstart.md`
+tell a new user to run) for everyone. That risk does not apply to merging
+onto the `v0.3.0` integration branch, which is not what a reader pulls
+until it reaches `main`; the unblock condition (a `v*` tag pushed and
+`publish-image.yml` dispatched for all four images) still gates the
+integration branch's own merge to `main`, recorded in the release sequence
+below. Its worktree and branch were removed after merge; task file
+retired. See `docs/plan/HISTORY.md`, grep `Task 55`, for what landed, the
+release-day version-pinning defect its fix pass closed, and the two
+inert-plumbing defects (a dangling build-arg, an inaccurate comment) found
+and fixed at this close-out.
 
 ### Task 58 — done. No task file remains under `docs/plan/tasks/`.
 
@@ -848,11 +853,12 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
 
   **The general lesson: a PASS expires when its base does.** Task 67 sat
   verified against a base that moved five merges before re-verification,
-  and two of its claims did not survive the move. **Task 55's held
-  worktree is in the same position right now** — verified PASS/APPROVE
-  against a base that has since moved under it — and needs re-verification
-  against current `main`, not a merge on trust, before anything is recorded
-  against it. Do not re-merge 55 without re-running its tester and reviewer.
+  and two of its claims did not survive the move. **Task 55 was in the same
+  position and was handled the same way**: re-verified (PASS + APPROVE
+  again) against the base it actually merged onto, not merged on the trust
+  of an older verification, then merged 2026-09-23 onto
+  `v0.3.0/audit-trail-and-nested-json`. See above and `docs/plan/HISTORY.md`,
+  grep `Task 55`.
 
   **Task 72 (widen the audit hash to cover `timestamp` and `sourceSystems`)
   merged 2026-09-23, PASS + APPROVE, fast-forward onto
@@ -990,20 +996,39 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
    `SSLContext` rather than the implicit default) actually holding. Recording
    it here so that if it ever does fire, whoever sees it finds this note
    instead of rediscovering the race from scratch.
+10. **Owed hardening from task 55's close-out, not scheduled.** The three
+    quickstart Dockerfiles each `find` "the one repackaged jar" a module's
+    `target` directory holds and copy it to a fixed name, with no
+    match-count assertion. Zero matches still fails loudly at the
+    subsequent `COPY` (the old ARG-pinned behaviour's failure mode is
+    preserved), but two matches would silently copy whichever one `find`
+    lists first — a wrong image built quietly, worse than the version
+    literal it replaced. Unreachable today; reaching it requires someone
+    deliberately adding a `-Prelease` profile or an attached-classifier
+    execution to a quickstart module. A `set -eu` plus an explicit
+    match-count check in each `RUN find ...` would convert that from
+    silent-wrong to loud-fail. File as its own task if any quickstart
+    module ever gains a second packaging execution; not worth one before
+    then.
 
 **Release sequence — order is load-bearing, do not compress it:**
-1. Waves 1-3 merge.
-2. 70 merges (0.3.0 on `main`, CHANGELOG written from the real diffs).
-3. Push the `v0.3.0` tag and dispatch `publish-image.yml` for the four
-   quickstart images. Task 55 cannot merge before those images exist on
-   `ghcr.io`, or `docker compose up` — the command both `README.md` and
-   `docs/quickstart.md` tell a new user to run — breaks for everyone.
-4. Merge 55 — unchanged from its held state above, now explicitly riding on
-   the `v0.3.0` tag rather than getting its own release. The owner deferred
-   the v0.2.1 tag decision for exactly this reason.
-5. Run 59 against the published result (with the two extra criteria items
+1. Waves 1-3 merge. (Task 55 already merged onto
+   `v0.3.0/audit-trail-and-nested-json`, 2026-09-23 — its `compose.yaml`
+   change is on the integration branch now, but the images it publishes on
+   tag do not exist on `ghcr.io` until step 3 below runs on `main`.)
+2. 70 merges (0.3.0 on `main`, CHANGELOG written from the real diffs) —
+   this is where the integration branch, carrying 55's workflow and
+   compose changes, reaches `main`.
+3. Push the `v0.3.0` tag and dispatch `publish-image.yml`. It now publishes
+   all four quickstart images alongside the distribution image, since 55's
+   workflow changes are already on `main` by this point. Until this step
+   runs, `docker compose up` on `main` — the command both `README.md` and
+   `docs/quickstart.md` tell a new user to run — pulls images that do not
+   exist yet; do not merge the integration branch to `main` and stop
+   before this step.
+4. Run 59 against the published result (with the two extra criteria items
    recorded above) and merge it.
-6. Maven Central and MCP registry publish. `server.json`'s shape follows
+5. Maven Central and MCP registry publish. `server.json`'s shape follows
    task 48's history entry: no `registryBaseUrl`, no per-package version.
 
 ## Remaining slices past the adopted core

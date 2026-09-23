@@ -17,6 +17,69 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 55: the quickstart images publish, and Compose pulls them by default
+
+`compose.yaml`'s four services (server-with-extension, fixtures, issuer,
+certs-init) no longer each carry a `build:` block Compose executes on plain
+`docker compose up`; the from-source path moves to a new
+`compose.build.yaml`, invoked with `docker compose -f compose.yaml -f
+compose.build.yaml up --build`. `.github/workflows/publish-image.yml`
+publishes all four as multi-architecture manifest lists under the same
+GHCR namespace as the existing distribution image, on a `v*` tag, gated by
+the identical `workflow_dispatch && refs/tags/v` guard on every
+registry-touching step; new build steps are `--load`-only and their digest
+files are written to their own `/tmp/digest-quickstart` directory so the
+distribution image's own manifest assembly is untouched. Verified PASS
+(tester) and APPROVE (reviewer) twice — once at `248fe7e`/`1c8d10e`, again
+for the fix-pass commit `47567b3` — then merged onto
+`v0.3.0/audit-trail-and-nested-json` as three separate commits (not
+squashed: each is a distinct logical step and each message is still
+accurate for its own change).
+
+The fix pass (`47567b3`) closed a release-day landmine: the from-source
+build path pinned `ARG VERSION=0.2.0` in all three jar-carrying Dockerfiles,
+so the moment task 70 cuts the reactor to 0.3.0, the documented fallback
+command for a reader who cannot pull images — `docker compose -f
+compose.yaml -f compose.build.yaml up --build` — would fail at `COPY` on a
+missing jar. Each Dockerfile now locates the one repackaged jar its own
+module's `target` directory holds (`find ... -maxdepth 1 -name '*.jar' !
+-name '*.original'`) and copies it to a fixed name, independent of the
+reactor version. Verified by actually running `mvn versions:set
+-DnewVersion=0.3.0` across the reactor, rebuilding successfully, and
+reverting cleanly — not merely inspected.
+
+Close-out review found and fixed two more defects before merging: six call
+sites across `publish-image.yml` (three `--load`-only builds, three
+push-by-digest builds) still passed `--build-arg VERSION=$VERSION` to
+Dockerfiles that no longer declare that `ARG` — Docker only warns on an
+unconsumed build-arg, so this was inert, but it read as live plumbing and
+was removed. All three quickstart Dockerfiles' comments also credited `!
+-name '*.original'` with excluding the spring-boot-maven-plugin's
+repackage sibling; it does not, since `-name '*.jar'` alone already
+excludes `*.jar.original` (it does not end in `.jar`), making the trailing
+predicate a no-op. The `find` behaviour was already correct; only the
+stated reasoning was wrong, and — since this same release already
+rejected task 67 for carrying a claim that had gone false — the comment
+was corrected rather than left to mislead the next reader, with the
+predicate kept as a defensive no-op.
+
+**What this does not close, stated plainly:** a full `docker compose up`
+end-to-end run was not exercised on the merging machine — the usual
+quickstart port was bound by an unrelated long-running process — though
+all four images were confirmed to build from source and both compose
+files resolve. The GHCR publish path itself remains argued from its
+conditions, not exercised by a real `v*` tag push through Actions, the
+same allowance task 40's own close-out used for the same reason.
+
+**Cost:** none of the three commits needed rework; the two defects above
+were both found and fixed during this close-out's own review pass, not
+carried over as owed follow-ups. One piece of hardening is still owed and
+recorded in `PLAN.md`: the `find` in each Dockerfile has no match-count
+assertion, so it silently copies an arbitrary jar if a future change ever
+produces two matches in one module's `target` — unreachable today, but a
+`set -eu` plus a count check would convert a future silent-wrong into a
+loud-fail.
+
 ## 2026-09-23 — Task 67: `dataprism.audit.sink=hash-chained` wired to `FileAuditSink`
 
 The release's centrepiece. `dataprism.audit.sink: hash-chained` now produces a
