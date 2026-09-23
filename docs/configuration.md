@@ -158,8 +158,8 @@ the standalone server and the Spring Boot starter. It is not describing
 refused before any of this section's checks run, with `STDIO_DEVELOPMENT_ONLY`
 (see "Supported modes" above). Requested with `fixture-development=true`
 inside a Spring application, the Spring auto-configuration always refuses
-with `STDIO_TRANSPORT_UNSUPPORTED` regardless of what is configured here —
-that combination never reaches a usable, protected deployment either.
+startup, normally with `STDIO_TRANSPORT_UNSUPPORTED` — that combination
+never reaches a usable, protected deployment either.
 
 `sink` is required; a missing value refuses startup with `MISSING_AUDIT_SINK`.
 It accepts exactly three values:
