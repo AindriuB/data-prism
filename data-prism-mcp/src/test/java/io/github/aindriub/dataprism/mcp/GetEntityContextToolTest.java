@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Drives {@link GetEntityContextTool#specification()}'s call handler directly,
@@ -213,6 +214,53 @@ class GetEntityContextToolTest {
         assertThat(first.isError()).isNotEqualTo(Boolean.TRUE);
         assertThat(second.isError()).isNotEqualTo(Boolean.TRUE);
         assertThat(soleText(first)).isNotEqualTo(soleText(second));
+    }
+
+    @Test
+    @DisplayName("a throwing audit sink aborts an unauthenticated denial as AuditUnavailableException, "
+            + "carrying no substring of the sink's own message")
+    void auditFailureOnUnauthenticatedDenyAbortsWithNoCauseText() {
+        String secretSinkMessage = "sink failure message that must never reach a client";
+        AuditSink throwingSink = event -> {
+            throw new IllegalStateException(secretSinkMessage);
+        };
+        AuditRecorder throwingAudit = new AuditRecorder(throwingSink, FIXED, "test-mcp");
+        RecordingOrchestrator orchestrator = new RecordingOrchestrator();
+        GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
+                authorizationService(policyGrantingGetEntityContext()), scopeResolver(Set.of("demonstration")),
+                DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED);
+
+        assertThatThrownBy(() -> tool.specification().callHandler().apply(
+                exchangeFor(null), request(Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
+                .isInstanceOf(AuditUnavailableException.class)
+                .hasMessage(AuditUnavailableException.CODE)
+                .hasMessageNotContaining(secretSinkMessage);
+        assertThat(orchestrator.requests).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a throwing audit sink aborts an authorisation denial as AuditUnavailableException, "
+            + "carrying no substring of the sink's own message")
+    void auditFailureOnAuthorisationDenyAbortsWithNoCauseText() {
+        String secretSinkMessage = "another sink failure message that must never reach a client";
+        AuditSink throwingSink = event -> {
+            throw new IllegalStateException(secretSinkMessage);
+        };
+        AuditRecorder throwingAudit = new AuditRecorder(throwingSink, FIXED, "test-mcp");
+        RecordingOrchestrator orchestrator = new RecordingOrchestrator();
+        SecurityPolicy policyMissingCapability = new SecurityPolicy(Set.of("demonstration"),
+                Map.of("investigator", Set.of("COMPARE_ENTITY_SOURCES")));
+        GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
+                authorizationService(policyMissingCapability), scopeResolver(Set.of("demonstration")),
+                DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED);
+
+        assertThatThrownBy(() -> tool.specification().callHandler().apply(
+                exchangeFor(caller("case-1", "demonstration")),
+                request(Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
+                .isInstanceOf(AuditUnavailableException.class)
+                .hasMessage(AuditUnavailableException.CODE)
+                .hasMessageNotContaining(secretSinkMessage);
+        assertThat(orchestrator.requests).isEmpty();
     }
 
     /** Records every call it receives; never fabricates a response for a call it never got. */
