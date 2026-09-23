@@ -618,18 +618,14 @@ the other did; and this is the second task this wave (after 56) to assume
 a bare JSON body from an endpoint that actually negotiates SSE, caught
 only by exercising the real server both times.
 
-**Task 59 — done.** Merged `--no-ff`, PASS + APPROVE (see the caveat on
-attempt 4's tester run below), onto `v0.3.0/quickstart-exit-ramp` — a local
-branch cut from `main` at the `v0.3.0` integration branch's own merge (PR
-#96, `543defb`), not yet opened as a PR. The owner ran this task before
-tagging, not after publish as originally planned (see the release sequence
-below); every command it quotes was verified via the from-source Compose
-path, since the published GHCR images do not exist yet. Task file retired;
-see `docs/plan/HISTORY.md`, grep `Task 59`, for what landed and the
-four-attempt cost. Attempt 4's reviewer APPROVEd with no defects; its
-tester run was still in progress when the owner asked to record this task
-closed, and chose to record without waiting — the tester's result will be
-reported separately when it lands.
+**Task 59 — done.** Merged `--no-ff`, PASS + APPROVE on attempt 4, onto
+`v0.3.0/quickstart-exit-ramp` — a local branch cut from `main` at the
+`v0.3.0` integration branch's own merge (PR #96, `543defb`), not yet opened
+as a PR. The owner ran this task before tagging, not after publish as
+originally planned (see the release sequence below); every command it
+quotes was verified via the from-source Compose path, since the published
+GHCR images do not exist yet. Task file retired; see `docs/plan/HISTORY.md`,
+grep `Task 59`, for what landed and the four-attempt cost.
 
 ### v0.3.0 plan (tasks 60-71) — opened 2026-09-22, none started
 

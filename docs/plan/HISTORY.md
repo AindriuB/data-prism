@@ -50,10 +50,13 @@ reworded, because the cut left it overclaiming which code the stdio+fixture-deve
 combination guarantees (it now claims only that startup always refuses, naming
 `STDIO_TRANSPORT_UNSUPPORTED` as the normal case rather than the only case, since a
 hash-chained sink with an unopenable path gives `AUDIT_SINK_FILE_UNUSABLE` instead in
-that same combination). Attempt 4's reviewer APPROVEd with no defects found; its
-tester run was still in progress when the owner asked to record this task closed, and
-the owner chose to record without waiting rather than block the close-out on it. The
-main session reports the tester's attempt-4 result separately.
+that same combination). Attempt 4's reviewer APPROVEd with no defects found, and its
+tester reported PASS: a scratch `WebApplicationContextRunner` test tried five
+configurations in stdio + fixture-development mode (plain, hash-chained with an
+unopenable path, slf4j, approved-sink with no `AuditSink` bean, hash-chained with a
+writable path) and confirmed none started, with the plain case refusing
+`STDIO_TRANSPORT_UNSUPPORTED`, then deleted the scratch test. Task 59 closed PASS +
+APPROVE on attempt 4.
 
 Merged `--no-ff` onto `v0.3.0/quickstart-exit-ramp` (a local branch cut from `main` at
 the PR #96 merge, not yet pushed or opened as a PR). Post-merge full-reactor
