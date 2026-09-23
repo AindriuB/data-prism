@@ -109,9 +109,11 @@ the separately published `connectors-rest` artefact, opted into via
 `-Dloader.path`, no Java required — and its allowlisted `fields:` catalogue
 covers one level of named nested sub-catalogues: a root field can declare
 `nested: <name>` and point at a `nested-catalogues:` entry that is itself a
-flat catalogue of scalar/classified leaves, exactly the same three leaf shapes
-as the root. It goes no deeper than that: a nested catalogue's own fields
-cannot themselves declare `nested:` or `identifier: true`, so recursion is
+flat catalogue of scalar/classified leaves, using the root's `nonSensitive`
+and classified leaf shapes — a nested catalogue carries no identifier of its
+own and inherits its subject from the enclosing record. It goes no deeper
+than that: a nested catalogue's own fields cannot themselves declare
+`nested:` or `identifier: true`, so recursion is
 refused at load time rather than left to depend on whatever the wire happens
 to send. There is still no dotted path, no JSONPath and no expression
 anywhere in this grammar — `subject-json-path` and every `fields:` or

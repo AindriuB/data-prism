@@ -16,7 +16,8 @@ instead of compiled Java. It has one real limit, stated here so you can check
 it against your own API before going further: its field resolver descends one
 level into a named nested sub-catalogue — a root field declared `nested:
 <name>` — but no further; a nested catalogue's own leaves cannot themselves
-declare `nested:`, so two levels of nesting refuses at load time rather than
+declare `nested:` or `identifier: true`, so two levels of nesting, or an
+identifier inside a nested catalogue, refuses at load time rather than
 silently flattening or dropping data. There is also no dotted path or
 JSONPath anywhere in this grammar: every field name, at either level, and
 `subject-json-path` itself, is a single bare, exact-match property name. If
@@ -546,9 +547,10 @@ scrub call, against that stale-shaped body, prints:
 REFUSED: NESTED_LEAF_NOT_SCALAR at customer-api-with-address$.address.postcode: nested catalogue leaf field is declared scalar/classified but the response carries a structure there; the catalogue is stale against the wire shape
 ```
 
-Neither the raw field name from the response body nor the unexpected
-structure's contents appear in that message — only the catalogue-declared path
-`$.address.postcode` does. The mirror-image failure — a scalar arriving where
+No raw value, and nothing from inside the unexpected structure, appears in
+that message — only the catalogue-declared path `$.address.postcode` does,
+and that path segment happens to match the wire's own field name here because
+nothing renames it. The mirror-image failure — a scalar arriving where
 `nested:` itself is declared — is `NESTED_FIELD_NOT_STRUCTURED`, and a
 property inside the nested object that its own catalogue never named is
 refused as `UNKNOWN_FIELD`, the identical code the root catalogue's own
