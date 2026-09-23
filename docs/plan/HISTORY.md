@@ -90,6 +90,54 @@ against all four `UnclassifiedBehaviour` settings, and
 `privacy-profiles-default.yaml:8`'s comment claiming unclassified has "only
 two settings" when the enum has four.
 
+## 2026-09-23 — Task 84: the `dataprism.privacy` row's two false startup-refusal claims corrected
+
+`docs/configuration.md:73` (the `dataprism.privacy` row) no longer claims two
+startup refusals that do not exist — "a production profile that relaxes
+fail-closed behaviour" and "a profile that lacks a rule required by exposed
+models". It now states: no `dataprism.*` property loads a custom profile
+file; the server and starter load the bundled `privacy-profiles-default.yaml`,
+whose `DEFAULT` and `STRICT` profiles both set `unclassified: FAIL_REQUEST`
+(refusing the whole response for a field nobody classified); and it adds the
+real refusal, `FORBIDDEN_PRIVACY_OVERRIDE`, for an application
+`PrivacyPolicyResolver` bean. Everything else in the table row is
+byte-identical to before; the row makes no absolute "only bundled profiles
+can be used" claim, since whether classpath shadowing of the bundled file is
+possible remains unverified.
+
+Re-verification, done fresh rather than trusted from planning: a refusal-code
+inventory across `data-prism-*/src/main` finds the only profile-related
+startup codes are `UNKNOWN_PRIVACY_PROFILE`
+(`DataPrismAutoConfiguration.java` ~:574), `FORBIDDEN_PRIVACY_OVERRIDE`
+(~:366) and `MISSING_PRIVACY_PROFILE` (`DataPrismProperties.java` ~:164);
+`PrivacyProfile.releasesUnclassifiedData()` has no callers anywhere in the
+reactor; `classifications()`/`generalizations()` are read only at request
+time, in `ProfilePrivacyPolicyResolver`. The tester started real Spring
+contexts under both the `STRICT` and `DEFAULT` profiles (both start clean)
+and confirmed `UNKNOWN_PRIVACY_PROFILE`, `FORBIDDEN_PRIVACY_OVERRIDE`,
+`INVALID_SCOPE_LIFETIME` and `UNSUPPORTED_LOCALE` all still fire.
+
+**Cost:** this was found, not planned — tracing task 81's launch-post
+sentence about fail-closed defaults back to the code it should have cited
+surfaced the doc defect underneath it. Owner decision 2026-09-23: correct the
+shipped doc now; building the startup guard for an unsafe profile is a
+separate, unscheduled follow-up (already recorded under task 81's follow-ups
+in `docs/plan/PLAN.md`, including the still-open question of whether
+`PASS_THROUGH_UNSAFE` is reachable today via classpath shadowing). PASS +
+APPROVE on attempt 1. The reviewer found two further gaps while checking this
+row, neither blocking the merge, recorded in `docs/plan/PLAN.md` "Small open
+items" under "Found on task 84": `docs/configuration.md:73`'s "a production
+scope lifetime is required" understates `protectedDeployment()`
+(`DataPrismProperties.java` ~:127-129, :165), which requires it in every
+deployment mode except stdio fixture-development, not only "production"; and
+in stdio fixture-development mode an unset `profile` skips
+`MISSING_PRIVACY_PROFILE` and then likely NPEs inside `validateProfile` on
+`Map.copyOf(...).containsKey(null)` instead of returning a clean refusal
+code — startup still fails, just without a named code, a code follow-up
+rather than a docs one. Merged `--no-ff` onto the local `discoverability`
+branch (not `main`), then a separate close-out commit; branch and worktree
+removed.
+
 ## 2026-09-23 — Task 77: an FAQ and a fair, sourced comparison page
 
 Adds `docs/faq.md` (seven H2 questions phrased and ending as questions,

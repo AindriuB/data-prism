@@ -1150,10 +1150,17 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   `docs/plan/HISTORY.md` — grep `Task 81`.
 - **Task 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)**
   — in flight, in its own worktree off `discoverability`.
-- **Task 84 (correct `docs/configuration.md`'s false unclassified-profile
-  startup-refusal claims)** — in flight, in its own worktree off
-  `discoverability`. Found while tracing task 81's launch-post claims back to
-  code.
+- **Task 84 — done.** Corrected `docs/configuration.md:73`'s two false
+  startup-refusal claims ("a production profile that relaxes fail-closed
+  behaviour", "a profile that lacks a rule required by exposed models"): no
+  `dataprism.*` property loads a custom profile file, so only the bundled
+  `privacy-profiles-default.yaml` loads today, whose `DEFAULT` and `STRICT`
+  profiles both set `unclassified: FAIL_REQUEST`, refusing the whole response
+  for a field nobody classified; the real refusal it names instead is an
+  application `PrivacyPolicyResolver` bean (`FORBIDDEN_PRIVACY_OVERRIDE`).
+  Found while tracing task 81's launch-post claims back to code. Merged
+  `--no-ff` onto `discoverability`, then a separate close-out commit. See
+  `docs/plan/HISTORY.md` — grep `Task 84`.
 - **Task 83 (go-live wiring)** — pending, blocked on 82; happens after the
   docs site deploys.
 
@@ -1253,6 +1260,19 @@ separately, the doc defect now filed as task 84.
 4. `privacy-profiles-default.yaml:8`'s comment says unclassified "has only
    two settings by design" — `PrivacyProfile.UnclassifiedBehaviour`
    (`PrivacyProfile.java:46`) has four values, not two.
+
+Found on task 84 (correct the `dataprism.privacy` row's false startup-refusal
+claims), merged 2026-09-23. Neither blocks the merge.
+
+1. `docs/configuration.md:73`'s "a production scope lifetime is required"
+   understates the rule: `protectedDeployment()`
+   (`DataPrismProperties.java` ~:127-129, :165) requires it in every
+   deployment mode except stdio fixture-development, not only "production".
+2. In stdio fixture-development mode, an unset `profile` skips
+   `MISSING_PRIVACY_PROFILE` entirely; `validateProfile` then likely NPEs on
+   `Map.copyOf(...).containsKey(null)` instead of returning a clean refusal
+   code. Startup still fails either way, but with a stack trace instead of a
+   named refusal — a code follow-up, not a docs one.
 
 Found on task 77 (FAQ and comparison page), merged 2026-09-23. None blocks
 the merge; all three are wording gaps in `docs/faq.md`.
