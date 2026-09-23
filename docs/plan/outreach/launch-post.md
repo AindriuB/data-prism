@@ -35,13 +35,21 @@ so, rather than hiding the disagreement behind uniform redaction. Pseudonyms are
 two different investigations gets two different synthetic identities and nothing correlates across cases by
 accident. ([What Data Prism does](https://github.com/AindriuB/data-prism/blob/main/README.md#what-data-prism-does))
 
-It fails closed by default: an unclassified field refuses the whole response under `FAIL_REQUEST`, the default
-every privacy profile gets unless its own YAML says otherwise, and every refusal is audited with the
-classification and the path, never the value. A profile's YAML can relax that instead — to `REDACT_AND_WARN`,
-`DROP_AND_WARN`, or, the one that actually releases the value unchanged, `PASS_THROUGH_UNSAFE` — and each of
-those three logs a warning naming the field every time it fires.
+It fails closed by default: an unclassified field refuses the whole response under `FAIL_REQUEST`, and both
+profiles shipped with the standalone server and the Spring Boot starter — `DEFAULT` and `STRICT` — use it. The
+refusal is audited as a `DENY`; the error returned to the caller names the refusal code and the path, never the
+value, and an unclassified field has no classification to name.
+([`privacy-profiles-default.yaml`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/resources/privacy-profiles-default.yaml),
+[`DefaultContextOrchestrator`](https://github.com/AindriuB/data-prism/blob/main/data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java),
+[`AuditRecorder`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditRecorder.java),
+[`GetEntityContextTool`](https://github.com/AindriuB/data-prism/blob/main/data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/GetEntityContextTool.java))
+The profile format itself supports relaxing that setting per field instead — `REDACT_AND_WARN`,
+`DROP_AND_WARN`, or, the one that releases the value unchanged, `PASS_THROUGH_UNSAFE`, each logging a warning
+every time it fires — but the shipped server and starter always load that one bundled file and expose no
+property to load a different one.
 ([`PrivacyProfile.UnclassifiedBehaviour`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/PrivacyProfile.java),
-[`ProfilePrivacyPolicyResolver`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/ProfilePrivacyPolicyResolver.java))
+[`ProfilePrivacyPolicyResolver`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/ProfilePrivacyPolicyResolver.java),
+[`DataPrismAutoConfiguration`](https://github.com/AindriuB/data-prism/blob/main/data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java))
 
 It can also keep a durable, hash-chained audit trail of what was recorded and released — a single file, no
 rotation, with a separate hash chain per writer inside it, and an offline verifier that replays each chain.
