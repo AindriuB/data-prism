@@ -58,15 +58,54 @@ trail — protect a real API without writing Java, and prove what happened.
   connector, this makes protecting a flat JSON API genuinely possible with
   no Java class. A Spring `FailureAnalyzer` now renders every
   `DataPrismConfigurationException` as an operator-facing block naming the
-  refusal code, what to supply, and the relevant docs page, with no stack
-  frame. A new walkthrough, `docs/protect-your-own-api.md`, takes a reader
-  with a flat JSON REST API from nothing to a pseudonymised MCP response
-  using only YAML.
+  refusal code, what to supply, and the two docs pages that explain it,
+  `docs/configuration.md` and `docs/quickstart.md`, with no stack frame. A
+  new walkthrough, `docs/protect-your-own-api.md`, takes a reader with a flat
+  JSON REST API from nothing to a pseudonymised MCP response using only YAML.
+- A one-command demo, `examples/quickstart-demo/run.sh`, drives the running
+  Compose quickstart end to end over its real MCP transport (obtaining a
+  token, handshaking over SSE-framed `tools/call` bodies, and printing a
+  pseudonymised response), extracted out of the CI smoke test so a reader can
+  run the same thing locally.
 - The four Compose quickstart images (server-with-extension, fixtures,
   issuer, certs-init) are now published as multi-architecture GHCR
   manifests; `docker compose up` pulls them by default, with the
   from-source build path moved to `docker compose -f compose.yaml -f
   compose.build.yaml up --build`.
+
+### Changed
+
+- `data-prism-example` is renamed to `data-prism-integration-tests`: it hosts
+  11 integration test classes with no duplicate elsewhere, including
+  `PiiLogScanTest`, the sole enforcement of privacy rule 7, and was never a
+  demo. Package `io.github.aindriub.dataprism.example` and `ExampleApplication`
+  are unchanged. Six `data-prism-example` strings survive deliberately inside
+  `data-prism-integration-tests` — its own JWT `issuer` and audit `writer-id`
+  config values, and the tests asserting on them — because they are
+  observable audit output, not a module identifier.
+- A configured JSON source's `DataSourceAdapter` bean no longer needs a
+  matching `dataprism.sources` entry: `DataPrismContractValidator`'s
+  cross-check between `dataprism.sources` and the supplied adapters now
+  requires only that `dataprism.sources` be a subset of the supplied
+  adapters, not an exact match, so a source whose transport lives entirely in
+  its own JSON catalogue can supply an adapter with no corresponding
+  `dataprism.sources` entry. Every `DataSourceAdapter` bean still has to earn
+  its way onto the review allow-list, though: it must be named by
+  `dataprism.sources` or supplied by the JSON-catalogue mechanism (the
+  catalogue's own source names), or startup refuses with the stable code
+  `UNREVIEWED_SOURCE_ADAPTER` — an adapter bean present on the classpath for
+  neither reason is not implicitly approved.
+- Documentation reconciled against the shipped code rather than the plan that
+  preceded it: two consumer guides, `docs/extending.md` and `docs/tools.md`,
+  are now linked from `README.md`, `docs/quickstart.md` and
+  `docs/agents/README.md`; every stale "one tool" claim across those files and
+  `docs/architecture.md` is corrected to name both shipped tools,
+  `get_entity_context` and `compare_entity_sources`; `docs/architecture.md`
+  now attributes `ArchitectureTest` to `data-prism-architecture`, the module
+  that hosts it, instead of the renamed module; and `README.md`'s "Until Task
+  20 delivers…" claim is replaced — the configuration-driven JSON REST mode
+  shipped as the published `data-prism-connectors-rest` artefact, self-
+  registering via Spring's `AutoConfiguration.imports` and requiring no Java.
 
 ### Fixed
 
@@ -79,14 +118,6 @@ trail — protect a real API without writing Java, and prove what happened.
 - `AutoConfiguredBeanClassificationTest`'s sweep now walks `@Import`ed and
   nested configuration classes recursively, closing a gap that let a bean be
   placed specifically to dodge classification.
-- The reviewed-adapter allow-list is restored: `DataPrismContractValidator`
-  again refuses, with the stable code `UNREVIEWED_SOURCE_ADAPTER`, any
-  `DataSourceAdapter` bean named by neither `dataprism.sources` nor the JSON
-  catalogue's own source names. This closes a rule-1 enforcement gap left by
-  an earlier change that widened the adapter-name cross-check from an exact
-  match against `dataprism.sources` to a subset match, which let an adapter
-  bean on the classpath go unreviewed as long as some `dataprism.sources`
-  entry existed.
 - A sink failure raised while recording an audit event no longer reaches the
   MCP client carrying its own exception text. `GetEntityContextTool` and
   `CompareEntitySourcesTool` now catch only the audit-record failure and
@@ -96,27 +127,36 @@ trail — protect a real API without writing Java, and prove what happened.
   disclose the server-side audit file's path to the MCP client. The response
   is still refused, exactly as before; only what the client is told changed.
 
-### Changed
+### Behavioural change for API consumers
 
-- `data-prism-example` is renamed to `data-prism-integration-tests`: it hosts
-  11 integration test classes with no duplicate elsewhere, including
-  `PiiLogScanTest`, the sole enforcement of privacy rule 7, and was never a
-  demo. Package `io.github.aindriub.dataprism.example` and `ExampleApplication`
-  are unchanged. Six `data-prism-example` strings survive deliberately inside
-  `data-prism-integration-tests` — its own JWT `issuer` and audit `writer-id`
-  config values, and the tests asserting on them — because they are
-  observable audit output, not a module identifier.
-- Documentation reconciled against the shipped code rather than the plan that
-  preceded it: two consumer guides, `docs/extending.md` and `docs/tools.md`,
-  are now linked from `README.md`, `docs/quickstart.md` and
-  `docs/agents/README.md`; every stale "one tool" claim across those files and
-  `docs/architecture.md` is corrected to name both shipped tools,
-  `get_entity_context` and `compare_entity_sources`; `docs/architecture.md`
-  now attributes `ArchitectureTest` to `data-prism-architecture`, where task 23
-  moved it, instead of the renamed module; and `README.md`'s "Until Task 20
-  delivers…" claim is replaced — the configuration-driven JSON REST mode
-  shipped as the published `data-prism-connectors-rest` artefact, self-
-  registering via Spring's `AutoConfiguration.imports` and requiring no Java.
+- `HmacSyntheticGenerator`'s discriminator widens from 20 bits (masked out of
+  a single 4-byte digest word, four Crockford base32 characters) to 40 bits
+  (eight distinct digest bytes, eight characters), and `ADDRESS` — which
+  previously rendered no discriminator at all — now carries one like every
+  other namespace. Every pseudonym this generator produces changes as a
+  result; a pseudonym stored or compared under 0.2.0 will not match the one
+  produced under 0.3.0 for the same input. `PseudonymisationVersion` now
+  rejects a MAC algorithm whose digest is too short for the generator's own
+  reads at construction time, with the stable code
+  `pseudonymisation.algorithm-digest-too-short`, rather than surfacing an
+  `ArrayIndexOutOfBoundsException` later; `HmacMD5` and `HmacSHA1` are both
+  now rejected, so an operator configured with either must move to an
+  algorithm whose MAC output is at least 24 bytes (`HmacSHA256` and wider
+  qualify). This reduces collision probability substantially; it does not
+  make collisions impossible, and no such claim is made.
+- `AuditRecorder` now derives `instanceId` as `<writer-id>/<per-boot random
+  UUID>` instead of the writer-id alone, so a restart under the same
+  writer-id is reported as a new writer starting at `GENESIS` rather than a
+  false chain break. `instanceId` values recorded before this change are not
+  comparable to ones recorded after it. A writer-id containing `/` is now
+  refused at startup with the new code `INVALID_AUDIT_WRITER`; rename any
+  writer-id that contains a `/` before upgrading.
+- Configuring `dataprism.audit.sink: approved-sink` with no matching
+  `AuditSink` bean now refuses with the new code `AUDIT_SINK_BEAN_REQUIRED`
+  instead of the generic `MISSING_AUDIT_SINK`, which is retained unchanged
+  for the separate case of an absent or blank `dataprism.audit.sink`
+  property. Anything keyed on the old code for the bean-absent case must
+  switch to the new one.
 
 ### Not changed
 
@@ -131,32 +171,6 @@ trail — protect a real API without writing Java, and prove what happened.
   who already has that access. Nothing here should be read as, or later
   restated as, a claim that the audit log is tamper-proof, immutable, or
   independently complete.
-
-### Behavioural change for API consumers
-
-- `HmacSyntheticGenerator`'s discriminator widens from 20 bits (one masked
-  byte, four Crockford base32 characters) to 40 bits (eight distinct digest
-  bytes, eight characters), and `ADDRESS` — which previously rendered no
-  discriminator at all — now carries one like every other namespace. Every
-  pseudonym this generator produces changes as a result. `PseudonymisationVersion`
-  now rejects a MAC algorithm whose digest is too short for the generator's
-  own reads at construction time, with the stable code
-  `pseudonymisation.algorithm-digest-too-short`, rather than surfacing an
-  `ArrayIndexOutOfBoundsException` later; `HmacMD5` and `HmacSHA1` are both
-  now rejected. This reduces collision probability substantially; it does
-  not make collisions impossible, and no such claim is made.
-- `AuditRecorder` now derives `instanceId` as `<writer-id>/<per-boot random
-  UUID>` instead of the writer-id alone, so a restart under the same
-  writer-id is reported as a new writer starting at `GENESIS` rather than a
-  false chain break. `instanceId` values recorded before this change are not
-  comparable to ones recorded after it. A writer-id containing `/` is now
-  refused at startup with the new code `INVALID_AUDIT_WRITER`.
-- Configuring `dataprism.audit.sink: approved-sink` with no matching
-  `AuditSink` bean now refuses with the new code `AUDIT_SINK_BEAN_REQUIRED`
-  instead of the generic `MISSING_AUDIT_SINK`, which is retained unchanged
-  for the separate case of an absent or blank `dataprism.audit.sink`
-  property. Anything keyed on the old code for the bean-absent case must
-  switch to the new one.
 
 ## [0.2.0] - 2026-09-17
 
