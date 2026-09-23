@@ -771,6 +771,12 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   could previously construct successfully. That is a breaking change to a
   public API arriving in 0.3.0 and wants a `CHANGELOG.md` line; task 70 owns
   `CHANGELOG.md` and should carry it when it cuts the version.
+- Task 75 changes `AuditRecorder`'s `instanceId` shape from the configured
+  writer-id verbatim to `<writer-id>/<per-boot random UUID>`, and adds the
+  `INVALID_AUDIT_WRITER` refusal code for a blank or `/`-containing
+  writer-id. Both are operator-visible (`AuditChainVerifierCli` output
+  now groups by the suffixed id; the config validation error surface
+  gains a code) and belong in task 70's 0.3.0 `CHANGELOG.md` line.
 - Task 71's collision test runs the generator roughly 80,000 times, with the
   subject count as its tuning knob. Below roughly 5,000 subjects the mutation
   proof stops being decisive for the 2^20 case — worth knowing before anyone
@@ -896,6 +902,22 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   images actually publish (release-sequence step 4), so in practice 62 has no
   reason to wait for 59 and should not be held up by it.
 
+  **Task 62 is still open, on attempt 6, now unblocked.** Its attempt-5
+  reviewer found a real code defect while reading `docs/audit.md`: a
+  hash-chained server restarted with the same `writer-id` raised a false
+  CHAIN BREAK, because every boot restarted at GENESIS/sequence 1 under one
+  config-fixed `instanceId`. Owner decision 2026-09-23: fix it in code before
+  0.3.0 rather than document the bug, filed as task 75, which blocked 62's
+  attempt 6 from starting. **Task 75 merged 2026-09-23, PASS + APPROVE on
+  attempt 3, onto `v0.3.0/audit-trail-and-nested-json`** — see
+  `docs/plan/HISTORY.md`, grep `Task 75`. 62's attempt 6 must still fix the
+  attempt-5 findings recorded in its own task file (the tail-edit-vs-tail-
+  delete claim in `docs/audit.md:159-161`, the dangling
+  `customer-api-nested.yaml` pointer, the exit-3 precedence wording) and now
+  must also document what 75 shipped: the `<writer-id>/<uuid>` `instanceId`
+  shape, and that deleting an entire boot's records is as undetectable as
+  tail truncation. Do not document the pre-75 restart behaviour.
+
   **Task 69 (restore the reviewed-adapter allow-list) merged 2026-09-23,
   PASS + APPROVE on attempt 2, onto `v0.3.0/audit-trail-and-nested-json`,
   squashed into one commit.** `DataPrismContractValidator` now refuses, with
@@ -920,8 +942,8 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   with an accurate comment — that decision stands, nothing further owed.
 - **Wave 4:** 70 (cut 0.3.0 across poms, `server.json`, `serverInfo`
   literals, four Dockerfiles, `publish-image.yml`, docs, with a CHANGELOG
-  built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69 — all merged
-  except 62 and 59, which 70 still needs before cutting the release).
+  built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69, 75 — all
+  merged except 62 and 59, which 70 still needs before cutting the release).
 
 **Risks flagged by the planner, both open:**
 - The per-nested-catalogue `Class` token task 60 introduces is the only
@@ -1011,7 +1033,12 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
    Whichever of 59 or 62 documents `dataprism.audit.sink` must add all
    three concretely: `AUDIT_SINK_BEAN_REQUIRED`, `AUDIT_SINK_FILE_UNUSABLE`,
    and `dataprism.audit.file-path` itself — not just `MISSING_AUDIT_SINK`
-   and `UNKNOWN_AUDIT_SINK`.
+   and `UNKNOWN_AUDIT_SINK`. **Extended 2026-09-23 alongside task 75:**
+   `docs/configuration.md:120`'s `writer-id: ${HOSTNAME}` example and its
+   surrounding reference text must say that a writer-id need no longer be
+   unique per boot (task 75 gives every boot its own chain identity) and
+   must not contain `/`, and must document the new `INVALID_AUDIT_WRITER`
+   refusal code alongside the existing `MISSING_AUDIT_WRITER`.
 9. **Known, documented, currently non-firing race — not scheduled.**
    `AuditSinkFailureAbortsResponseTest`'s own javadoc records a JVM-wide
    default-`SSLContext` singleton race against `McpHttpEndToEndTest` (and
@@ -1162,6 +1189,25 @@ looks.
    core-owned marker type would be marginally stricter; the reviewer
    explicitly recommended against a third attempt to get it, and the
    recommendation stands.
+
+Found on task 75 (per-boot audit chain identity), merged 2026-09-23. Neither
+blocks the merge; the owner has not yet decided whether to schedule the
+first item.
+
+- `AuditChainVerifier` classifies any field-count-mismatch line anywhere in a
+  file as `INTERRUPTED_WRITE_FRAGMENT` ("not tampering", exit 4). That means a
+  file that is not an audit file at all — e.g. raw Slf4j log output pointed
+  at the verifier by mistake — reads as a benign structural anomaly rather
+  than as an alarm. Not filed as a task; unscheduled pending an owner
+  decision on whether it is worth a task post-0.3.0.
+- Two reviewer suggestions not taken, recorded rather than acted on:
+  `AuditRecorderTest`'s `INSTANCE_ID_SHAPE`/`AuditChainVerifierTest`'s
+  `SEQ_SHAPE` preconditions use `find` semantics (a substring search), where
+  `matches` (a whole-string match) would pin the shape more tightly; and the
+  `seq` field's `/\d+` suffix relies on the whole-line word-boundary fallback
+  scan rather than being pinned by the field-shape regex itself. Neither is a
+  known false negative today — recorded so a future tightening pass has
+  somewhere to start rather than rediscovering both from scratch.
 
 Found on task 66 (audit chain verifier CLI), merged 2026-09-23. Neither
 blocks the merge.

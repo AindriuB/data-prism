@@ -17,6 +17,61 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 75: each process boot gets its own audit chain identity
+
+Found on task 62's attempt-5 review: a hash-chained server restarted with the
+same `dataprism.audit.writer-id` raised a false CHAIN BREAK, because every
+boot restarted at GENESIS/sequence 1 under the same config-fixed `instanceId`,
+and `AuditChainVerifier` keys chains on `instanceId`. Owner decision
+2026-09-23: fix it in code before 0.3.0, since a restart is the ordinary case,
+not an edge case, for a deployment this feature exists to run in. `AuditRecorder`
+now derives `instanceId` as `<writer-id>/<per-boot random UUID>`, so a restart
+reads as a new writer starting at GENESIS instead of a chain break; the
+three-arg constructor and every call site are unchanged. A blank writer-id or
+one containing `/` is refused — `AuditRecorder` throws `IllegalArgumentException`,
+and `DataPrismProperties.validate()` refuses the same at startup with a new
+`INVALID_AUDIT_WRITER` code alongside the existing `MISSING_AUDIT_WRITER`.
+`AuditChainVerifier`'s detection logic is untouched, verified against the real
+packaged server: two boots writing to the same file report as two intact
+writers, and editing any record, deleting a boot's first record, or a
+duplicate sequence within a boot all still give exactly today's exit code and
+finding type. New, owner-accepted blind spot recorded rather than fixed:
+deleting every record of one boot is undetectable from inside the file, the
+same as tail truncation.
+
+Three attempts. Attempt 1 passed the chain-behaviour criteria but made
+`PiiLogScanTest` flaky: the `seq` Slf4j field now carries a random UUID, and a
+plain `contains` scan over it flagged a banned fixture value (e.g. `123`)
+whenever the UUID happened to contain that substring — roughly 1-3% of runs
+red at random. `Owns` widened to cover pinning the field's shape the way the
+existing timestamp exemption does. Attempt 2 fixed the flake but introduced a
+worse defect in the fix: both new PII-scan exemptions (`PiiLogScanTest`'s
+`seq` shape and `AuditFilePiiScanTest`'s `instanceId` shape) matched the whole
+field and skipped it entirely on a match, so a banned value living inside the
+config-supplied writer-id part — which the exemption cannot pattern-match
+away, since an operator's writer-id can be anything without `/` — was never
+scanned at all: a fail-open in a leak-detection scan, the exact class of bug
+these scans exist to catch. `Owns` widened again mid-attempt to
+`AuditFilePiiScanTest` once the same exposure was found there. Attempt 3
+fixed it correctly: strip only the anchored `/<uuid>` (or `/<uuid>/<digits>`
+for `seq`) suffix, then run the ordinary `contains` scan over whatever
+remains — the config-supplied part is never exempted, only the part that is
+provably random. PASS + APPROVE on attempt 3, merged onto
+`v0.3.0/audit-trail-and-nested-json`.
+
+**Cost:** the lesson worth carrying past this task is general to any leak
+scan that adds an exemption for a structured field: exempt only the part of
+the field that is provably random (minted by the code, not supplied by
+config), never the whole field, even when the random part is anchored and
+easy to match in full — a full-field match is a fail-open the moment any part
+of that field can carry attacker- or operator-supplied content. Separately,
+two implementers in this task's history (task 62 attempt 4, and this task's
+own worktrees) rebased onto `origin/v0.3.0/audit-trail-and-nested-json`
+instead of the local ref of the same name, which is roughly 30 commits ahead;
+a `backup/62-attempt4-misbased` ref records the resulting hand-rebuild and is
+left in place, not this task's to remove. Implementer prompts for this branch
+must name the local base ref explicitly.
+
 ## 2026-09-23 — Task 69: the reviewed-adapter allow-list is restored, via a `Set<String>` bean instead of a connector-owned type
 
 `DataPrismContractValidator` now refuses, with the stable code
