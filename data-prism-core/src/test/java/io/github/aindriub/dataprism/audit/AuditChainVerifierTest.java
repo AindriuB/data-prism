@@ -230,6 +230,136 @@ class AuditChainVerifierTest {
         assertThat(report.hasBreak()).isTrue();
     }
 
+    // -- the removed precededByAnomaly exemption: three attacks independently reproduced --------
+    //
+    // An earlier revision suppressed the non-GENESIS-start finding entirely whenever the
+    // immediately preceding line had already been reported as a structural anomaly. That
+    // exemption is gone; these three tests each reconstruct the exact real-bytes attack that
+    // reproduced it, and pin that the writer's chain-does-not-start-at-GENESIS finding is always
+    // reported now -- never silenced, never "intact", never exit code 0.
+
+    @Test
+    void headDeletionMaskedByOnePrependedMalformedLineStillReportsTheNonGenesisFinding() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        AuditEvent third;
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            write(recorder);
+            third = write(recorder);
+        }
+
+        // Delete the writer's first two records, then prepend one throwaway malformed line: the
+        // exact attack. Skipped lines never advance any writer's lastHash, so nothing here can
+        // make the deletion itself invisible -- but the old exemption used to make the REPORT of
+        // it disappear.
+        List<String> lines = new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        lines.remove(0);
+        lines.remove(0);
+        lines.add(0, "toofewfields");
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
+
+        assertThat(report.anomalies()).hasSize(1);
+        assertThat(report.anomalies().get(0).type())
+                .isEqualTo(AuditChainVerifier.AnomalyType.INTERRUPTED_WRITE_FRAGMENT);
+
+        AuditChainVerifier.WriterResult writer = writerFor(report, "instance-1");
+        assertThat(writer.broken()).isFalse();
+        assertThat(writer.firstSequence()).isEqualTo(third.sequence());
+        assertThat(writer.nonGenesisStart()).isPresent();
+        assertThat(writer.nonGenesisStart().get().message())
+                .contains("CHAIN DOES NOT START AT GENESIS")
+                .contains("instance-1")
+                .doesNotContain("intact");
+        assertThat(report.hasBreak()).isFalse();
+        assertThat(report.hasStructuralAnomaly()).isTrue();
+    }
+
+    @Test
+    void oneWritersAnomalyNeverSuppressesADifferentWritersNonGenesisFinding() throws IOException {
+        // Writer A: one genuine record, then a durable duplicate at the same sequence -- a
+        // DUPLICATE_SEQUENCE anomaly, unrelated to writer B in every way.
+        Path pathA = tempDir.resolve("a.log");
+        AuditEvent firstA;
+        try (FileAuditSink sink = new FileAuditSink(pathA)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-a");
+            firstA = write(recorder);
+        }
+        AuditEvent duplicateA = eventWithComputedHash("event-dup", "instance-a", firstA.sequence(), "f".repeat(64));
+        try (FileAuditSink sink = new FileAuditSink(pathA)) {
+            sink.record(duplicateA);
+        }
+
+        // Writer B: three genuine records, then its first two are deleted so its survivor's
+        // previousHash no longer chains from GENESIS.
+        Path pathB = tempDir.resolve("b.log");
+        AuditEvent thirdB;
+        try (FileAuditSink sink = new FileAuditSink(pathB)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-b");
+            write(recorder);
+            write(recorder);
+            thirdB = write(recorder);
+        }
+        List<String> linesB = new ArrayList<>(Files.readAllLines(pathB, StandardCharsets.UTF_8));
+        linesB.remove(0);
+        linesB.remove(0);
+
+        // Concatenate so writer A's anomaly line is immediately followed by writer B's surviving
+        // first line -- the file-global, type-blind shape that used to silence writer B entirely.
+        List<String> merged = new ArrayList<>(Files.readAllLines(pathA, StandardCharsets.UTF_8));
+        merged.addAll(linesB);
+        Path mergedPath = tempDir.resolve("merged.log");
+        Files.writeString(mergedPath, String.join("\n", merged) + "\n", StandardCharsets.UTF_8);
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(mergedPath);
+
+        assertThat(report.anomalies()).hasSize(1);
+        assertThat(report.anomalies().get(0).type()).isEqualTo(AuditChainVerifier.AnomalyType.DUPLICATE_SEQUENCE);
+
+        AuditChainVerifier.WriterResult writerB = writerFor(report, "instance-b");
+        assertThat(writerB.broken()).isFalse();
+        assertThat(writerB.firstSequence()).isEqualTo(thirdB.sequence());
+        assertThat(writerB.nonGenesisStart()).isPresent();
+        assertThat(writerB.nonGenesisStart().get().message())
+                .contains("CHAIN DOES NOT START AT GENESIS")
+                .contains("instance-b")
+                .doesNotContain("intact");
+        assertThat(report.hasBreak()).isFalse();
+        assertThat(report.hasStructuralAnomaly()).isTrue();
+    }
+
+    @Test
+    void aFullyForgedWriterPrecededByOneMalformedLineStillReportsTheNonGenesisFinding() throws IOException {
+        Path path = tempDir.resolve("forged.log");
+        Files.writeString(path, "toofewfields\n", StandardCharsets.UTF_8);
+
+        // A single record for a brand-new writer, chaining from an arbitrary non-GENESIS hash,
+        // with a correctly self-computed eventHash -- a fully fabricated audit trail that is
+        // internally self-consistent by construction.
+        AuditEvent forged = eventWithComputedHash("event-forged", "forged-writer", 1, "a".repeat(64));
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            sink.record(forged);
+        }
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
+
+        assertThat(report.anomalies()).hasSize(1);
+        assertThat(report.anomalies().get(0).type())
+                .isEqualTo(AuditChainVerifier.AnomalyType.INTERRUPTED_WRITE_FRAGMENT);
+
+        AuditChainVerifier.WriterResult writer = writerFor(report, "forged-writer");
+        assertThat(writer.broken()).isFalse();
+        assertThat(writer.nonGenesisStart()).isPresent();
+        assertThat(writer.nonGenesisStart().get().message())
+                .contains("CHAIN DOES NOT START AT GENESIS")
+                .contains("forged-writer")
+                .doesNotContain("intact");
+        assertThat(report.hasBreak()).isFalse();
+        assertThat(report.hasStructuralAnomaly()).isTrue();
+    }
+
     @Test
     void intactChainReportsTheFirstSequenceSeenForEachWriter() throws IOException {
         Path path = tempDir.resolve("audit.log");
@@ -360,11 +490,20 @@ class AuditChainVerifierTest {
 
         // instance-2's own first record() call produced the unparseable merged line above (its
         // bytes are the ones landing directly after the fragment); only its second call produced
-        // a clean, attributable line.
+        // a clean, attributable line. That surviving record's previousHash chains from the FIRST
+        // call's hash, which was never durably parsed -- so instance-2's chain genuinely does not
+        // start at GENESIS here. This must be reported as its own structural finding, never as
+        // "intact" and never at exit code 0 (acceptance requires only that it not be reported AS
+        // TAMPERING, which this finding, at structural severity, satisfies without hiding it).
         AuditChainVerifier.WriterResult writer2 = writerFor(report, "instance-2");
         assertThat(writer2.broken()).isFalse();
         assertThat(writer2.sequenceCount()).isEqualTo(1);
         assertThat(writer2.headHash()).isEqualTo(afterSecond.eventHash());
+        assertThat(writer2.nonGenesisStart()).isPresent();
+        assertThat(writer2.nonGenesisStart().get().message())
+                .contains("CHAIN DOES NOT START AT GENESIS")
+                .contains("instance-2")
+                .contains(String.valueOf(fragmentOffset));
     }
 
     @Test

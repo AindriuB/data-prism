@@ -28,19 +28,29 @@ import java.util.Optional;
  * control, which this release does not build — see {@link
  * AuditChainVerifierCli}, which prints both limitations on every run.
  *
- * <p>Deletion of a writer's EARLIEST records is not exempt from detection:
- * the first record seen for each writer must itself chain from {@code
+ * <p>Deletion of a writer's EARLIEST records is not exempt from detection,
+ * ever: the first record seen for each writer must itself chain from {@code
  * GENESIS} (64 zero characters, matching {@code AuditRecorder}'s starting
- * hash), or that writer's chain is reported broken rather than intact — with
- * one narrow exception. If the line immediately before that first-seen
- * record was itself already reported as a structural anomaly (the mid-file
- * field-count shape above, where a restarted writer's true first record is
- * glued onto a torn fragment with no newline and can never be parsed), no
- * second, redundant break is raised for the same already-disclosed gap: the
- * anomaly already told the reader something is missing there. A quiet
- * deletion with no adjacent anomaly is always reported broken. Each writer's
- * {@link WriterResult#firstSequence()} is always reported so a reader can
- * see where every chain starts.
+ * hash), or that writer is reported as broken (a plain {@link Break}, exit
+ * code 2) when nothing on the immediately preceding line explains the
+ * missing head, or as {@link WriterResult#nonGenesisStart()} — a distinct
+ * finding at structural severity, exit code 4, NEVER folded into "intact"
+ * and NEVER exit code 0 — when the immediately preceding line was itself
+ * reported as a structural anomaly and so offers plausible (never certain)
+ * context for the gap. An earlier revision of this class instead SUPPRESSED
+ * the finding entirely in that second case, with no output at all; that
+ * exemption was file-global and anomaly-type-blind (one writer's
+ * duplicate-sequence anomaly could silence a completely different writer's
+ * head deletion on the next line) and, worse, let a single throwaway
+ * malformed line launder a fully forged writer — an entirely fabricated
+ * chain, correctly self-hashed from an arbitrary non-{@code GENESIS} start —
+ * into a report of "intact". That suppression has been removed: the
+ * preceding anomaly is now named in the message purely as context for a
+ * reader, and never silences, downgrades to "intact", or exit-codes this
+ * finding as 0. Deletion of this writer's earliest records can never be
+ * ruled out from inside the file alone. Each writer's {@link
+ * WriterResult#firstSequence()} is always reported so a reader can see
+ * where every chain starts.
  *
  * <p>Four on-disk shapes resemble tampering but are not, and this class
  * reports each distinctly from a genuine break rather than folding it into
@@ -97,13 +107,17 @@ public final class AuditChainVerifier {
         TailAnomaly tail = null;
 
         int start = 0;
-        boolean precededByAnomaly = false;
+        // The byte offset of the structural anomaly reported for the immediately preceding line,
+        // if any -- used ONLY to name that anomaly in a non-GENESIS-start finding's message for a
+        // reader's context. It never suppresses, downgrades, or changes the exit code of that
+        // finding; see this class's javadoc for why the earlier version that did so was wrong.
+        Long precedingAnomalyOffset = null;
         for (int i = 0; i < content.length; i++) {
             if (content[i] == '\n') {
                 String line = new String(content, start, i - start, StandardCharsets.UTF_8);
                 int anomaliesBefore = anomalies.size();
-                processLine(line, start, writers, anomalies, precededByAnomaly);
-                precededByAnomaly = anomalies.size() > anomaliesBefore;
+                processLine(line, start, writers, anomalies, precedingAnomalyOffset);
+                precedingAnomalyOffset = anomalies.size() > anomaliesBefore ? (long) start : null;
                 start = i + 1;
             }
         }
@@ -125,7 +139,7 @@ public final class AuditChainVerifier {
     }
 
     private static void processLine(String line, long offset, Map<String, WriterState> writers,
-                                      List<StructuralAnomaly> anomalies, boolean precededByAnomaly) {
+                                      List<StructuralAnomaly> anomalies, Long precedingAnomalyOffset) {
         if (line.isEmpty()) {
             return;
         }
@@ -158,25 +172,31 @@ public final class AuditChainVerifier {
         if (firstRecordSeenForWriter) {
             writer.firstSequence = event.sequence();
             if (!GENESIS.equals(event.previousHash())) {
-                if (precededByAnomaly) {
-                    // The line immediately before this one was already reported as its own
-                    // structural anomaly (for example a torn fragment with this writer's true
-                    // first record glued onto it with no newline between them, which prevents
-                    // that first record from ever being parsed). That anomaly already discloses
-                    // the gap, so this record's chain start is taken as-is rather than raising a
-                    // second, redundant finding for the same disclosed gap.
-                } else {
-                    writer.broken = true;
-                    writer.firstBreak = new Break(event.sequence(), event.instanceId(), offset,
-                            "this is the first record seen in this file for writer " + event.instanceId()
-                                    + ", but its previousHash is not GENESIS (64 zero characters), and no "
-                                    + "structural anomaly on the immediately preceding line explains why -- "
-                                    + "this writer's chain does not begin here, meaning one or more of this "
-                                    + "writer's earlier records, up to and including its true first record, "
-                                    + "were deleted before this point");
+                if (precedingAnomalyOffset != null) {
+                    // A structural anomaly was reported for the immediately preceding line -- for
+                    // example the mid-file field-count shape of an interrupted write followed by a
+                    // restart. That is plausible CONTEXT for this writer's missing head, so it is
+                    // named in the message below, but it never suppresses this finding, downgrades
+                    // it, or turns it into "intact": deletion of this writer's earliest records
+                    // can never be ruled out from inside the file. Reported at structural severity
+                    // (never exit 0), not as a break, because a genuine restart is one explanation
+                    // this shape is consistent with.
+                    writer.nonGenesisStart = new NonGenesisStart(event.sequence(), event.instanceId(), offset,
+                            nonGenesisStartMessage(event, offset, precedingAnomalyOffset));
+                    writer.lastHash = event.eventHash();
                     writer.headHash = event.eventHash();
                     return;
                 }
+                writer.broken = true;
+                writer.firstBreak = new Break(event.sequence(), event.instanceId(), offset,
+                        "this is the first record seen in this file for writer " + event.instanceId()
+                                + ", but its previousHash is not GENESIS (64 zero characters), and no "
+                                + "structural anomaly on the immediately preceding line offers any context for "
+                                + "why -- this writer's chain does not begin here, meaning one or more of this "
+                                + "writer's earlier records, up to and including its true first record, were "
+                                + "deleted before this point");
+                writer.headHash = event.eventHash();
+                return;
             }
         }
 
@@ -268,6 +288,20 @@ public final class AuditChainVerifier {
                 firstOffset, secondOffset);
     }
 
+    /**
+     * Builds the message for a writer whose first-seen record does not chain from {@code
+     * GENESIS} -- always reported, never suppressed. When the immediately preceding line was
+     * itself reported as a structural anomaly, that anomaly's offset is named here for a
+     * reader's context only: it never changes this finding, its severity, or its exit code.
+     */
+    private static String nonGenesisStartMessage(AuditEvent event, long offset, long precedingAnomalyOffset) {
+        return "CHAIN DOES NOT START AT GENESIS: writer " + event.instanceId() + "'s first record at offset "
+                + offset + " does not chain from GENESIS (64 zero characters); the structural anomaly reported "
+                + "at offset " + precedingAnomalyOffset + " may explain the missing head, but deletion of this "
+                + "writer's earliest records cannot be ruled out. This is neither a confirmed chain break nor "
+                + "a verified chain -- investigate this writer's true first record directly.";
+    }
+
     private static final class WriterState {
         private final String instanceId;
         private final Map<Long, Long> seenSequences = new LinkedHashMap<>();
@@ -278,6 +312,7 @@ public final class AuditChainVerifier {
         private boolean broken;
         private Break firstBreak;
         private Long firstSequence;
+        private NonGenesisStart nonGenesisStart;
 
         WriterState(String instanceId) {
             this.instanceId = instanceId;
@@ -285,7 +320,7 @@ public final class AuditChainVerifier {
 
         WriterResult toResult() {
             return new WriterResult(instanceId, recordCount, headHash, broken, Optional.ofNullable(firstBreak),
-                    afterBreakCount, firstSequence);
+                    afterBreakCount, firstSequence, Optional.ofNullable(nonGenesisStart));
         }
     }
 
@@ -311,9 +346,20 @@ public final class AuditChainVerifier {
     public record TailAnomaly(String message, long byteOffset) {
     }
 
+    /**
+     * A writer whose first-seen record does not chain from {@code GENESIS} -- always reported at
+     * structural severity, never as an intact chain and never with exit code 0, regardless of
+     * whether a structural anomaly on the immediately preceding line offers a plausible
+     * explanation: deletion of this writer's earliest records can never be ruled out from inside
+     * the file alone.
+     */
+    public record NonGenesisStart(long sequence, String instanceId, long byteOffset, String message) {
+    }
+
     /** One writer's replayed chain. {@code firstSequence} is the sequence of the first record this pass saw. */
     public record WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
-                                Optional<Break> firstBreak, long afterBreakCount, long firstSequence) {
+                                Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
+                                Optional<NonGenesisStart> nonGenesisStart) {
     }
 
     /** The full result of one verification pass over a file. */
@@ -326,9 +372,15 @@ public final class AuditChainVerifier {
                     || anomalies.stream().anyMatch(a -> a.type() == AnomalyType.UNPARSEABLE_RECORD);
         }
 
-        /** True if any anomaly is a known non-tampering structural shape (never true together with a break). */
+        /**
+         * True if any anomaly is a known non-tampering structural shape, or any writer's chain
+         * does not start at GENESIS. Never true together with a break for the same finding: a
+         * writer that both fails to start at GENESIS and later suffers a genuine mid-chain break
+         * is reported as a break (the more severe finding), via {@link #hasBreak()}.
+         */
         public boolean hasStructuralAnomaly() {
-            return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD);
+            return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD)
+                    || writers.stream().anyMatch(w -> w.nonGenesisStart().isPresent());
         }
     }
 }

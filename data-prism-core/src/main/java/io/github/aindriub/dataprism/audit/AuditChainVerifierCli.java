@@ -50,10 +50,15 @@ public final class AuditChainVerifierCli {
                     + "edit to either of those two fields cannot detect it. It also cannot detect truncation "
                     + "of a writer's most recent records: deleting the tail of an append-only file leaves a "
                     + "chain that verifies perfectly end to end. Detecting that needs an external checkpoint "
-                    + "held outside operator control, which this release does not build. Read nothing above "
-                    + "as a guarantee that this file is whole, that every field of every record is unaltered, "
-                    + "or that it can never be altered without this check noticing -- only that no edit or "
-                    + "deletion of a hashed field was found within the records this check could see.";
+                    + "held outside operator control, which this release does not build. This check also "
+                    + "cannot resist an adversary who can write to this file directly: AuditEventHash is "
+                    + "unkeyed SHA-256 over the joined record body, so anyone able to delete or alter a record "
+                    + "can simply recompute every hash after it and the resulting chain verifies perfectly; "
+                    + "resisting that needs a keyed MAC or an external checkpoint, neither of which this "
+                    + "release builds. Read nothing above as a guarantee that this file is whole, that every "
+                    + "field of every record is unaltered, or that it can never be altered without this check "
+                    + "noticing -- only that no edit or deletion of a hashed field was found within the records "
+                    + "this check could see, by someone who did not also recompute the chain that follows it.";
 
     private AuditChainVerifierCli() {
     }
@@ -111,6 +116,7 @@ public final class AuditChainVerifierCli {
             out.println("  first sequence seen: " + writer.firstSequence());
             out.println("  sequence count: " + writer.sequenceCount());
             out.println("  head hash: " + writer.headHash());
+            writer.nonGenesisStart().ifPresent(ngs -> out.println("  " + ngs.message()));
             if (writer.broken()) {
                 Break brk = writer.firstBreak().orElseThrow();
                 out.println("  CHAIN BREAK at sequence " + brk.sequence() + ", byte offset " + brk.byteOffset()
@@ -121,7 +127,7 @@ public final class AuditChainVerifierCli {
                             + "follow the break above and are reported as after the break, not as separate "
                             + "breaks.");
                 }
-            } else {
+            } else if (writer.nonGenesisStart().isEmpty()) {
                 out.println("  intact: every record in this writer's chain verified against the one before it.");
             }
         }

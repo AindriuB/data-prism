@@ -94,6 +94,39 @@ class AuditChainVerifierCliTest {
     }
 
     @Test
+    void headDeletionMaskedByAPrependedMalformedLineExitsStructuralNeverIntactNeverZero() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            write(recorder);
+            write(recorder);
+        }
+
+        // The attack: delete the writer's first two records, then prepend one throwaway
+        // malformed line so the missing head lands directly after a structural anomaly. An
+        // earlier revision of AuditChainVerifier let this silence the head-deletion finding
+        // entirely and report the writer "intact". It must not.
+        List<String> lines = new java.util.ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        lines.remove(0);
+        lines.remove(0);
+        lines.add(0, "toofewfields");
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        int code = run(path, outBytes, new ByteArrayOutputStream());
+        String out = outBytes.toString(StandardCharsets.UTF_8);
+
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_STRUCTURAL_ANOMALY);
+        assertThat(code).isNotEqualTo(AuditChainVerifierCli.EXIT_INTACT);
+        assertThat(out).contains("CHAIN DOES NOT START AT GENESIS");
+        assertThat(out).contains("instance-1");
+        assertThat(out).doesNotContain("intact: every record");
+        assertThat(out).doesNotContain("CHAIN BREAK");
+        assertThat(out).contains("cannot detect truncation");
+    }
+
+    @Test
     void aTimestampEditIsUndetectedAndTheLimitationSaysSoUpFront() throws IOException {
         Path path = tempDir.resolve("audit.log");
         try (FileAuditSink sink = new FileAuditSink(path)) {
