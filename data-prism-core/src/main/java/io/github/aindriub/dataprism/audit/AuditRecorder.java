@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.audit;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -48,11 +49,16 @@ public final class AuditRecorder {
         long seq = sequence.incrementAndGet();
         String id = UUID.randomUUID().toString();
         String prior = previousHash;
-        String hash = AuditEventHash.compute(id, instanceId, seq, principalId, clientId, tool, entityType,
-                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision,
-                correlationId, rejectedArguments, prior);
+        // Read the clock exactly once: the hash and the constructed event must carry
+        // the identical Instant, or a real clock's two reads would leave every
+        // record's stored hash disagreeing with its own stored timestamp and the
+        // chain breaking on its very first record.
+        Instant timestamp = clock.instant();
+        String hash = AuditEventHash.compute(id, timestamp, instanceId, seq, principalId, clientId, tool,
+                entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
+                policyDecision, correlationId, sourceSystems, rejectedArguments, prior);
 
-        AuditEvent event = new AuditEvent(id, clock.instant(), principalId, clientId, tool, entityType,
+        AuditEvent event = new AuditEvent(id, timestamp, principalId, clientId, tool, entityType,
                 subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
                 policyDecision, sourceSystems, rejectedArguments, correlationId, instanceId, seq, prior,
                 hash);

@@ -62,7 +62,8 @@ class AuditChainVerifierCliTest {
         assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
         assertThat(out).contains("intact");
         assertThat(out).contains("cannot detect truncation");
-        assertThat(out).contains("timestamp and sourceSystems");
+        assertThat(out).contains("eventId, timestamp, instanceId");
+        assertThat(out).contains("sourceSystems, rejectedArguments and previousHash");
         assertThat(out).contains("first sequence seen: 1");
         assertThat(out).doesNotContain("tamper-proof");
         assertThat(out).doesNotContain("immutable");
@@ -155,7 +156,7 @@ class AuditChainVerifierCliTest {
     }
 
     @Test
-    void aTimestampEditIsUndetectedAndTheLimitationSaysSoUpFront() throws IOException {
+    void aTimestampEditIsNowDetectedAsAChainBreak() throws IOException {
         Path path = tempDir.resolve("audit.log");
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
@@ -173,12 +174,39 @@ class AuditChainVerifierCliTest {
         int code = run(path, outBytes, new ByteArrayOutputStream());
         String out = outBytes.toString(StandardCharsets.UTF_8);
 
-        // The tool cannot see this backdating: timestamp is not among the hashed fields.
-        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
-        assertThat(out).contains("intact: every record");
-        // But its own printed limitation told the reader this would happen.
-        assertThat(out).contains("timestamp and sourceSystems");
-        assertThat(out).contains("backdated");
+        // timestamp is now among the hashed fields, so backdating a record is detected as a break.
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+        assertThat(out).contains("CHAIN BREAK");
+        assertThat(out).doesNotContain("intact: every record");
+        // The limitation no longer claims timestamp and sourceSystems are excluded.
+        assertThat(out).contains("eventId, timestamp, instanceId");
+        assertThat(out).doesNotContain("backdated");
+    }
+
+    @Test
+    void aSourceSystemsEditIsDetectedAsAChainBreak() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        AuditEvent second;
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            second = write(recorder);
+        }
+
+        List<String> lines = new java.util.ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        String corrupted = lines.get(1).replaceFirst("customer-api:ANSWERED", "rewritten-source:ANSWERED");
+        assertThat(corrupted).isNotEqualTo(lines.get(1));
+        lines.set(1, corrupted);
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        int code = run(path, outBytes, new ByteArrayOutputStream());
+        String out = outBytes.toString(StandardCharsets.UTF_8);
+
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+        assertThat(out).contains("CHAIN BREAK");
+        assertThat(out).contains("sequence " + second.sequence());
+        assertThat(out).doesNotContain("intact: every record");
     }
 
     @Test
