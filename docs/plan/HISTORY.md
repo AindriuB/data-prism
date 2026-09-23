@@ -17,6 +17,83 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 69: the reviewed-adapter allow-list is restored, via a `Set<String>` bean instead of a connector-owned type
+
+`DataPrismContractValidator` now refuses, with the stable code
+`UNREVIEWED_SOURCE_ADAPTER`, any `DataSourceAdapter` bean named by neither
+`dataprism.sources` nor the JSON catalogue's own source names — restoring
+rule-1 enforcement task 54's subset relaxation had silently dropped, not
+"guarantee-preserving" (task 54's own framing, which this task deliberately
+does not repeat): it is the mechanism keeping an unreviewed source adapter
+from reaching the MCP layer. `ConfiguredJsonSourcesAutoConfiguration`
+publishes the catalogue's names as a plain `Set<String>` bean named
+`dataPrismConfiguredJsonSourceNames`; `DataPrismAutoConfiguration` and
+`DataPrismContractValidator` consume it via `ObjectProvider` with
+`@Qualifier`. The unreachable `MISSING_AUDIT_SINK` arm (dead since task 67
+wired `hash-chained`) stays a defensive guard with an accurate "unreachable
+today" comment — judged correct, nothing further owed there.
+
+Attempt 1 (rejected on review and test) wired the catalogue's names in as
+`ObjectProvider<ConfiguredJsonSourceNames>`, a `data-prism-connectors-rest`
+record type, in unconditional `@Bean` method signatures on
+`DataPrismAutoConfiguration`, backed by a new `<optional>true</optional>`
+Maven dependency from autoconfigure to connectors-rest. `data-prism-server`
+declares connectors-rest at test scope only — the base distribution
+deliberately never compiles against a connector, opting one in at runtime
+via `-Dloader.path` — so the packaged server crashed at context refresh with
+`TypeNotPresentException`. `<optional>true</optional>` cannot help: the
+parameter type is compiled into the class file, and Spring's
+autowire-candidate resolution calls `Method.getGenericParameterTypes()`,
+resolving every type argument via `Class.forName` before
+`getIfAvailable()` is ever reached — there is no empty provider, only a hard
+failure. Blast radius was every deployment not bundling connectors-rest,
+including an IT that loads a perfectly *reviewed* adapter via
+`-Dloader.path`. Unit tests passed 22/22 regardless, because connectors-rest
+sits on the autoconfigure test classpath; only `mvn verify`
+(`ConfiguredJsonSourcesPackagingIT` and the server module's packaging ITs)
+exposed the crash.
+
+Attempt 2 publishes the names as a plain `Set<String>` instead — JDK-
+resolvable on any classpath regardless of which connector is present — and
+reverts the pom dependency entirely, so autoconfigure keeps no compile edge
+to the connector module at all. Also pins that the published names equal the
+registered adapters' own `sourceName()` values, which nothing previously
+tied together. Squashed both commits into one before merging (unlike task
+67's separate-commits precedent) because attempt 1's message describes an
+approach whose code no longer exists in the final tree; keeping it separate
+would have left a misleading commit in history for no offsetting benefit.
+
+**The collision question was settled empirically, not argued.** A generic
+`Set<String>` injection point sounds like it could be satisfied by any other
+`Set<String>` bean in an application context, which for an allow-list would
+be a rule-1 widening. Verified against real Spring contexts: a named bean
+present alongside an unrelated `Set<String>` resolves only the intended one;
+the named bean absent alongside an unrelated `Set<String>` resolves to null
+(empty provider) — it does not fall back to the other bean. Two candidates
+for the same name throw `NoUniqueBeanDefinitionException` (fail loud); none
+leaves the provider empty (fail closed). The only way to subvert it is an
+application deliberately defining a bean named
+`dataPrismConfiguredJsonSourceNames` in the vendor's own namespace. A
+core-owned marker type would be marginally stricter; the reviewer explicitly
+recommended against attempting that, and the recommendation stands — do not
+re-litigate this with a third attempt.
+
+**Cost:** the bean-name contract between the two modules is now three
+duplicated string literals with no shared constant to catch a typo at
+compile time — unavoidable, since no compile edge is the entire point. A
+typo fails closed (the allow-list narrows, a legitimate adapter is refused)
+but confusingly, and is caught only by `ConfiguredJsonSourcesPackagingIT`
+under `mvn verify`, not `mvn test`. That is the *same* blind spot that hid
+attempt 1's crash — twice in one task, a real defect was invisible to `mvn
+test` alone. Filed as a follow-up in `PLAN.md`: either a unit-level assertion
+tying the three literals together, or a documented requirement that this
+area be verified with `mvn verify` rather than `mvn test`. "The tests pass"
+means less here than usual unless it was `verify`. Merged 2026-09-23, PASS +
+APPROVE on attempt 2, onto `v0.3.0/audit-trail-and-nested-json`. Verifying
+agents hit concurrent-build contention in the shared `~/.m2` inside this
+task's own worktree and had to rerun in isolation before trusting a result —
+the same hazard `docs/conventions.md:335` already documents.
+
 ## 2026-09-23 — Task 55: the quickstart images publish, and Compose pulls them by default
 
 `compose.yaml`'s four services (server-with-extension, fixtures, issuer,

@@ -878,23 +878,50 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   message interpolates the slot class name
   (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name —
   task 62 owns documenting the slot-to-catalogue mapping.
-- **Wave 3 — depends on waves 1-2, now unblocked (66 merged 2026-09-23):**
+- **Wave 3 — depends on waves 1-2. Task 69 merged; only 62 and 59 remain:**
   62 (corrects
   `architecture.md`'s flat-by-design and boundary-7 claims, new
-  `docs/audit.md`, nested example and walkthrough; deps 60, 64, 66), 69
-  (restore the reviewed-adapter allow-list task 54's review flagged above,
-  via a catalogue-names bean from the connector, without reinstating the
-  exact-match duplication task 54 removed; deps 60, 67). 62's hard
-  precondition — the sink-exception-to-MCP-response path disclosure — is now
+  `docs/audit.md`, nested example and walkthrough; deps 60, 64, 66). 62's hard
+  precondition — the sink-exception-to-MCP-response path disclosure — is
   closed by task 74 (merged 2026-09-23); 62 and 59 may document
-  `hash-chained`. One new item is owed instead: `docs/configuration.md` has
-  no entry for `AUDIT_SINK_BEAN_REQUIRED` (task 73), so
+  `hash-chained`. One item is owed: `docs/configuration.md` has no entry for
+  `AUDIT_SINK_BEAN_REQUIRED` (task 73), so
   `DataPrismConfigurationFailureAnalyzer`'s pointer at that document is
   currently a dead end for an operator who hits the refusal. See follow-up
-  item 8 below, filed for 59/62.
+  item 8 below, filed for 59/62. 62 and 59 both touch documentation only and
+  own disjoint files (`docs/architecture.md`/`docs/audit.md` for 62,
+  `docs/quickstart.md`/`docs/configuration.md` exit-ramp material for 59 —
+  confirm against each task file before assuming no overlap); they may run in
+  parallel, but 59 was already recorded above as blocked until the v0.3.0
+  images actually publish (release-sequence step 4), so in practice 62 has no
+  reason to wait for 59 and should not be held up by it.
+
+  **Task 69 (restore the reviewed-adapter allow-list) merged 2026-09-23,
+  PASS + APPROVE on attempt 2, onto `v0.3.0/audit-trail-and-nested-json`,
+  squashed into one commit.** `DataPrismContractValidator` now refuses, with
+  the stable code `UNREVIEWED_SOURCE_ADAPTER`, any `DataSourceAdapter` bean
+  named by neither `dataprism.sources` nor the JSON catalogue's own source
+  names — restoring the allow-list property task 54 lost, not
+  guarantee-preserving. Attempt 1 (rejected) wired the catalogue's names in
+  via `ObjectProvider<ConfiguredJsonSourceNames>`, a connector-owned record
+  type, in unconditional `@Bean` signatures backed by a new optional Maven
+  dependency from autoconfigure to connectors-rest; that crashed the base
+  standalone server (connectors-rest is test-scope only there) because
+  Spring resolves every `@Bean` parameter type via `Class.forName` before
+  `ObjectProvider.getIfAvailable()` runs — `<optional>true</optional>` cannot
+  help, the type is compiled into the class file. Attempt 2 publishes the
+  names as a plain `Set<String>` bean (`dataPrismConfiguredJsonSourceNames`),
+  consumed via `ObjectProvider` with `@Qualifier`; `java.util.Set` is
+  JDK-resolvable regardless of what connector is present, so autoconfigure
+  keeps no compile edge to the connector at all. See `docs/plan/HISTORY.md`,
+  grep `Task 69`, for the collision-safety proof and the mvn-verify-only
+  blind spot this is the second instance of this task cycle. The unreachable
+  `MISSING_AUDIT_SINK` arm (dead since task 67) was kept as a defensive guard
+  with an accurate comment — that decision stands, nothing further owed.
 - **Wave 4:** 70 (cut 0.3.0 across poms, `server.json`, `serverInfo`
   literals, four Dockerfiles, `publish-image.yml`, docs, with a CHANGELOG
-  built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69).
+  built from the merged diffs; deps 61, 62, 63, 65, 66, 67, 69 — all merged
+  except 62 and 59, which 70 still needs before cutting the release).
 
 **Risks flagged by the planner, both open:**
 - The per-nested-catalogue `Class` token task 60 introduces is the only
@@ -1099,6 +1126,42 @@ Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
    the module is one careless new test away from the same failure.
    Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
    and retire the trustStore property.
+
+Found on task 69 (restore the reviewed-adapter allow-list), merged
+2026-09-23. Neither blocks the merge; the first item matters more than it
+looks.
+
+1. **The autoconfigure/connector contract is a bean-name string duplicated
+   as three literals** (`dataPrismConfiguredJsonSourceNames`, in
+   `ConfiguredJsonSourcesAutoConfiguration`, `DataPrismAutoConfiguration`,
+   and `DataPrismContractValidator`), with no shared constant — unavoidable,
+   since keeping autoconfigure free of a compile edge to the connector is
+   the whole point. A typo on either side fails closed (the provider comes
+   back empty, the allow-list narrows, a legitimate configured-JSON adapter
+   is refused) — the safe direction, but a confusing failure to debug. It is
+   caught only by `ConfiguredJsonSourcesPackagingIT`, which runs under `mvn
+   verify`, not `mvn test` — the same blind spot that hid attempt 1's crash
+   (unit tests passed 22/22 there too, because connectors-rest sits on the
+   autoconfigure test classpath; only `mvn verify` saw the
+   `TypeNotPresentException`). Twice in one task, a real defect was invisible
+   to `mvn test` alone. File a follow-up task for either a unit-level
+   assertion tying the three literals together, or a documented requirement
+   that this area be verified with `mvn verify` rather than `mvn test`. Until
+   then: "the tests pass" means less here than usual unless it was `verify`.
+2. The generic `Set<String>` injection point looks like it could collide
+   with an unrelated `Set<String>` bean elsewhere in an application context,
+   which for an allow-list would be a rule-1 widening. Verified empirically
+   in real Spring contexts that it cannot: a named bean present alongside an
+   unrelated `Set<String>` resolves only the intended one; the named bean
+   absent alongside an unrelated `Set<String>` resolves to null (empty
+   provider), it does not fall back to the other bean. Two candidates for the
+   same name throw `NoUniqueBeanDefinitionException` (fail loud); none leaves
+   the provider empty (fail closed). Do not re-litigate this: the only way to
+   subvert it is an application deliberately defining a bean named
+   `dataPrismConfiguredJsonSourceNames` in the vendor's own namespace. A
+   core-owned marker type would be marginally stricter; the reviewer
+   explicitly recommended against a third attempt to get it, and the
+   recommendation stands.
 
 Found on task 66 (audit chain verifier CLI), merged 2026-09-23. Neither
 blocks the merge.
