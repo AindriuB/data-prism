@@ -104,7 +104,7 @@ consumer building their own extension would find it:
 > upper-case, underscore convention), and, given a directory rather than one
 > jar, adds every `*.jar` placed directly inside it to the classpath.
 
-— `docker/distribution/Dockerfile:33-35`
+— `docker/distribution/Dockerfile:38-40`
 
 The consequence is the pom shape in the next section: everything your
 extension needs that `data-prism-server` already carries on its own
@@ -243,12 +243,13 @@ public final class PassThroughIdentityResolver implements IdentityResolver {
 `data-prism-core/src/main/java/io/github/aindriub/dataprism/core/PassThroughIdentityResolver.java:14-26`
 
 Use it **only** when every configured source genuinely keys its records on
-the same identifier (see the README's "Building and running" section): it does nothing, treating the
-subject id you were asked for as every source's own key. If your sources
-disagree about identity — different customer numbers, a probabilistic match
-on name and date of birth, a master data service you must call first — write
-your own `IdentityResolver`; that difficulty is exactly what the interface
-exists to hold, and nothing in the platform will paper over a wrong pass-through.
+the same identifier (see the README's "Building and running" section): it
+does nothing, treating the subject id you were asked for as every source's
+own key. If your sources disagree about identity — different customer
+numbers, a probabilistic match on name and date of birth, a master data
+service you must call first — write your own `IdentityResolver`; that
+difficulty is exactly what the interface exists to hold, and nothing in the
+platform will paper over a wrong pass-through.
 
 The worked example wires `PassThroughIdentityResolver` because its one
 fixture source shares a single id:
@@ -613,7 +614,7 @@ added. The single-jar form used directly is `-Dloader.path=/path/to/your-extensi
 as a JVM system property, passed before `-jar`. Both are the same mechanism
 `ServerPackagingIT.executableLoadsAReviewedAdapterExtensionFromLoaderPath`
 proves against a real packaged server jar
-(`docker/distribution/Dockerfile:34`), and both are subject to the trap
+(`docker/distribution/Dockerfile:39`), and both are subject to the trap
 above: only the jar's own classes travel this way.
 
 ## Bind `dataprism.sources.<name>` to your adapter

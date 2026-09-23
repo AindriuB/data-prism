@@ -15,8 +15,8 @@ Data Prism is an open-source privacy layer for Java/Spring teams putting LLM age
 or MCP clients in front of internal APIs that hold customer data. If nothing
 you run exposes personal data to a model, you don't need this.
 
-**Status: the walking skeleton and every slice through S9a are built**, with 19
-Maven submodules (20 Maven projects in the reactor counting the root
+**Status: the walking skeleton and every slice through S9a are built**, with 18
+Maven submodules (19 Maven projects in the reactor counting the root
 `pom`-packaged aggregator itself) and a passing test suite. The privacy
 engine, correlation and consistency findings, parallel mTLS connectors,
 embedded Hazelcast identity cache and read budget, an OAuth2 resource server
@@ -174,7 +174,7 @@ mvn -B --no-transfer-progress verify
 ```
 
 This is the same command CI runs (`.github/workflows/build.yml`). It builds all
-19 submodules plus the root aggregator, runs the full test suite, the
+18 submodules plus the root aggregator, runs the full test suite, the
 ArchUnit boundary rules, and the enforcer rule that keeps the classpath on a
 single Jackson major.
 
