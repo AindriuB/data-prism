@@ -17,6 +17,47 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 76: one canonical identity across README, poms, registry and image metadata
+
+Applies the canonical tagline T and description D from
+`docs/plan/specs/2026-09-23-discoverability.md` everywhere a search engine or
+AI assistant reads project metadata: the README opening (T, then D, then a
+two-sentence "Who it's for"), the root `pom.xml` `<description>`,
+`server.json`'s `.description` (96 chars, under the schema's 100-char limit —
+takes effect at the next MCP registry publish, not before), five new OCI
+labels (title/description/source/documentation/licenses) on
+`docker/distribution/Dockerfile`, a fixture-only
+`org.opencontainers.image.description` on `docker/server/Dockerfile` (not T,
+since that image is the quickstart server, not the registry image), and a new
+`CITATION.cff` (CFF 1.2.0, abstract = D, no `version` or `date-released`).
+Adds build/Maven-Central/licence badges and `<!-- site-intro:start/end -->`
+markers around the README intro for task 82's docs site to lift as its home
+page. Corrects the README Status paragraph, which wrongly said the
+hash-chained audit sink and verifier were "Not built" — `CHANGELOG.md`
+`[0.3.0]` shipped both (`FileAuditSink`, `AuditChainVerifier`) — with every
+new claim traced to `CHANGELOG.md` `[0.3.0]`, `docs/audit.md` or
+`docs/tools.md` "Not yet built". Replaces `docs/extending.md`'s three
+`README.md:NNN` line-number citations with section names, since a
+line-number citation breaks whenever the cited file grows. Published
+metadata (Central, the MCP registry, GHCR) is left untouched: no version
+changed anywhere.
+
+**Cost:** two attempts. Attempt 1's rewritten Status paragraph still said "19
+Maven submodules" — stale since `data-prism-audit` merged into core, now 18 —
+and its five new Dockerfile `LABEL` lines shifted two of `docs/extending.md`'s
+line-number citations onto the wrong lines, the exact fragility the task
+existed to remove. Attempt 2 fixed both and switched all three citations to
+section names instead of lines. Not taken: a suggestion to tighten
+`docs/extending.md:107`'s citation, which pre-dates this task and covers only
+part of the quote above it. Verified: `mcp-publisher validate`, the three
+`publish-mcp.yml` name extractions agreeing on `io.github.AindriuB/data-prism`,
+`docker buildx build --check` on both Dockerfiles, a built image's labels via
+`docker inspect`, `mvn -B -q -N validate`, `cffconvert --validate`, and the
+badge URLs. PASS + APPROVE on attempt 2, diff confirmed limited to
+`README.md`, `pom.xml`, `server.json`, `docker/distribution/Dockerfile`,
+`docker/server/Dockerfile`, `CITATION.cff` and `docs/extending.md`. Merged
+`--no-ff` onto the local `discoverability` branch, not `main`.
+
 ## 2026-09-23 — Task 78: three use-case pages for the searches this audience runs
 
 Adds `docs/use-cases/pseudonymise-customer-data-spring-boot.md`,

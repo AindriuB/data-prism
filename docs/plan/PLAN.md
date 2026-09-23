@@ -1122,11 +1122,18 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   routing into the existing quickstart/reference docs, GDPR citations linked
   to EUR-Lex 32016R0679 anchors. Merged `--no-ff` onto `discoverability`.
   See `docs/plan/HISTORY.md` — grep `Task 78`.
-- **Tasks 76 (canonical identity), 77 (FAQ and comparison page), 81 (outreach
-  drafts)** — in flight, each in its own worktree off `discoverability`.
-- **Tasks 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)
-  and 83 (go-live wiring)** — pending, blocked on the tasks above they
-  depend on.
+- **Task 76 — done.** Canonical tagline T and description D applied to the
+  README, root `pom.xml`, `server.json`, `docker/distribution/Dockerfile`'s
+  OCI labels, `docker/server/Dockerfile` and a new `CITATION.cff`; README
+  Status paragraph corrected (the hash-chained sink and verifier are built);
+  `docs/extending.md`'s README line-number citations replaced by section
+  names. Merged `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md`
+  — grep `Task 76`.
+- **Tasks 77 (FAQ and comparison page), 81 (outreach drafts)** — in flight,
+  each in its own worktree off `discoverability`.
+- **Task 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)**
+  — next once task 77 lands (82 needs the FAQ page it adds).
+- **Task 83 (go-live wiring)** — pending, blocked on 82.
 
 ## Remaining slices past the adopted core
 
