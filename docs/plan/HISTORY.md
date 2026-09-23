@@ -17,6 +17,62 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 59: the quickstart gets an exit ramp, and the reference docs catch up to v0.3.0
+
+`docs/quickstart.md` no longer dead-ends at `docker compose down`: it ends with a
+"What next" section pointing at `docs/protect-your-own-api.md`, its four hand-scraped
+curl/`python3 -c` blocks are replaced by `examples/quickstart-demo/run.sh`'s real
+output for both customer 1001 and 1002, and its pseudonym literals are pasted from a
+real run rather than hand-edited. Both `docs/quickstart.md` and `README.md` now state
+the pull-by-default `docker compose up` with `QUICKSTART_IMAGE_TAG=0.3.0` pinning
+alongside the full from-source override, and README links onward to the
+protect-your-own-API path. `docs/configuration.md` gains everything
+`DataPrismConfigurationFailureAnalyzer` could point an operator at and previously
+leave stranded: `dataprism.identity.resolver` (absent before this task, despite
+`pass-through` being the whole no-code path's dependency), all ten audit/identity
+refusal codes, the `dataprism.audit.sink`/`file-path`/`writer-id` rules after task 75
+(writer-id need not be unique per boot, must not contain `/`, `INVALID_AUDIT_WRITER`),
+stdio's refusal in both fixture-development and protected-deployment forms, and the
+one-level nested-catalogue grammar with `NESTED_LEAF_NOT_SCALAR`/`NESTED_FIELD_NOT_STRUCTURED`
+correctly named as request-time refusals raised by `data-prism-connectors-rest`, not
+`data-prism-core`. `/jwks` is documented and the stale duplicate-base-url paragraph is
+gone. `examples/quickstart-demo/run.sh` itself widened after attempt 1: it previously
+hardcoded subject 1001's raw fixture values, so its raw-value leak check was vacuous
+for 1002; it now carries per-subject raw values, refuses an unknown subject, and its
+leak check is proven load-bearing for both subjects by an instrumented run that feeds
+each subject its own values and confirms it fails.
+
+Verification: attempt 3 was tester PASS + reviewer APPROVE in full. The owner then
+asked to cut one paragraph from the `dataprism.audit` stdio section (accurate but
+disproportionate for a reference page, and its "fires before the refusal" claim held
+only on an undeclared bean creation order). Attempt 4 is that cut plus one sentence
+reworded, because the cut left it overclaiming which code the stdio+fixture-development
+combination guarantees (it now claims only that startup always refuses, naming
+`STDIO_TRANSPORT_UNSUPPORTED` as the normal case rather than the only case, since a
+hash-chained sink with an unopenable path gives `AUDIT_SINK_FILE_UNUSABLE` instead in
+that same combination). Attempt 4's reviewer APPROVEd with no defects found, and its
+tester reported PASS: a scratch `WebApplicationContextRunner` test tried five
+configurations in stdio + fixture-development mode (plain, hash-chained with an
+unopenable path, slf4j, approved-sink with no `AuditSink` bean, hash-chained with a
+writable path) and confirmed none started, with the plain case refusing
+`STDIO_TRANSPORT_UNSUPPORTED`, then deleted the scratch test. Task 59 closed PASS +
+APPROVE on attempt 4.
+
+Merged `--no-ff` onto `v0.3.0/quickstart-exit-ramp` (a local branch cut from `main` at
+the PR #96 merge, not yet pushed or opened as a PR). Post-merge full-reactor
+`mvn -B clean verify`: BUILD SUCCESS, 646 tests, 0 failures, 0 errors, 0 skipped
+(counted from the per-module surefire/failsafe `Results: Tests run:` lines).
+
+**Cost:** Four attempts, and both rejections trace to describing the demo instead of
+running it: attempt 1's reviewer caught pseudonym-determinism claims that were false
+under the defaults, plus the vacuous 1002 leak check above. Attempt 2's reviewer
+claimed two audit codes still fire in stdio fixture-development mode by reading
+`DataPrismContractValidator`'s source; the implementer disproved it by actually
+standing up a Spring `ApplicationContextRunner`-style context in that mode, where the
+contract validator returns early — the same reading-near-the-code-instead-of-tracing-it
+mistake this plan has hit before. Do not trust either the code or the docs by reading
+alone for a stdio/fixture-development claim in this codebase: run it.
+
 ## 2026-09-23 — Task 70: version 0.3.0 cut across the reactor, onto the integration branch
 
 The reactor, `server.json` (plus the previously-missing `DATAPRISM_AUDIT_FILE_PATH`

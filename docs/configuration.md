@@ -72,7 +72,7 @@ for the relevant group.
 | `dataprism.security-policy` | At least one permitted purpose and one role-to-known-capability mapping are required | No | Refuse startup for an empty purpose list, an unknown capability, blank role/purpose, or a role with no capabilities |
 | `dataprism.privacy` | `profile` is required; `locale` defaults to the locale-neutral vocabulary; unclassified behaviour is fail-closed; a production scope lifetime is required; `descriptor-file` is optional and, when unset, no descriptor file is ever read and classification comes from annotations alone | No | Refuse startup for an unknown profile, a production profile that relaxes fail-closed behaviour, unsupported locale, non-positive scope lifetime, or a profile that lacks a rule required by exposed models. A configured `descriptor-file` also refuses startup — never falling back to the annotation-only resolver — if the path does not exist, does not name a readable file, has no `models` section, or declares `undeclaredFields: NON_SENSITIVE` for a type; each failure names the property, never a line of the file's contents |
 | `dataprism.privacy.hmac-key` | `key-id` and one provider reference/environment-variable name are required; the selected key is pinned for each scope | **Yes, by reference** | Refuse startup if a literal key is configured, the reference is blank/unresolvable, the key is too weak, or `key-id` cannot be resolved; never fall back to a generated key |
-| `dataprism.audit` | `sink` is required in production; writer/instance identity is required for a hash-chained sink | Sink credentials are **yes, by reference** | Refuse startup for an unknown sink, missing required sink reference, or missing writer identity; do not downgrade to no-op auditing |
+| `dataprism.audit` | `sink` is required in production, one of `approved-sink`, `slf4j`, `hash-chained`; `writer-id` is required for every sink, not only a hash-chained one; `file-path` is required only when `sink: hash-chained` | Sink credentials are **yes, by reference** | Refuse startup for an unknown sink, missing required sink reference, a hash-chained sink's file path missing or unusable, or missing/invalid writer identity; do not downgrade to no or `slf4j` auditing |
 | `dataprism.metrics` | Defaults to the framework's no-op implementation only for fixture development; production requires an approved sink/registry binding | Sink credentials are **yes, by reference** when applicable | Refuse startup in production for an unknown or absent required sink; metrics failures after startup remain fail-safe and cannot change a privacy decision |
 | `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget across every member of the cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but the budget it produces is enforced once per process, so a configured budget of 100 becomes 100 times the number of running processes — identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | Cluster/TLS credentials are **yes, by reference** when configured | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration, invalid member/TLS settings, non-positive TTL, or an enabled index without its required controls |
 | `dataprism.sources` | One named source entry per configured Java-first REST adapter; each entry declares a server-controlled HTTPS base URL and positive timeout | mTLS key, trust material, and service credentials are **yes, by reference** | Refuse startup for duplicate names, an unapproved/non-HTTPS URL (local fixture exception only), user-info/query/fragment in a base URL, invalid timeout, unresolved mTLS reference, or a configured source without its explicit adapter bean |
@@ -138,6 +138,59 @@ same validation, but can only expose adapters packaged and reviewed with that
 distribution. In either mode, a missing adapter or resolver is a startup
 refusal.
 
+### `dataprism.identity.resolver`
+
+Selects a built-in `IdentityResolver` bean for an operator with no Java to
+write. `pass-through` is the one accepted value — it selects
+`PassThroughIdentityResolver`, correct only when every configured source
+genuinely shares the same identifier already; an application-supplied
+`IdentityResolver` bean always wins over it, never producing two. Any other
+non-blank value refuses startup with `UNSUPPORTED_IDENTITY_RESOLVER`. Leaving
+the property unset (or blank) selects nothing: with no `IdentityResolver`
+bean present either way — neither the built-in one nor an application-
+supplied one — startup refuses with `MISSING_IDENTITY_RESOLVER`.
+
+### `dataprism.audit`
+
+This section describes the protected-deployment path: `mode: http`, in both
+the standalone server and the Spring Boot starter. It is not describing
+`mode: stdio`. Requested without `fixture-development=true`, that is itself
+refused before any of this section's checks run, with `STDIO_DEVELOPMENT_ONLY`
+(see "Supported modes" above). Requested with `fixture-development=true`
+inside a Spring application, the Spring auto-configuration always refuses
+startup, normally with `STDIO_TRANSPORT_UNSUPPORTED` — that combination
+never reaches a usable, protected deployment either.
+
+`sink` is required; a missing value refuses startup with `MISSING_AUDIT_SINK`.
+It accepts exactly three values:
+
+- `approved-sink` — the deployment must supply its own `AuditSink` bean;
+  absent one, startup refuses with `AUDIT_SINK_BEAN_REQUIRED`.
+- `slf4j` — the built-in `Slf4jAuditSink`, safe to ship to ordinary log
+  infrastructure because nothing read from a source payload reaches it.
+- `hash-chained` — the built-in hash-chained `FileAuditSink`. Requires
+  `dataprism.audit.file-path`; a missing path refuses startup with
+  `MISSING_AUDIT_FILE_PATH`, and a path that cannot be opened (a parent
+  directory that does not exist, or one this process cannot write to)
+  refuses with `AUDIT_SINK_FILE_UNUSABLE` — startup never falls back to no or
+  `slf4j` auditing either way. See [`docs/audit.md`](audit.md) for the chain
+  itself, `instanceId`, and the offline verifier.
+
+An unrecognised `sink` value refuses startup with `UNKNOWN_AUDIT_SINK`.
+
+`writer-id` is required for **every** sink, not only `hash-chained` — a
+missing one refuses startup with `MISSING_AUDIT_WRITER` regardless of which
+sink is configured. It need not be unique per boot: each boot mints its own
+`instanceId` as `<writer-id>/<uuid>` (see `docs/audit.md`), so the same
+`writer-id` across restarts is expected, not a collision. It must not itself
+contain `/` — `AuditRecorder` splits `instanceId` on that character, so a
+`writer-id` containing one would make the split ambiguous — and one that does
+refuses startup with `INVALID_AUDIT_WRITER`. `${HOSTNAME}` in the example
+above is one convenient, non-unique-per-boot choice; it is not a requirement.
+
+A `dataprism.audit.credential-reference`, when configured, must not be
+blank; a blank one refuses startup with `INVALID_AUDIT_REFERENCE`.
+
 ## Java-first now; generic JSON as a separately reviewed extension
 
 V1 is **Java-first**. A source adapter is application/distribution code with an
@@ -175,10 +228,29 @@ under `json-sources:` states, and only states:
 - `fields:` — the allowlisted field classification catalogue, keyed by exact
   JSON property name. Every field this source may ever emit, including its
   subject field, must be named here with exactly one of `identifier: true`,
-  `nonSensitive: <reason>`, or `classifications` (with optional `namespace` and
-  `action`). A property present in a response but absent from this map is
-  refused before it reaches the scrubbing engine, the same UNKNOWN_FIELD
-  refusal a Java-first model's own undeclared property gets.
+  `nonSensitive: <reason>`, `classifications` (with optional `namespace` and
+  `action`), or `nested: <name>`. A property present in a response but absent
+  from this map is refused before it reaches the scrubbing engine, the same
+  UNKNOWN_FIELD refusal a Java-first model's own undeclared property gets.
+- `nested-catalogues:` — a top-level map, keyed by catalogue name, of the
+  named catalogues a root field's `nested: <name>` refers to. Nesting is
+  exactly one level: a nested catalogue's own entries may be `nonSensitive` or
+  classified only — stating `identifier:` or a further `nested:` inside one is
+  refused at load time, naming the offending catalogue and field, since a
+  nested catalogue carries no identifier of its own and this mode never
+  descends a second level.
+
+A response whose shape no longer matches a source's declared nesting is a
+request-time privacy refusal, not a startup refusal — the catalogue was valid
+at load time; the wire shape drifted from what it declared. `data-prism-connectors-rest`
+raises `NESTED_LEAF_NOT_SCALAR` when a nested catalogue's own leaf field (one
+with no `nested:` of its own) turns up as a structure in the response, and
+`NESTED_FIELD_NOT_STRUCTURED` when a root field declared `nested:` turns up as
+a scalar instead of the structure the catalogue expects. See
+[`docs/protect-your-own-api.md`](protect-your-own-api.md)'s "A nested
+response" section, which works `NESTED_LEAF_NOT_SCALAR` through a direct scrub
+call (`NestedCatalogueWalkthrough.java`) rather than a running adapter, and
+names `NESTED_FIELD_NOT_STRUCTURED` without a worked example of it.
 
 An optional top-level `tls:` block, identical in shape to the one `RestSource`
 already supports, requires every source in the file to use `https`.
@@ -186,24 +258,42 @@ already supports, requires every source in the file to use `https`.
 Startup fails closed and names the offending source for: a missing or
 malformed required key, an unknown top-level key, a `subject-json-path`
 outside the bounded grammar or not matching a declared identifier field, a
-field stating more than one (or none) of its three allowed shapes, and an
-unknown classification, namespace or action value. A response that is not a
-JSON object, or that is missing at request time, is a source failure or
-NO_DATA respectively, not a configuration error.
+field stating more than one (or none) of its four allowed shapes, an unknown
+classification, namespace or action value, a `nested:` field naming an
+undeclared catalogue, a declared catalogue referenced by no field, and
+`identifier:` or `nested:` stated inside a nested catalogue's own entries. A
+response that is not a JSON object, or that is missing at request time, is a
+source failure or NO_DATA respectively, not a configuration error, and
+neither is the nesting-shape mismatch described above.
 
-`dataprism.sources` still governs which adapter names the base distribution's
-own contract validator expects; a configured JSON source's name must currently
-also appear there (with a `base-url`/`timeout` pair) for that unrelated
-cross-check to pass, even though the `json-sources:` catalogue is the
-adapter's real, authoritative transport configuration — it is what
-`ConfiguredJsonDataSourceAdapter` actually dials. The two `base-url` values
-are therefore stated twice, and **startup refuses if they disagree**, naming
-both: the `json-sources:` value is authoritative for what gets dialled, so a
-`dataprism.sources` entry that silently won the validated-but-unused half of
-that check is exactly the hazard closed by refusing rather than picking a
-winner. Resolving the duplication itself — so only one statement of a
-configured source's transport exists at all — belongs to whichever task next
-revisits `DataPrismContractValidator`.
+A configured JSON source's transport is stated exactly once, in
+`json-sources:`; it does not also need a `dataprism.sources` entry, and
+`DataPrismContractValidator` does not require one — the base distribution's
+contract validator recognises the `DataSourceAdapter` bean this mode
+registers as reviewed without it appearing under `dataprism.sources` at all.
+Naming it there too is allowed but never required; if you do, its `base-url`
+must agree with the `json-sources:` value, and **startup refuses, naming
+both, if they disagree** — the `json-sources:` value is always the
+authoritative one actually dialled, so a `dataprism.sources` entry that
+silently won an unused, disagreeing check would be exactly the hazard this
+refusal closes.
+
+## The Compose quickstart's evaluation issuer
+
+`data-prism-quickstart-issuer` (see `docs/quickstart.md`) is a fixture-only
+evaluation JWT issuer, published as
+`ghcr.io/aindriub/data-prism-quickstart-issuer`. It mints tokens for one
+synthetic issuer/audience pair only, and is never a general-purpose identity
+provider. Pointing a deployment's `dataprism.security.jwt.jwk-set-uri` at
+it — its public signing key is served at `/jwks`, not
+`/.well-known/jwks.json` — is only ever useful for local evaluation: doing so
+still does not permit an unauthenticated call, since every request must carry
+a token this issuer minted, signature-verified against that JWKS location
+like any other. It does not, and cannot, substitute for
+`dataprism.transport.fixture-development=true`, which the standalone server
+refuses unconditionally regardless of which issuer a deployment trusts —
+authenticating against this evaluation issuer is a real, if fixture-scoped,
+authenticated HTTP deployment, never the stdio fixture-development path.
 
 ## Ownership boundary
 
@@ -211,7 +301,7 @@ revisits `DataPrismContractValidator`.
 |---|---|---|
 | Inbound security | Issuer, audience, trusted claim names, role-to-capability policy | JWT-to-`AuthenticatedCaller` integration and HTTP resource-server wiring |
 | Privacy pipeline | Selected profile, neutral locale, scope lifetime, key reference | Reviewed profile implementation, key-provider integration, and the single scrubbed mapper |
-| Sources | Named adapter selection, base URL, timeout, mTLS/credential references | `DataSourceAdapter`, `IdentityResolver`, annotated model types, endpoint paths and response conversion |
+| Sources | Named adapter selection, base URL, timeout, mTLS/credential references | `DataSourceAdapter`, annotated model types, endpoint paths and response conversion. `IdentityResolver` too, unless `dataprism.identity.resolver: pass-through` selects the built-in `PassThroughIdentityResolver` instead |
 | Operations | Audit/metric sink selection and references; embedded Hazelcast settings | Approved sink/registry/provider implementations and lifecycle wiring |
 
 Neither configuration nor application code may make a concrete connector a

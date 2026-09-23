@@ -618,19 +618,14 @@ the other did; and this is the second task this wave (after 56) to assume
 a bare JSON body from an endpoint that actually negotiates SSE, caught
 only by exercising the real server both times.
 
-**Task 59 has not started, blocked on 55, and is now also blocked on the
-v0.3.0 wave below.** Task file exists
-(`docs/plan/tasks/59-quickstart-exit-ramp-and-reference.md`), unedited.
-Its acceptance criteria already require documenting
-`dataprism.identity.resolver` in `docs/configuration.md`, which task 58
-found undocumented there despite being the property the whole no-code
-path depends on. Recorded here because 59 has not started, so its
-criteria are not frozen: it must gain two more items before it starts,
-on top of that one — the nested-catalogue grammar reference in
-`docs/configuration.md` (task 60) and the `dataprism.audit.sink:
-hash-chained` property plus its file-path property (task 67). Do not
-edit the task file to add these until 59 is actually picked up; this is
-the planning record, not a criteria change in flight.
+**Task 59 — done.** Merged `--no-ff`, PASS + APPROVE on attempt 4, onto
+`v0.3.0/quickstart-exit-ramp` — a local branch cut from `main` at the
+`v0.3.0` integration branch's own merge (PR #96, `543defb`), not yet opened
+as a PR. The owner ran this task before tagging, not after publish as
+originally planned (see the release sequence below); every command it
+quotes was verified via the from-source Compose path, since the published
+GHCR images do not exist yet. Task file retired; see `docs/plan/HISTORY.md`,
+grep `Task 59`, for what landed and the four-attempt cost.
 
 ### v0.3.0 plan (tasks 60-71) — opened 2026-09-22, none started
 
@@ -884,14 +879,11 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   message interpolates the slot class name
   (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name —
   task 62 owns documenting the slot-to-catalogue mapping.
-- **Wave 3 — depends on waves 1-2. 69 and 62 both merged; only 59 remains,
-  and it stays blocked until the v0.3.0 images publish (release-sequence step
-  4).** One item is still owed to 59, unchanged by 62's merge:
-  `docs/configuration.md` has no entry for `AUDIT_SINK_BEAN_REQUIRED` (task
-  73), so `DataPrismConfigurationFailureAnalyzer`'s pointer at that document
-  is currently a dead end for an operator who hits the refusal. See follow-up
-  item 8 below (extended for task 75's writer-id shape and
-  `INVALID_AUDIT_WRITER`), still owed to 59.
+- **Wave 3 — depends on waves 1-2. 69, 62 and 59 all merged; nothing remains
+  in this wave.** Follow-up item 8 below (the `docs/configuration.md` gap for
+  `AUDIT_SINK_BEAN_REQUIRED`, `AUDIT_SINK_FILE_UNUSABLE`,
+  `dataprism.audit.file-path`, and task 75's writer-id shape and
+  `INVALID_AUDIT_WRITER`) is resolved by task 59; see below.
 
   **Task 62 merged 2026-09-23, PASS + APPROVE on attempt 9, onto
   `v0.3.0/audit-trail-and-nested-json`.** Its attempt-5 reviewer found a real
@@ -1021,27 +1013,15 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
    because `DataPrismProperties` binds `ignoreUnknownFields=false` and
    Spring Boot's unbound-elements check exempts system properties but not
    command-line args — which is also how the packaged distribution wires it.
-8. **Owed to tasks 59/62, filed 2026-09-23 alongside task 73, extended
+8. ~~**Owed to tasks 59/62, filed 2026-09-23 alongside task 73, extended
    2026-09-23 alongside task 67.** `DataPrismConfigurationFailureAnalyzer`
    prints the refusal code and points an operator at
-   `docs/configuration.md`. That file has no entry for
-   `AUDIT_SINK_BEAN_REQUIRED` (task 73), so an operator who hits it today is
-   sent to a document that never mentions the code they were just given.
-   Task 67 adds two more operator-facing configuration items that are
-   equally undocumented: the `dataprism.audit.file-path` property itself
-   (required when `dataprism.audit.sink: hash-chained` is selected) and its
-   own refusal code, `AUDIT_SINK_FILE_UNUSABLE` (a configured path this
-   process cannot open at startup — no parent directory, unwritable —
-   refuses rather than degrading silently to no auditing).
-   Whichever of 59 or 62 documents `dataprism.audit.sink` must add all
-   three concretely: `AUDIT_SINK_BEAN_REQUIRED`, `AUDIT_SINK_FILE_UNUSABLE`,
-   and `dataprism.audit.file-path` itself — not just `MISSING_AUDIT_SINK`
-   and `UNKNOWN_AUDIT_SINK`. **Extended 2026-09-23 alongside task 75:**
-   `docs/configuration.md:120`'s `writer-id: ${HOSTNAME}` example and its
-   surrounding reference text must say that a writer-id need no longer be
-   unique per boot (task 75 gives every boot its own chain identity) and
-   must not contain `/`, and must document the new `INVALID_AUDIT_WRITER`
-   refusal code alongside the existing `MISSING_AUDIT_WRITER`.
+   `docs/configuration.md`.~~ **Resolved 2026-09-23 by task 59.**
+   `docs/configuration.md` now documents `AUDIT_SINK_BEAN_REQUIRED`,
+   `AUDIT_SINK_FILE_UNUSABLE`, `dataprism.audit.file-path`, and (from task 75)
+   that a writer-id need not be unique per boot, must not contain `/`, and
+   the `INVALID_AUDIT_WRITER` refusal code alongside `MISSING_AUDIT_WRITER`.
+   See `docs/plan/HISTORY.md`, grep `Task 59`.
 9. **Known, documented, currently non-firing race — not scheduled.**
    `AuditSinkFailureAbortsResponseTest`'s own javadoc records a JVM-wide
    default-`SSLContext` singleton race against `McpHttpEndToEndTest` (and
@@ -1067,37 +1047,56 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
     silent-wrong to loud-fail. File as its own task if any quickstart
     module ever gains a second packaging execution; not worth one before
     then.
+11. **Found by task 59, not scheduled.** In stdio fixture-development mode,
+    `DataPrismProperties.validate()` is skipped, so a missing
+    `dataprism.audit.writer-id` surfaces as a raw `NullPointerException` and a
+    `/`-containing one as a raw `IllegalArgumentException` from
+    `AuditRecorder`, and a missing sink bean as a raw
+    `NoSuchBeanDefinitionException` — startup still refuses (fail-closed) but
+    with no stable operator-facing code. Development-only mode; not a leak.
+    Worth a task if fixture-development mode is ever treated as more than a
+    developer convenience.
+12. **Found by task 59, pre-existing text, not scheduled.** `docs/configuration.md`'s
+    `dataprism.transport` vocabulary row names only `STDIO_TRANSPORT_UNSUPPORTED`
+    for `mode: stdio`. Without `fixture-development=true` that mode instead
+    refuses with `STDIO_DEVELOPMENT_ONLY` first; the row does not distinguish
+    the two forms.
+13. **Found by task 59, not scheduled.** `examples/quickstart-demo/mcp-handshake.sh`
+    still scrapes response headers with `grep | tr | cut` and parses the
+    session token with a `python3 -c` one-liner — the same pattern task 56
+    replaced in `run.sh`. Not in task 59's `Owns`.
 
 **Release sequence — order is load-bearing, do not compress it:**
-1. **Done, 2026-09-23.** Waves 1-3 merged onto
-   `v0.3.0/audit-trail-and-nested-json`, except 59 which runs after publish
-   (step 4). Task 55's `compose.yaml` change is on the integration branch —
-   the images it publishes on tag do not exist on `ghcr.io` until step 3
-   below runs on `main`.
-2. **Only HALF done, 2026-09-23.** 70 has merged 0.3.0 — reactor version,
-   `server.json`, `serverInfo`, Dockerfiles, `publish-image.yml`'s default,
-   and a `CHANGELOG.md` `[0.3.0]` entry written from the real diffs — onto
-   `v0.3.0/audit-trail-and-nested-json`. **The integration branch itself has
-   NOT been merged to `main`.** That merge — carrying 70's 0.3.0 cut and
-   55's quickstart-image workflow/compose changes together — is the
-   remainder of this step and is an owner action, not yet done.
-3. **Owner action, pending.** Push the `v0.3.0` tag and dispatch
-   `publish-image.yml`, on `main` after step 2's merge lands. It now
-   publishes all four quickstart images alongside the distribution image,
-   since 55's workflow changes will already be on `main` by this point.
-   **Until this step runs, `docker compose up` on `main` — the command both
-   `README.md` and `docs/quickstart.md` tell a new user to run — pulls
-   images that do not exist yet; do not merge the integration branch to
-   `main` and stop before this step runs.**
-4. **Owner action, pending, blocked on step 3.** Run 59 against the
-   published result (with the two extra criteria items recorded above) and
-   merge it.
-5. **Owner action, pending, blocked on step 4.** Maven Central and MCP
-   registry publish. `server.json`'s shape follows task 48's history entry:
-   no `registryBaseUrl`, no per-package version.
+1. **Done.** Waves 1-4 (tasks 60-71) merged onto
+   `v0.3.0/audit-trail-and-nested-json`.
+2. **Done, 2026-09-23 (PR #96, `543defb`).** The integration branch —
+   carrying 70's 0.3.0 cut and 55's quickstart-image workflow/compose
+   changes together — merged to `main`. `main` is now at 0.3.0 but the
+   `v0.3.0` tag has not been pushed, so no image or artifact has actually
+   published yet: `docker compose up` on `main` still pulls images that do
+   not exist on `ghcr.io`.
+3. **Done, 2026-09-23, out of the originally-planned order.** The owner
+   chose to run task 59 (quickstart exit ramp and reference docs) *before*
+   tagging rather than after publish, verifying the published-image doc text
+   against the from-source Compose build instead of a real pull, since no
+   image is published yet. Task 59 merged `--no-ff` onto a new local branch,
+   `v0.3.0/quickstart-exit-ramp`, cut from `main` at the step-2 merge — not
+   yet pushed or opened as a PR. See `docs/plan/HISTORY.md`, grep `Task 59`.
+   **Remaining owner steps, in order:**
+   a. Open a PR from `v0.3.0/quickstart-exit-ramp` into `main` and merge it.
+   b. Tag `v0.3.0` on `main` and push it. This triggers `release.yml`, which
+      creates the public GitHub Release. `publish-image.yml`,
+      `publish-central.yml` and `publish-mcp.yml` only build/validate on the
+      tag push; none of them publishes anything until dispatched.
+   c. Dispatch `publish-image.yml` on `v0.3.0`, publishing the distribution
+      image and all four quickstart images to `ghcr.io`.
+   d. Dispatch `publish-central.yml` (requires approval in the `central`
+      GitHub environment) for the Maven Central publish.
+   e. Dispatch `publish-mcp.yml` for the MCP registry publish; it refuses
+      until the GHCR image from step (c) is actually pullable.
 
-**Open tasks after this wave: only 59, blocked on step 3.** No other task
-file remains under `docs/plan/tasks/`.
+**No open tasks remain after this.** No task file remains under
+`docs/plan/tasks/`; everything left is the owner steps listed above.
 
 ## Remaining slices past the adopted core
 
