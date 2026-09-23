@@ -8,9 +8,10 @@
 # docs/quickstart.md walks through by hand across four curl blocks, as one
 # runnable command.
 #
-# Requires a Compose stack that is already up (`docker compose up --build`
-# from the repository root; see docs/quickstart.md). This script does not
-# start or stop it.
+# Requires a Compose stack that is already up (`docker compose up`, or
+# `docker compose -f compose.yaml -f compose.build.yaml up --build` to build
+# from source; see docs/quickstart.md). This script does not start or stop
+# it.
 #
 # Fails loudly — non-zero exit, one-line reason on stderr — if the server is
 # not reachable, a token cannot be minted, or the MCP call returns a
@@ -26,14 +27,29 @@ issuer_url="${DATAPRISM_ISSUER_URL:-https://localhost:8544/token}"
 entity_type="${1:-CUSTOMER}"
 subject_id="${2:-1001}"
 
-# The fixture's own real values for subject 1001, per
-# data-prism-quickstart-fixtures' own CustomerController — synthetic by
-# construction, never a real person (see docs/quickstart.md).
-raw_name="Fixture Person One"
-raw_email="fixture.person.one@example.invalid"
+# The fixture's own real values, per data-prism-quickstart-fixtures' own
+# CustomerController — synthetic by construction, never a real person (see
+# docs/quickstart.md). Keyed by subject id so the leak check below always
+# compares against the value the server actually holds for the subject
+# requested, not another subject's. A subject this script does not know is
+# refused rather than compared against the wrong value.
+case "$subject_id" in
+  1001)
+    raw_name="Fixture Person One"
+    raw_email="fixture.person.one@example.invalid"
+    ;;
+  1002)
+    raw_name="Fixture Person Two"
+    raw_email="fixture.person.two@example.invalid"
+    ;;
+  *)
+    echo "FAIL: run.sh does not know subject $subject_id's real fixture values, so it cannot check the response for a leak of them; use 1001 or 1002." >&2
+    exit 1
+    ;;
+esac
 
 if ! curl -sf -o /dev/null "$health_url"; then
-  echo "FAIL: the standalone server is not reachable at $health_url; run 'docker compose up --build' first." >&2
+  echo "FAIL: the standalone server is not reachable at $health_url; run 'docker compose up' (or 'docker compose -f compose.yaml -f compose.build.yaml up --build' to build from source) first." >&2
   exit 1
 fi
 
