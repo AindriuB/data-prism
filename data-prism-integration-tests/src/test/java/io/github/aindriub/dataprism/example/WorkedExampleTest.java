@@ -59,7 +59,7 @@ class WorkedExampleTest {
         String customerName = response.entity().get("customerName").asText();
         String holderName = response.entity().get("holderName").asText();
         assertThat(holderName).isEqualTo(customerName);
-        assertThat(customerName).matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{4}\\)$");
+        assertThat(customerName).matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
     }
 
     @Test
