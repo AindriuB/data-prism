@@ -106,10 +106,21 @@ infer classifications, create arbitrary JSON mappings, or let MCP callers
 choose a backend. Java-first adapters and annotated models are the general
 case, supported now. A configuration-driven JSON REST mode also ships today —
 the separately published `connectors-rest` artefact, opted into via
-`-Dloader.path`, no Java required — but its allowlisted `fields:` catalogue is
-flat by design (`ConfiguredJsonFieldMetadataResolver.descendable()` always
-returns `false`), so it covers only a source whose response is scalar fields
-and arrays of them, never a nested object. See `configuration.md` and
+`-Dloader.path`, no Java required — and its allowlisted `fields:` catalogue
+covers one level of named nested sub-catalogues: a root field can declare
+`nested: <name>` and point at a `nested-catalogues:` entry that is itself a
+flat catalogue of scalar/classified leaves, using the root's `nonSensitive`
+and classified leaf shapes — a nested catalogue carries no identifier of its
+own and inherits its subject from the enclosing record. It goes no deeper
+than that: a nested catalogue's own fields cannot themselves declare
+`nested:` or `identifier: true`, so recursion is
+refused at load time rather than left to depend on whatever the wire happens
+to send. There is still no dotted path, no JSONPath and no expression
+anywhere in this grammar — `subject-json-path` and every `fields:` or
+`nested-catalogues:` key remain a single bare, exact-match property name — so
+this mode still cannot reach a second path segment, an array index
+expression, or anything outside the one object (or one level of nested
+object) the response already is. See `configuration.md` and
 `docs/extending.md`.
 
 **Sideways.** An embedded Hazelcast member holding the identity cache, the shared
@@ -166,8 +177,10 @@ the boundary is crossed; catching a violation depends on review.
    message or audit record.** Search parameters are fingerprinted with an HMAC
    under the scope key, not hashed. **Partially enforced** — the log half is
    covered by `PiiLogScanTest`, which scans captured log output for stub
-   fixture identifying values. Metric labels, trace attributes and audit
-   records are not scanned by any test.
+   fixture identifying values, and the durable audit file half by
+   `AuditFilePiiScanTest` (task 65), which scans `FileAuditSink`'s own output
+   the same way. Metric labels and trace attributes are still not scanned by
+   any test.
 8. **The core carries no business domain.** No `Customer`, `Taxpayer`,
    `Employee` or `Account` type outside the `io.github.aindriub.dataprism.example`
    package (hosted in `data-prism-integration-tests`; task 49 renamed the
@@ -297,3 +310,25 @@ all of these is in `design-review.md` under the section named.
 - **2026-09-08 — Build the walking skeleton first, then thicken it**
   (`development-plan.md`). Rejected: the pack's layer-by-layer Phase 1–9 order,
   which defers proving the privacy boundary end-to-end until the last phase.
+- **2026-09-23 — The audit trail's threat model is a user, an operator, AND
+  any LLMs: it must be able to trace a sensitive-data exposure back to
+  whichever of the three caused it** (§A6, `pack.md` §54). An architect spike
+  found that `pack.md` §54, `design-review.md` §A6 and the S9 owner decisions
+  all describe the per-writer hash chain mechanism without ever stating whose
+  misbehaviour it catches; this closes that gap. Consequence, not a mechanism
+  change today: the operator is now explicitly in scope, and the unkeyed
+  SHA-256 chain (`AuditEventHash`) does not resist one — anyone with write
+  access to the audit file can delete or alter a record and recompute every
+  hash after it into a chain that verifies perfectly, as a tester demonstrated
+  by injecting a fabricated writer with a self-computed `eventHash`. Rejected:
+  keying the chain via `SecretKeyProvider` (the existing precedent being
+  `parameterFingerprint`'s HMAC). The key would live in the operator's own
+  process, making "the operator cannot have forged this" circular rather than
+  a claim this software can make true, and keying would also collapse
+  independent third-party verifiability, since only a key-holder could check
+  the file. Closing the gap needs external checkpointing (periodic signed
+  roots published outside the operator's control) or asymmetric signing with
+  the private key held outside the writing process — both real design work
+  depending on an operational guarantee this library cannot itself enforce,
+  left for the owner to schedule. See `docs/plan/PLAN.md` for the consequences
+  and follow-ups this decision opens.

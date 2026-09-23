@@ -1,15 +1,25 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.Hazelcast;
+import io.github.aindriub.dataprism.core.DataRequest;
+import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.ScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -84,6 +94,63 @@ class SharedReadBudgetTest {
                     assertThat(result).hasFailed();
                     assertThat(rootMessage(result.getStartupFailure())).contains("MISSING_SHARED_BUDGET");
                 });
+    }
+
+    /**
+     * Every other test in this class configures {@code dataprism.audit.sink=approved-sink}
+     * (see {@link #runner}) alongside an {@code AuditSink} bean, so none of them ever
+     * drives {@link DataPrismContractValidator} far enough to notice whether an absent
+     * bean still refuses -- the shared-budget outcome they assert is unrelated. Task 73:
+     * pin that explicitly, with the bean withheld, rather than leave the gap.
+     */
+    @Test
+    void approvedAuditSinkWithNoAuditSinkBeanRefusesAtTheContractValidator() {
+        WebApplicationContextRunner runner = new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrationsWithoutAudit.class)
+                .withPropertyValues(
+                        "dataprism.security.jwt.issuer=https://issuer.example",
+                        "dataprism.security.jwt.audience=mcp",
+                        "dataprism.security.jwt.jwk-set-uri=https://issuer.example/jwks",
+                        "dataprism.security.caller-claims.principal=sub",
+                        "dataprism.security.caller-claims.roles=roles",
+                        "dataprism.security.caller-claims.investigation=case_id",
+                        "dataprism.security-policy.purposes[0]=investigation",
+                        "dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
+                        "dataprism.privacy.profile=DEFAULT", "dataprism.privacy.scope-lifetime=8h",
+                        "dataprism.privacy.hmac-key.key-id=v1",
+                        "dataprism.privacy.hmac-key.environment-variable=DATAPRISM_HMAC_KEY_REF",
+                        "dataprism.audit.sink=approved-sink", "dataprism.audit.writer-id=test",
+                        "dataprism.metrics.sink=micrometer",
+                        "dataprism.sources.customer.base-url=https://customer.example",
+                        "dataprism.sources.customer.timeout=2s",
+                        "dataprism.hazelcast.topology=single-node");
+
+        runner.run(result -> {
+            assertThat(result).hasFailed();
+            String message = rootMessage(result.getStartupFailure());
+            assertThat(message).contains("AUDIT_SINK_BEAN_REQUIRED");
+            assertThat(message).contains("dataprism.audit.sink=approved-sink");
+        });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ReviewedHttpIntegrationsWithoutAudit {
+        @Bean DataSourceAdapter<String> customerAdapter() {
+            return new DataSourceAdapter<>() {
+                @Override public String sourceName() { return "customer"; }
+                @Override public Class<String> responseType() { return String.class; }
+                @Override public String fetch(DataRequest request) { throw new UnsupportedOperationException(); }
+            };
+        }
+        @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }
+        @Bean HmacKeyReferenceResolver keys() {
+            return (id, reference) -> (reference + ":" + id + ":resolved-key-material").getBytes();
+        }
+        @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
+        @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor() {
+            return request -> McpTransportContext.EMPTY;
+        }
     }
 
     /**

@@ -1,16 +1,16 @@
 # Extending Data Prism: writing a reviewed adapter
 
-If your source is a flat JSON REST API — one JSON object per response, no
-nested objects — you almost certainly do not need this guide. Read
-[`docs/protect-your-own-api.md`](protect-your-own-api.md) instead: a
+If your source is a JSON REST API whose response is either flat or nests
+objects at most one level deep, you almost certainly do not need this guide.
+Read [`docs/protect-your-own-api.md`](protect-your-own-api.md) instead: a
 YAML-only walkthrough that protects such a source with no Java class, no
 `pom.xml`, and no `META-INF` registration step, using the same
 `data-prism-connectors-rest` configuration-driven JSON REST mode summarised
 below.
 
-This guide is for the three cases that YAML-only path cannot cover: a
-response that nests objects, custom fetch logic beyond a single templated
-`GET`, or a model no flat allowlisted catalogue can express. For any of
+This guide is for the cases that YAML-only path cannot cover: a response that
+nests objects two levels or more, custom fetch logic beyond a single
+templated `GET`, or a model no allowlisted catalogue can express. For any of
 those, this is the path a consumer walks to point Data Prism at their own
 API: write a `DataSourceAdapter`, write (or reuse) an `IdentityResolver`,
 classify the response model with `@LlmExposedModel`, shape the pom, register
@@ -26,24 +26,29 @@ compiled adapter class. An operator loads that jar the same way as any
 reviewed extension (`-Dloader.path`) and writes a YAML catalogue instead:
 `dataprism.json-sources.config-location` names a file whose `json-sources:`
 entries state a transport (`base-url`, a `path` template, `timeout`), a
-`model-version` tag, and a flat, allowlisted `fields:` catalogue — one entry
-per JSON property, each an identifier, `nonSensitive`, or classified, the
-same vocabulary `@SensitiveData`/`@NonSensitive`/`@InternalIdentifier` express
+`model-version` tag, and an allowlisted `fields:` catalogue — one entry
+per JSON property, each an identifier, `nonSensitive`, classified, or a
+`nested: <name>` pointer into a `nested-catalogues:` entry — the same
+vocabulary `@SensitiveData`/`@NonSensitive`/`@InternalIdentifier` express
 below
 (`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSource.java:8-34`,
 `.../ConfiguredJsonSourcesAutoConfiguration.java:82`).
 
-That mode has a real limit worth knowing before choosing it: its resolver
-never descends into a nested object — `descendable` always returns `false`,
-by design, because there is no reviewed Java type behind a configured source
-to say what a nested structure means — so it only covers a source whose
-response is one flat JSON object: scalar fields, or arrays of them, but no
-nested objects
-(`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonFieldMetadataResolver.java:56-65`).
-If your source's response nests objects, needs custom fetch logic beyond a
-single templated `GET`, or needs a model no flat catalogue can express, that
-limit is why this guide exists: the Java-first path below has no such
-ceiling. Configuration for the JSON REST mode is not covered further here —
+That mode has a real limit worth knowing before choosing it: a `nested:`
+field's own catalogue is exactly one level deep, and it carries no identifier
+of its own — it inherits its subject from the enclosing record — so its
+leaves may be `nonSensitive` or classified only; `identifier: true` and a
+further `nested:` are both refused there. `descendable` only ever answers
+true for one of a source's own minted
+nested-catalogue tokens, never recursively
+(`data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonFieldMetadataResolver.java`).
+There is also no dotted path or JSONPath anywhere in this grammar: every
+`fields:`/`nested-catalogues:` key, and `subject-json-path` itself, is a
+single bare, exact-match property name. If your source's response nests
+objects two levels or more, needs custom fetch logic beyond a single
+templated `GET`, or needs a model no such catalogue can express, that limit
+is why this guide exists: the Java-first path below has no such ceiling.
+Configuration for the JSON REST mode is not covered further here —
 see [`docs/protect-your-own-api.md`](protect-your-own-api.md) for the
 worked walkthrough and [`docs/configuration.md`](configuration.md) for its
 full configuration vocabulary — because this guide is about the path that
@@ -349,8 +354,8 @@ placed on `-processorpath`, the same way `annotationProcessorPaths` places it
 for Maven:
 
 ```
-$ javac -cp data-prism-annotations-0.2.0.jar \
-    -processorpath data-prism-processor-0.2.0.jar:data-prism-annotations-0.2.0.jar \
+$ javac -cp data-prism-annotations-0.3.0.jar \
+    -processorpath data-prism-processor-0.3.0.jar:data-prism-annotations-0.3.0.jar \
     -d out BadModel.java
 BadModel.java:8: error: field is on an @LlmExposedModel but carries no classification. Add @SensitiveData, or @NonSensitive(reason = "...") stating why it is safe to expose.
         String unclassifiedField) {
@@ -411,7 +416,7 @@ dependency block above as shown gets a missing-version error for the two
 consumer's own project version*, an artifact that does not exist; and with
 no `release` set at all, `maven-compiler-plugin` falls back to its own
 default of `1.8`, at which point a `record` (used below) is a syntax error
-and `data-prism-core-0.2.0.class` files — compiled for 21 — fail to load
+and `data-prism-core-0.3.0.class` files — compiled for 21 — fail to load
 with `class file has wrong version 65.0`.
 
 The version-complete equivalent, standing alone, with no parent from this
@@ -423,7 +428,7 @@ depending on Data Prism:
 ```xml
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <data-prism.version>0.2.0</data-prism.version>
+    <data-prism.version>0.3.0</data-prism.version>
     <spring-boot.version>3.5.16</spring-boot.version>
   </properties>
 
@@ -465,7 +470,7 @@ depending on Data Prism:
   </dependencies>
 ```
 
-`spring-boot.version` (`3.5.16`) is the exact Spring Boot version the 0.2.0
+`spring-boot.version` (`3.5.16`) is the exact Spring Boot version the 0.3.0
 server distribution was built against — importing its
 `spring-boot-dependencies` BOM is what lets `spring-web` and
 `spring-boot-autoconfigure` above go unversioned safely, resolving to the
@@ -489,9 +494,9 @@ content is the top-level fields already assumed (`groupId`, `artifactId`,
 minimal `DataSourceAdapter` and an `@LlmExposedModel` record, it was built
 with `mvn package` against a clean local repository with no other
 data-prism artifacts in it, resolving `data-prism-core`,
-`data-prism-annotations` and `data-prism-processor` `0.2.0` from Maven
+`data-prism-annotations` and `data-prism-processor` `0.3.0` from Maven
 Central and `spring-web` `6.2.19`/`spring-boot-autoconfigure` `3.5.16` from
-the imported BOM — the same Spring Boot version the 0.2.0 server
+the imported BOM — the same Spring Boot version the 0.3.0 server
 distribution itself was built against. The build produced a jar; nothing in
 this paragraph is aspirational.
 
@@ -599,7 +604,7 @@ ways to load it into the packaged server exist, both documented already in
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.2.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.3.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 
@@ -655,7 +660,7 @@ Caused by: io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationExcept
 ```
 
 `$EXTENSION_JAR` and `$SERVER_JAR` were the built
-`data-prism-quickstart-extension-0.2.0.jar` and `data-prism-server-0.2.0.jar`
+`data-prism-quickstart-extension-0.3.0.jar` and `data-prism-server-0.3.0.jar`
 from this repository's own `target/` directories; the omitted arguments are
 the same security, privacy, audit, metrics and Hazelcast configuration
 `docs/configuration.md` requires for any protected deployment and are unrelated

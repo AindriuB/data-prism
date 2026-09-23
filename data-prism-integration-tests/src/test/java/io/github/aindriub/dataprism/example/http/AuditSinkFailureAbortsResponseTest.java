@@ -183,11 +183,133 @@ class AuditSinkFailureAbortsResponseTest {
             assertThatThrownBy(() -> client.callTool(new McpSchema.CallToolRequest(
                     "get_entity_context", Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
                     .as("the sink's failure must surface as a call failure, never a successful result "
-                            + "carrying an unaudited decision")
+                            + "carrying an unaudited decision, and the client learns only the stable "
+                            + "refusal code — never the sink's own exception message")
                     .isInstanceOf(McpError.class)
-                    .hasMessageContaining("simulated sink failure, for this test only");
+                    .hasMessageContaining("AUDIT_UNAVAILABLE")
+                    .hasMessageNotContaining("simulated sink failure, for this test only");
         } finally {
             client.closeGracefully();
+        }
+    }
+
+    /**
+     * The stubbed throwing sink above proves the code path; this proves the
+     * disclosure it guards against is real. A {@code FileAuditSink} is opened
+     * over a genuine temporary file, then its channel is closed out from under
+     * it so the very next {@code record(...)} poisons the sink and every
+     * subsequent one throws {@code FileAuditSink.PoisonedException} — the
+     * exception task 74's own analysis names as the one that carries the
+     * path (unlike the plain {@code UncheckedIOException} the first failed
+     * write throws). The same denial is then driven through the real
+     * transport, and the client-visible {@code McpError} is asserted to name
+     * neither the temporary directory nor the file within it — anywhere,
+     * including its cause chain as the client observes it.
+     */
+    @Test
+    @DisplayName("a real FileAuditSink poisoned by a prior failure never lets its path reach the client")
+    void poisonedFileAuditSinkNeverDisclosesItsPathToTheClient() throws Exception {
+        java.nio.file.Path auditFile = java.nio.file.Files.createTempFile("data-prism-audit-failure-test-", ".log");
+        io.github.aindriub.dataprism.audit.FileAuditSink fileSink =
+                new io.github.aindriub.dataprism.audit.FileAuditSink(auditFile);
+        AuditRecorder poisonProbe = new AuditRecorder(fileSink,
+                Clock.fixed(Instant.parse("2026-09-22T12:00:00Z"), java.time.ZoneOffset.UTC),
+                "audit-sink-failure-test-poison-probe");
+        try {
+            // Close the channel out from under the sink, then force one failed
+            // write so the sink poisons itself exactly the way a real durability
+            // failure would; every record() after this throws PoisonedException.
+            fileSink.close();
+            assertThatThrownBy(() -> poisonProbe.record(PRINCIPAL, CLIENT_ID, "poison-probe", "CUSTOMER", "",
+                    "", "", "", UNCONFIGURED_PURPOSE, CASE_ID, "POISON_PROBE", Set.of(), Set.of(),
+                    java.util.UUID.randomUUID().toString()))
+                    .as("the first failure after the channel is closed poisons the sink")
+                    .isInstanceOf(RuntimeException.class);
+        } finally {
+            // FileChannel#close is idempotent; a second close is harmless.
+            fileSink.close();
+        }
+
+        String token = mintToken(UNCONFIGURED_PURPOSE);
+        McpSyncClient client = clientWithFileAuditSink(fileSink, token);
+        try {
+            assertThatThrownBy(() -> client.callTool(new McpSchema.CallToolRequest(
+                    "get_entity_context", Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
+                    .as("neither the temporary directory nor the audit file's own name may reach the "
+                            + "client, in the message or anywhere in the cause chain it observes")
+                    .isInstanceOf(McpError.class)
+                    .satisfies(thrown -> {
+                        String rendered = renderedIncludingCauses((McpError) thrown);
+                        assertThat(rendered).contains("AUDIT_UNAVAILABLE");
+                        assertThat(rendered).doesNotContain(auditFile.toString());
+                        assertThat(rendered).doesNotContain(auditFile.getFileName().toString());
+                        assertThat(rendered).doesNotContain(auditFile.getParent().toString());
+                    });
+        } finally {
+            client.closeGracefully();
+            java.nio.file.Files.deleteIfExists(auditFile);
+        }
+    }
+
+    private static String renderedIncludingCauses(Throwable thrown) {
+        StringBuilder rendered = new StringBuilder();
+        for (Throwable current = thrown; current != null; current = current.getCause()) {
+            rendered.append(current).append('\n');
+            if (current.getCause() == current) {
+                break;
+            }
+        }
+        return rendered.toString();
+    }
+
+    /**
+     * A second application boot, identical in shape to {@link #startApplication()}
+     * except that it registers the given {@code FileAuditSink} as the {@code
+     * AuditSink} bean instead of the stubbed throwing one. Started and stopped
+     * within the test rather than shared, since only one test needs a real
+     * file-backed sink.
+     */
+    private static McpSyncClient clientWithFileAuditSink(AuditSink sink, String token) throws Exception {
+        HmacKeyReferenceResolver testKeys = (keyId, reference) ->
+                "task-63-test-only-key-material-longer-than-thirty-two-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        JwtDecoder testDecoder = NimbusJwtDecoder.withPublicKey((RSAPublicKey) signingKey.toRSAPublicKey()).build();
+
+        ConfigurableApplicationContext poisonedContext = new SpringApplicationBuilder(ResourceServerApplication.class)
+                .web(WebApplicationType.SERVLET)
+                .initializers(applicationContext -> {
+                    applicationContext.getBeanFactory().registerSingleton("poisonedFileAuditSink", sink);
+                    applicationContext.getBeanFactory().registerSingleton("testHmacKeyReferenceResolverPoisoned", testKeys);
+                    applicationContext.getBeanFactory().registerSingleton("testJwtDecoderPoisoned", testDecoder);
+                })
+                .run("--server.port=0");
+        int poisonedPort = ((ServletWebServerApplicationContext) poisonedContext).getWebServer().getPort();
+
+        javax.net.ssl.TrustManagerFactory trustManagers =
+                javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());
+        trustManagers.init((java.security.KeyStore) null);
+        javax.net.ssl.SSLContext explicitDefault = javax.net.ssl.SSLContext.getInstance("TLS");
+        explicitDefault.init(null, trustManagers.getTrustManagers(), null);
+
+        HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
+                .builder("http://localhost:" + poisonedPort)
+                .endpoint("/mcp")
+                .clientBuilder(java.net.http.HttpClient.newBuilder().sslContext(explicitDefault))
+                .requestBuilder(HttpRequest.newBuilder().header("Authorization", "Bearer " + token))
+                .build();
+        McpSyncClient client = McpClient.sync(transport)
+                .clientInfo(new McpSchema.Implementation("audit-sink-failure-test-poisoned", "1.0.0"))
+                .build();
+        client.initialize();
+        poisonedContexts.add(poisonedContext);
+        return client;
+    }
+
+    private static final List<ConfigurableApplicationContext> poisonedContexts = new ArrayList<>();
+
+    @AfterAll
+    static void stopPoisonedApplications() {
+        for (ConfigurableApplicationContext poisonedContext : poisonedContexts) {
+            poisonedContext.close();
         }
     }
 

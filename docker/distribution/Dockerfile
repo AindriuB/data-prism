@@ -61,7 +61,7 @@ ENV LOADER_PATH=/app/adapters
 # path below (matching docker/server/Dockerfile's own convention) precisely
 # so nothing past this COPY step, ENTRYPOINT included, ever needs to know
 # this ARG's value.
-ARG VERSION=0.2.0
+ARG VERSION=0.3.0
 COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server.jar
 RUN chown dataprism:dataprism /app/data-prism-server.jar
 

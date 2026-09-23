@@ -17,6 +17,691 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 70: version 0.3.0 cut across the reactor, onto the integration branch
+
+The reactor, `server.json` (plus the previously-missing `DATAPRISM_AUDIT_FILE_PATH`
+environment variable), both MCP `serverInfo` literals, the distribution
+Dockerfile, `publish-image.yml`'s `workflow_dispatch` default, three
+PackagingIT/SmokeIT jar-name literals, and README/doc version text all read
+`0.3.0`. `CHANGELOG.md` gained a `[0.3.0]` entry covering the cycle's
+user-visible changes, with breaking changes stated alongside what a consumer
+must do: task 71's pseudonym discriminator widened to 40 bits (24-byte-minimum
+MAC — HmacMD5/HmacSHA1 now refused, and any pseudonym stored or compared under
+0.2.0 will no longer match); task 73's `AUDIT_SINK_BEAN_REQUIRED` code
+replacing `MISSING_AUDIT_SINK` for `approved-sink` configured with no bean;
+task 75's `instanceId` shape change (`<writer-id>/<uuid>`) and new
+`INVALID_AUDIT_WRITER` refusal code; and task 69's `UNRESOLVED_SOURCE_ADAPTER`
+renamed to `UNREVIEWED_SOURCE_ADAPTER`. Verified: a fresh isolated-repo build
+is green; `-Prelease` runs through GPG signing (stopping there with no key in
+the sandbox, as expected); the packaged server reports `serverInfo` version
+0.3.0 over a real MCP `initialize`; all five images (distribution plus four
+quickstart) build; `server.json` validates against the live 2025-12-11
+registry schema. Merged 2026-09-23, PASS + APPROVE on attempt 4, onto
+`v0.3.0/audit-trail-and-nested-json` — **not onto `main`**; the integration
+branch's own merge to `main` is a separate, still-pending step in the release
+sequence (`docs/plan/PLAN.md`, "Release sequence"). Post-merge full-reactor
+`mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19 modules, 646
+tests, 0 failures, 0 errors, 0 skipped.
+
+**Cost:** four attempts, every one on the CHANGELOG and verification
+bookkeeping, never on the version bump itself, which was sound from attempt 1.
+Three lessons worth carrying into any future release-cut task:
+1. A CHANGELOG must be written from the verified docs and `HISTORY.md`, not
+   from plan text, task-file intentions, or memory. Attempt 1's first draft
+   both missed several already-merged breaking changes (71, 73, 74, 75, and a
+   run of onboarding tasks) and stated three claims — the verifier's exit
+   codes on truncation, nested leaves sharing the flat catalogue's leaf
+   grammar, and `descendable()`'s return value — that the code and `docs/audit.md`
+   had already corrected by the time this task started; each had to be traced
+   back to the file or doc that proves it, not assumed carried-over-correct.
+2. Do not cite commit SHAs in a commit body on a branch that will be rebased.
+   Two of this task's own verification commits cited SHAs from before a
+   rebase, pointing at commits unreachable from the final branch and due for
+   garbage collection. Refer to a commit by subject ("the version-bump
+   commit") and let the close-out record the count against the real merge
+   commit.
+3. Summing `target/*-reports/*.txt` surefire summaries undercounts JUnit 5
+   `@Nested` test classes — `MultiKeySecretKeyProviderTest` reported `Tests
+   run: 0` in its own `.txt` despite holding 14 real tests, because they sit
+   inside a `@Nested` container. That method gave 632 against this tree; the
+   true count, taken from the per-module surefire/failsafe `Results: Tests
+   run:` lines (or equivalently the `TEST-*.xml` testcase count), is 646 —
+   confirmed again independently at this close-out's own full-reactor run.
+
+Two items a reviewer raised but left unactioned, recorded so nobody rediscovers
+them as new: an empty `dataprism.sources` was refused as `MISSING_SOURCE_ADAPTER`
+under 0.2.0, which the `UNREVIEWED_SOURCE_ADAPTER` breaking-change line does not
+mention (the non-empty case is what actually changed, and is the normal case);
+and one commit body has a "nested nested" typo, left rather than rewriting
+history for it.
+
+## 2026-09-23 — Task 62: nested catalogues and the durable audit chain are documented
+
+`docs/architecture.md`'s "flat by design" and boundary-7 claims are corrected
+to what task 60 actually shipped: one level of named sub-catalogues, no
+recursion, no dotted paths or JSONPath, exact-match property names, the
+`AuditFilePiiScanTest` file scan named alongside `PiiLogScanTest`. A new
+`docs/audit.md` documents the hash chain, `FileAuditSink` (single file,
+append, fsync per record, no rotation), the offline verifier CLI, every exit
+code (0-4) and their precedence, the per-boot `<writer-id>/<uuid>` `instanceId`
+task 75 introduced, and exactly what is and is not detected: an edit anywhere
+in a writer's chain is caught, including the last record; deleting the tail of
+a chain or an entire boot's records is undetectable from inside the file; and
+pointing the verifier at `Slf4jAuditSink` (or any non-audit) output reads as a
+run of benign `INTERRUPTED WRITE, not tampering` lines (exit 4) — a false
+reassurance, not a false alarm, and the doc says plainly never to do it.
+`docs/protect-your-own-api.md` gained a nested-catalogue walkthrough with
+pseudonyms refreshed to task 71's eight-character forms and the
+`NESTED_LEAF_NOT_SCALAR` refusal code named; `docs/extending.md` no longer
+lists "a nested response" as a reason to leave the no-code path, only two-plus
+levels, custom fetch logic, or an inexpressible model. New
+`examples/json-sources/customer-api-nested.yaml` and
+`NestedCatalogueWalkthrough.java`, both reproducible from an empty local Maven
+repository, not just the author's machine.
+
+**Cost:** nine attempts, all failing on review (attempt 2 also failed on
+test). The pattern across all nine: nearly every round surfaced exactly one
+new factual error the previous round had missed, several of them introduced
+by a reviewer's own source-reading rather than caught in the implementer's
+draft — attempt 1's reviewer told attempt 2 that Slf4j-format log input makes
+the verifier exit 2 ("break detected"); the attempt-2 tester actually ran it
+and got exit 4 (`INTERRUPTED_WRITE_FRAGMENT`), the opposite hazard framing
+(false reassurance, not false alarm). The leaf-grammar claim that a nested
+catalogue's leaves take "the same three shapes as the root" (including
+`identifier`) was wrong and got restated in four different files across four
+different attempts before a grep-every-file sweep (attempt 4) found the last
+copy. Attempts 6-8 chased small drifts in the doc's own quoted verifier
+transcripts — a missing `/<uuid>` suffix, a whole-boot-deletion example with
+its counts backwards, a "LIMITATION paragraph quoted above in full" that was
+never actually quoted — none caught until a tester compared the quoted output
+BY TEXT against a real run rather than by shape (attempt 6's tester compared
+by shape and missed the missing-suffix defect entirely). What finally
+converged it: reviewers instructed to trace every claim to the enforcing code
+rather than to their own memory of it, testers diffing quoted blocks
+character-by-character against fresh runs, and prose counts (a "same" record
+count restated with a different UUID) checked against the block they
+describe. Separately, the walkthrough only ever reproduced on the author's own
+machine because a branch build was already sitting in `~/.m2`; proven
+reproducible from an isolated, empty local repository from attempt 3 onward,
+which is the bar every future runnable-example task in this repository should
+hold itself to. Task 75 (per-boot audit chain identity) was spun out of this
+task's attempt-5 review and is recorded separately above; this task's
+attempts 6-9 document the post-75 behaviour, not the bug 75 fixed. Attempt 4
+was misbased onto `origin/v0.3.0/audit-trail-and-nested-json` rather than the
+local ref and had to be rebuilt by hand as local base plus the four task
+commits — see task 75's entry above for the fuller account of that ref
+divergence.
+
+## 2026-09-23 — Task 75: each process boot gets its own audit chain identity
+
+Found on task 62's attempt-5 review: a hash-chained server restarted with the
+same `dataprism.audit.writer-id` raised a false CHAIN BREAK, because every
+boot restarted at GENESIS/sequence 1 under the same config-fixed `instanceId`,
+and `AuditChainVerifier` keys chains on `instanceId`. Owner decision
+2026-09-23: fix it in code before 0.3.0, since a restart is the ordinary case,
+not an edge case, for a deployment this feature exists to run in. `AuditRecorder`
+now derives `instanceId` as `<writer-id>/<per-boot random UUID>`, so a restart
+reads as a new writer starting at GENESIS instead of a chain break; the
+three-arg constructor and every call site are unchanged. A blank writer-id or
+one containing `/` is refused — `AuditRecorder` throws `IllegalArgumentException`,
+and `DataPrismProperties.validate()` refuses the same at startup with a new
+`INVALID_AUDIT_WRITER` code alongside the existing `MISSING_AUDIT_WRITER`.
+`AuditChainVerifier`'s detection logic is untouched, verified against the real
+packaged server: two boots writing to the same file report as two intact
+writers, and editing any record, deleting a boot's first record, or a
+duplicate sequence within a boot all still give exactly today's exit code and
+finding type. New, owner-accepted blind spot recorded rather than fixed:
+deleting every record of one boot is undetectable from inside the file, the
+same as tail truncation.
+
+Three attempts. Attempt 1 passed the chain-behaviour criteria but made
+`PiiLogScanTest` flaky: the `seq` Slf4j field now carries a random UUID, and a
+plain `contains` scan over it flagged a banned fixture value (e.g. `123`)
+whenever the UUID happened to contain that substring — roughly 1-3% of runs
+red at random. `Owns` widened to cover pinning the field's shape the way the
+existing timestamp exemption does. Attempt 2 fixed the flake but introduced a
+worse defect in the fix: both new PII-scan exemptions (`PiiLogScanTest`'s
+`seq` shape and `AuditFilePiiScanTest`'s `instanceId` shape) matched the whole
+field and skipped it entirely on a match, so a banned value living inside the
+config-supplied writer-id part — which the exemption cannot pattern-match
+away, since an operator's writer-id can be anything without `/` — was never
+scanned at all: a fail-open in a leak-detection scan, the exact class of bug
+these scans exist to catch. `Owns` widened again mid-attempt to
+`AuditFilePiiScanTest` once the same exposure was found there. Attempt 3
+fixed it correctly: strip only the anchored `/<uuid>` (or `/<uuid>/<digits>`
+for `seq`) suffix, then run the ordinary `contains` scan over whatever
+remains — the config-supplied part is never exempted, only the part that is
+provably random. PASS + APPROVE on attempt 3, merged onto
+`v0.3.0/audit-trail-and-nested-json`.
+
+**Cost:** the lesson worth carrying past this task is general to any leak
+scan that adds an exemption for a structured field: exempt only the part of
+the field that is provably random (minted by the code, not supplied by
+config), never the whole field, even when the random part is anchored and
+easy to match in full — a full-field match is a fail-open the moment any part
+of that field can carry attacker- or operator-supplied content. Separately,
+two implementers in this task's history (task 62 attempt 4, and this task's
+own worktrees) rebased onto `origin/v0.3.0/audit-trail-and-nested-json`
+instead of the local ref of the same name, which is roughly 30 commits ahead;
+a `backup/62-attempt4-misbased` ref records the resulting hand-rebuild and is
+left in place, not this task's to remove. Implementer prompts for this branch
+must name the local base ref explicitly.
+
+## 2026-09-23 — Task 69: the reviewed-adapter allow-list is restored, via a `Set<String>` bean instead of a connector-owned type
+
+`DataPrismContractValidator` now refuses, with the stable code
+`UNREVIEWED_SOURCE_ADAPTER`, any `DataSourceAdapter` bean named by neither
+`dataprism.sources` nor the JSON catalogue's own source names — restoring
+rule-1 enforcement task 54's subset relaxation had silently dropped, not
+"guarantee-preserving" (task 54's own framing, which this task deliberately
+does not repeat): it is the mechanism keeping an unreviewed source adapter
+from reaching the MCP layer. `ConfiguredJsonSourcesAutoConfiguration`
+publishes the catalogue's names as a plain `Set<String>` bean named
+`dataPrismConfiguredJsonSourceNames`; `DataPrismAutoConfiguration` and
+`DataPrismContractValidator` consume it via `ObjectProvider` with
+`@Qualifier`. The unreachable `MISSING_AUDIT_SINK` arm (dead since task 67
+wired `hash-chained`) stays a defensive guard with an accurate "unreachable
+today" comment — judged correct, nothing further owed there.
+
+Attempt 1 (rejected on review and test) wired the catalogue's names in as
+`ObjectProvider<ConfiguredJsonSourceNames>`, a `data-prism-connectors-rest`
+record type, in unconditional `@Bean` method signatures on
+`DataPrismAutoConfiguration`, backed by a new `<optional>true</optional>`
+Maven dependency from autoconfigure to connectors-rest. `data-prism-server`
+declares connectors-rest at test scope only — the base distribution
+deliberately never compiles against a connector, opting one in at runtime
+via `-Dloader.path` — so the packaged server crashed at context refresh with
+`TypeNotPresentException`. `<optional>true</optional>` cannot help: the
+parameter type is compiled into the class file, and Spring's
+autowire-candidate resolution calls `Method.getGenericParameterTypes()`,
+resolving every type argument via `Class.forName` before
+`getIfAvailable()` is ever reached — there is no empty provider, only a hard
+failure. Blast radius was every deployment not bundling connectors-rest,
+including an IT that loads a perfectly *reviewed* adapter via
+`-Dloader.path`. Unit tests passed 22/22 regardless, because connectors-rest
+sits on the autoconfigure test classpath; only `mvn verify`
+(`ConfiguredJsonSourcesPackagingIT` and the server module's packaging ITs)
+exposed the crash.
+
+Attempt 2 publishes the names as a plain `Set<String>` instead — JDK-
+resolvable on any classpath regardless of which connector is present — and
+reverts the pom dependency entirely, so autoconfigure keeps no compile edge
+to the connector module at all. Also pins that the published names equal the
+registered adapters' own `sourceName()` values, which nothing previously
+tied together. Squashed both commits into one before merging (unlike task
+67's separate-commits precedent) because attempt 1's message describes an
+approach whose code no longer exists in the final tree; keeping it separate
+would have left a misleading commit in history for no offsetting benefit.
+
+**The collision question was settled empirically, not argued.** A generic
+`Set<String>` injection point sounds like it could be satisfied by any other
+`Set<String>` bean in an application context, which for an allow-list would
+be a rule-1 widening. Verified against real Spring contexts: a named bean
+present alongside an unrelated `Set<String>` resolves only the intended one;
+the named bean absent alongside an unrelated `Set<String>` resolves to null
+(empty provider) — it does not fall back to the other bean. Two candidates
+for the same name throw `NoUniqueBeanDefinitionException` (fail loud); none
+leaves the provider empty (fail closed). The only way to subvert it is an
+application deliberately defining a bean named
+`dataPrismConfiguredJsonSourceNames` in the vendor's own namespace. A
+core-owned marker type would be marginally stricter; the reviewer explicitly
+recommended against attempting that, and the recommendation stands — do not
+re-litigate this with a third attempt.
+
+**Cost:** the bean-name contract between the two modules is now three
+duplicated string literals with no shared constant to catch a typo at
+compile time — unavoidable, since no compile edge is the entire point. A
+typo fails closed (the allow-list narrows, a legitimate adapter is refused)
+but confusingly, and is caught only by `ConfiguredJsonSourcesPackagingIT`
+under `mvn verify`, not `mvn test`. That is the *same* blind spot that hid
+attempt 1's crash — twice in one task, a real defect was invisible to `mvn
+test` alone. Filed as a follow-up in `PLAN.md`: either a unit-level assertion
+tying the three literals together, or a documented requirement that this
+area be verified with `mvn verify` rather than `mvn test`. "The tests pass"
+means less here than usual unless it was `verify`. Merged 2026-09-23, PASS +
+APPROVE on attempt 2, onto `v0.3.0/audit-trail-and-nested-json`. Verifying
+agents hit concurrent-build contention in the shared `~/.m2` inside this
+task's own worktree and had to rerun in isolation before trusting a result —
+the same hazard `docs/conventions.md:335` already documents.
+
+## 2026-09-23 — Task 55: the quickstart images publish, and Compose pulls them by default
+
+`compose.yaml`'s four services (server-with-extension, fixtures, issuer,
+certs-init) no longer each carry a `build:` block Compose executes on plain
+`docker compose up`; the from-source path moves to a new
+`compose.build.yaml`, invoked with `docker compose -f compose.yaml -f
+compose.build.yaml up --build`. `.github/workflows/publish-image.yml`
+publishes all four as multi-architecture manifest lists under the same
+GHCR namespace as the existing distribution image, on a `v*` tag, gated by
+the identical `workflow_dispatch && refs/tags/v` guard on every
+registry-touching step; new build steps are `--load`-only and their digest
+files are written to their own `/tmp/digest-quickstart` directory so the
+distribution image's own manifest assembly is untouched. Verified PASS
+(tester) and APPROVE (reviewer) twice — once at `248fe7e`/`1c8d10e`, again
+for the fix-pass commit `47567b3` — then merged onto
+`v0.3.0/audit-trail-and-nested-json` as three separate commits (not
+squashed: each is a distinct logical step and each message is still
+accurate for its own change).
+
+The fix pass (`47567b3`) closed a release-day landmine: the from-source
+build path pinned `ARG VERSION=0.2.0` in all three jar-carrying Dockerfiles,
+so the moment task 70 cuts the reactor to 0.3.0, the documented fallback
+command for a reader who cannot pull images — `docker compose -f
+compose.yaml -f compose.build.yaml up --build` — would fail at `COPY` on a
+missing jar. Each Dockerfile now locates the one repackaged jar its own
+module's `target` directory holds (`find ... -maxdepth 1 -name '*.jar' !
+-name '*.original'`) and copies it to a fixed name, independent of the
+reactor version. Verified by actually running `mvn versions:set
+-DnewVersion=0.3.0` across the reactor, rebuilding successfully, and
+reverting cleanly — not merely inspected.
+
+Close-out review found and fixed two more defects before merging: six call
+sites across `publish-image.yml` (three `--load`-only builds, three
+push-by-digest builds) still passed `--build-arg VERSION=$VERSION` to
+Dockerfiles that no longer declare that `ARG` — Docker only warns on an
+unconsumed build-arg, so this was inert, but it read as live plumbing and
+was removed. All three quickstart Dockerfiles' comments also credited `!
+-name '*.original'` with excluding the spring-boot-maven-plugin's
+repackage sibling; it does not, since `-name '*.jar'` alone already
+excludes `*.jar.original` (it does not end in `.jar`), making the trailing
+predicate a no-op. The `find` behaviour was already correct; only the
+stated reasoning was wrong, and — since this same release already
+rejected task 67 for carrying a claim that had gone false — the comment
+was corrected rather than left to mislead the next reader, with the
+predicate kept as a defensive no-op.
+
+**What this does not close, stated plainly:** a full `docker compose up`
+end-to-end run was not exercised on the merging machine — the usual
+quickstart port was bound by an unrelated long-running process — though
+all four images were confirmed to build from source and both compose
+files resolve. The GHCR publish path itself remains argued from its
+conditions, not exercised by a real `v*` tag push through Actions, the
+same allowance task 40's own close-out used for the same reason.
+
+**Cost:** none of the three commits needed rework; the two defects above
+were both found and fixed during this close-out's own review pass, not
+carried over as owed follow-ups. One piece of hardening is still owed and
+recorded in `PLAN.md`: the `find` in each Dockerfile has no match-count
+assertion, so it silently copies an arbitrary jar if a future change ever
+produces two matches in one module's `target` — unreachable today, but a
+`set -eu` plus a count check would convert a future silent-wrong into a
+loud-fail.
+
+## 2026-09-23 — Task 67: `dataprism.audit.sink=hash-chained` wired to `FileAuditSink`
+
+The release's centrepiece. `dataprism.audit.sink: hash-chained` now produces a
+`FileAuditSink` bean bound to the required `dataprism.audit.file-path`
+property, so an operator who selects it gets a durable, append-only,
+hash-chained audit file rather than tripping a later `MISSING_AUDIT_SINK` by
+accident. Omitting the file path refuses at the same `DataPrismProperties`
+validation phase as every other misconfiguration
+(`MISSING_AUDIT_FILE_PATH`, naming the property); a configured path this
+process cannot open — no parent directory, unwritable — refuses at startup
+with `AUDIT_SINK_FILE_UNUSABLE` rather than degrading silently to no
+auditing or surfacing on the first audited request. `slf4j` still produces
+only `Slf4jAuditSink`, never both. `PrivacyExtensionPoints` gained the new
+`@Bean`'s row. Because task 72 merged first, this is the first durable
+hash-chained audit file ever written under the nineteen-field hash
+(`timestamp` and `sourceSystems` included) from its very first record —
+nothing to migrate, no earlier chain invalidated. That ordering was the
+point of sequencing 72 ahead of 67, and it held. Verified PASS (tester) and
+APPROVE (reviewer) on attempt 2; merged onto
+`v0.3.0/audit-trail-and-nested-json`, squashing the wiring commit and its
+attempt-2 correction into one so history does not carry the corrected
+commit's false claims.
+
+**What this does not close, stated plainly so it is not oversold:** the
+trail is durable and tamper-evident against an outside forger. It does not
+resist the operator — `AuditEventHash` is unkeyed SHA-256, so anyone with
+write access to the file can recompute the whole chain. That gap is
+recorded in `docs/architecture.md` and `PLAN.md` and deliberately
+deprioritised by the owner. Nothing here should be read as, or later
+rewritten to say, that the audit file is tamper-proof, immutable, or
+evidence against the operator.
+
+**Cost — attempt 1 was rejected on review, and it is worth recording why,
+honestly: the wiring was correct throughout, both times.** It was rejected
+because two claims it carried had gone false while it sat verified-but-
+blocked on a base that moved beneath it — the PASS/APPROVE had been earned
+against base `36ee57d`, and five tasks (66, 71, 72, 73, 74) merged under it
+before it was re-verified:
+- Its javadoc claimed the response mapper leaks a sink's raw exception
+  message to the client and cited `AuditSinkFailureAbortsResponseTest` as
+  proof. Task 74 had closed exactly that, and the cited test now asserted
+  the inverse — a false security claim citing its own refutation.
+- `HashChainedAuditSinkTest` replayed the hash chain by hand on the stated
+  grounds that task 66 was unmerged. Task 66 had merged; `AuditChainVerifier`
+  existed and the acceptance criterion asked for it to be used.
+
+Attempt 2 fixed both claims, switched the test to
+`AuditChainVerifier.verify(file)`, added the missing test for the
+`AUDIT_SINK_FILE_UNUSABLE` refusal — proven by mutation that swallowing
+`OpenFailedException` and falling back to `Slf4jAuditSink` turns the test
+red — and stopped discarding `OpenFailedException`'s cause: it is now
+logged server-side at the catch site (the same sanctioned "catch block logs
+the object it caught" exception `docs/conventions.md` already recorded for
+two `data-prism-mcp` tools), while the thrown `DataPrismConfigurationException`
+message stays fixed and path-free.
+
+**The general lesson, worth carrying forward: a PASS expires when its base
+does.** Task 67 sat verified against a base that moved five tasks in five
+merges before it was re-verified, and two of its claims did not survive the
+move. Task 55's held worktree is in the same position as this was written —
+verified against a base that has since moved — and needs the same
+re-verification before anything is recorded against it, not a re-merge on
+trust.
+
+**Two follow-ups recorded durably, not fixed in scope of the tasks that own
+them:**
+- `docs/conventions.md:62`'s "deliberate, reviewed exception to no `catch`
+  block logs the object it caught" paragraph named only
+  `GetEntityContextTool` and `CompareEntitySourcesTool`. This task's
+  `dataPrismHashChainedAuditSink` bean is a third site doing the same
+  thing, so the paragraph is rewritten to state the rule ("sanctioned
+  wherever a caught exception could disclose server-side detail that must
+  not reach the client-visible exception") with the sites as illustrations
+  rather than the exhaustive gate — this is the second time the list needed
+  widening, and enumeration does not scale.
+- `dataprism.audit.file-path` and `AUDIT_SINK_FILE_UNUSABLE` appear nowhere
+  in `docs/`, joining `PLAN.md` follow-up item 8's existing gap
+  (`docs/configuration.md` has no `AUDIT_SINK_BEAN_REQUIRED` entry either).
+  Item 8 is extended to name both concretely; both remain owned by
+  tasks 59/62, not fixed here.
+
+Minor fixes folded into the squashed commit: an unused `import java.util.List`
+left in `HashChainedAuditSinkTest` after the hand-rolled replay was deleted,
+and `DataPrismAutoConfigurationTest`'s `AUDIT_SINK_FILE_UNUSABLE` javadoc,
+which called the startup refusal message "client-visible" when its only
+audience is the operator's console at startup — no MCP client exists yet at
+that point.
+
+Also recorded, not fixed here: the generic `MISSING_AUDIT_SINK` arm in
+`DataPrismContractValidator` is now unreachable dead code — `validate()`
+admits only three sink values, `approved-sink` takes task 73's specific
+arm, and `slf4j`/`hash-chained` always resolve a bean now. Harmless; owned
+by task 69.
+
+## 2026-09-23 — Task 71: pseudonym discriminator widens from 20 to 40 bits, and `ADDRESS` gains one
+
+`HmacSyntheticGenerator`'s discriminator now derives 40 bits from eight
+distinct digest bytes (`d[i] & 0x1F` per Crockford base32 character) instead
+of 20 bits from one masked word, rendered as eight characters instead of
+four — matching the width `HmacValueTokenSource.token` already used, so the
+two generators agree. `ADDRESS`, which previously rendered no discriminator
+at all (a pool of 200 x 24 x 24 = 115,200 distinct values, a 50% collision
+chance around 400 subjects), now carries the same tag every other namespace
+does. `PseudonymisationVersion`'s compact constructor gained a digest-length
+guard, raising `InvalidAlgorithmException` with stable codes
+(`pseudonymisation.algorithm-digest-too-short`,
+`pseudonymisation.algorithm-unavailable`) for a MAC algorithm too short for
+the generator's own reads — `HmacMD5` (16 bytes) and `HmacSHA1` (20 bytes)
+are both now rejected at construction rather than surfacing an
+`ArrayIndexOutOfBoundsException` at `address()`'s `unsigned(d, 20)` read
+against a digest that short. Both golden-vector files were regenerated under
+the dated exception at `docs/plan/PLAN.md:739-761` (grep "Owner decision,
+recorded 2026-09-22"); `PseudonymisationVersion.version` deliberately stays
+at `v1`. Pseudonym literals in `docs/tools.md`, `docs/agents/stdio.md` and
+`docs/agents/remote-http.md` were recaptured from real runs against the
+fixture server, per task 47's precedent. Verified PASS (tester) and APPROVE
+(reviewer); merged onto `v0.3.0/audit-trail-and-nested-json`.
+
+This closes a defect (the `ADDRESS` collision floor) and a latent crash path
+(the digest-length read), both found by the repository owner in review, not
+by the planning process that scoped the rest of v0.3.0.
+
+**No collision-resistance claim is made here, and none should be added
+later.** These remain HMAC-derived synthetic identities; widening the
+discriminator reduces collision probability substantially, it does not make
+collisions impossible. The reviewer confirmed the javadoc no longer claims
+collisions inside a scope "stop being a practical concern" at the new width
+— replace it with a claim of degree, not certainty, if it is ever touched
+again.
+
+**Cost:** the commit body's colliding-pair literals for the 20-bit mutation
+proof are not reproducible constants — when the tester independently
+mutated the mask back to `0xFFFFF` and the width back to four characters, it
+reproduced real collisions at the same subject volumes but different pairs
+for the tag-is-the-whole-pseudonym namespaces, because the exact pairs
+depend on precisely how the mutation is written, not just its width. Only
+the `ADDRESS` pair (`subject-300`/`subject-446`) matched exactly across
+independent mutations, because that branch's non-tag content was already
+fixed and identical, so the tag was the only degree of freedom left. Treat
+any pair cited in a commit body as illustrative of a reproduction, not as an
+expected value to assert against.
+
+A real but non-firing race was flagged during verification, not fixed here,
+and is worth keeping rather than losing:
+`AuditSinkFailureAbortsResponseTest`'s own javadoc documents a JVM-wide
+default-`SSLContext` singleton race against `McpHttpEndToEndTest` (and
+`ConfiguredJsonNestedHttpTest`) when they share a surefire fork. The
+implementer reported it as a flake; the tester ran
+`data-prism-integration-tests` three times plus both pairwise test
+orderings — five runs, all green — and could not reproduce it, consistent
+with the documented mitigation (each test using an explicit `SSLContext`
+rather than the implicit default) holding in practice. Recorded as follow-up
+item 9 in `docs/plan/PLAN.md` so a future firing finds this note instead of
+rediscovering the race.
+
+## 2026-09-23 — Task 74: a sink's exception no longer reaches the MCP client verbatim
+
+`GetEntityContextTool` and `CompareEntitySourcesTool` each caught nothing
+around their `audit.record(...)` call sites, so an `AuditSink` that throws at
+record time (correctly aborting the response, per task 63) let its own
+exception message travel out through the MCP SDK's rendering and reach the
+client as an `McpError`. With task 67 wiring `dataprism.audit.sink:
+hash-chained` to `FileAuditSink`, that message can be `PoisonedException`
+naming the configured audit file's server-side path — a filesystem-path
+disclosure to whatever model is on the other end of the MCP session, in a
+product whose premise is controlling what reaches that model. Both call sites
+now catch only the audit-record failure and rethrow a new
+`AuditUnavailableException` carrying a stable code, `AUDIT_UNAVAILABLE`, with
+no text derived from the caught exception — not its message, not its class
+name, not its cause's message.
+
+The caught exception is kept for the server-side log via `addSuppressed`,
+deliberately not as a `cause`. That distinction is load-bearing, not stylistic:
+the MCP SDK's `McpError.aggregateExceptionMessages` walks the `getCause()`
+chain into the client-visible `data` field, so a plain cause wiring would carry
+the sink's path back out exactly the way `addSuppressed` does not. Proven by
+mutation — restoring a normal cause turns the disclosure test red, with the
+temp file's path visible in `data`, and reverting to `addSuppressed` turns it
+green again. A new case in `AuditSinkFailureAbortsResponseTest` wires a real
+`FileAuditSink` over a real temporary file, poisons it so `record(...)` throws
+the path-naming `PoisonedException`, drives the same denial through the real
+booted MCP transport, and asserts neither the temp directory nor the file name
+appear anywhere in the `McpError` the client observes. The abort itself is
+unchanged and re-asserted: no new `catch` returns a result, logs and
+continues, or lets an unaudited decision reach the client; the paired
+non-throwing-sink case still returns an ordinary `isError` result with the
+sink recorded.
+
+Closes the hard precondition on tasks 62 and 59 recorded when task 67 merged:
+neither may document `dataprism.audit.sink: hash-chained` until a sink's
+exception cannot disclose a server path to the client, and it now cannot.
+Also unblocks task 67 itself, whose reviewer held it PASS/REQUEST CHANGES on
+bookkeeping pending exactly this and task 73 (below). Verified PASS (tester)
+and APPROVE (reviewer); merged onto `v0.3.0/audit-trail-and-nested-json`.
+
+**Cost:** the correct fix location was already settled by two prior
+reviewers (the response-mapping boundary in the two tools, not
+`FileAuditSink`, which is correct as written), so this task's own cost was
+proving the `addSuppressed`-vs-`cause` distinction rather than finding it —
+the SDK's cause-chain walk is not obvious from the tool code alone, and would
+have reopened the same disclosure silently if assumed rather than mutated.
+Left as a recorded exception rather than a defect: `GetEntityContextTool` and
+`CompareEntitySourcesTool` now call `LOG.error(msg, auditFailure)`, which
+`docs/conventions.md`'s "no `catch` block logs the object it caught" rule
+forbids in its literal form. Sanctioned here because the requirement is
+exactly "keep full detail server-side, disclose none client-side" — recorded
+as a named exception in `docs/conventions.md` so a future privacy-log scan
+does not flag it as a leak or "fix" it back into one. A second gap surfaced
+but not closed here: `docs/configuration.md` will have no entry for task 73's
+new `AUDIT_SINK_BEAN_REQUIRED` code until tasks 59/62 add one — filed as
+follow-up item 8 in `docs/plan/PLAN.md`.
+
+## 2026-09-23 — Task 73: `AUDIT_SINK_BEAN_REQUIRED` names the cause instead of the symptom
+
+`dataprism.audit.sink=approved-sink` passes `DataPrismProperties.validate()`
+by design — it is the contract for "this deployment supplies its own
+reviewed `AuditSink` bean" — but previously refused later, at
+`dataPrismContractValidator` construction, with the generic
+`MISSING_AUDIT_SINK`, a code shared with the unrelated absent-or-blank
+`dataprism.audit.sink` property case and naming the symptom ("no bean") not
+the cause ("this value requires you to supply one"). `DataPrismProperties`
+gained a named `APPROVED_SINK` constant with javadoc stating the contract, and
+`DataPrismContractValidator` now raises a new code, `AUDIT_SINK_BEAN_REQUIRED`,
+whose message contains the literal `dataprism.audit.sink=approved-sink` and
+names the bean type required, precisely when that configured value reaches
+the bean-absent branch. `MISSING_AUDIT_SINK` is retained, unchanged, for the
+absent-or-blank-property case at `validate()` and pinned there by its own
+test, so the two failures stay distinguishable in a dashboard.
+
+The split is value-based — an equals check against `APPROVED_SINK` — rather
+than "anything reaching the bean-absent branch is `approved-sink`", checked
+against `DataPrismAutoConfiguration` as merged: `hash-chained` reaches the
+same branch too, until task 67 merges and gives it a bean. An operator who
+has configured `hash-chained` is therefore never told to fix `approved-sink`.
+Verified forward: once 67 lands, `hash-chained` gains a bean, stops reaching
+the bean-absent branch, and this logic needs no change. All eight fixtures
+task 67's reviewer named — `ServerStartupTest`,
+`ConfiguredIdentityResolverTest`, `ModelDescriptorsConfigurationTest`,
+`PrivacyExtensionPointsTest`, `SharedReadBudgetTest`,
+`FixtureDevelopmentRefusalTest`, `ServerSecurityBoundaryTest`,
+`StarterStartupFailureTest` — still configure `approved-sink` and still
+exercise the path each was written for; none dropped the line to pass.
+`DataPrismContractValidatorTest` gained a direct pair: the refusal asserted
+with a bean absent, and its sibling asserting no exception with a bean
+present, so the first cannot pass for an unrelated reason. This is the task
+task 67's reviewer required filed before recording 67 done — it now is.
+Verified PASS (tester) and APPROVE (reviewer); merged onto
+`v0.3.0/audit-trail-and-nested-json`.
+
+**Cost:** none of substance in the code — the reachability question the task
+brief flagged as the one thing to verify before renaming (whether
+`approved-sink` is the *only* accepted value reaching the bean-absent branch
+post-67) was confirmed false rather than assumed, which is why the split
+stayed value-based instead of "else branch = `approved-sink`". Left owed, not
+closed here: `docs/configuration.md` has no entry naming
+`AUDIT_SINK_BEAN_REQUIRED`, so `DataPrismConfigurationFailureAnalyzer`'s
+existing pointer at that document is a dead end for an operator who hits this
+refusal today — named explicitly for tasks 59/62 in `docs/plan/PLAN.md`
+rather than left as a general reminder.
+
+## 2026-09-23 — Task 72: `timestamp` and `sourceSystems` brought inside the audit hash
+
+`AuditEventHash.compute` now joins nineteen fields instead of seventeen,
+adding `timestamp` (rendered `Instant.toString()`, matching the durable
+`AuditRecordFormat` encoding) and `sourceSystems` (sorted before joining,
+exactly as `rejectedArguments` already was). `AuditRecorder.record` reads the
+clock exactly once and reuses that single `Instant` for both the computed
+hash and the constructed event, so a record cannot carry a hash computed
+against a different instant than the one it stores. Verifier/CLI limitation
+text and javadoc updated from "seventeen" to "nineteen"; the CLI no longer
+tells a reader that a backdated record verifies clean. `AuditRecorderTest`'s
+pinned literal moved from `63b5da37...` to `323972fe...`, recomputed
+independently rather than copied from the implementation's own output.
+
+Closes the *lazy*-edit gap task 66's own limitation text flagged: a
+`timestamp` or `sourceSystems` value altered in place on disk is now detected
+as a chain break, and each record is self-consistent with its own stated
+time. **It does not close, and was never meant to close, the operator gap.**
+The chain is still unkeyed SHA-256; an operator who can write the file holds
+no key and can recompute every hash after any edit, and the result verifies
+perfectly. That gap is recorded in `docs/architecture.md` and stays open by
+explicit owner decision — nothing in this entry, or in the code it describes,
+should be read as narrowing it.
+
+Landed deliberately in this order: no durable hash-chained audit file exists
+yet, since task 67 (which wires `dataprism.audit.sink: hash-chained` to a
+real bean) had not merged. Widening the hash today invalidates nothing;
+widening it after 67 merges would invalidate every chain already written.
+Task 72 was sequenced ahead of 67 in the merge order specifically to satisfy
+that ordering constraint, which is now satisfied. Single commit, `43badb8`,
+fast-forward merge onto `v0.3.0/audit-trail-and-nested-json` (no rebase or
+conflict resolution needed — the branch was already even with the
+integration branch's tip). Verified PASS (tester) and APPROVE (reviewer)
+before merge.
+
+**Cost:** none of substance — a clean, narrowly-scoped diff against a task
+file that had already settled the hard questions (nineteen-parameter overload
+kept instead of collapsing to the `AuditEvent`-only form, single clock read,
+rendered forms pinned as ISO-8601/sorted-join) at spike time. The one
+reviewer follow-up was documentation, not code: task 66's own HISTORY entry
+had described the seventeen-field hash and the "backdated record verifies
+clean" behaviour in a way that, left alone, would have read as still true;
+corrected above to mark it superseded.
+
+## 2026-09-23 — Task 66: the offline audit-chain verifier CLI, after four attempts each relocating the same defect
+
+Ships an offline CLI that replays each writer's per-`instanceId` audit hash
+chain and reports what it finds, reusing `AuditEventHash` rather than
+re-deriving the canonical join. Five exit codes: 0 intact, 1 unreadable
+input, 2 break detected, 3 possibly-in-flight tail, 4 structural anomaly —
+4 never returned together with 2, and the report prints every finding
+regardless of which code is returned. It distinguishes four ordinary failure
+modes v0.3.0 wave 1 discovered, each of which resembles tampering and none of
+which is: a torn trailing record with no newline; a mid-file field-count
+error where a restarted sink appended after a surviving fragment; a
+duplicate sequence number from a sink-contract violation; and a new writer
+starting at `GENESIS` partway through the file, an ordinary process restart
+because chains are per-writer. At merge time it printed a limitation on every
+path including `--help`, naming the seventeen fields `AuditEventHash` covered,
+stating that `timestamp` and `sourceSystems` were excluded so a backdated
+record verified clean, and stating that it cannot resist an adversary with
+write access because the hash is unkeyed SHA-256 and the whole chain is
+recomputable. Merged onto `v0.3.0/audit-trail-and-nested-json`. **Superseded
+the same day by task 72** (below), which widened the hash to nineteen fields,
+folding `timestamp` and `sourceSystems` in; the backdating gap this entry
+describes no longer exists. The unkeyed-SHA-256/operator-recomputable
+limitation stands unchanged — that gap was never in scope for either task and
+remains open.
+
+**Cost:** four attempts, and every rejection was the same defect relocated —
+the tool asserting benignity it could not support. Attempt 1: a first-seen
+writer skipped the link check without asserting `previousHash == GENESIS`,
+so deleting a writer's first two records printed "intact", exit 0; the
+limitation also claimed to detect "an edit of a record already written" when
+the hash covers neither `timestamp` nor `sourceSystems`. Both probed against
+real files. Attempt 2 fixed both, then reintroduced the same outcome behind
+a `precededByAnomaly` exemption added so a pre-existing acceptance test would
+keep passing: the GENESIS check was suppressed whenever the preceding line
+produced any anomaly. Two agents independently reproduced three attacks —
+a head deletion masked by one 13-byte junk line reported "intact ... not
+tampering" at exit 4; the flag was file-global and type-blind so writer A's
+anomaly suppressed writer B's break; a fully forged writer with a
+self-computed `eventHash`, preceded by one malformed line, reported "intact".
+Cost to an attacker: one appended line. Attempt 3 removed the exemption; all
+three attacks then reported correctly, but was rejected because exit 4's
+`--help` text still documented it as "structural non-tampering anomaly", an
+enumeration excluding the new outcome and an adjective contradicting the
+finding's own text — a compliance reader consulting `--help` was told the
+code meant benign, and the test pinning that string was protecting the
+defect. Attempt 4 fixed the wording and was approved.
+
+Two rulings worth carrying forward. First, the severity split is deliberate
+and must not be "fixed": a non-`GENESIS` start with no preceding anomaly is a
+break (exit 2); with one it is a structural finding (exit 4). A single junk
+line downgrades 2 to 4 on an otherwise identical deletion — ruled acceptable
+because the benign restart-after-torn-write legitimately produces a
+non-`GENESIS` start (routing all of them to exit 2 would report an ordinary
+operator restart as tampering), and because the downgrade buys an attacker
+almost nothing when the unkeyed hash lets them reach exit 0 anyway. In the
+reviewer's words: the exploit is not the number. Second, what holds the line
+against regression is not a `doesNotContain("non-tampering anomaly")`
+literal — that would miss a reworded benign claim — but a required "cannot
+be ruled out" substring, which any future edit asserting benignity would
+have to delete first.
+
+Two items left open, not this task's to fix: `AuditChainVerifierCli.java:38`'s
+`EXIT_STRUCTURAL_ANOMALY` javadoc still reads "a known non-tampering
+structural anomaly", the phrasing the printed help just dropped —
+source-only, invisible to a compliance reader, but the same claim living on
+in a comment. And a process note: attempt records appended to a task file in
+the main checkout are not visible in a worktree created earlier, since the
+worktree holds its own copy from its branch point — an implementer working
+in a worktree read a stale task file this cycle. Briefs must restate defects
+inline, or records must be written into the worktree too.
+
 ## 2026-09-22 — v0.3.0 wave 2 (tasks 61, 65): nested JSON proven through the real MCP transport, and the file sink's PII scan closed after an empty-derivation hole
 
 Task 61 proves the nested-catalogue path (task 60) through the real MCP

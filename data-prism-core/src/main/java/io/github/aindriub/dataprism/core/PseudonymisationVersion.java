@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.core;
 
+import javax.crypto.Mac;
+import java.security.GeneralSecurityException;
 import java.util.Objects;
 
 /**
@@ -24,11 +26,29 @@ public record PseudonymisationVersion(
     public static final PseudonymisationVersion HMAC_SHA256_V1 =
             new PseudonymisationVersion("HmacSHA256", "v1", "dev", "");
 
+    /**
+     * The widest offset any generator reads from a digest plus the four bytes it
+     * reads there ({@code HmacSyntheticGenerator.address} reads bytes 20-23). An
+     * algorithm whose MAC output is shorter than this throws deep inside a
+     * generator instead of here, on whichever request happens to need those
+     * bytes.
+     */
+    private static final int MINIMUM_MAC_LENGTH = 24;
+
     public PseudonymisationVersion {
         Objects.requireNonNull(algorithm, "algorithm");
         Objects.requireNonNull(version, "version");
         Objects.requireNonNull(keyId, "keyId");
         Objects.requireNonNull(vocabularyId, "vocabularyId");
+        int macLength;
+        try {
+            macLength = Mac.getInstance(algorithm).getMacLength();
+        } catch (GeneralSecurityException e) {
+            throw new InvalidAlgorithmException("pseudonymisation.algorithm-unavailable", algorithm);
+        }
+        if (macLength < MINIMUM_MAC_LENGTH) {
+            throw new InvalidAlgorithmException("pseudonymisation.algorithm-digest-too-short", algorithm);
+        }
     }
 
     public PseudonymisationVersion withVocabulary(String vocabularyId) {
@@ -37,5 +57,31 @@ public record PseudonymisationVersion(
 
     public PseudonymisationVersion withKey(String keyId) {
         return new PseudonymisationVersion(algorithm, version, keyId, vocabularyId);
+    }
+
+    /**
+     * Thrown when {@code algorithm} cannot back this record: either no provider
+     * offers it, or its MAC output is narrower than {@link #MINIMUM_MAC_LENGTH},
+     * which every bundled generator relies on. Never carries a key or key id —
+     * the algorithm name is the only thing worth logging here.
+     */
+    public static final class InvalidAlgorithmException extends IllegalArgumentException {
+
+        private final String code;
+        private final String algorithm;
+
+        InvalidAlgorithmException(String code, String algorithm) {
+            super(code + ": algorithm '" + algorithm + "' cannot back a PseudonymisationVersion");
+            this.code = code;
+            this.algorithm = algorithm;
+        }
+
+        public String code() {
+            return code;
+        }
+
+        public String algorithm() {
+            return algorithm;
+        }
     }
 }

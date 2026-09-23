@@ -1,0 +1,78 @@
+# The sibling of `customer-api.yaml` in this directory: the same
+# configuration-driven JSON REST mode, but with one field ("address") pointing
+# at a named nested sub-catalogue instead of being a scalar. Walked through
+# end to end in the "A nested response" section of
+# `docs/protect-your-own-api.md`, which loads and scrubs against exactly this
+# file -- it is not committed only in prose.
+#
+# Nesting in this mode goes exactly one level deep: a `nested-catalogues:`
+# entry carries no identifier of its own -- it inherits its subject from the
+# enclosing record -- so its own fields may be `nonSensitive` or classified
+# only; `identifier: true` and a further `nested:` are both refused when this
+# file is loaded, not silently flattened or dropped. Every field name, at
+# either level, plus `subject-json-path` itself, is still a single bare,
+# exact-match property name: no dotted path, no JSONPath, no array index
+# expression.
+#
+# Every host below is a loopback fixture (`data-prism-quickstart-fixtures`),
+# not a real one: swap `base-url` for your own API's real address and adjust
+# `fields:`/`nested-catalogues:` to your own response shape; nothing else
+# about this file's structure changes.
+
+json-sources:
+
+  # A source whose response carries one nested object, "address", alongside
+  # the same scalar fields customer-api.yaml declares.
+  customer-api-with-address:
+
+    base-url: https://127.0.0.1:8543
+    path: /customers/{subject}
+    timeout: PT5S
+    model-version: customer-with-address-v1
+    subject-json-path: customerId
+
+    fields:
+
+      customerId:
+        identifier: true
+
+      customerName:
+        classifications: [PII]
+        namespace: PERSON_NAME
+        action: SYNTHESIZE
+
+      email:
+        classifications: [CONTACT]
+        namespace: EMAIL
+        action: REDACT
+
+      status:
+        nonSensitive: "enumerated lifecycle state"
+
+      # A `nested:` field names a `nested-catalogues:` entry declared below,
+      # rather than a Java type: the response's "address" property is an
+      # object, and every property that object may ever carry must be
+      # allowlisted in that entry, exactly the way `fields:` allowlists this
+      # source's own top-level properties.
+      address:
+        nested: address
+
+    # Declared once here, referenced by the `nested:` field above. A catalogue
+    # declared here but never referenced by any field's `nested:` is refused
+    # at load time by the loader (`ConfiguredJsonSources`).
+    nested-catalogues:
+      address:
+
+        # A plain, non-sensitive leaf: allowed inside a nested catalogue the
+        # same way it is at the root, but never `identifier: true` or a second
+        # `nested:` -- a nested catalogue carries no identifier of its own and
+        # goes no deeper than this one level.
+        line1:
+          nonSensitive: "street address line, reviewed as inert structure"
+
+        # A classified leaf inside the nested catalogue: scrubbed under the
+        # same PrivacyAction/PrivacyNamespace vocabulary as any root field.
+        postcode:
+          classifications: [PII]
+          namespace: ADDRESS
+          action: SYNTHESIZE

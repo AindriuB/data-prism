@@ -177,9 +177,9 @@ class HmacSyntheticGeneratorTest {
         // back to the default pool.
         assertThat(Set.copyOf(sample.values())).hasSize(sample.size());
         assertThat(sample.get("zh")).as("Han names are family-first and unspaced")
-                .matches("^\\p{IsHan}+ \\([0-9A-Z]{4}\\)$");
-        assertThat(sample.get("ru")).matches("^\\p{IsCyrillic}+ \\p{IsCyrillic}+ \\([0-9A-Z]{4}\\)$");
-        assertThat(sample.get("ar")).matches("^\\p{IsArabic}+ \\p{IsArabic}+ \\([0-9A-Z]{4}\\)$");
+                .matches("^\\p{IsHan}+ \\([0-9A-Z]{8}\\)$");
+        assertThat(sample.get("ru")).matches("^\\p{IsCyrillic}+ \\p{IsCyrillic}+ \\([0-9A-Z]{8}\\)$");
+        assertThat(sample.get("ar")).matches("^\\p{IsArabic}+ \\p{IsArabic}+ \\([0-9A-Z]{8}\\)$");
     }
 
     @Test
@@ -235,6 +235,75 @@ class HmacSyntheticGeneratorTest {
 
         int expected = GENERIC.pool(PoolKind.FIRST_NAME).size() * GENERIC.pool(PoolKind.LAST_NAME).size();
         assertThat(withoutDiscriminator).hasSizeLessThanOrEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("the discriminator tag is eight characters drawn from the Crockford alphabet")
+    void discriminatorIsEightCharactersFromTheDeclaredAlphabet() {
+        String alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+        PrivacyContext scope = scope("CASE-WIDTH");
+
+        for (int i = 0; i < 1_000; i++) {
+            String value = generator.syntheticValue("subject-" + i, PrivacyNamespace.NONE, scope);
+            String tag = value.substring("SUBJ-".length());
+            assertThat(tag).as("tag for subject-%d", i).hasSize(8);
+            assertThat(tag.chars().allMatch(c -> alphabet.indexOf(c) >= 0))
+                    .as("tag %s drawn only from the declared alphabet", tag)
+                    .isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("ADDRESS renders a discriminator tag, in both the non-Han and family-name-first forms")
+    void addressCarriesADiscriminatorTag() {
+        String nonHan = generator.syntheticValue("123", PrivacyNamespace.ADDRESS, scope("CASE-A"));
+        assertThat(nonHan).matches("^\\d+ [A-Za-z ]+, [A-Za-z ]+ \\([0-9A-Z]{8}\\)$");
+
+        Vocabulary han = REGISTRY.resolve("zh");
+        String hanForm = generatorFor(han)
+                .syntheticValue("123", PrivacyNamespace.ADDRESS, scope("CASE-A", han));
+        assertThat(hanForm).matches("^\\p{IsHan}+[0-9]+号 \\([0-9A-Z]{8}\\)$");
+    }
+
+    @Test
+    @DisplayName("20,000 subjects in one scope produce no colliding NONE token")
+    void noneAvoidsCollisionsAtVolume() {
+        assertNoCollisions(PrivacyNamespace.NONE);
+    }
+
+    @Test
+    @DisplayName("20,000 subjects in one scope produce no colliding EMAIL address")
+    void emailAvoidsCollisionsAtVolume() {
+        assertNoCollisions(PrivacyNamespace.EMAIL);
+    }
+
+    @Test
+    @DisplayName("20,000 subjects in one scope produce no colliding default-branch pseudonym")
+    void defaultBranchAvoidsCollisionsAtVolume() {
+        assertNoCollisions(PrivacyNamespace.GOVERNMENT_IDENTIFIER);
+    }
+
+    @Test
+    @DisplayName("20,000 subjects in one scope produce no colliding ADDRESS")
+    void addressAvoidsCollisionsAtVolume() {
+        assertNoCollisions(PrivacyNamespace.ADDRESS);
+    }
+
+    private void assertNoCollisions(PrivacyNamespace namespace) {
+        PrivacyContext scope = scope("CASE-COLLISION-" + namespace.name());
+        Set<String> seen = new HashSet<>();
+        Map<String, String> firstUse = new HashMap<>();
+
+        for (int i = 0; i < 20_000; i++) {
+            String subject = "subject-" + i;
+            String value = generator.syntheticValue(subject, namespace, scope);
+            if (!seen.add(value)) {
+                throw new AssertionError(namespace + " collision between "
+                        + firstUse.get(value) + " and " + subject + " (" + value + ")");
+            }
+            firstUse.put(value, subject);
+        }
+        assertThat(seen).hasSize(20_000);
     }
 
     private static List<String[]> readVectors(String resource) throws Exception {

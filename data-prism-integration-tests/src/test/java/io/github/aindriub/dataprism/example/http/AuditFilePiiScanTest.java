@@ -45,6 +45,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -166,6 +167,17 @@ class AuditFilePiiScanTest {
             Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
     private static final Pattern HEX64_SHAPE = Pattern.compile("[0-9a-f]{64}");
     private static final Pattern HEX24_SHAPE = Pattern.compile("[0-9a-f]{24}");
+
+    /**
+     * {@code AuditRecorder}'s trailing {@code /<uuid>}, minted per boot and
+     * as good as random: stripped before scanning so its hex digits cannot
+     * coincidentally spell a banned run, leaving the writer-id prefix —
+     * which is config, not random — still scanned.
+     */
+    private static final Pattern INSTANCE_ID_SHAPE =
+            Pattern.compile("[^/]+/" + UUID_SHAPE.pattern());
+    private static final Pattern INSTANCE_ID_UUID_SUFFIX =
+            Pattern.compile("/" + UUID_SHAPE.pattern() + "$");
 
     private static final Map<String, Pattern> EXEMPT_SHAPES = Map.of(
             "eventId", UUID_SHAPE,
@@ -306,6 +318,52 @@ class AuditFilePiiScanTest {
         assertThat(leaked).containsExactly(distinctiveLeak);
     }
 
+    /** The per-boot UUID suffix is stripped before scanning, so its coincidental digits are ignored. */
+    @Test
+    @DisplayName("a well-formed instanceId is exempt even where its UUID coincidentally spells a banned digit run")
+    void wellFormedInstanceIdIsExempt() {
+        String instanceIdContainingCoincidentalDigits =
+                "example-1/01234567-89ab-cdef-0123-456789abcdef";
+        assertThat(instanceIdContainingCoincidentalDigits).containsPattern(INSTANCE_ID_SHAPE);
+        assertThat(instanceIdContainingCoincidentalDigits).contains("123", "456");
+
+        AuditEvent event = eventWithInstanceId(instanceIdContainingCoincidentalDigits);
+
+        assertThat(leaksIn(event, List.of("123", "456"))).isEmpty();
+    }
+
+    /** A banned value sitting in the writer-id part of an otherwise well-formed instanceId is still caught. */
+    @Test
+    @DisplayName("a banned value inside the writer-id part of a well-formed instanceId is still caught")
+    void bannedValueInWriterIdPartOfInstanceIdIsCaught() {
+        String instanceIdWithBannedWriterId =
+                "4111111111111111/01234567-89ab-cdef-0123-456789abcdef";
+        assertThat(instanceIdWithBannedWriterId).containsPattern(INSTANCE_ID_SHAPE);
+
+        AuditEvent event = eventWithInstanceId(instanceIdWithBannedWriterId);
+
+        assertThat(leaksIn(event, List.of("4111111111111111"))).containsExactly("4111111111111111");
+    }
+
+    /** A malformed instanceId (no exemption-eligible suffix) is scanned like any other field. */
+    @Test
+    @DisplayName("an instanceId that does not match its pinned shape is scanned like any other field")
+    void nonConformingInstanceIdIsScanned() {
+        String malformedInstanceId = "example-1/not-a-uuid-123";
+        assertThat(malformedInstanceId).doesNotMatch(INSTANCE_ID_SHAPE.pattern());
+
+        AuditEvent event = eventWithInstanceId(malformedInstanceId);
+
+        assertThat(leaksIn(event, List.of("123"))).containsExactly("123");
+    }
+
+    private static AuditEvent eventWithInstanceId(String instanceId) {
+        return new AuditEvent("event-1", FIXED_CLOCK.instant(), "investigator-1", "client-1",
+                "get_entity_context", "CUSTOMER", "pseudo-1", "fingerprint", "DEFAULT", "scope-1",
+                "investigation", "case-1", "ALLOW", Set.of(), Set.of(), "correlation-1", instanceId, 1L,
+                "GENESIS", "hash-1");
+    }
+
     /** {@link AuditEvent} components that carry no scannable text: the write-ordering fields, not the record's content. */
     private static final Set<String> NON_SCANNABLE_COMPONENTS = Set.of("timestamp", "sequence");
 
@@ -316,10 +374,11 @@ class AuditFilePiiScanTest {
      * components rather than hand-enumerating them, so a component added to
      * the record later is scanned automatically instead of silently going
      * unwatched; {@code timestamp} and {@code sequence} are skipped as the
-     * only two that carry no scannable text. A field named in
-     * {@link #EXEMPT_SHAPES} is skipped only when its whole value matches
-     * that field's pinned shape; every other field, including
-     * {@code subjectPseudonym}, is scanned unconditionally.
+     * only two that carry no scannable text. {@code instanceId} has its
+     * random per-boot {@code /<uuid>} suffix stripped and the writer-id
+     * prefix still scanned; a field named in {@link #EXEMPT_SHAPES} is
+     * skipped whole only when it matches its pinned shape; every other
+     * field, including {@code subjectPseudonym}, is scanned unconditionally.
      */
     private static List<String> leaksIn(AuditEvent event, List<String> bannedValues) {
         List<String> leaked = new ArrayList<>();
@@ -349,15 +408,25 @@ class AuditFilePiiScanTest {
         if (value == null) {
             return;
         }
-        Pattern exemptShape = EXEMPT_SHAPES.get(fieldName);
-        if (exemptShape != null && exemptShape.matcher(value).matches()) {
-            return;
+        if ("instanceId".equals(fieldName)) {
+            value = stripInstanceIdUuidSuffix(value);
+        } else {
+            Pattern exemptShape = EXEMPT_SHAPES.get(fieldName);
+            if (exemptShape != null && exemptShape.matcher(value).matches()) {
+                return;
+            }
         }
         for (String banned : bannedValues) {
             if (value.contains(banned) && !leaked.contains(banned)) {
                 leaked.add(banned);
             }
         }
+    }
+
+    /** Strips {@code instanceId}'s trailing {@code /<uuid>}, if present, leaving the writer-id prefix. */
+    private static String stripInstanceIdUuidSuffix(String value) {
+        Matcher matcher = INSTANCE_ID_UUID_SUFFIX.matcher(value);
+        return matcher.find() ? value.substring(0, matcher.start()) : value;
     }
 
     /**

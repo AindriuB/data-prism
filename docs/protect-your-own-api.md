@@ -1,11 +1,11 @@
 # Protect your own API: a YAML-only walkthrough
 
-You have a flat JSON REST API — one JSON object per response, no nested
-objects — and you want Data Prism to sit in front of it and answer MCP
-callers with a pseudonymised view instead of your raw data. This walkthrough
-takes you from that API to a working `get_entity_context` call, writing only
-YAML. No Java class, no `pom.xml`, no `META-INF` registration step appears
-anywhere below.
+You have a JSON REST API whose response is either flat or nests objects at
+most one level deep, and you want Data Prism to sit in front of it and answer
+MCP callers with a pseudonymised view instead of your raw data. This
+walkthrough takes you from that API to a working `get_entity_context` call,
+writing only YAML. No Java class, no `pom.xml`, no `META-INF` registration
+step appears anywhere below.
 
 That is `data-prism-connectors-rest`'s configuration-driven JSON REST mode: a
 published artifact
@@ -13,12 +13,19 @@ published artifact
 `data-prism-server` the same way any other reviewed adapter is —
 `-Dloader.path` — but configured entirely by a `json-sources:` catalogue
 instead of compiled Java. It has one real limit, stated here so you can check
-it against your own API before going further: its field resolver never
-descends into a nested object, so it only covers a source whose response is
-one flat JSON object — scalar fields, or arrays of them. If your response
-nests objects, needs custom fetch logic beyond a single templated `GET`, or
-needs a model this flat catalogue cannot express, stop here and read
-[`docs/extending.md`](extending.md) instead; nothing below lifts that limit.
+it against your own API before going further: its field resolver descends one
+level into a named nested sub-catalogue — a root field declared `nested:
+<name>` — but no further; a nested catalogue's own leaves cannot themselves
+declare `nested:` or `identifier: true`, so two levels of nesting, or an
+identifier inside a nested catalogue, refuses at load time rather than
+silently flattening or dropping data. There is also no dotted path or
+JSONPath anywhere in this grammar: every field name, at either level, and
+`subject-json-path` itself, is a single bare, exact-match property name. If
+your response nests objects two levels or more, needs custom fetch logic
+beyond a single templated `GET`, or needs a model this catalogue cannot
+express, stop here and read [`docs/extending.md`](extending.md) instead;
+nothing below lifts that limit. The section "A nested response" below walks
+the one-level case this mode does cover.
 
 This walkthrough does not restate the full `dataprism.*` configuration
 vocabulary — that is [`docs/configuration.md`](configuration.md) — or the two
@@ -31,8 +38,8 @@ destination, without writing code.
 - A running `data-prism-server` distribution and the
   `data-prism-connectors-rest` jar alongside it. This walkthrough runs both
   from this repository's own `mvn package` output
-  (`data-prism-server/target/data-prism-server-0.2.0.jar` and
-  `data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar`),
+  (`data-prism-server/target/data-prism-server-0.3.0.jar` and
+  `data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar`),
   which is exactly the artifact Maven Central serves under the same
   coordinates and version — nothing here is specific to a from-source build.
   "Build the jars, then start the two fixtures" below gives the exact build
@@ -120,7 +127,7 @@ walkthrough stands in for your own — on port 8543:
 ```sh
 DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
-java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.2.0.jar \
+java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.3.0.jar \
   --server.port=8543 \
   --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
@@ -143,7 +150,7 @@ any earlier command in this walkthrough, so restate `DP_WALKTHROUGH_CERT_DIR` be
 ```sh
 DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
-java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.2.0.jar \
+java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.3.0.jar \
   --server.port=8544 \
   --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
@@ -213,7 +220,7 @@ classpath, the same mechanism any reviewed adapter extension uses (see
 the one property this mode reads:
 
 ```sh
--Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar
+-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar
 -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml
 ```
 
@@ -306,9 +313,9 @@ java \
   -Djavax.net.ssl.trustStore="$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12" \
   -Djavax.net.ssl.trustStorePassword=walkthrough-demo-only \
   -Djavax.net.ssl.trustStoreType=PKCS12 \
-  -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar \
+  -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar \
   -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml \
-  -jar data-prism-server/target/data-prism-server-0.2.0.jar \
+  -jar data-prism-server/target/data-prism-server-0.3.0.jar \
   --server.port=8080 \
   --dataprism.identity.resolver=pass-through \
   --dataprism.security.jwt.issuer=https://issuer.walkthrough.invalid \
@@ -382,17 +389,17 @@ bare JSON — one `id:`/`event:`/`data:` frame, the JSON-RPC response inside
 `data:`:
 
 ```
-id: 6967a06e-8550-4d0c-88e7-f1879e688c19
+id: 903eface-c8a4-4845-9631-aaa8fea1dc5d
 event: message
-data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-3WR4\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":\"ANSWERED\"},\"findings\":[],\"entity\":{\"customerName\":\"Casey Okafor (5K38)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-3WR4","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":"ANSWERED"},"findings":[],"entity":{"customerName":"Casey Okafor (5K38)","email":"[REDACTED]","status":"ACTIVE"}}}}
+data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-VHK4SXCQ\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":\"ANSWERED\"},\"findings\":[],\"entity\":{\"customerName\":\"Casey Okafor (G2C8D3R4)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-VHK4SXCQ","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":"ANSWERED"},"findings":[],"entity":{"customerName":"Casey Okafor (G2C8D3R4)","email":"[REDACTED]","status":"ACTIVE"}}}}
 ```
 
 Neither raw value appears. `customerName` is a stable synthetic substitute in
 the `PERSON_NAME` namespace (the catalogue's own `namespace:` above), `email`
 is redacted outright per its `action: REDACT`, and `status` passes through
 unchanged because the catalogue marked it `nonSensitive`. The subject itself
-(`SUBJ-3WR4`) is a pseudonym too, not `1001`. This ran with
-`-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar`
+(`SUBJ-VHK4SXCQ`) is a pseudonym too, not `1001`. This ran with
+`-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar`
 alone — no second jar,
 no custom extension, no `IdentityResolver` bean compiled anywhere — and
 against the catalogue exactly as it is committed in
@@ -443,6 +450,115 @@ reproduced here) in
 `data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourceEndToEndTest.java`,
 `unknownFieldFailsClosed`.
 
+## A nested response
+
+[`examples/json-sources/customer-api-nested.yaml`](../examples/json-sources/customer-api-nested.yaml)
+is `customer-api.yaml`'s sibling: the same source, plus one field, `address`,
+declared `nested: address` and pointed at a `nested-catalogues:` entry of its
+own:
+
+```yaml
+    fields:
+      customerId:
+        identifier: true
+      customerName:
+        classifications: [PII]
+        namespace: PERSON_NAME
+        action: SYNTHESIZE
+      email:
+        classifications: [CONTACT]
+        namespace: EMAIL
+        action: REDACT
+      status:
+        nonSensitive: "enumerated lifecycle state"
+      address:
+        nested: address
+    nested-catalogues:
+      address:
+        line1:
+          nonSensitive: "street address line, reviewed as inert structure"
+        postcode:
+          classifications: [PII]
+          namespace: ADDRESS
+          action: SYNTHESIZE
+```
+
+Nesting goes exactly one level: `address` carries no identifier of its own —
+it inherits its subject from the enclosing record — so its own leaves may be
+`nonSensitive` or classified only; `identifier: true` and a further `nested:`
+are both refused when the catalogue loads, not silently flattened. This is
+loaded and scrubbed below by the real engine, not asserted in prose:
+[`examples/json-sources/NestedCatalogueWalkthrough.java`](../examples/json-sources/NestedCatalogueWalkthrough.java)
+is a complete, runnable program, `public` but living in
+`io.github.aindriub.dataprism.connectors.rest` (the exact package
+`ConfiguredJsonNestedCatalogueScrubbingTest` in that module is in, because
+`ConfiguredJsonPayload` is package-private), calling the same public
+`ConfiguredJsonSources.fromYaml` this connector uses to read every
+`json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine` that
+test drives directly. Its own header comment gives the exact `javac`/`java`
+invocation; in short, `install` first — `package` alone leaves
+`data-prism-pseudonymisation` and `data-prism-orchestration` (imported here
+transitively) unresolved from this reactor, so `mvn dependency:build-classpath`
+falls back to whatever was last published to Maven Central. The `-am` flag
+installs every upstream module this one depends on, not just those two
+(`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`) — note this
+overwrites any `0.3.0` artifacts already sitting in the reader's local
+`~/.m2` repository with this branch's build. Then
+compile and run this one file against `data-prism-core`'s and
+`data-prism-connectors-rest`'s `target/classes` plus
+`data-prism-connectors-rest`'s Maven dependency classpath (`mvn -q
+dependency:build-classpath`) — no jar, no elided wiring: every line that runs
+is in that file.
+
+Run as written, it loads `customer-api-with-address` from
+`customer-api-nested.yaml` and prints its resolved catalogue:
+
+```
+sources: [customer-api-with-address]
+root fields: [address, customerId, customerName, email, status]
+nested catalogues: [address]
+  address.line1 -> classifications=[] namespace=NONE action=null nonSensitiveReason=street address line, reviewed as inert structure
+  address.postcode -> classifications=[PII] namespace=ADDRESS action=SYNTHESIZE nonSensitiveReason=null
+```
+
+then scrubs the fixture-shaped response
+`{"customerId":"1001","customerName":"Fixture Person One","email":"fixture.person.one@example.invalid","status":"ACTIVE","address":{"line1":"123 Main St","postcode":"90210"}}`
+against the `DEFAULT` profile:
+
+```json
+{"customerName":"Rowan Walsh (4MZ4CCK9)","email":"[REDACTED]","status":"ACTIVE","address":{"line1":"123 Main St","postcode":"48 Orchard Mews, Belmont (V8338JMM)"}}
+```
+
+`address.line1` passes through unchanged (`nonSensitive`), `address.postcode`
+is synthesised in the `ADDRESS` namespace (task 71's discriminator, the same
+eight-character Crockford base32 tag every other synthetic value in this
+walkthrough now carries) exactly like a root-level `SYNTHESIZE` field, and
+neither raw value (`90210`, `Fixture Person One`) appears anywhere in the
+result.
+
+**PROOF: the deeper-than-declared refusal.** `address` declares `postcode` a
+scalar/classified leaf. A response where that property arrives as a structure
+instead — a stale catalogue against a wire shape that changed — refuses as
+`NESTED_LEAF_NOT_SCALAR`, distinct from both `UNCLASSIFIED_STRUCTURE` and
+`UNKNOWN_FIELD`, before anything is scrubbed. The same program's second
+scrub call, against that stale-shaped body, prints:
+
+```
+REFUSED: NESTED_LEAF_NOT_SCALAR at customer-api-with-address$.address.postcode: nested catalogue leaf field is declared scalar/classified but the response carries a structure there; the catalogue is stale against the wire shape
+```
+
+No raw value, and nothing from inside the unexpected structure, appears in
+that message — only the catalogue-declared path `$.address.postcode` does,
+and that path segment happens to match the wire's own field name here because
+nothing renames it. The mirror-image failure — a scalar arriving where
+`nested:` itself is declared — is `NESTED_FIELD_NOT_STRUCTURED`, and a
+property inside the nested object that its own catalogue never named is
+refused as `UNKNOWN_FIELD`, the identical code the root catalogue's own
+undeclared fields get. `ConfiguredJsonNestedCatalogueScrubbingTest` and
+`ConfiguredJsonNestedHttpTest` (`data-prism-integration-tests`, the latter
+against the real MCP HTTP/SSE transport) both drive every one of these codes
+directly.
+
 ## Close-out
 
 Every code fence above was executed, not transcribed:
@@ -450,12 +566,13 @@ Every code fence above was executed, not transcribed:
 | What it shows | Command that produced it |
 |---|---|
 | The two fixtures' health checks | `curl -sk https://127.0.0.1:8543/health` and `curl -sk https://127.0.0.1:8544/health`, against processes started with the `java -jar data-prism-quickstart-fixtures/...`/`data-prism-quickstart-issuer/...` commands in "Build the jars, then start the two fixtures" |
-| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.2.0.jar -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server/target/data-prism-server-0.2.0.jar ...` (server log, "Started DataPrismServerApplication") |
+| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server/target/data-prism-server-0.3.0.jar ...` (server log, "Started DataPrismServerApplication") |
 | `GET /health` | `curl -s http://127.0.0.1:8080/health` |
 | `MISSING_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=pass-through` removed |
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |
 | The pseudonymised `get_entity_context` response, SSE frame included | the `initialize` / `notifications/initialized` / `tools/call` sequence in "Get a token and call it", run against a token freshly minted by `curl -sk -X POST https://127.0.0.1:8544/token` |
 | The missing-`timeout` refusal | the same server command, config-location pointed at the `sed`-produced `$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml` |
+| The nested catalogue's resolved fields, the scrubbed nested response, and the `NESTED_LEAF_NOT_SCALAR` refusal in "A nested response" | one run of `NestedCatalogueWalkthrough.java`, built against `data-prism-connectors-rest`'s own `target/classes` plus `mvn -q dependency:build-classpath` (after `mvn -q install -DskipTests -pl data-prism-connectors-rest -am`), against `examples/json-sources/customer-api-nested.yaml`; this one run prints all three outputs shown above, in order |
 | *(no captured output)* | `mvn -q -DskipTests package` and the three `keytool` commands in "Build the jars, then start the two fixtures" ran, but produce nothing worth capturing — a quiet build and key material respectively, not output that documents behaviour |
 
 `$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12`/`$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12` above are a

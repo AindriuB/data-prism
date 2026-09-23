@@ -60,8 +60,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code exchange.transportContext()} on a real request.
  *
  * <p>Every assertion about who the pipeline thinks is calling reads it from the
- * orchestrator's own audit trail — the {@code instanceId="data-prism-example"}
- * events the starter wires from configuration — rather than from the response,
+ * orchestrator's own audit trail — the {@code instanceId} starting with
+ * {@code "data-prism-example/"}, the configured writer-id with a per-boot
+ * suffix appended by {@code AuditRecorder} — rather than from the response,
  * because {@link io.github.aindriub.dataprism.audit.AuditEvent} carries the
  * resolved {@code PrivacyContext}'s scope, purpose and case, and
  * {@code InvestigationContext}'s principal, verbatim. An {@code AuditSink}
@@ -230,7 +231,7 @@ class McpHttpEndToEndTest {
 
     private static AuditEvent orchestratorEvent() {
         return auditEvents.stream()
-                .filter(e -> "data-prism-example".equals(e.instanceId()))
+                .filter(e -> e.instanceId().startsWith("data-prism-example/"))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("orchestrator produced no audit event"));
     }
@@ -277,7 +278,7 @@ class McpHttpEndToEndTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(401);
-        assertThat(auditEvents).noneMatch(e -> "data-prism-example".equals(e.instanceId()));
+        assertThat(auditEvents).noneMatch(e -> e.instanceId().startsWith("data-prism-example/"));
     }
 
     @Test
@@ -318,7 +319,7 @@ class McpHttpEndToEndTest {
                     .doesNotContain("4200.55").doesNotContain("\"123\"");
             assertThat(response.path("subject").asText()).startsWith("SUBJ-").isNotEqualTo("123");
             assertThat(response.path("entity").path("customerName").asText())
-                    .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{4}\\)$");
+                    .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
             assertThat(response.path("entity").path("email").asText()).isEqualTo("[REDACTED]");
             assertThat(response.path("entity").path("status").asText()).isEqualTo("ACTIVE");
         } finally {

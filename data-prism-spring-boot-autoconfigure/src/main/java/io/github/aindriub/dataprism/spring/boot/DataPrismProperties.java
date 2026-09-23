@@ -14,6 +14,15 @@ import java.util.Set;
 /** Complete V1 {@code dataprism.*} deployment vocabulary. Reviewed Java code supplies integrations. */
 @ConfigurationProperties(prefix = "dataprism", ignoreUnknownFields = false)
 public class DataPrismProperties {
+    /**
+     * The {@code dataprism.audit.sink} value meaning "this deployment supplies its own
+     * reviewed {@code AuditSink} bean" -- no sink implementation ships for it. {@code
+     * validate()} accepts it as a known value; only {@code DataPrismContractValidator},
+     * which alone can see whether a bean was actually supplied, can tell whether the
+     * deployment kept its side of that contract.
+     */
+    public static final String APPROVED_SINK = "approved-sink";
+
     private Transport transport = new Transport();
     private Security security = new Security();
     private SecurityPolicy securityPolicy = new SecurityPolicy();
@@ -165,10 +174,25 @@ public class DataPrismProperties {
             refuse("LITERAL_SECRET_FORBIDDEN", "dataprism.privacy.hmac-key.value is forbidden");
         }
         required(audit.sink, "MISSING_AUDIT_SINK", "dataprism.audit.sink");
-        if (!Set.of("approved-sink", "slf4j", "hash-chained").contains(audit.sink)) {
+        if (!Set.of(APPROVED_SINK, "slf4j", "hash-chained").contains(audit.sink)) {
             refuse("UNKNOWN_AUDIT_SINK", audit.sink);
         }
+        // Only hash-chained resolves to a bean that needs a file: see
+        // DataPrismAutoConfiguration#dataPrismHashChainedAuditSink. Refusing here,
+        // at property-validation time, means a missing path is a startup refusal
+        // with a stable code rather than a NullPointerException once that bean is
+        // actually constructed.
+        if ("hash-chained".equals(audit.sink)) {
+            required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
+        }
         required(audit.writerId, "MISSING_AUDIT_WRITER", "dataprism.audit.writer-id");
+        // AuditRecorder appends "/" plus a per-boot suffix to build its instanceId, so a
+        // writer-id containing "/" would make that split ambiguous -- refused here, at
+        // property-validation time, with a stable startup code rather than an
+        // IllegalArgumentException once the AuditRecorder bean is actually constructed.
+        if (!blank(audit.writerId) && audit.writerId.indexOf('/') >= 0) {
+            refuse("INVALID_AUDIT_WRITER", "dataprism.audit.writer-id must not contain '/'");
+        }
         if (audit.credentialReference != null && audit.credentialReference.isBlank()) {
             refuse("INVALID_AUDIT_REFERENCE", "dataprism.audit.credential-reference");
         }
@@ -519,7 +543,7 @@ public class DataPrismProperties {
     }
 
     public static class Audit {
-        private String sink, writerId, credentialReference;
+        private String sink, writerId, credentialReference, filePath;
 
         public String getSink() {
             return sink;
@@ -543,6 +567,20 @@ public class DataPrismProperties {
 
         public void setCredentialReference(String v) {
             credentialReference = v;
+        }
+
+        /**
+         * The file the {@code hash-chained} sink appends to. Required only when
+         * {@code dataprism.audit.sink=hash-chained}; see
+         * {@code DataPrismAutoConfiguration#dataPrismHashChainedAuditSink}. Unused,
+         * and left unset, by every other sink value.
+         */
+        public String getFilePath() {
+            return filePath;
+        }
+
+        public void setFilePath(String v) {
+            filePath = v;
         }
     }
 

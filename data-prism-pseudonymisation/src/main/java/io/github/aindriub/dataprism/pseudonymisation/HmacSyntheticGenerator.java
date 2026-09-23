@@ -93,7 +93,7 @@ public final class HmacSyntheticGenerator implements SyntheticValueSource {
             case PERSON_FIRST_NAME -> pick(PoolKind.FIRST_NAME, d, 4) + " (" + tag + ")";
             case PERSON_LAST_NAME -> pick(PoolKind.LAST_NAME, d, 8) + " (" + tag + ")";
             case EMAIL -> "person." + tag.toLowerCase(Locale.ROOT) + "@example.invalid";
-            case ADDRESS -> address(d);
+            case ADDRESS -> address(d) + " (" + tag + ")";
             case ORGANISATION_NAME, ORGANISATION_IDENTITY -> organisation(d) + " (" + tag + ")";
             // The scope-local token for a subject with no other representation.
             // Audit records this rather than the real identifier.
@@ -140,18 +140,15 @@ public final class HmacSyntheticGenerator implements SyntheticValueSource {
     }
 
     /**
-     * Twenty bits of the digest, rendered as four characters. Enough that
-     * collisions inside a scope stop being a practical concern; short enough that
-     * the value still reads as a name. ASCII only: a pseudonym travels through
+     * Forty bits of the digest, rendered as eight characters, matching
+     * {@link HmacValueTokenSource#token}. ASCII only: a pseudonym travels through
      * logs, audit records and terminals, and a non-ASCII separator turns into
      * mojibake in at least one of them.
      */
     private static String discriminator(byte[] d) {
-        int bits = (int) (unsigned(d, 0) & 0xFFFFF);
-        char[] out = new char[4];
-        for (int i = 3; i >= 0; i--) {
-            out[i] = ALPHABET[bits & 0x1F];
-            bits >>>= 5;
+        char[] out = new char[8];
+        for (int i = 0; i < 8; i++) {
+            out[i] = ALPHABET[d[i] & 0x1F];
         }
         return new String(out);
     }

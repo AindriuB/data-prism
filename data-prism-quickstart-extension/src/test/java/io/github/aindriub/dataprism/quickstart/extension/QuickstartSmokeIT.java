@@ -162,7 +162,7 @@ class QuickstartSmokeIT {
             JsonNode response = MAPPER.readTree(body);
             assertThat(response.path("subject").asText()).startsWith("SUBJ-").isNotEqualTo("1001");
             assertThat(response.path("entity").path("customerName").asText())
-                    .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{4}\\)$");
+                    .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
             assertThat(response.path("entity").path("email").asText()).isEqualTo("[REDACTED]");
             assertThat(response.path("entity").path("status").asText()).isEqualTo("ACTIVE");
         } finally {
@@ -250,11 +250,11 @@ class QuickstartSmokeIT {
     }
 
     private static Path extensionJar() {
-        return Path.of("target", "data-prism-quickstart-extension-0.2.0.jar").toAbsolutePath();
+        return Path.of("target", "data-prism-quickstart-extension-0.3.0.jar").toAbsolutePath();
     }
 
     private static Path jarFor(String moduleName) {
-        return Path.of("..", moduleName, "target", moduleName + "-0.2.0.jar").toAbsolutePath();
+        return Path.of("..", moduleName, "target", moduleName + "-0.3.0.jar").toAbsolutePath();
     }
 
     private static Process startProcess(Path jar, List<String> programArguments, Map<String, String> env)
@@ -272,7 +272,7 @@ class QuickstartSmokeIT {
 
     private static Process startServerProcess(List<String> jvmArguments, List<String> programArguments,
             Map<String, String> env) throws IOException {
-        Path jar = Path.of("..", "data-prism-server", "target", "data-prism-server-0.2.0.jar")
+        Path jar = Path.of("..", "data-prism-server", "target", "data-prism-server-0.3.0.jar")
                 .toAbsolutePath();
         assertThat(java.nio.file.Files.isRegularFile(jar))
                 .as("expected the packaged standalone server at %s", jar)
