@@ -40,12 +40,20 @@ public final class AuditChainVerifierCli {
 
     private static final String LIMITATION =
             "LIMITATION: this verifier detects an edit or a deletion of a record already written, replayed "
-                    + "independently per writer. It cannot detect truncation of a writer's most recent "
-                    + "records: deleting the tail of an append-only file leaves a chain that verifies "
-                    + "perfectly end to end. Detecting that needs an external checkpoint held outside "
-                    + "operator control, which this release does not build. Read nothing above as a guarantee "
-                    + "that this file is whole, or that it can never be altered without this check noticing -- "
-                    + "only that no edit or deletion was found within the records this check could see.";
+                    + "independently per writer -- but ONLY for the fields joined into AuditEventHash's "
+                    + "chained hash: eventId, instanceId, sequence, principalId, clientId, tool, entityType, "
+                    + "subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId, "
+                    + "policyDecision, correlationId, rejectedArguments and previousHash. As of this release, "
+                    + "timestamp and sourceSystems are stored in every record but are NOT among the fields "
+                    + "the chained hash covers, so a record can be backdated (its timestamp rewritten) or have "
+                    + "its sourceSystems rewritten and this check will still report the chain intact -- an "
+                    + "edit to either of those two fields cannot detect it. It also cannot detect truncation "
+                    + "of a writer's most recent records: deleting the tail of an append-only file leaves a "
+                    + "chain that verifies perfectly end to end. Detecting that needs an external checkpoint "
+                    + "held outside operator control, which this release does not build. Read nothing above "
+                    + "as a guarantee that this file is whole, that every field of every record is unaltered, "
+                    + "or that it can never be altered without this check noticing -- only that no edit or "
+                    + "deletion of a hashed field was found within the records this check could see.";
 
     private AuditChainVerifierCli() {
     }
@@ -100,6 +108,7 @@ public final class AuditChainVerifierCli {
         for (WriterResult writer : report.writers()) {
             out.println();
             out.println("Writer " + writer.instanceId() + ":");
+            out.println("  first sequence seen: " + writer.firstSequence());
             out.println("  sequence count: " + writer.sequenceCount());
             out.println("  head hash: " + writer.headHash());
             if (writer.broken()) {

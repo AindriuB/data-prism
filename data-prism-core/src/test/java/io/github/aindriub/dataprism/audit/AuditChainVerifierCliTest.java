@@ -62,8 +62,62 @@ class AuditChainVerifierCliTest {
         assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
         assertThat(out).contains("intact");
         assertThat(out).contains("cannot detect truncation");
+        assertThat(out).contains("timestamp and sourceSystems");
+        assertThat(out).contains("first sequence seen: 1");
         assertThat(out).doesNotContain("tamper-proof");
         assertThat(out).doesNotContain("immutable");
+    }
+
+    @Test
+    void deletedHeadRecordsExitWithBreakDetectedNotIntact() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            write(recorder);
+            write(recorder);
+        }
+
+        List<String> lines = new java.util.ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        lines.remove(0);
+        lines.remove(0);
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        int code = run(path, outBytes, new ByteArrayOutputStream());
+        String out = outBytes.toString(StandardCharsets.UTF_8);
+
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+        assertThat(out).contains("CHAIN BREAK");
+        assertThat(out).contains("GENESIS");
+        assertThat(out).doesNotContain("intact: every record");
+    }
+
+    @Test
+    void aTimestampEditIsUndetectedAndTheLimitationSaysSoUpFront() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            write(recorder);
+        }
+
+        List<String> lines = new java.util.ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        String corrupted = lines.get(1).replaceFirst("2026-01-01T00:00:00Z", "2020-06-15T00:00:00Z");
+        assertThat(corrupted).isNotEqualTo(lines.get(1));
+        lines.set(1, corrupted);
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        int code = run(path, outBytes, new ByteArrayOutputStream());
+        String out = outBytes.toString(StandardCharsets.UTF_8);
+
+        // The tool cannot see this backdating: timestamp is not among the hashed fields.
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
+        assertThat(out).contains("intact: every record");
+        // But its own printed limitation told the reader this would happen.
+        assertThat(out).contains("timestamp and sourceSystems");
+        assertThat(out).contains("backdated");
     }
 
     @Test

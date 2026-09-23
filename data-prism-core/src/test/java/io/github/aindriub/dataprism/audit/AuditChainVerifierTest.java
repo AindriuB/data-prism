@@ -202,6 +202,49 @@ class AuditChainVerifierTest {
     }
 
     @Test
+    void deletedHeadRecordsAreReportedAsABreakNotIntact() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        AuditEvent third;
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            write(recorder);
+            third = write(recorder);
+        }
+
+        // Delete the writer's first two records: the survivor's previousHash no longer
+        // chains from GENESIS, so this must not read as an intact two-record-shorter chain.
+        List<String> lines = new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        lines.remove(0);
+        lines.remove(0);
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
+
+        AuditChainVerifier.WriterResult writer = report.writers().get(0);
+        assertThat(writer.broken()).isTrue();
+        assertThat(writer.firstBreak()).isPresent();
+        assertThat(writer.firstBreak().get().sequence()).isEqualTo(third.sequence());
+        assertThat(writer.firstBreak().get().reason()).contains("GENESIS");
+        assertThat(writer.firstSequence()).isEqualTo(third.sequence());
+        assertThat(report.hasBreak()).isTrue();
+    }
+
+    @Test
+    void intactChainReportsTheFirstSequenceSeenForEachWriter() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            write(recorder);
+        }
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
+
+        assertThat(report.writers().get(0).firstSequence()).isEqualTo(1L);
+    }
+
+    @Test
     void eventHashMismatchIsBreakEvenWhenPreviousHashLinksCorrectly() throws IOException {
         Path path = tempDir.resolve("audit.log");
         AuditEvent second;
@@ -360,6 +403,68 @@ class AuditChainVerifierTest {
         assertThat(writer.broken()).isFalse();
         assertThat(writer.sequenceCount()).isEqualTo(3);
         assertThat(writer.headHash()).isEqualTo(third.eventHash());
+    }
+
+    // -- parse failures that must escalate to break severity, not the benign bucket ------------
+
+    @Test
+    void corruptedTimestampFieldEscalatesToUnparseableRecordNotTheBenignBucket() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+        }
+
+        List<String> lines = new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        String corrupted = lines.get(0).replaceFirst("2026-01-01T00:00:00Z", "not-a-timestamp");
+        assertThat(corrupted).isNotEqualTo(lines.get(0));
+        lines.set(0, corrupted);
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
+
+        assertThat(report.anomalies()).hasSize(1);
+        assertThat(report.anomalies().get(0).type()).isEqualTo(AuditChainVerifier.AnomalyType.UNPARSEABLE_RECORD);
+        assertThat(report.hasBreak()).isTrue();
+        assertThat(report.hasStructuralAnomaly()).isFalse();
+    }
+
+    @Test
+    void corruptedSequenceFieldEscalatesToUnparseableRecordNotTheBenignBucket() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+        }
+
+        // The serialized sequence field for the first (and only) record is "1"; corrupting it to
+        // non-numeric content trips NumberFormatException, not the field-count IllegalArgumentException.
+        List<String> lines = new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        String original = lines.get(0);
+        String fieldSep = "";
+        String[] fields = original.split(fieldSep);
+        fields[17] = "not-a-number";
+        lines.set(0, String.join(fieldSep, fields));
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
+
+        assertThat(report.anomalies()).hasSize(1);
+        assertThat(report.anomalies().get(0).type()).isEqualTo(AuditChainVerifier.AnomalyType.UNPARSEABLE_RECORD);
+        assertThat(report.hasBreak()).isTrue();
+        assertThat(report.hasStructuralAnomaly()).isFalse();
+    }
+
+    /**
+     * Pins the assumption {@link AuditChainVerifier#classifyParseFailure} relies on: a field-count
+     * mismatch throws exactly {@code IllegalArgumentException}, never a subtype. If {@code
+     * AuditRecordFormat} ever changes to throw something else for this condition, this test fails
+     * here rather than the change silently reclassifying interrupted writes as possible tampering.
+     */
+    @Test
+    void fieldCountMismatchThrowsExactlyIllegalArgumentException() {
+        assertThatThrownBy(() -> AuditRecordFormat.parse("toofewfields"))
+                .isExactlyInstanceOf(IllegalArgumentException.class);
     }
 
     private static AuditChainVerifier.WriterResult writerFor(AuditChainVerifier.VerificationReport report,

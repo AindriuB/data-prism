@@ -18,11 +18,29 @@ import java.util.Optional;
  * javadoc for why the chain is never global).
  *
  * <p>This class detects an edit or a deletion of a record that was already
- * written. It cannot detect truncation of a writer's most recent records:
- * deleting the tail of an append-only file leaves a chain that verifies
- * perfectly end to end. Detecting that needs an external checkpoint held
- * outside operator control, which this release does not build — see
- * {@link AuditChainVerifierCli}, which prints that limitation on every run.
+ * written, but only insofar as the edited or deleted field is one of the
+ * seventeen joined into {@link AuditEventHash}'s chained hash — see {@link
+ * AuditChainVerifierCli}'s printed limitation for exactly which fields those
+ * are and which two ({@code timestamp}, {@code sourceSystems}) are not. It
+ * also cannot detect truncation of a writer's most recent records: deleting
+ * the tail of an append-only file leaves a chain that verifies perfectly end
+ * to end. Detecting that needs an external checkpoint held outside operator
+ * control, which this release does not build — see {@link
+ * AuditChainVerifierCli}, which prints both limitations on every run.
+ *
+ * <p>Deletion of a writer's EARLIEST records is not exempt from detection:
+ * the first record seen for each writer must itself chain from {@code
+ * GENESIS} (64 zero characters, matching {@code AuditRecorder}'s starting
+ * hash), or that writer's chain is reported broken rather than intact — with
+ * one narrow exception. If the line immediately before that first-seen
+ * record was itself already reported as a structural anomaly (the mid-file
+ * field-count shape above, where a restarted writer's true first record is
+ * glued onto a torn fragment with no newline and can never be parsed), no
+ * second, redundant break is raised for the same already-disclosed gap: the
+ * anomaly already told the reader something is missing there. A quiet
+ * deletion with no adjacent anomaly is always reported broken. Each writer's
+ * {@link WriterResult#firstSequence()} is always reported so a reader can
+ * see where every chain starts.
  *
  * <p>Four on-disk shapes resemble tampering but are not, and this class
  * reports each distinctly from a genuine break rather than folding it into
@@ -40,13 +58,25 @@ import java.util.Optional;
  *   <li>a duplicate sequence number within one writer — the shape a sink
  *       produces if it violates {@link AuditSink}'s all-or-nothing contract
  *       by writing durably and then throwing — reported as an {@link
- *       AnomalyType#DUPLICATE_SEQUENCE} anomaly, not a break;
+ *       AnomalyType#DUPLICATE_SEQUENCE} anomaly, not a break. The record at
+ *       the FIRST byte offset seen for that sequence is always treated as
+ *       canonical and continues the chain; the message names both offsets so
+ *       a reader can tell whether a forged record was inserted before the
+ *       genuine one;
  *   <li>a new writer's chain starting at {@code GENESIS} partway through the
  *       file — an ordinary process restart — verified as its own independent
  *       chain, never as a break in the transition.
  * </ul>
  */
 public final class AuditChainVerifier {
+
+    /**
+     * The 64-zero hash every writer's chain begins from — matches {@code
+     * AuditRecorder}'s private {@code GENESIS} constant exactly; duplicated
+     * here rather than exposed from that class because this verifier owns no
+     * part of {@code AuditRecorder}.
+     */
+    private static final String GENESIS = "0".repeat(64);
 
     private AuditChainVerifier() {
     }
@@ -67,10 +97,13 @@ public final class AuditChainVerifier {
         TailAnomaly tail = null;
 
         int start = 0;
+        boolean precededByAnomaly = false;
         for (int i = 0; i < content.length; i++) {
             if (content[i] == '\n') {
                 String line = new String(content, start, i - start, StandardCharsets.UTF_8);
-                processLine(line, start, writers, anomalies);
+                int anomaliesBefore = anomalies.size();
+                processLine(line, start, writers, anomalies, precededByAnomaly);
+                precededByAnomaly = anomalies.size() > anomaliesBefore;
                 start = i + 1;
             }
         }
@@ -92,7 +125,7 @@ public final class AuditChainVerifier {
     }
 
     private static void processLine(String line, long offset, Map<String, WriterState> writers,
-                                      List<StructuralAnomaly> anomalies) {
+                                      List<StructuralAnomaly> anomalies, boolean precededByAnomaly) {
         if (line.isEmpty()) {
             return;
         }
@@ -119,6 +152,32 @@ public final class AuditChainVerifier {
             writer.afterBreakCount++;
             writer.headHash = event.eventHash();
             return;
+        }
+
+        boolean firstRecordSeenForWriter = writer.firstSequence == null;
+        if (firstRecordSeenForWriter) {
+            writer.firstSequence = event.sequence();
+            if (!GENESIS.equals(event.previousHash())) {
+                if (precededByAnomaly) {
+                    // The line immediately before this one was already reported as its own
+                    // structural anomaly (for example a torn fragment with this writer's true
+                    // first record glued onto it with no newline between them, which prevents
+                    // that first record from ever being parsed). That anomaly already discloses
+                    // the gap, so this record's chain start is taken as-is rather than raising a
+                    // second, redundant finding for the same disclosed gap.
+                } else {
+                    writer.broken = true;
+                    writer.firstBreak = new Break(event.sequence(), event.instanceId(), offset,
+                            "this is the first record seen in this file for writer " + event.instanceId()
+                                    + ", but its previousHash is not GENESIS (64 zero characters), and no "
+                                    + "structural anomaly on the immediately preceding line explains why -- "
+                                    + "this writer's chain does not begin here, meaning one or more of this "
+                                    + "writer's earlier records, up to and including its true first record, "
+                                    + "were deleted before this point");
+                    writer.headHash = event.eventHash();
+                    return;
+                }
+            }
         }
 
         if (writer.lastHash != null && !event.previousHash().equals(writer.lastHash)) {
@@ -152,7 +211,26 @@ public final class AuditChainVerifier {
      * record on the same append-only file. Anything else that fails to parse
      * corrupts a field's own content in a way that shape does not explain, so
      * it is reported as a possible tamper rather than folded into the benign
-     * bucket.
+     * bucket. In particular a corrupted {@code timestamp} or {@code sequence}
+     * fails with {@code DateTimeParseException} or {@code NumberFormatException}
+     * (a subtype of, but not exactly, {@code IllegalArgumentException}), so
+     * both already escalate to {@link AnomalyType#UNPARSEABLE_RECORD} rather
+     * than the benign bucket.
+     *
+     * <p>This exact-class check couples the benign classification to a class
+     * this verifier does not own: if {@code AuditRecordFormat} ever threw a
+     * different exception type for the same field-count-mismatch condition,
+     * that shape would silently stop matching here and fall through to {@code
+     * UNPARSEABLE_RECORD} — the safer failure direction (an ordinary
+     * interrupted write would read as possible tampering, not the reverse),
+     * but still a silent behaviour change with no failing test to announce
+     * it. Counting unescaped 0x1F field separators directly would test the
+     * shape itself and could not drift this way, but would mean re-deriving
+     * {@code AuditRecordFormat}'s own escaping rules in a class that does not
+     * own that format. Kept as an exact-class check for that reason;
+     * {@code AuditChainVerifierTest#fieldCountMismatchThrowsExactlyIllegalArgumentException}
+     * pins the assumption so a change to the thrown type fails a test here
+     * rather than only in production.
      */
     private static StructuralAnomaly classifyParseFailure(long offset, RuntimeException cause) {
         if (cause.getClass() == IllegalArgumentException.class) {
@@ -177,11 +255,16 @@ public final class AuditChainVerifier {
     private static StructuralAnomaly duplicateSequence(AuditEvent event, long firstOffset, long secondOffset) {
         return new StructuralAnomaly(AnomalyType.DUPLICATE_SEQUENCE,
                 "writer " + event.instanceId() + " has two durable records at sequence " + event.sequence()
-                        + " (byte offsets " + firstOffset + " and " + secondOffset + "). AuditSink requires an "
-                        + "all-or-nothing write per record; this shape is what a sink produces if it writes a "
-                        + "record durably and then still throws -- not tampering with an existing record. "
-                        + "Investigate the sink implementation that produced this file, not this file's later "
-                        + "custody.",
+                        + " (byte offsets " + firstOffset + " and " + secondOffset + "). The record at the "
+                        + "FIRST offset (" + firstOffset + ") is treated as canonical and is the one this "
+                        + "writer's chain continues from; the record at the second offset (" + secondOffset
+                        + ") is reported as the anomaly. AuditSink requires an all-or-nothing write per record; "
+                        + "this shape is what a sink produces if it writes a record durably and then still "
+                        + "throws -- not tampering with an existing record. Investigate the sink implementation "
+                        + "that produced this file, not this file's later custody. If instead a forged record "
+                        + "was inserted before the genuine one, it is the record at the first offset that would "
+                        + "be wrongly treated as canonical -- both offsets are named above so a reader can "
+                        + "investigate either.",
                 firstOffset, secondOffset);
     }
 
@@ -194,6 +277,7 @@ public final class AuditChainVerifier {
         private String headHash;
         private boolean broken;
         private Break firstBreak;
+        private Long firstSequence;
 
         WriterState(String instanceId) {
             this.instanceId = instanceId;
@@ -201,7 +285,7 @@ public final class AuditChainVerifier {
 
         WriterResult toResult() {
             return new WriterResult(instanceId, recordCount, headHash, broken, Optional.ofNullable(firstBreak),
-                    afterBreakCount);
+                    afterBreakCount, firstSequence);
         }
     }
 
@@ -227,9 +311,9 @@ public final class AuditChainVerifier {
     public record TailAnomaly(String message, long byteOffset) {
     }
 
-    /** One writer's replayed chain. */
+    /** One writer's replayed chain. {@code firstSequence} is the sequence of the first record this pass saw. */
     public record WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
-                                Optional<Break> firstBreak, long afterBreakCount) {
+                                Optional<Break> firstBreak, long afterBreakCount, long firstSequence) {
     }
 
     /** The full result of one verification pass over a file. */
