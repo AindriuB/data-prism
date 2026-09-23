@@ -14,16 +14,26 @@ COPY . .
 # Maven's -am ("also make") never discovers the edge and, in a fresh
 # container with no local repository cache, fails to resolve it.
 RUN mvn -B -q -pl data-prism-processor,data-prism-server,data-prism-quickstart-extension -am package -DskipTests
+# The reactor version is embedded in the filenames `mvn package` produces
+# (data-prism-server-<version>.jar, data-prism-quickstart-extension-<version>.jar),
+# and the pom.xml is the only place that version is written (task 36) —
+# rather than duplicating it here as an ARG default that silently goes
+# stale the moment the reactor cuts a new version (see
+# docs/plan/tasks/55-publish-quickstart-images.md), find the two repackaged
+# jars Maven actually produced and give them fixed names. The
+# spring-boot-maven-plugin repackage goal leaves the pre-repackage jar
+# alongside data-prism-server's as *.jar.original, so that suffix is
+# excluded explicitly; data-prism-quickstart-extension is not repackaged,
+# so it has no such sibling.
+RUN find data-prism-server/target -maxdepth 1 -name '*.jar' ! -name '*.original' \
+      -exec cp {} /workspace/data-prism-server.jar \; \
+    && find data-prism-quickstart-extension/target -maxdepth 1 -name '*.jar' ! -name '*.original' \
+      -exec cp {} /workspace/data-prism-quickstart-extension.jar \;
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-# VERSION only ever names the build stage's *source* jars: the reactor
-# version is embedded in the filenames `mvn package` produces, so COPY needs
-# it once to find them — matching docker/distribution/Dockerfile's own
-# convention. Nothing past these COPY steps needs to know this ARG's value.
-ARG VERSION=0.2.0
-COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server.jar
-COPY --from=build /workspace/data-prism-quickstart-extension/target/data-prism-quickstart-extension-${VERSION}.jar /app/data-prism-quickstart-extension.jar
+COPY --from=build /workspace/data-prism-server.jar /app/data-prism-server.jar
+COPY --from=build /workspace/data-prism-quickstart-extension.jar /app/data-prism-quickstart-extension.jar
 # Spring Boot's own convention: a jar started with working directory /app
 # auto-loads /app/config/application.yaml ahead of its own packaged defaults.
 COPY docker/server/application.yaml /app/config/application.yaml

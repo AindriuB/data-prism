@@ -10,9 +10,10 @@
 # volume — a location Docker itself owns, never a path in this repository —
 # and nothing generated is ever committed (CLAUDE.md rule 7).
 #
-# Every service below pulls its image, tagged at the reactor version (or
-# QUICKSTART_IMAGE_TAG, default `latest`), from the same GHCR namespace as
-# the published distribution image (task 55) — no service here carries a
+# Every service below pulls its image, tagged `latest` by default (or
+# QUICKSTART_IMAGE_TAG, e.g. pinned to the reactor version), from the same
+# GHCR namespace as the published distribution image (task 55) — no service
+# here carries a
 # `build:` block, so a cold `docker compose up` never runs a Maven build on
 # the reader's own machine. To build every image from source instead — for
 # local development, or before those images have ever been published — run
