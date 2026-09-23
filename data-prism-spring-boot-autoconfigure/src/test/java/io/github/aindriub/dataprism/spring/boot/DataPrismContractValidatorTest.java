@@ -8,20 +8,27 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Task 54: a configured JSON source's {@code DataSourceAdapter} bean (see
- * {@code io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonSourcesInitializer})
- * carries no {@code dataprism.sources.<name>} entry at all, so {@link
- * DataPrismContractValidator#validateIntegrations} must no longer demand
+ * Task 54 relaxed {@link DataPrismContractValidator#validateIntegrations} from
  * one-to-one equality between {@code dataprism.sources} and the supplied
- * adapter beans -- only that every {@code dataprism.sources} entry still
- * resolves to a real bean. {@link FixtureDevelopmentRefusalTest} already
- * covers the STDIO-fixture-development early return this class also observes
- * and is not repeated here.
+ * adapter beans to a subset check, since a configured JSON source's {@code
+ * DataSourceAdapter} bean (see {@code
+ * io.github.aindriub.dataprism.connectors.rest.ConfiguredJsonSourcesInitializer})
+ * carries no {@code dataprism.sources.<name>} entry at all. That subset check
+ * also admitted any other {@code DataSourceAdapter} bean on the classpath with
+ * no review trail at all. Task 69 restores the allow-list, narrowed to exactly
+ * the names the JSON-catalogue mechanism publishes: a plain {@code
+ * Set<String>} bean {@code data-prism-connectors-rest} registers, when
+ * present, under the name {@code dataPrismConfiguredJsonSourceNames} (see
+ * {@code ConfiguredJsonSourcesAutoConfiguration#configuredJsonSourceNames}
+ * there for why this module never imports that module's own type). {@link
+ * FixtureDevelopmentRefusalTest} already covers the STDIO-fixture-development
+ * early return this class also observes and is not repeated here.
  */
 class DataPrismContractValidatorTest {
 
@@ -30,18 +37,18 @@ class DataPrismContractValidatorTest {
         DataPrismProperties properties = new DataPrismProperties();
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
-                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
+                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
                 .isInstanceOf(DataPrismConfigurationException.class)
                 .hasMessageStartingWith("MISSING_SOURCE_ADAPTER:");
     }
 
     /**
-     * The collapse this task delivers: a configured JSON source supplies its
-     * adapter with no {@code dataprism.sources} entry naming it, and that
-     * alone must not trip {@code MISSING_SOURCE_ADAPTER}. Deleting that
-     * {@code throw} outright would also turn this green, but only because the
-     * first test above would already be red -- both are needed to pin the
-     * behaviour down.
+     * The collapse task 54 delivered, still true after task 69's narrowing: a
+     * configured JSON source supplies its adapter with no {@code
+     * dataprism.sources} entry naming it, and that alone must not trip {@code
+     * MISSING_SOURCE_ADAPTER} -- provided the JSON-catalogue mechanism itself
+     * vouches for the name via its published {@code Set<String>} bean, which
+     * is exactly what task 69 requires instead of admitting the bean unconditionally.
      */
     @Test
     void missingSourceAdapterDoesNotFireWhenAConfiguredJsonSourceSuppliesTheOnlyAdapter() {
@@ -50,7 +57,8 @@ class DataPrismContractValidatorTest {
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
                 availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
-                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none())))
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none()),
+                availableProvider(Set.of("customer-api"))))
                 .doesNotThrowAnyException();
     }
 
@@ -60,27 +68,47 @@ class DataPrismContractValidatorTest {
         properties.getSources().put("orphan", new DataPrismProperties.Source());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
-                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
+                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
                 .isInstanceOf(DataPrismConfigurationException.class)
                 .hasMessageStartingWith("UNRESOLVED_SOURCE_ADAPTER:");
     }
 
     /**
-     * The other half of the collapse: an adapter bean whose name has no
-     * {@code dataprism.sources} counterpart at all -- exactly what a
-     * configured JSON source now looks like -- must not trip {@code
-     * UNRESOLVED_SOURCE_ADAPTER} either. Deleting that {@code throw} outright
-     * would also turn this green, but only because the previous test would
-     * already be red.
+     * Task 69: the property the plain subset check lost. An adapter bean whose
+     * name appears neither under {@code dataprism.sources} nor in the
+     * JSON-catalogue mechanism's published names is not a reviewed adapter, and
+     * must refuse startup rather than being silently admitted the way any
+     * classpath {@code DataSourceAdapter} bean was between task 54 and this one.
      */
     @Test
-    void unresolvedSourceAdapterDoesNotFireWhenASuppliedAdapterHasNoDataprismSourcesEntry() {
+    void unreviewedSourceAdapterFiresWhenASuppliedAdapterIsNamedByNeitherMechanism() {
         DataPrismProperties properties = new DataPrismProperties();
+
+        assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(fakeAdapter("unreviewed-adapter")),
+                availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none()),
+                emptyProvider()))
+                .isInstanceOf(DataPrismConfigurationException.class)
+                .hasMessageStartingWith("UNREVIEWED_SOURCE_ADAPTER:")
+                .hasMessageContaining("unreviewed-adapter");
+    }
+
+    /**
+     * The other allow-listing route: a plain {@code dataprism.sources} entry,
+     * with no JSON-catalogue involvement at all, still vouches for its adapter
+     * the same way it always did.
+     */
+    @Test
+    void unreviewedSourceAdapterDoesNotFireWhenADataprismSourcesEntryNamesTheSuppliedAdapter() {
+        DataPrismProperties properties = new DataPrismProperties();
+        properties.getSources().put("customer-api", new DataPrismProperties.Source());
 
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
                 availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
-                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none())))
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none()),
+                emptyProvider()))
                 .doesNotThrowAnyException();
     }
 
@@ -93,11 +121,12 @@ class DataPrismContractValidatorTest {
     void approvedAuditSinkWithNoAuditSinkBeanFiresAuditSinkBeanRequired() {
         DataPrismProperties properties = new DataPrismProperties();
         properties.getAudit().setSink(DataPrismProperties.APPROVED_SINK);
+        properties.getSources().put("customer-api", new DataPrismProperties.Source());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
                 availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
-                emptyProvider(), availableProvider(PrivacyMetrics.none())))
+                emptyProvider(), availableProvider(PrivacyMetrics.none()), emptyProvider()))
                 .isInstanceOf(DataPrismConfigurationException.class)
                 .hasMessageStartingWith("AUDIT_SINK_BEAN_REQUIRED:")
                 .hasMessageContaining("dataprism.audit.sink=approved-sink");
@@ -112,11 +141,12 @@ class DataPrismContractValidatorTest {
     void approvedAuditSinkWithAnAuditSinkBeanPresentDoesNotThrow() {
         DataPrismProperties properties = new DataPrismProperties();
         properties.getAudit().setSink(DataPrismProperties.APPROVED_SINK);
+        properties.getSources().put("customer-api", new DataPrismProperties.Source());
 
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
                 availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
-                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none())))
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none()), emptyProvider()))
                 .doesNotThrowAnyException();
     }
 
@@ -129,11 +159,12 @@ class DataPrismContractValidatorTest {
     void nonApprovedSinkWithNoAuditSinkBeanStillFiresMissingAuditSink() {
         DataPrismProperties properties = new DataPrismProperties();
         properties.getAudit().setSink("slf4j");
+        properties.getSources().put("customer-api", new DataPrismProperties.Source());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
                 availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
-                emptyProvider(), availableProvider(PrivacyMetrics.none())))
+                emptyProvider(), availableProvider(PrivacyMetrics.none()), emptyProvider()))
                 .isInstanceOf(DataPrismConfigurationException.class)
                 .hasMessageStartingWith("MISSING_AUDIT_SINK:");
     }

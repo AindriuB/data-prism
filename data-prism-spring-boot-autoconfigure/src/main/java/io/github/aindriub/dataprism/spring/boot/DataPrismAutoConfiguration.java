@@ -49,6 +49,7 @@ import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -224,22 +225,46 @@ public class DataPrismAutoConfiguration {
             }
         }
     }
+    /**
+     * Task 69: {@code configuredJsonSourceNames} is deliberately {@code
+     * ObjectProvider<Set<String>>}, not a type declared by {@code
+     * data-prism-connectors-rest}. That module registers this bean, when
+     * present, under the literal name {@link
+     * #CONFIGURED_JSON_SOURCE_NAMES_BEAN} — see {@code
+     * ConfiguredJsonSourcesAutoConfiguration#configuredJsonSourceNames} for
+     * why a plain JDK type, matched by bean name through {@code @Qualifier}
+     * rather than by importing that module's own class, is what keeps this
+     * unconditional {@code @Bean} method safe to run on a classpath that
+     * genuinely never includes that module at all (the base standalone
+     * server's own {@code pom.xml} declares it test-scope only).
+     */
     @Bean
     Object dataPrismPropertiesValidated(DataPrismProperties properties, List<DataSourceAdapter<?>> adapters,
             ObjectProvider<IdentityResolver> identities, ObjectProvider<HmacKeyReferenceResolver> keys,
-            ObjectProvider<AuditSink> audit, ObjectProvider<PrivacyMetrics> metrics) {
+            ObjectProvider<AuditSink> audit, ObjectProvider<PrivacyMetrics> metrics,
+            @Qualifier(CONFIGURED_JSON_SOURCE_NAMES_BEAN) ObjectProvider<Set<String>> configuredJsonSourceNames) {
         properties.validate();
-        DataPrismContractValidator.validateIntegrations(properties, adapters, identities, keys, audit, metrics);
+        DataPrismContractValidator.validateIntegrations(properties, adapters, identities, keys, audit, metrics,
+                configuredJsonSourceNames);
         validateProfile(properties);
         validateKey(properties, keys.getIfAvailable());
         return new Object();
     }
+    /**
+     * Matches {@code data-prism-connectors-rest}'s {@code
+     * ConfiguredJsonSourcesAutoConfiguration.CONFIGURED_JSON_SOURCE_NAMES_BEAN}
+     * by literal value; see {@link #dataPrismPropertiesValidated}'s Javadoc
+     * for why this class never imports that module's own constant or type.
+     */
+    private static final String CONFIGURED_JSON_SOURCE_NAMES_BEAN = "dataPrismConfiguredJsonSourceNames";
     @Bean
     DataPrismContractValidator dataPrismContractValidator(DataPrismProperties properties,
             ObjectProvider<DataSourceAdapter<?>> adapters, ObjectProvider<IdentityResolver> identities,
             ObjectProvider<HmacKeyReferenceResolver> keys, ObjectProvider<AuditSink> audit,
-            ObjectProvider<PrivacyMetrics> metrics) {
-        return new DataPrismContractValidator(properties, adapters, identities, keys, audit, metrics);
+            ObjectProvider<PrivacyMetrics> metrics,
+            @Qualifier(CONFIGURED_JSON_SOURCE_NAMES_BEAN) ObjectProvider<Set<String>> configuredJsonSourceNames) {
+        return new DataPrismContractValidator(properties, adapters, identities, keys, audit, metrics,
+                configuredJsonSourceNames);
     }
 
     @Bean @ConditionalOnMissingBean
