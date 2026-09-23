@@ -485,46 +485,38 @@ own:
 Nesting goes exactly one level: `address`'s own leaves may be `identifier`,
 `nonSensitive` or classified, but never `nested:` themselves — a second level
 is refused when the catalogue loads, not silently flattened. This is loaded
-and scrubbed below by the real engine, not asserted in prose: a small
-verification program, package-private itself
+and scrubbed below by the real engine, not asserted in prose:
+[`examples/json-sources/NestedCatalogueWalkthrough.java`](../examples/json-sources/NestedCatalogueWalkthrough.java)
+is a complete, runnable program — package-private itself
 (`io.github.aindriub.dataprism.connectors.rest`, the exact way
-`ConfiguredJsonNestedCatalogueScrubbingTest` in that module is), built
-against this module's own `target/classes` and its Maven dependency
-classpath (`mvn -q dependency:build-classpath`), calling the same public
-`ConfiguredJsonSources.fromYaml` this connector uses to read every
-`json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine` that
-test drives directly:
+`ConfiguredJsonNestedCatalogueScrubbingTest` in that module is), calling the
+same public `ConfiguredJsonSources.fromYaml` this connector uses to read
+every `json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine`
+that test drives directly. Its own header comment gives the exact `javac`/
+`java` invocation; in short, build both modules first
+(`mvn -q package -pl data-prism-core,data-prism-connectors-rest -am
+-DskipTests`), then compile and run this one file against their
+`target/classes` plus `data-prism-connectors-rest`'s Maven dependency
+classpath (`mvn -q dependency:build-classpath`) — no jar, no elided wiring:
+every line that runs is in that file.
 
-```java
-ConfiguredJsonSourcesConfig config;
-try (var in = new FileInputStream("examples/json-sources/customer-api-nested.yaml")) {
-    config = ConfiguredJsonSources.fromYaml(in);
-}
-ConfiguredJsonSource source = config.sources().get("customer-api-with-address");
-// ... wire ConfiguredJsonScrubbingEngine with the DEFAULT profile, an
-// HmacSyntheticGenerator/HmacValueTokenSource pair and a fixed test key,
-// exactly as ConfiguredJsonNestedCatalogueScrubbingTest does, then:
-ScrubResult result = engine.scrub(
-    new ConfiguredJsonPayload("customer-api-with-address", body), context);
-```
-
-Loading `customer-api-with-address` from that file and printing its resolved
-catalogue:
+Run as written, it loads `customer-api-with-address` from
+`customer-api-nested.yaml` and prints its resolved catalogue:
 
 ```
 sources: [customer-api-with-address]
-root fields: [status, customerName, email, address, customerId]
+root fields: [address, customerId, customerName, email, status]
 nested catalogues: [address]
   address.line1 -> classifications=[] namespace=NONE action=null nonSensitiveReason=street address line, reviewed as inert structure
   address.postcode -> classifications=[PII] namespace=ADDRESS action=SYNTHESIZE nonSensitiveReason=null
 ```
 
-Scrubbing the fixture-shaped response
+then scrubs the fixture-shaped response
 `{"customerId":"1001","customerName":"Fixture Person One","email":"fixture.person.one@example.invalid","status":"ACTIVE","address":{"line1":"123 Main St","postcode":"90210"}}`
 against the `DEFAULT` profile:
 
 ```json
-{"customerName":"Sage Fontaine (329X1P2A)","email":"[REDACTED]","status":"ACTIVE","address":{"line1":"123 Main St","postcode":"55 Hazel Street, Dunmore (MPFX65RQ)"}}
+{"customerName":"Rowan Walsh (4MZ4CCK9)","email":"[REDACTED]","status":"ACTIVE","address":{"line1":"123 Main St","postcode":"48 Orchard Mews, Belmont (V8338JMM)"}}
 ```
 
 `address.line1` passes through unchanged (`nonSensitive`), `address.postcode`
@@ -538,7 +530,8 @@ result.
 scalar/classified leaf. A response where that property arrives as a structure
 instead — a stale catalogue against a wire shape that changed — refuses as
 `NESTED_LEAF_NOT_SCALAR`, distinct from both `UNCLASSIFIED_STRUCTURE` and
-`UNKNOWN_FIELD`, before anything is scrubbed:
+`UNKNOWN_FIELD`, before anything is scrubbed. The same program's second
+scrub call, against that stale-shaped body, prints:
 
 ```
 REFUSED: NESTED_LEAF_NOT_SCALAR at customer-api-with-address$.address.postcode: nested catalogue leaf field is declared scalar/classified but the response carries a structure there; the catalogue is stale against the wire shape

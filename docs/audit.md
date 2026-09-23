@@ -13,8 +13,11 @@ There are three audit sinks:
   verifies it independently: log infrastructure reorders, compresses and
   ships lines outside this application's control, so there is no byte-for-byte
   shape here for an offline tool to check.
-- a bring-your-own sink, named by `dataprism.audit.credential-reference`
-  (`APPROVED_SINK`) — out of scope here.
+- a bring-your-own sink, selected with `dataprism.audit.sink: approved-sink`
+  and requiring the deployment to also supply an `AuditSink` bean of its own —
+  startup refuses with `AUDIT_SINK_BEAN_REQUIRED` if that bean is missing.
+  `dataprism.audit.credential-reference` is unrelated: setting it does not
+  select or configure this sink. Out of scope here.
 - `hash-chained` — `FileAuditSink` plus `AuditRecorder`, described below.
   This is the sink this page is about.
 
@@ -72,9 +75,14 @@ writer. It is a standalone command-line tool on purpose — never a Spring
 Actuator endpoint or a startup self-check — because a running instance
 reporting on its own output conflates "the process that might have tampered
 with this file says the file is fine" with independent verification, which
-proves less than an operator asking that question would assume. It refuses
-outright to be pointed at `Slf4jAuditSink` output: that never has the
-byte-for-byte shape this class relies on.
+proves less than an operator asking that question would assume. It has no
+special check for `Slf4jAuditSink` output, and pointing it at a log file does
+not fail cleanly: each log line fails to parse as a record, is reported as
+`UNPARSEABLE_RECORD`, and the run exits 2 — the same exit code this page
+tells you to treat as edit-or-deletion evidence. That is a false tamper
+alarm, not a diagnosis of the input. Do not point this verifier at
+`Slf4jAuditSink` output; it only has the byte-for-byte shape this class
+relies on when read back from `FileAuditSink`'s own file.
 
 Run it against a copy of the file:
 
@@ -141,12 +149,11 @@ Every run also prints the limitation below, in full, regardless of outcome.
 Read this before treating an intact report, or this file's mere existence,
 as more than it is.
 
-**What it proves.** Replaying the chain found no edit or deletion of any of
-the nineteen hashed fields in any record the verifier could see, in any
-writer's chain, that this check did not also have to recompute past to reach
-an "intact" verdict. Editing or deleting a record anywhere but the very end
-of a writer's chain breaks every hash after it; this check follows that break
-to its first occurrence and reports it, per writer, at exit code 2.
+**What it proves.** For every record the verifier could see, in every
+writer's chain, replaying the chain found no edit or deletion of any of the
+nineteen hashed fields. Editing or deleting a record anywhere but the very
+end of a writer's chain breaks every hash after it; this check follows that
+break to its first occurrence and reports it, per writer, at exit code 2.
 
 **What it does not prove — deliberately, not as an oversight:**
 
