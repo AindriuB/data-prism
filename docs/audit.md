@@ -53,10 +53,19 @@ A few properties are deliberate, not accidental gaps:
   immediately rather than risking that. This is a fail-closed property of the
   writer, not of the file it already wrote.
 - **Per-writer hash chain, not a global one.** `AuditRecorder` chains each
-  event's hash to the previous event's hash *for that recorder instance*
-  (`instanceId`, `dataprism.audit.writer-id`). Two processes, or two restarts
-  of the same process with different writer ids, produce two independent
-  chains in the same file, each starting from `GENESIS` (64 zero characters).
+  event's hash to the previous event's hash *for that recorder instance*. The
+  chain is keyed on `instanceId`, which is `dataprism.audit.writer-id` plus a
+  `/` and a random UUID minted once per `AuditRecorder` construction — one per
+  process boot, not one per configured deployment. A restart under the *same*
+  `writer-id` therefore mints a fresh `instanceId` automatically, so it is
+  reported as a second, independent writer starting at `GENESIS`, not as a
+  break in the first writer's chain (shown below, under "What a run actually
+  looks like"). That is also this scheme's blind spot: deleting every record
+  belonging to one boot's `instanceId` — its whole chain, not just its tail —
+  leaves no trace that writer ever existed. The verifier only reports the
+  writers it finds records for, so a wholly deleted boot is invisible, not
+  merely unprovable, to a report that only ever saw the boots that survived
+  (also shown below).
   `AuditEventHash` joins nineteen fields per record — `eventId`, `timestamp`,
   `instanceId`, `sequence`, `principalId`, `clientId`, `tool`, `entityType`,
   `subjectPseudonym`, `parameterFingerprint`, `privacyProfile`, `scopeId`,
@@ -104,7 +113,7 @@ or `--help` for the same summary this section gives.
 | 0 | Intact — every writer's chain verified: no break, no structural anomaly, no in-flight tail. |
 | 1 | Unreadable input — the file could not be opened or read, or the invocation was malformed. |
 | 2 | Break detected — an edit or deletion was found in at least one writer's chain, or a line could not be ruled out as tampering. |
-| 3 | Possibly-in-flight tail — the final record has no terminating newline; not a break. |
+| 3 | Possibly-in-flight tail — the final record has no terminating newline; not a break. Only reported when nothing scored higher: a run with both a break and an in-flight tail exits 2, and a run with both a structural anomaly and an in-flight tail exits 4 (precedence is break, then anomaly, then in-flight tail). |
 | 4 | Structural anomaly — an interrupted-write fragment, a sink-contract duplicate-sequence violation, or a writer's chain not starting at `GENESIS` (an ordinary restart, but deletion of that writer's earliest records cannot be ruled out). Never returned together with exit code 2. |
 
 ### What a run actually looks like
@@ -133,6 +142,21 @@ Writer walkthrough-writer-1:
 ```
 (exit code 2)
 
+Three fresh records, this time with the *last* one's `subjectPseudonym`
+edited in place after being written — proving that a chain does not need a
+successor record to catch a tampered tail:
+
+```
+Writer walkthrough-writer-1/95cf8f9f-d1e9-4c0b-9f08-92549a109d4e:
+  first sequence seen: 1
+  sequence count: 3
+  head hash: 90b395af248a7c7d9d24b40123d7d0ac750e8b69283bf7f15d33c79f0f169978
+  CHAIN BREAK at sequence 3, byte offset 622: its eventHash does not match AuditEventHash recomputed from its own stored fields -- its content was altered after it was written. This is evidence the record was edited or deleted after being written -- investigate immediately.
+```
+(exit code 2 — editing the final record is caught exactly as an edit
+anywhere earlier in the chain is: only *deleting* the tail, not editing it,
+escapes detection)
+
 The same three records, with the third deleted entirely — the truncation
 this verifier cannot detect, proven rather than merely claimed:
 
@@ -147,7 +171,47 @@ Writer walkthrough-writer-1:
 remaining records chain perfectly, and nothing inside the file distinguishes
 "this writer stopped writing" from "someone deleted the tail")
 
-Every run also prints the limitation below, in full, regardless of outcome.
+The same writer id (`walkthrough-writer-1`), restarted: two records from one
+boot, then the process exits and a second boot writes a third record under
+the same configured `writer-id`. Each boot mints its own random suffix, so
+the reader's own run will show different UUIDs after the `/`, but the shape
+is always two independent writers, each starting at `GENESIS`, neither
+reporting a break:
+
+```
+Writer walkthrough-writer-1/40703ecf-d3c6-428e-b818-3cbd5f679f74:
+  first sequence seen: 1
+  sequence count: 2
+  head hash: 2045c3561e5161a1e31d39ed100831a25466c4a16a5aacca4920f4912e28a29d
+  intact: every record in this writer's chain verified against the one before it.
+
+Writer walkthrough-writer-1/71856164-5ed3-464c-a400-3e926e5b5887:
+  first sequence seen: 1
+  sequence count: 1
+  head hash: e5f929623b7283bae3df5bb577a4e1a2b56bd7d3ff064c744d897b3edbdded90
+  intact: every record in this writer's chain verified against the one before it.
+```
+(exit code 0 — a restart under the same `writer-id` is reported as a second
+writer starting fresh, never as a break in the first one's chain)
+
+The same setup, but this time the second boot's two records are deleted
+outright — not truncated to a shorter chain, removed entirely, leaving only
+the first boot's one record in the file:
+
+```
+Writer walkthrough-writer-1/61695b17-e26b-4cf7-9692-b112d6df42af:
+  first sequence seen: 1
+  sequence count: 1
+  head hash: 2de489fe2ed58addccfd165dd5b4473259f59d389499f92df0ee135b631518e7
+  intact: every record in this writer's chain verified against the one before it.
+```
+(exit code 0 — the report never mentions the second boot at all: it is not
+reported as broken, missing or suspicious, because nothing in the surviving
+file records that a second boot ever wrote anything. Deleting a whole boot's
+chain is indistinguishable from that boot never having run.)
+
+Every run also prints a limitation statement, regardless of outcome; the
+section below is the full account of what that statement summarises.
 
 ## What this does and does not prove
 
@@ -156,9 +220,16 @@ as more than it is.
 
 **What it proves.** For every record the verifier could see, in every
 writer's chain, replaying the chain found no edit or deletion of any of the
-nineteen hashed fields. Editing or deleting a record anywhere but the very
-end of a writer's chain breaks every hash after it; this check follows that
-break to its first occurrence and reports it, per writer, at exit code 2.
+nineteen hashed fields. Editing a record breaks its own stored hash the
+moment its content no longer matches what `AuditEventHash` recomputes from
+that content, so an edit is caught anywhere in the chain, including the very
+last record written — a chain does not have to have a successor record to
+catch an edit to its tail (verified above). Only deleting one or more of a
+writer's most recent records goes undetected, because there is then nothing
+left in the file for the check to notice is missing; that gap, and the
+related whole-boot-deletion gap, are covered below. Where an edit is found,
+this check follows the break forward to report every later record in that
+writer's chain as after it, not as separate breaks, at exit code 2.
 
 **What it does not prove — deliberately, not as an oversight:**
 
@@ -172,6 +243,12 @@ break to its first occurrence and reports it, per writer, at exit code 2.
   newline is reported as "possibly in flight" (exit code 3) precisely because
   it is *not* proof of either tampering or health: it is exactly as
   consistent with an in-progress write as with a truncation caught mid-line.
+  Deleting an entire boot's records — every record under one `instanceId`,
+  not just its tail — has the same shape at the level of the whole writer:
+  the surviving writers each still verify intact, and the report simply never
+  mentions the boot whose every record is gone, because the verifier can only
+  report on the writers it finds records for (demonstrated above alongside
+  the restart case).
 - **This is intra-writer edit and delete detection, not a guarantee against
   a capable adversary.** `AuditEventHash` is unkeyed SHA-256 over the joined
   record body. Anyone able to write to this file directly can edit or delete
