@@ -11,7 +11,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java (audit writer-id validation only)
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/HashChainedAuditSinkTest.java
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/McpHttpEndToEndTest.java
-- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java (comment at :264 only)
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java (widened after attempt 1: the `seq` field's scan shape, and the :264 comment)
 
 ## Goal
 A hash-chained audit deployment restarted with the same `dataprism.audit.writer-id`
@@ -86,3 +86,41 @@ must be exactly what it is today.
 - CHANGELOG.md — task 70 writes the 0.3.0 line from this diff.
 - Keyed/HMAC hashing, rotation, cross-writer anchoring, any verifier logic change.
 - `AuditEvent` / `AuditEventHash` / `AuditRecordFormat` shape changes.
+
+## Attempt 1 — failed on review (2026-09-23)
+
+Tester: PASS. Full-reactor `mvn verify` green (625 tests, incl.
+ServerPackagingIT). Restart verified against the real packaged server: boot 1
+wrote 3 records, boot 2 (same writer-id, same file) wrote 4; the CLI reported
+two intact writers `restart-writer/<uuid>`, exit 0. On that same file, a
+middle-record edit, a last-record edit and deleting boot 2's first record all
+gave exit 2 with the right findings. A writer-id of `bad/writer` is refused
+with `INVALID_AUDIT_WRITER` and a blank one with `MISSING_AUDIT_WRITER`.
+Reviewer confirmed `AuditChainVerifier` is untouched, detection is unchanged,
+the suffix is `UUID.randomUUID()` minted once and not influenceable by config,
+and the `McpHttpEndToEndTest` prefix assertions are no longer vacuous. Keep
+all of it. WHAT FAILED:
+
+1. BLOCKING, flaky test. `PiiLogScanTest.java:816-823`: the Slf4j `seq`
+   field is not in `EXEMPT_SHAPES`, so it gets a plain `contains` scan, and it
+   now carries a random UUID (`seq=<writer>/<uuid>/<n>`). A UUID containing
+   `123` or `456` (e.g. `…-4123-…`) reports a banned fixture value as leaked
+   when nothing leaked — roughly 1-3% of runs red at random, the same
+   false-positive class the timestamp exemption at `:283-311` exists for, and
+   a breach of the no-flaky-tests rule in `docs/conventions.md` "Tests". Owns
+   is now widened to cover this. Fix by pinning the `seq` field's shape
+   (`<writer-id>/<uuid>/<digits>`, UUID in canonical form) the way the
+   timestamp is pinned — exempt ONLY that exact shape, so anything else in the
+   field is still scanned. Prove the fix is load-bearing: a test (or a
+   demonstrated temporary mutation) where a UUID containing `123` would have
+   failed before and passes after, and a `seq` value carrying a banned value
+   outside the pinned shape is still caught. `AuditFilePiiScanTest` should be
+   checked for the same exposure (the instanceId field of each record); if
+   it has it, report it rather than editing it — it is not in Owns.
+2. Minor, fix while there: add a `HashChainedAuditSinkTest` case asserting a
+   blank writer-id refuses with `MISSING_AUDIT_WRITER`. Extend
+   `AuditRecorderRestartTest`'s edit case to also edit a boot-B record
+   (ideally the last), matching its "either boot" name. Remove the "task 75"
+   citations from code comments and javadocs (`DataPrismProperties.java:189-192`
+   and the tests) — `docs/conventions.md` "Code comments" says comments do not
+   restate the task file; say what the code does and why.
