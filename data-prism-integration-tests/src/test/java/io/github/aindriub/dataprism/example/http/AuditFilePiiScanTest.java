@@ -167,12 +167,25 @@ class AuditFilePiiScanTest {
     private static final Pattern HEX64_SHAPE = Pattern.compile("[0-9a-f]{64}");
     private static final Pattern HEX24_SHAPE = Pattern.compile("[0-9a-f]{24}");
 
+    /**
+     * {@code AuditRecorder}'s own instanceId shape: a configured writer-id
+     * (never containing the {@code /} separator), a {@code /}, and a
+     * canonical-form {@code UUID.randomUUID()} minted once per process
+     * lifetime. Pinned this precisely for the same reason {@code
+     * PiiLogScanTest.SEQ_SHAPE} is: the per-boot UUID is as good as random,
+     * and its hex digits coincidentally spelling a banned digit run must not
+     * redden this test with no leak anywhere near it.
+     */
+    private static final Pattern INSTANCE_ID_SHAPE =
+            Pattern.compile("[^/]+/" + UUID_SHAPE.pattern());
+
     private static final Map<String, Pattern> EXEMPT_SHAPES = Map.of(
             "eventId", UUID_SHAPE,
             "correlationId", UUID_SHAPE,
             "parameterFingerprint", HEX24_SHAPE,
             "previousHash", HEX64_SHAPE,
-            "eventHash", HEX64_SHAPE);
+            "eventHash", HEX64_SHAPE,
+            "instanceId", INSTANCE_ID_SHAPE);
 
     /**
      * Mirrors {@code PiiLogScanTest.derivedBannedSetIsNonEmptyAndCoversKnownFixtureValues}:
@@ -304,6 +317,57 @@ class AuditFilePiiScanTest {
         }
 
         assertThat(leaked).containsExactly(distinctiveLeak);
+    }
+
+    /**
+     * {@code instanceId} carries a {@code UUID.randomUUID()} minted once per
+     * process lifetime (see {@code AuditRecorder}), so its hex digits are
+     * effectively random and, over enough runs, do coincidentally spell a
+     * banned digit run with no leak anywhere near it -- the same
+     * false-positive class the other {@link #EXEMPT_SHAPES} entries exist
+     * for. A synthetic instanceId engineered to contain both {@code "123"}
+     * and {@code "456"} in its UUID, but otherwise a well-formed
+     * {@code <writer-id>/<uuid>} value, proves the exemption actually covers
+     * it: the raw value itself already contains both digit runs -- what an
+     * unexempted per-field scan would have reported as leaked -- yet
+     * {@link #leaksIn} reports nothing once the whole value matches
+     * {@link #INSTANCE_ID_SHAPE}.
+     */
+    @Test
+    @DisplayName("a well-formed instanceId is exempt even where its UUID coincidentally spells a banned digit run")
+    void wellFormedInstanceIdIsExempt() {
+        String instanceIdContainingCoincidentalDigits =
+                "example-1/01234567-89ab-cdef-0123-456789abcdef";
+        assertThat(instanceIdContainingCoincidentalDigits).containsPattern(INSTANCE_ID_SHAPE);
+        assertThat(instanceIdContainingCoincidentalDigits).contains("123", "456");
+
+        AuditEvent event = eventWithInstanceId(instanceIdContainingCoincidentalDigits);
+
+        assertThat(leaksIn(event, List.of("123", "456"))).isEmpty();
+    }
+
+    /**
+     * The other half of the exemption: an instanceId that does not conform
+     * to {@link #INSTANCE_ID_SHAPE} -- here, one whose suffix is not a
+     * well-formed UUID -- is scanned like any other field, so a real leak
+     * riding along in a malformed instanceId is still caught.
+     */
+    @Test
+    @DisplayName("an instanceId that does not match its pinned shape is scanned like any other field")
+    void nonConformingInstanceIdIsScanned() {
+        String malformedInstanceId = "example-1/not-a-uuid-123";
+        assertThat(malformedInstanceId).doesNotMatch(INSTANCE_ID_SHAPE.pattern());
+
+        AuditEvent event = eventWithInstanceId(malformedInstanceId);
+
+        assertThat(leaksIn(event, List.of("123"))).containsExactly("123");
+    }
+
+    private static AuditEvent eventWithInstanceId(String instanceId) {
+        return new AuditEvent("event-1", FIXED_CLOCK.instant(), "investigator-1", "client-1",
+                "get_entity_context", "CUSTOMER", "pseudo-1", "fingerprint", "DEFAULT", "scope-1",
+                "investigation", "case-1", "ALLOW", Set.of(), Set.of(), "correlation-1", instanceId, 1L,
+                "GENESIS", "hash-1");
     }
 
     /** {@link AuditEvent} components that carry no scannable text: the write-ordering fields, not the record's content. */
