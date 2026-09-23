@@ -52,9 +52,12 @@ automatic entity resolution: correlating a subject across sources requires
 an identifier the sources already share, resolved by a reviewed
 `IdentityResolver` (see [`docs/extending.md`](../extending.md)) — Data Prism
 does not infer that two different identifiers across two systems belong to
-the same person. It is not anonymisation: the pseudonym is reproducible from
-the same scope and key, and GDPR Art. 4(5) treats that as personal data
-still.
+the same person. It is not anonymisation: the pseudonym is reproducible
+from the same scope and key — the reversible relationship [GDPR Art.
+4(5)](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#art_4)
+defines as pseudonymisation — so [Recital
+26](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#rct_26)
+treats it as personal data still.
 
 ## Where to go next
 

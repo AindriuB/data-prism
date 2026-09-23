@@ -7,11 +7,12 @@ description: How Data Prism's pseudonymisation and fail-closed classification su
 
 A team exposing an internal customer API through MCP tools has to account
 for [GDPR Art.
-5(1)(c)](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#005.001):
-personal data made available to a caller — including an LLM agent — must be
-adequate, relevant and limited to what is necessary. Handing an agent an
-API's full raw response, on the chance that some of it turns out to be
-useful, does not sit well with that.
+5(1)(c)](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#005.001),
+which requires personal data to be "adequate, relevant and limited to what
+is necessary in relation to the purposes for which they are processed
+('data minimisation')". Applied to an MCP tool call: handing an LLM agent
+an API's full raw response, on the chance that some of it turns out to be
+useful for the caller's purpose, does not sit well with that requirement.
 
 **This is not legal advice.** It describes what the shipped code does and
 does not do. Whether a given deployment satisfies the GDPR is a legal
@@ -23,23 +24,31 @@ processing, not something a piece of software can certify.
 Every field an MCP tool could return is either explicitly classified or it
 is not. Unclassified fields are redacted or the call is refused outright —
 fail-closed, not fail-open — so a source's raw response never reaches a
-caller unexamined by default. Personal data that is classified is
-pseudonymised per privacy scope before it reaches the caller: one subject
-gets one deterministic pseudonym, and no raw identifier, source host, path
-or credential is ever included in a response. See
-[`docs/tools.md`](../tools.md) for what the two shipped tools return, and
-[`docs/configuration.md`](../configuration.md) for the classification and
-scope vocabulary that decides this.
+caller unexamined by default. A field that is classified is pseudonymised,
+redacted or removed according to its classification before it reaches the
+caller: where the configured action is pseudonymisation, one subject gets
+one deterministic pseudonym within its privacy scope. Either way, no raw
+identifier, source host, path or credential is ever included in a
+response. See [`docs/tools.md`](../tools.md) for what the two shipped tools
+return, and [`docs/configuration.md`](../configuration.md) for the
+classification and scope vocabulary that decides this.
 
 A deployment can also keep a hash-chained audit trail of every privacy
 decision — an allow, a redaction, a refusal — described in
 [`docs/audit.md`](../audit.md). It is opt-in, and that page states plainly
 what its offline verifier does and does not prove.
 
-**Pseudonymised data is still personal data.** [GDPR Art.
+[GDPR Art.
 4(5)](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#art_4)
-says so directly, and Data Prism does not change that. Sending Data Prism's
-output to a third-party model is still processing personal data.
+defines pseudonymisation as processing personal data so that it can no
+longer be attributed to a subject without additional information kept
+separately. **Pseudonymised data is still personal data**: [Recital
+26](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#rct_26)
+states directly that personal data which have undergone pseudonymisation,
+and which could be attributed to a natural person by the use of additional
+information, remain information on an identifiable natural person. Data
+Prism does not change that: sending its output to a third-party model is
+still processing personal data.
 
 ## What it does not do
 
@@ -63,9 +72,11 @@ deployment against either one.
 - **A transfer mechanism**, where the model or agent runtime receiving the
   output sits outside the EU.
 - **HMAC key custody.** Data Prism pins pseudonymisation to a configured key
-  reference; supplying, rotating and protecting the key itself is the
-  operator's job, described in
-  [`docs/configuration.md`](../configuration.md).
+  reference (`dataprism.privacy.hmac-key`) and refuses startup if it cannot
+  be resolved. [`docs/configuration.md`](../configuration.md) describes only
+  that reference/pinning contract; supplying the key via a provider,
+  protecting it, and rotating it are the operator's job, and this release
+  does not document a rotation procedure.
 - **Retention** of source data, pseudonym mappings and any audit trail kept.
 - **Deciding what is classified as what** — which fields are personal data,
   which are sensitive, and which profile and rules apply to them — is a

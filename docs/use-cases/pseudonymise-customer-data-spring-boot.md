@@ -19,11 +19,14 @@ scope-local view of one entity instead of the raw record. Each subject gets
 one synthetic pseudonym, derived deterministically from the privacy scope,
 the subject, the namespace, the algorithm version and an HMAC key — never
 random, never stored in plaintext — so the same customer reads as the same
-pseudonym everywhere the caller is allowed to see them. Fields that are not
-classified are redacted or the call is refused outright, rather than passed
-through unexamined. See [`docs/tools.md`](../tools.md) for what the two
-shipped tools, `get_entity_context` and `compare_entity_sources`, take and
-return.
+pseudonym everywhere the caller sees them within one privacy scope (case).
+A different case gives the same subject a different, unrelated-looking
+pseudonym, on purpose — see
+[`docs/use-cases/consistent-pseudonyms-across-systems.md`](consistent-pseudonyms-across-systems.md).
+Fields that are not classified are redacted or the call is refused
+outright, rather than passed through unexamined. See
+[`docs/tools.md`](../tools.md) for what the two shipped tools,
+`get_entity_context` and `compare_entity_sources`, take and return.
 
 Two deployment options consume the same configuration contract and the same
 privacy pipeline:
@@ -41,9 +44,11 @@ is the authoritative contract for either one.
 
 Data Prism does not route or proxy general traffic between systems, and it
 is not an ETL platform, a master-data system or an identity provider.
-**It is not anonymisation**: under GDPR Art.
-4(5), pseudonymised data is still personal data, and sending it to a
-third-party model is still processing that needs its own lawful basis. See
+**It is not anonymisation**: pseudonymisation, as [GDPR Art.
+4(5)](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#art_4)
+defines it, keeps data re-attributable to its subject given additional
+information, so it is still personal data, and sending it to a third-party
+model is still processing that needs its own lawful basis. See
 [`docs/use-cases/gdpr-data-minimisation-mcp.md`](gdpr-data-minimisation-mcp.md)
 for what that means in practice and what stays the operator's job.
 
