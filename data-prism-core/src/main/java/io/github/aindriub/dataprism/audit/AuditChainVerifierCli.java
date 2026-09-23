@@ -166,9 +166,9 @@ public final class AuditChainVerifierCli {
                 + "terminating newline; not a break");
         out.println("  " + EXIT_STRUCTURAL_ANOMALY + "  structural anomaly -- an interrupted-write "
                 + "fragment, a sink-contract duplicate-sequence violation, or a writer's chain not "
-                + "starting at GENESIS (an ordinary restart, but deletion of that writer's earliest "
-                + "records cannot be ruled out); never returned together with exit code "
-                + EXIT_BREAK_DETECTED);
+                + "starting at GENESIS (every writer's own first record is GENESIS, including after an "
+                + "ordinary restart, so this means deletion of that writer's earliest records cannot be "
+                + "ruled out); never returned together with exit code " + EXIT_BREAK_DETECTED);
         out.println();
         out.println(LIMITATION);
     }

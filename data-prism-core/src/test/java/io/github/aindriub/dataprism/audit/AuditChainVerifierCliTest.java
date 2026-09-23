@@ -336,11 +336,13 @@ class AuditChainVerifierCliTest {
     void duplicateSequenceReadsAsASinkContractViolationNotABreakOnTheCli() throws IOException {
         Path path = tempDir.resolve("audit.log");
         AuditEvent first;
+        String instanceId;
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            instanceId = recorder.instanceId();
             first = write(recorder);
         }
-        AuditEvent duplicate = eventWithComputedHash("event-dup", "instance-1", first.sequence(), "f".repeat(64));
+        AuditEvent duplicate = eventWithComputedHash("event-dup", instanceId, first.sequence(), "f".repeat(64));
         try (FileAuditSink sink = new FileAuditSink(path)) {
             sink.record(duplicate);
         }
@@ -351,7 +353,7 @@ class AuditChainVerifierCliTest {
 
         assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_STRUCTURAL_ANOMALY);
         assertThat(out).contains("SINK-CONTRACT VIOLATION, not tampering");
-        assertThat(out).contains("instance-1");
+        assertThat(out).contains(instanceId);
         assertThat(out).doesNotContain("CHAIN BREAK");
         assertThat(out).doesNotContain("INTERRUPTED WRITE");
         assertThat(out).doesNotContain("POSSIBLY IN FLIGHT");
