@@ -17,6 +17,64 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 70: version 0.3.0 cut across the reactor, onto the integration branch
+
+The reactor, `server.json` (plus the previously-missing `DATAPRISM_AUDIT_FILE_PATH`
+environment variable), both MCP `serverInfo` literals, the distribution
+Dockerfile, `publish-image.yml`'s `workflow_dispatch` default, three
+PackagingIT/SmokeIT jar-name literals, and README/doc version text all read
+`0.3.0`. `CHANGELOG.md` gained a `[0.3.0]` entry covering the cycle's
+user-visible changes, with breaking changes stated alongside what a consumer
+must do: task 71's pseudonym discriminator widened to 40 bits (24-byte-minimum
+MAC — HmacMD5/HmacSHA1 now refused, and any pseudonym stored or compared under
+0.2.0 will no longer match); task 73's `AUDIT_SINK_BEAN_REQUIRED` code
+replacing `MISSING_AUDIT_SINK` for `approved-sink` configured with no bean;
+task 75's `instanceId` shape change (`<writer-id>/<uuid>`) and new
+`INVALID_AUDIT_WRITER` refusal code; and task 69's `UNRESOLVED_SOURCE_ADAPTER`
+renamed to `UNREVIEWED_SOURCE_ADAPTER`. Verified: a fresh isolated-repo build
+is green; `-Prelease` runs through GPG signing (stopping there with no key in
+the sandbox, as expected); the packaged server reports `serverInfo` version
+0.3.0 over a real MCP `initialize`; all five images (distribution plus four
+quickstart) build; `server.json` validates against the live 2025-12-11
+registry schema. Merged 2026-09-23, PASS + APPROVE on attempt 4, onto
+`v0.3.0/audit-trail-and-nested-json` — **not onto `main`**; the integration
+branch's own merge to `main` is a separate, still-pending step in the release
+sequence (`docs/plan/PLAN.md`, "Release sequence"). Post-merge full-reactor
+`mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19 modules, 646
+tests, 0 failures, 0 errors, 0 skipped.
+
+**Cost:** four attempts, every one on the CHANGELOG and verification
+bookkeeping, never on the version bump itself, which was sound from attempt 1.
+Three lessons worth carrying into any future release-cut task:
+1. A CHANGELOG must be written from the verified docs and `HISTORY.md`, not
+   from plan text, task-file intentions, or memory. Attempt 1's first draft
+   both missed several already-merged breaking changes (71, 73, 74, 75, and a
+   run of onboarding tasks) and stated three claims — the verifier's exit
+   codes on truncation, nested leaves sharing the flat catalogue's leaf
+   grammar, and `descendable()`'s return value — that the code and `docs/audit.md`
+   had already corrected by the time this task started; each had to be traced
+   back to the file or doc that proves it, not assumed carried-over-correct.
+2. Do not cite commit SHAs in a commit body on a branch that will be rebased.
+   Two of this task's own verification commits cited SHAs from before a
+   rebase, pointing at commits unreachable from the final branch and due for
+   garbage collection. Refer to a commit by subject ("the version-bump
+   commit") and let the close-out record the count against the real merge
+   commit.
+3. Summing `target/*-reports/*.txt` surefire summaries undercounts JUnit 5
+   `@Nested` test classes — `MultiKeySecretKeyProviderTest` reported `Tests
+   run: 0` in its own `.txt` despite holding 14 real tests, because they sit
+   inside a `@Nested` container. That method gave 632 against this tree; the
+   true count, taken from the per-module surefire/failsafe `Results: Tests
+   run:` lines (or equivalently the `TEST-*.xml` testcase count), is 646 —
+   confirmed again independently at this close-out's own full-reactor run.
+
+Two items a reviewer raised but left unactioned, recorded so nobody rediscovers
+them as new: an empty `dataprism.sources` was refused as `MISSING_SOURCE_ADAPTER`
+under 0.2.0, which the `UNREVIEWED_SOURCE_ADAPTER` breaking-change line does not
+mention (the non-empty case is what actually changed, and is the normal case);
+and one commit body has a "nested nested" typo, left rather than rewriting
+history for it.
+
 ## 2026-09-23 — Task 62: nested catalogues and the durable audit chain are documented
 
 `docs/architecture.md`'s "flat by design" and boundary-7 claims are corrected

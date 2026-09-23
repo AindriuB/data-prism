@@ -924,14 +924,29 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   blind spot this is the second instance of this task cycle. The unreachable
   `MISSING_AUDIT_SINK` arm (dead since task 67) was kept as a defensive guard
   with an accurate comment — that decision stands, nothing further owed.
-- **Wave 4: 70 is now unblocked** — every one of its dependencies (61, 62,
-  63, 65, 66, 67, 69, 75) has merged. 70 cuts 0.3.0 across poms, `server.json`,
-  `serverInfo` literals, four Dockerfiles, `publish-image.yml`, docs, with a
-  `CHANGELOG.md` built from the merged diffs, including the two items already
-  owed to it: task 71's `PseudonymisationVersion` compact-constructor breaking
-  change, and task 75's `instanceId` shape change plus the new
-  `INVALID_AUDIT_WRITER` code. 70 does not need 59, which runs after 70 and
-  the image publish, per the release sequence below.
+- **Wave 4: task 70 merged 2026-09-23, PASS + APPROVE on attempt 4, onto
+  `v0.3.0/audit-trail-and-nested-json`.** Cut 0.3.0 across the reactor —
+  pom.xml and every module pom, `server.json` (plus the previously-missing
+  `DATAPRISM_AUDIT_FILE_PATH` environment variable), both `serverInfo`
+  literals, the distribution Dockerfile, `publish-image.yml`'s dispatch
+  default, three PackagingIT/SmokeIT jar-name literals, and every remaining
+  `0.2.0` literal in README/doc text — plus a `CHANGELOG.md` `[0.3.0]` entry
+  written from the merged diffs of tasks 60-69, not from task-file intentions,
+  naming the breaking changes with what a consumer must do: task 71's widened
+  pseudonym discriminator (40-bit/24-byte-minimum MAC — anything using
+  HmacMD5/HmacSHA1 must move algorithms, and pseudonyms stored or compared
+  under 0.2.0 will no longer match), task 73's `AUDIT_SINK_BEAN_REQUIRED` code
+  replacing `MISSING_AUDIT_SINK` for `approved-sink` with no bean, task 75's
+  `instanceId` shape change and new `INVALID_AUDIT_WRITER` code, and task 69's
+  `UNRESOLVED_SOURCE_ADAPTER` → `UNREVIEWED_SOURCE_ADAPTER` rename. Post-merge
+  full-reactor `mvn -B --no-transfer-progress clean verify`: BUILD SUCCESS, 19
+  modules, 646 tests (counted from the per-module surefire/failsafe `Results:
+  Tests run:` lines, not by summing `target/*-reports/*.txt`, which
+  undercounts `MultiKeySecretKeyProviderTest`'s `@Nested` classes), 0
+  failures, 0 errors, 0 skipped. Task file retired; see
+  `docs/plan/HISTORY.md`, grep `Task 70`, for the four-attempt cost.
+  **This merges 70 onto the integration branch only — it does not put 0.3.0
+  on `main`.** See the release sequence below: step 2 is now half done.
 
 **Risks flagged by the planner, both open:**
 - The per-nested-catalogue `Class` token task 60 introduces is the only
@@ -1059,20 +1074,30 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
    (step 4). Task 55's `compose.yaml` change is on the integration branch —
    the images it publishes on tag do not exist on `ghcr.io` until step 3
    below runs on `main`.
-2. 70 merges (0.3.0 on `main`, CHANGELOG written from the real diffs) —
-   this is where the integration branch, carrying 55's workflow and
-   compose changes, reaches `main`.
-3. Push the `v0.3.0` tag and dispatch `publish-image.yml`. It now publishes
-   all four quickstart images alongside the distribution image, since 55's
-   workflow changes are already on `main` by this point. Until this step
-   runs, `docker compose up` on `main` — the command both `README.md` and
-   `docs/quickstart.md` tell a new user to run — pulls images that do not
-   exist yet; do not merge the integration branch to `main` and stop
-   before this step.
-4. Run 59 against the published result (with the two extra criteria items
-   recorded above) and merge it.
-5. Maven Central and MCP registry publish. `server.json`'s shape follows
-   task 48's history entry: no `registryBaseUrl`, no per-package version.
+2. **Only HALF done, 2026-09-23.** 70 has merged 0.3.0 — reactor version,
+   `server.json`, `serverInfo`, Dockerfiles, `publish-image.yml`'s default,
+   and a `CHANGELOG.md` `[0.3.0]` entry written from the real diffs — onto
+   `v0.3.0/audit-trail-and-nested-json`. **The integration branch itself has
+   NOT been merged to `main`.** That merge — carrying 70's 0.3.0 cut and
+   55's quickstart-image workflow/compose changes together — is the
+   remainder of this step and is an owner action, not yet done.
+3. **Owner action, pending.** Push the `v0.3.0` tag and dispatch
+   `publish-image.yml`, on `main` after step 2's merge lands. It now
+   publishes all four quickstart images alongside the distribution image,
+   since 55's workflow changes will already be on `main` by this point.
+   **Until this step runs, `docker compose up` on `main` — the command both
+   `README.md` and `docs/quickstart.md` tell a new user to run — pulls
+   images that do not exist yet; do not merge the integration branch to
+   `main` and stop before this step runs.**
+4. **Owner action, pending, blocked on step 3.** Run 59 against the
+   published result (with the two extra criteria items recorded above) and
+   merge it.
+5. **Owner action, pending, blocked on step 4.** Maven Central and MCP
+   registry publish. `server.json`'s shape follows task 48's history entry:
+   no `registryBaseUrl`, no per-package version.
+
+**Open tasks after this wave: only 59, blocked on step 3.** No other task
+file remains under `docs/plan/tasks/`.
 
 ## Remaining slices past the adopted core
 
