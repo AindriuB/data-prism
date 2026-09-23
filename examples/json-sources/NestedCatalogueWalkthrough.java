@@ -1,6 +1,7 @@
 // Complete, runnable companion to docs/protect-your-own-api.md, "A nested
-// response". Package-private itself, exactly the way
-// ConfiguredJsonNestedCatalogueScrubbingTest in this module is, because
+// response". It is `public` but lives in
+// io.github.aindriub.dataprism.connectors.rest, the same package as
+// ConfiguredJsonNestedCatalogueScrubbingTest in this module, because
 // ConfiguredJsonPayload is package-private: this file lives beside the
 // examples it loads, not inside data-prism-connectors-rest's own source
 // tree, so it is compiled and run against that module's already-built
@@ -11,13 +12,23 @@
 // the scrubbed fixture-shaped response, and the NESTED_LEAF_NOT_SCALAR
 // refusal for a stale wire shape.
 //
-// Run from the repository root, after `mvn -q package -pl data-prism-core,
-// data-prism-connectors-rest -am -DskipTests` has built both modules' classes:
+// Run from the repository root. `mvn -q dependency:build-classpath` resolves
+// this project's own dependencies -- including data-prism-pseudonymisation
+// and data-prism-orchestration, which this file imports transitively --
+// from whatever is already in the local Maven repository, not from this
+// reactor build. On a clean machine that resolves the last version
+// published to Maven Central instead of what this branch just built, so
+// `install` first, not `package`:
 //
+//   mvn -q install -DskipTests -pl data-prism-connectors-rest -am
 //   javac -cp "data-prism-core/target/classes:data-prism-connectors-rest/target/classes:$(cd data-prism-connectors-rest && mvn -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout)" \
 //       -d /tmp/nested-catalogue-walkthrough examples/json-sources/NestedCatalogueWalkthrough.java
 //   java -cp "/tmp/nested-catalogue-walkthrough:data-prism-core/target/classes:data-prism-connectors-rest/target/classes:$(cd data-prism-connectors-rest && mvn -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout)" \
 //       io.github.aindriub.dataprism.connectors.rest.NestedCatalogueWalkthrough
+//
+// This one run prints all three outputs shown in the doc -- the resolved
+// catalogue, the scrubbed response, and the stale-shape refusal -- in that
+// order.
 package io.github.aindriub.dataprism.connectors.rest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -90,7 +101,7 @@ public final class NestedCatalogueWalkthrough {
         }
 
         PrivacyContext context = new PrivacyContext("SCOPE-1", PrivacyScopeType.INVESTIGATION, "DEFAULT",
-                "investigation", Instant.now(),
+                "investigation", Instant.parse("2030-01-01T00:00:00Z"),
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("v1").withVocabulary(vocabulary.id()));
 
         ObjectMapper json = new ObjectMapper();

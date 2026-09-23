@@ -76,12 +76,17 @@ Actuator endpoint or a startup self-check — because a running instance
 reporting on its own output conflates "the process that might have tampered
 with this file says the file is fine" with independent verification, which
 proves less than an operator asking that question would assume. It has no
-special check for `Slf4jAuditSink` output, and pointing it at a log file does
-not fail cleanly: each log line fails to parse as a record, is reported as
-`UNPARSEABLE_RECORD`, and the run exits 2 — the same exit code this page
-tells you to treat as edit-or-deletion evidence. That is a false tamper
-alarm, not a diagnosis of the input. Do not point this verifier at
-`Slf4jAuditSink` output; it only has the byte-for-byte shape this class
+special check for `Slf4jAuditSink` output, and pointing it at a log file is
+worse than failing cleanly: an ordinary log line has no 0x1F field separators,
+so it fails `AuditRecordFormat`'s field-count check the same way a torn
+fragment from an interrupted write does, and `classifyParseFailure`
+deliberately reads that shape as benign — every line is reported as
+`INTERRUPTED_WRITE_FRAGMENT`, "INTERRUPTED WRITE, not tampering", and the run
+exits **4**, the code this page's own table calls a structural anomaly, not
+a break. That is a false reassurance, not a false alarm: a file that is not
+an audit file at all reads as a run of ordinary restarts, never as the break
+it should be reported as, or as any other kind of failure. Do not point this
+verifier at `Slf4jAuditSink` output; it only has the byte-for-byte shape this class
 relies on when read back from `FileAuditSink`'s own file.
 
 Run it against a copy of the file:

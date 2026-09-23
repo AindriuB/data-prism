@@ -487,18 +487,23 @@ Nesting goes exactly one level: `address`'s own leaves may be `identifier`,
 is refused when the catalogue loads, not silently flattened. This is loaded
 and scrubbed below by the real engine, not asserted in prose:
 [`examples/json-sources/NestedCatalogueWalkthrough.java`](../examples/json-sources/NestedCatalogueWalkthrough.java)
-is a complete, runnable program — package-private itself
-(`io.github.aindriub.dataprism.connectors.rest`, the exact way
-`ConfiguredJsonNestedCatalogueScrubbingTest` in that module is), calling the
-same public `ConfiguredJsonSources.fromYaml` this connector uses to read
-every `json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine`
-that test drives directly. Its own header comment gives the exact `javac`/
-`java` invocation; in short, build both modules first
-(`mvn -q package -pl data-prism-core,data-prism-connectors-rest -am
--DskipTests`), then compile and run this one file against their
-`target/classes` plus `data-prism-connectors-rest`'s Maven dependency
-classpath (`mvn -q dependency:build-classpath`) — no jar, no elided wiring:
-every line that runs is in that file.
+is a complete, runnable program, `public` but living in
+`io.github.aindriub.dataprism.connectors.rest` (the exact package
+`ConfiguredJsonNestedCatalogueScrubbingTest` in that module is in, because
+`ConfiguredJsonPayload` is package-private), calling the same public
+`ConfiguredJsonSources.fromYaml` this connector uses to read every
+`json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine` that
+test drives directly. Its own header comment gives the exact `javac`/`java`
+invocation; in short, `install` both modules first — `package` alone leaves
+`data-prism-pseudonymisation` and `data-prism-orchestration` (imported here
+transitively) unresolved from this reactor, so `mvn dependency:build-classpath`
+falls back to whatever was last published to Maven Central —
+(`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`), then
+compile and run this one file against `data-prism-core`'s and
+`data-prism-connectors-rest`'s `target/classes` plus
+`data-prism-connectors-rest`'s Maven dependency classpath (`mvn -q
+dependency:build-classpath`) — no jar, no elided wiring: every line that runs
+is in that file.
 
 Run as written, it loads `customer-api-with-address` from
 `customer-api-nested.yaml` and prints its resolved catalogue:
@@ -560,7 +565,7 @@ Every code fence above was executed, not transcribed:
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |
 | The pseudonymised `get_entity_context` response, SSE frame included | the `initialize` / `notifications/initialized` / `tools/call` sequence in "Get a token and call it", run against a token freshly minted by `curl -sk -X POST https://127.0.0.1:8544/token` |
 | The missing-`timeout` refusal | the same server command, config-location pointed at the `sed`-produced `$DP_WALKTHROUGH_SCRATCH_DIR/customer-api-no-timeout.yaml` |
-| The nested catalogue's resolved fields, the scrubbed nested response, and the `NESTED_LEAF_NOT_SCALAR` refusal in "A nested response" | the verification program described there, built against `data-prism-connectors-rest`'s own `target/classes` plus `mvn -q dependency:build-classpath`, run once per shown output against `examples/json-sources/customer-api-nested.yaml` |
+| The nested catalogue's resolved fields, the scrubbed nested response, and the `NESTED_LEAF_NOT_SCALAR` refusal in "A nested response" | one run of `NestedCatalogueWalkthrough.java`, built against `data-prism-connectors-rest`'s own `target/classes` plus `mvn -q dependency:build-classpath` (after `mvn -q install -DskipTests -pl data-prism-connectors-rest -am`), against `examples/json-sources/customer-api-nested.yaml`; this one run prints all three outputs shown above, in order |
 | *(no captured output)* | `mvn -q -DskipTests package` and the three `keytool` commands in "Build the jars, then start the two fixtures" ran, but produce nothing worth capturing — a quiet build and key material respectively, not output that documents behaviour |
 
 `$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12`/`$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12` above are a
