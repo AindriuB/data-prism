@@ -12,6 +12,7 @@
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/HashChainedAuditSinkTest.java
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/McpHttpEndToEndTest.java
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java (widened after attempt 1: the `seq` field's scan shape, and the :264 comment)
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/AuditFilePiiScanTest.java (widened during attempt 2: the `instanceId` field's scan shape only)
 
 ## Goal
 A hash-chained audit deployment restarted with the same `dataprism.audit.writer-id`
@@ -124,3 +125,12 @@ all of it. WHAT FAILED:
    citations from code comments and javadocs (`DataPrismProperties.java:189-192`
    and the tests) — `docs/conventions.md` "Code comments" says comments do not
    restate the task file; say what the code does and why.
+
+**Attempt 2, scope widened mid-attempt (2026-09-23):** the attempt-2
+implementer found, and the main session confirmed, that
+`AuditFilePiiScanTest` has the same exposure: its `EXEMPT_SHAPES` (`:170-175`)
+does not cover `instanceId`, and the full-run recorder (`:380`) now mints a
+random per-boot UUID into it. Owns now covers that file's `instanceId` scan
+shape. Pin it to exactly `<writer-id>/<uuid>` the same way, with the same
+two-sided proof (a UUID containing a banned value passes; a banned value
+outside the pinned shape is still caught).
