@@ -120,3 +120,44 @@ one level only, no Slf4j verification offered). Follow-up item 8
    for that fence.
 4. `docs/audit.md:191-196`, the "What it proves" sentence ("that this check
    did not also have to recompute past to reach...") does not parse. Rewrite.
+
+## Attempt 2 — failed on test and review (2026-09-23)
+
+All four attempt-1 findings are resolved except that finding 2's correction
+was itself wrong (see 1 below — the attempt-1 reviewer's source reading was
+the error; this time the tester actually ran it). Nothing in
+`architecture.md`, `extending.md` or the YAML examples changed; keep them.
+`NestedCatalogueWalkthrough.java` compiles, prints byte-identical output on two
+runs, and matches the doc verbatim ON A MACHINE THAT ALREADY HAS A BRANCH
+BUILD INSTALLED. Scope clean, no secrets. WHAT FAILED:
+
+1. `docs/audit.md:80-81` (tester, by execution) says Slf4jAuditSink log lines
+   are reported as `UNPARSEABLE_RECORD` and the run exits 2. Actual: log lines
+   are not 0x1F-delimited, so `AuditRecordFormat` throws exactly
+   `IllegalArgumentException` on field-count mismatch, which
+   `AuditChainVerifier.classifyParseFailure` (`:254-265`) deliberately
+   classifies as `INTERRUPTED_WRITE_FRAGMENT` — output "INTERRUPTED WRITE, not
+   tampering: ...", exit **4**. Reproduced for one line and for three. The
+   hazard to document is therefore a FALSE REASSURANCE, not a false alarm: a
+   file that is not an audit file at all reads as benign interrupted writes.
+   Say that, and say plainly never to point the verifier at log output. Run it
+   before quoting it. No code change is in scope.
+2. `NestedCatalogueWalkthrough.java:14-20` and
+   `docs/protect-your-own-api.md:496-500` (reviewer): the documented run is not
+   reproducible on a clean machine. The branch is versioned 0.2.0, which is on
+   Maven Central; the build step is `package` (installs nothing), and
+   `mvn dependency:build-classpath` run inside the module resolves
+   `data-prism-pseudonymisation:0.2.0` from Central — pre-task-71
+   discriminators or a linkage error, not `Rowan Walsh (4MZ4CCK9)`. It worked
+   for the author only because a branch build was already in `~/.m2`. Fix:
+   either `mvn -q install -DskipTests -pl data-prism-connectors-rest -am`
+   first, or put every `-am` module's `target/classes` (pseudonymisation,
+   validation, orchestration, ...) on the classpath ahead of the resolved
+   dependencies. Prove it with an empty/isolated local repo
+   (`-Dmaven.repo.local=<fresh dir>`), not the shared `~/.m2`.
+3. Minor, fix while there: the doc (`:490`) and the program header (`:2`) call
+   it "package-private itself" but it is `public final class` — say it lives
+   in that package. Use a fixed instant
+   (`Instant.parse("2030-01-01T00:00:00Z")`, as the mirrored test does) rather
+   than `Instant.now()` (`:93`). The close-out row at `:563` says "run once
+   per shown output" but one run prints all three; name the file.
