@@ -23,8 +23,7 @@ trail — protect a real API without writing Java, and prove what happened.
   dotted paths, no JSONPath, no wildcard descent, no inferring structure
   from the wire — `subject-json-path` is untouched and a nested object never
   carries its own subject. A response nesting deeper than declared — a leaf
-  the catalogue
-  says is a scalar turning up as a structure — refuses with the new,
+  the catalogue says is a scalar turning up as a structure — refuses with the new,
   distinct `NESTED_LEAF_NOT_SCALAR` code rather than falling through to
   core's generic `UNCLASSIFIED_STRUCTURE`; the mirror case, a declared
   structure that turns up as a scalar, refuses with `NESTED_FIELD_NOT_STRUCTURED`.
