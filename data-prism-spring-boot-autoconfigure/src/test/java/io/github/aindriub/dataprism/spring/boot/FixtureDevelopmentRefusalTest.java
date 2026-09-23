@@ -73,7 +73,7 @@ class FixtureDevelopmentRefusalTest {
         properties.getSources().put("customer", new DataPrismProperties.Source());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
-                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
+                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
                 .isInstanceOf(DataPrismConfigurationException.class)
                 .hasMessageStartingWith("UNRESOLVED_SOURCE_ADAPTER:");
     }
@@ -84,7 +84,7 @@ class FixtureDevelopmentRefusalTest {
         properties.getTransport().setFixtureDevelopment(true);
 
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
-                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
+                emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
                 .doesNotThrowAnyException();
     }
 
@@ -102,7 +102,7 @@ class FixtureDevelopmentRefusalTest {
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeCustomerAdapter()),
                 availableProvider(new PassThroughIdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
-                emptyProvider(), availableProvider(PrivacyMetrics.none())))
+                emptyProvider(), availableProvider(PrivacyMetrics.none()), emptyProvider()))
                 .isInstanceOf(DataPrismConfigurationException.class)
                 .hasMessageStartingWith("AUDIT_SINK_BEAN_REQUIRED:")
                 .hasMessageContaining("dataprism.audit.sink=approved-sink");

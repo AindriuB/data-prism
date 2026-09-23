@@ -31,6 +31,7 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Wires configuration-driven JSON REST sources into a running server, the same
@@ -80,6 +81,46 @@ import java.util.List;
 public class ConfiguredJsonSourcesAutoConfiguration {
 
     static final String CONFIG_LOCATION_PROPERTY = "dataprism.json-sources.config-location";
+
+    /**
+     * The bean name {@code DataPrismContractValidator} looks up by, in place
+     * of a compile-time class reference — see {@link #configuredJsonSourceNames}
+     * for why a plain {@code Set<String>} type alone is not enough on its own
+     * to keep this lookup unambiguous should another {@code Set<String>} bean
+     * ever appear in the same context.
+     */
+    static final String CONFIGURED_JSON_SOURCE_NAMES_BEAN = "dataPrismConfiguredJsonSourceNames";
+
+    /**
+     * Task 69: publishes exactly the source names {@link
+     * ConfiguredJsonSourcesInitializer} registers a {@code DataSourceAdapter}
+     * bean for, read straight off the same parsed catalogue that initializer
+     * itself loads, rather than a second, hand-restated copy of the same
+     * names that could drift from it.
+     *
+     * <p>Published as a plain {@link Set}{@code <String>}, not a type this
+     * module declares, deliberately: {@code DataPrismContractValidator}
+     * (owned by {@code data-prism-spring-boot-autoconfigure}) consumes this
+     * through {@code ObjectProvider<Set<String>>}, and the JDK's own {@link
+     * Set} class is always resolvable, on any classpath, with or without this
+     * module present. An earlier attempt published a record type declared in
+     * this module instead; that made {@code DataPrismContractValidator}'s own
+     * {@code ObjectProvider<ConfiguredJsonSourceNames>} parameter reference a
+     * class that is genuinely absent from the base standalone server's
+     * classpath (this module is test-scope only there — see {@code
+     * data-prism-server/pom.xml}), and Spring's autowire-candidate resolution
+     * resolves every parameter type via {@code Class.forName} before {@code
+     * ObjectProvider.getIfAvailable()} is ever reached, crashing context
+     * refresh outright rather than seeing an empty provider. A plain {@code
+     * Set<String>} needs no such dependency at all, so
+     * {@code data-prism-spring-boot-autoconfigure}'s {@code pom.xml} keeps no
+     * dependency, optional or otherwise, on this module.
+     */
+    @Bean(name = CONFIGURED_JSON_SOURCE_NAMES_BEAN)
+    @ConditionalOnProperty(name = CONFIG_LOCATION_PROPERTY)
+    Set<String> configuredJsonSourceNames(Environment environment) {
+        return ConfiguredJsonSourcesInitializer.loadConfig(environment).sources().keySet();
+    }
 
     @Bean
     @ConditionalOnProperty(name = CONFIG_LOCATION_PROPERTY)

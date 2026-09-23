@@ -41,6 +41,7 @@ import org.springframework.core.env.SystemEnvironmentPropertySource;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -75,6 +76,8 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
         runner.run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context.getBeansOfType(DataSourceAdapter.class)).isEmpty();
+            assertThat(context.containsBean(
+                    ConfiguredJsonSourcesAutoConfiguration.CONFIGURED_JSON_SOURCE_NAMES_BEAN)).isFalse();
             // The platform's own default is the only ContextOrchestrator bean.
             assertThat(context.getBeansOfType(ContextOrchestrator.class)).hasSize(1);
             assertThat(context.getBean(ContextOrchestrator.class))
@@ -82,6 +85,35 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
         });
     }
 
+    /**
+     * Task 69: the allow-list {@code DataPrismContractValidator} narrows its
+     * exemption to. Derived from the same parsed catalogue {@link
+     * #registersAdaptersAndReplacesTheOrchestrator} proves one adapter bean
+     * comes from, not restated by hand.
+     */
+    @Test
+    @DisplayName("with the property set, the published source names bean names exactly the "
+            + "configured sources")
+    void publishesTheConfiguredSourceNames() {
+        runner.withPropertyValues(
+                        "dataprism.json-sources.config-location=classpath:/task20-json-sources.yaml")
+                .run((AssertableApplicationContext context) -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(
+                            ConfiguredJsonSourcesAutoConfiguration.CONFIGURED_JSON_SOURCE_NAMES_BEAN, Set.class))
+                            .containsExactly("customer-api");
+                });
+    }
+
+    /**
+     * Task 69's "also": the published allow-list names come from {@code
+     * config.sources().keySet()}, while a registered adapter's own {@code
+     * sourceName()} comes from {@code source.transport().name()} (see {@link
+     * ConfiguredJsonDataSourceAdapter}). Nothing in either type's own code
+     * pins that these must agree; this proves they do, so a future change to
+     * either one that lets them drift apart fails here rather than silently
+     * admitting an adapter the allow-list no longer actually names.
+     */
     @Test
     @DisplayName("with the property set, one adapter bean per source is registered and the "
             + "orchestrator is replaced, not duplicated")
@@ -94,6 +126,12 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
                     var adapters = context.getBeansOfType(DataSourceAdapter.class);
                     assertThat(adapters).hasSize(1);
                     assertThat(adapters.values().iterator().next().sourceName()).isEqualTo("customer-api");
+
+                    @SuppressWarnings("unchecked")
+                    Set<String> publishedNames = context.getBean(
+                            ConfiguredJsonSourcesAutoConfiguration.CONFIGURED_JSON_SOURCE_NAMES_BEAN, Set.class);
+                    assertThat(adapters.values().stream().map(DataSourceAdapter::sourceName))
+                            .containsExactlyInAnyOrderElementsOf(publishedNames);
 
                     // Exactly one ContextOrchestrator bean still exists -- replaced, not
                     // added alongside -- so the platform still exposes one MCP tool
