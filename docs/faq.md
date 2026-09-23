@@ -42,14 +42,16 @@ phone number, a JWT, or a known API-key prefix, at any depth up to a size
 budget, and refuses the response if it finds one that is not already one of
 the scope's own emitted pseudonyms. This is shape-based matching for a fixed
 list of formats, not open-ended named-entity recognition, so it will not
-catch, for example, a bare name typed into a note. That is a deliberate
-choice: an earlier, allowlist-free version of this check rejected the
-platform's own synthesised values (a synthesised email matches the email
-shape) and deadlocked every synthesising profile. See the `validation`
-module in [`architecture.md`](architecture.md#components), the
-2026-09-08 decision not to run naive pattern detection without that
-allowlist in [`architecture.md`](architecture.md#decisions-worth-knowing),
-and the detector list in
+catch, for example, a bare name typed into a note; the repository does not
+document a reason for that scope beyond it being what shipped. The check
+allows the scope's own pseudonyms through a per-scope allowlist, because
+without one a synthesised value that happens to match a detector's shape —
+a synthesised email, for instance — would make the validator refuse Data
+Prism's own valid output. See the `validation` module and the
+2026-09-08 decision to allowlist a scope's own pseudonyms in
+[`architecture.md`](architecture.md#components) and
+[`architecture.md`](architecture.md#decisions-worth-knowing), and the
+detector list in
 [`SensitiveDataScanner.java`](../data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/SensitiveDataScanner.java).
 Free-text values are checked separately for instruction-like phrasing, not
 PII — see "Does it stop prompt injection?" below and the worked example in
@@ -104,17 +106,21 @@ from the one person who could recognise the attack. Anyone determined can
 phrase around a fixed list of signals, so treat a finding as putting a human
 on notice, not as protection. See
 [`InstructionContentHeuristic.java`](../data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/InstructionContentHeuristic.java)
-and [`design-review.md`](design-review.md#d3-prompt-injection--flag-never-sanitise).
+and [`design-review.md`](https://github.com/AindriuB/data-prism/blob/main/docs/design-review.md#d3-prompt-injection--flag-never-sanitise)
+(an internal doc kept off the docs site, linked here at its GitHub source).
 
 ## Is it production-ready?
 
-Not yet at a 1.0 release: Data Prism is at version 0.3.0, and the privacy
-engine, deterministic pseudonymisation, correlation and consistency
-findings, the JSON REST and reviewed-adapter connectors, the OAuth2 resource
-server, and an opt-in durable hash-chained audit sink with an offline
-verifier are built and covered by tests — see the 0.3.0 entry in
-[`CHANGELOG.md`](../CHANGELOG.md). Two of the four originally designed MCP
-tools, `search_entity_data` and `describe_entity_model`, are not
-implemented — see ["Not yet built"](tools.md#not-yet-built) in `tools.md` —
-and the re-identification operator surface and an Elasticsearch connector
-are deferred by design, not missing by accident.
+No — [`SECURITY.md`](../SECURITY.md#supported-versions) states plainly that
+the project is pre-1.0, and that only the latest released version receives
+security fixes. Version 0.3.0 is that latest release, and across its
+history the privacy engine, deterministic pseudonymisation, correlation and
+consistency findings, the JSON REST and reviewed-adapter connectors, the
+OAuth2 resource server, and an opt-in durable hash-chained audit sink with
+an offline verifier have all been built and are covered by tests — see the
+full release history in [`CHANGELOG.md`](../CHANGELOG.md). Two of the four
+originally designed MCP tools, `search_entity_data` and
+`describe_entity_model`, are not implemented — see
+["Not yet built"](tools.md#not-yet-built) in `tools.md` — and the
+re-identification operator surface and an Elasticsearch connector are
+deferred by design, not missing by accident.
