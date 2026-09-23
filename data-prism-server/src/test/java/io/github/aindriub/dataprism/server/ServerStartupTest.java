@@ -142,7 +142,10 @@ class ServerStartupTest {
             try (var ignored = start(true, true, false, validConfiguration())) { }
         });
 
-        assertConfigurationFailure(failure, "MISSING_AUDIT_SINK");
+        assertConfigurationFailure(failure, "AUDIT_SINK_BEAN_REQUIRED");
+        Throwable cursor = failure;
+        while (cursor.getCause() != null) cursor = cursor.getCause();
+        assertThat(cursor).hasMessageContaining("dataprism.audit.sink=approved-sink");
     }
 
     @Test
