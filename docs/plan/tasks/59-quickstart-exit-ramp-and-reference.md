@@ -267,3 +267,28 @@ widened Owns. Keep all of it. WHAT FAILED:
      describes a mode that is itself refused with `STDIO_DEVELOPMENT_ONLY`
      (`DataPrismProperties.java:119-120`). Do not present it as part of the
      protected-deployment path.
+
+## Attempt 3 — passed; owner asked for one cut (2026-09-23)
+
+Tester: PASS. Reviewer: APPROVE. Correction to attempt 2's item 1: the
+contract validator returns early in stdio fixture-development mode
+(`DataPrismContractValidator.java:42-43`), so `AUDIT_SINK_BEAN_REQUIRED` does
+NOT fire there. The attempt-3 text got this right, by execution. The
+hash-chained-with-unopenable-path case gave `AUDIT_SINK_FILE_UNUSABLE` in
+20 of 20 runs. Keep everything else exactly as it is.
+
+OWNER DECISION: delete the paragraph at `docs/configuration.md:165-177`,
+which begins "Before that unconditional refusal is reached". It is accurate
+but disproportionate for a reference page:
+- It spends 13 lines on a combination the preceding lines say is always
+  refused.
+- It narrates how it was verified.
+- Its "fires before the refusal" claim holds only because of bean creation
+  order. Nothing declares that order, and it breaks when the application
+  supplies its own AuditSink or uses lazy initialisation.
+
+Keep `:155-162`: this section's checks apply to the HTTP deployments the
+standalone server and starter support, and stdio is refused
+(`STDIO_DEVELOPMENT_ONLY` without fixture-development,
+`STDIO_TRANSPORT_UNSUPPORTED` with it). Adjust the surrounding sentences only
+as far as needed for the section to read cleanly. Make no other change.
