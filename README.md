@@ -2,25 +2,42 @@
 
 <!-- mcp-name: io.github.AindriuB/data-prism -->
 
-A privacy layer between MCP clients and enterprise APIs.
+[![Build](https://github.com/AindriuB/data-prism/actions/workflows/build.yml/badge.svg)](https://github.com/AindriuB/data-prism/actions/workflows/build.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.aindriub/data-prism-spring-boot-starter.svg)](https://central.sonatype.com/artifact/io.github.aindriub/data-prism-spring-boot-starter)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**Status: the walking skeleton and every slice through S9a are built**, with 19
-Maven submodules (`pom.xml:24-42`; 20 Maven projects in the reactor counting
-the root `pom`-packaged aggregator itself) and a passing test suite. The
-privacy engine, correlation and consistency findings, parallel mTLS
-connectors, embedded Hazelcast identity cache and read budget, an OAuth2
-resource server with session-derived `PrivacyContext`, audit and metrics are
-all real and exercised end to end. The standalone server is the primary
-deployment surface; the Spring Boot starter is the embedded option. A
-one-command local Compose quickstart also exists: see "Try it" below.
-Not built: the re-identification operator surface (deferred past V1 by
-decision, see `docs/architecture.md#decisions-worth-knowing`), the
-Elasticsearch connector and its search tools, and the append-only audit sink
-with hash-chain verifier (a file/SLF4J sink exists; the append-only sink is
-deliberately deferred). Two MCP tools ship today, `get_entity_context` and
-`compare_entity_sources` — the other two named in the design review,
-`search_entity_data` and `describe_entity_model`, are not yet built. See
-`docs/plan/PLAN.md` for what is open.
+<!-- site-intro:start -->
+Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents and MCP clients.
+
+Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail.
+
+**Who it's for.** Java/Spring platform and backend teams putting LLM agents
+or MCP clients in front of internal APIs that hold customer data. If nothing
+you run exposes personal data to a model, you don't need this.
+
+**Status: the walking skeleton and every slice through S9a are built**, with 18
+Maven submodules (19 Maven projects in the reactor counting the root
+`pom`-packaged aggregator itself) and a passing test suite. The privacy
+engine, correlation and consistency findings, parallel mTLS connectors,
+embedded Hazelcast identity cache and read budget, an OAuth2 resource server
+with session-derived `PrivacyContext`, audit and metrics are all real and
+exercised end to end. The standalone server is the primary deployment
+surface; the Spring Boot starter is the embedded option. A one-command local
+Compose quickstart also exists: see "Try it" below. Two MCP tools ship
+today, `get_entity_context` and `compare_entity_sources` — the other two
+named in the design review, `search_entity_data` and
+`describe_entity_model`, are not yet built (`docs/tools.md` "Not yet
+built"). A durable, append-only, hash-chained audit sink and an offline
+`AuditChainVerifier` ship as of 0.3.0, opt-in via
+`dataprism.audit.sink: hash-chained`; the verifier catches an edit or
+deletion inside a writer's chain, but cannot detect truncation of a writer's
+most recent records or the deletion of a whole process boot's records, and
+the trail does not resist an operator, or anyone else, who already has
+write access to the file (`docs/audit.md` "What this does and does not
+prove"). Not built: the re-identification operator surface (deferred past
+V1 by decision, see `docs/architecture.md#decisions-worth-knowing`) and the
+Elasticsearch connector and its search tools. See `docs/plan/PLAN.md` for
+what is open.
 
 ## The problem
 
@@ -93,6 +110,7 @@ Once you have seen the demo, protect your own API: `docs/quickstart.md` ends
 with a "What next" section pointing at
 [`docs/protect-your-own-api.md`](docs/protect-your-own-api.md), a YAML-only
 walkthrough from a real JSON REST API to a working `get_entity_context` call.
+<!-- site-intro:end -->
 
 ## If you found this on the MCP registry
 
@@ -156,7 +174,7 @@ mvn -B --no-transfer-progress verify
 ```
 
 This is the same command CI runs (`.github/workflows/build.yml`). It builds all
-19 submodules plus the root aggregator, runs the full test suite, the
+18 submodules plus the root aggregator, runs the full test suite, the
 ArchUnit boundary rules, and the enforcer rule that keeps the classpath on a
 single Jackson major.
 

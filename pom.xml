@@ -11,7 +11,7 @@
   <packaging>pom</packaging>
 
   <name>Data Prism</name>
-  <description>A privacy layer between MCP clients and enterprise APIs.</description>
+  <description>Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail.</description>
   <url>https://github.com/AindriuB/data-prism</url>
 
   <licenses>

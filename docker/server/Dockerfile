@@ -33,6 +33,11 @@ RUN find data-prism-server/target -maxdepth 1 -name '*.jar' ! -name '*.original'
       -exec cp {} /workspace/data-prism-quickstart-extension.jar \;
 
 FROM eclipse-temurin:21-jre
+# Fixture-only: this image bundles a pre-loaded adapter extension and a demo
+# configuration for the Compose quickstart, never a real backend, and is not
+# for production use — see docker/distribution/Dockerfile for the image an
+# operator deploys against their own data.
+LABEL org.opencontainers.image.description="Data Prism quickstart server: a fixture-only demo build for the Compose quickstart, not for production use."
 WORKDIR /app
 COPY --from=build /workspace/data-prism-server.jar /app/data-prism-server.jar
 COPY --from=build /workspace/data-prism-quickstart-extension.jar /app/data-prism-quickstart-extension.jar
