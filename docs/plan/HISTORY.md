@@ -17,6 +17,50 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 72: `timestamp` and `sourceSystems` brought inside the audit hash
+
+`AuditEventHash.compute` now joins nineteen fields instead of seventeen,
+adding `timestamp` (rendered `Instant.toString()`, matching the durable
+`AuditRecordFormat` encoding) and `sourceSystems` (sorted before joining,
+exactly as `rejectedArguments` already was). `AuditRecorder.record` reads the
+clock exactly once and reuses that single `Instant` for both the computed
+hash and the constructed event, so a record cannot carry a hash computed
+against a different instant than the one it stores. Verifier/CLI limitation
+text and javadoc updated from "seventeen" to "nineteen"; the CLI no longer
+tells a reader that a backdated record verifies clean. `AuditRecorderTest`'s
+pinned literal moved from `63b5da37...` to `323972fe...`, recomputed
+independently rather than copied from the implementation's own output.
+
+Closes the *lazy*-edit gap task 66's own limitation text flagged: a
+`timestamp` or `sourceSystems` value altered in place on disk is now detected
+as a chain break, and each record is self-consistent with its own stated
+time. **It does not close, and was never meant to close, the operator gap.**
+The chain is still unkeyed SHA-256; an operator who can write the file holds
+no key and can recompute every hash after any edit, and the result verifies
+perfectly. That gap is recorded in `docs/architecture.md` and stays open by
+explicit owner decision — nothing in this entry, or in the code it describes,
+should be read as narrowing it.
+
+Landed deliberately in this order: no durable hash-chained audit file exists
+yet, since task 67 (which wires `dataprism.audit.sink: hash-chained` to a
+real bean) had not merged. Widening the hash today invalidates nothing;
+widening it after 67 merges would invalidate every chain already written.
+Task 72 was sequenced ahead of 67 in the merge order specifically to satisfy
+that ordering constraint, which is now satisfied. Single commit, `43badb8`,
+fast-forward merge onto `v0.3.0/audit-trail-and-nested-json` (no rebase or
+conflict resolution needed — the branch was already even with the
+integration branch's tip). Verified PASS (tester) and APPROVE (reviewer)
+before merge.
+
+**Cost:** none of substance — a clean, narrowly-scoped diff against a task
+file that had already settled the hard questions (nineteen-parameter overload
+kept instead of collapsing to the `AuditEvent`-only form, single clock read,
+rendered forms pinned as ISO-8601/sorted-join) at spike time. The one
+reviewer follow-up was documentation, not code: task 66's own HISTORY entry
+had described the seventeen-field hash and the "backdated record verifies
+clean" behaviour in a way that, left alone, would have read as still true;
+corrected above to mark it superseded.
+
 ## 2026-09-23 — Task 66: the offline audit-chain verifier CLI, after four attempts each relocating the same defect
 
 Ships an offline CLI that replays each writer's per-`instanceId` audit hash
@@ -30,12 +74,17 @@ which is: a torn trailing record with no newline; a mid-file field-count
 error where a restarted sink appended after a surviving fragment; a
 duplicate sequence number from a sink-contract violation; and a new writer
 starting at `GENESIS` partway through the file, an ordinary process restart
-because chains are per-writer. It prints a limitation on every path
-including `--help`, naming the seventeen fields `AuditEventHash` covers,
-stating that `timestamp` and `sourceSystems` are excluded so a backdated
-record verifies clean, and stating that it cannot resist an adversary with
+because chains are per-writer. At merge time it printed a limitation on every
+path including `--help`, naming the seventeen fields `AuditEventHash` covered,
+stating that `timestamp` and `sourceSystems` were excluded so a backdated
+record verified clean, and stating that it cannot resist an adversary with
 write access because the hash is unkeyed SHA-256 and the whole chain is
-recomputable. Merged onto `v0.3.0/audit-trail-and-nested-json`.
+recomputable. Merged onto `v0.3.0/audit-trail-and-nested-json`. **Superseded
+the same day by task 72** (below), which widened the hash to nineteen fields,
+folding `timestamp` and `sourceSystems` in; the backdating gap this entry
+describes no longer exists. The unkeyed-SHA-256/operator-recomputable
+limitation stands unchanged — that gap was never in scope for either task and
+remains open.
 
 **Cost:** four attempts, and every rejection was the same defect relocated —
 the tool asserting benignity it could not support. Attempt 1: a first-seen

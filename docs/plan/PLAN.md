@@ -713,17 +713,20 @@ does and does not deliver:
   has not yet said when.
 - Task 66's verifier (merged 2026-09-23) prints its truncation-cannot-be-
   detected disclaimer on every run; that disclaimer is load-bearing against
-  a stated requirement, not a nice-to-have caveat. Do not soften or remove
-  it — task 72 touches this file next and must not weaken it either.
+  a stated requirement, not a nice-to-have caveat. Task 72 (merged
+  2026-09-23) touched this file and did not weaken it — the disclaimer's
+  wording is unchanged; only the field-count and the backdating claim it
+  makes were corrected.
 - Tasks 62 and 59 write the audit-facing documentation. Neither may state or
   imply that `hash-chained` resists an operator with write access to the
   audit file, in addition to the existing path-disclosure precondition
-  (follow-up item 2 above).
-- Timestamp integrity is now forensically central, not cosmetic: tracing when
-  an exposure happened depends on a timestamp that cannot be rewritten
-  without recomputing a hash. `AuditEventHash` currently excludes
-  `timestamp` and `sourceSystems` from the joined body it hashes — file a
-  task to widen coverage to both fields.
+  (follow-up item 2 above). This still holds after task 72: the operator gap
+  above is unchanged by it.
+- Timestamp integrity was forensically central, not cosmetic: tracing when an
+  exposure happened depends on a timestamp that cannot be rewritten without
+  recomputing a hash. `AuditEventHash` used to exclude `timestamp` and
+  `sourceSystems` from the joined body it hashes; task 72 (merged 2026-09-23)
+  closed that, widening the join to nineteen fields. This item is done.
 - Open question, not yet decided by the owner: the trail records
   `subjectPseudonym`, `parameterFingerprint`, `tool`, `sourceSystems` and the
   policy decision — enough to reconstruct what would have been returned,
@@ -816,14 +819,12 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   closed. 73 is now filed; 74 is not yet.
 
   **Task 72 (widen the audit hash to cover `timestamp` and `sourceSystems`)
-  must merge before 67, not after — the window is closing, not open-ended.**
-  72 depends on 66 (now merged) and owns
-  `AuditChainVerifier{,Cli}.java`/tests, which 67 does not touch, so there is
-  no file conflict either order. But 67 wires `hash-chained` to
-  `FileAuditSink`, creating the first durable chain this repository will
-  ever write; once real chains exist, widening the hash invalidates every
-  one already written. Today it invalidates nothing. Sequence 72 ahead of
-  67 in the merge order regardless of which finishes review first.
+  merged 2026-09-23, PASS + APPROVE, fast-forward onto
+  `v0.3.0/audit-trail-and-nested-json` at `43badb8`.** It landed ahead of 67 as
+  required — no durable chain existed yet to invalidate, since 67 (which wires
+  `hash-chained` to `FileAuditSink`) had not merged. That ordering constraint
+  is now satisfied; 67 may merge without invalidating anything 72 wrote. Task
+  file retired; see `docs/plan/HISTORY.md`, grep `Task 72`.
 
   Task 60's durable caveats, load-bearing for 62 and 69: the fail-open is
   fenced by `ConfiguredJsonNestedLeafShapeGuard` running before
@@ -1003,9 +1004,9 @@ blocks the merge.
     still reads "a known non-tampering structural anomaly", the exact
     phrasing the printed `--help` text dropped at attempt 3 for asserting
     benignity it could not support. Source-only, invisible to a compliance
-    reader, but the same claim living on in a comment. Task 72 owns this
-    file; fold the fix in there or file it separately if 72 does not touch
-    that line.
+    reader, but the same claim living on in a comment. Task 72 (merged
+    2026-09-23) touched this file but not this line — still open. File it
+    separately.
 11. Process note, not code: attempt records appended to a task file in the
     main checkout are not visible in a worktree created earlier, because the
     worktree holds its own copy from its branch point. Task 66's worktree was
