@@ -135,8 +135,9 @@ With the defaults above, these pseudonyms are the same every time you run
 this: `customerName` and `subjectId` are derived by a keyed HMAC over the
 case id and the subject id (`ScopeResolver`, `HmacSyntheticGenerator`), and
 `run.sh` always mints a token for the same default case,
-`CASE-QUICKSTART-1`. They change only for a different case id or a different
-HMAC key — never merely from running the demo again.
+`CASE-QUICKSTART-1`. They change for a different case id, a different HMAC
+key, or a different pseudonymisation version or vocabulary
+(`HmacSyntheticGenerator`) — never merely from running the demo again.
 
 The fixture customer API holds a second record, for subject `1002`:
 
