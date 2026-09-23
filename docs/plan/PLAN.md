@@ -1116,9 +1116,14 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   target, refuses to clobber a same-day snapshot), and the 2026-09-23
   baseline (`docs/plan/discoverability/`). Merged `--no-ff` onto
   `discoverability`. See `docs/plan/HISTORY.md` — grep `Task 80`.
-- **Tasks 76 (canonical identity), 77 (FAQ and comparison page), 78 (use-case
-  pages), 81 (outreach drafts)** — in flight, each in its own worktree off
-  `discoverability`.
+- **Task 78 — done.** Three use-case pages under `docs/use-cases/`
+  (pseudonymise customer data for an LLM agent in Spring Boot, GDPR data
+  minimisation for MCP tools, consistent pseudonyms across systems), each
+  routing into the existing quickstart/reference docs, GDPR citations linked
+  to EUR-Lex 32016R0679 anchors. Merged `--no-ff` onto `discoverability`.
+  See `docs/plan/HISTORY.md` — grep `Task 78`.
+- **Tasks 76 (canonical identity), 77 (FAQ and comparison page), 81 (outreach
+  drafts)** — in flight, each in its own worktree off `discoverability`.
 - **Tasks 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)
   and 83 (go-live wiring)** — pending, blocked on the tasks above they
   depend on.

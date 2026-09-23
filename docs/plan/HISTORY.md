@@ -17,6 +17,43 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 78: three use-case pages for the searches this audience runs
+
+Adds `docs/use-cases/pseudonymise-customer-data-spring-boot.md`,
+`gdpr-data-minimisation-mcp.md` and `consistent-pseudonyms-across-systems.md`.
+Each follows the same shape: the problem in the reader's terms, what Data
+Prism does about it, what it does not do, and next steps that link into
+`docs/quickstart.md`, `docs/protect-your-own-api.md` and the matching
+`docs/tools.md` sections rather than duplicating them. The Spring Boot page
+names the starter and the standalone server as the two deployment options.
+The GDPR page links Art. 4(5), 5(1)(c), 25 and 32 to EUR-Lex 32016R0679,
+quotes 5(1)(c) and Recital 26 verbatim rather than paraphrasing, carries a
+visible "this is not legal advice" statement, lists what stays the
+operator's job (lawful basis, DPIA, transfer mechanism, HMAC key custody,
+retention, classification), and states that pseudonymised data is still
+personal data. The cross-systems page explains the pseudonym collapse,
+consistency findings and scope isolation, linking `docs/tools.md` by anchor.
+No page adds a new configuration or code snippet. Every claim traces to an
+existing doc; no `README.md:NNN`-style citations.
+
+**Cost:** three attempts, all on the accuracy of paraphrased claims rather
+than structure. Attempt 1 overstated pseudonym consistency as holding
+"everywhere the caller can see them" when it is only consistent within one
+privacy scope/case; attributed "pseudonymised data is still personal data"
+to Art. 4(5), when that statement is Recital 26, not the article defining
+pseudonymisation; paraphrased Art. 5(1)(c) beyond what it says; left two of
+the required GDPR citations unlinked; said classified data "is
+pseudonymised" when classification can also mean redacted or removed; and
+claimed `docs/configuration.md` documents key rotation, which it does not.
+Attempt 2 fixed all of those but introduced a new unsupported claim — that
+Art. 4(5) defines the pseudonym/identity relationship as "reversible".
+Attempt 3 dropped that claim and quoted Recital 26 verbatim instead of
+paraphrasing it. Lesson: legal citations need the same verbatim-and-trace
+discipline as product claims — every paraphrase of a GDPR article was wrong
+in some way until it was quoted directly. PASS + APPROVE on attempt 3; the
+merge diff touches only `docs/use-cases/**`. Merged `--no-ff` onto the local
+`discoverability` branch, not `main`.
+
 ## 2026-09-23 — Task 80: discoverability gets a tracker-free measurement setup
 
 Adds `docs/plan/discoverability/`: `questions.md` (15 questions an
