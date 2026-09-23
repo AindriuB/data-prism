@@ -292,3 +292,28 @@ both breaking attempt 5's "no pre-75 behaviour documented":
    `audit.md:57` may note a writer-id containing `/` is refused at startup
    with `INVALID_AUDIT_WRITER`; `audit.md:21` implies `AuditRecorder` backs
    only `hash-chained`, but it backs every sink.
+
+## Attempt 7 — failed on test and review (2026-09-23)
+
+All attempt 1-6 findings are resolved; row 4 of the exit table was confirmed
+by execution both ways; five of the six quoted verifier blocks match real
+output line by line by text. Keep all of it. WHAT FAILED:
+
+1. Tester, by execution: the whole-boot-deletion example,
+   `docs/audit.md:203-213`, has its counts backwards. The restart example
+   right above it (`:188-199`) — confirmed correct — has boot A writing 2
+   records and boot B writing 1. The prose at `:203-205` says "the second
+   boot's two records are deleted ... leaving only the first boot's one
+   record", and the block at `:210` shows `sequence count: 1`. Real output
+   after deleting boot B is boot A alone with `sequence count: 2`. Fix the
+   prose and paste the real block.
+2. Reviewer: `docs/audit.md:102` says log input "reads as a run of ordinary
+   restarts". Since task 75 an ordinary restart is a clean new GENESIS writer
+   at exit 0 with no anomaly (this same page, `:180-201`). Log input actually
+   yields one `INTERRUPTED WRITE, not tampering` per line, no writers, exit 4.
+   Say "reads as a run of benign interrupted writes" (or equivalent).
+3. Take both, cheap: `:113` says `--help` gives "the same summary this section
+   gives", but the CLI's row 4 (`AuditChainVerifierCli.java:167-171`) lacks the
+   "only after another anomaly" condition — say "a shorter summary". The
+   quoted blocks omit the CLI's leading blank line and the LIMITATION
+   paragraph every run prints; call them excerpts where they are introduced.
