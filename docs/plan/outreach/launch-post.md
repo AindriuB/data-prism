@@ -35,11 +35,13 @@ so, rather than hiding the disagreement behind uniform redaction. Pseudonyms are
 two different investigations gets two different synthetic identities and nothing correlates across cases by
 accident. ([What Data Prism does](https://github.com/AindriuB/data-prism/blob/main/README.md#what-data-prism-does))
 
-It fails closed by default: an unclassified field refuses the whole response unless a deployment has
-explicitly chosen a looser setting, and every refusal is audited with the classification and the path, never
-the value. Passing unclassified data through unchanged is possible, but only by naming the one setting spelled
-for exactly that risk, `PASS_THROUGH_UNSAFE` — it is not what happens by omission.
-([`dataprism.privacy`](https://github.com/AindriuB/data-prism/blob/main/docs/configuration.md#dataprism-vocabulary))
+It fails closed by default: an unclassified field refuses the whole response under `FAIL_REQUEST`, the default
+every privacy profile gets unless its own YAML says otherwise, and every refusal is audited with the
+classification and the path, never the value. A profile's YAML can relax that instead — to `REDACT_AND_WARN`,
+`DROP_AND_WARN`, or, the one that actually releases the value unchanged, `PASS_THROUGH_UNSAFE` — and each of
+those three logs a warning naming the field every time it fires.
+([`PrivacyProfile.UnclassifiedBehaviour`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/PrivacyProfile.java),
+[`ProfilePrivacyPolicyResolver`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/ProfilePrivacyPolicyResolver.java))
 
 It can also keep a durable, hash-chained audit trail of what was recorded and released — a single file, no
 rotation, with a separate hash chain per writer inside it, and an offline verifier that replays each chain.
