@@ -125,8 +125,8 @@ or `--help` for a shorter summary.
 ### What a run actually looks like
 
 The blocks below are excerpts: every real run also prints a leading blank
-line and, after the writer report, the same `LIMITATION` paragraph quoted
-above in full, omitted here for brevity.
+line and, after the writer report, a `LIMITATION` paragraph, summarised
+under "What this does and does not prove" below, omitted here for brevity.
 
 Three records written by one writer (`walkthrough-writer-1`), verified intact:
 
@@ -139,7 +139,7 @@ Writer walkthrough-writer-1/e6b1ef0f-728f-45ec-ba7b-16da13df827b:
 ```
 (exit code 0)
 
-The same three records, with the middle one's `subjectPseudonym` edited in
+Three records, with the middle one's `subjectPseudonym` edited in
 place after being written:
 
 ```
@@ -167,7 +167,7 @@ Writer walkthrough-writer-1/81e2238a-b55c-4a81-b592-0ab8d137db9f:
 anywhere earlier in the chain is: only *deleting* the tail, not editing it,
 escapes detection)
 
-The same three records, with the third deleted entirely — the truncation
+Three records, with the third deleted entirely — the truncation
 this verifier cannot detect, proven rather than merely claimed:
 
 ```
