@@ -5,6 +5,10 @@ is audited. `docs/configuration.md` (task 59) owns the `dataprism.audit.*`
 configuration vocabulary; this page owns what the durable, tamper-evident
 sink actually is, what its offline verifier proves, and — the part worth
 reading before relying on either — what neither of them proves.
+`AuditRecorder` builds and chains the `instanceId`/`sequence`/`previousHash`
+fields described below for every configured sink, not only `hash-chained` —
+only `FileAuditSink`'s own file has the byte-for-byte shape the offline
+verifier can actually check.
 
 There are three audit sinks:
 
@@ -56,7 +60,9 @@ A few properties are deliberate, not accidental gaps:
   event's hash to the previous event's hash *for that recorder instance*. The
   chain is keyed on `instanceId`, which is `dataprism.audit.writer-id` plus a
   `/` and a random UUID minted once per `AuditRecorder` construction — one per
-  process boot, not one per configured deployment. A restart under the *same*
+  process boot, not one per configured deployment. Because `/` is the
+  separator, a configured `writer-id` containing `/` is refused at startup
+  with `INVALID_AUDIT_WRITER`. A restart under the *same*
   `writer-id` therefore mints a fresh `instanceId` automatically, so it is
   reported as a second, independent writer starting at `GENESIS`, not as a
   break in the first writer's chain (shown below, under "What a run actually
@@ -94,7 +100,7 @@ deliberately reads that shape as benign — every line is reported as
 exits **4**, the code this page's own table calls a structural anomaly, not
 a break. That is a false reassurance, not a false alarm: a file that is not
 an audit file at all reads as a run of ordinary restarts, never as the break
-it should be reported as, or as any other kind of failure. Do not point this
+it should be reported as. Do not point this
 verifier at `Slf4jAuditSink` output; it only has the byte-for-byte shape this class
 relies on when read back from `FileAuditSink`'s own file.
 
@@ -114,17 +120,17 @@ or `--help` for the same summary this section gives.
 | 1 | Unreadable input — the file could not be opened or read, or the invocation was malformed. |
 | 2 | Break detected — an edit or deletion was found in at least one writer's chain, or a line could not be ruled out as tampering. |
 | 3 | Possibly-in-flight tail — the final record has no terminating newline; not a break. Only reported when nothing scored higher: a run with both a break and an in-flight tail exits 2, and a run with both a structural anomaly and an in-flight tail exits 4 (precedence is break, then anomaly, then in-flight tail). |
-| 4 | Structural anomaly — an interrupted-write fragment, a sink-contract duplicate-sequence violation, or a writer's chain not starting at `GENESIS` (an ordinary restart, but deletion of that writer's earliest records cannot be ruled out). Never returned together with exit code 2. |
+| 4 | Structural anomaly — an interrupted-write fragment, a sink-contract duplicate-sequence violation, or a writer's chain not starting at `GENESIS` immediately after another structural anomaly, which offers plausible (never certain) context for the missing head. A writer's chain not starting at `GENESIS` in any other position is a break, exit code 2, not this. Never returned together with exit code 2. |
 
 ### What a run actually looks like
 
 Three records written by one writer (`walkthrough-writer-1`), verified intact:
 
 ```
-Writer walkthrough-writer-1:
+Writer walkthrough-writer-1/0029e6b5-a51c-440f-8233-891b02c463d7:
   first sequence seen: 1
   sequence count: 3
-  head hash: 68f085448baae1bd72e133774d4ab3dc5209c675d6839124aa03c21ef6e4b884
+  head hash: fc674baef27f1a58c6c4444a3a01382139a73da8d0d26f1a62d94c92910e9f37
   intact: every record in this writer's chain verified against the one before it.
 ```
 (exit code 0)
@@ -133,11 +139,11 @@ The same three records, with the middle one's `subjectPseudonym` edited in
 place after being written:
 
 ```
-Writer walkthrough-writer-1:
+Writer walkthrough-writer-1/fe7e0914-f54b-4b5f-9681-59792c028474:
   first sequence seen: 1
   sequence count: 3
-  head hash: 68f085448baae1bd72e133774d4ab3dc5209c675d6839124aa03c21ef6e4b884
-  CHAIN BREAK at sequence 2, byte offset 351: its eventHash does not match AuditEventHash recomputed from its own stored fields -- its content was altered after it was written. This is evidence the record was edited or deleted after being written -- investigate immediately.
+  head hash: 1c9f7103c70da3539077354e2698d220430cf60167ff8babf9b8c7e8f1bacc45
+  CHAIN BREAK at sequence 2, byte offset 365: its eventHash does not match AuditEventHash recomputed from its own stored fields -- its content was altered after it was written. This is evidence the record was edited or deleted after being written -- investigate immediately.
   1 later record(s) in this writer's chain follow the break above and are reported as after the break, not as separate breaks.
 ```
 (exit code 2)
@@ -147,11 +153,11 @@ edited in place after being written — proving that a chain does not need a
 successor record to catch a tampered tail:
 
 ```
-Writer walkthrough-writer-1/95cf8f9f-d1e9-4c0b-9f08-92549a109d4e:
+Writer walkthrough-writer-1/b81b7a65-3c92-4062-98c5-4b659ceaa2bd:
   first sequence seen: 1
   sequence count: 3
-  head hash: 90b395af248a7c7d9d24b40123d7d0ac750e8b69283bf7f15d33c79f0f169978
-  CHAIN BREAK at sequence 3, byte offset 622: its eventHash does not match AuditEventHash recomputed from its own stored fields -- its content was altered after it was written. This is evidence the record was edited or deleted after being written -- investigate immediately.
+  head hash: b61f3d2fcf6d5713d6a4ea6bf9d815d8cc45e50a66fc76e7e65e1b035fee5d1c
+  CHAIN BREAK at sequence 3, byte offset 730: its eventHash does not match AuditEventHash recomputed from its own stored fields -- its content was altered after it was written. This is evidence the record was edited or deleted after being written -- investigate immediately.
 ```
 (exit code 2 — editing the final record is caught exactly as an edit
 anywhere earlier in the chain is: only *deleting* the tail, not editing it,
@@ -161,10 +167,10 @@ The same three records, with the third deleted entirely — the truncation
 this verifier cannot detect, proven rather than merely claimed:
 
 ```
-Writer walkthrough-writer-1:
+Writer walkthrough-writer-1/6f895e36-d08e-46cf-9ab8-80ac0932a1a2:
   first sequence seen: 1
   sequence count: 2
-  head hash: 205fef8a045db82fc2fd40536229fb72f0be1eebcda5fdc59cb52d12f1b566fc
+  head hash: 9762325257f67630d13acca06f0e0d426a18011a76882309282da9f3c6bca999
   intact: every record in this writer's chain verified against the one before it.
 ```
 (exit code 0 — reported intact, because it is: a truncated append-only file's
@@ -179,16 +185,16 @@ is always two independent writers, each starting at `GENESIS`, neither
 reporting a break:
 
 ```
-Writer walkthrough-writer-1/40703ecf-d3c6-428e-b818-3cbd5f679f74:
+Writer walkthrough-writer-1/01d7c133-a971-4220-af29-b1b71468684f:
   first sequence seen: 1
   sequence count: 2
-  head hash: 2045c3561e5161a1e31d39ed100831a25466c4a16a5aacca4920f4912e28a29d
+  head hash: 9c9e923722a5ec0428d6e83b66cedd7501ac15751e9d516e3a55cec2ad1abdb4
   intact: every record in this writer's chain verified against the one before it.
 
-Writer walkthrough-writer-1/71856164-5ed3-464c-a400-3e926e5b5887:
+Writer walkthrough-writer-1/13febde6-98b4-4334-83cc-5844959f6c73:
   first sequence seen: 1
   sequence count: 1
-  head hash: e5f929623b7283bae3df5bb577a4e1a2b56bd7d3ff064c744d897b3edbdded90
+  head hash: 208c6b4d0d13526cf08aca2577082491fec6b8751d0b4c336a3b7ea0ce8a9224
   intact: every record in this writer's chain verified against the one before it.
 ```
 (exit code 0 — a restart under the same `writer-id` is reported as a second
@@ -199,10 +205,10 @@ outright — not truncated to a shorter chain, removed entirely, leaving only
 the first boot's one record in the file:
 
 ```
-Writer walkthrough-writer-1/61695b17-e26b-4cf7-9692-b112d6df42af:
+Writer walkthrough-writer-1/ba1c3702-5c8f-4601-96eb-806680c89da8:
   first sequence seen: 1
   sequence count: 1
-  head hash: 2de489fe2ed58addccfd165dd5b4473259f59d389499f92df0ee135b631518e7
+  head hash: 53849942ff0adb2bc13baceddfb01a3f9b57c1cbf314ff65fd4495098233c8f2
   intact: every record in this writer's chain verified against the one before it.
 ```
 (exit code 0 — the report never mentions the second boot at all: it is not
