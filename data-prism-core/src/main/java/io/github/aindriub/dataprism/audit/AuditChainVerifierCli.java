@@ -167,9 +167,11 @@ public final class AuditChainVerifierCli {
                 + "least one writer's chain, or a line could not be ruled out as tampering");
         out.println("  " + EXIT_POSSIBLY_IN_FLIGHT + "  possibly-in-flight tail -- the final record has no "
                 + "terminating newline; not a break");
-        out.println("  " + EXIT_STRUCTURAL_ANOMALY + "  structural non-tampering anomaly -- an "
-                + "interrupted-write fragment or a sink-contract duplicate-sequence violation was found; "
-                + "never returned together with exit code " + EXIT_BREAK_DETECTED);
+        out.println("  " + EXIT_STRUCTURAL_ANOMALY + "  structural anomaly -- an interrupted-write "
+                + "fragment, a sink-contract duplicate-sequence violation, or a writer's chain not "
+                + "starting at GENESIS (an ordinary restart, but deletion of that writer's earliest "
+                + "records cannot be ruled out); never returned together with exit code "
+                + EXIT_BREAK_DETECTED);
         out.println();
         out.println(LIMITATION);
     }

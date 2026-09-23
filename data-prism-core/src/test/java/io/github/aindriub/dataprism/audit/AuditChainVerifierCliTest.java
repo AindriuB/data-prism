@@ -94,6 +94,34 @@ class AuditChainVerifierCliTest {
     }
 
     @Test
+    void swappedRecordsExitWithBreakDetectedOnTheThirdRecordsPreviousHash() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        AuditEvent third;
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            write(recorder);
+            write(recorder);
+            third = write(recorder);
+        }
+
+        List<String> lines = new java.util.ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+        // Swap records 2 and 3 on disk, so the file reads 1, 3, 2.
+        String second = lines.get(1);
+        lines.set(1, lines.get(2));
+        lines.set(2, second);
+        Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        int code = run(path, outBytes, new ByteArrayOutputStream());
+        String out = outBytes.toString(StandardCharsets.UTF_8);
+
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+        assertThat(out).contains("CHAIN BREAK");
+        assertThat(out).contains("sequence " + third.sequence());
+        assertThat(out).contains("previousHash");
+    }
+
+    @Test
     void headDeletionMaskedByAPrependedMalformedLineExitsStructuralNeverIntactNeverZero() throws IOException {
         Path path = tempDir.resolve("audit.log");
         try (FileAuditSink sink = new FileAuditSink(path)) {
@@ -177,7 +205,11 @@ class AuditChainVerifierCliTest {
         assertThat(out).contains("1  unreadable input");
         assertThat(out).contains("2  break detected");
         assertThat(out).contains("3  possibly-in-flight tail");
-        assertThat(out).contains("4  structural non-tampering anomaly");
+        assertThat(out).contains("4  structural anomaly");
+        assertThat(out).contains("not starting at GENESIS");
+        assertThat(out).contains("deletion of that writer's earliest records cannot be ruled out");
+        assertThat(out).doesNotContain("4  structural non-tampering anomaly");
+        assertThat(out).doesNotContain("non-tampering anomaly");
         assertThat(out).contains("never returned together with exit code 2");
         assertThat(out).contains("cannot detect truncation");
     }
