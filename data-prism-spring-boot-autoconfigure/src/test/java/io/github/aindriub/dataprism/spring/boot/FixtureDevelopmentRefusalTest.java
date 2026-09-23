@@ -31,6 +31,22 @@ class FixtureDevelopmentRefusalTest {
                 .hasMessageStartingWith("FIXTURE_DEVELOPMENT_STDIO_ONLY:");
     }
 
+    /**
+     * Task 73: {@code MISSING_AUDIT_SINK} names the case {@code validate()} alone can
+     * see -- the property itself absent or blank -- which is a different failure from
+     * {@code AUDIT_SINK_BEAN_REQUIRED} (an absent bean under a configured {@code
+     * approved-sink}, seen only by {@link DataPrismContractValidator}). Pinned
+     * separately so the two stay distinguishable in a dashboard.
+     */
+    @Test void blankAuditSinkRefusesWithMissingAuditSink() {
+        DataPrismProperties properties = validProperties();
+        properties.getAudit().setSink("");
+
+        assertThatThrownBy(properties::validate)
+                .isInstanceOf(DataPrismConfigurationException.class)
+                .hasMessageStartingWith("MISSING_AUDIT_SINK:");
+    }
+
     @Test void httpFixtureDevelopmentWithABlankIssuerRefusesWithMissingJwtIssuer() {
         DataPrismProperties properties = validProperties();
         properties.getTransport().setMode(DataPrismProperties.Transport.Mode.HTTP);
