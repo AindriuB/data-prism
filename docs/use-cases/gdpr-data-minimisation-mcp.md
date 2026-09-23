@@ -44,11 +44,11 @@ defines pseudonymisation as processing personal data so that it can no
 longer be attributed to a subject without additional information kept
 separately. **Pseudonymised data is still personal data**: [Recital
 26](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#rct_26)
-states directly that personal data which have undergone pseudonymisation,
-and which could be attributed to a natural person by the use of additional
-information, remain information on an identifiable natural person. Data
-Prism does not change that: sending its output to a third-party model is
-still processing personal data.
+states directly that "personal data which have undergone pseudonymisation,
+which could be attributed to a natural person by the use of additional
+information should be considered to be information on an identifiable
+natural person". Data Prism does not change that: sending its output to a
+third-party model is still processing personal data.
 
 ## What it does not do
 

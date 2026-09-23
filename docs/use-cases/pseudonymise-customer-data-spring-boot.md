@@ -47,8 +47,10 @@ is not an ETL platform, a master-data system or an identity provider.
 **It is not anonymisation**: pseudonymisation, as [GDPR Art.
 4(5)](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#art_4)
 defines it, keeps data re-attributable to its subject given additional
-information, so it is still personal data, and sending it to a third-party
-model is still processing that needs its own lawful basis. See
+information, so [Recital
+26](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#rct_26)
+treats it as still personal data, and sending it to a third-party model is
+still processing that needs its own lawful basis. See
 [`docs/use-cases/gdpr-data-minimisation-mcp.md`](gdpr-data-minimisation-mcp.md)
 for what that means in practice and what stays the operator's job.
 

@@ -53,9 +53,10 @@ an identifier the sources already share, resolved by a reviewed
 `IdentityResolver` (see [`docs/extending.md`](../extending.md)) — Data Prism
 does not infer that two different identifiers across two systems belong to
 the same person. It is not anonymisation: the pseudonym is reproducible
-from the same scope and key — the reversible relationship [GDPR Art.
+from the same scope and key, which is what [GDPR Art.
 4(5)](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#art_4)
-defines as pseudonymisation — so [Recital
+means by data kept re-attributable to its subject given additional
+information — so [Recital
 26](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32016R0679#rct_26)
 treats it as personal data still.
 
