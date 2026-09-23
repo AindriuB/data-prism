@@ -27,6 +27,13 @@ public final class AuditRecorder {
 
     private static final String GENESIS = "0".repeat(64);
 
+    /**
+     * Separates the configured writer id from this instance's per-boot suffix
+     * in {@link #instanceId}. A writer id containing this character would make
+     * the split ambiguous, so the constructor refuses it outright.
+     */
+    private static final char INSTANCE_ID_SEPARATOR = '/';
+
     private final AuditSink sink;
     private final Clock clock;
     private final String instanceId;
@@ -34,10 +41,36 @@ public final class AuditRecorder {
 
     private volatile String previousHash = GENESIS;
 
-    public AuditRecorder(AuditSink sink, Clock clock, String instanceId) {
+    /**
+     * {@code writerId} identifies the deployment (for example {@code
+     * ${HOSTNAME}}), not this process's lifetime: {@link #instanceId} appends a
+     * random per-boot suffix so a restart under the same {@code writerId}
+     * stamps every event with a distinct {@link #instanceId}, which {@link
+     * AuditChainVerifier} keys chains on. That is what turns a restart into a
+     * new writer starting at GENESIS instead of a false chain break.
+     */
+    public AuditRecorder(AuditSink sink, Clock clock, String writerId) {
         this.sink = Objects.requireNonNull(sink, "sink");
         this.clock = Objects.requireNonNull(clock, "clock");
-        this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
+        Objects.requireNonNull(writerId, "writerId");
+        if (writerId.isBlank()) {
+            throw new IllegalArgumentException("writerId must not be blank");
+        }
+        if (writerId.indexOf(INSTANCE_ID_SEPARATOR) >= 0) {
+            throw new IllegalArgumentException(
+                    "writerId must not contain '" + INSTANCE_ID_SEPARATOR + "': " + writerId);
+        }
+        this.instanceId = writerId + INSTANCE_ID_SEPARATOR + UUID.randomUUID();
+    }
+
+    /**
+     * This instance's chain identity: the configured writer id, a {@code
+     * '/'}, and a random suffix minted once per {@link AuditRecorder}
+     * construction, so every event this recorder ever produces carries the
+     * same value.
+     */
+    public String instanceId() {
+        return instanceId;
     }
 
     public synchronized AuditEvent record(String principalId, String clientId, String tool,

@@ -69,8 +69,10 @@ class AuditChainVerifierTest {
     void intactSingleWriterChainReportsSequenceCountHeadHashAndNoBreak() throws IOException {
         Path path = tempDir.resolve("audit.log");
         AuditEvent last;
+        String instanceId;
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            instanceId = recorder.instanceId();
             write(recorder);
             write(recorder);
             last = write(recorder);
@@ -80,7 +82,7 @@ class AuditChainVerifierTest {
 
         assertThat(report.writers()).hasSize(1);
         AuditChainVerifier.WriterResult writer = report.writers().get(0);
-        assertThat(writer.instanceId()).isEqualTo("instance-1");
+        assertThat(writer.instanceId()).isEqualTo(instanceId);
         assertThat(writer.sequenceCount()).isEqualTo(3);
         assertThat(writer.headHash()).isEqualTo(last.eventHash());
         assertThat(writer.broken()).isFalse();
@@ -107,9 +109,13 @@ class AuditChainVerifierTest {
     @Test
     void interleavedWritersVerifyIndependently() throws IOException {
         Path path = tempDir.resolve("audit.log");
+        String instanceIdA;
+        String instanceIdB;
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder a = new AuditRecorder(sink, FIXED, "instance-a");
             AuditRecorder b = new AuditRecorder(sink, FIXED, "instance-b");
+            instanceIdA = a.instanceId();
+            instanceIdB = b.instanceId();
             write(a);
             write(b);
             write(a);
@@ -120,7 +126,7 @@ class AuditChainVerifierTest {
         AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
 
         assertThat(report.writers()).extracting(AuditChainVerifier.WriterResult::instanceId)
-                .containsExactlyInAnyOrder("instance-a", "instance-b");
+                .containsExactlyInAnyOrder(instanceIdA, instanceIdB);
         assertThat(report.writers()).allSatisfy(w -> assertThat(w.broken()).isFalse());
         assertThat(report.hasBreak()).isFalse();
     }
@@ -128,12 +134,16 @@ class AuditChainVerifierTest {
     @Test
     void newWriterStartingAtGenesisPartwayThroughFileVerifiesAsNormal() throws IOException {
         Path path = tempDir.resolve("audit.log");
+        String instanceIdA;
+        String instanceIdB;
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder writerA = new AuditRecorder(sink, FIXED, "instance-a");
+            instanceIdA = writerA.instanceId();
             write(writerA);
             write(writerA);
 
             AuditRecorder writerB = new AuditRecorder(sink, FIXED, "instance-b");
+            instanceIdB = writerB.instanceId();
             write(writerB);
         }
 
@@ -141,7 +151,7 @@ class AuditChainVerifierTest {
 
         assertThat(report.hasBreak()).isFalse();
         assertThat(report.writers()).extracting(AuditChainVerifier.WriterResult::instanceId)
-                .containsExactlyInAnyOrder("instance-a", "instance-b");
+                .containsExactlyInAnyOrder(instanceIdA, instanceIdB);
         assertThat(report.writers()).allSatisfy(w -> assertThat(w.broken()).isFalse());
     }
 
@@ -242,8 +252,10 @@ class AuditChainVerifierTest {
     void headDeletionMaskedByOnePrependedMalformedLineStillReportsTheNonGenesisFinding() throws IOException {
         Path path = tempDir.resolve("audit.log");
         AuditEvent third;
+        String instanceId;
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            instanceId = recorder.instanceId();
             write(recorder);
             write(recorder);
             third = write(recorder);
@@ -265,13 +277,13 @@ class AuditChainVerifierTest {
         assertThat(report.anomalies().get(0).type())
                 .isEqualTo(AuditChainVerifier.AnomalyType.INTERRUPTED_WRITE_FRAGMENT);
 
-        AuditChainVerifier.WriterResult writer = writerFor(report, "instance-1");
+        AuditChainVerifier.WriterResult writer = writerFor(report, instanceId);
         assertThat(writer.broken()).isFalse();
         assertThat(writer.firstSequence()).isEqualTo(third.sequence());
         assertThat(writer.nonGenesisStart()).isPresent();
         assertThat(writer.nonGenesisStart().get().message())
                 .contains("CHAIN DOES NOT START AT GENESIS")
-                .contains("instance-1")
+                .contains(instanceId)
                 .doesNotContain("intact");
         assertThat(report.hasBreak()).isFalse();
         assertThat(report.hasStructuralAnomaly()).isTrue();
@@ -283,11 +295,13 @@ class AuditChainVerifierTest {
         // DUPLICATE_SEQUENCE anomaly, unrelated to writer B in every way.
         Path pathA = tempDir.resolve("a.log");
         AuditEvent firstA;
+        String instanceIdA;
         try (FileAuditSink sink = new FileAuditSink(pathA)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-a");
+            instanceIdA = recorder.instanceId();
             firstA = write(recorder);
         }
-        AuditEvent duplicateA = eventWithComputedHash("event-dup", "instance-a", firstA.sequence(), "f".repeat(64));
+        AuditEvent duplicateA = eventWithComputedHash("event-dup", instanceIdA, firstA.sequence(), "f".repeat(64));
         try (FileAuditSink sink = new FileAuditSink(pathA)) {
             sink.record(duplicateA);
         }
@@ -296,8 +310,10 @@ class AuditChainVerifierTest {
         // previousHash no longer chains from GENESIS.
         Path pathB = tempDir.resolve("b.log");
         AuditEvent thirdB;
+        String instanceIdB;
         try (FileAuditSink sink = new FileAuditSink(pathB)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-b");
+            instanceIdB = recorder.instanceId();
             write(recorder);
             write(recorder);
             thirdB = write(recorder);
@@ -318,13 +334,13 @@ class AuditChainVerifierTest {
         assertThat(report.anomalies()).hasSize(1);
         assertThat(report.anomalies().get(0).type()).isEqualTo(AuditChainVerifier.AnomalyType.DUPLICATE_SEQUENCE);
 
-        AuditChainVerifier.WriterResult writerB = writerFor(report, "instance-b");
+        AuditChainVerifier.WriterResult writerB = writerFor(report, instanceIdB);
         assertThat(writerB.broken()).isFalse();
         assertThat(writerB.firstSequence()).isEqualTo(thirdB.sequence());
         assertThat(writerB.nonGenesisStart()).isPresent();
         assertThat(writerB.nonGenesisStart().get().message())
                 .contains("CHAIN DOES NOT START AT GENESIS")
-                .contains("instance-b")
+                .contains(instanceIdB)
                 .doesNotContain("intact");
         assertThat(report.hasBreak()).isFalse();
         assertThat(report.hasStructuralAnomaly()).isTrue();
@@ -447,8 +463,10 @@ class AuditChainVerifierTest {
             throws IOException {
         Path path = tempDir.resolve("audit.log");
         AuditEvent before;
+        String instanceId1;
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            instanceId1 = recorder.instanceId();
             before = write(recorder);
         }
 
@@ -459,15 +477,17 @@ class AuditChainVerifierTest {
         try (FileChannel real = FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
                 ShortWriteChannel faulty = new ShortWriteChannel(real, 60)) {
             FileAuditSink torn = new FileAuditSink(path, faulty);
-            AuditEvent unfinished = eventWithComputedHash("event-torn", "instance-1", 2, before.eventHash());
+            AuditEvent unfinished = eventWithComputedHash("event-torn", instanceId1, 2, before.eventHash());
             assertThatThrownBy(() -> torn.record(unfinished)).isInstanceOf(UncheckedIOException.class);
         }
 
         // The operator restarts: a fresh FileAuditSink opens APPEND on the same path and its
         // first record lands directly after the surviving fragment, with no newline between them.
         AuditEvent afterSecond;
+        String instanceId2;
         try (FileAuditSink restarted = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(restarted, FIXED, "instance-2");
+            instanceId2 = recorder.instanceId();
             write(recorder);
             afterSecond = write(recorder);
         }
@@ -483,7 +503,7 @@ class AuditChainVerifierTest {
         assertThat(report.hasBreak()).isFalse();
         assertThat(report.hasStructuralAnomaly()).isTrue();
 
-        AuditChainVerifier.WriterResult writer1 = writerFor(report, "instance-1");
+        AuditChainVerifier.WriterResult writer1 = writerFor(report, instanceId1);
         assertThat(writer1.broken()).isFalse();
         assertThat(writer1.sequenceCount()).isEqualTo(1);
         assertThat(writer1.headHash()).isEqualTo(before.eventHash());
@@ -495,14 +515,14 @@ class AuditChainVerifierTest {
         // start at GENESIS here. This must be reported as its own structural finding, never as
         // "intact" and never at exit code 0 (acceptance requires only that it not be reported AS
         // TAMPERING, which this finding, at structural severity, satisfies without hiding it).
-        AuditChainVerifier.WriterResult writer2 = writerFor(report, "instance-2");
+        AuditChainVerifier.WriterResult writer2 = writerFor(report, instanceId2);
         assertThat(writer2.broken()).isFalse();
         assertThat(writer2.sequenceCount()).isEqualTo(1);
         assertThat(writer2.headHash()).isEqualTo(afterSecond.eventHash());
         assertThat(writer2.nonGenesisStart()).isPresent();
         assertThat(writer2.nonGenesisStart().get().message())
                 .contains("CHAIN DOES NOT START AT GENESIS")
-                .contains("instance-2")
+                .contains(instanceId2)
                 .contains(String.valueOf(fragmentOffset));
     }
 
@@ -510,20 +530,22 @@ class AuditChainVerifierTest {
     void duplicateSequenceNumberWithinOneWriterIsReportedAsSinkContractViolationNotABreak() throws IOException {
         Path path = tempDir.resolve("audit.log");
         AuditEvent first;
+        String instanceId;
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            instanceId = recorder.instanceId();
             first = write(recorder);
         }
 
         // A non-conforming sink wrote this record durably and then still threw: a second
         // durable copy at the same sequence, whose previousHash points at the wrong record.
-        AuditEvent duplicate = eventWithComputedHash("event-dup", "instance-1", first.sequence(), "f".repeat(64));
+        AuditEvent duplicate = eventWithComputedHash("event-dup", instanceId, first.sequence(), "f".repeat(64));
         try (FileAuditSink sink = new FileAuditSink(path)) {
             sink.record(duplicate);
         }
 
         // The chain continues legitimately after the duplicate, chaining from the real first record.
-        AuditEvent third = eventWithComputedHash("event-3", "instance-1", first.sequence() + 1, first.eventHash());
+        AuditEvent third = eventWithComputedHash("event-3", instanceId, first.sequence() + 1, first.eventHash());
         try (FileAuditSink sink = new FileAuditSink(path)) {
             sink.record(third);
         }
@@ -533,7 +555,7 @@ class AuditChainVerifierTest {
         assertThat(report.anomalies()).hasSize(1);
         AuditChainVerifier.StructuralAnomaly anomaly = report.anomalies().get(0);
         assertThat(anomaly.type()).isEqualTo(AuditChainVerifier.AnomalyType.DUPLICATE_SEQUENCE);
-        assertThat(anomaly.message()).contains("instance-1").contains(String.valueOf(first.sequence()));
+        assertThat(anomaly.message()).contains(instanceId).contains(String.valueOf(first.sequence()));
 
         assertThat(report.hasBreak()).isFalse();
         assertThat(report.hasStructuralAnomaly()).isTrue();

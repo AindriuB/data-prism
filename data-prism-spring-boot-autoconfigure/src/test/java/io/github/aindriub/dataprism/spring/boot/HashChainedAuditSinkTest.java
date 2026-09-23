@@ -69,6 +69,52 @@ class HashChainedAuditSinkTest {
         assertThat(report.writers().get(0).broken()).isFalse();
     }
 
+    /**
+     * {@link io.github.aindriub.dataprism.audit.AuditRecorder} appends {@code
+     * "/" + <per-boot suffix>} to build its {@code instanceId}, so a configured writer-id
+     * already containing {@code '/'} would make that split ambiguous. Refused here, at
+     * property-validation time, with the named {@code INVALID_AUDIT_WRITER} code -- before
+     * an {@code AuditRecorder} bean is ever constructed.
+     */
+    @Test
+    void a_writer_id_containing_the_instance_id_separator_is_refused_at_startup() {
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrationsWithoutAudit.class)
+                .withPropertyValues(valid())
+                .withPropertyValues("dataprism.audit.sink=slf4j", "dataprism.audit.writer-id=host/1")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    Throwable failure = context.getStartupFailure();
+                    while (failure.getCause() != null) {
+                        failure = failure.getCause();
+                    }
+                    assertThat(failure.getMessage()).contains("INVALID_AUDIT_WRITER");
+                });
+    }
+
+    /**
+     * A blank writer-id is refused at property-validation time with the
+     * named {@code MISSING_AUDIT_WRITER} code, before an {@code AuditRecorder}
+     * bean is ever constructed.
+     */
+    @Test
+    void a_blank_writer_id_is_refused_at_startup() {
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ReviewedHttpIntegrationsWithoutAudit.class)
+                .withPropertyValues(valid())
+                .withPropertyValues("dataprism.audit.sink=slf4j", "dataprism.audit.writer-id=")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    Throwable failure = context.getStartupFailure();
+                    while (failure.getCause() != null) {
+                        failure = failure.getCause();
+                    }
+                    assertThat(failure.getMessage()).contains("MISSING_AUDIT_WRITER");
+                });
+    }
+
     private static String[] valid() {
         return new String[] {
                 "dataprism.security.jwt.issuer=https://issuer.example", "dataprism.security.jwt.audience=mcp",

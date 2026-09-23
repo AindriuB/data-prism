@@ -312,4 +312,60 @@ class AuditRecorderTest {
                 .as("the second, failed call's sequence number is reused rather than left as a gap")
                 .isEqualTo(2L);
     }
+
+    /**
+     * A restart configured with the same writer-id must not collide with the
+     * previous boot's chain. Two recorders built with the identical
+     * writer-id mint distinct instance ids, each prefixed by that writer-id,
+     * so {@link AuditChainVerifier} sees them as independent writers rather
+     * than one writer whose sequence went backwards.
+     */
+    @Test
+    @DisplayName("two recorders built with the same writer-id produce distinct instance ids, both prefixed by it")
+    void sameWriterIdProducesDistinctInstanceIdsSharingThePrefix() {
+        List<AuditEvent> sinkA = new ArrayList<>();
+        AuditRecorder recorderA = new AuditRecorder(sinkA::add, FIXED, "shared-writer");
+        List<AuditEvent> sinkB = new ArrayList<>();
+        AuditRecorder recorderB = new AuditRecorder(sinkB::add, FIXED, "shared-writer");
+
+        assertThat(recorderA.instanceId()).isNotEqualTo(recorderB.instanceId());
+        assertThat(recorderA.instanceId()).startsWith("shared-writer/");
+        assertThat(recorderB.instanceId()).startsWith("shared-writer/");
+    }
+
+    /**
+     * Every event a single recorder ever produces carries that one recorder's
+     * instance id, and the first event still starts the chain exactly as
+     * before: GENESIS previousHash, sequence 1.
+     */
+    @Test
+    @DisplayName("every event from one recorder carries its instanceId, and the first starts at GENESIS/1")
+    void allEventsFromOneRecorderShareItsInstanceIdAndStartAtGenesis() {
+        AuditRecorder recorder = recorder();
+        String instanceId = recorder.instanceId();
+
+        AuditEvent first = baseline(recorder, "investigator-1", "client-1", "investigation", "CASE-1", Set.of());
+        AuditEvent second = baseline(recorder, "investigator-2", "client-1", "investigation", "CASE-1", Set.of());
+
+        assertThat(first.instanceId()).isEqualTo(instanceId);
+        assertThat(second.instanceId()).isEqualTo(instanceId);
+        assertThat(first.previousHash()).isEqualTo("0".repeat(64));
+        assertThat(first.sequence()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("a blank writer-id is refused")
+    void blankWriterIdIsRefused() {
+        List<AuditEvent> sink = new ArrayList<>();
+        assertThatThrownBy(() -> new AuditRecorder(sink::add, FIXED, "   "))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("a writer-id containing the instanceId separator is refused")
+    void writerIdContainingSeparatorIsRefused() {
+        List<AuditEvent> sink = new ArrayList<>();
+        assertThatThrownBy(() -> new AuditRecorder(sink::add, FIXED, "host/1"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

@@ -291,16 +291,28 @@ class PiiLogScanTest {
             Pattern.compile("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.(\\d{3}|\\d{6}|\\d{9}))?Z");
 
     /**
+     * {@code seq}'s trailing {@code /<uuid>/<sequence digits>}, minted per
+     * boot and as good as random: stripped before scanning so its hex digits
+     * cannot coincidentally spell a banned run, leaving the writer-id prefix
+     * — which is config, not random — still scanned.
+     */
+    private static final Pattern SEQ_SHAPE =
+            Pattern.compile("[^/]+/" + UUID_SHAPE.pattern() + "/\\d+");
+    private static final Pattern SEQ_UUID_SEQUENCE_SUFFIX =
+            Pattern.compile("/" + UUID_SHAPE.pattern() + "/\\d+$");
+
+    /**
      * The fields {@code Slf4jAuditSink} fills with nothing but a UUID, a run
      * of hex, or a system timestamp: {@code event} and {@code correlation}
      * (UUIDs), {@code params} (a twelve-byte HMAC fingerprint), {@code hash}
-     * and {@code prev} (a SHA-256 hex digest), and {@code ts} — the wall clock
-     * at the moment of the call, via {@code Clock.systemUTC()} in
-     * {@code DataPrismAssembly.standard()}, so its nanosecond digits are as
-     * good as random and were observed, empirically, to coincidentally spell
-     * a banned digit run and redden this test with no leak anywhere near it.
-     * Every other field — {@code subject} above all, the field a leak
-     * actually lands in — is never exempted, whatever it looks like.
+     * and {@code prev} (a SHA-256 hex digest), and {@code ts} — the wall
+     * clock at call time, whose nanosecond digits are as good as random and
+     * were observed, empirically, to coincidentally spell a banned digit run
+     * and redden this test with no leak anywhere near it. {@code seq} is
+     * handled separately (see {@link #SEQ_UUID_SEQUENCE_SUFFIX}) because,
+     * unlike these, it also carries the configured writer-id. Every other
+     * field — {@code subject} above all, the field a leak actually lands
+     * in — is never exempted, whatever it looks like.
      */
     private static final Map<String, Pattern> EXEMPT_SHAPES = Map.of(
             "event", UUID_SHAPE,
@@ -547,6 +559,51 @@ class PiiLogScanTest {
 
         assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123", "456")))
                 .isEmpty();
+    }
+
+    /** The per-boot UUID/sequence suffix is stripped before scanning, so its coincidental digits are ignored. */
+    @Test
+    @DisplayName("a well-formed seq field is exempt even where its instanceId's UUID coincidentally spells a banned digit run")
+    void wellFormedSeqFieldIsExempt() {
+        String seqContainingCoincidentalDigits =
+                "example-1/01234567-89ab-cdef-0123-456789abcdef/42";
+        assertThat(seqContainingCoincidentalDigits).containsPattern(SEQ_SHAPE);
+        assertThat(seqContainingCoincidentalDigits).contains("123", "456");
+
+        String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: seq={}", seqContainingCoincidentalDigits));
+
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123", "456")))
+                .isEmpty();
+    }
+
+    /** A banned value sitting in the writer-id part of an otherwise well-formed seq value is still caught. */
+    @Test
+    @DisplayName("a banned value inside the writer-id part of a well-formed seq field is still caught")
+    void bannedValueInWriterIdPartOfSeqFieldIsCaught() {
+        String seqWithBannedWriterId =
+                "acct_123/01234567-89ab-cdef-0123-456789abcdef/42";
+        assertThat(seqWithBannedWriterId).containsPattern(SEQ_SHAPE);
+
+        String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: seq={}", seqWithBannedWriterId));
+
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123")))
+                .containsExactly("123");
+    }
+
+    /** A malformed seq value (no exemption-eligible suffix) is scanned like any other field. */
+    @Test
+    @DisplayName("a seq field whose value does not match its pinned shape is scanned like any other")
+    void nonConformingSeqFieldIsScanned() {
+        String malformedSeq = "example-1/not-a-uuid-123/42";
+        assertThat(malformedSeq).doesNotMatch(SEQ_SHAPE.pattern());
+
+        String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: seq={}", malformedSeq));
+
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), List.of("123")))
+                .containsExactly("123");
     }
 
     /**
@@ -799,23 +856,29 @@ class PiiLogScanTest {
     }
 
     /**
-     * Scans one audit-shaped line field by field. A field whose name is one of
-     * {@link #EXEMPT_SHAPES}' keys is skipped only when its whole value
-     * matches that field's pinned shape; every other field, including one that
-     * was exempt-eligible but did not conform, is scanned by plain
-     * {@code contains} — safe once the field's own boundaries are known, which
-     * is exactly what {@link #auditFields} establishes. {@link #findLeaked}
-     * also runs across the whole line underneath, so nothing the old matcher
-     * caught is lost to the new one having a gap of its own.
+     * Scans one audit-shaped line field by field. {@code seq} has its random
+     * per-boot {@code /<uuid>/<sequence digits>} suffix stripped (see
+     * {@link #SEQ_UUID_SEQUENCE_SUFFIX}) and the remaining writer-id prefix
+     * still scanned; every other field named in {@link #EXEMPT_SHAPES} is
+     * skipped whole only when it matches its pinned shape. Every field is
+     * then scanned by plain {@code contains} — safe once the field's own
+     * boundaries are known, which is exactly what {@link #auditFields}
+     * establishes. {@link #findLeaked} also runs across the whole line
+     * underneath, so nothing the old matcher caught is lost to the new one
+     * having a gap of its own.
      */
     private static List<String> findLeakedInAuditLine(String line, List<String> bannedValues) {
         List<String> leaked = new ArrayList<>();
         for (String[] field : auditFields(line)) {
             String key = field[0];
             String value = field[1];
-            Pattern exemptShape = EXEMPT_SHAPES.get(key);
-            if (exemptShape != null && exemptShape.matcher(value).matches()) {
-                continue;
+            if ("seq".equals(key)) {
+                value = stripSeqUuidSequenceSuffix(value);
+            } else {
+                Pattern exemptShape = EXEMPT_SHAPES.get(key);
+                if (exemptShape != null && exemptShape.matcher(value).matches()) {
+                    continue;
+                }
             }
             for (String banned : bannedValues) {
                 if (value.contains(banned) && !leaked.contains(banned)) {
@@ -829,6 +892,12 @@ class PiiLogScanTest {
             }
         }
         return leaked;
+    }
+
+    /** Strips {@code seq}'s trailing {@code /<uuid>/<sequence digits>}, if present, leaving the writer-id prefix. */
+    private static String stripSeqUuidSequenceSuffix(String value) {
+        Matcher matcher = SEQ_UUID_SEQUENCE_SUFFIX.matcher(value);
+        return matcher.find() ? value.substring(0, matcher.start()) : value;
     }
 
     /**
