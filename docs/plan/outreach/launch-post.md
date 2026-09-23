@@ -10,6 +10,8 @@ Owner posts this by hand, one venue at a time. No agent submits, comments or pos
       2026-09-23.
 - [ ] Re-run task 81's honesty and wording checks against this whole directory before posting, in case an
       edit since reintroduced an overclaim.
+- [ ] Confirm the README on `main` no longer says the hash-chained audit sink/verifier is "Not built" (fixed
+      on the discoverability branch, PR #98).
 
 ## Angle
 
@@ -33,9 +35,11 @@ so, rather than hiding the disagreement behind uniform redaction. Pseudonyms are
 two different investigations gets two different synthetic identities and nothing correlates across cases by
 accident. ([What Data Prism does](https://github.com/AindriuB/data-prism/blob/main/README.md#what-data-prism-does))
 
-It fails closed: [the privacy path refuses rather than passing through anything it cannot
-classify](https://github.com/AindriuB/data-prism/blob/main/docs/conventions.md#errors), and every refusal is
-audited with the classification and the path, never the value.
+It fails closed by default: an unclassified field refuses the whole response unless a deployment has
+explicitly chosen a looser setting, and every refusal is audited with the classification and the path, never
+the value. Passing unclassified data through unchanged is possible, but only by naming the one setting spelled
+for exactly that risk, `PASS_THROUGH_UNSAFE` — it is not what happens by omission.
+([`dataprism.privacy`](https://github.com/AindriuB/data-prism/blob/main/docs/configuration.md#dataprism-vocabulary))
 
 It can also keep a durable, hash-chained audit trail of what was recorded and released — a single file, no
 rotation, with a separate hash chain per writer inside it, and an offline verifier that replays each chain.
@@ -71,14 +75,18 @@ Read this before treating anything above as more than it is.
   transfer mechanism where the provider is outside the EU. The platform reduces exposure; it does not remove
   that obligation.
   ([What it is not](https://github.com/AindriuB/data-prism/blob/main/README.md#what-it-is-not))
-- **This is not a prompt-injection defence.** Data Prism classifies and pseudonymises data on the way through
-  the privacy engine; it does not inspect model output or tool-call arguments for injected instructions, and
-  makes no claim to.
+- **This is not a prompt-injection defence.** A heuristic flags source values that read like an instruction to
+  a model (`InstructionContentHeuristic`) and attaches a finding — it never strips or rewrites the value, by
+  design, because doing so would hide the attack from the one person who'd recognise it. It is deliberately a
+  heuristic and deliberately not a defence: anyone determined will phrase around it, and it does not inspect
+  model output or tool-call arguments at all.
+  ([D3. Prompt injection — flag, never sanitise](https://github.com/AindriuB/data-prism/blob/main/docs/design-review.md#d3-prompt-injection--flag-never-sanitise))
 - **Not yet built:** the re-identification operator surface (deferred past V1 by decision — see
   [Decisions worth knowing](https://github.com/AindriuB/data-prism/blob/main/docs/architecture.md#decisions-worth-knowing));
-  the Elasticsearch connector and its search tools; and two of the four MCP tools named in the original
-  design, `search_entity_data` and `describe_entity_model` — only `get_entity_context` and
-  `compare_entity_sources` ship today.
+  the Elasticsearch connector and its search tools, listed as `(planned)` in the component map
+  ([Components](https://github.com/AindriuB/data-prism/blob/main/docs/architecture.md#components)); and two of
+  the four MCP tools named in the original design, `search_entity_data` and `describe_entity_model` — only
+  `get_entity_context` and `compare_entity_sources` ship today.
   ([Not yet built](https://github.com/AindriuB/data-prism/blob/main/docs/tools.md#not-yet-built))
 - **What the audit trail does not prove, deliberately, not as an oversight:** truncating a writer's most
   recent records is structurally undetectable — an append-only file with its tail removed replays perfectly,

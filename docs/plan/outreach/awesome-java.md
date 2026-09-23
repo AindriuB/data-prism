@@ -76,9 +76,12 @@ repeated in the description text.
 
 ## Exact entry line
 
-Insert alphabetically by project name — between "Cryptomator" and "Dependency-Track" in the current Security
-section (`Data Prism` < `Dependency-Track` alphabetically; re-check the exact neighbours at post time, since
-the section is not perfectly sorted today):
+The section is not alphabetically sorted today: its actual order runs ... Certificate Ripper,
+Dependency-Track, OWASP Dependency-Check, Cryptomator, jjwt ... — so "Cryptomator" and "Dependency-Track" are
+not adjacent to each other (Cryptomator sits two entries after Dependency-Track, not before it). The one
+alphabetically correct insertion point that doesn't disturb anything already in order is immediately after
+"Certificate Ripper" and before "Dependency-Track" (`Certificate Ripper` < `Data Prism` < `Dependency-Track`).
+Re-check the exact neighbours at post time, since the section may have changed:
 
 Description is the project's own tagline (T, 96 chars, ends with a period, per the required format):
 
@@ -93,8 +96,9 @@ Description is the project's own tagline (T, 96 chars, ends with a period, per t
 ## PR body
 
 ```markdown
-Adds Data Prism to the Security section of README_SOURCE.md, alphabetically between "Cryptomator" and
-"Dependency-Track".
+Adds Data Prism to the Security section of README_SOURCE.md, alphabetically immediately after "Certificate
+Ripper" and before "Dependency-Track" (the section isn't fully sorted today; those are the nearest two entries
+this insertion keeps in correct alphabetical order).
 
 Data Prism is a Java/Spring privacy layer for teams putting LLM agents or MCP clients in front of internal
 APIs that hold customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything it
