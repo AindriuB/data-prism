@@ -8,3 +8,5 @@ target/
 /site/
 /docs-site/.manifest.json
 __pycache__/
+# The venv CONTRIBUTING.md's "Docs site" section has a contributor create.
+/.venv/

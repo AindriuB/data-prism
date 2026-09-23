@@ -1,6 +1,6 @@
 """MkDocs build hook for the Data Prism docs site.
 
-Three jobs, kept in one module because they share the same page-meta lookup
+Four jobs, kept in one module because they share the same page-meta lookup
 and all run inside the same `mkdocs build`:
 
 1. Inject title/description "front matter" for existing user docs that carry
@@ -11,14 +11,25 @@ and all run inside the same `mkdocs build`:
    a build failure that names the page, not a warning.
 2. Rewrite Markdown links that leave `docs_dir` (or land on an excluded
    path) to the file's `blob` URL, or the directory's `tree` URL, on
-   GitHub `main`, since mkdocs will not serve those paths.
+   GitHub `main` (a raw-content URL for an image), since mkdocs will not
+   serve those paths. Raises if the resolved target does not exist in the
+   repo, naming the page and the link, rather than emitting a link to a
+   GitHub 404.
 3. Register a `tojson` Jinja filter for the JSON-LD block in
-   `docs-site/overrides/main.html`, and record every built page's
-   canonical URL, title and description to a manifest file that
-   `docs-site/hooks/check_site.py` and the tester both read, since neither
-   is otherwise able to see what mkdocs decided a page's title actually is
-   (an explicit nav label wins over front matter, front matter wins over
-   the first Markdown heading).
+   `docs-site/overrides/main.html`.
+4. Record, to a manifest file that `docs-site/hooks/check_site.py` and the
+   tester both read:
+   - every built page's canonical URL, title and description, since neither
+     is otherwise able to see what mkdocs decided a page's title actually is
+     (an explicit nav label wins over front matter, front matter wins over
+     the first Markdown heading);
+   - the canonical URL of every page actually reachable from the `nav:`
+     config (`on_nav`, from `nav.pages`), which is *not* the same set as
+     "every built page" above — mkdocs builds every non-excluded doc
+     whether or not it's in the nav, and the sitemap is built from that
+     same "every built page" set, so comparing the sitemap against the
+     first list can never fail even when a page is missing from the nav.
+     Comparing it against this second list can.
 """
 
 from __future__ import annotations
@@ -55,6 +66,7 @@ EXCLUDED_PREFIXES = (
 
 _page_meta: dict[str, dict[str, str]] | None = None
 _manifest: list[dict[str, str]] = []
+_nav_urls: list[str] = []
 
 
 def _load_page_meta() -> dict[str, dict[str, str]]:
@@ -148,7 +160,7 @@ def on_page_read_source(page: Page, config, **kwargs):
 _LINK_RE = re.compile(r"(!?\[[^\]]*\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 
 
-def _rewrite_target(target: str, page_dir: Path, docs_dir: Path) -> str | None:
+def _rewrite_target(target: str, is_image: bool, page_src_uri: str, page_dir: Path, docs_dir: Path) -> str | None:
     if target.startswith(("http://", "https://", "mailto:", "#")):
         return None
     path_part, sep, fragment = target.partition("#")
@@ -170,8 +182,22 @@ def _rewrite_target(target: str, page_dir: Path, docs_dir: Path) -> str | None:
     except ValueError:
         return None  # points outside the repo entirely; leave it alone
 
-    kind = "tree" if resolved.is_dir() else "blob"
-    url = f"https://github.com/{GITHUB_REPO}/{kind}/main/{rel_to_repo.as_posix()}"
+    # A typo here would otherwise silently become a link to a GitHub 404 —
+    # the build only ever validates links that stay inside docs_dir, so
+    # this is the one place anything checks a link that leaves it.
+    if not resolved.exists():
+        raise PluginError(
+            f"docs-site: '{page_src_uri}' links '{target}', which does not "
+            f"exist in the repo (resolved to {rel_to_repo.as_posix()})"
+        )
+
+    if is_image:
+        # blob/tree URLs serve GitHub's HTML wrapper page, not the image
+        # bytes an `<img>` tag needs — raw.githubusercontent.com does.
+        url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{rel_to_repo.as_posix()}"
+    else:
+        kind = "tree" if resolved.is_dir() else "blob"
+        url = f"https://github.com/{GITHUB_REPO}/{kind}/main/{rel_to_repo.as_posix()}"
     if sep:
         url += f"#{fragment}"
     return url
@@ -183,7 +209,8 @@ def on_page_markdown(markdown: str, page: Page, config, **kwargs):
 
     def replace(match: re.Match) -> str:
         prefix, target, suffix = match.group(1), match.group(2), match.group(3)
-        rewritten = _rewrite_target(target, page_dir, docs_dir)
+        is_image = prefix.startswith("!")
+        rewritten = _rewrite_target(target, is_image, page.file.src_uri, page_dir, docs_dir)
         if rewritten is None:
             return match.group(0)
         return f"{prefix}{rewritten}{suffix}"
@@ -194,6 +221,14 @@ def on_page_markdown(markdown: str, page: Page, config, **kwargs):
 def on_env(env, config, **kwargs):
     env.filters["tojson"] = lambda value: Markup(json.dumps(value))
     return env
+
+
+def on_nav(nav, config, **kwargs):
+    """The set of pages actually reachable from `nav:` in mkdocs.yml — not
+    the same as "every page mkdocs builds" (see module docstring)."""
+    global _nav_urls
+    _nav_urls = [page.canonical_url for page in nav.pages]
+    return nav
 
 
 def on_post_page(output: str, page: Page, config, **kwargs):
@@ -208,5 +243,7 @@ def on_post_page(output: str, page: Page, config, **kwargs):
 
 
 def on_post_build(config, **kwargs):
-    MANIFEST_PATH.write_text(json.dumps(_manifest, indent=2, sort_keys=True) + "\n")
+    MANIFEST_PATH.write_text(
+        json.dumps({"pages": _manifest, "nav_urls": _nav_urls}, indent=2, sort_keys=True) + "\n"
+    )
     _manifest.clear()

@@ -38,7 +38,7 @@ jobs:
           cache-dependency-path: docs-site/requirements.txt
 
       - name: Install the pinned MkDocs toolchain
-        run: pip install --no-cache-dir -r docs-site/requirements.txt
+        run: pip install -r docs-site/requirements.txt
 
       # --strict turns every `validation.links.*` / `validation.nav.*` warn
       # into a build failure, alongside the site.py hook's own errors for a
