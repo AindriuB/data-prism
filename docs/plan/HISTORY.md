@@ -17,6 +17,79 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 81: outreach drafts for the owner to post by hand
+
+Adds `docs/plan/outreach/` — internal drafts only, nothing submitted, forked
+or posted anywhere; the owner posts each one, by hand, one at a time.
+`awesome-mcp-servers.md` (ready: quotes `punkpeye/awesome-mcp-servers`'
+"How to Contribute" steps and its `check-glama.yml` Glama-badge requirement
+verbatim, entry line carries the project's existing Glama score badge, rated
+A). `awesome-java.md` (ready: quotes `akullpp/awesome-java`'s live PR
+template with its checklist filled in, entry text is the canonical tagline
+T). `awesome-spring.md` (hold: the canonical Spring AI list's MCP-servers
+subsection is Spring-AI-built servers only, and Data Prism has no Spring AI
+dependency — verified against two other entries' build files rather than
+assumed). `awesome-llm-security.md` (hold: scope; LLM Guard's PII scanners
+noted as a partial precedent for re-checking later). `launch-post.md` (angle
+"Redaction breaks LLM investigations; consistent pseudonyms don't — a
+fail-closed privacy layer for MCP in Spring Boot"; every claim about Data
+Prism links to the doc or code that backs it; a Limits section stating it is
+not anonymisation, the audit trail does not prove tail-truncation, whole-boot
+deletion or metric/trace-attribute leakage, `SensitiveDataScanner` does fixed
+identifier-shape scanning rather than general PII/name detection,
+`InstructionContentHeuristic` flags prompt injection but is deliberately not
+a defence, and what is not yet built; a Show HN title and an r/java title,
+both pairing "Data Prism" with "MCP privacy layer"; a pre-post checklist
+including re-fetching each list's contribution rules and confirming `main`'s
+README no longer says the hash-chained audit sink is "Not built"). Adds a
+`README.md` status table (list/venue, draft, verdict, blank posted-on/outcome
+columns).
+
+**Cost:** five attempts, four of them fixing factual claims, and the
+sequence matters — the same launch-post sentence about the fail-closed
+default was reworded four times before it stopped overclaiming. Attempt 1
+(rejected outright) was missing the Glama badge, said "one file per writer"
+for the audit trail when it is one file with per-writer chains, wrongly
+claimed two `awesome-spring-ai` entries don't depend on Spring AI (they do —
+checked against their build files), gave titles without "MCP privacy layer",
+and omitted the free-text scanning limit. Attempt 2 fixed those but still
+said Data Prism "fails closed... unconditionally"; attempt 3 grounded the
+claim in `PrivacyProfile.UnclassifiedBehaviour` and
+`ProfilePrivacyPolicyResolver` directly instead of a doc that does not cover
+it, and dropped an implied startup refusal that no code enforces — the
+search for that refusal is what surfaced task 84's doc defect. Attempt 4
+corrected a second claim the same way: the DENY audit event records profile/
+scope/purpose/case/source-status, not the refusal code, path or
+classification (an unclassified field has no classification to record) —
+those appear only in the caller's error. Attempt 5 corrected the last
+overclaim, that a relaxed unclassified setting is a per-field choice; it is
+one value on the profile record, so `PASS_THROUGH_UNSAFE` (or either of the
+other two relaxed settings) applies to every unclassified field the profile
+governs, including ones a source adds later. Verified: `git diff --name-only
+discoverability` limited to the six files under `docs/plan/outreach/`; the
+task's honesty-check greps; every quoted contribution rule fetched live via
+read-only `gh api`; the reviewer's final round approved every clause once
+the "per profile, not per field" correction was confirmed by diff. PASS +
+APPROVE on attempt 5, merged `--no-ff` onto the local `discoverability`
+branch, not `main`.
+
+Tracing the launch-post's audit sentence back to code found a real shipped-
+doc defect, not an outreach-drafting one: `docs/configuration.md:73` claims
+two startup refusals — a production profile that relaxes fail-closed
+behaviour, and a profile lacking a rule required by an exposed model —
+that no code enforces. Filed as its own task, 84, by owner decision to
+correct the doc now and treat an actual startup guard as a separate,
+unscheduled follow-up. Four further wording gaps, none blocking the merge,
+recorded in `docs/plan/PLAN.md` "Found on task 81": whether
+`PASS_THROUGH_UNSAFE` is reachable today via classpath shadowing of
+`/privacy-profiles-default.yaml` (verify before treating a startup guard as
+merely a nice-to-have), `docs/tools.md:120`'s "unclassified values dropped"
+against the `FAIL_REQUEST` default, `README.md:12` and
+`docs/use-cases/gdpr-data-minimisation-mcp.md:25`'s "redacted or refused"
+against all four `UnclassifiedBehaviour` settings, and
+`privacy-profiles-default.yaml:8`'s comment claiming unclassified has "only
+two settings" when the enum has four.
+
 ## 2026-09-23 — Task 77: an FAQ and a fair, sourced comparison page
 
 Adds `docs/faq.md` (seven H2 questions phrased and ending as questions,

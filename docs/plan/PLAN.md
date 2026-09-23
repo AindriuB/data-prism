@@ -1139,12 +1139,23 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   `docs/extending.md`'s README line-number citations replaced by section
   names. Merged `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md`
   — grep `Task 76`.
-- **Task 81 (outreach drafts)** — in flight, in its own worktree off
-  `discoverability`.
+- **Task 81 — done.** Internal outreach drafts for the owner to post by hand
+  (nothing submitted): `docs/plan/outreach/awesome-mcp-servers.md` (ready),
+  `docs/plan/outreach/awesome-java.md` (ready), `docs/plan/outreach/awesome-spring.md`
+  (hold — that list's MCP-server subsection is Spring-AI-built servers only,
+  and Data Prism has no Spring AI dependency), `docs/plan/outreach/awesome-llm-security.md`
+  (hold — scope), `docs/plan/outreach/launch-post.md` (angle, every claim
+  linked, Limits section, Show HN/r/java titles, pre-post checklist), and a
+  `README.md` status table. Merged `--no-ff` onto `discoverability`. See
+  `docs/plan/HISTORY.md` — grep `Task 81`.
 - **Task 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)**
-  — unblocked now that task 77 has landed (82 needs the FAQ page it adds);
-  starting.
-- **Task 83 (go-live wiring)** — pending, blocked on 82.
+  — in flight, in its own worktree off `discoverability`.
+- **Task 84 (correct `docs/configuration.md`'s false unclassified-profile
+  startup-refusal claims)** — in flight, in its own worktree off
+  `discoverability`. Found while tracing task 81's launch-post claims back to
+  code.
+- **Task 83 (go-live wiring)** — pending, blocked on 82; happens after the
+  docs site deploys.
 
 ## Remaining slices past the adopted core
 
@@ -1214,6 +1225,34 @@ Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
    the module is one careless new test away from the same failure.
    Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
    and retire the trustStore property.
+
+Found on task 81 (outreach drafts), merged 2026-09-23. None blocks the
+merge; tracing one launch-post sentence against the code turned up (4) and,
+separately, the doc defect now filed as task 84.
+
+1. No startup guard exists for an unclassified-unsafe profile:
+   `PrivacyProfile.releasesUnclassifiedData()` (`PrivacyProfile.java:87`) has
+   no callers anywhere in the reactor. **First verify reachability** — check
+   whether a same-named `/privacy-profiles-default.yaml` earlier on the
+   classpath (e.g. an extension jar on `LOADER_PATH`) can shadow the bundled
+   one, since `DataPrismAutoConfiguration` loads it by classpath name alone
+   (`DataPrismAutoConfiguration.java:356`, `:572`, both
+   `getResourceAsStream("/privacy-profiles-default.yaml")`). If shadowing is
+   possible, `PASS_THROUGH_UNSAFE` is reachable today with no refusal, and
+   the guard is urgent rather than a nice-to-have. While there, consider
+   putting the classification and path into the DENY audit event itself
+   (see item 2) rather than leaving it only in the caller's error.
+2. `docs/tools.md:120` says "unclassified values dropped" as the only
+   behaviour; the code's default is `FAIL_REQUEST` (refuse the whole
+   response), and drop is only one of the four `UnclassifiedBehaviour`
+   settings.
+3. `README.md:12` and `docs/use-cases/gdpr-data-minimisation-mcp.md:25` both
+   say unclassified fields are "redacted or refused" — that names two of
+   four settings (`REDACT_AND_WARN`, `FAIL_REQUEST`) and omits `DROP_AND_WARN`
+   and `PASS_THROUGH_UNSAFE`.
+4. `privacy-profiles-default.yaml:8`'s comment says unclassified "has only
+   two settings by design" — `PrivacyProfile.UnclassifiedBehaviour`
+   (`PrivacyProfile.java:46`) has four values, not two.
 
 Found on task 77 (FAQ and comparison page), merged 2026-09-23. None blocks
 the merge; all three are wording gaps in `docs/faq.md`.
