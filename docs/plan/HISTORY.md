@@ -17,6 +17,72 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 66: the offline audit-chain verifier CLI, after four attempts each relocating the same defect
+
+Ships an offline CLI that replays each writer's per-`instanceId` audit hash
+chain and reports what it finds, reusing `AuditEventHash` rather than
+re-deriving the canonical join. Five exit codes: 0 intact, 1 unreadable
+input, 2 break detected, 3 possibly-in-flight tail, 4 structural anomaly —
+4 never returned together with 2, and the report prints every finding
+regardless of which code is returned. It distinguishes four ordinary failure
+modes v0.3.0 wave 1 discovered, each of which resembles tampering and none of
+which is: a torn trailing record with no newline; a mid-file field-count
+error where a restarted sink appended after a surviving fragment; a
+duplicate sequence number from a sink-contract violation; and a new writer
+starting at `GENESIS` partway through the file, an ordinary process restart
+because chains are per-writer. It prints a limitation on every path
+including `--help`, naming the seventeen fields `AuditEventHash` covers,
+stating that `timestamp` and `sourceSystems` are excluded so a backdated
+record verifies clean, and stating that it cannot resist an adversary with
+write access because the hash is unkeyed SHA-256 and the whole chain is
+recomputable. Merged onto `v0.3.0/audit-trail-and-nested-json`.
+
+**Cost:** four attempts, and every rejection was the same defect relocated —
+the tool asserting benignity it could not support. Attempt 1: a first-seen
+writer skipped the link check without asserting `previousHash == GENESIS`,
+so deleting a writer's first two records printed "intact", exit 0; the
+limitation also claimed to detect "an edit of a record already written" when
+the hash covers neither `timestamp` nor `sourceSystems`. Both probed against
+real files. Attempt 2 fixed both, then reintroduced the same outcome behind
+a `precededByAnomaly` exemption added so a pre-existing acceptance test would
+keep passing: the GENESIS check was suppressed whenever the preceding line
+produced any anomaly. Two agents independently reproduced three attacks —
+a head deletion masked by one 13-byte junk line reported "intact ... not
+tampering" at exit 4; the flag was file-global and type-blind so writer A's
+anomaly suppressed writer B's break; a fully forged writer with a
+self-computed `eventHash`, preceded by one malformed line, reported "intact".
+Cost to an attacker: one appended line. Attempt 3 removed the exemption; all
+three attacks then reported correctly, but was rejected because exit 4's
+`--help` text still documented it as "structural non-tampering anomaly", an
+enumeration excluding the new outcome and an adjective contradicting the
+finding's own text — a compliance reader consulting `--help` was told the
+code meant benign, and the test pinning that string was protecting the
+defect. Attempt 4 fixed the wording and was approved.
+
+Two rulings worth carrying forward. First, the severity split is deliberate
+and must not be "fixed": a non-`GENESIS` start with no preceding anomaly is a
+break (exit 2); with one it is a structural finding (exit 4). A single junk
+line downgrades 2 to 4 on an otherwise identical deletion — ruled acceptable
+because the benign restart-after-torn-write legitimately produces a
+non-`GENESIS` start (routing all of them to exit 2 would report an ordinary
+operator restart as tampering), and because the downgrade buys an attacker
+almost nothing when the unkeyed hash lets them reach exit 0 anyway. In the
+reviewer's words: the exploit is not the number. Second, what holds the line
+against regression is not a `doesNotContain("non-tampering anomaly")`
+literal — that would miss a reworded benign claim — but a required "cannot
+be ruled out" substring, which any future edit asserting benignity would
+have to delete first.
+
+Two items left open, not this task's to fix: `AuditChainVerifierCli.java:38`'s
+`EXIT_STRUCTURAL_ANOMALY` javadoc still reads "a known non-tampering
+structural anomaly", the phrasing the printed help just dropped —
+source-only, invisible to a compliance reader, but the same claim living on
+in a comment. And a process note: attempt records appended to a task file in
+the main checkout are not visible in a worktree created earlier, since the
+worktree holds its own copy from its branch point — an implementer working
+in a worktree read a stale task file this cycle. Briefs must restate defects
+inline, or records must be written into the worktree too.
+
 ## 2026-09-22 — v0.3.0 wave 2 (tasks 61, 65): nested JSON proven through the real MCP transport, and the file sink's PII scan closed after an empty-derivation hole
 
 Task 61 proves the nested-catalogue path (task 60) through the real MCP

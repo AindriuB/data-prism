@@ -711,10 +711,10 @@ does and does not deliver:
   external checkpointing or asymmetric signing with the key held outside the
   writing process; neither is a v0.3.0 increment. Not scheduled; the owner
   has not yet said when.
-- Task 66's verifier prints its truncation-cannot-be-detected disclaimer on
-  every run; that disclaimer is now load-bearing as a disclaimer against a
-  stated requirement, not a nice-to-have caveat. Do not soften or remove it
-  when 66 comes back for rework.
+- Task 66's verifier (merged 2026-09-23) prints its truncation-cannot-be-
+  detected disclaimer on every run; that disclaimer is load-bearing against
+  a stated requirement, not a nice-to-have caveat. Do not soften or remove
+  it — task 72 touches this file next and must not weaken it either.
 - Tasks 62 and 59 write the audit-facing documentation. Neither may state or
   imply that `hash-chained` resists an operator with write access to the
   audit file, in addition to the existing path-disclosure precondition
@@ -795,10 +795,6 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   together with the `docs/conventions.md` amendment its golden-vector
   criterion cites.
 
-  **Task 66's task file was written before this wave discovered four
-  ordinary failure modes whose output resembles tampering** (see
-  `docs/plan/HISTORY.md`, grep `v0.3.0 wave 1`, for the account); amend 66's
-  acceptance criteria to address them before starting it.
 - **Wave 2 — depends on wave 1, now unblocked:** 61 (nested JSON through the
   real MCP HTTP/SSE transport, deps 60 — unblocked now that 60 has merged),
   65 (file sink PII scan, deps 64 — unblocked), 66 (audit chain verifier CLI,
@@ -810,13 +806,24 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
 
   **61 and 65 merged 2026-09-22, both PASS + APPROVE.** 61's task file was
   retired; 65 took two attempts (see `docs/plan/HISTORY.md`, grep `v0.3.0
-  wave 2`, for both). **66 is PASS but REQUEST CHANGES, in rework at attempt
-  2** — its task file stays under `docs/plan/tasks/` carrying the attempt-1
-  failure record (head-deletion reads as intact; the limitation text claims
-  more than `AuditEventHash` covers). Its branch and worktree are held, not
-  merged. **67 is PASS but REQUEST CHANGES for bookkeeping, not code** — see
-  follow-up item 1 below; its branch and worktree are held pending that task
-  being filed, unchanged by this close-out.
+  wave 2`, for both). **66 merged 2026-09-23 at attempt 4, PASS + APPROVE** —
+  three earlier attempts each relocated the same defect (the tool asserting
+  benignity it could not support); task file retired, mined into
+  `docs/plan/HISTORY.md`, grep `Task 66`. **67 is PASS but REQUEST CHANGES
+  for bookkeeping, not code** — see follow-up item 1 below; its branch and
+  worktree are held pending tasks 73 and 74 (the approved-sink refusal, and
+  the sink-exception-to-MCP-response path disclosure) being filed and
+  closed. 73 is now filed; 74 is not yet.
+
+  **Task 72 (widen the audit hash to cover `timestamp` and `sourceSystems`)
+  must merge before 67, not after — the window is closing, not open-ended.**
+  72 depends on 66 (now merged) and owns
+  `AuditChainVerifier{,Cli}.java`/tests, which 67 does not touch, so there is
+  no file conflict either order. But 67 wires `hash-chained` to
+  `FileAuditSink`, creating the first durable chain this repository will
+  ever write; once real chains exist, widening the hash invalidates every
+  one already written. Today it invalidates nothing. Sequence 72 ahead of
+  67 in the merge order regardless of which finishes review first.
 
   Task 60's durable caveats, load-bearing for 62 and 69: the fail-open is
   fenced by `ConfiguredJsonNestedLeafShapeGuard` running before
@@ -828,7 +835,8 @@ Two smaller items the planner surfaced reviewing task 71, neither blocking it:
   message interpolates the slot class name
   (`ConfiguredJsonNestedCatalogueSlot0`), not the operator's catalogue name —
   task 62 owns documenting the slot-to-catalogue mapping.
-- **Wave 3 — depends on waves 1-2, blocked on 66:** 62 (corrects
+- **Wave 3 — depends on waves 1-2, now unblocked (66 merged 2026-09-23):**
+  62 (corrects
   `architecture.md`'s flat-by-design and boundary-7 claims, new
   `docs/audit.md`, nested example and walkthrough; deps 60, 64, 66), 69
   (restore the reviewed-adapter allow-list task 54's review flagged above,
@@ -987,6 +995,26 @@ Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
    the module is one careless new test away from the same failure.
    Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
    and retire the trustStore property.
+
+Found on task 66 (audit chain verifier CLI), merged 2026-09-23. Neither
+blocks the merge.
+
+10. `AuditChainVerifierCli.java:38` — the `EXIT_STRUCTURAL_ANOMALY` javadoc
+    still reads "a known non-tampering structural anomaly", the exact
+    phrasing the printed `--help` text dropped at attempt 3 for asserting
+    benignity it could not support. Source-only, invisible to a compliance
+    reader, but the same claim living on in a comment. Task 72 owns this
+    file; fold the fix in there or file it separately if 72 does not touch
+    that line.
+11. Process note, not code: attempt records appended to a task file in the
+    main checkout are not visible in a worktree created earlier, because the
+    worktree holds its own copy from its branch point. Task 66's worktree was
+    created before its attempt-1/2/3 sections were written, and an
+    implementer working from the worktree read a stale task file — a note in
+    the file itself had to say "read this from the main checkout" to route
+    around it. Future briefs should restate defects inline rather than
+    relying on the task file being current inside a worktree, or write
+    records into the worktree too.
 
 Found on task 60 (nested JSON catalogues), merged 2026-09-22. None blocks the
 merge; pick any up only if a future task already owns the file.
