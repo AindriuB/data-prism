@@ -43,10 +43,11 @@ value, and an unclassified field has no classification to name.
 [`DefaultContextOrchestrator`](https://github.com/AindriuB/data-prism/blob/main/data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java),
 [`AuditRecorder`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditRecorder.java),
 [`GetEntityContextTool`](https://github.com/AindriuB/data-prism/blob/main/data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/GetEntityContextTool.java))
-The profile format itself supports relaxing that setting per field instead — `REDACT_AND_WARN`,
-`DROP_AND_WARN`, or, the one that releases the value unchanged, `PASS_THROUGH_UNSAFE`, each logging a warning
-every time it fires — but the shipped server and starter always load that one bundled file and expose no
-property to load a different one.
+The profile format itself supports relaxing that setting per profile instead — `REDACT_AND_WARN`,
+`DROP_AND_WARN`, or, the one that releases the value unchanged, `PASS_THROUGH_UNSAFE` — and whichever one a
+profile sets applies to every unclassified field under that profile, including ones a source adds later, each
+logging a warning every time it fires. The shipped server and starter always load that one bundled file and
+expose no property to load a different one.
 ([`PrivacyProfile.UnclassifiedBehaviour`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/PrivacyProfile.java),
 [`ProfilePrivacyPolicyResolver`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/ProfilePrivacyPolicyResolver.java),
 [`DataPrismAutoConfiguration`](https://github.com/AindriuB/data-prism/blob/main/data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java))
