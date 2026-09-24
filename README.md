@@ -9,7 +9,7 @@
 <!-- site-intro:start -->
 Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents and MCP clients.
 
-Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail.
+Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, refuses anything unclassified, and can keep a hash-chained audit trail.
 
 **Who it's for.** Java/Spring platform and backend teams putting LLM agents
 or MCP clients in front of internal APIs that hold customer data. If nothing

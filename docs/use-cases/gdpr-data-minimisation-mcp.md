@@ -22,7 +22,7 @@ processing, not something a piece of software can certify.
 ## What Data Prism does
 
 Every field an MCP tool could return is either explicitly classified or it
-is not. Unclassified fields are redacted or the call is refused outright —
+is not. Unclassified fields cause the whole call to be refused outright —
 fail-closed, not fail-open — so a source's raw response never reaches a
 caller unexamined by default. A field that is classified is pseudonymised,
 redacted or removed according to its classification before it reaches the

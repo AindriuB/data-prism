@@ -1219,20 +1219,19 @@ action, not a task:
     `docs/plan/discoverability/runs/TEMPLATE.md`) and a `snapshot.sh` run,
     both within 14 days of the 2026-09-23 baseline — a missed 14-day window
     loses that period's traffic data permanently.
-- **Open question for the owner, not a task:** description D — "It
-  pseudonymises personal data per privacy scope, redacts or refuses anything
-  unclassified, and can keep a hash-chained audit trail" — says unclassified
-  data is redacted *or* refused. Checked against the shipped profiles
-  (`data-prism-core/src/main/resources/privacy-profiles-default.yaml`): both
-  `DEFAULT` and `STRICT` set `unclassified: FAIL_REQUEST` only — an
-  unclassified field always refuses the whole request; neither profile
-  redacts one. Redaction exists in the profile grammar and applies to
-  *classified* sensitive fields, not to unclassified ones. D appears in
-  `README.md`, `pom.xml`, `CITATION.cff`, the mkdocs `site_description`
-  (hence `llms.txt`) and the home page's JSON-LD — six or more surfaces per
-  the discoverability spec's own drift risk. The owner should decide whether
-  to correct D (e.g. drop "redacts or", or add a redaction path for
-  unclassified data) before the next release copies it further.
+- ~~Open question for the owner: description D said unclassified data is
+  "redacted or refused", but the shipped profiles' `unclassified:
+  FAIL_REQUEST` only refuses~~ — resolved 2026-09-24 by owner decision:
+  corrected D to "refuses anything unclassified" everywhere it appeared
+  (`README.md`, `pom.xml`, `CITATION.cff`, `CITATION.cff`'s abstract, the
+  mkdocs `site_description`/`llms.txt`, `.github/workflows/pages.yml`'s D
+  check, the discoverability spec's own D definition, and the outreach
+  drafts under `docs/plan/outreach/`), plus the two use-case pages'
+  "redacted or the call is refused" phrasing
+  (`docs/use-cases/gdpr-data-minimisation-mcp.md`,
+  `docs/use-cases/pseudonymise-customer-data-spring-boot.md`) — see
+  `HISTORY.md`. The GitHub About text (`gh repo edit`) still needs the owner
+  to paste the corrected description by hand.
 
 ### Site polish and developer guide (tasks 85-90) — opened 2026-09-24, wave 0 done
 

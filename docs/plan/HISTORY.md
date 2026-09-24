@@ -17,6 +17,35 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Corrects canonical description D's "redacts or refuses" to "refuses"
+
+Description D ("Data Prism is an open-source privacy layer... It
+pseudonymises personal data per privacy scope, redacts or refuses anything
+unclassified, and can keep a hash-chained audit trail.") said unclassified
+data is redacted *or* refused, but both shipped profiles (`DEFAULT`,
+`STRICT`) set `unclassified: FAIL_REQUEST` only — refusal, never redaction,
+for an unclassified field. D now reads "...refuses anything unclassified,
+and can keep..." wherever it appeared: `README.md`, `pom.xml`,
+`CITATION.cff`, the mkdocs `site_description` (hence `llms.txt`),
+`.github/workflows/pages.yml`'s D assertion, the discoverability spec's own
+D definition (which also gained a dated correction note), and the four
+`docs/plan/outreach/*.md` drafts carrying D or a close paraphrase. The two
+use-case pages with the related "redacted or the call is refused outright"
+phrasing (`docs/use-cases/gdpr-data-minimisation-mcp.md`,
+`docs/use-cases/pseudonymise-customer-data-spring-boot.md`) now say the call
+is refused outright, with no redaction option, matching the same fact.
+Left alone: classified-field wording (a sensitive field genuinely is
+redacted per its classification — that's unchanged and correct), the home
+page's tagline T (doesn't contain the phrase), `server.json` and the OCI
+image `LABEL org.opencontainers.image.description`/`io.modelcontextprotocol.
+server.name` (neither contains D, so out of scope and untouched), and the
+GitHub repo "About" text, which is an owner action via `gh repo edit`.
+**Cost:** none — a wording-only fix across near-identical copies of one
+sentence; the strict `mkdocs build` and all `docs-site/hooks/check_*.py`
+pass, and `site/llms.txt` was checked by hand to contain the corrected D
+verbatim (the `pages.yml` CI assertion that also checks this only runs in
+GitHub Actions).
+
 ## 2026-09-24 — Corrects the released 0.3.0 `AuditChainVerifier` CHANGELOG wording
 
 `CHANGELOG.md`'s 0.3.0 "Added" and "Not changed" bullets said an edit or

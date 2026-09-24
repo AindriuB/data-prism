@@ -8,8 +8,8 @@ site_url: https://aindriub.github.io/data-prism/
 site_description: >-
   Data Prism is an open-source privacy layer for Java/Spring teams putting
   LLM agents or MCP clients in front of internal APIs holding customer data.
-  It pseudonymises personal data per privacy scope, redacts or refuses
-  anything unclassified, and can keep a hash-chained audit trail.
+  It pseudonymises personal data per privacy scope, refuses anything
+  unclassified, and can keep a hash-chained audit trail.
 repo_url: https://github.com/AindriuB/data-prism
 repo_name: AindriuB/data-prism
 edit_uri: ""
