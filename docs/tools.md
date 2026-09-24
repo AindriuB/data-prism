@@ -192,6 +192,13 @@ one source never held an email at all. Values are synthetic and the
 pseudonym will differ on your own run of the same request — the shape does
 not.
 
+The sequence diagram below traces one call through authorisation, scope
+resolution, the orchestrator, a source adapter, scrubbing, validation and
+audit.
+
+[![Sequence diagram of one get_entity_context call: the MCP client calls the tool, which authorises the caller, resolves a privacy session, then asks the orchestrator to fan out to a source adapter, scrub the record, validate it and record an audit event, before returning the response to the client.](assets/diagrams/entity-context-call.svg)](assets/diagrams/entity-context-call.svg)
+Select the diagram to open it full size.
+
 ## `compare_entity_sources`
 
 The same correlated read as `get_entity_context`, projected onto one
@@ -435,6 +442,11 @@ input that changed between them is the case id the caller's session carries,
 and the pseudonym for the same customer changes with it. A caller in one case
 has no way to tell, from the pseudonym alone, that it is looking at the same
 underlying subject a different case is also looking at.
+
+The diagram below shows how one pseudonym is derived.
+
+[![How a pseudonym is made: scope (case: plus case id), the canonicalised subject id, namespace and algorithm version are joined and run through an HMAC with the HMAC key, producing a digest that becomes a synthetic identity plus an eight-character discriminator.](assets/diagrams/pseudonym-generation.svg)](assets/diagrams/pseudonym-generation.svg)
+Select the diagram to open it full size.
 
 ## Not yet built
 
