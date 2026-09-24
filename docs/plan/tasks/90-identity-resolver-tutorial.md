@@ -113,3 +113,38 @@ spec requires. The spec's wave list says diagram 6 is placed by C1 or C2.
 - **Correct the adapter tutorial's IdentityResolver sentence.** `docs/developer-guide/write-an-adapter.md` (about lines 61–63) says the auto-configuration class supplies "the `IdentityResolver` and `DataSourceAdapter` beans the platform refuses to start without". That is inaccurate for the resolver: `dataprism.identity.resolver: pass-through` supplies one with no code (DataPrismAutoConfiguration.java about lines 128–133). An application-supplied `IdentityResolver` bean still wins. Reword only that sentence, tracing it to the code, so it matches what this tutorial explains. Don't change anything else in that file. Acceptance: the sentence traces to DataPrismAutoConfiguration, and `git diff site-polish...HEAD -- docs/developer-guide/write-an-adapter.md` touches only those lines.
 - Always diff with three dots (`git diff site-polish...HEAD`), because `site-polish` moves as tasks merge.
 - Branch from LOCAL `site-polish` only after task 88 is recorded, because this task renders diagram 6 with 88's `render.sh`.
+
+## Attempt 1 — failed
+
+Tester: PASS. mvn and QuickstartSmokeIT are green; the identity tests are non-vacuous; the snippets are byte-identical; the literal run matches the page; diagram 6 is legible and byte-stable; no stubs remain. Reviewer: CHANGES, on tutorial accuracy. Rebase onto LOCAL `site-polish`, which now also carries the CHANGELOG and description-D fixes. Always diff with three dots. Then fix:
+
+1. **The tutorial presents `resolve` as the runtime mechanism, but it isn't** (custom-identity-resolver.md about lines 25–29 and 78–82). The only runtime call is `expand(new CanonicalId(request.subjectId()), names)` (DefaultContextOrchestrator.java about line 313). Nothing in production code calls `resolve`. Rewrite the "how one subject is recognised across sources" and pass-through sections to match the code:
+   - The caller's `subjectId` is taken as the canonical id.
+   - `expand` maps it to each source's own key.
+   - Under pass-through, every source is queried with the caller's id unchanged. A source that keys differently usually comes back as no data. It is a wrong-subject merge only if keys collide across sources.
+   - Say plainly that the caller must ask for the canonical id. With MappedIdentityResolver, asking for "C-1001" ends in NO_SOURCE_DATA.
+   - Describe what `resolve` is for only as far as the code and the SPI javadoc support. If nothing calls it, say it isn't on the request path today.
+2. **The canonical id does more than look up source keys** (about lines 49–51). `request.subjectId()`, the canonical id, also keys:
+   - the per-scope subject pseudonym (`synthetics.syntheticValue(request.subjectId(), …, context)`, DCO about line 151);
+   - the fingerprint (about line 152);
+   - the scope read budget (about line 165).
+
+   Cover how identity feeds the per-scope pseudonym; the spec requires it. Fix "the canonical id is never shown to a client": the client supplies it, and it is the response that pseudonymises it.
+3. **Diagram 6 and its index.md intro and alt text** (extension-points.mmd line 5; index.md about lines 48–50):
+   - The preflight refuses startup when *either* bean is missing, not only "with neither bean present" (DPAC about line 107). Fix the label.
+   - Don't say both beans are registered by an application's own @AutoConfiguration. `dataprism.identity.resolver: pass-through` supplies a resolver with no code (DPAC about lines 128–135).
+   - Update the trace-table rows. Re-render with render.sh twice and confirm the output is byte-stable.
+4. **Suggestions to apply:**
+   - (a) Registration from a `-Dloader.path` jar. A plain `@Configuration` there is never scanned (write-an-adapter.md about line 61). Say how a loader.path extension registers its resolver: via `AutoConfiguration.imports`, ordered so the application's bean wins over the quickstart's `@ConditionalOnMissingBean` default. Make sure the example code and the tutorial agree. If the example's `ExampleIdentityResolverConfiguration` is a plain `@Configuration`, either explain that it's for an application's own scanned package, or show the auto-configuration route. Pick whichever is true to the code and tested.
+   - (b) Add a test that `expand` on an unknown canonical id returns an empty list. That is the fail-closed path that actually runs. The tutorial should say what happens at runtime in that case, traced to code.
+   - (c) extension-points.mmd line 10: tie the `@ConditionalOnMissingBean` edge to the quickstart's default resolver, not to the MappedIdentityResolver example.
+
+Keep green:
+- mvn verify, with QuickstartSmokeIT and the identity tests, plus the non-vacuity check;
+- snippets that match their sources byte for byte, and check_snippet_markers.py;
+- re-run every tutorial command literally and quote the output again if anything changed;
+- write-an-adapter.md changed only in the IdentityResolver sentence;
+- render.sh byte-stable, and check_diagrams.py;
+- `DP_REQUIRE_NO_STUBS=true` passes;
+- the strict build, every check_*.py, lychee and actionlint;
+- the Owns scope, checked with three dots.
