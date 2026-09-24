@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves task 57's operator-facing presentation against the packaged distribution itself,
- * not a hand-built exception: {@code docker run ghcr.io/aindriub/data-prism-server:0.3.0} with
+ * not a hand-built exception: {@code docker run ghcr.io/aindriub/data-prism-server:0.3.1} with
  * no configuration must print a block naming the stable code, what to supply, {@code
  * docs/configuration.md} and the runnable demo — and no Java stack frame — while still exiting
  * non-zero. This is the same failure {@code .github/workflows/publish-image.yml}'s "Verify the
@@ -119,7 +119,7 @@ class ConfigurationRefusalMessageIT {
 
     private static ProcessResult runPackagedServer(List<String> extraJvmArgs, List<String> programArgs)
             throws Exception {
-        Path artifact = Path.of("target", "data-prism-server-0.3.0.jar").toAbsolutePath();
+        Path artifact = Path.of("target", "data-prism-server-0.3.1.jar").toAbsolutePath();
         List<String> command = new ArrayList<>();
         command.add(javaCommand());
         command.addAll(extraJvmArgs);

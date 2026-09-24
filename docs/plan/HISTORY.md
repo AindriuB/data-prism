@@ -17,6 +17,48 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 91: 0.3.1 cut for GHCR and the MCP Registry, Maven Central held at 0.3.0
+
+Merged into local `release-0.3.1` (not `main`, not pushed). 0.3.1 is a
+partial release by owner decision: GHCR and the MCP Registry only, with
+Maven Central staying at 0.3.0. The version bump touches 19 poms,
+`server.json` (`.version` and `.packages[0].identifier`, exactly two changed
+lines), the Dockerfile `ARG VERSION`, the `publish-image.yml` dispatch
+default, both `serverInfo("data-prism", ...)` literals, the IT jar-name
+literals, local build paths and `QUICKSTART_IMAGE_TAG` in README and
+docs/quickstart.md. Every other `0.3.0` string in the tree was individually
+classified as either a Maven Central coordinate a reader would copy (left at
+0.3.0) or a historical, past-tense transcript of a run made against 0.3.0
+jars (left at 0.3.0, with "(recorded against 0.3.0)" added where a reader
+could otherwise misread it as current). `docs/protect-your-own-api.md` and
+`docs/extending.md` now say plainly that `data-prism-server` is never
+published to Central at any version (`skipPublishing`) and that the
+distribution comes from a source build, a GitHub Release or the GHCR image;
+`data-prism-connectors-rest`'s Central artifact is unchanged since v0.3.0.
+`CHANGELOG.md`'s `[0.3.1] - 2026-09-24` entry carries, verbatim, "Not
+published to Maven Central; the Maven artifacts remain at 0.3.0." The tester
+(attempt 1) passed the full reactor `mvn verify` (655 tests), the docs
+build, lychee, actionlint, `mcp-publisher 1.8.1 validate`, and a local replay
+of the publish-mcp and publish-image guards. The reviewer's attempt-1 CHANGES
+were all consequences of the no-Central decision, fixed in attempt 2; a final
+review approved everything except one CHANGELOG bullet's file scope, fixed
+directly in `0afe325` and checked by the main session before merge.
+
+**Cost:** a partial release (build output ships, Central coordinates do not)
+turns a version bump from a single find-and-replace into a three-way
+classification: build output, Central coordinates, and historical
+transcripts. The first attempt got this wrong in both directions — it bumped
+a Central-pinned coordinate (`docs/extending.md`) that should have stayed at
+0.3.0, and it bumped several past-tense "this was compiled/executed, not
+transcribed" records, which would have claimed test runs against 0.3.1 jars
+that never happened. Do not re-run those transcripts to regenerate them
+either — that's out of scope; mark them "(recorded against 0.3.0)" instead.
+Second, CHANGELOG bullets are not safe to draft from memory of what a wave
+did — the first drafts presented an unreleased documentation draft as a
+correction to shipped behaviour, and overstated which files a description
+change actually touched. Every bullet needs tracing per file against `git
+show v<prev-tag>:<file>`, not against the task's own narrative of itself.
+
 ## 2026-09-24 — Site polish merged to main (PR #101); Search Console, Bing, About and first traffic snapshot done
 
 `site-polish` (tasks 85-90) merged to `main` via PR #101 on 2026-09-24; the

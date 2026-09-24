@@ -355,9 +355,9 @@ public record BadModel(
 ```
 
 It was compiled directly against this repository's own built
-`data-prism-annotations` and `data-prism-processor` jars, with the processor
-placed on `-processorpath`, the same way `annotationProcessorPaths` places it
-for Maven:
+`data-prism-annotations` and `data-prism-processor` jars (recorded against
+0.3.0), with the processor placed on `-processorpath`, the same way
+`annotationProcessorPaths` places it for Maven:
 
 ```
 $ javac -cp data-prism-annotations-0.3.0.jar \
@@ -610,7 +610,7 @@ the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.3.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.3.1.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 
@@ -665,7 +665,8 @@ Caused by: io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationExcept
 
 `$EXTENSION_JAR` and `$SERVER_JAR` were the built
 `data-prism-quickstart-extension-0.3.0.jar` and `data-prism-server-0.3.0.jar`
-from this repository's own `target/` directories; the omitted arguments are
+(recorded against 0.3.0) from this repository's own `target/` directories;
+the omitted arguments are
 the same security, privacy, audit, metrics and Hazelcast configuration
 `docs/configuration.md` requires for any protected deployment and are unrelated
 to this refusal.
