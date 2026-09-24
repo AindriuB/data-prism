@@ -93,6 +93,16 @@
       <artifactId>mcp-json-jackson2</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!-- ApplicationContextRunner, for IdentityResolverOverrideTest to prove that
+         an application-supplied IdentityResolver bean replaces this module's own
+         @ConditionalOnMissingBean default. Test-only: never shipped in this
+         module's jar. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
