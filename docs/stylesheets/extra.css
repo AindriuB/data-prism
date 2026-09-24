@@ -44,6 +44,29 @@
   --md-typeset-a-color: var(--md-accent-fg-color);
 }
 
+/* Slate-scheme hero-button fix: Material colours a plain `.md-button`'s
+   text/border with `--md-primary-fg-color` (#1e293b), and fills
+   `.md-button--primary` with the same colour. Both are dark-slate-on-
+   dark-slate here, since the slate scheme's own page background
+   (`--md-default-bg-color`, Material's un-overridden default) is close to
+   that value. Retarget both, slate only:
+   - the plain button (Developer guide) takes the accent shade already used
+     for slate links, which reads against the slate page background;
+   - the primary button (Quickstart) swaps to the header's own pairing —
+     `--md-primary-bg-color` fill with `--md-primary-fg-color` text — the
+     same two colours already checked as header text on primary, and a fill
+     that stands well clear of the dark slate page. */
+[data-md-color-scheme="slate"] .md-button {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+
+[data-md-color-scheme="slate"] .md-button--primary {
+  background-color: var(--md-primary-bg-color);
+  border-color: var(--md-primary-bg-color);
+  color: var(--md-primary-fg-color);
+}
+
 /* Tables: a visible header row, so a plain reference table (e.g.
    docs/configuration.md) reads as a table at a glance. */
 .md-typeset table:not([class]) th {

@@ -23,6 +23,16 @@ colour at WCAG 1.4.11's 3:1 non-text minimum: the stroke colour, and the
 fully opaque indigo bar. The 85%/70%-opacity bars are printed for
 information only — their geometry is the owner's, not this script's, to
 change.
+
+Checks the hero's two buttons (`.md-button` / `.md-button--primary`) in
+both schemes, against Material's own compiled defaults for those classes,
+overridden per scheme where `extra.css` says so (its
+`[data-md-color-scheme="..."] .md-button(--primary)?` rules — currently
+slate only):
+- plain-button text/border against the page background, at 4.5:1;
+- primary-button text against its own fill, at 4.5:1;
+- primary-button fill against the page background, at 3:1 (fill and border
+  share one colour in this stylesheet, so checking fill covers both).
 """
 
 from __future__ import annotations
@@ -90,6 +100,32 @@ MATERIAL_DEFAULTS: dict[str, dict[str, str]] = {
         "--md-primary-fg-color": "#4051b5",
         "--md-primary-bg-color": "#ffffff",
         "--md-typeset-a-color": "var(--md-primary-fg-color)",
+    },
+}
+
+# Material's own compiled defaults for the two button classes the hero uses,
+# for the pinned mkdocs-material==9.7.7, copied from its compiled CSS, not
+# reproduced from memory:
+#   main.ec1eaa64.min.css:
+#     .md-button{border:.1rem solid;...;color:var(--md-primary-fg-color);...}
+#       (no explicit border-color, so the border takes the CSS default of
+#       `currentColor` — i.e. the same `color` value above)
+#     .md-button--primary{background-color:var(--md-primary-fg-color);
+#       border-color:var(--md-primary-fg-color);color:var(--md-primary-bg-color)}
+#   palette.ab4e12ef.min.css also has `.md-button`/`.md-button--primary`
+#   rules, but only scoped to `[data-md-color-primary=white]` and
+#   `[data-md-color-primary=black]`; this site's `primary: custom` sets
+#   `data-md-color-primary="custom"`, which neither selector matches, so
+#   those rules never apply here and are not modelled below.
+MATERIAL_BUTTON_DEFAULTS: dict[str, dict[str, str]] = {
+    "plain": {
+        "color": "var(--md-primary-fg-color)",
+        "border-color": "var(--md-primary-fg-color)",
+    },
+    "primary": {
+        "background-color": "var(--md-primary-fg-color)",
+        "border-color": "var(--md-primary-fg-color)",
+        "color": "var(--md-primary-bg-color)",
     },
 }
 
@@ -183,6 +219,15 @@ _SCHEME_BLOCK_RE = re.compile(r'\[data-md-color-scheme=(["\'])(default|slate)\1\
 _DECL_RE = re.compile(r"(--[\w-]+)\s*:\s*([^;]+);")
 _VAR_REF_RE = re.compile(r"^var\(\s*(--[\w-]+)\s*\)$")
 
+# extra.css's per-scheme button overrides are ordinary selectors, not a bare
+# `[data-md-color-scheme="..."] { ... }` block, so they need their own
+# pattern: `[data-md-color-scheme="slate"] .md-button { ... }` or the same
+# with `.md-button--primary`.
+_BUTTON_BLOCK_RE = re.compile(
+    r'\[data-md-color-scheme=(["\'])(default|slate)\1\]\s+\.md-button(--primary)?\s*\{([^}]*)\}'
+)
+_PROP_DECL_RE = re.compile(r"([a-zA-Z-]+)\s*:\s*([^;]+);")
+
 
 _COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 
@@ -215,6 +260,40 @@ def resolve(decls: dict[str, str], name: str, _seen: frozenset[str] = frozenset(
 
 def effective_color(decls: dict[str, str], name: str) -> RGBA:
     return parse_css_color(resolve(decls, name))
+
+
+def parse_button_overrides(css_text: str) -> dict[str, dict[str, dict[str, str]]]:
+    """This project's own per-scheme button overrides, keyed
+    `[scheme]["plain" | "primary"][css-property]`. Empty for a scheme/class
+    extra.css does not override — callers fall back to
+    `MATERIAL_BUTTON_DEFAULTS`.
+    """
+    css_text = _COMMENT_RE.sub("", css_text)
+    overrides: dict[str, dict[str, dict[str, str]]] = {"default": {}, "slate": {}}
+    for match in _BUTTON_BLOCK_RE.finditer(css_text):
+        scheme = match.group(2)
+        button = "primary" if match.group(3) else "plain"
+        decls = {name.strip(): value.strip() for name, value in _PROP_DECL_RE.findall(match.group(4))}
+        overrides[scheme][button] = decls
+    return overrides
+
+
+def resolve_value(value: str, decls: dict[str, str]) -> str:
+    """Resolve a raw CSS property value (not necessarily itself a `--var`
+    name) one `var(--...)` hop, via `resolve`, or return it unchanged if it
+    is already a literal colour."""
+    match = _VAR_REF_RE.match(value.strip())
+    if match:
+        return resolve(decls, match.group(1))
+    return value.strip()
+
+
+def effective_button_color(
+    button_decls: dict[str, str], decls: dict[str, str], prop: str
+) -> RGBA:
+    if prop not in button_decls:
+        fail(f"button declaration {prop} is not defined")
+    return parse_css_color(resolve_value(button_decls[prop], decls))
 
 
 # --------------------------------------------------------------------------
@@ -332,17 +411,62 @@ def check_logo_contrast(scheme_vars: dict[str, dict[str, str]]) -> list[str]:
     return lines
 
 
+def check_button_contrast(
+    scheme_vars: dict[str, dict[str, str]],
+    button_overrides: dict[str, dict[str, dict[str, str]]],
+) -> list[str]:
+    lines = []
+    for scheme in SCHEMES:
+        decls = {**MATERIAL_DEFAULTS[scheme], **scheme_vars[scheme]}
+        page_bg = effective_color(decls, "--md-default-bg-color")
+
+        plain = {**MATERIAL_BUTTON_DEFAULTS["plain"], **button_overrides[scheme].get("plain", {})}
+        plain_color = effective_button_color(plain, decls, "color")
+        plain_ratio = contrast_ratio(plain_color, page_bg)
+        lines.append(f"plain button (text/border) on page ({scheme}): {plain_ratio:.2f}:1")
+        if plain_ratio < AA_TEXT:
+            fail(
+                f"plain button text/border on page ({scheme}): "
+                f"{plain_ratio:.2f}:1, need >= {AA_TEXT}:1"
+            )
+
+        primary = {**MATERIAL_BUTTON_DEFAULTS["primary"], **button_overrides[scheme].get("primary", {})}
+        primary_fill = effective_button_color(primary, decls, "background-color")
+        primary_text = effective_button_color(primary, decls, "color")
+
+        text_on_fill_ratio = contrast_ratio(primary_text, primary_fill)
+        lines.append(f"primary button text on its fill ({scheme}): {text_on_fill_ratio:.2f}:1")
+        if text_on_fill_ratio < AA_TEXT:
+            fail(
+                f"primary button text on fill ({scheme}): "
+                f"{text_on_fill_ratio:.2f}:1, need >= {AA_TEXT}:1"
+            )
+
+        fill_on_page_ratio = contrast_ratio(primary_fill, page_bg)
+        lines.append(f"primary button fill on page ({scheme}): {fill_on_page_ratio:.2f}:1")
+        if fill_on_page_ratio < AA_NON_TEXT:
+            fail(
+                f"primary button fill on page ({scheme}): "
+                f"{fill_on_page_ratio:.2f}:1, need >= {AA_NON_TEXT}:1"
+            )
+
+    return lines
+
+
 def main() -> int:
     if not EXTRA_CSS.exists():
         fail(f"{EXTRA_CSS} does not exist")
     if not LOGO_SVG.exists():
         fail(f"{LOGO_SVG} does not exist")
 
-    scheme_vars = parse_extra_css(EXTRA_CSS.read_text(encoding="utf-8"))
+    css_text = EXTRA_CSS.read_text(encoding="utf-8")
+    scheme_vars = parse_extra_css(css_text)
+    button_overrides = parse_button_overrides(css_text)
 
     checks = [
         ("text contrast", lambda: check_text_contrast(scheme_vars)),
         ("logo (non-text) contrast", lambda: check_logo_contrast(scheme_vars)),
+        ("button contrast", lambda: check_button_contrast(scheme_vars, button_overrides)),
     ]
     for name, check in checks:
         try:
