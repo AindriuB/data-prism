@@ -54,10 +54,11 @@ not cover: it gets its `DataSourceAdapter` from
 `ConfiguredJsonSourcesInitializer` with no application code either, per
 [`docs/protect-your-own-api.md`](../protect-your-own-api.md).) Either way,
 `DataPrismAutoConfiguration` refuses to start when either kind of bean is
-missing, and everything a `DataSourceAdapter` returns still passes through
-the privacy engine before anything downstream sees it.
+missing (outside fixture STDIO mode, where that check is skipped), and
+everything a `DataSourceAdapter` returns still passes through the privacy
+engine before anything downstream sees it.
 
-[![How a reviewed DataSourceAdapter and an IdentityResolver plug in: an application's own @AutoConfiguration registers a DataSourceAdapter bean, an IdentityResolver can instead come from a pass-through configuration setting with no code, DataPrismAutoConfiguration's preflight and contract validation refuse to start when either bean is missing, and the orchestrator's fan-out sends every fetched record on to the privacy engine's classification and scrubbing, with no path around it.](../assets/diagrams/extension-points.svg)](../assets/diagrams/extension-points.svg)
+[![How a reviewed DataSourceAdapter and an IdentityResolver plug in: an application's own @AutoConfiguration registers a DataSourceAdapter bean, an IdentityResolver can instead come from a pass-through configuration setting with no code, DataPrismAutoConfiguration's preflight and contract validation refuse to start when either bean is missing outside fixture STDIO mode, and the orchestrator's fan-out sends every fetched record on to the privacy engine's classification and scrubbing, with no path around it.](../assets/diagrams/extension-points.svg)](../assets/diagrams/extension-points.svg)
 
 ## Where to start
 

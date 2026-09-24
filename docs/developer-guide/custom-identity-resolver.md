@@ -146,15 +146,17 @@ skips every configured source entirely — none is ever called
 `DefaultContextOrchestrator` treats that exactly like the all-sources-empty
 case above: when `merged` is still `null` after the fan-out, it throws
 `PrivacyRefusedException("NO_SOURCE_DATA", request.entityType(), "no source
-returned a record for this subject")`, before building any `ContextResponse`
-at all (`DefaultContextOrchestrator.java:193-195`). `GetEntityContextTool`'s
-`catch (PrivacyRefusedException refused)` turns that into the tool's error
-result, `"refused: " + refused.code() + " at " + refused.path()`
-(`GetEntityContextTool.java:193`) — for this exception, exactly `"refused:
-NO_SOURCE_DATA at CUSTOMER"` (`entityType` is `"CUSTOMER"` for this
-quickstart's one configured entity). That is a refusal, not a
-visible-but-empty answer: there is no `sources` map and no `ContextResponse`
-at all, only that error text.
+returned a record for this subject")` — the path argument is the *client's
+own* `entityType` from the request, not anything derived from the source
+data (`DefaultContextOrchestrator.java:194`) — before building any
+`ContextResponse` at all (`DefaultContextOrchestrator.java:193-195`).
+`GetEntityContextTool`'s `catch (PrivacyRefusedException refused)` turns that
+into the tool's error result, `"refused: " + refused.code() + " at " +
+refused.path()` (`GetEntityContextTool.java:193`) — for this exception,
+exactly `"refused: NO_SOURCE_DATA at CUSTOMER"`, for a request with
+`entityType` `"CUSTOMER"` (this quickstart's one configured entity). That is
+a refusal, not a visible-but-empty answer: there is no `sources` map and no
+`ContextResponse` at all, only that error text.
 
 ## How to register a resolver
 
@@ -199,19 +201,40 @@ the `DataSourceAdapter` case.
 Being on that list is not, by itself, enough. Spring Boot gives no ordering
 promise between two unrelated `@AutoConfiguration` classes just because both
 are imported — so an extension's own, unconditional `IdentityResolver` bean
-can just as easily be processed *after* the quickstart's own
-`@ConditionalOnMissingBean` default, which is already registered by then and
-does not step aside for a later, unconditional bean. The result is two
-`IdentityResolver` beans in the same context, and startup fails wherever
-something asks for exactly one — `DataPrismAutoConfiguration.dataPrismContextOrchestrator`
-does (`DataPrismAutoConfiguration.java:446`). The fix is an explicit
+can just as easily be processed *after* whichever `@AutoConfiguration`
+already supplies a default for this deployment, which is already registered
+by then and does not step aside for a later, unconditional bean. The result
+is two `IdentityResolver` beans in the same context, and startup fails
+wherever something asks for exactly one —
+`DataPrismAutoConfiguration.dataPrismContextOrchestrator` does
+(`DataPrismAutoConfiguration.java:446`).
+
+The general rule: order your own `@AutoConfiguration` *before* whichever
+class supplies the `@ConditionalOnMissingBean` default in your deployment —
+never rely on where either class happens to land unordered. For the
+quickstart, that default-supplying class is `QuickstartExtensionAutoConfiguration`
+itself. It is a different class if you instead rely on
+`dataprism.identity.resolver: pass-through` (below) with no
+`QuickstartExtensionAutoConfiguration` involved at all: that setting's
+default comes from `DataPrismAutoConfiguration`'s own nested
+`IdentityResolverSelection` (`@Import`-ed by it —
+`DataPrismAutoConfiguration.java:128-135`), so the class to order before is
+`DataPrismAutoConfiguration`, not `QuickstartExtensionAutoConfiguration`.
+`ExampleOrderedIdentityResolverAutoConfiguration` names
+`QuickstartExtensionAutoConfiguration` directly with
 `@AutoConfiguration(before = QuickstartExtensionAutoConfiguration.class)`,
-naming the class to run ahead of, as
-`ExampleOrderedIdentityResolverAutoConfiguration` does:
+since this module already depends on it at compile time:
 
 ```java
 --8<-- "src/main/java/io/github/aindriub/dataprism/quickstart/extension/identity/ExampleOrderedIdentityResolverAutoConfiguration.java:ordered-registration"
 ```
+
+An extension that would rather not take a compile-time dependency just to
+name a class this way can use `beforeName` instead, with the fully qualified
+class name as a string — `@AutoConfiguration(beforeName =
+"io.github.aindriub.dataprism.spring.boot.DataPrismAutoConfiguration")`, for
+example, orders before `DataPrismAutoConfiguration` without importing its
+type at all.
 
 `IdentityResolverOrderingTest` proves both directions of this, feeding
 `QuickstartExtensionAutoConfiguration` and the reader's own
@@ -235,10 +258,13 @@ refuses to start with no `IdentityResolver` bean in the context at all, from
 any source — registering one, whichever way, is not optional. A resolver can
 also be supplied with no application code at all, by setting
 `dataprism.identity.resolver: pass-through`
-(`DataPrismAutoConfiguration.java:128-135`); that is a separate, built-in
+(`DataPrismAutoConfiguration.java:128-135`) — a separate, built-in
 `PassThroughIdentityResolver` registration from `DataPrismAutoConfiguration`
-itself, not from the quickstart's own `@AutoConfiguration` class, and it
-behaves exactly as described above.
+itself, not from the quickstart's own `@AutoConfiguration` class. Pair that
+setting with an extension's own unconditional `IdentityResolver` bean and the
+same two-bean risk applies, but relative to `DataPrismAutoConfiguration`
+rather than `QuickstartExtensionAutoConfiguration` — the general rule above
+is what to follow, not this page's one worked example.
 
 ## Running the example's tests
 

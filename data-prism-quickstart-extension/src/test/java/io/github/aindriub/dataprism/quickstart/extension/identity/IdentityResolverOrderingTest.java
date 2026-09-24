@@ -33,8 +33,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Both {@code @AutoConfiguration} classes below are fed to {@code
  * AutoConfigurations.of} with {@link QuickstartExtensionAutoConfiguration}
- * listed <em>first</em> — the ordering an extension author does not control
- * and must not rely on — so anything this test proves comes from the {@code
+ * listed <em>first</em> in both tests. That is not what decides which one
+ * processes first: {@code AutoConfigurations.of} sorts its candidates the
+ * same way {@code AutoConfigurationImportSelector} does — an initial sort by
+ * fully qualified class name, then adjusted for any {@code
+ * @AutoConfigureBefore}/{@code @AutoConfigureAfter} — regardless of the order
+ * given here. So anything this test proves comes from the {@code
  * @AutoConfiguration} annotations themselves, not from argument order.
  */
 class IdentityResolverOrderingTest {
@@ -60,17 +64,25 @@ class IdentityResolverOrderingTest {
     /**
      * The failure {@code before} exists to avoid: an extension's own {@code
      * @AutoConfiguration} with no ordering relative to the quickstart's
-     * default is not merely "may lose the override" — with the quickstart's
-     * default processed first (as it is here, listed first with neither
-     * class declaring an order), both beans register, and the context fails
-     * to start once anything asks for exactly one {@link IdentityResolver}.
+     * default is not merely "may lose the override" — with neither class
+     * declaring an order, {@code AutoConfigurations}' own name sort processes
+     * {@link QuickstartExtensionAutoConfiguration} first here (its fully
+     * qualified name sorts ahead of this nested class's), so the quickstart's
+     * default registers, then {@link UnorderedIdentityResolverAutoConfiguration}
+     * unconditionally adds a second {@link IdentityResolver} bean, and the
+     * context fails to start once anything asks for exactly one.
      */
     @Test
     void anUnorderedAutoConfigurationCanProduceTwoBeansAndFailToStart() {
         runner.withConfiguration(AutoConfigurations.of(
                         QuickstartExtensionAutoConfiguration.class,
                         UnorderedIdentityResolverAutoConfiguration.class))
-                .run(context -> assertThat(context).hasFailed());
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .rootCause()
+                            .isInstanceOf(org.springframework.beans.factory.NoUniqueBeanDefinitionException.class);
+                });
     }
 
     @AutoConfiguration

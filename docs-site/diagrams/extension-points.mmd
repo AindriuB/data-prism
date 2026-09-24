@@ -4,7 +4,7 @@ flowchart TB
     AppResolver["Application-supplied IdentityResolver\n(e.g. MappedIdentityResolver)"]
     PassThroughProperty["dataprism.identity.resolver:\npass-through (no code)"]
     AutoConfig["Application @AutoConfiguration\n(e.g. QuickstartExtensionAutoConfiguration)"]
-    DataPrismConfig["DataPrismAutoConfiguration:\npreflight and contract validation\nrefuse startup when either bean is missing"]
+    DataPrismConfig["DataPrismAutoConfiguration:\npreflight and contract validation\nrefuse startup when either bean is missing\n(outside fixture STDIO mode)"]
     Orchestrator["Orchestrator (fan-out):\nfetches each adapter,\nexpand(canonicalId, sourceNames)"]
     Engine["Privacy engine:\nclassification and scrubbing"]
 
