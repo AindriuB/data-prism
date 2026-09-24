@@ -445,7 +445,7 @@ underlying subject a different case is also looking at.
 
 The diagram below shows how one pseudonym is derived.
 
-[![How a pseudonym is made: scope (case: plus case id), the canonicalised subject id, namespace and algorithm version are joined and run through the HMAC key, producing a digest that becomes a synthetic identity plus an eight-character discriminator.](assets/diagrams/pseudonym-generation.svg)](assets/diagrams/pseudonym-generation.svg)
+[![How a pseudonym is made: scope (case: plus case id), the canonicalised subject id, namespace and algorithm version are joined and run through an HMAC with the HMAC key, producing a digest that becomes a synthetic identity plus an eight-character discriminator.](assets/diagrams/pseudonym-generation.svg)](assets/diagrams/pseudonym-generation.svg)
 Select the diagram to open it full size.
 
 ## Not yet built
