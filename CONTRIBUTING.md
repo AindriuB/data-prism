@@ -113,6 +113,10 @@ Rules for adding or changing a page:
   (`.github/workflows/pages.yml`) and by the tester, against a built `site/`
   directory. Add a new guard by adding a new `check_*.py` module; nothing
   else needs editing to wire it in.
+- **`DP_REQUIRE_NO_STUBS`** is an env var, set true in `pages.yml` only for a
+  pull request into `main` or a push to `main`, that makes
+  `check_no_stub_pages.py` fail the build if a placeholder stub page is
+  still live, so wave branches can keep building their stubs unblocked.
 
 ## Licence
 
