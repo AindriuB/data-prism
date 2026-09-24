@@ -17,6 +17,58 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 88: draw five concept diagrams and embed each in context
+
+`docs-site/diagrams/*.mmd` holds five Mermaid sources (system overview, one
+`get_entity_context` call, how a pseudonym is made, fail-closed field
+decisions, the audit chain), rendered by `render.sh` to committed SVGs in
+`docs/assets/diagrams/` via a digest-pinned `minlag/mermaid-cli`, run
+`--network none` as the caller's uid; output is byte-stable across runs, and
+each SVG carries padding plus a thin border so it reads as a framed panel on
+dark pages. Each diagram is embedded insert-only in the page that already
+covers it — one intro sentence and a linked image that opens full size — in
+`docs/architecture.md` (system overview), `docs/tools.md` (the
+`get_entity_context` call, and pseudonym generation at "Scope isolation"),
+`docs/configuration.md` (fail-closed decisions), and `docs/audit.md` (the
+audit chain); diagrams 2-4 add a "Select the diagram to open it full size."
+caption. New `docs-site/hooks/check_diagrams.py` enforces `.mmd`/`.svg`
+pairing, that every SVG is referenced by a built page, non-empty alt text,
+and no off-w3.org URL/script/`@import` in any SVG. `docs-site/diagrams/README.md`
+carries a trace table mapping every node and edge to a code or doc line.
+
+**Cost:** Two attempts. Attempt 1 passed the tester on legibility grounds
+undetected until screenshots: both `flowchart LR` diagrams (system overview,
+audit chain) are wide enough that Material's ~688px content column shrank
+them to single-digit-pixel text — no automated check catches this, only
+looking at the rendered page did. The reviewer separately caught diagram 5
+overclaiming what the audit chain detects (attributing "including the last
+record" to deletions as well as edits, contradicting `docs/audit.md`'s own
+"What this does and does not prove"), a hard white SVG background reading as
+a bare strip on the dark theme, and an incomplete line-shift list. Attempt 2
+redrew both wide diagrams top-to-bottom, corrected diagram 5's wording and
+alt text to audit.md's own phrasing, added SVG padding and a border, and
+re-verified byte-stable re-rendering plus a full screenshot pass in light
+and dark at 1280px. Two lessons worth keeping: wide `flowchart LR` layouts
+are illegible in a narrow docs column — draw top-to-bottom and always link
+to the full-size SVG; and legibility has to be checked by screenshot, since
+no structural check (mmd validity, SVG well-formedness, trace-table
+completeness) catches a diagram that renders correctly but unreadably small.
+PASS + APPROVE on attempt 2 (a focused review checked the attempt-2 diff at
+95e9fd7, and the main session checked 2abe300's two `audit.md` citations
+directly), merged onto local `site-polish` (not `main`). Line-shift note for
+future citations: `docs/architecture.md`'s embed grows the file, so two
+already-retired task files' historical citations now point short —
+`docs/architecture.md:106-155` (retired task 12) now ends at 159, and
+`:135-141` (retired task 13) has its old 136-141 now at 140-145;
+`docs/plan/HISTORY.md`'s own `architecture.md:156-159` citation (already
+stale before this task) is now shifted a further 4 lines. None of these were
+edited — retired task files and past HISTORY.md entries are left as written.
+No live `docs/plan/PLAN.md` citation shifted. Left unblocked, not done here:
+`docs/tools.md:120` still says "unclassified values dropped" though the
+shipped profiles use `FAIL_REQUEST`; this task's diagram-2 embed lands
+elsewhere in the same file and does not touch that line, so the correction
+is a standalone follow-up.
+
 ## 2026-09-24 — Task 89: start the developer guide with a tested adapter tutorial
 
 `docs/developer-guide/index.md` (replacing task 85's stub) now covers the

@@ -1284,9 +1284,21 @@ it now carries three stub developer-guide pages; the merge-only
   APPROVE on attempt 2 — see `docs/plan/HISTORY.md`, grep `Task 86`, for what
   attempt 1's review closed and the two lessons worth carrying forward. Task
   file retired.
-- **Wave 1, still in flight:** 88 (diagrams embedded in existing
-  pages, mermaid source committed and pre-rendered to SVG, no runtime
-  Mermaid/CDN).
+- **Task 88 — done.** Drew five concept diagrams (system overview, one
+  `get_entity_context` call, pseudonym generation, fail-closed field
+  decisions, the audit chain) and embedded each in the existing doc that
+  covers it — `architecture.md`, `tools.md` (two), `configuration.md`,
+  `audit.md` — insert-only, one intro sentence plus a linked image that
+  opens full size. Mermaid source lives in `docs-site/diagrams/*.mmd`;
+  `render.sh` renders it to committed SVGs in `docs/assets/diagrams/` with a
+  digest-pinned mermaid-cli run `--network none` as the caller's uid, output
+  byte-stable, each SVG padded with a thin border so it reads as a framed
+  panel on dark pages. `check_diagrams.py` enforces `.mmd`/`.svg` pairing,
+  references, alt text and no off-w3.org URLs/script/`@import`. No "learn"
+  page, no runtime Mermaid. Merged onto local `site-polish`, PASS + APPROVE
+  on attempt 2 — see `docs/plan/HISTORY.md`, grep `Task 88`, for what
+  attempt 1's review closed and the two lessons worth carrying forward. Task
+  file retired.
 - **Task 89 — done.** Opened the developer guide: an overview page covering
   the extension points with GitHub-linked sources, and tutorial 1
   ("write a data-source adapter"), seven steps from model and annotations to
@@ -1337,9 +1349,10 @@ it now carries three stub developer-guide pages; the merge-only
   corrected; whether to amend the already-released changelog entry is the
   owner's call.
 - `docs/tools.md:120` says "unclassified values dropped", but the shipped
-  profiles use `FAIL_REQUEST`, which refuses the whole response. A doc
-  correction, best done after task 88 merges since 88 owns embeds in
-  `tools.md`.
+  profiles use `FAIL_REQUEST`, which refuses the whole response. Task 88 has
+  now merged (it only inserted embeds, no deletions, so this line is
+  unchanged at :120), so the correction is unblocked — a standalone scribe
+  doc fix, not yet done.
 
 ## Remaining slices past the adopted core
 
