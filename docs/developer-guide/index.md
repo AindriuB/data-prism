@@ -45,13 +45,22 @@ YAML-only path first.
   [Classify the model with `@LlmExposedModel`](../extending.md#classify-the-model-with-llmexposedmodel)
   in the full reference.
 
+The diagram below shows where a `DataSourceAdapter` and an `IdentityResolver`
+plug in: both are registered as beans by an application's own
+`@AutoConfiguration`, `DataPrismAutoConfiguration` refuses to start without
+one of each, and everything a `DataSourceAdapter` returns still passes
+through the privacy engine before anything downstream sees it.
+
+[![How a DataSourceAdapter and an IdentityResolver plug in: both are registered as beans by an application's own @AutoConfiguration, DataPrismAutoConfiguration's preflight refuses to start with neither present, and the orchestrator's fan-out sends every fetched record on to the privacy engine's classification and scrubbing, with no path around it.](../assets/diagrams/extension-points.svg)](../assets/diagrams/extension-points.svg)
+
 ## Where to start
 
 1. [Write a data-source adapter](write-an-adapter.md) — from an empty module
    to a pseudonymised MCP response, using `DataSourceAdapter` and the
    classification annotations.
 2. [Write a custom identity resolver](custom-identity-resolver.md) — how one
-   subject is recognised across sources, and how `pass-through` differs.
+   subject is recognised across sources, how `pass-through` differs, and how
+   to register a resolver of your own.
 
 Both walk through a real, compiled, tested module in this repository
 (`data-prism-quickstart-extension`); every code block on those pages is

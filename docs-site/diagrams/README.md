@@ -253,3 +253,35 @@ review found the previous wording overclaimed this — a deletion is caught
 only when later records still follow it in the chain, and deleting a
 writer's most recent records is the tail-truncation gap the `Blind` node
 already names).
+
+### 6. Extension points — `extension-points.mmd`
+
+Deliberately acyclic and top-to-bottom (task 90): `Adapter` and `IdResolver`
+sit side by side at the top — both are just implementations of a core SPI, one
+per extension point — converging through `AutoConfig` and `DataPrismConfig`
+into `Orchestrator`, then `Engine`. The two runtime calls the orchestrator
+makes on these beans (fetching each adapter, expanding a canonical id into
+per-source keys) are named in `Orchestrator`'s own label rather than drawn as
+edges back up to `Adapter`/`IdResolver`, which would have made the graph
+cyclic and pushed both nodes to the bottom of the layout instead of the top —
+see the task report for the two renders compared.
+
+| Element | Label | Supports |
+|---|---|---|
+| Node | `Adapter` — DataSourceAdapter implementation (e.g. QuickstartCustomerAdapter) | `data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataSourceAdapter.java:10-16`; `data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartExtensionAutoConfiguration.java:48-62` (`quickstartCustomerAdapter`) |
+| Node | `IdResolver` — IdentityResolver implementation (e.g. MappedIdentityResolver) | `data-prism-core/src/main/java/io/github/aindriub/dataprism/core/IdentityResolver.java:22-32`; `data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/identity/MappedIdentityResolver.java:30-85` |
+| Node | `AutoConfig` — Application `@AutoConfiguration` (e.g. QuickstartExtensionAutoConfiguration) | `QuickstartExtensionAutoConfiguration.java:34-35` (`@AutoConfiguration` on the class), `:37-46` and `:48-62` (its two `@Bean` methods) |
+| Node | `DataPrismConfig` — DataPrismAutoConfiguration: preflight refuses startup with neither bean present | `data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java:99-110` (`dataPrismIdentityResolverPreflight`, `MISSING_IDENTITY_RESOLVER`); `DataPrismContractValidator.java:44-45` (`MISSING_SOURCE_ADAPTER`, the analogous check for `DataSourceAdapter`) |
+| Node | `Orchestrator` — Orchestrator (fan-out): fetches each adapter, `expand(canonicalId, sourceNames)` | `data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java:277-278` (`fanOut.fetchAll(adapters, ...)`); `:313-314` (`identities.expand(new IdentityResolver.CanonicalId(...), names)`) |
+| Node | `Engine` — Privacy engine: classification and scrubbing | `docs/architecture.md:18`; `DefaultContextOrchestrator.java:289` (`scrubber.scrub(record, context)`) |
+| Edge | Adapter → AutoConfig: `@Bean` | `QuickstartExtensionAutoConfiguration.java:48-49` |
+| Edge | IdResolver → AutoConfig: `@Bean, @ConditionalOnMissingBean` | `QuickstartExtensionAutoConfiguration.java:38-39` |
+| Edge | AutoConfig → DataPrismConfig: beans visible in the same context | `DataPrismAutoConfiguration.java:107-108` (`factory.getBeanNamesForType(IdentityResolver.class, ...)` sees every bean registered by any `@AutoConfiguration` processed into the same `BeanFactory`, including `QuickstartExtensionAutoConfiguration`'s) |
+| Edge | DataPrismConfig → Orchestrator: injected into `dataPrismContextOrchestrator` | `DataPrismAutoConfiguration.java:445-452` (`dataPrismContextOrchestrator(List<DataSourceAdapter<?>> adapters, IdentityResolver identities, ...)` constructs `DefaultContextOrchestrator` from both) |
+| Edge | Orchestrator → Engine | `DefaultContextOrchestrator.java:289` |
+
+No edge from `Adapter` reaches `Engine`, `Orchestrator` or anything else
+except through `AutoConfig` → `DataPrismConfig` → `Orchestrator` → `Engine`,
+and nothing in this diagram names the `mcp` module at all — the property
+`CLAUDE.md` rule 1 and `docs/architecture.md:147-152` (boundary 1) require:
+no route from a source adapter to a client that bypasses the privacy engine.
