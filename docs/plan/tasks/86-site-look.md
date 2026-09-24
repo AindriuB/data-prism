@@ -144,3 +144,27 @@ and no animation.
 - Rewording README's site-intro block (it is included, not edited here).
 - Diagrams on the landing page (none are planned: 88 embeds diagrams in existing docs), and any icon/emoji extension.
 - Changing any claim on the pages the cards link to.
+
+## Attempt 1 — failed
+
+Tester: PASS. Reviewer: CHANGES. The dark-mode home screenshot (`/tmp/t86-shots/home-1280-dark.png`) confirms defect 2, which the tester missed. Rebase onto LOCAL `site-polish`, which carries the corrected audit wording in this task's Context, and fix these:
+
+1. **The audit card overclaims** (docs/index.md). "catches an edit or deletion … anywhere in it, including the last record" attaches "including the last record" to deletion. `docs/audit.md` "What this does and does not prove" attaches it to edits only, and says deleting a writer's most recent records goes undetected. Reword the card to match: an edit is caught anywhere, including the last record; a deletion is caught when later records follow it; it cannot detect truncation of the most recent records, deletion of a whole boot's records, or recomputation by someone with write access. Use audit.md's own words.
+2. **The "Developer guide" hero button is invisible in the slate scheme.** Material colours a plain `.md-button`'s text and border with `var(--md-primary-fg-color)`, which is #1e293b on the slate page (about 1.1:1). The Quickstart primary button's fill also blends into the slate page. Fix both in extra.css, for the slate scheme only:
+   - the plain button's text and border must reach at least 4.5:1 against the page (the accent shade works);
+   - the primary button must stand out from the page, at 3:1 or more for its fill or border against the page, with its text still at 4.5:1 or more.
+
+   **Extend check_contrast.py to measure both buttons in both schemes:** plain-button text against page, primary-button text against its fill, and primary fill or border against page. Planted fault: revert the slate button fix in a scratch copy, which must fail naming the button pair.
+3. **No orphaned card.** At 1280px the three cards lay out 2 + 1, with the third alone on its own row. Make them read as a set on desktop: either three across, or one full-width column. Stack them on mobile. You may shorten a card's body to fewer of its source's verified sentences, but the audit card must keep its limits sentence. Confirm with screenshots.
+4. **Screenshots are part of acceptance.** Take them with Playwright/Chromium at 1280px and 390px, in light and dark, and look at them. Report every interactive element's visibility in both schemes, not only text legibility.
+
+Keep green:
+- the strict build;
+- every `check_*.py`;
+- favicon reproducibility;
+- that the logo is byte-identical to the supplied file;
+- the third-party grep;
+- lychee;
+- actionlint;
+- the home meta description equal to T;
+- the Owns scope, checked with `git diff site-polish...HEAD`.
