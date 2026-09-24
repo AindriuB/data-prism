@@ -19,6 +19,7 @@ read it from
 - docs-site/diagrams/extension-points.mmd *(new)*
 - docs/assets/diagrams/extension-points.svg *(new, rendered by 88's `render.sh`)*
 - docs-site/diagrams/README.md *(add diagram 6's trace-table rows only)*
+- docs/developer-guide/write-an-adapter.md *(the one sentence at about lines 61–63, "the `IdentityResolver` and `DataSourceAdapter` beans the platform refuses to start without", only; added 2026-09-24 when closing task 89)*
 
 ## Goal
 
@@ -106,3 +107,9 @@ spec requires. The spec's wave list says diagram 6 is placed by C1 or C2.
 - `mkdocs.yml`, `docs/extending.md`, `write-an-adapter.md`, `render.sh`, `check_diagrams.py`, and diagrams 1–5's sources, SVGs and embeds.
 - Any diagrams landing or "learn" page (the owner ruled it out, 2026-09-24).
 - Tutorials on classification in depth or custom audit sinks (later plan).
+
+## Amendment — 2026-09-24, carried from task 89's review
+
+- **Correct the adapter tutorial's IdentityResolver sentence.** `docs/developer-guide/write-an-adapter.md` (about lines 61–63) says the auto-configuration class supplies "the `IdentityResolver` and `DataSourceAdapter` beans the platform refuses to start without". That is inaccurate for the resolver: `dataprism.identity.resolver: pass-through` supplies one with no code (DataPrismAutoConfiguration.java about lines 128–133). An application-supplied `IdentityResolver` bean still wins. Reword only that sentence, tracing it to the code, so it matches what this tutorial explains. Don't change anything else in that file. Acceptance: the sentence traces to DataPrismAutoConfiguration, and `git diff site-polish...HEAD -- docs/developer-guide/write-an-adapter.md` touches only those lines.
+- Always diff with three dots (`git diff site-polish...HEAD`), because `site-polish` moves as tasks merge.
+- Branch from LOCAL `site-polish` only after task 88 is recorded, because this task renders diagram 6 with 88's `render.sh`.
