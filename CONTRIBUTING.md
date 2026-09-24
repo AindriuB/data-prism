@@ -71,6 +71,19 @@ mkdocs build --strict   # what CI runs; fails on any broken link or
                          # missing/duplicate/over-length page description
 ```
 
+If your `python3` has no `pip` (or you want the exact toolchain CI uses),
+build in Docker instead, as your own user so nothing it writes is
+root-owned:
+
+```bash
+docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/w" -w /w python:3.12 sh -c '
+  python -m venv /tmp/v &&
+  /tmp/v/bin/pip -q install -r docs-site/requirements.txt &&
+  /tmp/v/bin/mkdocs build --strict &&
+  for f in docs-site/hooks/check_*.py; do /tmp/v/bin/python "$f" || exit 1; done
+'
+```
+
 Rules for adding or changing a page:
 
 - **Existing docs get no front matter.** `docs/extending.md` and `PLAN.md`
@@ -88,6 +101,18 @@ Rules for adding or changing a page:
   `exclude_docs`). `docs/pack.md` in particular is the superseded original
   spec; keeping it off the site stops an assistant citing it as current
   behaviour.
+- **Tutorial snippets are never hand-copied.** Anything presented as example
+  code in the developer guide comes from a marked region (`// --8<--
+  [start:name]` / `[end:name]`) in a real, compiled and tested source file
+  under `data-prism-quickstart-extension/` or `docker/`, pulled in with
+  `pymdownx.snippets`'s `--8<--` syntax. `check_paths: true` fails the build
+  if the file or section doesn't exist, so a snippet going stale when the
+  source changes is caught, not silently left wrong.
+- **`docs-site/hooks/check_*.py` is a convention, not a fixed list.** Every
+  file matching that glob runs, in sorted order, both in CI
+  (`.github/workflows/pages.yml`) and by the tester, against a built `site/`
+  directory. Add a new guard by adding a new `check_*.py` module; nothing
+  else needs editing to wire it in.
 
 ## Licence
 
