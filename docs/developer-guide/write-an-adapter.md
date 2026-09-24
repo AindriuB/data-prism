@@ -32,9 +32,11 @@ build if one is missing:
 ```
 
 `@InternalIdentifier` marks the record's own correlation id; `@SensitiveData`
-classifies a field and states what should happen to it (here, synthesizing
-`customerName` and redacting `email`); `@NonSensitive` asserts a field is
-safe to emit unchanged and requires a `reason()`. Full reference:
+classifies a field and *suggests* what should happen to it (here, synthesizing
+`customerName` and redacting `email`) — the privacy engine's own profile
+rule, or the stricter of the two if both apply, has the final say;
+`@NonSensitive` asserts a field is safe to emit unchanged and requires a
+`reason()`. Full reference:
 [Classify the model with `@LlmExposedModel`](../extending.md#classify-the-model-with-llmexposedmodel),
 including what the processor rejects and why.
 
@@ -79,16 +81,16 @@ Full reference: [Register the extension](../extending.md#register-the-extension)
 ## 4. Shape the pom
 
 Inside this repository, the dependencies are unversioned because the reactor
-parent pins them:
+parent pins them, and all four are scoped `provided` (test-scope entries
+omitted below):
 
 ```xml
 --8<-- "pom.xml:dependencies"
 ```
 
-**This is not a standalone pom.** Outside this reactor, `data-prism-core` and
-`data-prism-annotations` need explicit `<version>` elements, and the
-annotation processor below needs a real version rather than
-`${project.version}` — see
+**This is not a standalone pom.** Outside this reactor, every dependency
+above needs an explicit `<version>` element, and the annotation processor
+below needs a real version rather than `${project.version}` — see
 [The pom shape](../extending.md#the-pom-shape) for the version-complete
 equivalent that stands alone, verified by building it against a clean local
 repository. The annotation processor itself goes on the processor path, never
@@ -102,7 +104,7 @@ as a `<dependency>`:
 
 The packaged server adds a `-Dloader.path` jar's own classes and resources to
 its classpath — never its dependencies, which is why the pom above marks
-everything but `data-prism-core`/`data-prism-annotations` `provided`. Read
+every dependency `provided`. Read
 [The `-Dloader.path` trap](../extending.md#the-dloaderpath-trap) before
 relying on this. The quickstart's own server image loads this module's jar
 exactly that way:
@@ -123,7 +125,8 @@ Full reference: [Load the extension](../extending.md#load-the-extension).
 
 ## 6. Configure the source
 
-The adapter's `@Value` bindings above read `dataprism.sources.customer.*`.
+`QuickstartExtensionAutoConfiguration`'s `@Value` bindings above read
+`dataprism.sources.customer.*`.
 The quickstart's own deployment configuration sets it:
 
 ```yaml
@@ -157,7 +160,8 @@ stack, including what each service is and how they trust each other.
 
 Once it settles, mint a token and call `get_entity_context` — the same
 handshake [`docs/quickstart.md`](../quickstart.md) walks through in full —
-using the runnable script this repository ships:
+using the runnable script this repository ships. The `up --build` above runs
+in the foreground and blocks its terminal, so run this in a second one:
 
 ```sh
 examples/quickstart-demo/run.sh
@@ -176,8 +180,10 @@ PASS: get_entity_context for CUSTOMER 1001 returned a pseudonymised response.
 ```
 
 `customerName` is a stable synthetic name — the module's own code, from step
-1, marked it `SYNTHESIZE` — never the fixture's own `Fixture Person One`.
-`email` is redacted outright, per that field's own `REDACT` action. Neither
+1, suggested `SYNTHESIZE`, and the deployment's privacy profile agreed — never
+the fixture's own `Fixture Person One`. `email` is redacted outright: the
+model suggested `REDACT`, and the privacy engine, which always has the final
+say, did not relax it. Neither
 is anonymisation in any strict, re-identification-proof sense: pseudonymised
 output is still personal data, recoverable by whoever holds the deployment's
 HMAC key, and this tutorial does not claim otherwise. `status`, classified

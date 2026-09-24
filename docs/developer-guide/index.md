@@ -23,24 +23,25 @@ YAML-only path first.
   (`sourceName()`), states the model it returns (`responseType()`), and
   fetches one record (`fetch(DataRequest request)`), never seeing anything
   a caller supplied beyond an entity type and a subject id
-  (`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataSourceAdapter.java`).
+  ([`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataSourceAdapter.java`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataSourceAdapter.java)).
   Tutorial 1, below, writes one from nothing. Full reference:
   [Implement `DataSourceAdapter`](../extending.md#implement-datasourceadapter).
 - **`IdentityResolver`** — how a subject's per-source keys relate to one
   canonical identity. Most integrations use the shipped
   `PassThroughIdentityResolver` as-is; write your own only when your sources
   disagree about identity
-  (`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/IdentityResolver.java`).
+  ([`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/IdentityResolver.java`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/IdentityResolver.java)).
   Tutorial 2 covers writing one. Full reference:
   [Implement `IdentityResolver`](../extending.md#implement-identityresolver).
 - **`AuditSink`** and the **classification annotations**
   (`@LlmExposedModel`, `@SensitiveData`, `@NonSensitive`, `@InternalIdentifier`,
   `@SubjectIdentifier`) are also extension points a reviewed integration
   touches — the first is where audit events go
-  (`data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditSink.java`),
-  the second is what makes a field safe to return through MCP at all. Both
-  are used, not yet explained, in tutorial 1 below; a later part of this
-  guide covers them on their own. Until then, see
+  ([`data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditSink.java`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditSink.java)),
+  the second is what makes a field safe to return through MCP at all. The
+  classification annotations are used, not yet explained, in tutorial 1
+  below; `AuditSink` does not appear there. A later part of this guide covers
+  both on their own. Until then, see
   [Classify the model with `@LlmExposedModel`](../extending.md#classify-the-model-with-llmexposedmodel)
   in the full reference.
 
