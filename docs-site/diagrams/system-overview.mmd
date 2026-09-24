@@ -1,12 +1,12 @@
-flowchart LR
+flowchart TB
     Client["MCP client"]
     Auth["Authenticate caller"]
     Authz["Tool authorisation"]
-    Scope["Derive scope and purpose"]
-    Orchestrator["Orchestrator (fan-out)"]
-    Adapters["Reviewed source adapters"]
+    Scope["Derive scope\nand purpose"]
+    Orchestrator["Orchestrator\n(fan-out)"]
+    Adapters["Reviewed source\nadapters"]
     APIs["Enterprise APIs"]
-    Engine["Classification and scrubbing: pseudonymise / redact / remove"]
+    Engine["Classification and scrubbing:\npseudonymise / redact / remove"]
     Leak["Raw-value leak check"]
     Audit["Audit"]
     Response["MCP response"]

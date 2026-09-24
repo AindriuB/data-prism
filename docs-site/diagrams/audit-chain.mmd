@@ -1,12 +1,12 @@
-flowchart LR
-    Boot["Writer boot: instanceId is writer-id / uuid"]
+flowchart TB
+    Boot["Writer boot: instanceId is\nwriter-id / uuid"]
     Genesis["GENESIS"]
     R1["record 1"]
     R2["record 2"]
     R3["record N"]
-    Verifier["Offline verifier replays the chain"]
-    Detect["Detects an edit or deletion inside the chain, including the last record"]
-    Blind["Cannot detect: tail truncation, deletion of a whole boot's records, or recomputation by someone with write access"]
+    Verifier["Offline verifier\nreplays the chain"]
+    Detect["Detects: an edit anywhere in\nthe chain, including the last\nrecord, and a deletion that\nhas later records after it"]
+    Blind["Cannot detect: tail\ntruncation, deletion of a\nwhole boot's records, or\nrecomputation by someone\nwith write access"]
 
     Boot --> Genesis --> R1 --> R2 --> R3 --> Verifier
     Verifier --> Detect

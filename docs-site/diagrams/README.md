@@ -43,12 +43,35 @@ never use `<foreignObject>` for their labels either way, so the setting is a
 no-op for that one but is kept in the shared config for whatever task 90's
 diagram turns out to be.
 
+**Layout choices.** Diagrams 1 and 5 (`system-overview.mmd`,
+`audit-chain.mmd`) are `flowchart TB`, not `LR`: a single wide row of nodes
+shrinks to an unreadable strip once a `<img>` scales it down to the docs
+site's ~688px content column. Stacked top-to-bottom, and with a few labels
+given an explicit `\n` line break (mermaid renders `\n` as a real line break
+in plain SVG text even with `htmlLabels: false`), both now render at native
+size at that width instead of scaled down. `entity-context-call.mmd`'s nine
+participants and call-and-return messages need real horizontal room; its
+participants use short ids (`Tool`, `Authz`, …, matched to their class in the
+trace table below) and `docs-site/diagrams/mermaid-config.json` tightens
+`sequence.actorMargin`/`messageMargin`/`boxMargin`/`noteMargin`, but it still
+renders wider than the other four — see the task report for its measured
+effective label size.
+
+**Dark-mode framing.** mermaid-cli's SVGs carry a hard white background with
+no margin, which reads as an abrupt white strip on a dark page. `render.sh`
+pads every rendered SVG's `viewBox` by a small uniform margin
+(`PADDING_PX`) and draws a thin rounded border inset from the new edge, so
+each diagram reads as a deliberate framed panel instead — pure
+post-processing on the existing viewBox numbers (mermaid-cli itself has no
+padding option), applied after every render, to every diagram.
+
 **Reproducibility.** Two consecutive runs of `render.sh` in this worktree
 produced byte-identical SVGs (`diff -r` empty) — mermaid-cli's flowchart and
 sequence renderers are deterministic here, with no per-run randomness (no
-`init` seed, no wall-clock content), so `render.sh` does not need to
-normalise anything. `git status --porcelain docs/assets/diagrams` is empty
-after a fresh run.
+`init` seed, no wall-clock content), and the padding/framing post-processing
+is pure arithmetic on the rendered viewBox, so `render.sh` does not need to
+normalise anything further. `git status --porcelain docs/assets/diagrams` is
+empty after a fresh run.
 
 **Verified clean.**
 
@@ -78,9 +101,12 @@ embedded script.
 
 Every node and every edge of every diagram, with the `file:line` (code, or
 `docs/architecture.md` / `docs/tools.md` / `docs/audit.md`) that supports it.
-Line numbers are this branch's current ones (after the four embeds below —
-none of these source lines moved, since every embed was inserted at its
-section's end).
+Line numbers are this branch's current ones, after the four embeds below.
+Each embed was inserted at its section's end, so nothing it cites within that
+same section moved; content further down the same file did shift by the
+number of lines its embed added (`architecture.md` +4, `tools.md` +6 then
++4, `configuration.md` +5, `audit.md` +5 at end of file, so nothing after it
+to shift) — see the task report's line-shift list for what that moves.
 
 ### 1. System overview — `system-overview.mmd`
 
@@ -115,32 +141,37 @@ requires. **Boundary line backing this:** `docs/architecture.md:147-152`
 
 ### 2. One `get_entity_context` call — `entity-context-call.mmd`
 
+Participant labels are kept short in the diagram itself (`Tool`, `Authz`,
+`Scope`, `Orchestrator`, `Adapter`, `Scrub`, `Validator`, `Audit`) so the
+sequence fits a usable width; the class each one names is given here instead.
+
 | Element | Label | Supports |
 |---|---|---|
-| Participant | MCP client | `docs/tools.md:96-98` |
-| Participant | `GetEntityContextTool` | `GetEntityContextTool.java:62-64` |
-| Participant | `AuthorizationService` | `docs/architecture.md:43`; `GetEntityContextTool.java:84,108` |
-| Participant | `ScopeResolver` | `docs/architecture.md:43`; `data-prism-security/src/main/java/io/github/aindriub/dataprism/security/ScopeResolver.java:27` |
-| Participant | `ContextOrchestrator` | `docs/architecture.md:44`; `data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/ContextOrchestrator.java:6,9` |
-| Participant | `DataSourceAdapter` | `docs/architecture.md:56-57`; `DefaultContextOrchestrator.java:69,277` |
-| Participant | `ScrubbingEngine` | `DefaultContextOrchestrator.java:70,289` |
-| Participant | `LlmResponseValidator` | `docs/architecture.md:42`; `DefaultContextOrchestrator.java:72,199-200` |
-| Participant | `AuditRecorder` | `docs/architecture.md:39`; `DefaultContextOrchestrator.java:75,215-221` |
-| Message | Caller→Tool: `tools/call get_entity_context(entityType, subjectId)` | `docs/tools.md:100-105` (Arguments table); `GetEntityContextTool.java:144-149` |
-| Message | Tool→Authz: `authorize(caller, toolInvocation)` | `GetEntityContextTool.java:160` |
+| Participant | `Caller` — MCP client | `docs/tools.md:96-98` |
+| Participant | `Tool` — `GetEntityContextTool` | `GetEntityContextTool.java:62-64` |
+| Participant | `Authz` — `AuthorizationService` | `docs/architecture.md:43`; `GetEntityContextTool.java:84,108` |
+| Participant | `Scope` — `ScopeResolver` | `docs/architecture.md:43`; `data-prism-security/src/main/java/io/github/aindriub/dataprism/security/ScopeResolver.java:27` |
+| Participant | `Orchestrator` — `ContextOrchestrator` | `docs/architecture.md:44`; `data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/ContextOrchestrator.java:6,9` |
+| Participant | `Adapter` — `DataSourceAdapter` | `docs/architecture.md:56-57`; `DefaultContextOrchestrator.java:69,277` |
+| Participant | `Scrub` — `ScrubbingEngine` | `DefaultContextOrchestrator.java:70,289` |
+| Participant | `Validator` — `LlmResponseValidator` | `docs/architecture.md:42`; `DefaultContextOrchestrator.java:72,199-200` |
+| Participant | `Audit` — `AuditRecorder` | `docs/architecture.md:39`; `DefaultContextOrchestrator.java:75,215-221` |
+| Message | Caller→Tool: `get_entity_context(entityType, subjectId)` | `docs/tools.md:100-105` (Arguments table); `GetEntityContextTool.java:144-149` |
+| Message | Tool→Tool: `caller from transport context` | `GetEntityContextTool.java:155,206-213` (`callerFrom`: the transport-context caller, or the configured development caller when the transport carries none) |
+| Message | Tool→Authz: `authorize(caller, invocation)` | `GetEntityContextTool.java:160` |
 | Message | Authz-->Tool: `AuthorizationDecision` | `GetEntityContextTool.java:160-163` |
 | Message | Tool→Scope: `resolve(caller, decision, clock)` | `GetEntityContextTool.java:167` |
 | Message | Scope-->Tool: `PrivacySession` | `GetEntityContextTool.java:165-170` |
-| Message | Tool→Orchestrator: `buildContext(request, privacyContext, investigationContext)` | `GetEntityContextTool.java:178-180` |
-| Message | Orchestrator→Adapter: `fetch (parallel fan-out)` | `DefaultContextOrchestrator.java:277` |
+| Message | Tool→Orchestrator: `buildContext(request, context)` | `GetEntityContextTool.java:178-180` |
+| Message | Orchestrator→Adapter: `fetch (fan-out)` | `DefaultContextOrchestrator.java:277` |
 | Message | Adapter-->Orchestrator: `raw source record` | `DefaultContextOrchestrator.java:280-286` |
 | Message | Orchestrator→Scrub: `scrub(record, context)` | `DefaultContextOrchestrator.java:289` |
 | Message | Scrub-->Orchestrator: `scrubbed tree` | `DefaultContextOrchestrator.java:289-296` |
-| Message | Orchestrator→Validator: `validate(merged, prohibited, emitted, context)` | `DefaultContextOrchestrator.java:198-200` |
-| Message | Validator-->Orchestrator: `ValidationResult, no violations` | `DefaultContextOrchestrator.java:200-203` |
-| Message | Orchestrator→Audit: `record(..., decision=ALLOW, ...)` | `DefaultContextOrchestrator.java:220-221` |
+| Message | Orchestrator→Validator: `validate(merged, context)` | `DefaultContextOrchestrator.java:198-200` |
+| Message | Validator-->Orchestrator: `ValidationResult` | `DefaultContextOrchestrator.java:200-203` |
+| Message | Orchestrator→Audit: `record(decision=ALLOW)` | `DefaultContextOrchestrator.java:220-221` |
 | Message | Orchestrator-->Tool: `ContextResponse` | `DefaultContextOrchestrator.java:222-223` |
-| Message | Tool-->Caller: `CallToolResult, structuredContent` | `GetEntityContextTool.java:181-184`; `docs/tools.md:112-120` (Response table) |
+| Message | Tool-->Caller: `CallToolResult` | `GetEntityContextTool.java:181-184`; `docs/tools.md:112-120` (Response table) |
 
 ### 3. How a pseudonym is made — `pseudonym-generation.mmd`
 
@@ -205,14 +236,18 @@ is empty.
 | Node | `Genesis` — GENESIS | `docs/audit.md:67`; `AuditRecorder.java:28,42` |
 | Node | `R1`/`R2`/`R3` — record 1 / record 2 / record N | `docs/audit.md:8`; `AuditRecorder.java:84-110` (`previousHash` chaining) |
 | Node | `Verifier` — Offline verifier replays the chain | `docs/audit.md:87` (`AuditChainVerifierCli` replays each writer's chain); `data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditChainVerifier.java:16` |
-| Node | `Detect` — Detects an edit or deletion inside the chain, including the last record | `docs/audit.md:233-236` |
+| Node | `Detect` — Detects: an edit anywhere in the chain, including the last record, and a deletion that has later records after it | `docs/audit.md:231-239` (edit caught anywhere including the tail; only deleting a writer's *most recent* records goes undetected, so a deletion followed by later records is caught) |
 | Node | `Blind` — Cannot detect: tail truncation, deletion of a whole boot's records, or recomputation by someone with write access | `docs/audit.md:246-254` (truncation, whole-boot deletion); `docs/audit.md:261-268` (recomputation by anyone with write access) |
 | Edge | Boot → Genesis | `docs/audit.md:61-67` |
 | Edge | Genesis → R1 → R2 → R3 | `AuditRecorder.java:84,90-92,110` |
 | Edge | R3 → Verifier | `docs/audit.md:87` |
-| Edge | Verifier → Detect | `docs/audit.md:233-236` |
+| Edge | Verifier → Detect | `docs/audit.md:231-239` |
 | Edge | Verifier → Blind | `docs/audit.md:246-268` |
 
 This diagram uses only `docs/audit.md`'s own wording for what is and is not
-detected, matching the strength of `docs/audit.md`'s own closing paragraph
-about the durable audit log.
+detected: "including the last record" is attached only to edits, never to
+deletions, matching "What this does and does not prove" exactly (attempt 1's
+review found the previous wording overclaimed this — a deletion is caught
+only when later records still follow it in the chain, and deleting a
+writer's most recent records is the tail-truncation gap the `Blind` node
+already names).

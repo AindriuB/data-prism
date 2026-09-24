@@ -1,4 +1,4 @@
 {
   "flowchart": { "htmlLabels": false },
-  "sequence": { "useMaxWidth": true }
+  "sequence": { "useMaxWidth": true, "actorMargin": 30, "messageMargin": 20, "boxMargin": 6, "noteMargin": 6 }
 }

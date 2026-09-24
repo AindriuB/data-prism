@@ -287,4 +287,4 @@ and evidence is what an offline verifier can actually give.
 The diagram below shows what one writer's hash chain looks like, and what
 its offline verifier can and cannot tell you.
 
-![The audit chain: one chain per writer boot (writer-id/uuid) starts at GENESIS; the offline verifier replaying it detects an edit or deletion anywhere in the chain, including the last record, but cannot detect truncation of the tail, deletion of a whole boot's records, or recomputation of every hash by someone who already has write access.](assets/diagrams/audit-chain.svg)
+![The audit chain: one chain per writer boot (writer-id/uuid) starts at GENESIS; the offline verifier replaying it detects an edit anywhere in the chain, including the last record, and a deletion that has later records after it, but cannot detect truncation of the tail, deletion of a whole boot's records, or recomputation of every hash by someone who already has write access.](assets/diagrams/audit-chain.svg)
