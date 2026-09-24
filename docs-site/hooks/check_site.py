@@ -274,9 +274,13 @@ def check_no_third_party_scripts() -> None:
 # superfences highlighting puts on a *fenced code block that shows* Mermaid
 # source) is among the value's whitespace-separated class names is decided
 # below, in Python, rather than in the regex, so the same "which class names"
-# logic works for all three quoting styles.
+# logic works for all three quoting styles. The attribute name is allowed to
+# follow whitespace, `/` or a closing quote (attempt 3): HTML parsers treat
+# all three as attribute separators, so `<pre id="x"class="mermaid">` — the
+# quote from the previous attribute immediately followed by `class` — is a
+# real `.mermaid` element too, not just the whitespace-separated form.
 _CLASS_ATTR_RE = re.compile(
-    r"""\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
+    r"""[\s/"']class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
     re.IGNORECASE,
 )
 
@@ -308,10 +312,13 @@ _TAG_RE = re.compile(r"<(script|link)\b([^>]*)>", re.IGNORECASE)
 # `<script src='https://…'>` passed unnoticed. Three alternative capturing
 # groups, one per quoting style, since stdlib `re` rejects the same named
 # group in more than one alternative; `_first_group` below picks whichever
-# one matched.
+# one matched. The attribute name may follow whitespace, `/` or a closing
+# quote (attempt 3): `<script/src="…">` and `<script type="module"src="…">`
+# are both real `src` attributes an HTML parser recognises, even though
+# neither has whitespace right before `src`.
 def _attr_re(attr_name: str) -> re.Pattern[str]:
     return re.compile(
-        rf"""\s{attr_name}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
+        rf"""[\s/"']{attr_name}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
         re.IGNORECASE,
     )
 
@@ -334,13 +341,19 @@ def _iter_tag_attr_values(text: str) -> list[str]:
     return values
 
 
-_AT_IMPORT_RE = re.compile(r'@import\s+(?:url\(\s*)?["\']?([^"\'\);]+)', re.IGNORECASE)
+_AT_IMPORT_RE = re.compile(r'@import\s*(?:url\(\s*)?["\']?([^"\'\);]+)', re.IGNORECASE)
 _URL_FUNC_RE = re.compile(r'\burl\(\s*["\']?([^"\')]+)["\']?\s*\)', re.IGNORECASE)
 
 # `img`/`srcset`/`iframe`/`fetch(...)` are deliberately left out of scope:
 # this guard only needs to catch the ways a *script or stylesheet* origin can
 # be widened (which is what actually executes third-party code or loads
 # analytics), not every possible off-origin URL a page could ever mention.
+# Also deliberately out of scope (attempt 3, final bounded round): C0 control
+# characters other than whitespace inside attribute values, CSS escapes such
+# as `\2f` or `h\ttps` inside `url(...)`, and a quoted `url()` string that
+# contains the other quote character — each needs deliberate obfuscation to
+# exploit, which this guard protects against an accident, not an attacker
+# who can already edit the repo.
 
 
 def _first_group(match: re.Match[str]) -> str:
