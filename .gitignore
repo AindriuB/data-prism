@@ -4,9 +4,11 @@ logs/
 *.log
 target/
 
-# MkDocs build output and the site build's own manifest (docs-site/hooks/site.py).
+# MkDocs build output and the site build's own manifests (docs-site/hooks/site.py,
+# docs-site/hooks/changelog.py).
 /site/
 /docs-site/.manifest.json
+/docs-site/.changelog-rendered.md
 __pycache__/
 # The venv CONTRIBUTING.md's "Docs site" section has a contributor create.
 /.venv/
