@@ -32,6 +32,9 @@
   <meta name="twitter:description" content="{{ page.meta.description if page.meta and page.meta.description else config.site_description }}">
   <meta name="twitter:image" content="{{ config.site_url }}assets/social-card.png">
   {% if page and page.file.src_uri == "index.md" %}
+  {#- Google Search Console ownership check for the URL-prefix property
+      https://aindriub.github.io/data-prism/ — keep it; Google re-checks. -#}
+  <meta name="google-site-verification" content="1JOstC7IXDgY0OuuBh-TH-kJEuA9-iTBPxNun-UnRTg">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
