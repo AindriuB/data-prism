@@ -60,9 +60,9 @@ on:
       version:
         description: >-
           Image tag to publish (must match the reactor version in pom.xml,
-          e.g. 0.3.0). Only used for the workflow_dispatch push step.
+          e.g. 0.3.1). Only used for the workflow_dispatch push step.
         required: true
-        default: "0.3.0"
+        default: "0.3.1"
 
 permissions:
   contents: read

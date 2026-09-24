@@ -38,10 +38,17 @@ destination, without writing code.
 - A running `data-prism-server` distribution and the
   `data-prism-connectors-rest` jar alongside it. This walkthrough runs both
   from this repository's own `mvn package` output
-  (`data-prism-server/target/data-prism-server-0.3.0.jar` and
-  `data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar`),
-  which is exactly the artifact Maven Central serves under the same
-  coordinates and version — nothing here is specific to a from-source build.
+  (`data-prism-server/target/data-prism-server-0.3.1.jar` and
+  `data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.1.jar`).
+  `data-prism-server` is never published to Maven Central at any version
+  (`data-prism-server/pom.xml` sets `skipPublishing`); its distribution
+  always comes from a from-source build like this one, a GitHub Release, or
+  the GHCR image, never from Central. `data-prism-connectors-rest` is on
+  Central, but only at `0.3.0` — 0.3.1 was not published there — and its own
+  source is unchanged since that release (`git diff v0.3.0..HEAD --
+  data-prism-connectors-rest/src/main` is empty), so the jar this walkthrough
+  builds is code-identical to the `0.3.0` artifact Central serves under
+  `io.github.aindriub:data-prism-connectors-rest`.
   "Build the jars, then start the two fixtures" below gives the exact build
   command; every path in this walkthrough is relative to the repository
   root, and every command below is run from there.
@@ -127,7 +134,7 @@ walkthrough stands in for your own — on port 8543:
 ```sh
 DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
-java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.3.0.jar \
+java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.3.1.jar \
   --server.port=8543 \
   --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
@@ -150,7 +157,7 @@ any earlier command in this walkthrough, so restate `DP_WALKTHROUGH_CERT_DIR` be
 ```sh
 DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
-java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.3.0.jar \
+java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.3.1.jar \
   --server.port=8544 \
   --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
@@ -220,7 +227,7 @@ classpath, the same mechanism any reviewed adapter extension uses (see
 the one property this mode reads:
 
 ```sh
--Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar
+-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.1.jar
 -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml
 ```
 
@@ -313,9 +320,9 @@ java \
   -Djavax.net.ssl.trustStore="$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12" \
   -Djavax.net.ssl.trustStorePassword=walkthrough-demo-only \
   -Djavax.net.ssl.trustStoreType=PKCS12 \
-  -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar \
+  -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.1.jar \
   -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml \
-  -jar data-prism-server/target/data-prism-server-0.3.0.jar \
+  -jar data-prism-server/target/data-prism-server-0.3.1.jar \
   --server.port=8080 \
   --dataprism.identity.resolver=pass-through \
   --dataprism.security.jwt.issuer=https://issuer.walkthrough.invalid \
@@ -400,7 +407,7 @@ is redacted outright per its `action: REDACT`, and `status` passes through
 unchanged because the catalogue marked it `nonSensitive`. The subject itself
 (`SUBJ-VHK4SXCQ`) is a pseudonym too, not `1001`. This ran with
 `-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar`
-alone — no second jar,
+(recorded against 0.3.0) alone — no second jar,
 no custom extension, no `IdentityResolver` bean compiled anywhere — and
 against the catalogue exactly as it is committed in
 `examples/json-sources/customer-api.yaml`, comments included: the transport
@@ -499,11 +506,13 @@ test drives directly. Its own header comment gives the exact `javac`/`java`
 invocation; in short, `install` first — `package` alone leaves
 `data-prism-pseudonymisation` and `data-prism-orchestration` (imported here
 transitively) unresolved from this reactor, so `mvn dependency:build-classpath`
-falls back to whatever was last published to Maven Central. The `-am` flag
+fails to resolve them — no `0.3.1` artifact of either exists on Maven Central
+to fall back to. The `-am` flag
 installs every upstream module this one depends on, not just those two
 (`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`) — note this
-overwrites any `0.3.0` artifacts already sitting in the reader's local
-`~/.m2` repository with this branch's build. Then
+installs this branch's build at `0.3.1`, alongside, not overwriting, any
+`0.3.0` artifacts already sitting in the reader's local `~/.m2` repository
+from Maven Central. Then
 compile and run this one file against `data-prism-core`'s and
 `data-prism-connectors-rest`'s `target/classes` plus
 `data-prism-connectors-rest`'s Maven dependency classpath (`mvn -q
@@ -566,7 +575,7 @@ Every code fence above was executed, not transcribed:
 | What it shows | Command that produced it |
 |---|---|
 | The two fixtures' health checks | `curl -sk https://127.0.0.1:8543/health` and `curl -sk https://127.0.0.1:8544/health`, against processes started with the `java -jar data-prism-quickstart-fixtures/...`/`data-prism-quickstart-issuer/...` commands in "Build the jars, then start the two fixtures" |
-| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server/target/data-prism-server-0.3.0.jar ...` (server log, "Started DataPrismServerApplication") |
+| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server/target/data-prism-server-0.3.0.jar ...` (recorded against 0.3.0; server log, "Started DataPrismServerApplication") |
 | `GET /health` | `curl -s http://127.0.0.1:8080/health` |
 | `MISSING_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=pass-through` removed |
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |

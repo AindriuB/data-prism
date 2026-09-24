@@ -7,12 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-24
+
+No runtime behaviour changed on the server. This release refreshes the
+docs site and the MCP Registry listing, and corrects several documentation
+and CHANGELOG claims found while writing them.
+
+### Added
+
+- A MkDocs Material docs site published from the existing user docs, with an
+  identity (mark, favicon, palette, landing page), six concept diagrams
+  embedded in context, and dedicated FAQ, comparison and three intent
+  use-case pages.
+- A developer guide overview with tutorials for writing an adapter and
+  writing a custom `IdentityResolver`, both checked against the code they
+  document, plus an example `IdentityResolver` and its unit tests in
+  `data-prism-quickstart-extension`.
+- `websiteUrl` and the current canonical tagline in the MCP Registry
+  `server.json` entry, so the next registry publish carries them instead of
+  the stale v0.3.0 description and missing `websiteUrl`.
+
 ### Changed
 
+- The changelog page on the docs site now collapses every release but the
+  latest, without editing `CHANGELOG.md` itself.
 - CHANGELOG: corrected the 0.3.0 `AuditChainVerifier` entry, which attached
   "caught even on the last record" to deletions as well as edits; only edits
   are caught at a chain's tail, a deletion is caught only when a later record
   follows it (see `docs/audit.md`).
+- Adopted a new canonical project description in `README.md` and the root
+  `pom.xml`, replacing v0.3.0's "A privacy layer between MCP clients and
+  enterprise APIs.": it now says Data Prism pseudonymises personal data per
+  privacy scope and refuses anything unclassified. The same text is the
+  abstract of the new `CITATION.cff`.
+
+### Fixed
+
+- `docs/tools.md`'s claim that an unclassified field is "dropped"; the
+  shipped `DEFAULT`/`STRICT` profiles both refuse the whole request instead.
+
+Not published to Maven Central; the Maven artifacts remain at 0.3.0.
 
 ## [0.3.0] - 2026-09-23
 
@@ -291,6 +325,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.3.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.1
 [0.3.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.2.0
 [0.1.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.1

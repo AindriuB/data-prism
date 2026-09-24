@@ -96,7 +96,7 @@ docker compose up
 ```
 
 pulls the published `ghcr.io/aindriub/data-prism-quickstart-<name>` images
-(pin one with `QUICKSTART_IMAGE_TAG=0.3.0`; run
+(pin one with `QUICKSTART_IMAGE_TAG=0.3.1`; run
 `docker compose -f compose.yaml -f compose.build.yaml up --build` instead to
 build every image from source) and brings up the standalone server, a
 synthetic fixture API and a local HTTPS JWT issuer, proving an
@@ -226,7 +226,7 @@ then load reviewed extension jars without rebuilding the server:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.3.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.3.1.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 
