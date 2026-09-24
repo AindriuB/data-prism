@@ -180,3 +180,24 @@ Keep green everything the attempt-2 tester verified:
 - actionlint;
 - the verbatim CONTRIBUTING recipe;
 - `git diff --stat site-polish`, limited to Owns plus `check_no_stub_pages.py`.
+
+## Attempt 3 — failed
+
+Tester: PASS. Reviewer: CHANGES. All attempt-2 items are closed. The following also pass:
+- `SRC=`, spaces around `=`, and `&#47;`, `&#x2F;` and `&sol;` slashes;
+- leading whitespace and `URL(`;
+- no false positives on `<a href>`;
+- the `url()` / `@import` labels are correct.
+
+This is the **final bounded round**. The guard protects our own generated site against an accidental CDN script, font or tracker, not against a deliberate attacker who can already edit the repo. Fix exactly these two items, each proven with the planted faults listed, and nothing further in this family. Rebase onto LOCAL `site-polish` first.
+
+1. **Minified `@import` with no space is missed** (`_AT_IMPORT_RE`, check_site.py about line 337). `@import"https://fonts.bunny.net/x.css";` and `@import'//fonts.bunny.net/x.css';` are valid CSS, browsers load them, and minifiers emit them. Change `@import\s+` to `@import\s*`. Also check that the pages.yml grep step catches the third-party host in this form (it should, as it's a host grep). Planted faults: both forms, appended to a scratch copy of `main.*.min.css`.
+2. **Attribute separators other than whitespace** (check_site.py about lines 279 and 314). Attributes are only found after `\s`. HTML parsers also treat `/` and a closing quote as separators, and `class="mermaid"` after a quoted attribute is a small regression from attempt 2. Allow `[\s/"']` (or equivalent) before the attribute name for `src`, `href` and `class`. Planted faults:
+   - `<script/src="https://evil.example.com/x.js">`
+   - `<script type="module"src="https://evil.example.com/x.js">`
+   - `<pre id="x"class="mermaid">`
+   - negative case: `class="highlight language-mermaid"` still passes.
+
+**Out of scope, deliberately not fixed:** C0 control characters other than whitespace inside attribute values, CSS escapes such as `\2f` or `h\ttps` inside `url()`, and quoted `url()` strings that contain the other quote. These need deliberate obfuscation. Add one comment line in check_site.py naming them as out of scope, next to the existing img/srcset/iframe/fetch comment.
+
+Keep green the full list from the attempt-2 section plus the attempt-2 planted faults.
