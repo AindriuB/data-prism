@@ -36,14 +36,31 @@ theme:
   # the build if fonts.googleapis or fonts.gstatic appear anywhere in site/.
   font: false
   custom_dir: docs-site/overrides
+  # The supplied prism mark (docs-site/logo/supplied/mark-dark.svg, light
+  # strokes), copied byte-for-byte to docs/assets/logo.svg — see
+  # docs-site/logo/README.md. mark-dark.svg, not mark-light.svg, because
+  # the header background (--md-primary-fg-color, set below) is dark slate
+  # in both colour schemes.
+  logo: assets/logo.svg
+  # Material 9.7.7's base.html emits the favicon <link> before its
+  # extrahead block, so this PNG link renders first; docs-site/overrides/
+  # main.html adds one more <link rel="icon" type="image/svg+xml"> for
+  # favicon.svg inside extrahead, after it. Both are derived from the
+  # supplied mark by docs-site/logo/make_favicon.py — see
+  # docs-site/logo/README.md.
+  favicon: assets/favicon.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -53,6 +70,13 @@ theme:
     - navigation.top
     - content.code.copy
     - search.suggest
+
+# The palette's actual colour values: a dark-slate primary (the header
+# background, in both schemes, so the light-stroke logo works in both) and
+# one indigo accent. See docs/stylesheets/extra.css and
+# docs-site/hooks/check_contrast.py.
+extra_css:
+  - stylesheets/extra.css
 
 # No analytics, no trackers (spec: "Measurement" decision) — deliberately no
 # `extra.analytics` key here.
