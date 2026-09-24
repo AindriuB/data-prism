@@ -46,12 +46,14 @@ YAML-only path first.
   in the full reference.
 
 The diagram below shows where a `DataSourceAdapter` and an `IdentityResolver`
-plug in: both are registered as beans by an application's own
-`@AutoConfiguration`, `DataPrismAutoConfiguration` refuses to start without
-one of each, and everything a `DataSourceAdapter` returns still passes
+plug in: a `DataSourceAdapter` is always a bean an application's own
+`@AutoConfiguration` registers, but an `IdentityResolver` can instead come
+from a `dataprism.identity.resolver: pass-through` setting with no code at
+all; either way, `DataPrismAutoConfiguration` refuses to start when either
+bean is missing, and everything a `DataSourceAdapter` returns still passes
 through the privacy engine before anything downstream sees it.
 
-[![How a DataSourceAdapter and an IdentityResolver plug in: both are registered as beans by an application's own @AutoConfiguration, DataPrismAutoConfiguration's preflight refuses to start with neither present, and the orchestrator's fan-out sends every fetched record on to the privacy engine's classification and scrubbing, with no path around it.](../assets/diagrams/extension-points.svg)](../assets/diagrams/extension-points.svg)
+[![How a DataSourceAdapter and an IdentityResolver plug in: a DataSourceAdapter is always registered as a bean by an application's own @AutoConfiguration, an IdentityResolver can instead come from a pass-through configuration setting with no code, DataPrismAutoConfiguration's preflight refuses to start when either bean is missing, and the orchestrator's fan-out sends every fetched record on to the privacy engine's classification and scrubbing, with no path around it.](../assets/diagrams/extension-points.svg)](../assets/diagrams/extension-points.svg)
 
 ## Where to start
 

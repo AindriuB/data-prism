@@ -35,6 +35,13 @@ class MappedIdentityResolverTest {
     }
 
     @Test
+    void expandOnAnUnknownCanonicalIdReturnsAnEmptyList() {
+        List<SourceRef> refs = resolver.expand(new CanonicalId("no-such-subject"), List.of("customer", "billing", "crm"));
+
+        assertThat(refs).isEmpty();
+    }
+
+    @Test
     void resolveRejectsAnUnknownSourceKey() {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> resolver.resolve(new SourceRef("customer", "does-not-exist")))
