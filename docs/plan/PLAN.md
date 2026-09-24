@@ -1201,24 +1201,34 @@ task below merges onto; task worktrees are reset onto it, not `main`.
 With 83 closed, no discoverability task remains open. What is left is owner
 action, not a task:
 
-- **Owner, after go-live (not yet done):**
-  - `gh repo edit AindriuB/data-prism --description "<D>" --homepage https://aindriub.github.io/data-prism/`
+- **Owner, after go-live:**
+  - ~~`gh repo edit AindriuB/data-prism --description "<D>" --homepage https://aindriub.github.io/data-prism/`
     and add the 11 topics
     (`model-context-protocol pseudonymization pii gdpr data-privacy
     data-minimization llm llm-security ai-agents audit-log hmac`) to the
-    existing 6.
-  - Upload the social preview (`docs/assets/social-card.png`) in Settings →
-    General.
-  - Verify the repo in Google Search Console and Bing Webmaster Tools, then
-    submit `sitemap.xml` to both. Bing feeds Copilot and ChatGPT search.
+    existing 6.~~ — done 2026-09-24: About description is the corrected D,
+    homepage set, 17 topics present, verified with `gh repo view`. See
+    `HISTORY.md`.
+  - ~~Upload the social preview (`docs/assets/social-card.png`) in Settings →
+    General.~~ — done 2026-09-24: a custom social preview image is set.
+  - ~~Verify the repo in Google Search Console and Bing Webmaster Tools, then
+    submit `sitemap.xml` to both. Bing feeds Copilot and ChatGPT search.~~ —
+    done 2026-09-24: Search Console verified as a URL-prefix property for
+    `https://aindriub.github.io/data-prism/` using the meta tag PR #103 added
+    (`docs-site/overrides/main.html`, home page only), `sitemap.xml`
+    submitted; Bing Webmaster Tools imported from Search Console. Verified
+    with `gh repo view` and curl. See `HISTORY.md`.
   - Post each `docs/plan/outreach/*.md` draft by hand, one at a time, only
     where that list's own rules are met (`awesome-spring.md` and
     `awesome-llm-security.md` are marked hold, not ready).
+  - ~~Run a `snapshot.sh` run within 14 days of the 2026-09-23 baseline — a
+    missed 14-day window loses that period's traffic data permanently.~~ —
+    done 2026-09-24: first scheduled snapshot taken
+    (`docs/plan/discoverability/snapshots/2026-09-24.json`). Next snapshot
+    due by 2026-10-08. See `HISTORY.md`.
   - Run the first monthly 15-question assistant check
     (`docs/plan/discoverability/questions.md` /
-    `docs/plan/discoverability/runs/TEMPLATE.md`) and a `snapshot.sh` run,
-    both within 14 days of the 2026-09-23 baseline — a missed 14-day window
-    loses that period's traffic data permanently.
+    `docs/plan/discoverability/runs/TEMPLATE.md`) — still open.
 - ~~Open question for the owner: description D said unclassified data is
   "redacted or refused", but the shipped profiles' `unclassified:
   FAIL_REQUEST` only refuses~~ — resolved 2026-09-24 by owner decision:
@@ -1233,7 +1243,7 @@ action, not a task:
   `HISTORY.md`. The GitHub About text (`gh repo edit`) still needs the owner
   to paste the corrected description by hand.
 
-### Site polish and developer guide (tasks 85-90) — done on the local branch. Owner push/PR outstanding.
+### Site polish and developer guide (tasks 85-90) — done, merged to `main` via PR #101 on 2026-09-24; site redeployed.
 
 Design: `docs/plan/specs/2026-09-24-site-polish-and-developer-guide.md`
 (binding — read "Decisions", "Facts the planner must respect" and the
@@ -1339,8 +1349,9 @@ it now carries three stub developer-guide pages; the merge-only
 
 With 90 closed, every task the site-polish plan named is done, and no stub
 page remains under `docs/developer-guide/` — `DP_REQUIRE_NO_STUBS=true`
-passes. `site-polish` is ready for the owner-approved push and a pull request
-into `main`; nothing has been pushed yet.
+passes. ~~`site-polish` is ready for the owner-approved push and a pull
+request into `main`; nothing has been pushed yet.~~ — merged to `main` via
+PR #101 on 2026-09-24; the site redeployed. See `HISTORY.md`.
 
 **Small follow-ups, found closing task 86 (not blocking):**
 - The hero buttons' hover state in the slate scheme is white text on

@@ -17,6 +17,38 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Site polish merged to main (PR #101); Search Console, Bing, About and first traffic snapshot done
+
+`site-polish` (tasks 85-90) merged to `main` via PR #101 on 2026-09-24; the
+site redeployed. The owner also closed out the remaining discoverability
+owner-actions: `gh repo edit` set the About description to the corrected D
+("...refuses anything unclassified..."), the homepage to
+`https://aindriub.github.io/data-prism/`, and 17 topics (the original 6 plus
+the 11 the discoverability spec named); a custom social preview image is set;
+Google Search Console has `https://aindriub.github.io/data-prism/` verified
+as a URL-prefix property, using the meta tag PR #103 added
+(`docs-site/overrides/main.html`, home page only), with `sitemap.xml`
+submitted; Bing Webmaster Tools was imported from Search Console. All
+verified with `gh repo view` and curl. The first scheduled traffic snapshot
+was taken on 2026-09-24
+(`docs/plan/discoverability/snapshots/2026-09-24.json`); the next is due by
+2026-10-08, within the 14-day window.
+
+Snapshot figures, both covering GitHub's trailing 14-day window, compared
+with the 2026-09-23 baseline: views 318 → 337, uniques 9 → 10; clones
+1358 → 1623, uniques 346 → 384; stars 1, forks 0, watchers 0; referrers from
+github.com 184 → 126.
+
+**Cost:** Clone counts include CI and automated fetches, so unique visitors
+are the better signal to track; docs-site traffic shows up in Search Console
+and Bing, not in these repo numbers, so don't read the repo snapshot as the
+whole picture. Still open: the listings (the `awesome-mcp-servers` PR with
+☕ 🏠 ☁️, claiming the Glama listing, the mcpservers.org form), a 0.3.1
+release so the MCP Registry picks up the tagline and `websiteUrl`, the first
+monthly 15-question assistant check, and the small site follow-ups already
+listed in `PLAN.md` (task 86's hover-contrast gap, `check_contrast.py` not
+catching unparsed selectors, the card `:hover` accent-border regression).
+
 ## 2026-09-24 — Task 90: the custom identity-resolver tutorial, and the site-polish plan is done
 
 Replaced the third and last developer-guide stub with tutorial 2, "write a
