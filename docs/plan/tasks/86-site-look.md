@@ -47,7 +47,7 @@ and no animation.
 - **Cards: text must come only from wording already verified on the target page.** Candidate sources:
   - *Pseudonymise per scope* → `docs/tools.md` "## Scope isolation" / "## The pseudonym collapse"
   - *Fail closed* → `docs/configuration.md`'s `dataprism.privacy` row as corrected by task 84: only the bundled profiles load, and both set `unclassified: FAIL_REQUEST`. Do not imply an operator can relax it, or that relaxation is refused at startup.
-  - *Verifiable audit trail* → `docs/audit.md`, whose "## What this does and does not prove" section sets the limits. The chain is per writer boot. The verifier detects an edit or deletion inside a chain. It cannot detect tail truncation, deletion of a whole boot's records, or recomputation by someone with write access. The card must not say more than that.
+  - *Verifiable audit trail* → `docs/audit.md`, whose "## What this does and does not prove" section sets the limits. The chain is per writer boot. The verifier detects an edit anywhere in a chain, including the last record, and a deletion that has later records after it. "Including the last record" applies to edits only: deleting a writer's most recent records goes undetected. It cannot detect tail truncation, deletion of a whole boot's records, or recomputation by someone with write access. The card must not say more than that.
   - Pseudonymisation is never called anonymisation.
 - **The logo is supplied, not drawn** (owner decision, 2026-09-24).
   - The source of record is `/srv/dev/scratch/data-prism-logo/`:

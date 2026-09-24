@@ -110,7 +110,7 @@ Every node and edge must trace to code or to `docs/architecture.md` / `docs/tool
    - Do not show relaxed profile settings as reachable. Configuration cannot select them today (see task 84).
 5. **The audit chain**, in `docs/audit.md`.
    - One hash chain per writer boot (`<writer-id>/<uuid>`), starting at GENESIS.
-   - The verifier detects an edit or deletion inside a chain, including the last record.
+   - The verifier detects an edit anywhere in a chain, including the last record, and a deletion that has later records after it. Deleting a writer's most recent records goes undetected (tail truncation). (Corrected 2026-09-24; the earlier wording attached "including the last record" to deletion too, which `docs/audit.md` "What this does and does not prove" contradicts.)
    - It cannot detect tail truncation, deletion of a whole boot's records, or recomputation by someone with write access.
    - Wording is strictly `docs/audit.md`'s.
 6. **Extension points**, in the developer guide overview. Where a `DataSourceAdapter` and an `IdentityResolver` plug in, relative to the privacy engine.

@@ -63,7 +63,7 @@ and placed later by task 90.
 - **Diagram 4:** show only what configuration can reach today. Task 84 established this: no `dataprism.*` property loads a custom profile, and only bundled `DEFAULT`/`STRICT` load. Relaxed settings (for example `PASS_THROUGH_UNSAFE`, or an unclassified action other than `FAIL_REQUEST`) must not appear as reachable branches.
 - **Diagram 5:** use `docs/audit.md`'s wording strictly:
   - one chain per writer boot, `<writer-id>/<uuid>`, starting at `GENESIS`;
-  - the verifier detects an edit or deletion inside a chain, including the last record;
+  - the verifier detects an edit anywhere in a chain, including the last record, and a deletion that has later records after it ("including the last record" applies to edits only; see `docs/audit.md` "What this does and does not prove");
   - it cannot detect tail truncation, deletion of a whole boot's records, or recomputation by someone with write access.
 
   No "tamper-proof", no "immutable". The file's closing paragraph says it is neither.
