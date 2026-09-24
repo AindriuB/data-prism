@@ -148,3 +148,26 @@ Keep green:
 - `DP_REQUIRE_NO_STUBS=true` passes;
 - the strict build, every check_*.py, lychee and actionlint;
 - the Owns scope, checked with three dots.
+
+## Attempt 2 — failed
+
+Tester: PASS. Reviewer: CHANGES, on three remaining accuracy defects. Everything else from attempt 1 is fixed and verified:
+- `resolve` has no production caller; only `expand` runs;
+- the canonical id's roles are quoted exactly;
+- the diagram's "either" label is correct;
+- the unknown-id `expand` test is in place;
+- the scope is clean.
+
+Rebase onto LOCAL `site-polish` and always diff with three dots. Then fix:
+
+1. **The unknown-id outcome is wrong** (custom-identity-resolver.md about lines 139–144). The page promises "a visible, empty answer, not an error". In the code:
+   - an empty `expand` makes SourceFanOut (about lines 80–82) skip every source, so `merged` stays null;
+   - DefaultContextOrchestrator (about lines 193–195) then throws `PrivacyRefusedException("NO_SOURCE_DATA")`;
+   - GetEntityContextTool's `catch (PrivacyRefusedException refused)` returns `error("refused: NO_SOURCE_DATA at …")`, with no ContextResponse and no `sources`.
+
+   State that exactly, and quote the error shape from the code. Also fix the "visible gap" wording (about lines 126–128). A single source returning NO_DATA is visible in `sources` only if some other source answers. If every source returns nothing, the call is again a NO_SOURCE_DATA refusal (DCO about line 193).
+2. **Registration from a `-Dloader.path` jar has no ordering** (about lines 180–185, and the ExampleIdentityResolverConfiguration Javadoc). The failure: a reader adds an unconditional `@AutoConfiguration` IdentityResolver to the imports, Spring Boot orders auto-configurations by class name, and the quickstart's `@ConditionalOnMissingBean` default may register first. That gives two IdentityResolver beans, and startup fails (DPAC about line 446). Give correct guidance, e.g. `@AutoConfiguration(before = <the class that supplies the default>)`. If you recommend an approach, prove it with a test: one where the reader's resolver wins under auto-configuration ordering, not only under plain `@Configuration`. Keep the test in the owned identity test package. If a meaningful test is not possible within Owns, say so plainly in the tutorial and in your report, and don't claim a guarantee. Fix the Javadoc's reference to an "ordering guarantee" in write-an-adapter.md; that guarantee isn't there.
+3. **The overview intro overclaims about adapters** (index.md about lines 48–49 and the alt text). "a DataSourceAdapter is always a bean an application's own @AutoConfiguration registers" is false. A YAML-configured JSON source gets its adapter from ConfiguredJsonSourcesInitializer in data-prism-connectors-rest, with no application code, and an ordinary scanned app can use a plain @Configuration. Reword both the intro and the alt text to match the code.
+4. **Suggestion to apply:** extension-points.mmd line 6. The adapter check is `validateIntegrations` (DPAC about line 247 → DataPrismContractValidator about lines 44–45), not the preflight, and it is skipped in fixture STDIO mode. Label it along the lines of "preflight and contract validation refuse startup when either bean is missing". Check the wording against the code, including the STDIO skip, and update the README trace rows. Re-render twice to confirm byte-stability.
+
+Keep green: the full attempt-1 keep-green list. The tester verified it all in attempt 2.
