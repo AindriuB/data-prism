@@ -17,6 +17,401 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 82: MkDocs Material docs site built and wired to deploy
+
+Publishes `https://aindriub.github.io/data-prism/` from the existing user
+docs as the single source, with an MkDocs Material site (mkdocs 1.6.1,
+material 9.7.7, include-markdown 7.3.0, llmstxt 0.5.0, all pinned in
+`docs-site/requirements.txt`). 17 nav pages; the home page (`docs/index.md`,
+new) includes the README intro between the `<!-- site-intro:start/end -->`
+markers via include-markdown, and the changelog page (`docs/changelog.md`,
+new) includes `CHANGELOG.md`. Existing docs get no front matter — their
+titles and per-page descriptions come from `docs-site/page-meta.yml`, which
+the hook applies — while the new pages carry their own front matter.
+Internal docs stay off the site (`exclude_docs`: `plan/`, `adr/`,
+`pack.md`, `conventions.md`, `workflow.md`, `development-plan.md`,
+`design-review.md`). Every sitemap page gets OG/Twitter tags and the
+existing social card; only the home page carries JSON-LD
+(`SoftwareSourceCode`, description D, no version). The site serves
+`llms.txt` (first line `# Data Prism`, summary = D) and `llms-full.txt`. No
+analytics, no `robots.txt`, `theme.font: false`.
+
+`docs-site/hooks/site.py` rewrites every link that leaves `docs/` (found via
+`../examples/…` and `../../examples/…` references from `docs/` and
+`docs/agents/`) to an absolute `https://github.com/AindriuB/data-prism/blob/main/…`
+URL (`raw` for images, `tree` for directories resolved against the excluded
+`plan/`/`adr/` paths too), and fails the build if the rewritten target does
+not exist. `docs-site/hooks/check_site.py` verifies, over the built
+`site/`: no excluded path leaked in, the sitemap matches the nav exactly, a
+unique ≤155-character description and canonical/social tags on every page,
+the home page's JSON-LD, no font/analytics hosts, no `robots.txt`, and that
+neither llms file contains excluded-page content. `.github/workflows/pages.yml`
+runs `mkdocs build --strict`, `check_site.py`, `lychee --offline` and
+`actionlint` on every PR and push to `main`, and deploys only on push to
+`main`, gated on `pages:write`/`id-token:write` in the `github-pages`
+environment — it changes no branch-protection setting and is not a required
+check. `CONTRIBUTING.md` gained a "Docs site" section with the local build
+commands and the front-matter/exclusion rules.
+
+Verified: `mkdocs build --strict` exits 0 from a fresh venv; `check_site.py`
+all-OK; `lychee --offline` 0 errors; `actionlint` 0. Non-vacuity of three
+guards shown with real planted-fault output: deleting a `page-meta.yml`
+entry, duplicating a description, and a description over 155 characters each
+fail the build by name; all three pass again reverted. Deferred, not
+checkable by the implementer: the PR's `pages` build job going green (runs
+once pushed to the PR) and the deploy itself, which needs GitHub Pages
+enabled first (owner action).
+
+**Cost:** two attempts. Attempt 1's site content was correct, but three of
+its own guards could not fail: the sitemap check compared the sitemap
+against the same rendered-pages manifest the sitemap itself is built from,
+so an orphan page could never be caught; the llms-leak check searched for a
+URL string the link-rewrite hook had already made impossible to produce, so
+an injected leak from `pack.md` passed clean; and the link-rewrite hook
+never checked that a rewritten target actually exists, so a typo'd
+`../examples` link would rewrite silently instead of failing the build.
+Attempt 2 fixed all three and proved each one by planting the fault it now
+catches (an orphan page, an injected `pack.md` line, a typo'd link) and
+showing the build fail with the target named, then reverting. Lesson
+carried forward: a guard is only a guard once it has been shown to fail on
+a planted fault, not just to pass on clean input. A tester run was also cut
+off mid-way by a usage limit and re-run cleanly from scratch. PASS + APPROVE
+on attempt 2, diff confirmed limited to this task's owned files, merged
+`--no-ff` onto the local `discoverability` branch (not `main`), then a
+separate close-out commit. Four unscheduled follow-ups filed in
+`docs/plan/PLAN.md` "Found on task 82": the llms-leak guard checks only the
+first ≥40-character line per excluded doc, a nested badge image gets a
+`blob` URL instead of `raw`, a `?query`/percent-encoded link leaving `docs/`
+fails loudly rather than being handled, and MkDocs/Material's pins should be
+re-checked before ever bumping them (Material warns of a coming
+backward-incompatible MkDocs 2.0; Zensical reads `mkdocs.yml` as the
+migration path).
+
+## 2026-09-23 — Task 81: outreach drafts for the owner to post by hand
+
+Adds `docs/plan/outreach/` — internal drafts only, nothing submitted, forked
+or posted anywhere; the owner posts each one, by hand, one at a time.
+`awesome-mcp-servers.md` (ready: quotes `punkpeye/awesome-mcp-servers`'
+"How to Contribute" steps and its `check-glama.yml` Glama-badge requirement
+verbatim, entry line carries the project's existing Glama score badge, rated
+A). `awesome-java.md` (ready: quotes `akullpp/awesome-java`'s live PR
+template with its checklist filled in, entry text is the canonical tagline
+T). `awesome-spring.md` (hold: the canonical Spring AI list's MCP-servers
+subsection is Spring-AI-built servers only, and Data Prism has no Spring AI
+dependency — verified against two other entries' build files rather than
+assumed). `awesome-llm-security.md` (hold: scope; LLM Guard's PII scanners
+noted as a partial precedent for re-checking later). `launch-post.md` (angle
+"Redaction breaks LLM investigations; consistent pseudonyms don't — a
+fail-closed privacy layer for MCP in Spring Boot"; every claim about Data
+Prism links to the doc or code that backs it; a Limits section stating it is
+not anonymisation, the audit trail does not prove tail-truncation, whole-boot
+deletion or metric/trace-attribute leakage, `SensitiveDataScanner` does fixed
+identifier-shape scanning rather than general PII/name detection,
+`InstructionContentHeuristic` flags prompt injection but is deliberately not
+a defence, and what is not yet built; a Show HN title and an r/java title,
+both pairing "Data Prism" with "MCP privacy layer"; a pre-post checklist
+including re-fetching each list's contribution rules and confirming `main`'s
+README no longer says the hash-chained audit sink is "Not built"). Adds a
+`README.md` status table (list/venue, draft, verdict, blank posted-on/outcome
+columns).
+
+**Cost:** five attempts, four of them fixing factual claims, and the
+sequence matters — the same launch-post sentence about the fail-closed
+default was reworded four times before it stopped overclaiming. Attempt 1
+(rejected outright) was missing the Glama badge, said "one file per writer"
+for the audit trail when it is one file with per-writer chains, wrongly
+claimed two `awesome-spring-ai` entries don't depend on Spring AI (they do —
+checked against their build files), gave titles without "MCP privacy layer",
+and omitted the free-text scanning limit. Attempt 2 fixed those but still
+said Data Prism "fails closed... unconditionally"; attempt 3 grounded the
+claim in `PrivacyProfile.UnclassifiedBehaviour` and
+`ProfilePrivacyPolicyResolver` directly instead of a doc that does not cover
+it, and dropped an implied startup refusal that no code enforces — the
+search for that refusal is what surfaced task 84's doc defect. Attempt 4
+corrected a second claim the same way: the DENY audit event records profile/
+scope/purpose/case/source-status, not the refusal code, path or
+classification (an unclassified field has no classification to record) —
+those appear only in the caller's error. Attempt 5 corrected the last
+overclaim, that a relaxed unclassified setting is a per-field choice; it is
+one value on the profile record, so `PASS_THROUGH_UNSAFE` (or either of the
+other two relaxed settings) applies to every unclassified field the profile
+governs, including ones a source adds later. Verified: `git diff --name-only
+discoverability` limited to the six files under `docs/plan/outreach/`; the
+task's honesty-check greps; every quoted contribution rule fetched live via
+read-only `gh api`; the reviewer's final round approved every clause once
+the "per profile, not per field" correction was confirmed by diff. PASS +
+APPROVE on attempt 5, merged `--no-ff` onto the local `discoverability`
+branch, not `main`.
+
+Tracing the launch-post's audit sentence back to code found a real shipped-
+doc defect, not an outreach-drafting one: `docs/configuration.md:73` claims
+two startup refusals — a production profile that relaxes fail-closed
+behaviour, and a profile lacking a rule required by an exposed model —
+that no code enforces. Filed as its own task, 84, by owner decision to
+correct the doc now and treat an actual startup guard as a separate,
+unscheduled follow-up. Four further wording gaps, none blocking the merge,
+recorded in `docs/plan/PLAN.md` "Found on task 81": whether
+`PASS_THROUGH_UNSAFE` is reachable today via classpath shadowing of
+`/privacy-profiles-default.yaml` (verify before treating a startup guard as
+merely a nice-to-have), `docs/tools.md:120`'s "unclassified values dropped"
+against the `FAIL_REQUEST` default, `README.md:12` and
+`docs/use-cases/gdpr-data-minimisation-mcp.md:25`'s "redacted or refused"
+against all four `UnclassifiedBehaviour` settings, and
+`privacy-profiles-default.yaml:8`'s comment claiming unclassified has "only
+two settings" when the enum has four.
+
+## 2026-09-23 — Task 84: the `dataprism.privacy` row's two false startup-refusal claims corrected
+
+`docs/configuration.md:73` (the `dataprism.privacy` row) no longer claims two
+startup refusals that do not exist — "a production profile that relaxes
+fail-closed behaviour" and "a profile that lacks a rule required by exposed
+models". It now states: no `dataprism.*` property loads a custom profile
+file; the server and starter load the bundled `privacy-profiles-default.yaml`,
+whose `DEFAULT` and `STRICT` profiles both set `unclassified: FAIL_REQUEST`
+(refusing the whole response for a field nobody classified); and it adds the
+real refusal, `FORBIDDEN_PRIVACY_OVERRIDE`, for an application
+`PrivacyPolicyResolver` bean. Everything else in the table row is
+byte-identical to before; the row makes no absolute "only bundled profiles
+can be used" claim, since whether classpath shadowing of the bundled file is
+possible remains unverified.
+
+Re-verification, done fresh rather than trusted from planning: a refusal-code
+inventory across `data-prism-*/src/main` finds the only profile-related
+startup codes are `UNKNOWN_PRIVACY_PROFILE`
+(`DataPrismAutoConfiguration.java` ~:574), `FORBIDDEN_PRIVACY_OVERRIDE`
+(~:366) and `MISSING_PRIVACY_PROFILE` (`DataPrismProperties.java` ~:164);
+`PrivacyProfile.releasesUnclassifiedData()` has no callers anywhere in the
+reactor; `classifications()`/`generalizations()` are read only at request
+time, in `ProfilePrivacyPolicyResolver`. The tester started real Spring
+contexts under both the `STRICT` and `DEFAULT` profiles (both start clean)
+and confirmed `UNKNOWN_PRIVACY_PROFILE`, `FORBIDDEN_PRIVACY_OVERRIDE`,
+`INVALID_SCOPE_LIFETIME` and `UNSUPPORTED_LOCALE` all still fire.
+
+**Cost:** this was found, not planned — tracing task 81's launch-post
+sentence about fail-closed defaults back to the code it should have cited
+surfaced the doc defect underneath it. Owner decision 2026-09-23: correct the
+shipped doc now; building the startup guard for an unsafe profile is a
+separate, unscheduled follow-up (already recorded under task 81's follow-ups
+in `docs/plan/PLAN.md`, including the still-open question of whether
+`PASS_THROUGH_UNSAFE` is reachable today via classpath shadowing). PASS +
+APPROVE on attempt 1. The reviewer found two further gaps while checking this
+row, neither blocking the merge, recorded in `docs/plan/PLAN.md` "Small open
+items" under "Found on task 84": `docs/configuration.md:73`'s "a production
+scope lifetime is required" understates `protectedDeployment()`
+(`DataPrismProperties.java` ~:127-129, :165), which requires it in every
+deployment mode except stdio fixture-development, not only "production"; and
+in stdio fixture-development mode an unset `profile` skips
+`MISSING_PRIVACY_PROFILE` and then likely NPEs inside `validateProfile` on
+`Map.copyOf(...).containsKey(null)` instead of returning a clean refusal
+code — startup still fails, just without a named code, a code follow-up
+rather than a docs one. Merged `--no-ff` onto the local `discoverability`
+branch (not `main`), then a separate close-out commit; branch and worktree
+removed.
+
+## 2026-09-23 — Task 77: an FAQ and a fair, sourced comparison page
+
+Adds `docs/faq.md` (seven H2 questions phrased and ending as questions,
+answered first-sentence-first so an assistant can quote them standalone):
+is the output anonymous (no, and why — GDPR Art. 4(5)), how pseudonyms are
+made and scoped, whether it detects PII in free text (fixed identifier-shape
+scanning, not general PII/name detection), whether Java is required (a
+YAML-only path exists alongside the Java adapter), what the audit trail
+proves and does not prove (quotes `docs/audit.md`'s "does not prove" list),
+whether it stops prompt injection (`InstructionContentHeuristic` flags
+instruction-like content and is deliberately not a defence), and whether
+it's production-ready (0.3.0, pre-1.0, per `SECURITY.md`). Adds
+`docs/comparison.md`, maintainer-authored and dated 2026-09-23, placing Data
+Prism next to Microsoft Presidio, LLM Guard, NeMo Guardrails and the Docker
+MCP Gateway: a "different layers" table, a "use X instead when…" section per
+tool, and a "where Data Prism does not fit" section. Every sentence about
+another tool links to that tool's own documentation with an access date; no
+claim is made about another tool's quality or performance.
+
+**Cost:** two attempts, both on sourcing accuracy in the comparison page.
+Attempt 1 claimed the Docker MCP Gateway does not inspect tool responses,
+but its own security documentation says `--block-secrets` scans them by
+default; invented a scanner history ("an earlier allowlist-free version
+deadlocked") that never happened; cited Presidio's operator list and
+`presidio-structured` to the wrong page and understated Presidio's
+structured-data scope; left the Data Prism claims in "does not fit"
+unlinked, blurring re-identification into something other than what it is
+(never an MCP tool — boundary 5); and linked an internal doc
+(`design-review.md`) that the docs site's strict build excludes. Attempt 2
+fixed all of these and switched internal-doc links that the site excludes
+to absolute GitHub URLs so the build does not break. Lesson for future
+comparison pages: absence from a tool's README is not evidence of absence —
+cite what the other tool's own docs say, not what they happen to omit.
+Verified: `git diff --name-only discoverability` limited to the two owned
+files; every honesty-check grep from the task's acceptance criteria; every
+external link opened and read against the sentence it supports. PASS +
+APPROVE on attempt 2, merged `--no-ff` onto the local `discoverability`
+branch, not `main`.
+
+Three wording gaps found while writing the FAQ were left as unscheduled
+follow-ups rather than fixed here (`docs/plan/PLAN.md`, "Small open items,
+unscheduled", "Found on task 77"): the "deferred by design" sourcing at
+`docs/faq.md:125-126` covers re-identification only, not the Elasticsearch
+connector; `docs/faq.md:41` omits the scanner's depth cap of 16; and
+`docs/faq.md:68-70` cites a README section that names only the adapter
+path, not every non-Java route.
+
+## 2026-09-23 — Task 76: one canonical identity across README, poms, registry and image metadata
+
+Applies the canonical tagline T and description D from
+`docs/plan/specs/2026-09-23-discoverability.md` everywhere a search engine or
+AI assistant reads project metadata: the README opening (T, then D, then a
+two-sentence "Who it's for"), the root `pom.xml` `<description>`,
+`server.json`'s `.description` (96 chars, under the schema's 100-char limit —
+takes effect at the next MCP registry publish, not before), five new OCI
+labels (title/description/source/documentation/licenses) on
+`docker/distribution/Dockerfile`, a fixture-only
+`org.opencontainers.image.description` on `docker/server/Dockerfile` (not T,
+since that image is the quickstart server, not the registry image), and a new
+`CITATION.cff` (CFF 1.2.0, abstract = D, no `version` or `date-released`).
+Adds build/Maven-Central/licence badges and `<!-- site-intro:start/end -->`
+markers around the README intro for task 82's docs site to lift as its home
+page. Corrects the README Status paragraph, which wrongly said the
+hash-chained audit sink and verifier were "Not built" — `CHANGELOG.md`
+`[0.3.0]` shipped both (`FileAuditSink`, `AuditChainVerifier`) — with every
+new claim traced to `CHANGELOG.md` `[0.3.0]`, `docs/audit.md` or
+`docs/tools.md` "Not yet built". Replaces `docs/extending.md`'s three
+`README.md:NNN` line-number citations with section names, since a
+line-number citation breaks whenever the cited file grows. Published
+metadata (Central, the MCP registry, GHCR) is left untouched: no version
+changed anywhere.
+
+**Cost:** two attempts. Attempt 1's rewritten Status paragraph still said "19
+Maven submodules" — stale since `data-prism-audit` merged into core, now 18 —
+and its five new Dockerfile `LABEL` lines shifted two of `docs/extending.md`'s
+line-number citations onto the wrong lines, the exact fragility the task
+existed to remove. Attempt 2 fixed both and switched all three citations to
+section names instead of lines. Not taken: a suggestion to tighten
+`docs/extending.md:107`'s citation, which pre-dates this task and covers only
+part of the quote above it. Verified: `mcp-publisher validate`, the three
+`publish-mcp.yml` name extractions agreeing on `io.github.AindriuB/data-prism`,
+`docker buildx build --check` on both Dockerfiles, a built image's labels via
+`docker inspect`, `mvn -B -q -N validate`, `cffconvert --validate`, and the
+badge URLs. PASS + APPROVE on attempt 2, diff confirmed limited to
+`README.md`, `pom.xml`, `server.json`, `docker/distribution/Dockerfile`,
+`docker/server/Dockerfile`, `CITATION.cff` and `docs/extending.md`. Merged
+`--no-ff` onto the local `discoverability` branch, not `main`.
+
+## 2026-09-23 — Task 78: three use-case pages for the searches this audience runs
+
+Adds `docs/use-cases/pseudonymise-customer-data-spring-boot.md`,
+`gdpr-data-minimisation-mcp.md` and `consistent-pseudonyms-across-systems.md`.
+Each follows the same shape: the problem in the reader's terms, what Data
+Prism does about it, what it does not do, and next steps that link into
+`docs/quickstart.md`, `docs/protect-your-own-api.md` and the matching
+`docs/tools.md` sections rather than duplicating them. The Spring Boot page
+names the starter and the standalone server as the two deployment options.
+The GDPR page links Art. 4(5), 5(1)(c), 25 and 32 to EUR-Lex 32016R0679,
+quotes 5(1)(c) and Recital 26 verbatim rather than paraphrasing, carries a
+visible "this is not legal advice" statement, lists what stays the
+operator's job (lawful basis, DPIA, transfer mechanism, HMAC key custody,
+retention, classification), and states that pseudonymised data is still
+personal data. The cross-systems page explains the pseudonym collapse,
+consistency findings and scope isolation, linking `docs/tools.md` by anchor.
+No page adds a new configuration or code snippet. Every claim traces to an
+existing doc; no `README.md:NNN`-style citations.
+
+**Cost:** three attempts, all on the accuracy of paraphrased claims rather
+than structure. Attempt 1 overstated pseudonym consistency as holding
+"everywhere the caller can see them" when it is only consistent within one
+privacy scope/case; attributed "pseudonymised data is still personal data"
+to Art. 4(5), when that statement is Recital 26, not the article defining
+pseudonymisation; paraphrased Art. 5(1)(c) beyond what it says; left two of
+the required GDPR citations unlinked; said classified data "is
+pseudonymised" when classification can also mean redacted or removed; and
+claimed `docs/configuration.md` documents key rotation, which it does not.
+Attempt 2 fixed all of those but introduced a new unsupported claim — that
+Art. 4(5) defines the pseudonym/identity relationship as "reversible".
+Attempt 3 dropped that claim and quoted Recital 26 verbatim instead of
+paraphrasing it. Lesson: legal citations need the same verbatim-and-trace
+discipline as product claims — every paraphrase of a GDPR article was wrong
+in some way until it was quoted directly. PASS + APPROVE on attempt 3; the
+merge diff touches only `docs/use-cases/**`. Merged `--no-ff` onto the local
+`discoverability` branch, not `main`.
+
+## 2026-09-23 — Task 80: discoverability gets a tracker-free measurement setup
+
+Adds `docs/plan/discoverability/`: `questions.md` (15 questions an
+enterprise-Java/MCP audience would actually ask, e.g. "How do I stop an LLM
+agent seeing customer PII from our internal REST APIs?", "Presidio
+alternative for Java", "GDPR data minimisation MCP tools" — none names Data
+Prism, so the monthly check measures unprompted citation, not a leading
+question); `runs/TEMPLATE.md` (a 15x4 grid — ChatGPT, Claude, Perplexity,
+Copilot — recording date, model, mode, cited Y/N, the URL cited and other
+tools named, with citation rate defined as cited cells / 60); `snapshot.sh`
+(bash + `gh` + `jq` only, every call a read-only `gh api` GET, writing
+`snapshots/YYYY-MM-DD.json` via `mktemp` + `mv` under `set -euo pipefail` so
+a failed call never leaves a partial file); `baseline.md` plus the committed
+`snapshots/2026-09-23.json` and its five raw JSON files (1 star, 0 forks, 7
+open issues; 318 views / 9 unique and 1,358 clones / 346 unique over a
+window that includes the v0.3.0 release and is mostly owner/CI traffic, not
+real readers; github.com the only referrer); and a `README.md` giving the
+monthly assistant-check and 14-day snapshot procedure, plus the numbers that
+must still be read by hand (Central Portal downloads, GHCR pulls, Search
+Console/Bing Webmaster once verified). Nothing here is published on the
+site or is a tracker — it is purely for telling, after the fact, whether the
+discoverability work has any effect.
+
+**Cost:** attempt 1 passed both test and review, but the closing session
+found and required three fixes to `snapshot.sh` before merge, all invisible
+to a script-only read: it inferred the target repo from the working
+directory via `gh repo view`, so running it from inside a different repo
+silently recorded that repo's traffic into data-prism's snapshots; it
+silently overwrote a same-day snapshot, and a live verification run had
+already clobbered the committed baseline this way, which the tester had to
+restore from git; and its header comment overstated the access it needed
+("read-only", "GET-only") without noting GitHub's traffic endpoints in fact
+require push access, which is exactly the kind of gap that surfaces only by
+trying to run it as a genuinely read-only collaborator would. Attempt 2
+fixed all three — fixed `AindriuB/data-prism` default (override via
+`DATA_PRISM_REPO`), an output directory resolved from the script's own
+location rather than the working directory, a `--force`-gated refusal to
+overwrite an existing dated snapshot, and a header that states the push-
+access requirement plus the GET-only guarantee — reverified by running it
+from `/home/andrew/homelab`, a different repo entirely, and confirming
+nothing under data-prism's `snapshots/` changed unexpectedly. The committed
+raw `repo.json` keeps its live `permissions` block and an empty
+`temp_clone_token`; reviewed and accepted as-is, since the repo is public,
+the token field is already empty, and `snapshot.sh` itself never stores or
+reads either. One suggestion not taken: have the discoverability `README.md`
+mention `--force` and the same-day refusal explicitly rather than leaving
+them to the script's own `--help`-less error message. PASS + APPROVE on
+attempt 2; the merge diff touches only `docs/plan/discoverability/**`.
+Merged `--no-ff` onto the local `discoverability` branch, not `main`.
+
+## 2026-09-23 — Task 79: the site gets a reproducible social card
+
+Adds `docs/assets/social-card.png` (1280x640 PNG, 32KB, carrying tagline T —
+"Fail-closed privacy layer that pseudonymises enterprise API data for LLM
+agents and MCP clients." — plus "Data Prism" and nothing else) and
+`docs-site/social-card/{make_card.py,requirements.txt,README.md}` that
+generate it. This is the input task 82 wires into the site's `og:image` and
+Twitter card meta tags, and the file the owner uploads as the repo's GitHub
+social preview. Regenerating from the pinned `requirements.txt` in a fresh
+venv reproduces the committed PNG byte-for-byte, confirmed independently on
+Python 3.14 (the host) and `python:3.12-slim` (Docker), so anyone can
+reproduce it without trusting the committed binary. Uses Pillow's own
+built-in scalable default font (`ImageFont.load_default(size=…)`, available
+since Pillow 10.1) rather than committing a font file, so there is no font
+licence to track.
+
+**Cost:** `requirements.txt` pins Pillow 11.3.0, not the 10.1.0 the task file
+suggested as the minimum — 10.1.0 ships no `cp314` wheel, so a fresh venv on
+the host's Python 3.14 would fail to install it; 11.3.0 is the earliest
+pinned version that installs on both the host and the Docker verification
+image. PASS + APPROVE on attempt 1; the diff touches only the two paths this
+task owns (`docs/assets/**`, `docs-site/social-card/**`), confirmed by `git
+diff --stat` on the merge. Reviewer left two optional, not-required
+suggestions for a future pass: record which platform/Python the committed
+PNG was generated on, and align the docstring's stated run-from directory
+with the README's. Merged `--no-ff` onto the local `discoverability`
+branch, not `main` — task 82 depends on this file's path but not on this
+merge landing anywhere further yet.
+
 ## 2026-09-23 — Task 59: the quickstart gets an exit ramp, and the reference docs catch up to v0.3.0
 
 `docs/quickstart.md` no longer dead-ends at `docker compose down`: it ends with a

@@ -22,6 +22,11 @@ RUN mvn -B -q -pl data-prism-server -am package -DskipTests
 FROM eclipse-temurin:21-jre
 
 LABEL io.modelcontextprotocol.server.name="io.github.AindriuB/data-prism"
+LABEL org.opencontainers.image.title="Data Prism"
+LABEL org.opencontainers.image.description="Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents and MCP clients."
+LABEL org.opencontainers.image.source="https://github.com/AindriuB/data-prism"
+LABEL org.opencontainers.image.documentation="https://aindriub.github.io/data-prism/"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # Non-root: the packaged jar and PropertiesLauncher never need root, and
 # running as root in a container is a needless privilege to hand an operator's

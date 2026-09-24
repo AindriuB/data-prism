@@ -1098,6 +1098,92 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
 **No open tasks remain after this.** No task file remains under
 `docs/plan/tasks/`; everything left is the owner steps listed above.
 
+### Discoverability (tasks 76-83)
+
+Design: `docs/plan/specs/2026-09-23-discoverability.md` (binding — read
+"Decisions" and the per-task "T*" sections before touching any of these).
+Makes Data Prism findable by search engines and citable by AI assistants,
+without publishing any claim the code does not back. Local branch
+`discoverability` (not pushed, not `main`) is the integration branch every
+task below merges onto; task worktrees are reset onto it, not `main`.
+
+- **Task 77 — done.** `docs/faq.md` (seven questions: anonymity per Art.
+  4(5), how pseudonyms are made and scoped, fixed identifier-shape scanning
+  rather than general PII/name detection, YAML path vs Java, what the audit
+  trail proves and does not prove, prompt injection flagged but not
+  defended against, not production-ready pre-1.0) and `docs/comparison.md`
+  (Presidio, LLM Guard, NeMo Guardrails, Docker MCP Gateway; "different
+  layers" table, "use X instead when", "where Data Prism does not fit";
+  every claim about another tool sourced to that tool's own docs with an
+  access date). Merged `--no-ff` onto `discoverability`. See
+  `docs/plan/HISTORY.md` — grep `Task 77`.
+- **Task 79 — done.** Reproducible social card (`docs/assets/social-card.png`,
+  1280x640, tagline T, regenerated from `docs-site/social-card/`). Merged
+  `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md` — grep
+  `Task 79`.
+- **Task 80 — done.** Discoverability measurement: 15-question assistant
+  check, run template, `snapshot.sh` (bash+gh+jq, GET-only, fixed repo
+  target, refuses to clobber a same-day snapshot), and the 2026-09-23
+  baseline (`docs/plan/discoverability/`). Merged `--no-ff` onto
+  `discoverability`. See `docs/plan/HISTORY.md` — grep `Task 80`.
+- **Task 78 — done.** Three use-case pages under `docs/use-cases/`
+  (pseudonymise customer data for an LLM agent in Spring Boot, GDPR data
+  minimisation for MCP tools, consistent pseudonyms across systems), each
+  routing into the existing quickstart/reference docs, GDPR citations linked
+  to EUR-Lex 32016R0679 anchors. Merged `--no-ff` onto `discoverability`.
+  See `docs/plan/HISTORY.md` — grep `Task 78`.
+- **Task 76 — done.** Canonical tagline T and description D applied to the
+  README, root `pom.xml`, `server.json`, `docker/distribution/Dockerfile`'s
+  OCI labels, `docker/server/Dockerfile` and a new `CITATION.cff`; README
+  Status paragraph corrected (the hash-chained sink and verifier are built);
+  `docs/extending.md`'s README line-number citations replaced by section
+  names. Merged `--no-ff` onto `discoverability`. See `docs/plan/HISTORY.md`
+  — grep `Task 76`.
+- **Task 81 — done.** Internal outreach drafts for the owner to post by hand
+  (nothing submitted): `docs/plan/outreach/awesome-mcp-servers.md` (ready),
+  `docs/plan/outreach/awesome-java.md` (ready), `docs/plan/outreach/awesome-spring.md`
+  (hold — that list's MCP-server subsection is Spring-AI-built servers only,
+  and Data Prism has no Spring AI dependency), `docs/plan/outreach/awesome-llm-security.md`
+  (hold — scope), `docs/plan/outreach/launch-post.md` (angle, every claim
+  linked, Limits section, Show HN/r/java titles, pre-post checklist), and a
+  `README.md` status table. Merged `--no-ff` onto `discoverability`. See
+  `docs/plan/HISTORY.md` — grep `Task 81`.
+- **Task 82 — done.** MkDocs Material docs site (mkdocs 1.6.1, material
+  9.7.7, include-markdown 7.3.0, llmstxt 0.5.0, all pinned) built from the
+  existing docs as the single source — site_url
+  `https://aindriub.github.io/data-prism/`; 17 nav pages; home page includes
+  the README intro between the site-intro markers, changelog page includes
+  `CHANGELOG.md`; internal docs excluded (`plan/`, `adr/`, `pack.md`,
+  conventions, workflow, development-plan, design-review); per-page
+  title/description from `docs-site/page-meta.yml` for existing docs (no
+  front matter added to them); OG/Twitter tags and the social card; JSON-LD
+  `SoftwareSourceCode` on the home page only, no version; `llms.txt` and
+  `llms-full.txt`; no analytics, `theme.font: false`.
+  `docs-site/hooks/site.py` rewrites links leaving `docs/` to GitHub
+  blob/tree URLs (raw for images) and fails the build if the target does not
+  exist; `check_site.py` verifies excluded paths, sitemap vs the real nav,
+  meta/canonical/social tags, JSON-LD, no fonts/analytics, no `robots.txt`,
+  and the llms files. `.github/workflows/pages.yml` builds strict on PRs and
+  `main`, runs `check_site`, `lychee --offline` and the guards; deploys only
+  on push to `main` with `pages:write`/`id-token:write` in the
+  `github-pages` environment. Merged `--no-ff` onto `discoverability`. See
+  `docs/plan/HISTORY.md` — grep `Task 82`.
+- **Task 84 — done.** Corrected `docs/configuration.md:73`'s two false
+  startup-refusal claims ("a production profile that relaxes fail-closed
+  behaviour", "a profile that lacks a rule required by exposed models"): no
+  `dataprism.*` property loads a custom profile file, so only the bundled
+  `privacy-profiles-default.yaml` loads today, whose `DEFAULT` and `STRICT`
+  profiles both set `unclassified: FAIL_REQUEST`, refusing the whole response
+  for a field nobody classified; the real refusal it names instead is an
+  application `PrivacyPolicyResolver` bean (`FORBIDDEN_PRIVACY_OVERRIDE`).
+  Found while tracing task 81's launch-post claims back to code. Merged
+  `--no-ff` onto `discoverability`, then a separate close-out commit. See
+  `docs/plan/HISTORY.md` — grep `Task 84`.
+- **Task 83 (go-live wiring)** — next, blocked on: the owner enabling GitHub
+  Pages (`build_type=workflow`) and enforcing HTTPS, PR #98 (`discoverability`
+  → `main`, carrying tasks 76-82 and 84) merging, and the `pages` workflow's
+  first deploy actually succeeding.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
@@ -1166,6 +1252,80 @@ Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
    the module is one careless new test away from the same failure.
    Recommended fix: give `McpHttpEndToEndTest` its own explicit `SSLContext`
    and retire the trustStore property.
+
+Found on task 81 (outreach drafts), merged 2026-09-23. None blocks the
+merge; tracing one launch-post sentence against the code turned up (4) and,
+separately, the doc defect now filed as task 84.
+
+1. No startup guard exists for an unclassified-unsafe profile:
+   `PrivacyProfile.releasesUnclassifiedData()` (`PrivacyProfile.java:87`) has
+   no callers anywhere in the reactor. **First verify reachability** — check
+   whether a same-named `/privacy-profiles-default.yaml` earlier on the
+   classpath (e.g. an extension jar on `LOADER_PATH`) can shadow the bundled
+   one, since `DataPrismAutoConfiguration` loads it by classpath name alone
+   (`DataPrismAutoConfiguration.java:356`, `:572`, both
+   `getResourceAsStream("/privacy-profiles-default.yaml")`). If shadowing is
+   possible, `PASS_THROUGH_UNSAFE` is reachable today with no refusal, and
+   the guard is urgent rather than a nice-to-have. While there, consider
+   putting the classification and path into the DENY audit event itself
+   (see item 2) rather than leaving it only in the caller's error.
+2. `docs/tools.md:120` says "unclassified values dropped" as the only
+   behaviour; the code's default is `FAIL_REQUEST` (refuse the whole
+   response), and drop is only one of the four `UnclassifiedBehaviour`
+   settings.
+3. `README.md:12` and `docs/use-cases/gdpr-data-minimisation-mcp.md:25` both
+   say unclassified fields are "redacted or refused" — that names two of
+   four settings (`REDACT_AND_WARN`, `FAIL_REQUEST`) and omits `DROP_AND_WARN`
+   and `PASS_THROUGH_UNSAFE`.
+4. `privacy-profiles-default.yaml:8`'s comment says unclassified "has only
+   two settings by design" — `PrivacyProfile.UnclassifiedBehaviour`
+   (`PrivacyProfile.java:46`) has four values, not two.
+
+Found on task 84 (correct the `dataprism.privacy` row's false startup-refusal
+claims), merged 2026-09-23. Neither blocks the merge.
+
+1. `docs/configuration.md:73`'s "a production scope lifetime is required"
+   understates the rule: `protectedDeployment()`
+   (`DataPrismProperties.java` ~:127-129, :165) requires it in every
+   deployment mode except stdio fixture-development, not only "production".
+2. In stdio fixture-development mode, an unset `profile` skips
+   `MISSING_PRIVACY_PROFILE` entirely; `validateProfile` then likely NPEs on
+   `Map.copyOf(...).containsKey(null)` instead of returning a clean refusal
+   code. Startup still fails either way, but with a stack trace instead of a
+   named refusal — a code follow-up, not a docs one.
+
+Found on task 82 (build and deploy the docs site), merged 2026-09-23. None
+blocks the merge.
+
+1. The llms-leak guard checks only the first line of at least 40 characters
+   per excluded doc — a partial include of an excluded page's content could
+   still slip past it undetected.
+2. The link-rewrite hook gives a nested badge image
+   (`[![alt](../img)](../x)`) the same `blob/main/…` treatment as a page
+   link, when the image itself should get a `raw` URL like a bare image
+   reference does.
+3. A link leaving `docs/` with a `?query` suffix or a percent-encoded path
+   component fails the build loudly (target-not-found) rather than being
+   handled — acceptable today since no such link exists, but worth a
+   deliberate rule if one is ever added.
+4. MkDocs 1.6.x and Material 9.x are pinned for good reason: Material's own
+   docs flag a coming backward-incompatible MkDocs 2.0, and Zensical reads
+   `mkdocs.yml` as the documented migration path. Re-check both before ever
+   bumping the pins.
+
+Found on task 77 (FAQ and comparison page), merged 2026-09-23. None blocks
+the merge; all three are wording gaps in `docs/faq.md`.
+
+1. `docs/faq.md:125-126` sources "deferred by design" for the
+   re-identification surface only — the Elasticsearch connector is also not
+   built, but for a different reason (task 78/S11 scope, not a deferral
+   decision), and the FAQ does not distinguish the two.
+2. `docs/faq.md:41` (does it detect PII in free text) omits the scanner's
+   depth cap of 16, beyond which it fails closed. Worth adding since a
+   reader could otherwise assume unbounded scanning.
+3. `docs/faq.md:68-70` (do I need Java) cites the README's MCP-registry
+   section, which names only the adapter path — it does not by itself rule
+   out every non-adapter, non-Java route a reader might ask about.
 
 Found on task 69 (restore the reviewed-adapter allow-list), merged
 2026-09-23. Neither blocks the merge; the first item matters more than it

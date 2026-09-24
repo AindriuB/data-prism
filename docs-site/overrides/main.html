@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{#-
+  Open Graph, Twitter Card and JSON-LD tags. Material's stock templates
+  don't emit any of these without its `social` plugin (out of scope here —
+  the card image itself comes from task 79's docs/assets/social-card.png).
+
+  `page.title` and the page's own `page.meta.description` (falling back to
+  `config.site_description` only where a page genuinely has none) are used
+  directly for og:title/og:description, so they can never disagree with
+  what mkdocs itself considers the page's title and description — including
+  where a nav label (e.g. "FAQ") overrides a page's front-matter title.
+
+  The JSON-LD block is gated on `page.file.src_uri == "index.md"` rather
+  than `page.is_homepage`, because `is_homepage` also requires the page to
+  sit at the top level of the nav — and `docs/index.md` is nested as the
+  first page of "Get started" so it doesn't add an eighth top-level nav
+  section.
+#}
+{% block extrahead %}
+  {{ super() }}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ page.title }}">
+  <meta property="og:description" content="{{ page.meta.description if page.meta and page.meta.description else config.site_description }}">
+  <meta property="og:url" content="{{ page.canonical_url }}">
+  <meta property="og:image" content="{{ config.site_url }}assets/social-card.png">
+  <meta property="og:image:alt" content="{{ config.site_name }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ page.title }}">
+  <meta name="twitter:description" content="{{ page.meta.description if page.meta and page.meta.description else config.site_description }}">
+  <meta name="twitter:image" content="{{ config.site_url }}assets/social-card.png">
+  {% if page and page.file.src_uri == "index.md" %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": {{ config.site_name | tojson }},
+    "description": {{ config.site_description | tojson }},
+    "codeRepository": "https://github.com/AindriuB/data-prism",
+    "programmingLanguage": "Java",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0"
+  }
+  </script>
+  {% endif %}
+{% endblock %}
