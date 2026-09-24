@@ -205,15 +205,38 @@ ALLOWED_BUNDLE_URLS = frozenset(
     }
 )
 
-# A scheme-qualified URL token, used to pull out *actual references* from the
-# bundle rather than every bare substring match: the bundle's `.map` also
-# carries Material's own source comment "...downloaded from unpkg.com...",
-# which matches THIRD_PARTY_PATTERN but is prose, not a URL, and not a
-# reference the browser ever fetches. Confining the allowlist comparison to
-# scheme-qualified tokens lets that harmless mention through while still
-# catching a genuine third `https://unpkg.com/...`-shaped string planted in
-# the bundle.
-URL_TOKEN_RE = re.compile(r"https?://[^\s\"'\\)]+")
+# A URL-*like* token: every character run around a THIRD_PARTY_PATTERN hit
+# up to the nearest whitespace, quote, backslash or closing bracket — not
+# just `https?://…` tokens. A scheme-qualified check alone (attempt 1) let a
+# protocol-relative `//host/...` or a bare `host/path` reference inside the
+# bundle through uncompared, even though both are things the bundle's own
+# code can `import`/fetch just as readily as a full `https://` URL.
+_TOKEN_BOUNDARY_RE = re.compile(r'[\s"\'\\)<>]')
+
+
+def _url_like_tokens(text: str) -> set[str]:
+    tokens: set[str] = set()
+    for match in THIRD_PARTY_PATTERN.finditer(text):
+        start, end = match.start(), match.end()
+        while start > 0 and not _TOKEN_BOUNDARY_RE.match(text[start - 1]):
+            start -= 1
+        while end < len(text) and not _TOKEN_BOUNDARY_RE.match(text[end]):
+            end += 1
+        tokens.add(text[start:end])
+    return tokens
+
+
+# The one known non-URL occurrence of the pattern inside Material's own
+# source map: its embedded `sourcesContent` carries a source comment
+# explaining, in prose, that the ResizeObserver polyfill is "automatically
+# downloaded from unpkg.com" if needed. That is not a reference the browser
+# ever fetches, so it is carved out by this one exact phrase — and only from
+# `bundle.*.min.js.map` — rather than by a blanket "ignore anything not
+# shaped like a URL" rule, which would also wave through a bare `unpkg.com/…`
+# or `//host/…` reference planted anywhere else in the same file.
+KNOWN_MAP_PROSE = (
+    "polyfill is automatically downloaded from unpkg.com. This is also compatible"
+)
 
 
 def check_no_third_party_scripts() -> None:
@@ -228,12 +251,8 @@ def check_no_third_party_scripts() -> None:
         if not THIRD_PARTY_PATTERN.search(text):
             continue
         if BUNDLE_PATH_RE.match(rel):
-            found_urls = {
-                token
-                for token in (m.group(0) for m in URL_TOKEN_RE.finditer(text))
-                if THIRD_PARTY_PATTERN.search(token)
-            }
-            unexpected = found_urls - ALLOWED_BUNDLE_URLS
+            scan_text = text.replace(KNOWN_MAP_PROSE, "") if rel.endswith(".map") else text
+            unexpected = _url_like_tokens(scan_text) - ALLOWED_BUNDLE_URLS
             if unexpected:
                 fail(
                     f"{rel}: unexpected third-party script reference(s) in "
@@ -247,7 +266,12 @@ def check_no_third_party_scripts() -> None:
         )
 
 
-MERMAID_CLASS_RE = re.compile(r'class="[^"]*\bmermaid\b[^"]*"')
+# Matches only an exact `mermaid` class token (bounded by the attribute's
+# own start/end or a space either side) — not `language-mermaid`, the class
+# Material's own superfences highlighting puts on a *fenced code block that
+# shows* Mermaid source. Only a rendered `.mermaid` element makes Material
+# fetch the runtime from unpkg.com; a code sample naming Mermaid is fine.
+MERMAID_CLASS_RE = re.compile(r'class="(?:[^"]*\s)?mermaid(?:\s[^"]*)?"')
 
 
 def check_no_mermaid_class() -> None:
@@ -261,19 +285,47 @@ def check_no_mermaid_class() -> None:
             fail(f'{rel}: found class="mermaid", which triggers Material\'s runtime unpkg.com fetch')
 
 
+# Matches double-quoted, single-quoted *and* unquoted `src=`/`href=` values
+# (HTML allows all three) — attempt 1 only matched double-quoted ones, so
+# `<script src='https://…'>` passed unnoticed. Three alternative capturing
+# groups, one per quoting style, since stdlib `re` rejects the same named
+# group in more than one alternative; `_first_group` below picks whichever
+# one matched.
 _ATTR_SRC_HREF_RE = re.compile(
-    r'<(?:script[^>]*\ssrc|link[^>]*\shref)\s*=\s*"([^"]*)"', re.IGNORECASE
+    r"""<(?:script[^>]*\ssrc|link[^>]*\shref)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
+    re.IGNORECASE,
 )
 _AT_IMPORT_RE = re.compile(r'@import\s+(?:url\(\s*)?["\']?([^"\'\);]+)', re.IGNORECASE)
 _URL_FUNC_RE = re.compile(r'\burl\(\s*["\']?([^"\')]+)["\']?\s*\)', re.IGNORECASE)
 
+# `img`/`srcset`/`iframe`/`fetch(...)` are deliberately left out of scope:
+# this guard only needs to catch the ways a *script or stylesheet* origin can
+# be widened (which is what actually executes third-party code or loads
+# analytics), not every possible off-origin URL a page could ever mention.
+
+
+def _first_group(match: re.Match[str]) -> str:
+    for group in match.groups():
+        if group is not None:
+            return group
+    return ""
+
 
 def _is_offsite(url: str) -> bool:
+    # A protocol-relative reference (`//host/...`) is exactly as off-site as
+    # an absolute `https://host/...` one — the browser resolves it against
+    # the current scheme, not the current origin — so it must not fall
+    # through the leading-`/` "site-local" check below, which is only meant
+    # for genuine root-relative paths like `/data-prism/foo/`.
+    if url.startswith("//"):
+        return True
     if url.startswith(("data:", "#", "mailto:", "/")):
         return False
-    if url.startswith(SITE_URL):
+    lowered = url.lower()
+    if lowered.startswith(SITE_URL.lower()):
         return False
-    return url.startswith(("http://", "https://"))
+    # Case-insensitive: `HTTPS://…` is exactly as off-site as `https://…`.
+    return lowered.startswith(("http://", "https://"))
 
 
 def check_no_offsite_resources() -> None:
@@ -285,7 +337,7 @@ def check_no_offsite_resources() -> None:
             checks.insert(0, ("<script src> / <link href>", _ATTR_SRC_HREF_RE))
         for label, pattern in checks:
             for match in pattern.finditer(text):
-                url = html.unescape(match.group(1)).strip()
+                url = html.unescape(_first_group(match)).strip()
                 if _is_offsite(url):
                     fail(f"{rel}: off-origin {label} reference: {url}")
 
