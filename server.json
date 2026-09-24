@@ -9,11 +9,11 @@
     "id": "1361848414"
   },
   "websiteUrl": "https://aindriub.github.io/data-prism/",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/aindriub/data-prism-server:0.3.0",
+      "identifier": "ghcr.io/aindriub/data-prism-server:0.3.1",
       "runtimeHint": "docker",
       "transport": {
         "type": "streamable-http",

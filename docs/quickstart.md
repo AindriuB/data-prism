@@ -46,7 +46,7 @@ docker compose -f compose.yaml -f compose.build.yaml up --build
 ```
 
 To pin a specific released version instead of `latest`, set
-`QUICKSTART_IMAGE_TAG=0.3.0` in the environment (or a `.env` file) before
+`QUICKSTART_IMAGE_TAG=0.3.1` in the environment (or a `.env` file) before
 either command.
 
 The first run (either command) takes a few minutes — pulling four images, or

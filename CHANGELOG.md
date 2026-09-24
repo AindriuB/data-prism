@@ -7,12 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-24
+
+No runtime behaviour changed on the server. This release refreshes the
+docs site and the MCP Registry listing, and corrects several documentation
+and CHANGELOG claims found while writing them.
+
+### Added
+
+- A MkDocs Material docs site published from the existing user docs, with an
+  identity (mark, favicon, palette, landing page), five concept diagrams
+  embedded in context, and dedicated FAQ, comparison and three intent
+  use-case pages.
+- A developer guide overview with tested tutorials for writing an adapter
+  and writing a custom `IdentityResolver`, plus an example `IdentityResolver`
+  and its unit tests in `data-prism-quickstart-extension`.
+- `websiteUrl` and the current canonical tagline in the MCP Registry
+  `server.json` entry, so the next registry publish carries them instead of
+  the stale v0.3.0 description and missing `websiteUrl`.
+
 ### Changed
 
+- The changelog page on the docs site now collapses every release but the
+  latest, without editing `CHANGELOG.md` itself.
 - CHANGELOG: corrected the 0.3.0 `AuditChainVerifier` entry, which attached
   "caught even on the last record" to deletions as well as edits; only edits
   are caught at a chain's tail, a deletion is caught only when a later record
   follows it (see `docs/audit.md`).
+- Corrected the canonical description's "redacts or refuses unclassified
+  data" to "refuses unclassified data", matching what the code actually
+  does.
+
+### Fixed
+
+- `docs/tools.md`'s false claim that an unclassified field is silently
+  dropped.
+- The write-an-adapter tutorial's overclaim about what a hand-rolled
+  `IdentityResolver` needs to guarantee.
+
+Not published to Maven Central; the Maven artifacts remain at 0.3.0.
 
 ## [0.3.0] - 2026-09-23
 
@@ -291,6 +324,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.3.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.1
 [0.3.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.2.0
 [0.1.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.1.1
