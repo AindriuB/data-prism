@@ -139,10 +139,11 @@ fixture for evaluation, not this image or that configuration.
 ## Documentation
 
 The full set of user docs is also published, rendered and searchable, at
-<https://aindriub.github.io/data-prism/>. Each row below links both the
-site page and the repo file it is built from.
+<https://aindriub.github.io/data-prism/>.
 
 ### User docs
+
+Each row links the site page and the repo file it is built from.
 
 | Doc | Site | What it covers |
 |---|---|---|
@@ -154,11 +155,14 @@ site page and the repo file it is built from.
 | [`docs/audit.md`](docs/audit.md) | [audit/](https://aindriub.github.io/data-prism/audit/) | What the hash-chained audit trail records, and how to verify it |
 | [`docs/architecture.md`](docs/architecture.md) | [architecture/](https://aindriub.github.io/data-prism/architecture/) | Module map, dependency rules, the boundaries that must not be crossed, dated decisions |
 | [`docs/agents/`](docs/agents/README.md) | [agents/](https://aindriub.github.io/data-prism/agents/) | Connecting an MCP agent client, local fixture or authenticated remote |
+| [`docs/agents/stdio.md`](docs/agents/stdio.md) | [agents/stdio/](https://aindriub.github.io/data-prism/agents/stdio/) | The local stdio fixture workflow: a real MCP tool call with no JWT, network call or source system |
+| [`docs/agents/remote-http.md`](docs/agents/remote-http.md) | [agents/remote-http/](https://aindriub.github.io/data-prism/agents/remote-http/) | The authenticated Streamable HTTP workflow against a real MCP endpoint; no development bypass |
 | [`docs/faq.md`](docs/faq.md) | [faq/](https://aindriub.github.io/data-prism/faq/) | Direct answers on pseudonymisation, PII detection, Java requirements, the audit trail and prompt injection |
 | [`docs/comparison.md`](docs/comparison.md) | [comparison/](https://aindriub.github.io/data-prism/comparison/) | How Data Prism compares to Presidio, LLM Guard, NeMo Guardrails and MCP gateways or proxies |
 | [`docs/use-cases/pseudonymise-customer-data-spring-boot.md`](docs/use-cases/pseudonymise-customer-data-spring-boot.md) | [use-cases/pseudonymise-customer-data-spring-boot/](https://aindriub.github.io/data-prism/use-cases/pseudonymise-customer-data-spring-boot/) | Pseudonymising customer data from a Spring Boot API before an LLM agent sees it |
 | [`docs/use-cases/gdpr-data-minimisation-mcp.md`](docs/use-cases/gdpr-data-minimisation-mcp.md) | [use-cases/gdpr-data-minimisation-mcp/](https://aindriub.github.io/data-prism/use-cases/gdpr-data-minimisation-mcp/) | GDPR data minimisation for MCP tools |
 | [`docs/use-cases/consistent-pseudonyms-across-systems.md`](docs/use-cases/consistent-pseudonyms-across-systems.md) | [use-cases/consistent-pseudonyms-across-systems/](https://aindriub.github.io/data-prism/use-cases/consistent-pseudonyms-across-systems/) | Keeping one customer recognisable across systems without exposing identity |
+| [`CHANGELOG.md`](CHANGELOG.md) | [changelog/](https://aindriub.github.io/data-prism/changelog/) | Every notable Data Prism change by version, in Keep a Changelog format |
 
 ### Internal / project working docs
 
