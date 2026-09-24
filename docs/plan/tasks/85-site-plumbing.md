@@ -157,3 +157,26 @@ The re-run must keep everything the tester verified in attempt 1 green:
 - actionlint;
 - the verbatim CONTRIBUTING Docker recipe;
 - `git diff --stat site-polish` limited to **Owns**.
+
+## Attempt 2 — failed
+
+Tester: PASS. Reviewer: CHANGES. Items 1–6 from attempt 1 are closed for their stated forms, and the new `check_no_stub_pages.py` is accepted as in scope: it is a new `check_*.py` required by item 5 and collides with no other task. Two bypasses of the same kind remain. Rebase onto LOCAL `site-polish`, fix both, and prove each with the planted faults listed, in a scratch copy of `site/`, quoting the failure lines.
+
+1. **Backslash URLs pass** (`check_site.py` around lines 313–329, and the `pages.yml` grep step if it has the same gap). Browsers treat `\` as `/` in http(s) URLs and strip tabs and newlines, so all three of these load from off-origin hosts, yet `_is_offsite` returns False for each:
+   - `<script src="/\evil.example.com/x.js">`
+   - `<script src="https:\\evil.example.com/x.js">`
+   - CSS `url('/\fonts.bunny.net/x.woff2')`
+
+   Before the off-site test, normalise the value: turn `\` into `/` and remove ASCII tab, CR and LF. Planted faults: the three examples above, plus one with an embedded tab (`src="/<TAB>/evil.example.com/x.js"`).
+2. **The mermaid class matches only in double quotes** (`MERMAID_CLASS_RE`, about line 278). `<pre class='mermaid'>` and `<pre class=mermaid>` pass, yet each is a `.mermaid` element that makes Material fetch mermaid from unpkg. Accept single-quoted and unquoted class values, as was done for src/href, and keep `language-mermaid` passing. Planted faults: both forms fail, and `class='highlight language-mermaid'` still passes.
+3. **Suggestion, not blocking:** the greedy `[^>]*\ssrc` takes the last ` src` in a tag, so a decoy inside another attribute's value hides the real one. Fix it only if the fix is cheap: e.g. iterate over every `src`/`href` attribute in the tag rather than just the last.
+
+Keep green everything the attempt-2 tester verified:
+- the strict build;
+- every `check_*.py`, including the stub guard's true, false and unset behaviour;
+- all earlier planted faults: the original four and attempt-1 items 1–4;
+- the snippets cases;
+- lychee `--offline`;
+- actionlint;
+- the verbatim CONTRIBUTING recipe;
+- `git diff --stat site-polish`, limited to Owns plus `check_no_stub_pages.py`.
