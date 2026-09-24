@@ -1,0 +1,16 @@
+flowchart LR
+    Client["MCP client"]
+    Auth["Authenticate caller"]
+    Authz["Tool authorisation"]
+    Scope["Derive scope and purpose"]
+    Orchestrator["Orchestrator (fan-out)"]
+    Adapters["Reviewed source adapters"]
+    APIs["Enterprise APIs"]
+    Engine["Classification and scrubbing: pseudonymise / redact / remove"]
+    Leak["Raw-value leak check"]
+    Audit["Audit"]
+    Response["MCP response"]
+
+    Client --> Auth --> Authz --> Scope --> Orchestrator --> Adapters
+    Adapters <--> APIs
+    Adapters --> Engine --> Leak --> Audit --> Response

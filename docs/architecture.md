@@ -133,6 +133,10 @@ re-identification index are not, and are treated differently for that reason.
 timeouts, circuit breakers, bulkheads and a bounded pool. An LLM in a retry loop
 is the realistic overload, not an attacker.
 
+The diagram below traces one request end to end through these components.
+
+![Request path from MCP client through authentication, tool authorisation and scope/purpose derivation, then the orchestrator, reviewed source adapters and enterprise APIs; response path through classification and scrubbing (pseudonymise, redact or remove), the raw-value leak check and audit, before the MCP response — no path from an adapter bypasses the privacy engine.](assets/diagrams/system-overview.svg)
+
 ## Boundaries that must not be crossed
 
 Violating any of these is a defect regardless of how the code reads or whether

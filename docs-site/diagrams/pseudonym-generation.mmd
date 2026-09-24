@@ -1,0 +1,19 @@
+flowchart LR
+    Scope["Scope: case: plus case id"]
+    Subject["Subject id, canonicalised"]
+    Namespace["Namespace"]
+    Version["Algorithm version"]
+    Material["Material: scope, subject, namespace, version"]
+    Key["HMAC key"]
+    Mac["HMAC digest"]
+    Identity["Synthetic identity"]
+    Discriminator["Discriminator, 8 characters"]
+
+    Scope --> Material
+    Subject --> Material
+    Namespace --> Material
+    Version --> Material
+    Material --> Mac
+    Key --> Mac
+    Mac --> Identity
+    Mac --> Discriminator

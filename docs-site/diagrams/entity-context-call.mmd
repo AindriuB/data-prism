@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant Caller as MCP client
+    participant Tool as GetEntityContextTool
+    participant Authz as AuthorizationService
+    participant Scope as ScopeResolver
+    participant Orchestrator as ContextOrchestrator
+    participant Adapter as DataSourceAdapter
+    participant Scrub as ScrubbingEngine
+    participant Validator as LlmResponseValidator
+    participant Audit as AuditRecorder
+
+    Caller->>Tool: tools/call get_entity_context(entityType, subjectId)
+    Tool->>Authz: authorize(caller, toolInvocation)
+    Authz-->>Tool: AuthorizationDecision
+    Tool->>Scope: resolve(caller, decision, clock)
+    Scope-->>Tool: PrivacySession
+    Tool->>Orchestrator: buildContext(request, privacyContext, investigationContext)
+    Orchestrator->>Adapter: fetch (parallel fan-out)
+    Adapter-->>Orchestrator: raw source record
+    Orchestrator->>Scrub: scrub(record, context)
+    Scrub-->>Orchestrator: scrubbed tree
+    Orchestrator->>Validator: validate(merged, prohibited, emitted, context)
+    Validator-->>Orchestrator: ValidationResult, no violations
+    Orchestrator->>Audit: record(principal, tool, decision=ALLOW, correlationId)
+    Orchestrator-->>Tool: ContextResponse
+    Tool-->>Caller: CallToolResult, structuredContent

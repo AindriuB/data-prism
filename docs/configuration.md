@@ -191,6 +191,11 @@ above is one convenient, non-unique-per-boot choice; it is not a requirement.
 A `dataprism.audit.credential-reference`, when configured, must not be
 blank; a blank one refuses startup with `INVALID_AUDIT_REFERENCE`.
 
+The diagram below shows the three outcomes a field's classification can lead
+to.
+
+![Fail-closed field decisions: a classified field is pseudonymised, redacted or removed according to its classification; an unclassified field refuses the whole response (FAIL_REQUEST); and a response where something looks like a sensitive identifier shape is also refused.](assets/diagrams/fail-closed-decisions.svg)
+
 ## Java-first now; generic JSON as a separately reviewed extension
 
 V1 is **Java-first**. A source adapter is application/distribution code with an
