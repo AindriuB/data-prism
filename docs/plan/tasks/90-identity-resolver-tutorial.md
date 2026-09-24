@@ -171,3 +171,23 @@ Rebase onto LOCAL `site-polish` and always diff with three dots. Then fix:
 4. **Suggestion to apply:** extension-points.mmd line 6. The adapter check is `validateIntegrations` (DPAC about line 247 → DataPrismContractValidator about lines 44–45), not the preflight, and it is skipped in fixture STDIO mode. Label it along the lines of "preflight and contract validation refuse startup when either bean is missing". Check the wording against the code, including the STDIO skip, and update the README trace rows. Re-render twice to confirm byte-stability.
 
 Keep green: the full attempt-1 keep-green list. The tester verified it all in attempt 2.
+
+## Attempt 3 — failed
+
+Tester: PASS. The ordering test is non-vacuous. A scratch orchestrator test confirmed the NO_SOURCE_DATA refusal end to end. The example auto-configuration is not registered.
+
+Reviewer: CHANGES, for one defect. Everything else from attempt 2 is met.
+
+This is the **final bounded round**. Fix exactly the items below and nothing further. Rebase onto LOCAL `site-polish`, and diff with three dots.
+
+1. **The ordering guidance is specific to the quickstart** (custom-identity-resolver.md: "The fix is an explicit `@AutoConfiguration(before = QuickstartExtensionAutoConfiguration.class)`" and the following "Either way … pass-through" paragraph).
+
+   How it fails: a reader's `org.acme.AcmeIdentityAutoConfiguration` follows the recipe with `dataprism.identity.resolver: pass-through` set. `io.github…DataPrismAutoConfiguration` sorts first, with no ordering, so `IdentityResolverSelection` (DPAC about lines 128–135) registers the pass-through bean. The reader's unconditional bean then adds a second one, and startup fails at DPAC about line 446.
+
+   State the general rule: order your auto-configuration before whichever auto-configuration supplies the `@ConditionalOnMissingBean` default in your deployment. That is `QuickstartExtensionAutoConfiguration` for the quickstart, and `DataPrismAutoConfiguration` when `dataprism.identity.resolver: pass-through` is set. Mention `beforeName` for when the class isn't a compile dependency. Drop "behaves exactly as described above" for the pass-through case, or make it accurate. A new test is not required. If you make a claim about `DataPrismAutoConfiguration` ordering, trace it to the code and don't overstate it.
+2. **Precision notes** (small wording fixes, all required):
+   - (a) extension-points.mmd (about line 7), plus the index.md intro and alt text: qualify "refuse startup when either bean is missing". The adapter check is skipped in fixture STDIO mode (DataPrismContractValidator about lines 42–43). A short "(outside fixture STDIO mode)" or equivalent is enough. Re-render twice to confirm byte-stability.
+   - (b) custom-identity-resolver.md, "exactly `refused: NO_SOURCE_DATA at CUSTOMER`": the path is the client-supplied entityType (DCO about line 194). Say so, e.g. "…at CUSTOMER, for a request with entityType CUSTOMER".
+   - (c) IdentityResolverOrderingTest.java (about lines 69–70): the comment credits argument order for the quickstart class coming first. The real cause is AutoConfigurations' name sort, so fix the comment. Optionally, assert that the failed context's cause is NoUniqueBeanDefinitionException.
+
+Keep green: everything on the attempt-3 tester's list.
