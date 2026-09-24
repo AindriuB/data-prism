@@ -1,0 +1,230 @@
+{
+  "repo": {
+    "forks_count": 0,
+    "open_issues_count": 9,
+    "stargazers_count": 1,
+    "subscribers_count": 0
+  },
+  "views": {
+    "count": 337,
+    "uniques": 10,
+    "views": [
+      {
+        "timestamp": "2026-09-10T00:00:00Z",
+        "count": 0,
+        "uniques": 0
+      },
+      {
+        "timestamp": "2026-09-11T00:00:00Z",
+        "count": 2,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-12T00:00:00Z",
+        "count": 3,
+        "uniques": 3
+      },
+      {
+        "timestamp": "2026-09-13T00:00:00Z",
+        "count": 27,
+        "uniques": 3
+      },
+      {
+        "timestamp": "2026-09-14T00:00:00Z",
+        "count": 102,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-15T00:00:00Z",
+        "count": 14,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-16T00:00:00Z",
+        "count": 30,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-17T00:00:00Z",
+        "count": 34,
+        "uniques": 2
+      },
+      {
+        "timestamp": "2026-09-18T00:00:00Z",
+        "count": 1,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-19T00:00:00Z",
+        "count": 1,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-20T00:00:00Z",
+        "count": 5,
+        "uniques": 2
+      },
+      {
+        "timestamp": "2026-09-21T00:00:00Z",
+        "count": 0,
+        "uniques": 0
+      },
+      {
+        "timestamp": "2026-09-22T00:00:00Z",
+        "count": 16,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-23T00:00:00Z",
+        "count": 102,
+        "uniques": 3
+      }
+    ]
+  },
+  "clones": {
+    "count": 1623,
+    "uniques": 384,
+    "clones": [
+      {
+        "timestamp": "2026-09-10T00:00:00Z",
+        "count": 9,
+        "uniques": 8
+      },
+      {
+        "timestamp": "2026-09-11T00:00:00Z",
+        "count": 26,
+        "uniques": 16
+      },
+      {
+        "timestamp": "2026-09-12T00:00:00Z",
+        "count": 1,
+        "uniques": 1
+      },
+      {
+        "timestamp": "2026-09-13T00:00:00Z",
+        "count": 116,
+        "uniques": 49
+      },
+      {
+        "timestamp": "2026-09-14T00:00:00Z",
+        "count": 213,
+        "uniques": 67
+      },
+      {
+        "timestamp": "2026-09-15T00:00:00Z",
+        "count": 90,
+        "uniques": 41
+      },
+      {
+        "timestamp": "2026-09-16T00:00:00Z",
+        "count": 246,
+        "uniques": 76
+      },
+      {
+        "timestamp": "2026-09-17T00:00:00Z",
+        "count": 411,
+        "uniques": 107
+      },
+      {
+        "timestamp": "2026-09-18T00:00:00Z",
+        "count": 73,
+        "uniques": 32
+      },
+      {
+        "timestamp": "2026-09-19T00:00:00Z",
+        "count": 5,
+        "uniques": 3
+      },
+      {
+        "timestamp": "2026-09-20T00:00:00Z",
+        "count": 8,
+        "uniques": 6
+      },
+      {
+        "timestamp": "2026-09-21T00:00:00Z",
+        "count": 4,
+        "uniques": 2
+      },
+      {
+        "timestamp": "2026-09-22T00:00:00Z",
+        "count": 73,
+        "uniques": 25
+      },
+      {
+        "timestamp": "2026-09-23T00:00:00Z",
+        "count": 348,
+        "uniques": 81
+      }
+    ]
+  },
+  "referrers": [
+    {
+      "referrer": "github.com",
+      "count": 126,
+      "uniques": 7
+    }
+  ],
+  "paths": [
+    {
+      "path": "/AindriuB/data-prism",
+      "title": "Overview",
+      "count": 48,
+      "uniques": 9
+    },
+    {
+      "path": "/AindriuB/data-prism/actions",
+      "title": "/actions",
+      "count": 16,
+      "uniques": 2
+    },
+    {
+      "path": "/AindriuB/data-prism/pulls",
+      "title": "/pulls",
+      "count": 13,
+      "uniques": 2
+    },
+    {
+      "path": "/AindriuB/data-prism/actions/workflows/publish-central.yml",
+      "title": "/actions/workflows/publish-central.yml",
+      "count": 10,
+      "uniques": 1
+    },
+    {
+      "path": "/AindriuB/data-prism/actions/runs/35908077912",
+      "title": "/actions/runs/35908077912",
+      "count": 9,
+      "uniques": 1
+    },
+    {
+      "path": "/AindriuB/data-prism/actions/runs/35909035304",
+      "title": "/actions/runs/35909035304",
+      "count": 7,
+      "uniques": 1
+    },
+    {
+      "path": "/AindriuB/data-prism/actions/runs/35908048687",
+      "title": "/actions/runs/35908048687",
+      "count": 6,
+      "uniques": 1
+    },
+    {
+      "path": "/AindriuB/data-prism/tree/main/data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture",
+      "title": "/tree/main/data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture",
+      "count": 5,
+      "uniques": 1
+    },
+    {
+      "path": "/AindriuB/data-prism/actions/runs/35909035304/job/107345314864",
+      "title": "/actions/runs/35909035304/job/107345314864",
+      "count": 4,
+      "uniques": 1
+    },
+    {
+      "path": "/AindriuB/data-prism/tree/main/data-prism-spring-boot-autoconfigure",
+      "title": "/tree/main/data-prism-spring-boot-autoconfigure",
+      "count": 4,
+      "uniques": 1
+    }
+  ],
+  "captured_at": "2026-09-24T20:12:13Z"
+}
