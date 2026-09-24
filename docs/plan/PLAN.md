@@ -1273,14 +1273,37 @@ it now carries three stub developer-guide pages; the merge-only
   task. Task file retired.
 - **Wave 1 — no cross-dependencies, all branched from local `site-polish`:**
   86 (site look: logo, favicon, palette, landing page, `extra_css` — the only
-  wave-1 task touching `theme:`), 87 (collapsible changelog, replacing the
-  `changelog.py` stub task 85 registered), 88 (diagrams embedded in existing
+  wave-1 task touching `theme:`), 88 (diagrams embedded in existing
   pages, mermaid source committed and pre-rendered to SVG, no runtime
   Mermaid/CDN), 89 (developer guide overview and the write-an-adapter
-  tutorial, replacing two of task 85's three stub pages). Not started.
+  tutorial, replacing two of task 85's three stub pages). In flight (86, 88,
+  89).
+- **Task 87 — done.** Replaced the `changelog.py` stub task 85 registered:
+  each `CHANGELOG.md` release now renders as a `pymdownx.details` block,
+  newest open and the rest closed, with an empty `[Unreleased]` dropped and
+  a "version — date · N added · …" summary line (singular for a count of 1).
+  `check_changelog.py` guards every release marker, `<summary>`, and that
+  link-reference definitions stay at top level and resolve; `CHANGELOG.md`
+  itself is untouched, and the only site side effect is `llms-full.txt`'s
+  release headings. Merged onto `site-polish`, PASS + APPROVE on attempt 2 —
+  see `docs/plan/HISTORY.md`, grep `Task 87`, for what attempt 1's review
+  closed. Task file retired.
 - **Not yet in a wave:** 90 (custom identity resolver tutorial, replacing the
   third stub page) — depends on the SPI shape 89's tutorial settles first,
   per the spec's "simple to advanced" tutorial-order decision.
+
+**Open items for the owner, found closing task 87:**
+- `CHANGELOG.md`'s 0.3.0 `AuditChainVerifier` bullet says "an edit or
+  deletion inside one writer's chain, caught even on that chain's own last
+  record". That is the same ambiguity `docs/audit.md` resolves: only edits
+  are caught at the tail, and deleting a writer's most recent records goes
+  undetected. The site-polish spec copied the same wording and has been
+  corrected; whether to amend the already-released changelog entry is the
+  owner's call.
+- `docs/tools.md:120` says "unclassified values dropped", but the shipped
+  profiles use `FAIL_REQUEST`, which refuses the whole response. A doc
+  correction, best done after task 88 merges since 88 owns embeds in
+  `tools.md`.
 
 ## Remaining slices past the adopted core
 

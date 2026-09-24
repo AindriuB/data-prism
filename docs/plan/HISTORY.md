@@ -17,7 +17,42 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
-## 2026-09-24 — Task 85: shared site plumbing for the site-polish wave
+## 2026-09-24 — Task 87: collapse the changelog page per release
+
+`docs/changelog.md` renders each `CHANGELOG.md` release as a
+`pymdownx.details` block instead of one long wall of text, replacing task
+85's no-op `changelog.py` stub: the newest release starts open, every other
+release starts closed, and an empty `[Unreleased]` section is dropped
+entirely. Each release's `<summary>` line reads "version — date · N added ·
+N changed · …", built from a top-level-list-item count per `###`
+subsection, omitting any subsection with zero items and using the singular
+label for a count of 1 ("1 behavioural change"). The changelog page's own
+right-hand TOC is hidden via `page.meta["hide"]` set inside the hook, since
+the `###` headings buried in collapsed blocks would otherwise show as 12
+unlabelled entries. `docs-site/hooks/check_changelog.py` is new: it fails,
+naming what's missing, unless every release marker and its `<summary>`
+survive the transform and every link-reference definition both stays at
+top level (anchored with `^`/`MULTILINE` so one indented into a details
+block fails) and resolves to a real `<a href>`. `CHANGELOG.md` itself is
+untouched — `git diff -- CHANGELOG.md` against `site-polish` is empty — and
+the only rendering side effect anywhere else is `llms-full.txt`, whose
+release headings become plain "[x.y.z](url) — date · counts" lines with no
+`???` syntax.
+
+**Cost:** Two attempts. Attempt 1 passed the tester but the reviewer found
+one class of defect worth naming for future guard/formatting tasks: a
+comment describing the counting rule ("a subsection with zero items still
+renders … never silently dropped from the count") said the opposite of what
+the code did (lines 119/126 actually omit zero-item subsections from the
+summary, correctly — only the comment was wrong), a plural-only summary
+label ("1 behavioural changes"), a missing per-page TOC suppression, and an
+unanchored link-reference-definition check that a definition indented into
+the last details block would still pass. All four fixed in attempt 2, kept
+green alongside the existing planted faults and the strict build. Lesson
+recorded for future coordination: diff a task branch against a moving
+integration branch with `git diff site-polish...HEAD` (three dots), not two
+— a two-dot diff against `site-polish` showed unrelated plan-only commits as
+a false `Owns` violation during review.
 
 Lays every piece of `mkdocs.yml`, the guard scripts and the CI workflow that
 the site-polish plan's wave-1 tasks (look, changelog, diagrams, developer
