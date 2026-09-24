@@ -46,7 +46,9 @@ WORKDIR /app
 # Nothing is pre-populated: an empty directory is exactly what makes
 # MISSING_SOURCE_ADAPTER the correct, fail-closed refusal without one.
 RUN mkdir -p /app/adapters && chown -R dataprism:dataprism /app
+# --8<-- [start:loader-path]
 ENV LOADER_PATH=/app/adapters
+# --8<-- [end:loader-path]
 
 # CONFIG_DIR: Spring Boot's own convention — a jar started with working
 # directory /app auto-loads /app/config/application.yaml ahead of its packaged

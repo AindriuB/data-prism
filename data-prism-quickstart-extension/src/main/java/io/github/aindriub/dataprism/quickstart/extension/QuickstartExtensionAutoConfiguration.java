@@ -30,6 +30,7 @@ import java.time.Duration;
  * arguments carry only {@code entityType} and {@code subjectId}, per docs/
  * configuration.md.
  */
+// --8<-- [start:autoconfiguration]
 @AutoConfiguration
 public class QuickstartExtensionAutoConfiguration {
 
@@ -58,3 +59,4 @@ public class QuickstartExtensionAutoConfiguration {
         return new QuickstartCustomerAdapter(client);
     }
 }
+// --8<-- [end:autoconfiguration]

@@ -14,6 +14,7 @@ import io.github.aindriub.dataprism.annotations.SensitiveData;
  * platform never makes for an adapter (see {@code LlmExposedModelProcessor}
  * and pack.md §30: a field nobody classified is never exposed).
  */
+// --8<-- [start:model]
 @LlmExposedModel
 public record CustomerModel(
 
@@ -35,3 +36,4 @@ public record CustomerModel(
         @NonSensitive(reason = "Enumerated lifecycle state; no free text and no bearing on identity")
         String status) {
 }
+// --8<-- [end:model]

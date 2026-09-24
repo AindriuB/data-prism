@@ -45,4 +45,6 @@ COPY --from=build /workspace/data-prism-quickstart-extension.jar /app/data-prism
 # auto-loads /app/config/application.yaml ahead of its own packaged defaults.
 COPY docker/server/application.yaml /app/config/application.yaml
 EXPOSE 8080
+# --8<-- [start:entrypoint]
 ENTRYPOINT ["java", "-Dloader.path=/app/data-prism-quickstart-extension.jar", "-jar", "/app/data-prism-server.jar", "--server.port=8080"]
+# --8<-- [end:entrypoint]

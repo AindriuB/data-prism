@@ -47,6 +47,7 @@ dataprism:
     # required choice between "embedded" and "single-node" rather than a
     # default either could quietly fall back to.
     topology: single-node
+  # --8<-- [start:customer-source]
   sources:
     customer:
       # fixture-only: "fixtures" is this Compose network's own synthetic
@@ -54,3 +55,4 @@ dataprism:
       # real deployment points this at its own reviewed enterprise API.
       base-url: https://fixtures:8543
       timeout: 5s
+  # --8<-- [end:customer-source]
