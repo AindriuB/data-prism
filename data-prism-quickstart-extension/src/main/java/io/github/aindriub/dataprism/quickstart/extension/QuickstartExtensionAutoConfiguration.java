@@ -34,6 +34,7 @@ import java.time.Duration;
 @AutoConfiguration
 public class QuickstartExtensionAutoConfiguration {
 
+    // --8<-- [start:quickstart-identity-resolver]
     @Bean
     @ConditionalOnMissingBean
     IdentityResolver quickstartIdentityResolver() {
@@ -42,6 +43,7 @@ public class QuickstartExtensionAutoConfiguration {
         // PassThroughIdentityResolver's own Javadoc.
         return new PassThroughIdentityResolver();
     }
+    // --8<-- [end:quickstart-identity-resolver]
 
     @Bean
     @ConditionalOnMissingBean

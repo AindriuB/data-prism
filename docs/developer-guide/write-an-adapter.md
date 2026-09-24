@@ -60,8 +60,11 @@ Full reference: [Implement `DataSourceAdapter`](../extending.md#implement-dataso
 
 Nothing on a `-Dloader.path` jar is component-scanned, so Spring Boot has to
 be told which `@AutoConfiguration` class to load. That class supplies the
-`IdentityResolver` and `DataSourceAdapter` beans the platform refuses to
-start without:
+`DataSourceAdapter` bean the platform refuses to start without, plus a
+fallback `IdentityResolver` bean — one is only mandatory because
+`DataPrismAutoConfiguration.dataPrismIdentityResolverPreflight` refuses to
+start without some `IdentityResolver` bean, which `dataprism.identity.resolver:
+pass-through` or an application-supplied bean can equally satisfy:
 
 ```java
 --8<-- "src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartExtensionAutoConfiguration.java:autoconfiguration"

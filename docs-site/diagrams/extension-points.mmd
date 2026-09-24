@@ -1,0 +1,17 @@
+flowchart TB
+    Adapter["DataSourceAdapter implementation\n(e.g. QuickstartCustomerAdapter)"]
+    QuickstartDefault["Quickstart's default IdentityResolver\n(PassThroughIdentityResolver)"]
+    AppResolver["Application-supplied IdentityResolver\n(e.g. MappedIdentityResolver)"]
+    PassThroughProperty["dataprism.identity.resolver:\npass-through (no code)"]
+    AutoConfig["Application @AutoConfiguration\n(e.g. QuickstartExtensionAutoConfiguration)"]
+    DataPrismConfig["DataPrismAutoConfiguration:\npreflight and contract validation\nrefuse startup when either bean is missing\n(outside fixture STDIO mode)"]
+    Orchestrator["Orchestrator (fan-out):\nfetches each adapter,\nexpand(canonicalId, sourceNames)"]
+    Engine["Privacy engine:\nclassification and scrubbing"]
+
+    Adapter -->|"@Bean,\n@ConditionalOnMissingBean"| AutoConfig
+    QuickstartDefault -->|"@Bean,\n@ConditionalOnMissingBean"| AutoConfig
+    AppResolver -->|"@Bean\n(wins over either default)"| DataPrismConfig
+    PassThroughProperty -->|"selects a built-in resolver,\nno application code"| DataPrismConfig
+    AutoConfig -->|"beans visible in\nthe same context"| DataPrismConfig
+    DataPrismConfig -->|"injected into\ndataPrismContextOrchestrator"| Orchestrator
+    Orchestrator --> Engine
