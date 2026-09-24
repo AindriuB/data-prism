@@ -75,3 +75,21 @@ release or link can go missing in the transformation.
 - `mkdocs.yml`, `check_site.py`, `pages.yml`, `site.py` (85 already did all the wiring this task needs).
 - Changing the changelog's nav position or front-matter description.
 - Any change to how other pages render.
+
+## Attempt 1 — failed
+
+Tester: PASS. Reviewer: CHANGES, for one honesty defect. Everything else passed: counts match an independent recount, no text is lost, the guard is tied to per-release markers, and the only side effect is `llms-full.txt`, which keeps version, date and link with no `???` syntax. Rebase onto LOCAL `site-polish` and fix these:
+
+1. **The comment doesn't match the code** (changelog.py lines 49–51). The comment says a subsection with zero items "still renders … never silently dropped from the count", but lines 119 and 126 omit any subsection with zero items, e.g. a prose-only `### Notes`. The comment describes itself as the rule the report cites, so make it state what the code does: subsections with no top-level `- ` items are omitted from the summary line, and their text is still rendered in the block.
+2. **Singular and plural in the summary line.** "1 behavioural changes" is visible on a page whose purpose is polish. Use the singular label for a count of 1 ("1 behavioural change"). Keep the verb-style labels (added, changed, fixed, not changed, not included) unchanged, since they read correctly for any count. Unknown headings keep their lowercased heading as-is.
+3. **Hide the page's table of contents on the changelog page.** With `###` headings inside collapsed blocks, the right-hand TOC becomes a flat list of 12 unlabelled "Added / Changed / …" entries, and the collapsible blocks already do that job. Do it inside Owns: e.g. set `page.meta["hide"] = ["toc"]` (or equivalent) in the hook, only for `changelog.md`, rather than editing `page-meta.yml`, which you don't own. Confirm in the built HTML that the changelog page has no TOC sidebar and that other pages still do.
+4. **Anchor the rendered-markdown link-reference check** (check_changelog.py about line 93). Use `^` with MULTILINE, so a definition indented into the last block fails, enforcing the "stays at top level" rule. Planted fault: the definitions indented 4 spaces, which must fail. The unmodified copy passes.
+
+Keep green:
+- the strict build and every `check_*.py`;
+- the earlier planted faults (a)–(d);
+- the Unreleased-with-content case;
+- `git diff site-polish -- CHANGELOG.md`, which must be empty;
+- the site diff limited to changelog/, search, sitemap and `llms-full.txt`;
+- lychee `--offline`;
+- actionlint.
