@@ -1148,8 +1148,26 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   linked, Limits section, Show HN/r/java titles, pre-post checklist), and a
   `README.md` status table. Merged `--no-ff` onto `discoverability`. See
   `docs/plan/HISTORY.md` — grep `Task 81`.
-- **Task 82 (docs-site wiring: mkdocs.yml, OG/Twitter meta, page-meta.yml)**
-  — in flight, in its own worktree off `discoverability`.
+- **Task 82 — done.** MkDocs Material docs site (mkdocs 1.6.1, material
+  9.7.7, include-markdown 7.3.0, llmstxt 0.5.0, all pinned) built from the
+  existing docs as the single source — site_url
+  `https://aindriub.github.io/data-prism/`; 17 nav pages; home page includes
+  the README intro between the site-intro markers, changelog page includes
+  `CHANGELOG.md`; internal docs excluded (`plan/`, `adr/`, `pack.md`,
+  conventions, workflow, development-plan, design-review); per-page
+  title/description from `docs-site/page-meta.yml` for existing docs (no
+  front matter added to them); OG/Twitter tags and the social card; JSON-LD
+  `SoftwareSourceCode` on the home page only, no version; `llms.txt` and
+  `llms-full.txt`; no analytics, `theme.font: false`.
+  `docs-site/hooks/site.py` rewrites links leaving `docs/` to GitHub
+  blob/tree URLs (raw for images) and fails the build if the target does not
+  exist; `check_site.py` verifies excluded paths, sitemap vs the real nav,
+  meta/canonical/social tags, JSON-LD, no fonts/analytics, no `robots.txt`,
+  and the llms files. `.github/workflows/pages.yml` builds strict on PRs and
+  `main`, runs `check_site`, `lychee --offline` and the guards; deploys only
+  on push to `main` with `pages:write`/`id-token:write` in the
+  `github-pages` environment. Merged `--no-ff` onto `discoverability`. See
+  `docs/plan/HISTORY.md` — grep `Task 82`.
 - **Task 84 — done.** Corrected `docs/configuration.md:73`'s two false
   startup-refusal claims ("a production profile that relaxes fail-closed
   behaviour", "a profile that lacks a rule required by exposed models"): no
@@ -1161,8 +1179,10 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   Found while tracing task 81's launch-post claims back to code. Merged
   `--no-ff` onto `discoverability`, then a separate close-out commit. See
   `docs/plan/HISTORY.md` — grep `Task 84`.
-- **Task 83 (go-live wiring)** — pending, blocked on 82; happens after the
-  docs site deploys.
+- **Task 83 (go-live wiring)** — next, blocked on: the owner enabling GitHub
+  Pages (`build_type=workflow`) and enforcing HTTPS, PR #98 (`discoverability`
+  → `main`, carrying tasks 76-82 and 84) merging, and the `pages` workflow's
+  first deploy actually succeeding.
 
 ## Remaining slices past the adopted core
 
@@ -1273,6 +1293,25 @@ claims), merged 2026-09-23. Neither blocks the merge.
    `Map.copyOf(...).containsKey(null)` instead of returning a clean refusal
    code. Startup still fails either way, but with a stack trace instead of a
    named refusal — a code follow-up, not a docs one.
+
+Found on task 82 (build and deploy the docs site), merged 2026-09-23. None
+blocks the merge.
+
+1. The llms-leak guard checks only the first line of at least 40 characters
+   per excluded doc — a partial include of an excluded page's content could
+   still slip past it undetected.
+2. The link-rewrite hook gives a nested badge image
+   (`[![alt](../img)](../x)`) the same `blob/main/…` treatment as a page
+   link, when the image itself should get a `raw` URL like a bare image
+   reference does.
+3. A link leaving `docs/` with a `?query` suffix or a percent-encoded path
+   component fails the build loudly (target-not-found) rather than being
+   handled — acceptable today since no such link exists, but worth a
+   deliberate rule if one is ever added.
+4. MkDocs 1.6.x and Material 9.x are pinned for good reason: Material's own
+   docs flag a coming backward-incompatible MkDocs 2.0, and Zensical reads
+   `mkdocs.yml` as the documented migration path. Re-check both before ever
+   bumping the pins.
 
 Found on task 77 (FAQ and comparison page), merged 2026-09-23. None blocks
 the merge; all three are wording gaps in `docs/faq.md`.

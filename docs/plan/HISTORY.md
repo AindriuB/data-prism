@@ -17,6 +17,76 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-23 — Task 82: MkDocs Material docs site built and wired to deploy
+
+Publishes `https://aindriub.github.io/data-prism/` from the existing user
+docs as the single source, with an MkDocs Material site (mkdocs 1.6.1,
+material 9.7.7, include-markdown 7.3.0, llmstxt 0.5.0, all pinned in
+`docs-site/requirements.txt`). 17 nav pages; the home page (`docs/index.md`,
+new) includes the README intro between the `<!-- site-intro:start/end -->`
+markers via include-markdown, and the changelog page (`docs/changelog.md`,
+new) includes `CHANGELOG.md`. Existing docs get no front matter — their
+titles and per-page descriptions come from `docs-site/page-meta.yml`, which
+the hook applies — while the new pages carry their own front matter.
+Internal docs stay off the site (`exclude_docs`: `plan/`, `adr/`,
+`pack.md`, `conventions.md`, `workflow.md`, `development-plan.md`,
+`design-review.md`). Every sitemap page gets OG/Twitter tags and the
+existing social card; only the home page carries JSON-LD
+(`SoftwareSourceCode`, description D, no version). The site serves
+`llms.txt` (first line `# Data Prism`, summary = D) and `llms-full.txt`. No
+analytics, no `robots.txt`, `theme.font: false`.
+
+`docs-site/hooks/site.py` rewrites every link that leaves `docs/` (found via
+`../examples/…` and `../../examples/…` references from `docs/` and
+`docs/agents/`) to an absolute `https://github.com/AindriuB/data-prism/blob/main/…`
+URL (`raw` for images, `tree` for directories resolved against the excluded
+`plan/`/`adr/` paths too), and fails the build if the rewritten target does
+not exist. `docs-site/hooks/check_site.py` verifies, over the built
+`site/`: no excluded path leaked in, the sitemap matches the nav exactly, a
+unique ≤155-character description and canonical/social tags on every page,
+the home page's JSON-LD, no font/analytics hosts, no `robots.txt`, and that
+neither llms file contains excluded-page content. `.github/workflows/pages.yml`
+runs `mkdocs build --strict`, `check_site.py`, `lychee --offline` and
+`actionlint` on every PR and push to `main`, and deploys only on push to
+`main`, gated on `pages:write`/`id-token:write` in the `github-pages`
+environment — it changes no branch-protection setting and is not a required
+check. `CONTRIBUTING.md` gained a "Docs site" section with the local build
+commands and the front-matter/exclusion rules.
+
+Verified: `mkdocs build --strict` exits 0 from a fresh venv; `check_site.py`
+all-OK; `lychee --offline` 0 errors; `actionlint` 0. Non-vacuity of three
+guards shown with real planted-fault output: deleting a `page-meta.yml`
+entry, duplicating a description, and a description over 155 characters each
+fail the build by name; all three pass again reverted. Deferred, not
+checkable by the implementer: the PR's `pages` build job going green (runs
+once pushed to the PR) and the deploy itself, which needs GitHub Pages
+enabled first (owner action).
+
+**Cost:** two attempts. Attempt 1's site content was correct, but three of
+its own guards could not fail: the sitemap check compared the sitemap
+against the same rendered-pages manifest the sitemap itself is built from,
+so an orphan page could never be caught; the llms-leak check searched for a
+URL string the link-rewrite hook had already made impossible to produce, so
+an injected leak from `pack.md` passed clean; and the link-rewrite hook
+never checked that a rewritten target actually exists, so a typo'd
+`../examples` link would rewrite silently instead of failing the build.
+Attempt 2 fixed all three and proved each one by planting the fault it now
+catches (an orphan page, an injected `pack.md` line, a typo'd link) and
+showing the build fail with the target named, then reverting. Lesson
+carried forward: a guard is only a guard once it has been shown to fail on
+a planted fault, not just to pass on clean input. A tester run was also cut
+off mid-way by a usage limit and re-run cleanly from scratch. PASS + APPROVE
+on attempt 2, diff confirmed limited to this task's owned files, merged
+`--no-ff` onto the local `discoverability` branch (not `main`), then a
+separate close-out commit. Four unscheduled follow-ups filed in
+`docs/plan/PLAN.md` "Found on task 82": the llms-leak guard checks only the
+first ≥40-character line per excluded doc, a nested badge image gets a
+`blob` URL instead of `raw`, a `?query`/percent-encoded link leaving `docs/`
+fails loudly rather than being handled, and MkDocs/Material's pins should be
+re-checked before ever bumping them (Material warns of a coming
+backward-incompatible MkDocs 2.0; Zensical reads `mkdocs.yml` as the
+migration path).
+
 ## 2026-09-23 — Task 81: outreach drafts for the owner to post by hand
 
 Adds `docs/plan/outreach/` — internal drafts only, nothing submitted, forked
