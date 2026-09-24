@@ -56,6 +56,39 @@ em-dashes as CP1252 and the script will not parse.
 None of this is required to contribute. It is how the maintainers split work; a
 plain clone, an editor and Maven are enough.
 
+## Docs site
+
+`https://aindriub.github.io/data-prism/` is built with MkDocs Material from
+the existing docs under `docs/` (plus `README.md` and `CHANGELOG.md`,
+pulled into `docs/index.md` and `docs/changelog.md`). Build it locally:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r docs-site/requirements.txt
+mkdocs serve            # live-reloading local preview
+mkdocs build --strict   # what CI runs; fails on any broken link or
+                         # missing/duplicate/over-length page description
+```
+
+Rules for adding or changing a page:
+
+- **Existing docs get no front matter.** `docs/extending.md` and `PLAN.md`
+  cite line numbers inside these files, and front matter would shift them.
+  Give the page a `title` and `description` in `docs-site/page-meta.yml`
+  instead — `docs-site/hooks/site.py` injects them at build time, and fails
+  the build, naming the page, if the entry is missing, its description is
+  reused elsewhere, or it is over 155 characters.
+- **New pages carry real front matter** (`title` and `description`, the
+  latter unique and at most 155 characters) — see `docs/faq.md` or
+  `docs/comparison.md`.
+- **Excluded from the site entirely:** anything under `docs/plan/` or
+  `docs/adr/`, and `docs/pack.md`, `docs/conventions.md`, `docs/workflow.md`,
+  `docs/development-plan.md` and `docs/design-review.md` (`mkdocs.yml`'s
+  `exclude_docs`). `docs/pack.md` in particular is the superseded original
+  spec; keeping it off the site stops an assistant citing it as current
+  behaviour.
+
 ## Licence
 
 Contributions are accepted under the Apache License 2.0. By opening a pull

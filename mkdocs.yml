@@ -1,0 +1,138 @@
+# Builds https://aindriub.github.io/data-prism/ from the existing
+# user-facing docs under docs/, plus the repo's own README.md and
+# CHANGELOG.md pulled in through docs/index.md and docs/changelog.md. See
+# docs/plan/specs/2026-09-23-discoverability.md (T7) and
+# docs-site/hooks/site.py for what the hook does.
+site_name: Data Prism
+site_url: https://aindriub.github.io/data-prism/
+site_description: >-
+  Data Prism is an open-source privacy layer for Java/Spring teams putting
+  LLM agents or MCP clients in front of internal APIs holding customer data.
+  It pseudonymises personal data per privacy scope, redacts or refuses
+  anything unclassified, and can keep a hash-chained audit trail.
+repo_url: https://github.com/AindriuB/data-prism
+repo_name: AindriuB/data-prism
+edit_uri: ""
+copyright: Apache-2.0
+
+docs_dir: docs
+
+# Never move or rename a user doc: docs/configuration.md and
+# docs/quickstart.md are cited by path from
+# data-prism-spring-boot-autoconfigure's DataPrismConfigurationFailureAnalyzer
+# and its tests.
+exclude_docs: |
+  plan/
+  adr/
+  pack.md
+  conventions.md
+  workflow.md
+  development-plan.md
+  design-review.md
+
+theme:
+  name: material
+  # No Google Fonts: this is also enforced by `check_site.py`, which fails
+  # the build if fonts.googleapis or fonts.gstatic appear anywhere in site/.
+  font: false
+  custom_dir: docs-site/overrides
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+# No analytics, no trackers (spec: "Measurement" decision) — deliberately no
+# `extra.analytics` key here.
+
+hooks:
+  - docs-site/hooks/site.py
+
+plugins:
+  - search
+  - include-markdown
+  - llmstxt:
+      full_output: llms-full.txt
+      sections:
+        Get started:
+          - index.md
+          - quickstart.md
+          - protect-your-own-api.md
+        Use cases:
+          - use-cases/pseudonymise-customer-data-spring-boot.md
+          - use-cases/gdpr-data-minimisation-mcp.md
+          - use-cases/consistent-pseudonyms-across-systems.md
+        Connect an agent:
+          - agents/README.md
+          - agents/stdio.md
+          - agents/remote-http.md
+        Reference:
+          - configuration.md
+          - tools.md
+          - extending.md
+          - audit.md
+          - architecture.md
+        FAQ:
+          - faq.md
+        Comparison:
+          - comparison.md
+        Changelog:
+          - changelog.md
+
+# All warn, not ignore, so a real problem is still visible in a plain
+# `mkdocs build`; `--strict` (used everywhere this is built) turns every one
+# of these into a build failure.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    absolute_links: warn
+    unrecognized_links: warn
+    anchors: warn
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - tables
+
+# Exactly these seven top-level sections, covering every published page.
+# docs/index.md (the home page) is the first page of "Get started" rather
+# than its own top-level entry, so it doesn't add an eighth section.
+nav:
+  - Get started:
+      - index.md
+      - quickstart.md
+      - protect-your-own-api.md
+  - Use cases:
+      - use-cases/pseudonymise-customer-data-spring-boot.md
+      - use-cases/gdpr-data-minimisation-mcp.md
+      - use-cases/consistent-pseudonyms-across-systems.md
+  - Connect an agent:
+      - agents/README.md
+      - agents/stdio.md
+      - agents/remote-http.md
+  - Reference:
+      - configuration.md
+      - tools.md
+      - extending.md
+      - audit.md
+      - architecture.md
+  - FAQ: faq.md
+  - Comparison: comparison.md
+  - Changelog: changelog.md

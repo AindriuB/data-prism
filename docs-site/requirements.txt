@@ -1,0 +1,8 @@
+# Pinned so a `mkdocs build` today and in a year produce the same site.
+# Bump deliberately, in its own change, after checking the release notes —
+# MkDocs and Material are both reported to be in maintenance mode (task 82),
+# and Zensical is the documented later migration path.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mkdocs-include-markdown-plugin==7.3.0
+mkdocs-llmstxt==0.5.0

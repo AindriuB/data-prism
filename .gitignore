@@ -3,3 +3,10 @@
 logs/
 *.log
 target/
+
+# MkDocs build output and the site build's own manifest (docs-site/hooks/site.py).
+/site/
+/docs-site/.manifest.json
+__pycache__/
+# The venv CONTRIBUTING.md's "Docs site" section has a contributor create.
+/.venv/
