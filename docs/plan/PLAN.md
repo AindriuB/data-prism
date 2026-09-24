@@ -1286,8 +1286,23 @@ it now carries three stub developer-guide pages; the merge-only
   file retired.
 - **Wave 1, still in flight:** 88 (diagrams embedded in existing
   pages, mermaid source committed and pre-rendered to SVG, no runtime
-  Mermaid/CDN), 89 (developer guide overview and the write-an-adapter
-  tutorial, replacing two of task 85's three stub pages).
+  Mermaid/CDN).
+- **Task 89 — done.** Opened the developer guide: an overview page covering
+  the extension points with GitHub-linked sources, and tutorial 1
+  ("write a data-source adapter"), seven steps from model and annotations to
+  a pseudonymised MCP response, every code/pom/YAML/Dockerfile block pulled
+  via `--8<--` from marked regions in `data-prism-quickstart-extension` and
+  `docker/`, never hand-copied. New `docs-site/hooks/check_snippet_markers.py`
+  closes a gap `pymdownx.snippets` leaves open (a missing end marker is read
+  silently to EOF, not failed). Merged onto local `site-polish`, PASS +
+  APPROVE on attempt 2 — see `docs/plan/HISTORY.md`, grep `Task 89`, for what
+  attempt 1's review closed and the lessons worth carrying forward. Task file
+  retired. **Carry into task 90:** `write-an-adapter.md` currently implies (and
+  task 90's own file said) the server "refuses to start without" an
+  `IdentityResolver` bean; that's inaccurate — `dataprism.identity.resolver:
+  pass-through` supplies one without code
+  (`DataPrismAutoConfiguration.java:128-133`). Task 90's tutorial should
+  correct this rather than repeat it.
 - **Task 87 — done.** Replaced the `changelog.py` stub task 85 registered:
   each `CHANGELOG.md` release now renders as a `pymdownx.details` block,
   newest open and the rest closed, with an empty `[Unreleased]` dropped and

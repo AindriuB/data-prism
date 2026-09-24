@@ -17,6 +17,51 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 89: start the developer guide with a tested adapter tutorial
+
+`docs/developer-guide/index.md` (replacing task 85's stub) now covers the
+extension points — `DataSourceAdapter`, `IdentityResolver`, and `AuditSink`
+plus the classification annotations flagged as covered later in the guide —
+each linked to its source on GitHub and its `docs/extending.md` section,
+followed by the learning path (tutorial 1, then tutorial 2). Tutorial 1,
+`docs/developer-guide/write-an-adapter.md`, walks seven steps from the
+`@LlmExposedModel` record through to running the packaged server and seeing
+a pseudonymised MCP response, with every code, pom, YAML and Dockerfile
+block pulled at build time via `--8<--` snippet includes from marked regions
+in `data-prism-quickstart-extension` and `docker/`, never hand-copied. The
+tutorial's commands were run literally from a clean clone and the page
+quotes the real output: `customerName` pseudonymised, `email` redacted.
+`data-prism-quickstart-extension/pom.xml` uses single-dash `-8<-` markers,
+since `--` inside an XML comment is illegal. New
+`docs-site/hooks/check_snippet_markers.py` reuses pymdownx 12.1's own
+section regex and fails on a missing, duplicate, unmatched or out-of-order
+marker, naming the file and section. `docs/extending.md` gains a five-line
+pointer to the guide. `QuickstartSmokeIT` stays green (3 tests, 0 failures).
+
+**Cost:** Two attempts. Attempt 1 passed the tester (tutorial ran clean,
+9 snippets byte-identical, `mvn verify` and `QuickstartSmokeIT` green) but
+the reviewer found the tutorial prose drifting from its own snippets: it
+said the pom marked everything but core/annotations `provided` right under
+a snippet showing all four `provided` (the loader.path trap the tutorial
+exists to avoid), and said `@SensitiveData` "states what should happen" and
+email is redacted "per that field's own action" when the profile rule, or
+the stricter of the two, actually decides. It also found that
+`pymdownx.snippets`' own `check_paths` only guards a missing *start* marker
+— a missing `[end:x]` is read silently to EOF rather than failing the
+build, which the task's own acceptance criterion had assumed would fail
+loudly; `check_snippet_markers.py` was added in attempt 2 to close that gap
+with its own pairing check. The task-authored marker syntax
+(`<!-- --8<-- [start:x] -->`) also did not survive contact with XML comment
+grammar in `pom.xml` and had to become single-dash. All fixed in attempt 2:
+PASS + APPROVE, merged onto local `site-polish` (not `main`). Left as
+unscheduled follow-ups: the annotation-authority sentence still omits two
+edge cases (no profile rule → the suggestion is used as-is; a profile rule
+with `override: true` applies even if looser); `check_snippet_markers.py`
+would flag a future prose file under `base_path` that quotes the marker
+syntax itself; and its docstring should say to always read this
+repository's own `mkdocs.yml` rather than assume the values it currently
+hardcodes.
+
 ## 2026-09-24 — Task 86: give the docs site an identity
 
 The docs site now has its own visual identity instead of stock Material
