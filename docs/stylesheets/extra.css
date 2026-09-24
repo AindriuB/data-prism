@@ -85,3 +85,21 @@
 .md-typeset .grid.cards > ul > li {
   border-top: 0.15rem solid var(--md-accent-fg-color);
 }
+
+/* Landing-page card layout: Material's own `.md-typeset .grid` rule fits as
+   many 16rem columns as the content column allows, which — at the content
+   column's actual width, not the viewport's — fits two of these three cards
+   per row and orphans the third alone on a row of its own. Force a
+   deliberate layout instead of an incidental one: three across on wider
+   screens, reading as one set, and one full-width column on narrow screens,
+   below the same width Material itself treats as a small screen for its
+   own nav drawer. */
+.md-typeset .grid.cards {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media screen and (max-width: 76.234375em) {
+  .md-typeset .grid.cards {
+    grid-template-columns: 1fr;
+  }
+}
