@@ -1098,7 +1098,7 @@ resolved below (tasks 73 and 74, merged 2026-09-23).**
 **No open tasks remain after this.** No task file remains under
 `docs/plan/tasks/`; everything left is the owner steps listed above.
 
-### Discoverability (tasks 76-83)
+### Discoverability (tasks 76-84) — done
 
 Design: `docs/plan/specs/2026-09-23-discoverability.md` (binding — read
 "Decisions" and the per-task "T*" sections before touching any of these).
@@ -1179,10 +1179,60 @@ task below merges onto; task worktrees are reset onto it, not `main`.
   Found while tracing task 81's launch-post claims back to code. Merged
   `--no-ff` onto `discoverability`, then a separate close-out commit. See
   `docs/plan/HISTORY.md` — grep `Task 84`.
-- **Task 83 (go-live wiring)** — next, blocked on: the owner enabling GitHub
-  Pages (`build_type=workflow`) and enforcing HTTPS, PR #98 (`discoverability`
-  → `main`, carrying tasks 76-82 and 84) merging, and the `pages` workflow's
-  first deploy actually succeeding.
+- **Task 83 — done. All of tasks 76-84 are done; the discoverability plan is
+  done.** Wires README and `server.json` to the now-live
+  `https://aindriub.github.io/data-prism/` — site live since PR #98 merged
+  `discoverability` → `main` on 2026-09-24, Pages `build_type=workflow`, HTTPS
+  enforced. README's "## Documentation" splits into "User docs" (every page
+  the site publishes — 16 doc pages plus the site root — each linking the
+  live site URL and the repo file it is built from) and "Internal / project
+  working docs" (not published). `server.json` gains `.websiteUrl`, effective
+  at the next registry publish. Two attempts: attempt 1 reviewer APPROVE but
+  tester FAIL (missed the changelog and both agent-transport pages); attempt
+  2 added them, and the README's site-URL set was confirmed to equal the live
+  sitemap's 17-page set exactly. PASS + APPROVE on attempt 2. Closed onto a
+  new local `go-live-wiring` branch cut from `main` (not pushed, `main`
+  itself untouched), carrying the `--no-ff` merge of `task/83-go-live-wiring`
+  plus a close-out commit — since `discoverability` reached `main` before
+  this task closed, its own base branch instruction (merge onto
+  `discoverability`) no longer applied. Reaching `main` is a separate,
+  still-pending step. See `docs/plan/HISTORY.md` — grep `Task 83`.
+
+With 83 closed, no discoverability task remains open. What is left is owner
+action, not a task:
+
+- **Owner, after go-live (not yet done):**
+  - `gh repo edit AindriuB/data-prism --description "<D>" --homepage https://aindriub.github.io/data-prism/`
+    and add the 11 topics
+    (`model-context-protocol pseudonymization pii gdpr data-privacy
+    data-minimization llm llm-security ai-agents audit-log hmac`) to the
+    existing 6.
+  - Upload the social preview (`docs/assets/social-card.png`) in Settings →
+    General.
+  - Verify the repo in Google Search Console and Bing Webmaster Tools, then
+    submit `sitemap.xml` to both. Bing feeds Copilot and ChatGPT search.
+  - Post each `docs/plan/outreach/*.md` draft by hand, one at a time, only
+    where that list's own rules are met (`awesome-spring.md` and
+    `awesome-llm-security.md` are marked hold, not ready).
+  - Run the first monthly 15-question assistant check
+    (`docs/plan/discoverability/questions.md` /
+    `docs/plan/discoverability/runs/TEMPLATE.md`) and a `snapshot.sh` run,
+    both within 14 days of the 2026-09-23 baseline — a missed 14-day window
+    loses that period's traffic data permanently.
+- **Open question for the owner, not a task:** description D — "It
+  pseudonymises personal data per privacy scope, redacts or refuses anything
+  unclassified, and can keep a hash-chained audit trail" — says unclassified
+  data is redacted *or* refused. Checked against the shipped profiles
+  (`data-prism-core/src/main/resources/privacy-profiles-default.yaml`): both
+  `DEFAULT` and `STRICT` set `unclassified: FAIL_REQUEST` only — an
+  unclassified field always refuses the whole request; neither profile
+  redacts one. Redaction exists in the profile grammar and applies to
+  *classified* sensitive fields, not to unclassified ones. D appears in
+  `README.md`, `pom.xml`, `CITATION.cff`, the mkdocs `site_description`
+  (hence `llms.txt`) and the home page's JSON-LD — six or more surfaces per
+  the discoverability spec's own drift risk. The owner should decide whether
+  to correct D (e.g. drop "redacts or", or add a redaction path for
+  unclassified data) before the next release copies it further.
 
 ## Remaining slices past the adopted core
 

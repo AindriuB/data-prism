@@ -17,6 +17,46 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 83: README and `server.json` wired to the live docs site
+
+Now that `https://aindriub.github.io/data-prism/` is live (task 82, deployed
+via PR #98), the repo sends readers to it instead of only to raw files.
+README's single "## Documentation" table is split into "User docs" — every
+page the site publishes, 16 doc pages plus the site root, each row linking
+both the live site URL and the repo file it is built from — and "Internal /
+project working docs" (`design-review.md`, `development-plan.md`, `pack.md`,
+`conventions.md`, `workflow.md`, `plan/PLAN.md`, `plan/HISTORY-INDEX.md`),
+labelled not published. `server.json` gains `.websiteUrl`, which takes effect
+in the MCP registry at the next publish; version and `.description` untouched.
+
+Verified: the live site, `sitemap.xml` and `llms.txt` all return 200; the set
+of site URLs added to the README equals the live sitemap's 17-page set
+exactly; `mcp-publisher validate server.json` exits 0; the three
+`publish-mcp.yml` name extractions agree; the `<!-- mcp-name: … -->` line and
+the `<!-- site-intro:start/end -->` markers are byte-identical to before.
+`git diff` against base touches only `README.md` (the "## Documentation"
+section) and `server.json` (the one added key).
+
+Two attempts: attempt 1 was reviewer APPROVE but tester FAIL — the User docs
+table missed three pages the site actually publishes (changelog, the two
+agent-transport pages, `agents/stdio` and `agents/remote-http`); attempt 2
+added the missing rows and re-scoped the "published once, in prose" link
+note to the User docs subsection only. PASS + APPROVE on attempt 2.
+
+Base branch changed under this task: it was cut against the local
+`discoverability` branch as task 82 and 84 were, but `discoverability`
+reached `main` through PR #98 (2026-09-24, Pages `build_type=workflow`,
+HTTPS enforced) before this task closed. Closed instead onto a new local
+branch `go-live-wiring`, cut from `main` and not pushed, carrying `merge 83:
+task/83-go-live-wiring` (`--no-ff`) plus a separate close-out commit — `main`
+itself was not touched, per this close-out's explicit instruction. Reaching
+`main` is a separate, still-pending step, same pattern as task 70's
+integration branch.
+
+**Cost:** none beyond the one missed-rows tester defect above; verifying the
+README's site-URL set against the live sitemap by set comparison, rather than
+eyeballing 17 rows, is what would have caught it on attempt 1.
+
 ## 2026-09-23 — Task 82: MkDocs Material docs site built and wired to deploy
 
 Publishes `https://aindriub.github.io/data-prism/` from the existing user
