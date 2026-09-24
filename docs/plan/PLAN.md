@@ -1271,13 +1271,23 @@ it now carries three stub developer-guide pages; the merge-only
   `docs/plan/HISTORY.md`, grep `Task 85`, for what the first three attempts'
   reviews closed and the two lessons worth carrying into any future guard
   task. Task file retired.
-- **Wave 1 — no cross-dependencies, all branched from local `site-polish`:**
-  86 (site look: logo, favicon, palette, landing page, `extra_css` — the only
-  wave-1 task touching `theme:`), 88 (diagrams embedded in existing
+- **Task 86 — done.** Gave the docs site an identity: the owner's prism mark
+  as the header logo (byte-identical to the supplied `mark-dark.svg`,
+  original files kept unchanged under `docs-site/logo/supplied/`), a
+  script-derived favicon (SVG with a `prefers-color-scheme` switch, plus a
+  32px PNG), a dark-slate `#1e293b` header in both schemes with one indigo
+  accent in two AA-tuned shades (`#4f46e5` light, `#818cf8` dark),
+  `check_contrast.py` covering text, links, header, logo and both hero
+  buttons in both schemes, a landing hero (tagline T, Quickstart and
+  Developer guide buttons, three cards) and an `extra.css` covering only
+  palette, tables, code, cards and buttons. Merged onto `site-polish`, PASS +
+  APPROVE on attempt 2 — see `docs/plan/HISTORY.md`, grep `Task 86`, for what
+  attempt 1's review closed and the two lessons worth carrying forward. Task
+  file retired.
+- **Wave 1, still in flight:** 88 (diagrams embedded in existing
   pages, mermaid source committed and pre-rendered to SVG, no runtime
   Mermaid/CDN), 89 (developer guide overview and the write-an-adapter
-  tutorial, replacing two of task 85's three stub pages). In flight (86, 88,
-  89).
+  tutorial, replacing two of task 85's three stub pages).
 - **Task 87 — done.** Replaced the `changelog.py` stub task 85 registered:
   each `CHANGELOG.md` release now renders as a `pymdownx.details` block,
   newest open and the rest closed, with an empty `[Unreleased]` dropped and
@@ -1291,6 +1301,17 @@ it now carries three stub developer-guide pages; the merge-only
 - **Not yet in a wave:** 90 (custom identity resolver tutorial, replacing the
   third stub page) — depends on the SPI shape 89's tutorial settles first,
   per the spec's "simple to advanced" tutorial-order decision.
+
+**Small follow-ups, found closing task 86 (not blocking):**
+- The hero buttons' hover state in the slate scheme is white text on
+  `#818cf8`, about 2.98:1 — below AA. `check_contrast.py` doesn't measure
+  hover states, only the resting palette.
+- `check_contrast.py` should fail on any unparsed `extra.css` selector that
+  mentions `.md-button` or `data-md-color-scheme`, instead of silently
+  falling back to defaults — it would have caught the attempt-1 invisible
+  dark-mode button sooner.
+- Cosmetic: Material's card `:hover` clears the accent top border set in
+  `extra.css`.
 
 **Open items for the owner, found closing task 87:**
 - `CHANGELOG.md`'s 0.3.0 `AuditChainVerifier` bullet says "an edit or

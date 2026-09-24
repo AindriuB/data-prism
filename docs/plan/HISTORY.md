@@ -17,6 +17,43 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 86: give the docs site an identity
+
+The docs site now has its own visual identity instead of stock Material
+defaults: the owner's prism mark as the header logo (`docs/assets/logo.svg`,
+byte-identical to the supplied `mark-dark.svg`; the supplied files themselves
+are kept unchanged under `docs-site/logo/supplied/`), a script-derived
+favicon (`docs/assets/favicon.svg`, an SVG with a `prefers-color-scheme`
+switch dropping the incoming ray and thickening the two indigo bars, plus a
+32px `favicon.png` rendered by `docs-site/logo/make_favicon.py`), and a
+dark-slate `#1e293b` header in both colour schemes with one indigo accent at
+two AA-tuned shades (`#4f46e5` light, `#818cf8` dark). `docs/index.md` opens
+with a hero (tagline T, Quickstart and Developer guide buttons) and three
+cards — pseudonymise per scope, fail closed, verifiable audit trail — each
+worded from the page it links to, before the existing README include and
+"Where to go next" list. `docs-site/hooks/check_contrast.py` is new: it
+checks WCAG AA contrast for body text, links, the header and the logo, and
+both hero buttons, in both schemes. `docs/stylesheets/extra.css` covers only
+palette, tables, code, cards and buttons — no web fonts, no JavaScript, no
+animation.
+
+**Cost:** Two attempts. Attempt 1 passed the tester on text-contrast checks
+alone; the reviewer's own screenshot review in the main session caught that
+the Developer guide button was invisible in the slate scheme (light-indigo
+text on a light-indigo button) — the automated contrast check covered the
+default scheme's buttons but not slate's. Fixed in attempt 2, and
+`check_contrast.py` extended to check both hero buttons in both schemes.
+Attempt 1 also copied the audit card's "caught even on that chain's own last
+record" wording from `CHANGELOG.md`'s 0.3.0 bullet by way of the spec;
+`docs/audit.md` — the binding source — draws the line at edits only, not
+deletions, so the card was corrected to say no more than that. Lesson for
+future visual/UI tasks: a tester must look at a rendered screenshot of every
+interactive element in every colour scheme the task touches, not just run a
+text-contrast script — a script only checks what it was told to check.
+Left as a small unblocking follow-up rather than fixed in this task: the
+hero buttons' *hover* state in slate is ~2.98:1 (white text on `#818cf8`),
+below AA, and `check_contrast.py` does not measure hover at all.
+
 ## 2026-09-24 — Task 87: collapse the changelog page per release
 
 `docs/changelog.md` renders each `CHANGELOG.md` release as a
