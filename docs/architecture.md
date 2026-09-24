@@ -135,7 +135,7 @@ is the realistic overload, not an attacker.
 
 The diagram below traces one request end to end through these components.
 
-![Request path from MCP client through authentication, tool authorisation and scope/purpose derivation, then the orchestrator, reviewed source adapters and enterprise APIs; response path through classification and scrubbing (pseudonymise, redact or remove), the raw-value leak check and audit, before the MCP response — no path from an adapter bypasses the privacy engine.](assets/diagrams/system-overview.svg)
+[![Request path from MCP client through authentication, tool authorisation and scope/purpose derivation, then the orchestrator, reviewed source adapters and enterprise APIs; response path through classification and scrubbing (pseudonymise, redact or remove), the raw-value leak check and audit, before the MCP response — no path from an adapter bypasses the privacy engine.](assets/diagrams/system-overview.svg)](assets/diagrams/system-overview.svg)
 
 ## Boundaries that must not be crossed
 

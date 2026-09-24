@@ -194,7 +194,8 @@ blank; a blank one refuses startup with `INVALID_AUDIT_REFERENCE`.
 The diagram below shows the three outcomes a field's classification can lead
 to.
 
-![Fail-closed field decisions: a classified field is pseudonymised, redacted or removed according to its classification; an unclassified field refuses the whole response (FAIL_REQUEST); and a response where something looks like a sensitive identifier shape is also refused.](assets/diagrams/fail-closed-decisions.svg)
+[![Fail-closed field decisions: a classified field is pseudonymised, redacted or removed according to its classification; an unclassified field refuses the whole response (FAIL_REQUEST); and a response where something looks like a sensitive identifier shape is also refused.](assets/diagrams/fail-closed-decisions.svg)](assets/diagrams/fail-closed-decisions.svg)
+Select the diagram to open it full size.
 
 ## Java-first now; generic JSON as a separately reviewed extension
 

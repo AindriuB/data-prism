@@ -196,7 +196,8 @@ The sequence diagram below traces one call through authorisation, scope
 resolution, the orchestrator, a source adapter, scrubbing, validation and
 audit.
 
-![Sequence diagram of one get_entity_context call: the MCP client calls the tool, which authorises the caller, resolves a privacy session, then asks the orchestrator to fan out to a source adapter, scrub the record, validate it and record an audit event, before returning the response to the client.](assets/diagrams/entity-context-call.svg)
+[![Sequence diagram of one get_entity_context call: the MCP client calls the tool, which authorises the caller, resolves a privacy session, then asks the orchestrator to fan out to a source adapter, scrub the record, validate it and record an audit event, before returning the response to the client.](assets/diagrams/entity-context-call.svg)](assets/diagrams/entity-context-call.svg)
+Select the diagram to open it full size.
 
 ## `compare_entity_sources`
 
@@ -444,7 +445,8 @@ underlying subject a different case is also looking at.
 
 The diagram below shows how one pseudonym is derived.
 
-![How a pseudonym is made: scope (case: plus case id), the canonicalised subject id, namespace and algorithm version are joined and run through an HMAC keyed by the scope's secret key, producing a digest that becomes a synthetic identity plus an eight-character discriminator.](assets/diagrams/pseudonym-generation.svg)
+[![How a pseudonym is made: scope (case: plus case id), the canonicalised subject id, namespace and algorithm version are joined and run through an HMAC keyed by the scope's secret key, producing a digest that becomes a synthetic identity plus an eight-character discriminator.](assets/diagrams/pseudonym-generation.svg)](assets/diagrams/pseudonym-generation.svg)
+Select the diagram to open it full size.
 
 ## Not yet built
 
