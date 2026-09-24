@@ -17,6 +17,24 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Corrects `docs/tools.md:120`'s "unclassified values dropped" claim
+
+`get_entity_context`'s response table now says the `entity` field's real
+values are pseudonymised, sensitive values redacted or removed per their
+classification, and that under the shipped profiles an unclassified field
+refuses the whole response rather than being dropped — matching
+`docs/configuration.md`'s existing wording for the same fact. A repo-wide
+grep for the same claim found no other occurrence to fix.
+**Cost:** none — a one-line correction, traced through
+`PrivacyProfiles`/`ProfilePrivacyPolicyResolver`/`privacy-profiles-default.yaml`
+to confirm `DROP_AND_WARN` exists in code but neither bundled profile
+(`DEFAULT`, `STRICT`) selects it, and no `dataprism.*` property loads a
+custom profile file, so it is not reachable today. Left open (already
+tracked in `PLAN.md` "Found on task 81"): `README.md:12` and
+`docs/use-cases/gdpr-data-minimisation-mcp.md:25`'s "redacted or refused"
+wording, which is a different inaccuracy on the same topic and out of this
+fix's scope.
+
 ## 2026-09-24 — Task 88: draw five concept diagrams and embed each in context
 
 `docs-site/diagrams/*.mmd` holds five Mermaid sources (system overview, one

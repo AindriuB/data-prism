@@ -117,7 +117,7 @@ never read for its value (`ReservedArguments`).
 | `subject` | string | the scope-local pseudonym for this subject, e.g. `SUBJ-0VYFHPY9` |
 | `sources` | object, alias → status | every source asked, keyed by its scope-local alias (or its real name if the caller holds `EXPOSE_SOURCE_NAMES`); status is one of `ANSWERED`, `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `SKIPPED_OVER_LIMIT` |
 | `findings` | array of finding | see "Consistency findings" below — empty when nothing to report |
-| `entity` | object | the correlated, scrubbed entity: real values pseudonymised, sensitive values redacted, unclassified values dropped |
+| `entity` | object | the correlated, scrubbed entity: real values pseudonymised, sensitive values redacted or removed per their classification; under the shipped profiles, an unclassified field refuses the whole response rather than being dropped |
 
 ### Worked example
 

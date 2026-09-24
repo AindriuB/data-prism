@@ -1348,11 +1348,9 @@ it now carries three stub developer-guide pages; the merge-only
   undetected. The site-polish spec copied the same wording and has been
   corrected; whether to amend the already-released changelog entry is the
   owner's call.
-- `docs/tools.md:120` says "unclassified values dropped", but the shipped
-  profiles use `FAIL_REQUEST`, which refuses the whole response. Task 88 has
-  now merged (it only inserted embeds, no deletions, so this line is
-  unchanged at :120), so the correction is unblocked — a standalone scribe
-  doc fix, not yet done.
+- ~~`docs/tools.md:120` says "unclassified values dropped"~~ — corrected on
+  `site-polish` (2026-09-24, see `HISTORY.md`); the row now states an
+  unclassified field refuses the whole response under the shipped profiles.
 
 ## Remaining slices past the adopted core
 
