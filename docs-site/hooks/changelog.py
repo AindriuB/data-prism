@@ -45,10 +45,12 @@ LINKREF_RE = re.compile(r"^\[[^\]]+\]:\s*\S+\s*$")
 # for each `###` subsection in a release, count its top-level `- ` list
 # items (CHANGELOG.md never nests a list item under another inside a
 # release) and render "N <label>" for every subsection that has at least
-# one, in the order the subsections appear, joined with " · ". A subsection
-# with zero items, or a subsection name this map has never seen, still
-# renders — falling back to its own lowercased heading — so a future
-# subsection is never silently dropped from the count.
+# one item, in the order the subsections appear, joined with " · ". A
+# subsection with zero top-level `- ` items — e.g. a prose-only `### Notes`
+# — is omitted from this summary line; its heading and text are still
+# rendered in full inside the collapsible block, only the summary line ever
+# leaves it out. A subsection name this map has never seen falls back to its
+# own lowercased heading, both in the summary line and here.
 SUBSECTION_LABELS = {
     "Added": "added",
     "Changed": "changed",
@@ -56,6 +58,15 @@ SUBSECTION_LABELS = {
     "Behavioural change for API consumers": "behavioural changes",
     "Not changed": "not changed",
     "Not included in this release": "not included",
+}
+
+# Singular form for a count of 1, for the noun-style labels above ("1
+# behavioural change", not "1 behavioural changes"). The other known labels
+# are verb-style (added, changed, fixed, not changed, not included) and read
+# correctly for any count, so they are left out of this map; an unknown
+# heading keeps its own lowercased form as-is, for any count.
+SUBSECTION_SINGULAR = {
+    "behavioural changes": "behavioural change",
 }
 
 
@@ -133,7 +144,10 @@ def _build_title(version: str, date: str | None, counts: list[tuple[str, int]]) 
     if date:
         head = f"{head} — {date}"
     if counts:
-        counts_text = " · ".join(f"{n} {label}" for label, n in counts)
+        counts_text = " · ".join(
+            f"{n} {label if n != 1 else SUBSECTION_SINGULAR.get(label, label)}"
+            for label, n in counts
+        )
         return f"{head} · {counts_text}"
     return head
 
@@ -182,6 +196,14 @@ def render_changelog(markdown: str) -> str:
 def on_page_markdown(markdown, page, **kwargs):
     if page.file.src_uri != "changelog.md":
         return markdown
+    # Every `###` subsection inside a release becomes a details block's own
+    # heading, so the right-hand table of contents would otherwise be a flat,
+    # unlabelled list of a dozen "Added / Changed / ..." entries repeated
+    # once per release — the collapsible blocks' own summary lines already do
+    # that job. Hide it only for this page, without touching page-meta.yml.
+    hide = page.meta.setdefault("hide", [])
+    if "toc" not in hide:
+        hide.append("toc")
     rendered = render_changelog(markdown)
     RENDERED_PATH.write_text(rendered, encoding="utf-8")
     return rendered

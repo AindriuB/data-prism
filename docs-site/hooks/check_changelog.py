@@ -87,10 +87,15 @@ def check_versions_in_rendered(changelog_text: str, rendered_text: str) -> None:
 
 
 def check_link_refs_in_rendered(changelog_text: str, rendered_text: str) -> None:
+    # Anchored with `^`/MULTILINE, and not indented, so a definition that
+    # pymdownx.details has swallowed into the last block's four-space indent
+    # (rather than staying at top level, as CHANGELOG.md's own trailing
+    # link-reference definitions must) fails this check instead of passing
+    # on a plain substring match.
     missing = [
         label
         for label, url in changelog_link_refs(changelog_text)
-        if f"[{label}]: {url}" not in rendered_text
+        if not re.search(rf"^\[{re.escape(label)}\]:\s*{re.escape(url)}\s*$", rendered_text, re.MULTILINE)
     ]
     if missing:
         fail(f"link-reference definition(s) missing from the rendered changelog markdown: {missing}")
