@@ -12,7 +12,7 @@ into task files. Nothing here is a task file.
 | Changelog | Collapse, don't rewrite. `CHANGELOG.md` stays the only source and is not edited for this work. The site only changes how it is presented. |
 | Developer guide snippets | Pulled from compiled code. Tutorial snippets come from marked regions in real, compiled and tested source files. They are never hand-copied into Markdown. |
 | Tutorial order | Simple to advanced: (1) write a data-source adapter, then (2) a custom identity resolver. Classifying models in depth and custom audit sinks come in a later plan. |
-| Diagrams | A "Learn Data Prism" page modelled on Presidio's learn page (https://presidio.dataprivacystack.org/learn_presidio/): one diagram per concept, each with a short introduction and a link to the doc that covers it. Diagrams are reused where relevant, for example the extension-points diagram in the developer guide. |
+| Diagrams | Diagrams go where they explain something, embedded in the existing page that covers that concept, each with a short introduction and alt text. There is **no** separate "learn"/diagrams landing page, and nothing is modelled on or named after another project's site (the owner decided this on 2026-09-24; we cite other tools in `docs/comparison.md`, and a lookalike page would reflect badly). The extension-points diagram also appears in the developer guide. |
 | Diagram rendering | Mermaid source is committed. SVGs are pre-rendered by a reproducible script (mermaid-cli, via a pinned Docker image) and committed. **Do not** use Material's runtime Mermaid, which loads `mermaid.js` from a third-party CDN. The site must keep loading no third-party scripts or fonts. |
 | Honesty | Unchanged from the discoverability spec (`docs/plan/specs/2026-09-23-discoverability.md`). Nothing claims more than the code does. Audit wording follows `docs/audit.md`. Pseudonymisation is never called anonymisation. Every box and arrow in a diagram, and every tutorial step, traces to code or to a verified doc. |
 
@@ -91,33 +91,38 @@ into task files. Nothing here is a task file.
   - Snippets come from that compiled, tested code.
 - **`docs/extending.md` stays** as the full reference. The tutorials link to it, and it gets a short pointer to the guide. Do not duplicate its content.
 
-## D. "Learn Data Prism" page and diagrams
+## D. Diagrams, embedded in context
 
-Each diagram has Mermaid source (`docs-site/diagrams/*.mmd`) and a committed rendered SVG (`docs/assets/diagrams/*.svg`), produced by a script (`docs-site/diagrams/render.sh`) that runs a pinned `minlag/mermaid-cli` image, or equivalent, in Docker. Each diagram also gets alt text that states what it shows. Every node and edge must trace to code or to `docs/architecture.md` / `docs/tools.md` / `docs/audit.md`, and the reviewer traces each one.
+Each diagram has:
+- Mermaid source in `docs-site/diagrams/*.mmd`
+- a committed rendered SVG in `docs/assets/diagrams/*.svg`, produced by a script (`docs-site/diagrams/render.sh`) that runs a pinned `minlag/mermaid-cli` image, or equivalent, in Docker
+- alt text that states what it shows
 
-1. **System overview.** MCP client → authentication and caller-derived scope and purpose → tool authorisation → orchestrator → reviewed source adapters → enterprise APIs. The response path runs through classification and scrubbing (pseudonymise, redact or remove), then the raw-value leak check, then audit, then the MCP response. Show that there is no path from an adapter to the MCP layer that bypasses the privacy engine (`CLAUDE.md` rule 1; `docs/architecture.md` boundaries).
-2. **One tool call, step by step.** A sequence diagram for `get_entity_context`.
-3. **How a pseudonym is made.** (scope, subject, namespace, algorithm version) plus the HMAC key → digest → synthetic identity plus discriminator. Scope is `case:` + case id, so a different case gives a different pseudonym.
-4. **Fail-closed field decisions.**
+Every node and edge must trace to code or to `docs/architecture.md` / `docs/tools.md` / `docs/audit.md`, and the reviewer traces each one. Each diagram is embedded where it explains something, with a two- or three-sentence introduction:
+
+1. **System overview**, in `docs/architecture.md` near the components or "how they talk" section. MCP client → authentication and caller-derived scope and purpose → tool authorisation → orchestrator → reviewed source adapters → enterprise APIs. The response path runs through classification and scrubbing (pseudonymise, redact or remove), then the raw-value leak check, then audit, then the MCP response. Show that no path from an adapter to the MCP layer bypasses the privacy engine (`CLAUDE.md` rule 1; the `docs/architecture.md` boundaries).
+2. **One tool call, step by step**, in `docs/tools.md` beside `get_entity_context`. A sequence diagram of one call.
+3. **How a pseudonym is made**, in `docs/tools.md` near the pseudonym and scope-isolation material. (scope, subject, namespace, algorithm version) plus the HMAC key → digest → synthetic identity plus discriminator. Scope is `case:` + case id, so a different case gives a different pseudonym.
+4. **Fail-closed field decisions**, in `docs/tools.md` or `docs/configuration.md`, wherever unclassified handling is described.
    - A classified field becomes pseudonymised, redacted or removed according to its classification.
    - An unclassified field refuses the whole response, which is the shipped profiles' `FAIL_REQUEST`.
    - A detected identifier shape refuses the response.
    - Do not show relaxed profile settings as reachable. Configuration cannot select them today (see task 84).
-5. **The audit chain.**
+5. **The audit chain**, in `docs/audit.md`.
    - One hash chain per writer boot (`<writer-id>/<uuid>`), starting at GENESIS.
    - The verifier detects an edit or deletion inside a chain, including the last record.
    - It cannot detect tail truncation, deletion of a whole boot's records, or recomputation by someone with write access.
    - Wording is strictly `docs/audit.md`'s.
-6. **Extension points.** Where a `DataSourceAdapter` and an `IdentityResolver` plug in, relative to the privacy engine. Shown on the Learn page and the developer guide overview.
+6. **Extension points**, in the developer guide overview. Where a `DataSourceAdapter` and an `IdentityResolver` plug in, relative to the privacy engine.
 
-The Learn page (`docs/learn.md`, in the nav near Get started) shows diagrams 1–5, each with a two- or three-sentence introduction and a link to its doc.
+Embedding a diagram in an existing doc must not move or reword that doc's existing text, beyond one introductory sentence. PLAN.md and other docs cite line numbers, so insertions should go at section ends where possible, and any cited line ranges that shift must be noted for the scribe.
 
 ## Waves (the planner turns these into tasks with disjoint Owns)
 
 - **Wave 1 (parallel):**
   - A, the look (logo and favicon script, palette, landing page, `extra.css`, `mkdocs.yml` theme keys)
   - B, the changelog hook and its guard
-  - D, the diagrams and the Learn page
+  - D, the diagrams embedded in `docs/architecture.md`, `docs/tools.md` and `docs/audit.md` (diagram 6 is placed later, by C2 or C1)
   - C1, the developer guide overview and tutorial 1, including snippet markers in the quickstart-extension sources
 
   `mkdocs.yml`, `docs-site/page-meta.yml`, `docs-site/hooks/check_site.py` and `docs-site/requirements.txt` are shared hot spots. The planner must give each an owner, or sequence the tasks, so no two parallel tasks edit the same file. For example, one task owns `mkdocs.yml` and the others ask for keys through their task files, or the nav and extension changes are split sensibly.
