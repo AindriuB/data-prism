@@ -1233,7 +1233,7 @@ action, not a task:
   `HISTORY.md`. The GitHub About text (`gh repo edit`) still needs the owner
   to paste the corrected description by hand.
 
-### Site polish and developer guide (tasks 85-90) — opened 2026-09-24, wave 0 done
+### Site polish and developer guide (tasks 85-90) — done on the local branch. Owner push/PR outstanding.
 
 Design: `docs/plan/specs/2026-09-24-site-polish-and-developer-guide.md`
 (binding — read "Decisions", "Facts the planner must respect" and the
@@ -1324,9 +1324,23 @@ it now carries three stub developer-guide pages; the merge-only
   release headings. Merged onto `site-polish`, PASS + APPROVE on attempt 2 —
   see `docs/plan/HISTORY.md`, grep `Task 87`, for what attempt 1's review
   closed. Task file retired.
-- **Not yet in a wave:** 90 (custom identity resolver tutorial, replacing the
-  third stub page) — depends on the SPI shape 89's tutorial settles first,
-  per the spec's "simple to advanced" tutorial-order decision.
+- **Task 90 — done.** Replaced the third and last stub page with tutorial 2,
+  "write a custom identity resolver", backed by a tested example
+  `MappedIdentityResolver` in `data-prism-quickstart-extension`
+  (`ExampleIdentityMapping`, `ExampleIdentityResolverConfiguration`, and an
+  `ExampleOrderedIdentityResolverAutoConfiguration` not registered in
+  `AutoConfiguration.imports` and inert in the shipped jar), plus diagram 6
+  (extension points) embedded in the developer-guide overview and the
+  `write-an-adapter.md` `IdentityResolver` sentence task 89 flagged, now
+  corrected. Every snippet is pulled from compiled, tested source. Merged onto
+  local `site-polish`, PASS + APPROVE on attempt 4 — see `docs/plan/HISTORY.md`,
+  grep `Task 90`, for what the first three attempts' reviews closed and the
+  three lessons worth carrying forward. Task file retired.
+
+With 90 closed, every task the site-polish plan named is done, and no stub
+page remains under `docs/developer-guide/` — `DP_REQUIRE_NO_STUBS=true`
+passes. `site-polish` is ready for the owner-approved push and a pull request
+into `main`; nothing has been pushed yet.
 
 **Small follow-ups, found closing task 86 (not blocking):**
 - The hero buttons' hover state in the slate scheme is white text on

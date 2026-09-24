@@ -17,6 +17,44 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 90: the custom identity-resolver tutorial, and the site-polish plan is done
+
+Replaced the third and last developer-guide stub with tutorial 2, "write a
+custom identity resolver," backed by a tested example `MappedIdentityResolver`
+in `data-prism-quickstart-extension` (`ExampleIdentityMapping`,
+`ExampleIdentityResolverConfiguration` for ordinary scanned apps, and an
+`ExampleOrderedIdentityResolverAutoConfiguration` deliberately not registered
+in `AutoConfiguration.imports`, so it stays inert in the shipped jar; tests:
+`MappedIdentityResolverTest` (5), `IdentityResolverOverrideTest` (2),
+`IdentityResolverOrderingTest` (2)). The tutorial states, and the tests prove:
+the caller's `subjectId` is the canonical id; only `expand` runs at runtime
+today, `resolve` has no production caller; pass-through behaviour; the
+canonical id also keys the per-scope pseudonym, fingerprint and read budget;
+an unknown id gives `refused: NO_SOURCE_DATA at <entityType>`, not an empty
+answer; and registration is a plain `@Configuration` for scanned apps, or for
+`-Dloader.path` an `@AutoConfiguration` ordered before whichever
+auto-configuration supplies the `@ConditionalOnMissingBean` default, with
+`beforeName` as the general option. Diagram 6 (extension points) is now
+embedded in the developer-guide overview, and `write-an-adapter.md`'s
+`IdentityResolver` sentence (flagged by task 89) is corrected. With 90 closed,
+no stub page remains under `docs/developer-guide/` and
+`DP_REQUIRE_NO_STUBS=true` passes, so `site-polish` (tasks 85-90, all done) is
+ready for the owner-approved push and a pull request into `main`; nothing has
+been pushed yet.
+
+**Cost:** Four attempts. Tutorial prose about runtime behaviour has to be
+traced call by call, not inferred from the SPI's Javadoc: the first draft
+called `resolve` the runtime path when nothing calls it, and called an
+unknown id's result an "empty answer" when it is a refusal. Registration
+guidance needs a test in both directions (ordered wins; unordered fails with
+two beans) — writing that test showed the first guidance only held for the
+quickstart's own auto-configuration order, not in general. The final round
+was bounded to four listed items, as task 85 did, which is what kept a
+docs-accuracy review from running indefinitely. Left for later, not blocking:
+`IdentityResolverOrderingTest`'s Javadoc omits `@AutoConfigureOrder`, and
+`docs/developer-guide/index.md:57`'s "where that check is skipped" doesn't
+name the adapter check it means.
+
 ## 2026-09-24 — Corrects canonical description D's "redacts or refuses" to "refuses"
 
 Description D ("Data Prism is an open-source privacy layer... It
