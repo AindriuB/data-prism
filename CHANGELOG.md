@@ -35,11 +35,11 @@ and CHANGELOG claims found while writing them.
   "caught even on the last record" to deletions as well as edits; only edits
   are caught at a chain's tail, a deletion is caught only when a later record
   follows it (see `docs/audit.md`).
-- Adopted a new canonical project description across README, the poms,
-  `CITATION.cff`, `server.json` and the Dockerfile LABEL, replacing v0.3.0's
-  "A privacy layer between MCP clients and enterprise APIs.": it now says
-  Data Prism pseudonymises enterprise API data and refuses anything
-  unclassified.
+- Adopted a new canonical project description in `README.md` and the root
+  `pom.xml`, replacing v0.3.0's "A privacy layer between MCP clients and
+  enterprise APIs.": it now says Data Prism pseudonymises personal data per
+  privacy scope and refuses anything unclassified. The same text is the
+  abstract of the new `CITATION.cff`.
 
 ### Fixed
 
