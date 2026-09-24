@@ -101,12 +101,14 @@ embedded script.
 
 Every node and every edge of every diagram, with the `file:line` (code, or
 `docs/architecture.md` / `docs/tools.md` / `docs/audit.md`) that supports it.
-Line numbers are this branch's current ones, after the four embeds below.
-Each embed was inserted at its section's end, so nothing it cites within that
-same section moved; content further down the same file did shift by the
-number of lines its embed added (`architecture.md` +4, `tools.md` +6 then
-+4, `configuration.md` +5, `audit.md` +5 at end of file, so nothing after it
-to shift) — see the task report's line-shift list for what that moves.
+Line numbers are this branch's current ones, after the four embeds below and
+the later full-size links and captions added to them. Each embed was
+inserted at its section's end, so nothing it cites within that same section
+moved; content further down the same file did shift by the number of lines
+its embed (plus, for diagrams 2, 3 and 4, its later caption) added:
+`architecture.md` +4, `tools.md` +7 then +5, `configuration.md` +6, `audit.md`
++5 at end of file (so nothing after it to shift) — see the task report's
+line-shift list for what that moves.
 
 ### 1. System overview — `system-overview.mmd`
 
@@ -162,12 +164,12 @@ sequence fits a usable width; the class each one names is given here instead.
 | Message | Authz-->Tool: `AuthorizationDecision` | `GetEntityContextTool.java:160-163` |
 | Message | Tool→Scope: `resolve(caller, decision, clock)` | `GetEntityContextTool.java:167` |
 | Message | Scope-->Tool: `PrivacySession` | `GetEntityContextTool.java:165-170` |
-| Message | Tool→Orchestrator: `buildContext(request, context)` | `GetEntityContextTool.java:178-180` |
+| Message | Tool→Orchestrator: `buildContext(request, context, …)` | `GetEntityContextTool.java:178-180` (`…` is `investigationContext`, the third argument, omitted from the label to save width) |
 | Message | Orchestrator→Adapter: `fetch (fan-out)` | `DefaultContextOrchestrator.java:277` |
 | Message | Adapter-->Orchestrator: `raw source record` | `DefaultContextOrchestrator.java:280-286` |
 | Message | Orchestrator→Scrub: `scrub(record, context)` | `DefaultContextOrchestrator.java:289` |
 | Message | Scrub-->Orchestrator: `scrubbed tree` | `DefaultContextOrchestrator.java:289-296` |
-| Message | Orchestrator→Validator: `validate(merged, context)` | `DefaultContextOrchestrator.java:198-200` |
+| Message | Orchestrator→Validator: `validate(merged, …, context)` | `DefaultContextOrchestrator.java:198-200` (real order is `validate(merged, prohibited, emitted, context)`; `…` stands for the omitted `prohibited, emitted` pair, kept between `merged` and `context` to preserve the real argument order) |
 | Message | Validator-->Orchestrator: `ValidationResult` | `DefaultContextOrchestrator.java:200-203` |
 | Message | Orchestrator→Audit: `record(decision=ALLOW)` | `DefaultContextOrchestrator.java:220-221` |
 | Message | Orchestrator-->Tool: `ContextResponse` | `DefaultContextOrchestrator.java:222-223` |
@@ -177,7 +179,7 @@ sequence fits a usable width; the class each one names is given here instead.
 
 | Element | Label | Supports |
 |---|---|---|
-| Node | `Scope` — Scope: case: plus case id | `data-prism-security/src/main/java/io/github/aindriub/dataprism/security/ScopeResolver.java:86-88` (`scopeId(caseId)` returns `"case:" + caseId`); `docs/tools.md:416-422` |
+| Node | `Scope` — Scope: case: plus case id | `data-prism-security/src/main/java/io/github/aindriub/dataprism/security/ScopeResolver.java:86-88` (`scopeId(caseId)` returns `"case:" + caseId`); `docs/tools.md:419-423` |
 | Node | `Subject` — Subject id, canonicalised | `data-prism-pseudonymisation/src/main/java/io/github/aindriub/dataprism/pseudonymisation/HmacSyntheticGenerator.java:38-40,72` (`Text.canonical(subjectId)`) |
 | Node | `Namespace` | `HmacSyntheticGenerator.java:56,72` |
 | Node | `Version` — Algorithm version | `HmacSyntheticGenerator.java:61,72` (`version.version()`) |
@@ -195,7 +197,7 @@ sequence fits a usable width; the class each one names is given here instead.
 | Edge | Mac → Identity | `HmacSyntheticGenerator.java:75,89-103` |
 | Edge | Mac → Discriminator | `HmacSyntheticGenerator.java:90,148-154` |
 
-`docs/tools.md:416-422` (Scope isolation) is the doc-side confirmation that a
+`docs/tools.md:419-423` (Scope isolation) is the doc-side confirmation that a
 different case id — the only input in `Scope` above that a different
 investigation changes — produces a different, unrelated-looking pseudonym for
 the same subject. This is pseudonymisation throughout: the diagram's own

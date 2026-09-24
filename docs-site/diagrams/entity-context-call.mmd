@@ -15,12 +15,12 @@ sequenceDiagram
     Authz-->>Tool: AuthorizationDecision
     Tool->>Scope: resolve(caller, decision, clock)
     Scope-->>Tool: PrivacySession
-    Tool->>Orchestrator: buildContext(request, context)
+    Tool->>Orchestrator: buildContext(request, context, …)
     Orchestrator->>Adapter: fetch (fan-out)
     Adapter-->>Orchestrator: raw source record
     Orchestrator->>Scrub: scrub(record, context)
     Scrub-->>Orchestrator: scrubbed tree
-    Orchestrator->>Validator: validate(merged, context)
+    Orchestrator->>Validator: validate(merged, …, context)
     Validator-->>Orchestrator: ValidationResult
     Orchestrator->>Audit: record(decision=ALLOW)
     Orchestrator-->>Tool: ContextResponse

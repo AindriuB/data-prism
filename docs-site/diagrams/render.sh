@@ -39,10 +39,11 @@ if [ "${#mmd_files[@]}" -eq 0 ]; then
 fi
 
 # add_num A B -> A+B, printed with just enough decimal places to match
-# mermaid-cli's own viewBox precision (deterministic: no locale, no rounding
+# mermaid-cli's own viewBox precision (deterministic: LC_ALL=C rules out a
+# locale swapping "." for "," in awk's number formatting, and no rounding
 # beyond the fixed 6-decimal working precision).
 add_num() {
-    awk -v a="$1" -v b="$2" 'BEGIN {
+    LC_ALL=C awk -v a="$1" -v b="$2" 'BEGIN {
         s = sprintf("%.6f", a + b)
         sub(/0+$/, "", s)
         sub(/\.$/, "", s)
@@ -58,6 +59,11 @@ frame_svg() {
     local svg="$1"
     local content
     content="$(cat "$svg")"
+
+    if [[ "$content" != *"<style>"* ]]; then
+        echo "render.sh: $svg has no <style> element to anchor the border rect before — mermaid-cli's output shape may have changed; frame_svg needs updating" >&2
+        exit 1
+    fi
 
     local vb minx miny w h
     vb="$(printf '%s' "$content" | grep -oE 'viewBox="[-0-9.]+ [-0-9.]+ [-0-9.]+ [-0-9.]+"' | head -1)"
