@@ -177,19 +177,117 @@ def check_single_json_ld() -> None:
             fail(f"{rel} carries a JSON-LD block; only site/index.html should")
 
 
-def check_no_fonts_or_analytics() -> None:
-    pattern = re.compile(
-        r"fonts\.googleapis|fonts\.gstatic|googletagmanager|google-analytics"
-    )
+# Task 85 (owner decision, 2026-09-24): the spec's literal
+# `grep -rE 'fonts.googleapis|…|unpkg|jsdelivr|cdnjs' site/` cannot be
+# empty, because Material 9.7.7's own `assets/javascripts/bundle.<hash>.min.js`
+# (and its `.map`) contains two `unpkg.com` URLs it uses to lazy-load Mermaid
+# and a ResizeObserver polyfill *only if a page ever gets a `.mermaid`
+# element* — which this site never produces (no superfences `custom_fences`
+# entry for mermaid; diagrams are pre-rendered SVGs). So instead of a bare
+# "the pattern must not appear" check, this allows exactly those two known
+# strings, confined to Material's own bundle files, and fails on anything
+# else: any other hit of the pattern anywhere in `site/`, any built
+# `class="mermaid"` (the only thing that makes Material fetch that URL), and
+# any off-origin `<script src>` / `<link href>` / `@import` / `url(`.
+THIRD_PARTY_PATTERN = re.compile(
+    r"fonts\.googleapis|fonts\.gstatic|googletagmanager|google-analytics"
+    r"|gtag|unpkg|jsdelivr|cdnjs"
+)
+
+# Material's minified runtime bundle and its source map — the only files
+# allowed to contain the two known unpkg.com strings below.
+BUNDLE_PATH_RE = re.compile(r"^assets/javascripts/bundle\.[0-9a-f]+\.min\.js(\.map)?$")
+
+ALLOWED_BUNDLE_URLS = frozenset(
+    {
+        "https://unpkg.com/mermaid@11/dist/mermaid.min.js",
+        "https://unpkg.com/resize-observer-polyfill",
+    }
+)
+
+# A scheme-qualified URL token, used to pull out *actual references* from the
+# bundle rather than every bare substring match: the bundle's `.map` also
+# carries Material's own source comment "...downloaded from unpkg.com...",
+# which matches THIRD_PARTY_PATTERN but is prose, not a URL, and not a
+# reference the browser ever fetches. Confining the allowlist comparison to
+# scheme-qualified tokens lets that harmless mention through while still
+# catching a genuine third `https://unpkg.com/...`-shaped string planted in
+# the bundle.
+URL_TOKEN_RE = re.compile(r"https?://[^\s\"'\\)]+")
+
+
+def check_no_third_party_scripts() -> None:
     for path in SITE_DIR.rglob("*"):
         if not path.is_file():
             continue
+        rel = path.relative_to(SITE_DIR).as_posix()
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        if pattern.search(text):
-            fail(f"{path.relative_to(SITE_DIR)}: found a Google Fonts/Analytics reference")
+        if not THIRD_PARTY_PATTERN.search(text):
+            continue
+        if BUNDLE_PATH_RE.match(rel):
+            found_urls = {
+                token
+                for token in (m.group(0) for m in URL_TOKEN_RE.finditer(text))
+                if THIRD_PARTY_PATTERN.search(token)
+            }
+            unexpected = found_urls - ALLOWED_BUNDLE_URLS
+            if unexpected:
+                fail(
+                    f"{rel}: unexpected third-party script reference(s) in "
+                    f"Material's own bundle: {sorted(unexpected)}"
+                )
+            continue
+        fail(
+            f"{rel}: found a third-party script/font/analytics reference "
+            "(fonts.googleapis/gstatic, googletagmanager, google-analytics, "
+            "gtag, unpkg, jsdelivr or cdnjs) outside Material's own bundle"
+        )
+
+
+MERMAID_CLASS_RE = re.compile(r'class="[^"]*\bmermaid\b[^"]*"')
+
+
+def check_no_mermaid_class() -> None:
+    # The only thing that makes Material's bundle fetch the mermaid.js URL
+    # from unpkg.com at runtime is a `.mermaid` element on the page — which
+    # this site must never produce, since diagrams are pre-rendered SVGs.
+    for path in SITE_DIR.rglob("*.html"):
+        rel = path.relative_to(SITE_DIR).as_posix()
+        text = path.read_text(encoding="utf-8")
+        if MERMAID_CLASS_RE.search(text):
+            fail(f'{rel}: found class="mermaid", which triggers Material\'s runtime unpkg.com fetch')
+
+
+_ATTR_SRC_HREF_RE = re.compile(
+    r'<(?:script[^>]*\ssrc|link[^>]*\shref)\s*=\s*"([^"]*)"', re.IGNORECASE
+)
+_AT_IMPORT_RE = re.compile(r'@import\s+(?:url\(\s*)?["\']?([^"\'\);]+)', re.IGNORECASE)
+_URL_FUNC_RE = re.compile(r'\burl\(\s*["\']?([^"\')]+)["\']?\s*\)', re.IGNORECASE)
+
+
+def _is_offsite(url: str) -> bool:
+    if url.startswith(("data:", "#", "mailto:", "/")):
+        return False
+    if url.startswith(SITE_URL):
+        return False
+    return url.startswith(("http://", "https://"))
+
+
+def check_no_offsite_resources() -> None:
+    for path in (*SITE_DIR.rglob("*.html"), *SITE_DIR.rglob("*.css")):
+        rel = path.relative_to(SITE_DIR).as_posix()
+        text = path.read_text(encoding="utf-8")
+        checks: list[tuple[str, re.Pattern[str]]] = [("@import", _AT_IMPORT_RE), ("url()", _URL_FUNC_RE)]
+        if path.suffix == ".html":
+            checks.insert(0, ("<script src> / <link href>", _ATTR_SRC_HREF_RE))
+        for label, pattern in checks:
+            for match in pattern.finditer(text):
+                url = html.unescape(match.group(1)).strip()
+                if _is_offsite(url):
+                    fail(f"{rel}: off-origin {label} reference: {url}")
 
 
 def check_no_robots_txt() -> None:
@@ -326,7 +424,9 @@ def main() -> int:
         ("sitemap matches nav", lambda: check_sitemap_matches_nav(manifest)),
         ("meta description / canonical / social tags", lambda: check_meta_and_social(manifest)),
         ("exactly one JSON-LD block, on index.html only", check_single_json_ld),
-        ("no Google Fonts or analytics references", check_no_fonts_or_analytics),
+        ("no third-party scripts, fonts or analytics", check_no_third_party_scripts),
+        ("no built class=\"mermaid\" element", check_no_mermaid_class),
+        ("no off-origin script/link/@import/url() reference", check_no_offsite_resources),
         ("no robots.txt", check_no_robots_txt),
         ("llms.txt / llms-full.txt", check_llms_files),
         ("llmstxt sections match nav", lambda: check_llmstxt_sections_match_nav(manifest)),
