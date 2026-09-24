@@ -16,12 +16,13 @@ and CHANGELOG claims found while writing them.
 ### Added
 
 - A MkDocs Material docs site published from the existing user docs, with an
-  identity (mark, favicon, palette, landing page), five concept diagrams
+  identity (mark, favicon, palette, landing page), six concept diagrams
   embedded in context, and dedicated FAQ, comparison and three intent
   use-case pages.
-- A developer guide overview with tested tutorials for writing an adapter
-  and writing a custom `IdentityResolver`, plus an example `IdentityResolver`
-  and its unit tests in `data-prism-quickstart-extension`.
+- A developer guide overview with tutorials for writing an adapter and
+  writing a custom `IdentityResolver`, both checked against the code they
+  document, plus an example `IdentityResolver` and its unit tests in
+  `data-prism-quickstart-extension`.
 - `websiteUrl` and the current canonical tagline in the MCP Registry
   `server.json` entry, so the next registry publish carries them instead of
   the stale v0.3.0 description and missing `websiteUrl`.
@@ -34,16 +35,16 @@ and CHANGELOG claims found while writing them.
   "caught even on the last record" to deletions as well as edits; only edits
   are caught at a chain's tail, a deletion is caught only when a later record
   follows it (see `docs/audit.md`).
-- Corrected the canonical description's "redacts or refuses unclassified
-  data" to "refuses unclassified data", matching what the code actually
-  does.
+- Adopted a new canonical project description across README, the poms,
+  `CITATION.cff`, `server.json` and the Dockerfile LABEL, replacing v0.3.0's
+  "A privacy layer between MCP clients and enterprise APIs.": it now says
+  Data Prism pseudonymises enterprise API data and refuses anything
+  unclassified.
 
 ### Fixed
 
-- `docs/tools.md`'s false claim that an unclassified field is silently
-  dropped.
-- The write-an-adapter tutorial's overclaim about what a hand-rolled
-  `IdentityResolver` needs to guarantee.
+- `docs/tools.md`'s claim that an unclassified field is "dropped"; the
+  shipped `DEFAULT`/`STRICT` profiles both refuse the whole request instead.
 
 Not published to Maven Central; the Maven artifacts remain at 0.3.0.
 

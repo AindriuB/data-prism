@@ -355,13 +355,13 @@ public record BadModel(
 ```
 
 It was compiled directly against this repository's own built
-`data-prism-annotations` and `data-prism-processor` jars, with the processor
-placed on `-processorpath`, the same way `annotationProcessorPaths` places it
-for Maven:
+`data-prism-annotations` and `data-prism-processor` jars (recorded against
+0.3.0), with the processor placed on `-processorpath`, the same way
+`annotationProcessorPaths` places it for Maven:
 
 ```
-$ javac -cp data-prism-annotations-0.3.1.jar \
-    -processorpath data-prism-processor-0.3.1.jar:data-prism-annotations-0.3.1.jar \
+$ javac -cp data-prism-annotations-0.3.0.jar \
+    -processorpath data-prism-processor-0.3.0.jar:data-prism-annotations-0.3.0.jar \
     -d out BadModel.java
 BadModel.java:8: error: field is on an @LlmExposedModel but carries no classification. Add @SensitiveData, or @NonSensitive(reason = "...") stating why it is safe to expose.
         String unclassifiedField) {
@@ -422,7 +422,7 @@ dependency block above as shown gets a missing-version error for the two
 consumer's own project version*, an artifact that does not exist; and with
 no `release` set at all, `maven-compiler-plugin` falls back to its own
 default of `1.8`, at which point a `record` (used below) is a syntax error
-and `data-prism-core-0.3.1.class` files — compiled for 21 — fail to load
+and `data-prism-core-0.3.0.class` files — compiled for 21 — fail to load
 with `class file has wrong version 65.0`.
 
 The version-complete equivalent, standing alone, with no parent from this
@@ -664,8 +664,9 @@ Caused by: io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationExcept
 ```
 
 `$EXTENSION_JAR` and `$SERVER_JAR` were the built
-`data-prism-quickstart-extension-0.3.1.jar` and `data-prism-server-0.3.1.jar`
-from this repository's own `target/` directories; the omitted arguments are
+`data-prism-quickstart-extension-0.3.0.jar` and `data-prism-server-0.3.0.jar`
+(recorded against 0.3.0) from this repository's own `target/` directories;
+the omitted arguments are
 the same security, privacy, audit, metrics and Hazelcast configuration
 `docs/configuration.md` requires for any protected deployment and are unrelated
 to this refusal.
