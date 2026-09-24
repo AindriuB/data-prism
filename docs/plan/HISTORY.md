@@ -17,6 +17,77 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 85: shared site plumbing for the site-polish wave
+
+Lays every piece of `mkdocs.yml`, the guard scripts and the CI workflow that
+the site-polish plan's wave-1 tasks (look, changelog, diagrams, developer
+guide) would otherwise collide over. Adds `attr_list`, `md_in_html` and
+`pymdownx.snippets` (`check_paths: true`,
+`base_path: [data-prism-quickstart-extension, docker]`,
+`restrict_base_path: true`, `dedent_subsections: true`) to the four existing
+markdown extensions, and pins `pymdown-extensions` to the exact version the
+existing pins already resolved. Adds a "Developer guide" nav section (three
+new stub pages, placed before "Reference") mirrored in `llmstxt.sections`,
+and `docs-site/hooks/changelog.py`, a no-op `on_page_markdown` stub with a
+docstring naming task 87 as its owner. Widens `check_site.py`'s third-party
+check to a pattern covering fonts/analytics/`unpkg`/`jsdelivr`/`cdnjs`, and
+resolves the one real conflict with Material 9.7.7 itself: Material's own
+`bundle.*.min.js`/`.map` already contains two `unpkg.com` mermaid/polyfill
+strings, so the guard allows exactly those two strings and only inside that
+bundle, and fails on every other hit anywhere in `site/`, on any
+`class="mermaid"` element, and on any off-origin `<script src>`/
+`<link href>`/CSS `@import`/`url(`. `pages.yml`'s single `check_site.py`
+step becomes a loop over every `docs-site/hooks/check_*.py` in sorted order,
+and its grep step is widened to the same pattern with the same bundle
+carve-out. A new merge-only `check_no_stub_pages.py` fails a build that still
+carries the stub body "This page is being written." when
+`DP_REQUIRE_NO_STUBS` is true — true only for a PR into `main` or a push to
+`main`, read from an explicit workflow env var rather than guessed from other
+variables, so wave branches keep building with the stubs in place until
+tasks 89 and 90 replace them. `CONTRIBUTING.md` gains a "## Docs site"
+section: the `check_*.py` convention, that tutorial snippets must come from
+`--8<--` markers under `base_path` and never be hand-copied, the Docker
+build recipe, and the stub-guard variable.
+
+Four attempts, all on the third-party guard, and closed with a deliberately
+bounded final round. Attempt 1: protocol-relative URLs (`//host/...`)
+counted as local; the attribute/scheme match was double-quote-only and
+case-sensitive; scheme-less bundle tokens (`//cdn.jsdelivr.net/...`,
+`unpkg.com/other@1/...`) passed uncompared; the `.map` exemption was too
+broad; and the stub guard didn't exist yet. Attempt 2: backslash- and
+tab/CR/LF-mangled URLs (`src="/\evil.example.com/x.js"`,
+`src="https:\\evil.example.com/x.js"`) still read as local, and the mermaid
+class match fired only in double quotes. Attempt 3: `SRC=`, spaces around
+`=`, HTML-entity slashes, `URL(` and leading whitespace all closed, plus
+false-positive and label checks. Attempt 4 (merged): minified `@import` with
+no space (`@import"https://...";`) was missed, and attribute separators
+other than whitespace (`<script/src=`, a closing quote before `class=`)
+weren't recognised. PASS + APPROVE on attempt 4.
+
+**Cost:** four rounds chasing an ever-more-obscure family of URL-obfuscation
+bypasses in the third-party guard, each review finding a real but
+increasingly narrow gap. The task file's own attempt-3 review named the fix:
+state the threat model up front. This guard defends against *accidentally*
+shipping a third-party script, font or tracker in our own generated site —
+not against a hostile author who can already edit the repository — so the
+final round was bounded explicitly, and the deliberately out-of-scope
+obfuscation forms (C0 control characters inside attribute values other than
+whitespace, CSS escapes like `\2f` or `h\ttps` inside `url()`, quoted
+`url()` strings containing the other quote) are named in a `check_site.py`
+comment rather than chased into a fifth attempt. Separately: `pages.yml`'s
+grep step only checks a fixed, named list of hosts
+(`fonts.googleapis|...|unpkg|jsdelivr|cdnjs`), so it cannot catch an
+arbitrary off-origin host; `check_site.py`'s build-time check is what
+catches any off-origin `src`/`href`/`@import`/`url(` in general. The two are
+complementary by design, not redundant — do not try to make the grep step
+do the general-purpose job the build check already does.
+
+Merged onto local `site-polish` (not `main` — see the site-polish plan
+entry in `docs/plan/PLAN.md`; `site-polish` must not reach `main` before
+task 90 closes, since it now carries the three stub developer-guide pages,
+enforced by the merge-only `DP_REQUIRE_NO_STUBS` guard this task added).
+Worktree and branch removed; task file retired.
+
 ## 2026-09-24 — Task 83: README and `server.json` wired to the live docs site
 
 Now that `https://aindriub.github.io/data-prism/` is live (task 82, deployed

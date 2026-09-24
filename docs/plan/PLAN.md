@@ -1234,6 +1234,54 @@ action, not a task:
   to correct D (e.g. drop "redacts or", or add a redaction path for
   unclassified data) before the next release copies it further.
 
+### Site polish and developer guide (tasks 85-90) — opened 2026-09-24, wave 0 done
+
+Design: `docs/plan/specs/2026-09-24-site-polish-and-developer-guide.md`
+(binding — read "Decisions", "Facts the planner must respect" and the
+per-section A-D detail before touching any of these). Restrained visual
+polish, a collapsible changelog view, embedded diagrams and a real developer
+guide with tutorials built from compiled, tested source — none of it
+rewriting `CHANGELOG.md` or claiming more than the code does. Local branch
+`site-polish` (cut from `main` at `fc5cc58`, not pushed) is the integration
+branch every task below merges onto; task worktrees are reset onto it, not
+`main`. **`site-polish` must not reach `main` before task 90 closes**, since
+it now carries three stub developer-guide pages; the merge-only
+`check_no_stub_pages.py` guard (`DP_REQUIRE_NO_STUBS`) enforces that in CI.
+
+- **Task 85 — done.** Laid the shared plumbing every wave-1 task needs, so
+  they land in `mkdocs.yml`, the guard scripts and the CI workflow without
+  colliding: `attr_list`, `md_in_html` and `pymdownx.snippets` (with
+  `check_paths: true`, `base_path: [data-prism-quickstart-extension, docker]`,
+  `restrict_base_path: true`, `dedent_subsections: true`) added to the four
+  existing markdown extensions, and `pymdown-extensions` pinned to the exact
+  version the existing pins already resolve; a new "Developer guide" nav
+  section (three stub pages, task 89/90 to replace two of them) placed before
+  "Reference", mirrored in `llmstxt.sections`; `docs-site/hooks/changelog.py`,
+  a no-op `on_page_markdown` stub task 87 owns; a third-party-script guard in
+  `check_site.py` that allows exactly two `unpkg.com` strings and only inside
+  Material's own `bundle.*.min.js`/`.map`, and fails on everything else
+  (off-origin `<script src>`/`<link href>`/CSS `@import`/`url(`, any
+  `class="mermaid"`); `pages.yml` running every `docs-site/hooks/check_*.py`
+  in sorted order instead of one hardcoded step; a merge-only stub-page guard
+  (`check_no_stub_pages.py`, gated on `DP_REQUIRE_NO_STUBS`, true only for a
+  PR into `main` or a push to `main`, so wave branches keep building with the
+  stubs in place); and a new CONTRIBUTING "## Docs site" section documenting
+  the `check_*.py` convention, snippet sourcing, and the Docker build recipe.
+  Merged onto `site-polish`, PASS + APPROVE on attempt 4 — see
+  `docs/plan/HISTORY.md`, grep `Task 85`, for what the first three attempts'
+  reviews closed and the two lessons worth carrying into any future guard
+  task. Task file retired.
+- **Wave 1 — no cross-dependencies, all branched from local `site-polish`:**
+  86 (site look: logo, favicon, palette, landing page, `extra_css` — the only
+  wave-1 task touching `theme:`), 87 (collapsible changelog, replacing the
+  `changelog.py` stub task 85 registered), 88 (diagrams embedded in existing
+  pages, mermaid source committed and pre-rendered to SVG, no runtime
+  Mermaid/CDN), 89 (developer guide overview and the write-an-adapter
+  tutorial, replacing two of task 85's three stub pages). Not started.
+- **Not yet in a wave:** 90 (custom identity resolver tutorial, replacing the
+  third stub page) — depends on the SPI shape 89's tutorial settles first,
+  per the spec's "simple to advanced" tutorial-order decision.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
