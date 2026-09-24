@@ -122,3 +122,37 @@ reference.
 - Any behavioural change to the quickstart-extension classes, the Dockerfiles or `application.yaml`; any new class or test in the module.
 - `mkdocs.yml` or snippet config changes. If `base_path` is insufficient, report it; do not edit (86 owns `mkdocs.yml` in this wave).
 - Rewriting or restructuring `docs/extending.md`; verifying its 32 existing fences.
+
+## Attempt 1 — failed
+
+Tester: PASS. The tutorial ran literally from a clean clone, and its output matched the page character for character; all 9 snippets match the source byte for byte; mvn and QuickstartSmokeIT are green. Reviewer: CHANGES. Rebase onto LOCAL `site-polish` and always diff with three dots (`git diff site-polish...HEAD`). Then fix:
+
+1. **The pom scope prose contradicts the snippet** (write-an-adapter.md about lines 104–105). It says the pom "marks everything but data-prism-core/data-prism-annotations `provided`", but the snippet above it (pom.xml about lines 43 and 48) and extending.md:117 mark all four `provided`. A reader following the prose would make core compile-scope, which is the loader.path trap. Make the prose match the snippet.
+2. **The annotation authority is overstated** (write-an-adapter.md about lines 35–36 and 180). The page says `@SensitiveData` "states what should happen" and that email is redacted "per that field's own REDACT action". In the code, `suggestedAction` is a suggestion, and the profile rule, or the stricter of the two, wins (ProfilePrivacyPolicyResolver.java about lines 79–93; extending.md:316). Reword it so the privacy engine decides and the annotation only suggests. CLAUDE.md rule 1 applies.
+3. **index.md overclaims tutorial 1's coverage** (about lines 47–48). It says AuditSink and the annotations are "Both … used … in tutorial 1", but AuditSink does not appear in tutorial 1. Correct it.
+4. **A missing end marker is silent.** pymdownx.snippets 12.1 reads to EOF when an `[end:x]` is missing (confirmed in the library source and by the tester). Add `docs-site/hooks/check_snippet_markers.py`; it is accepted into this task's scope and collides with nothing. The check must:
+   - read `base_path` from mkdocs.yml;
+   - scan every file under it, using pymdownx's own section regex (`-{1,}8<-{1,}`), so both the `--8<--` and `-8<-` forms count;
+   - fail on a missing, duplicate or out-of-order `[end:x]`, and on an unmatched `[start:x]`, naming the file and section.
+   The existing check_*.py loop in pages.yml picks it up, so there is no pages.yml or mkdocs.yml change. Planted faults, each in a scratch copy:
+   - (a) delete `[end:dependencies]` from pom.xml;
+   - (b) delete an end marker from a Java file;
+   - (c) duplicate a start marker.
+   Each must fail with its message quoted. The unmodified tree passes. This replaces the unmeetable "deleting an end marker fails the build" criterion, which now reads "…fails check_snippet_markers.py".
+5. **The acceptance grep** for marker-only changes becomes `grep -vE -- '-8<-'`, which matches both forms.
+6. **Suggestions to apply:**
+   - Line 126: the `@Value` bindings live in QuickstartExtensionAutoConfiguration, not in "the adapter's".
+   - Lines 84–86: after the dependencies snippet, which stops before `</dependencies>`, note "(test-scope entries omitted)".
+   - Line 145: say to run `run.sh` in a second terminal, since the foreground `up --build` blocks the first. Keep the command itself unchanged, because the quoted run used it.
+   - index.md: "linked to its source file" — make the source paths real links to the files on GitHub, or drop the word "linked".
+
+Keep green:
+- mvn verify, with QuickstartSmokeIT;
+- marker-only diffs in the Java, pom and Docker files;
+- buildx --check;
+- snippets byte-identical to their source regions;
+- the page's quoted output unchanged (no re-run needed unless a command changes);
+- the strict build and every check_*.py;
+- the stub guard naming only custom-identity-resolver;
+- lychee and actionlint;
+- the Owns scope, plus check_snippet_markers.py.
