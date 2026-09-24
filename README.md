@@ -138,20 +138,45 @@ fixture for evaluation, not this image or that configuration.
 
 ## Documentation
 
-| | |
+The full set of user docs is also published, rendered and searchable, at
+<https://aindriub.github.io/data-prism/>.
+
+### User docs
+
+Each row links the site page and the repo file it is built from.
+
+| Doc | Site | What it covers |
+|---|---|---|
+| [`docs/quickstart.md`](docs/quickstart.md) | [quickstart/](https://aindriub.github.io/data-prism/quickstart/) | One-command local Compose demonstration — start here |
+| [`docs/protect-your-own-api.md`](docs/protect-your-own-api.md) | [protect-your-own-api/](https://aindriub.github.io/data-prism/protect-your-own-api/) | Pointing Data Prism at your own API instead of the fixture |
+| [`docs/configuration.md`](docs/configuration.md) | [configuration/](https://aindriub.github.io/data-prism/configuration/) | The authoritative, complete `dataprism.*` deployment configuration contract |
+| [`docs/tools.md`](docs/tools.md) | [tools/](https://aindriub.github.io/data-prism/tools/) | What each shipped MCP tool takes and returns, worked examples |
+| [`docs/extending.md`](docs/extending.md) | [extending/](https://aindriub.github.io/data-prism/extending/) | Protecting a new source: a reviewed Java adapter, or the configuration-driven JSON REST mode |
+| [`docs/audit.md`](docs/audit.md) | [audit/](https://aindriub.github.io/data-prism/audit/) | What the hash-chained audit trail records, and how to verify it |
+| [`docs/architecture.md`](docs/architecture.md) | [architecture/](https://aindriub.github.io/data-prism/architecture/) | Module map, dependency rules, the boundaries that must not be crossed, dated decisions |
+| [`docs/agents/`](docs/agents/README.md) | [agents/](https://aindriub.github.io/data-prism/agents/) | Connecting an MCP agent client, local fixture or authenticated remote |
+| [`docs/agents/stdio.md`](docs/agents/stdio.md) | [agents/stdio/](https://aindriub.github.io/data-prism/agents/stdio/) | The local stdio fixture workflow: a real MCP tool call with no JWT, network call or source system |
+| [`docs/agents/remote-http.md`](docs/agents/remote-http.md) | [agents/remote-http/](https://aindriub.github.io/data-prism/agents/remote-http/) | The authenticated Streamable HTTP workflow against a real MCP endpoint; no development bypass |
+| [`docs/faq.md`](docs/faq.md) | [faq/](https://aindriub.github.io/data-prism/faq/) | Direct answers on pseudonymisation, PII detection, Java requirements, the audit trail and prompt injection |
+| [`docs/comparison.md`](docs/comparison.md) | [comparison/](https://aindriub.github.io/data-prism/comparison/) | How Data Prism compares to Presidio, LLM Guard, NeMo Guardrails and MCP gateways or proxies |
+| [`docs/use-cases/pseudonymise-customer-data-spring-boot.md`](docs/use-cases/pseudonymise-customer-data-spring-boot.md) | [use-cases/pseudonymise-customer-data-spring-boot/](https://aindriub.github.io/data-prism/use-cases/pseudonymise-customer-data-spring-boot/) | Pseudonymising customer data from a Spring Boot API before an LLM agent sees it |
+| [`docs/use-cases/gdpr-data-minimisation-mcp.md`](docs/use-cases/gdpr-data-minimisation-mcp.md) | [use-cases/gdpr-data-minimisation-mcp/](https://aindriub.github.io/data-prism/use-cases/gdpr-data-minimisation-mcp/) | GDPR data minimisation for MCP tools |
+| [`docs/use-cases/consistent-pseudonyms-across-systems.md`](docs/use-cases/consistent-pseudonyms-across-systems.md) | [use-cases/consistent-pseudonyms-across-systems/](https://aindriub.github.io/data-prism/use-cases/consistent-pseudonyms-across-systems/) | Keeping one customer recognisable across systems without exposing identity |
+| [`CHANGELOG.md`](CHANGELOG.md) | [changelog/](https://aindriub.github.io/data-prism/changelog/) | Every notable Data Prism change by version, in Keep a Changelog format |
+
+### Internal / project working docs
+
+Not published on the site.
+
+| Doc | What it covers |
 |---|---|
-| `docs/quickstart.md` | One-command local Compose demonstration — start here |
-| `docs/agents/` | Connecting an MCP agent client, local fixture or authenticated remote |
-| `docs/tools.md` | What each shipped MCP tool takes and returns, worked examples |
-| `docs/extending.md` | Protecting a new source: a reviewed Java adapter, or the configuration-driven JSON REST mode |
-| `docs/architecture.md` | Module map, dependency rules, the boundaries that must not be crossed, dated decisions |
-| `docs/design-review.md` | Amendments to the specification, with reasoning. **Authoritative** |
-| `docs/development-plan.md` | Slice order, sizing, and the decisions that block the first one |
-| `docs/pack.md` | The original specification. Historical; superseded where the review disagrees |
-| `docs/conventions.md` | Code style and the privacy rules a diff must satisfy |
-| `docs/workflow.md` | How work is split and run |
-| `docs/plan/PLAN.md` | What is open, in priority order |
-| `docs/plan/HISTORY-INDEX.md` | What was built, and what it cost to find out |
+| [`docs/design-review.md`](docs/design-review.md) | Amendments to the specification, with reasoning. **Authoritative** |
+| [`docs/development-plan.md`](docs/development-plan.md) | Slice order, sizing, and the decisions that block the first one |
+| [`docs/pack.md`](docs/pack.md) | The original specification. Superseded and historical; describes tools that were never built |
+| [`docs/conventions.md`](docs/conventions.md) | Code style and the privacy rules a diff must satisfy |
+| [`docs/workflow.md`](docs/workflow.md) | How work is split and run |
+| [`docs/plan/PLAN.md`](docs/plan/PLAN.md) | What is open, in priority order |
+| [`docs/plan/HISTORY-INDEX.md`](docs/plan/HISTORY-INDEX.md) | What was built, and what it cost to find out |
 
 `docs/plan/PLAN.md` is the working queue. GitHub Issues is the front door for
 anything coming from outside — file there, not in `PLAN.md`.
