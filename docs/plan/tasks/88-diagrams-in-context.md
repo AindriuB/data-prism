@@ -131,3 +131,22 @@ and placed later by task 90.
 - Rewording, reordering or correcting any existing sentence in `architecture.md`, `tools.md`, `configuration.md` or `audit.md`. If a doc is wrong, report it; do not fix it here.
 - `docs-site/page-meta.yml`, and the landing page's links (86 owns `docs/index.md`).
 - Diagrams for classifying models in depth or custom audit sinks (later plan).
+
+## Attempt 1 — failed
+
+Tester: FAIL, on diagram legibility. The tester's Owns "violation" (`docs/plan/tasks/87-changelog-collapse.md`) is a false positive: `site-polish` advanced with plan-only commits, so always diff with three dots, `git diff site-polish...HEAD`. Reviewer: CHANGES. Rebase onto LOCAL `site-polish`, which carries the corrected audit wording in this task's Context, and fix these:
+
+1. **Diagram 5 overclaims** (audit-chain.mmd about line 8, and the audit.md alt text). It says an edit *or deletion* is detected "including the last record" or "anywhere in the chain". `docs/audit.md` "What this does and does not prove" attaches "including the last record" to edits only. A deletion is caught only when later records follow it, and deleting a writer's most recent records goes undetected. As drawn, the diagram contradicts its own "Blind" node. Use audit.md's own words in the node and in the alt text.
+2. **Diagrams 1 and 5 are unreadable at page width.** Both are wide `flowchart LR` layouts: system-overview's viewBox is about 2415×134, and Material's roughly 688px content column shrinks it to about 688×39px. See `/tmp/t88-shots/architecture-system-overview-*.png` and `audit-audit-chain-*.png`. Redraw both top-to-bottom (`flowchart TB`), or group them into subgraphs, so node labels render at no less than about 12px effective size in a 688px column without zooming. Keep every node and edge traced, and update the README trace table if labels change.
+3. **Dark mode.** The SVGs carry a hard white background, so each shows as a white band inside the dark page. That is acceptable, but make it deliberate: give the diagrams a small uniform padding or margin in the SVG, e.g. via mermaid config or render.sh options, so they read as a framed panel rather than a strip. Don't touch extra.css; it belongs to task 86. If you can reach a clean result another way inside Owns, say how.
+4. **The line-shift list is incomplete.** Retired task 12 (lines 23 and 64) cites `architecture.md:106-155`, which now ends at 159. Retired task 13 (lines 30 and 88) cites `135-141`, which straddles the insertion; old 136–141 is now 140–145. HISTORY.md:1775 cites `architecture.md:156`. List all of these in your report for the scribe. Don't edit those files.
+5. **Suggestions, which you should do:**
+   - entity-context-call.mmd: show where the caller comes from, with a Tool→Tool "caller from transport context" step (GetEntityContextTool.java about lines 155 and 206). Align the README audit-message row with the .mmd label.
+   - README trace-table preamble: drop "none of these source lines moved", since architecture.md and tools.md did move. Keep the cited numbers correct for the branch.
+
+**Out of scope, not yours:** `docs/tools.md:120` says "unclassified values dropped", which contradicts FAIL_REQUEST. The scribe will handle it separately. Do not change that line.
+
+**Acceptance for this attempt:**
+- Re-render with render.sh twice and confirm the output is byte-stable.
+- Take all 10 screenshots again (5 diagrams, light and dark) at 1280px with Playwright (`mcr.microsoft.com/playwright:v1.49.0-noble`, run with `--user $(id -u):$(id -g)`) into `/tmp/t88b-shots/`. Look at each one and report the effective label size.
+- Re-run the keep-green list: the strict build, every `check_*.py`, check_diagrams' planted faults, the third-party grep, lychee, actionlint, 0 deletions in the four docs, and the Owns scope checked with three dots.
