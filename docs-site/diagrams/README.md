@@ -257,7 +257,9 @@ already names).
 ### 6. Extension points — `extension-points.mmd`
 
 Top-to-bottom (task 90, revised in attempt 2 to fix two inaccuracies a review
-found): `Adapter` and `QuickstartDefault` sit side by side at the top, both
+found, and again in attempt 3 to fix `DataPrismConfig`'s label — the adapter
+check is contract validation, not the preflight, and is skipped in fixture
+STDIO mode): `Adapter` and `QuickstartDefault` sit side by side at the top, both
 flowing into `AutoConfig` under the same `@ConditionalOnMissingBean`
 discipline; `AppResolver` and `PassThroughProperty` are the two ways an
 `IdentityResolver` can instead reach `DataPrismConfig` directly, without going
@@ -274,7 +276,7 @@ edges back up to the beans above it, which would make the graph cyclic.
 | Node | `AppResolver` — Application-supplied IdentityResolver (e.g. MappedIdentityResolver) | `data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/identity/MappedIdentityResolver.java:30-85`; `.../identity/ExampleIdentityResolverConfiguration.java:37-44` (`customIdentityResolver`) |
 | Node | `PassThroughProperty` — `dataprism.identity.resolver: pass-through` (no code) | `data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java:128-135` (`IdentityResolverSelection.dataPrismPassThroughIdentityResolver`, `@ConditionalOnProperty(..., havingValue = "pass-through")`) |
 | Node | `AutoConfig` — Application `@AutoConfiguration` (e.g. QuickstartExtensionAutoConfiguration) | `QuickstartExtensionAutoConfiguration.java:34-35` (`@AutoConfiguration` on the class), `:37-46` and `:48-62` (its two `@Bean` methods) |
-| Node | `DataPrismConfig` — DataPrismAutoConfiguration: preflight refuses startup when either bean is missing | `DataPrismAutoConfiguration.java:99-110` (`dataPrismIdentityResolverPreflight`, `MISSING_IDENTITY_RESOLVER`); `DataPrismContractValidator.java:44-45` (`MISSING_SOURCE_ADAPTER`, the analogous check for `DataSourceAdapter`) |
+| Node | `DataPrismConfig` — DataPrismAutoConfiguration: preflight and contract validation refuse startup when either bean is missing | `DataPrismAutoConfiguration.java:99-110` (`dataPrismIdentityResolverPreflight`, `MISSING_IDENTITY_RESOLVER`, for `IdentityResolver`); `DataPrismAutoConfiguration.java:247` (`dataPrismPropertiesValidated` calls `DataPrismContractValidator.validateIntegrations`) → `DataPrismContractValidator.java:44-45` (`MISSING_SOURCE_ADAPTER`, for `DataSourceAdapter`) — this second check is skipped in fixture STDIO mode (`DataPrismContractValidator.java:38-39`, `isFixtureDevelopment() && mode == STDIO`), so the diagram's claim holds for every other transport/mode combination, not universally |
 | Node | `Orchestrator` — Orchestrator (fan-out): fetches each adapter, `expand(canonicalId, sourceNames)` | `data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java:277-278` (`fanOut.fetchAll(adapters, ...)`); `:313-314` (`identities.expand(new IdentityResolver.CanonicalId(...), names)`) |
 | Node | `Engine` — Privacy engine: classification and scrubbing | `docs/architecture.md:18`; `DefaultContextOrchestrator.java:289` (`scrubber.scrub(record, context)`) |
 | Edge | Adapter → AutoConfig: `@Bean, @ConditionalOnMissingBean` | `QuickstartExtensionAutoConfiguration.java:48-49` |

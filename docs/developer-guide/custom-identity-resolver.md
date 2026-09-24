@@ -124,24 +124,37 @@ It stops being correct once two sources disagree about what to call the same
 subject, but the failure it produces is narrower than "wrong data merged
 together": querying a source with an id that isn't really its key usually
 just finds nothing — that source's adapter returns no record, and its
-outcome is reported as `NO_DATA`
-(`SourceFanOut.java:138-139`), a visible gap rather than a wrong answer. The
-case that actually merges the wrong subject's data is narrower and easy to
-miss: a *different* subject who genuinely has that same literal id as their
-own key at some source. Pass-through has no way to tell the two apart, and
-the response would silently include that other subject's data under this
-subject's pseudonym. Nothing in the platform detects that condition for you;
-it looks exactly like an `ANSWERED` source until someone reads the data.
+outcome is reported as `NO_DATA` (`SourceFanOut.java:138-139`). That is a
+visible gap in `sources` only when at least one *other* configured source
+answers for the same call. If every configured source comes back with
+nothing, there is no gap to see: `merged` stays `null`
+(`DefaultContextOrchestrator.java:193`) and the whole call is refused before
+any response is built — see below. The case that actually merges the wrong
+subject's data is narrower and easy to miss: a *different* subject who
+genuinely has that same literal id as their own key at some source.
+Pass-through has no way to tell the two apart, and the response would
+silently include that other subject's data under this subject's pseudonym.
+Nothing in the platform detects that condition for you; it looks exactly
+like an `ANSWERED` source until someone reads the data.
 
 This is also why a caller must ask a resolver like `MappedIdentityResolver`
 for the *canonical id*, not a source-native key: asking it for `"C-1001"`
 (the `customer` source's own key for `cust-001`, not a canonical id in its
-table) finds no row, so `expand` returns an empty list — every configured
-source is then skipped entirely, and never called at all
-(`SourceFanOut.java:80-82`). The response reports no sources for that id;
-that is a visible, empty answer, not an error and not a `NO_DATA` status
-either, since a source that is never called never produces an outcome at
-all.
+table) finds no row, so `expand` returns an empty list. `SourceFanOut` then
+skips every configured source entirely — none is ever called
+(`SourceFanOut.java:80-82`) — so `merged` is never set and stays `null`.
+`DefaultContextOrchestrator` treats that exactly like the all-sources-empty
+case above: when `merged` is still `null` after the fan-out, it throws
+`PrivacyRefusedException("NO_SOURCE_DATA", request.entityType(), "no source
+returned a record for this subject")`, before building any `ContextResponse`
+at all (`DefaultContextOrchestrator.java:193-195`). `GetEntityContextTool`'s
+`catch (PrivacyRefusedException refused)` turns that into the tool's error
+result, `"refused: " + refused.code() + " at " + refused.path()`
+(`GetEntityContextTool.java:193`) — for this exception, exactly `"refused:
+NO_SOURCE_DATA at CUSTOMER"` (`entityType` is `"CUSTOMER"` for this
+quickstart's one configured entity). That is a refusal, not a
+visible-but-empty answer: there is no `sources` map and no `ContextResponse`
+at all, only that error text.
 
 ## How to register a resolver
 
@@ -177,12 +190,45 @@ that case; it is not on this module's own
 list, and `IdentityResolverOverrideTest` exercises it only as a plain user
 configuration class supplied directly to `ApplicationContextRunner`, never as
 part of the quickstart's own loaded jar. An extension jar instead needs its
-own `@AutoConfiguration` class, registered exactly the way
+own `@AutoConfiguration` class, registered the same way
 `QuickstartExtensionAutoConfiguration` registers itself — one line in that
-same `AutoConfiguration.imports` file — which [Write a data-source
+same `AutoConfiguration.imports` file, which [Write a data-source
 adapter](write-an-adapter.md#3-wire-it-up-with-auto-configuration) shows for
-the `DataSourceAdapter` case; the same mechanism applies to an
-`IdentityResolver` bean.
+the `DataSourceAdapter` case.
+
+Being on that list is not, by itself, enough. Spring Boot gives no ordering
+promise between two unrelated `@AutoConfiguration` classes just because both
+are imported — so an extension's own, unconditional `IdentityResolver` bean
+can just as easily be processed *after* the quickstart's own
+`@ConditionalOnMissingBean` default, which is already registered by then and
+does not step aside for a later, unconditional bean. The result is two
+`IdentityResolver` beans in the same context, and startup fails wherever
+something asks for exactly one — `DataPrismAutoConfiguration.dataPrismContextOrchestrator`
+does (`DataPrismAutoConfiguration.java:446`). The fix is an explicit
+`@AutoConfiguration(before = QuickstartExtensionAutoConfiguration.class)`,
+naming the class to run ahead of, as
+`ExampleOrderedIdentityResolverAutoConfiguration` does:
+
+```java
+--8<-- "src/main/java/io/github/aindriub/dataprism/quickstart/extension/identity/ExampleOrderedIdentityResolverAutoConfiguration.java:ordered-registration"
+```
+
+`IdentityResolverOrderingTest` proves both directions of this, feeding
+`QuickstartExtensionAutoConfiguration` and the reader's own
+`@AutoConfiguration` to `AutoConfigurations.of` with the quickstart's class
+listed *first* in both cases, so nothing here depends on argument order:
+with `before` declared, exactly one `IdentityResolver` bean exists and it is
+the reader's; without it — `UnorderedIdentityResolverAutoConfiguration`, an
+otherwise identical class with no `before` — the context fails to start with
+`NoUniqueBeanDefinitionException`, "expected single matching bean but found
+2: quickstartIdentityResolver,unorderedCustomIdentityResolver", exactly the
+failure above. Both tests ask a stand-in bean for exactly one
+`IdentityResolver`, the same shape as
+`dataPrismContextOrchestrator`'s single `IdentityResolver` parameter — the
+real `DataPrismAutoConfiguration` needs unrelated JWT, audit-sink and
+Hazelcast-topology configuration this module does not own, so this is a
+faithful minimal reproduction of the ambiguity, not a boot of production
+wiring; see the test's own Javadoc.
 
 Either way, `DataPrismAutoConfiguration.dataPrismIdentityResolverPreflight`
 refuses to start with no `IdentityResolver` bean in the context at all, from
@@ -204,15 +250,23 @@ mvn -pl data-prism-quickstart-extension -am test
 [INFO] -------------------------------------------------------
 [INFO]  T E S T S
 [INFO] -------------------------------------------------------
+[INFO] Running io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOrderingTest
+19:02:16.263 [main] WARN org.springframework.context.annotation.AnnotationConfigApplicationContext -- Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'identityResolverConsumer' defined in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOrderingTest$SingleIdentityResolverConsumer: Unsatisfied dependency expressed through method 'identityResolverConsumer' parameter 0: No qualifying bean of type 'io.github.aindriub.dataprism.core.IdentityResolver' available: expected single matching bean but found 2: quickstartIdentityResolver,unorderedCustomIdentityResolver
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.644 s -- in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOrderingTest
 [INFO] Running io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOverrideTest
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.675 s -- in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOverrideTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.099 s -- in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOverrideTest
 [INFO] Running io.github.aindriub.dataprism.quickstart.extension.identity.MappedIdentityResolverTest
-[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.025 s -- in io.github.aindriub.dataprism.quickstart.extension.identity.MappedIdentityResolverTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.022 s -- in io.github.aindriub.dataprism.quickstart.extension.identity.MappedIdentityResolverTest
 [INFO]
 [INFO] Results:
 [INFO]
-[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0
 ```
+
+The `WARN` line above is expected, not a failure: it is Spring logging the
+context-startup exception `anUnorderedAutoConfigurationCanProduceTwoBeansAndFailToStart`
+deliberately triggers, inside a test that then asserts the context failed to
+start — the two `IdentityResolverOrderingTest` tests both pass.
 
 Where each extension point plugs in, relative to the privacy engine, is drawn
 out on the [developer guide overview](index.md#the-extension-points).

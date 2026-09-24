@@ -25,13 +25,17 @@ import org.springframework.context.annotation.Configuration;
  * QuickstartExtensionAutoConfiguration} itself is: one line in {@code
  * META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}
  * — see {@code docs/developer-guide/write-an-adapter.md}'s "Wire it up with
- * auto-configuration" step for that mechanism, and its ordering guarantee
- * relative to a {@code @ConditionalOnMissingBean} default such as this
- * module's own. This class is not on that list, and is never
- * component-scanned by the quickstart itself; it is exercised only by this
- * module's own {@code IdentityResolverOverrideTest}, which is what proves
- * the ordinary-application claim above rather than merely asserting it in
- * prose.
+ * auto-configuration" step for that mechanism. That page documents no
+ * ordering between auto-configuration classes; on its own, being on that
+ * list does not say whether this bean or the quickstart's own {@code
+ * @ConditionalOnMissingBean} default registers first, and either one
+ * arriving first changes the outcome. {@link
+ * ExampleOrderedIdentityResolverAutoConfiguration} is the version written for
+ * that case, with the explicit ordering this class does not need. This class
+ * is not on that list, and is never component-scanned by the quickstart
+ * itself; it is exercised only by this module's own {@code
+ * IdentityResolverOverrideTest}, which is what proves the ordinary-application
+ * claim above rather than merely asserting it in prose.
  */
 // --8<-- [start:registration]
 @Configuration
