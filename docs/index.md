@@ -36,10 +36,11 @@ Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents 
 
     ---
 
-    Replaying a writer's chain catches an edit or deletion of any hashed
-    field anywhere in it, including the last record. It cannot detect
-    truncation of the most recent records, deletion of a whole boot's
-    records, or recomputation by someone who already has write access.
+    Replaying a writer's chain catches an edit to any hashed field anywhere
+    in it, including the last record, and catches a deletion when later
+    records follow it. It cannot detect truncation of the most recent
+    records, deletion of a whole boot's records, or recomputation by
+    someone who already has write access.
 
     [What this does and does not prove](audit.md#what-this-does-and-does-not-prove)
 
