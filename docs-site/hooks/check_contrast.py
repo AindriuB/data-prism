@@ -55,7 +55,7 @@ def fail(message: str) -> None:
 # --------------------------------------------------------------------------
 
 # mkdocs-material==9.7.7 (pinned in docs-site/requirements.txt) sets this in
-# `material/templates/assets/stylesheets/main.<hash>.min.css`:
+# `material/templates/assets/stylesheets/main.ec1eaa64.min.css`:
 #   `:root,[data-md-color-scheme=default]{--md-hue:225deg;...}`
 # — inherited by the slate scheme too, whose own hsla() values (below)
 # reference `var(--md-hue)` rather than a literal number.
@@ -65,17 +65,17 @@ MATERIAL_HUE_DEG = 225.0
 # where docs/stylesheets/extra.css does not override them. Copied from the
 # package's compiled CSS for the pinned mkdocs-material==9.7.7, not
 # reproduced from memory:
-#   main.<hash>.min.css, `:root,[data-md-color-scheme=default]`:
+#   main.ec1eaa64.min.css, `:root,[data-md-color-scheme=default]`:
 #     --md-default-fg-color:#000000de; --md-default-bg-color:#fff;
 #     --md-primary-fg-color:#4051b5; --md-primary-bg-color:#fff
-#   palette.<hash>.min.css, `[data-md-color-scheme=slate]`:
+#   palette.ab4e12ef.min.css, `[data-md-color-scheme=slate]`:
 #     --md-default-fg-color:hsla(var(--md-hue),15%,90%,0.82);
 #     --md-default-bg-color:hsla(var(--md-hue),15%,14%,1)
-#   palette.<hash>.min.css also has no slate default for --md-primary-fg-
+#   palette.ab4e12ef.min.css also has no slate default for --md-primary-fg-
 #   color/--md-primary-bg-color (only per named `data-md-color-primary`
-#   value), so main.<hash>.min.css's `:root` default applies unchanged.
+#   value), so main.ec1eaa64.min.css's `:root` default applies unchanged.
 #   `--md-typeset-a-color:var(--md-primary-fg-color)` in both schemes
-#   (palette.<hash>.min.css), Material's un-overridden default link colour.
+#   (palette.ab4e12ef.min.css), Material's un-overridden default link colour.
 MATERIAL_DEFAULTS: dict[str, dict[str, str]] = {
     "default": {
         "--md-default-fg-color": "#000000de",
