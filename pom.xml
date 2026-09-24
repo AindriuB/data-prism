@@ -82,7 +82,7 @@
     <!-- Used only inside the `release` profile below: sources/javadoc jars,
          signing and the Central Portal publishing plugin. Never resolved by
          a plain `mvn verify`. -->
-    <source-plugin.version>3.3.1</source-plugin.version>
+    <source-plugin.version>3.4.0</source-plugin.version>
     <javadoc-plugin.version>3.12.0</javadoc-plugin.version>
     <gpg-plugin.version>3.2.8</gpg-plugin.version>
     <central-publishing-plugin.version>0.11.0</central-publishing-plugin.version>
