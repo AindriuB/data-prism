@@ -266,12 +266,19 @@ def check_no_third_party_scripts() -> None:
         )
 
 
-# Matches only an exact `mermaid` class token (bounded by the attribute's
-# own start/end or a space either side) — not `language-mermaid`, the class
-# Material's own superfences highlighting puts on a *fenced code block that
-# shows* Mermaid source. Only a rendered `.mermaid` element makes Material
-# fetch the runtime from unpkg.com; a code sample naming Mermaid is fine.
-MERMAID_CLASS_RE = re.compile(r'class="(?:[^"]*\s)?mermaid(?:\s[^"]*)?"')
+# Matches a `class` attribute's value in any of HTML's three quoting styles
+# (double-quoted, single-quoted, unquoted) — attempt 2 only matched
+# double-quoted ones, so `<pre class='mermaid'>` and `<pre class=mermaid>`
+# passed unnoticed even though both are a real `.mermaid` element. Whether an
+# exact `mermaid` token (not `language-mermaid`, the class Material's own
+# superfences highlighting puts on a *fenced code block that shows* Mermaid
+# source) is among the value's whitespace-separated class names is decided
+# below, in Python, rather than in the regex, so the same "which class names"
+# logic works for all three quoting styles.
+_CLASS_ATTR_RE = re.compile(
+    r"""\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
+    re.IGNORECASE,
+)
 
 
 def check_no_mermaid_class() -> None:
@@ -281,9 +288,20 @@ def check_no_mermaid_class() -> None:
     for path in SITE_DIR.rglob("*.html"):
         rel = path.relative_to(SITE_DIR).as_posix()
         text = path.read_text(encoding="utf-8")
-        if MERMAID_CLASS_RE.search(text):
-            fail(f'{rel}: found class="mermaid", which triggers Material\'s runtime unpkg.com fetch')
+        for match in _CLASS_ATTR_RE.finditer(text):
+            class_names = html.unescape(_first_group(match)).split()
+            if "mermaid" in class_names:
+                fail(f'{rel}: found class="mermaid", which triggers Material\'s runtime unpkg.com fetch')
 
+
+# A `<script ...>` / `<link ...>` opening tag, captured whole so every
+# `src`/`href` attribute inside it can be walked (attempt 2's suggestion): the
+# original single greedy `[^>]*\ssrc` picked only the *last* `\ssrc`-shaped
+# thing in the tag, so a decoy — e.g. another attribute's value containing a
+# space then the literal text `src=...` — occurring after the real `src`
+# could hide it. Matching the tag first, then every `src`/`href` attribute
+# inside its body, checks each one instead of just whichever is rightmost.
+_TAG_RE = re.compile(r"<(script|link)\b([^>]*)>", re.IGNORECASE)
 
 # Matches double-quoted, single-quoted *and* unquoted `src=`/`href=` values
 # (HTML allows all three) — attempt 1 only matched double-quoted ones, so
@@ -291,10 +309,31 @@ def check_no_mermaid_class() -> None:
 # groups, one per quoting style, since stdlib `re` rejects the same named
 # group in more than one alternative; `_first_group` below picks whichever
 # one matched.
-_ATTR_SRC_HREF_RE = re.compile(
-    r"""<(?:script[^>]*\ssrc|link[^>]*\shref)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
-    re.IGNORECASE,
-)
+def _attr_re(attr_name: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"""\s{attr_name}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
+        re.IGNORECASE,
+    )
+
+
+_SRC_RE = _attr_re("src")
+_HREF_RE = _attr_re("href")
+
+
+def _iter_tag_attr_values(text: str) -> list[str]:
+    """Every `src` value from a `<script>` tag and every `href` value from a
+    `<link>` tag in `text` — every occurrence in the tag's body, not just the
+    last."""
+    values: list[str] = []
+    for tag_match in _TAG_RE.finditer(text):
+        tag_name = tag_match.group(1).lower()
+        body = tag_match.group(2)
+        pattern = _SRC_RE if tag_name == "script" else _HREF_RE
+        for attr_match in pattern.finditer(body):
+            values.append(_first_group(attr_match))
+    return values
+
+
 _AT_IMPORT_RE = re.compile(r'@import\s+(?:url\(\s*)?["\']?([^"\'\);]+)', re.IGNORECASE)
 _URL_FUNC_RE = re.compile(r'\burl\(\s*["\']?([^"\')]+)["\']?\s*\)', re.IGNORECASE)
 
@@ -311,7 +350,22 @@ def _first_group(match: re.Match[str]) -> str:
     return ""
 
 
+# Browsers treat `\` exactly like `/` inside an http(s)-ish URL, and silently
+# strip ASCII tab/CR/LF wherever they appear in one, before resolving it — so
+# `/\evil.example.com/x.js`, `https:\\evil.example.com/x.js` and a value with
+# an embedded tab all load off-origin even though none of them starts with
+# `//` or `http(s)://` as written. Normalising first (attempt 2) turns each
+# into a form the existing `//`/scheme checks below already catch, instead of
+# adding a parallel, easily-incomplete set of backslash-aware checks.
+_URL_JUNK_RE = re.compile(r"[\t\r\n]")
+
+
+def _normalize_url(url: str) -> str:
+    return _URL_JUNK_RE.sub("", url.replace("\\", "/"))
+
+
 def _is_offsite(url: str) -> bool:
+    url = _normalize_url(url)
     # A protocol-relative reference (`//host/...`) is exactly as off-site as
     # an absolute `https://host/...` one — the browser resolves it against
     # the current scheme, not the current origin — so it must not fall
@@ -332,10 +386,12 @@ def check_no_offsite_resources() -> None:
     for path in (*SITE_DIR.rglob("*.html"), *SITE_DIR.rglob("*.css")):
         rel = path.relative_to(SITE_DIR).as_posix()
         text = path.read_text(encoding="utf-8")
-        checks: list[tuple[str, re.Pattern[str]]] = [("@import", _AT_IMPORT_RE), ("url()", _URL_FUNC_RE)]
         if path.suffix == ".html":
-            checks.insert(0, ("<script src> / <link href>", _ATTR_SRC_HREF_RE))
-        for label, pattern in checks:
+            for raw_value in _iter_tag_attr_values(text):
+                url = html.unescape(raw_value).strip()
+                if _is_offsite(url):
+                    fail(f"{rel}: off-origin <script src> / <link href> reference: {url}")
+        for label, pattern in (("@import", _AT_IMPORT_RE), ("url()", _URL_FUNC_RE)):
             for match in pattern.finditer(text):
                 url = html.unescape(_first_group(match)).strip()
                 if _is_offsite(url):
