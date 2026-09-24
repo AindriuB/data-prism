@@ -19,6 +19,7 @@ import java.util.Objects;
  * not a failure — and returning {@code null} lets the orchestrator record
  * {@code NO_DATA} rather than opening this source's circuit breaker.
  */
+// --8<-- [start:adapter]
 final class QuickstartCustomerAdapter implements DataSourceAdapter<CustomerModel> {
 
     private static final Logger LOG = LoggerFactory.getLogger(QuickstartCustomerAdapter.class);
@@ -56,3 +57,4 @@ final class QuickstartCustomerAdapter implements DataSourceAdapter<CustomerModel
         }
     }
 }
+// --8<-- [end:adapter]

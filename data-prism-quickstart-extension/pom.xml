@@ -35,6 +35,7 @@
     <gpg.skip>true</gpg.skip>
   </properties>
 
+  <!-- -8<- [start:dependencies] -->
   <dependencies>
     <dependency>
       <groupId>io.github.aindriub</groupId>
@@ -56,6 +57,7 @@
       <artifactId>spring-boot-autoconfigure</artifactId>
       <scope>provided</scope>
     </dependency>
+    <!-- -8<- [end:dependencies] -->
 
     <!-- Test-only, and never a compile/runtime dependency of this module: these
          four entries exist solely so the Maven reactor builds the three
@@ -91,10 +93,21 @@
       <artifactId>mcp-json-jackson2</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!-- ApplicationContextRunner, for IdentityResolverOverrideTest to prove that
+         an application-supplied IdentityResolver bean replaces this module's own
+         @ConditionalOnMissingBean default. Test-only: never shipped in this
+         module's jar. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
     <plugins>
+      <!-- -8<- [start:processor-plugin] -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -111,6 +124,7 @@
           </annotationProcessorPaths>
         </configuration>
       </plugin>
+      <!-- -8<- [end:processor-plugin] -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>

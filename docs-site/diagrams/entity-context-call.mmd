@@ -1,0 +1,27 @@
+sequenceDiagram
+    participant Caller as MCP client
+    participant Tool
+    participant Authz
+    participant Scope
+    participant Orchestrator
+    participant Adapter
+    participant Scrub
+    participant Validator
+    participant Audit
+
+    Caller->>Tool: get_entity_context(entityType, subjectId)
+    Tool->>Tool: caller from transport context
+    Tool->>Authz: authorize(caller, invocation)
+    Authz-->>Tool: AuthorizationDecision
+    Tool->>Scope: resolve(caller, decision, clock)
+    Scope-->>Tool: PrivacySession
+    Tool->>Orchestrator: buildContext(request, context, …)
+    Orchestrator->>Adapter: fetch (fan-out)
+    Adapter-->>Orchestrator: raw source record
+    Orchestrator->>Scrub: scrub(record, context)
+    Scrub-->>Orchestrator: scrubbed tree
+    Orchestrator->>Validator: validate(merged, …, context)
+    Validator-->>Orchestrator: ValidationResult
+    Orchestrator->>Audit: record(decision=ALLOW)
+    Orchestrator-->>Tool: ContextResponse
+    Tool-->>Caller: CallToolResult

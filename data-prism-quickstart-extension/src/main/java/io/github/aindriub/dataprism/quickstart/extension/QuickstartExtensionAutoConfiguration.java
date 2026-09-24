@@ -30,9 +30,11 @@ import java.time.Duration;
  * arguments carry only {@code entityType} and {@code subjectId}, per docs/
  * configuration.md.
  */
+// --8<-- [start:autoconfiguration]
 @AutoConfiguration
 public class QuickstartExtensionAutoConfiguration {
 
+    // --8<-- [start:quickstart-identity-resolver]
     @Bean
     @ConditionalOnMissingBean
     IdentityResolver quickstartIdentityResolver() {
@@ -41,6 +43,7 @@ public class QuickstartExtensionAutoConfiguration {
         // PassThroughIdentityResolver's own Javadoc.
         return new PassThroughIdentityResolver();
     }
+    // --8<-- [end:quickstart-identity-resolver]
 
     @Bean
     @ConditionalOnMissingBean
@@ -58,3 +61,4 @@ public class QuickstartExtensionAutoConfiguration {
         return new QuickstartCustomerAdapter(client);
     }
 }
+// --8<-- [end:autoconfiguration]

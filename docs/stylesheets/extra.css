@@ -1,0 +1,105 @@
+/*
+ * Data Prism's one small stylesheet: the palette's actual colour values,
+ * plus light styling for tables, code blocks and the landing page's grid
+ * cards. Nothing else — no web fonts, no JavaScript, nothing that moves.
+ *
+ * mkdocs.yml sets `primary: custom` / `accent: custom` in both palette
+ * schemes, which is Material's documented way to opt a scheme out of its
+ * own named colour swatches. Material still applies `data-md-color-primary
+ * = "custom"` to the page, but no rule in its own palette CSS matches that
+ * value, so the CSS custom properties below (loaded after Material's own
+ * stylesheets, so they win the cascade at equal selector specificity) are
+ * the only thing that gives `--md-primary-fg-color` etc. a value.
+ */
+
+[data-md-color-scheme="default"] {
+  /* Dark-slate header background, in both schemes, so the light-stroke
+     logo mark (docs/assets/logo.svg) reads on it either way. Same value
+     the owner measured the supplied mark's indigo bar against (about
+     3.3:1 — see docs-site/hooks/check_contrast.py). */
+  --md-primary-fg-color: #1e293b;
+  /* Header text/site-name colour: the mark's own light-slate stroke
+     colour, so header text and logo read as one family. */
+  --md-primary-bg-color: #e2e8f0;
+  /* The one indigo accent. Material ties link colour to the *primary*
+     colour by default (`--md-typeset-a-color: var(--md-primary-fg-color)`
+     in its own palette CSS), which would make links dark-slate-on-white —
+     legible, but not the accent. Retargeting it at the accent colour below
+     is what actually puts indigo on the page. A single #6366F1 (the
+     supplied mark's indigo) fails 4.5:1 against both a white and a slate
+     dark background, so light and dark schemes each get their own AA-safe
+     shade of the same hue, the same way Material's own built-in indigo
+     palette lightens its link colour for the slate scheme.
+     Default (light) scheme: indigo-600, ~6.3:1 on white. */
+  --md-accent-fg-color: #4f46e5;
+  --md-typeset-a-color: var(--md-accent-fg-color);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1e293b;
+  --md-primary-bg-color: #e2e8f0;
+  /* Slate (dark) scheme: indigo-400, ~5.4:1 on Material's default slate
+     background. */
+  --md-accent-fg-color: #818cf8;
+  --md-typeset-a-color: var(--md-accent-fg-color);
+}
+
+/* Slate-scheme hero-button fix: Material colours a plain `.md-button`'s
+   text/border with `--md-primary-fg-color` (#1e293b), and fills
+   `.md-button--primary` with the same colour. Both are dark-slate-on-
+   dark-slate here, since the slate scheme's own page background
+   (`--md-default-bg-color`, Material's un-overridden default) is close to
+   that value. Retarget both, slate only:
+   - the plain button (Developer guide) takes the accent shade already used
+     for slate links, which reads against the slate page background;
+   - the primary button (Quickstart) swaps to the header's own pairing —
+     `--md-primary-bg-color` fill with `--md-primary-fg-color` text — the
+     same two colours already checked as header text on primary, and a fill
+     that stands well clear of the dark slate page. */
+[data-md-color-scheme="slate"] .md-button {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+
+[data-md-color-scheme="slate"] .md-button--primary {
+  background-color: var(--md-primary-bg-color);
+  border-color: var(--md-primary-bg-color);
+  color: var(--md-primary-fg-color);
+}
+
+/* Tables: a visible header row, so a plain reference table (e.g.
+   docs/configuration.md) reads as a table at a glance. */
+.md-typeset table:not([class]) th {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+/* Code blocks: an outline matching the table border, so both read as one
+   family of "structured content" boxes. */
+.md-typeset pre > code {
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+}
+
+/* Landing-page cards (docs/index.md): an accent-coloured top edge, since
+   the cards are text-only (no icons) and would otherwise be
+   indistinguishable from Material's default grid-card look. */
+.md-typeset .grid.cards > ul > li {
+  border-top: 0.15rem solid var(--md-accent-fg-color);
+}
+
+/* Landing-page card layout: Material's own `.md-typeset .grid` rule fits as
+   many 16rem columns as the content column allows, which — at the content
+   column's actual width, not the viewport's — fits two of these three cards
+   per row and orphans the third alone on a row of its own. Force a
+   deliberate layout instead of an incidental one: three across on wider
+   screens, reading as one set, and one full-width column on narrow screens,
+   below the same width Material itself treats as a small screen for its
+   own nav drawer. */
+.md-typeset .grid.cards {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media screen and (max-width: 76.234375em) {
+  .md-typeset .grid.cards {
+    grid-template-columns: 1fr;
+  }
+}

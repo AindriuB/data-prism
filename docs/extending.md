@@ -68,6 +68,11 @@ MCP tools an agent calls; that is `docs/tools.md`. It does not re-specify the
 platform's design; that is `docs/pack.md`. It is the missing piece: how the
 pieces those documents assume already exist get built.
 
+For a shorter, guided walk to the same destination, see
+[the developer guide](developer-guide/index.md), starting with
+[Write a data-source adapter](developer-guide/write-an-adapter.md). This page
+remains the full reference either one points back to.
+
 ## The `-Dloader.path` trap
 
 Read this before the pom section, because the mistake it describes is

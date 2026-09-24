@@ -65,26 +65,85 @@ jobs:
             exit 1
           fi
 
-      # Sitemap-vs-nav agreement, one non-empty <=155-char meta description
-      # per page with no page sharing another's, a canonical link under
-      # site_url, and the OG/Twitter/social-card tags. The tester runs this
-      # same script over the same build.
-      - name: Sitemap, meta description, canonical and social tags
-        run: python3 docs-site/hooks/check_site.py
+      # Every `docs-site/hooks/check_*.py`, in sorted order, fails on the
+      # first that fails and, so a rename or deletion never silently drops a
+      # guard, fails if no file matches. Sitemap-vs-nav agreement, one
+      # non-empty <=155-char meta description per page with no page sharing
+      # another's, a canonical link under site_url, the OG/Twitter/social-card
+      # tags and the third-party-script guard live here. The tester runs
+      # this same loop over the same build.
+      #
+      # DP_REQUIRE_NO_STUBS makes check_no_stub_pages.py fail the build if a
+      # placeholder stub page is still live, but only for a PR into `main` or
+      # a push to `main` — wave branches keep building their stubs.
+      - name: Run every docs-site guard check
+        env:
+          DP_REQUIRE_NO_STUBS: ${{ github.base_ref == 'main' || github.ref == 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(docs-site/hooks/check_*.py)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no docs-site/hooks/check_*.py files found"
+            exit 1
+          fi
+          while IFS= read -r f; do
+            echo "::group::$f"
+            python3 "$f"
+            echo "::endgroup::"
+          done < <(printf '%s\n' "${files[@]}" | sort)
 
       - name: llms.txt exists and its summary is the canonical description
         run: |
           set -euo pipefail
           test -s site/llms.txt
           test -s site/llms-full.txt
-          D="Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail."
+          D="Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, refuses anything unclassified, and can keep a hash-chained audit trail."
           grep -F "$D" site/llms.txt
 
-      - name: No Google Fonts or analytics/trackers
+      # Widened to the same pattern the python guard uses. Excludes only
+      # Material's own runtime bundle and its source map, and — for those —
+      # asserts their third-party references are exactly the two known
+      # unpkg.com strings Material 9.7.7 ships (see check_site.py's
+      # check_no_third_party_scripts for why those two are unavoidable).
+      #
+      # The bundle_hits token match is deliberately not scheme-qualified
+      # (`https?://…` alone): that let a protocol-relative `//host/…` or a
+      # bare `host/path` reference inside the bundle through uncompared
+      # (attempt 1). Instead it grabs the run of URL-ish characters around
+      # every pattern hit and compares that whole token to the allowlist.
+      # The `.map`'s one known prose mention ("...downloaded from
+      # unpkg.com...", from Material's own source comment) is stripped
+      # first, by that exact phrase, so it isn't itself compared as a bogus
+      # third "token" — any *other* pattern hit in the `.map` still fails.
+      - name: No third-party scripts, fonts or analytics outside Material's own bundle
         run: |
           set -euo pipefail
-          if grep -rEl 'fonts.googleapis|fonts.gstatic|googletagmanager|google-analytics' site/; then
-            echo "::error::found a Google Fonts or analytics reference in site/"
+          pattern='fonts\.googleapis|fonts\.gstatic|googletagmanager|google-analytics|gtag|unpkg|jsdelivr|cdnjs'
+          bundle_path_re='site/assets/javascripts/bundle\.[0-9a-f]+\.min\.js(\.map)?$'
+          known_map_prose_re='polyfill is automatically downloaded from unpkg\.com\. This is also compatible'
+          token_re="[A-Za-z0-9@._~:/%+-]*(${pattern})[A-Za-z0-9@._~:/%+-]*"
+
+          hits="$(grep -rlE "$pattern" site/ | grep -vE "$bundle_path_re" || true)"
+          if [ -n "$hits" ]; then
+            echo "::error::found a third-party script/font/analytics reference outside Material's own bundle:"
+            echo "$hits"
+            exit 1
+          fi
+
+          expected=$'https://unpkg.com/mermaid@11/dist/mermaid.min.js\nhttps://unpkg.com/resize-observer-polyfill'
+          bundle_hits="$(
+            for f in site/assets/javascripts/bundle.*.min.js site/assets/javascripts/bundle.*.min.js.map; do
+              [ -e "$f" ] || continue
+              case "$f" in
+                *.map) sed -E "s/${known_map_prose_re}//g" "$f" | grep -ohE "$token_re" ;;
+                *) grep -ohE "$token_re" "$f" ;;
+              esac
+            done | sort -u
+          )"
+          if [ "$bundle_hits" != "$(sort <<<"$expected")" ]; then
+            echo "::error::Material's bundle's third-party references are not exactly the two expected unpkg.com strings:"
+            echo "$bundle_hits"
             exit 1
           fi
 

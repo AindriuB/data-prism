@@ -1219,20 +1219,150 @@ action, not a task:
     `docs/plan/discoverability/runs/TEMPLATE.md`) and a `snapshot.sh` run,
     both within 14 days of the 2026-09-23 baseline — a missed 14-day window
     loses that period's traffic data permanently.
-- **Open question for the owner, not a task:** description D — "It
-  pseudonymises personal data per privacy scope, redacts or refuses anything
-  unclassified, and can keep a hash-chained audit trail" — says unclassified
-  data is redacted *or* refused. Checked against the shipped profiles
-  (`data-prism-core/src/main/resources/privacy-profiles-default.yaml`): both
-  `DEFAULT` and `STRICT` set `unclassified: FAIL_REQUEST` only — an
-  unclassified field always refuses the whole request; neither profile
-  redacts one. Redaction exists in the profile grammar and applies to
-  *classified* sensitive fields, not to unclassified ones. D appears in
-  `README.md`, `pom.xml`, `CITATION.cff`, the mkdocs `site_description`
-  (hence `llms.txt`) and the home page's JSON-LD — six or more surfaces per
-  the discoverability spec's own drift risk. The owner should decide whether
-  to correct D (e.g. drop "redacts or", or add a redaction path for
-  unclassified data) before the next release copies it further.
+- ~~Open question for the owner: description D said unclassified data is
+  "redacted or refused", but the shipped profiles' `unclassified:
+  FAIL_REQUEST` only refuses~~ — resolved 2026-09-24 by owner decision:
+  corrected D to "refuses anything unclassified" everywhere it appeared
+  (`README.md`, `pom.xml`, `CITATION.cff`, `CITATION.cff`'s abstract, the
+  mkdocs `site_description`/`llms.txt`, `.github/workflows/pages.yml`'s D
+  check, the discoverability spec's own D definition, and the outreach
+  drafts under `docs/plan/outreach/`), plus the two use-case pages'
+  "redacted or the call is refused" phrasing
+  (`docs/use-cases/gdpr-data-minimisation-mcp.md`,
+  `docs/use-cases/pseudonymise-customer-data-spring-boot.md`) — see
+  `HISTORY.md`. The GitHub About text (`gh repo edit`) still needs the owner
+  to paste the corrected description by hand.
+
+### Site polish and developer guide (tasks 85-90) — done on the local branch. Owner push/PR outstanding.
+
+Design: `docs/plan/specs/2026-09-24-site-polish-and-developer-guide.md`
+(binding — read "Decisions", "Facts the planner must respect" and the
+per-section A-D detail before touching any of these). Restrained visual
+polish, a collapsible changelog view, embedded diagrams and a real developer
+guide with tutorials built from compiled, tested source — none of it
+rewriting `CHANGELOG.md` or claiming more than the code does. Local branch
+`site-polish` (cut from `main` at `fc5cc58`, not pushed) is the integration
+branch every task below merges onto; task worktrees are reset onto it, not
+`main`. **`site-polish` must not reach `main` before task 90 closes**, since
+it now carries three stub developer-guide pages; the merge-only
+`check_no_stub_pages.py` guard (`DP_REQUIRE_NO_STUBS`) enforces that in CI.
+
+- **Task 85 — done.** Laid the shared plumbing every wave-1 task needs, so
+  they land in `mkdocs.yml`, the guard scripts and the CI workflow without
+  colliding: `attr_list`, `md_in_html` and `pymdownx.snippets` (with
+  `check_paths: true`, `base_path: [data-prism-quickstart-extension, docker]`,
+  `restrict_base_path: true`, `dedent_subsections: true`) added to the four
+  existing markdown extensions, and `pymdown-extensions` pinned to the exact
+  version the existing pins already resolve; a new "Developer guide" nav
+  section (three stub pages, task 89/90 to replace two of them) placed before
+  "Reference", mirrored in `llmstxt.sections`; `docs-site/hooks/changelog.py`,
+  a no-op `on_page_markdown` stub task 87 owns; a third-party-script guard in
+  `check_site.py` that allows exactly two `unpkg.com` strings and only inside
+  Material's own `bundle.*.min.js`/`.map`, and fails on everything else
+  (off-origin `<script src>`/`<link href>`/CSS `@import`/`url(`, any
+  `class="mermaid"`); `pages.yml` running every `docs-site/hooks/check_*.py`
+  in sorted order instead of one hardcoded step; a merge-only stub-page guard
+  (`check_no_stub_pages.py`, gated on `DP_REQUIRE_NO_STUBS`, true only for a
+  PR into `main` or a push to `main`, so wave branches keep building with the
+  stubs in place); and a new CONTRIBUTING "## Docs site" section documenting
+  the `check_*.py` convention, snippet sourcing, and the Docker build recipe.
+  Merged onto `site-polish`, PASS + APPROVE on attempt 4 — see
+  `docs/plan/HISTORY.md`, grep `Task 85`, for what the first three attempts'
+  reviews closed and the two lessons worth carrying into any future guard
+  task. Task file retired.
+- **Task 86 — done.** Gave the docs site an identity: the owner's prism mark
+  as the header logo (byte-identical to the supplied `mark-dark.svg`,
+  original files kept unchanged under `docs-site/logo/supplied/`), a
+  script-derived favicon (SVG with a `prefers-color-scheme` switch, plus a
+  32px PNG), a dark-slate `#1e293b` header in both schemes with one indigo
+  accent in two AA-tuned shades (`#4f46e5` light, `#818cf8` dark),
+  `check_contrast.py` covering text, links, header, logo and both hero
+  buttons in both schemes, a landing hero (tagline T, Quickstart and
+  Developer guide buttons, three cards) and an `extra.css` covering only
+  palette, tables, code, cards and buttons. Merged onto `site-polish`, PASS +
+  APPROVE on attempt 2 — see `docs/plan/HISTORY.md`, grep `Task 86`, for what
+  attempt 1's review closed and the two lessons worth carrying forward. Task
+  file retired.
+- **Task 88 — done.** Drew five concept diagrams (system overview, one
+  `get_entity_context` call, pseudonym generation, fail-closed field
+  decisions, the audit chain) and embedded each in the existing doc that
+  covers it — `architecture.md`, `tools.md` (two), `configuration.md`,
+  `audit.md` — insert-only, one intro sentence plus a linked image that
+  opens full size. Mermaid source lives in `docs-site/diagrams/*.mmd`;
+  `render.sh` renders it to committed SVGs in `docs/assets/diagrams/` with a
+  digest-pinned mermaid-cli run `--network none` as the caller's uid, output
+  byte-stable, each SVG padded with a thin border so it reads as a framed
+  panel on dark pages. `check_diagrams.py` enforces `.mmd`/`.svg` pairing,
+  references, alt text and no off-w3.org URLs/script/`@import`. No "learn"
+  page, no runtime Mermaid. Merged onto local `site-polish`, PASS + APPROVE
+  on attempt 2 — see `docs/plan/HISTORY.md`, grep `Task 88`, for what
+  attempt 1's review closed and the two lessons worth carrying forward. Task
+  file retired.
+- **Task 89 — done.** Opened the developer guide: an overview page covering
+  the extension points with GitHub-linked sources, and tutorial 1
+  ("write a data-source adapter"), seven steps from model and annotations to
+  a pseudonymised MCP response, every code/pom/YAML/Dockerfile block pulled
+  via `--8<--` from marked regions in `data-prism-quickstart-extension` and
+  `docker/`, never hand-copied. New `docs-site/hooks/check_snippet_markers.py`
+  closes a gap `pymdownx.snippets` leaves open (a missing end marker is read
+  silently to EOF, not failed). Merged onto local `site-polish`, PASS +
+  APPROVE on attempt 2 — see `docs/plan/HISTORY.md`, grep `Task 89`, for what
+  attempt 1's review closed and the lessons worth carrying forward. Task file
+  retired. **Carry into task 90:** `write-an-adapter.md` currently implies (and
+  task 90's own file said) the server "refuses to start without" an
+  `IdentityResolver` bean; that's inaccurate — `dataprism.identity.resolver:
+  pass-through` supplies one without code
+  (`DataPrismAutoConfiguration.java:128-133`). Task 90's tutorial should
+  correct this rather than repeat it.
+- **Task 87 — done.** Replaced the `changelog.py` stub task 85 registered:
+  each `CHANGELOG.md` release now renders as a `pymdownx.details` block,
+  newest open and the rest closed, with an empty `[Unreleased]` dropped and
+  a "version — date · N added · …" summary line (singular for a count of 1).
+  `check_changelog.py` guards every release marker, `<summary>`, and that
+  link-reference definitions stay at top level and resolve; `CHANGELOG.md`
+  itself is untouched, and the only site side effect is `llms-full.txt`'s
+  release headings. Merged onto `site-polish`, PASS + APPROVE on attempt 2 —
+  see `docs/plan/HISTORY.md`, grep `Task 87`, for what attempt 1's review
+  closed. Task file retired.
+- **Task 90 — done.** Replaced the third and last stub page with tutorial 2,
+  "write a custom identity resolver", backed by a tested example
+  `MappedIdentityResolver` in `data-prism-quickstart-extension`
+  (`ExampleIdentityMapping`, `ExampleIdentityResolverConfiguration`, and an
+  `ExampleOrderedIdentityResolverAutoConfiguration` not registered in
+  `AutoConfiguration.imports` and inert in the shipped jar), plus diagram 6
+  (extension points) embedded in the developer-guide overview and the
+  `write-an-adapter.md` `IdentityResolver` sentence task 89 flagged, now
+  corrected. Every snippet is pulled from compiled, tested source. Merged onto
+  local `site-polish`, PASS + APPROVE on attempt 4 — see `docs/plan/HISTORY.md`,
+  grep `Task 90`, for what the first three attempts' reviews closed and the
+  three lessons worth carrying forward. Task file retired.
+
+With 90 closed, every task the site-polish plan named is done, and no stub
+page remains under `docs/developer-guide/` — `DP_REQUIRE_NO_STUBS=true`
+passes. `site-polish` is ready for the owner-approved push and a pull request
+into `main`; nothing has been pushed yet.
+
+**Small follow-ups, found closing task 86 (not blocking):**
+- The hero buttons' hover state in the slate scheme is white text on
+  `#818cf8`, about 2.98:1 — below AA. `check_contrast.py` doesn't measure
+  hover states, only the resting palette.
+- `check_contrast.py` should fail on any unparsed `extra.css` selector that
+  mentions `.md-button` or `data-md-color-scheme`, instead of silently
+  falling back to defaults — it would have caught the attempt-1 invisible
+  dark-mode button sooner.
+- Cosmetic: Material's card `:hover` clears the accent top border set in
+  `extra.css`.
+
+**Open items for the owner, found closing task 87:**
+- ~~`CHANGELOG.md`'s 0.3.0 `AuditChainVerifier` bullet says "an edit or
+  deletion inside one writer's chain, caught even on that chain's own last
+  record"~~ — corrected on `site-polish` (2026-09-24, see `HISTORY.md`): the
+  0.3.0 "Added" and "Not changed" bullets now attach "caught even on the last
+  record" to edits only, with deletion caught only when a later record
+  follows it; `[Unreleased]` records the correction.
+- ~~`docs/tools.md:120` says "unclassified values dropped"~~ — corrected on
+  `site-polish` (2026-09-24, see `HISTORY.md`); the row now states an
+  unclassified field refuses the whole response under the shipped profiles.
 
 ## Remaining slices past the adopted core
 

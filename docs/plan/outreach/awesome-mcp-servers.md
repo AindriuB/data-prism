@@ -140,7 +140,7 @@ alphabetical order in the live list, so insert relative to the nearest alphabeti
 post time, per the "Alphabetical order" rule above):
 
 ```markdown
-- [AindriuB/data-prism](https://github.com/AindriuB/data-prism) [![AindriuB/data-prism MCP server](https://glama.ai/mcp/servers/AindriuB/data-prism/badges/score.svg)](https://glama.ai/mcp/servers/AindriuB/data-prism) ☕ 🏠 - Fail-closed privacy layer for MCP: pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail. Spring Boot starter or standalone server. `docker compose up` (local quickstart)
+- [AindriuB/data-prism](https://github.com/AindriuB/data-prism) [![AindriuB/data-prism MCP server](https://glama.ai/mcp/servers/AindriuB/data-prism/badges/score.svg)](https://glama.ai/mcp/servers/AindriuB/data-prism) ☕ 🏠 - Fail-closed privacy layer for MCP: pseudonymises personal data per privacy scope, refuses anything unclassified, and can keep a hash-chained audit trail. Spring Boot starter or standalone server. `docker compose up` (local quickstart)
 ```
 
 ## PR title
@@ -151,7 +151,7 @@ post time, per the "Alphabetical order" rule above):
 
 ```markdown
 Adds one entry to the Security section for Data Prism, a fail-closed privacy layer that sits between MCP
-clients and enterprise APIs. It pseudonymises personal data per privacy scope, redacts or refuses anything it
+clients and enterprise APIs. It pseudonymises personal data per privacy scope, refuses anything it
 cannot classify, and can optionally keep a hash-chained audit trail (opt-in; see the project's docs/audit.md
 for what that does and does not prove).
 

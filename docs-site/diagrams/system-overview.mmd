@@ -1,0 +1,16 @@
+flowchart TB
+    Client["MCP client"]
+    Auth["Authenticate caller"]
+    Authz["Tool authorisation"]
+    Scope["Derive scope\nand purpose"]
+    Orchestrator["Orchestrator\n(fan-out)"]
+    Adapters["Reviewed source\nadapters"]
+    APIs["Enterprise APIs"]
+    Engine["Classification and scrubbing:\npseudonymise / redact / remove"]
+    Leak["Raw-value leak check"]
+    Audit["Audit"]
+    Response["MCP response"]
+
+    Client --> Auth --> Authz --> Scope --> Orchestrator --> Adapters
+    Adapters <--> APIs
+    Adapters --> Engine --> Leak --> Audit --> Response

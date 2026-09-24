@@ -101,7 +101,7 @@ Ripper" and before "Dependency-Track" (the section isn't fully sorted today; tho
 this insertion keeps in correct alphabetical order).
 
 Data Prism is a Java/Spring privacy layer for teams putting LLM agents or MCP clients in front of internal
-APIs that hold customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything it
+APIs that hold customer data. It pseudonymises personal data per privacy scope, refuses anything it
 cannot classify, and can keep a hash-chained audit trail (opt-in). Java is the implementation language and the
 primary runtime; a Spring Boot starter is one of its two supported deployment surfaces.
 

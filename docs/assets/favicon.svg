@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Data Prism</title>
+  <style>
+    .dp-fill { fill: #1E293B; }
+    .dp-stroke { stroke: #1E293B; }
+    @media (prefers-color-scheme: dark) {
+      .dp-fill { fill: #E2E8F0; }
+      .dp-stroke { stroke: #E2E8F0; }
+    }
+  </style>
+  <g stroke-linejoin="miter" transform="translate(2.56 2.56) scale(0.92)">
+    <path class="dp-fill" d="M24 14 34 8 48 42 38 48Z" fill-opacity="0.16"/>
+    <path class="dp-stroke" d="M10 48 24 14 34 8 48 42 38 48Z M24 14 38 48" fill="none" stroke-width="3"/>
+    <path d="M44 20.5H54L56 25.5H46Z" fill="#6366F1"/>
+    <path d="M48 32.5H58L60 37.5H50Z" fill="#6366F1"/>
+  </g>
+</svg>

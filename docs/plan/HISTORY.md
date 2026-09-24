@@ -17,6 +17,348 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Task 90: the custom identity-resolver tutorial, and the site-polish plan is done
+
+Replaced the third and last developer-guide stub with tutorial 2, "write a
+custom identity resolver," backed by a tested example `MappedIdentityResolver`
+in `data-prism-quickstart-extension` (`ExampleIdentityMapping`,
+`ExampleIdentityResolverConfiguration` for ordinary scanned apps, and an
+`ExampleOrderedIdentityResolverAutoConfiguration` deliberately not registered
+in `AutoConfiguration.imports`, so it stays inert in the shipped jar; tests:
+`MappedIdentityResolverTest` (5), `IdentityResolverOverrideTest` (2),
+`IdentityResolverOrderingTest` (2)). The tutorial states, and the tests prove:
+the caller's `subjectId` is the canonical id; only `expand` runs at runtime
+today, `resolve` has no production caller; pass-through behaviour; the
+canonical id also keys the per-scope pseudonym, fingerprint and read budget;
+an unknown id gives `refused: NO_SOURCE_DATA at <entityType>`, not an empty
+answer; and registration is a plain `@Configuration` for scanned apps, or for
+`-Dloader.path` an `@AutoConfiguration` ordered before whichever
+auto-configuration supplies the `@ConditionalOnMissingBean` default, with
+`beforeName` as the general option. Diagram 6 (extension points) is now
+embedded in the developer-guide overview, and `write-an-adapter.md`'s
+`IdentityResolver` sentence (flagged by task 89) is corrected. With 90 closed,
+no stub page remains under `docs/developer-guide/` and
+`DP_REQUIRE_NO_STUBS=true` passes, so `site-polish` (tasks 85-90, all done) is
+ready for the owner-approved push and a pull request into `main`; nothing has
+been pushed yet.
+
+**Cost:** Four attempts. Tutorial prose about runtime behaviour has to be
+traced call by call, not inferred from the SPI's Javadoc: the first draft
+called `resolve` the runtime path when nothing calls it, and called an
+unknown id's result an "empty answer" when it is a refusal. Registration
+guidance needs a test in both directions (ordered wins; unordered fails with
+two beans) — writing that test showed the first guidance only held for the
+quickstart's own auto-configuration order, not in general. The final round
+was bounded to four listed items, as task 85 did, which is what kept a
+docs-accuracy review from running indefinitely. Left for later, not blocking:
+`IdentityResolverOrderingTest`'s Javadoc omits `@AutoConfigureOrder`, and
+`docs/developer-guide/index.md:57`'s "where that check is skipped" doesn't
+name the adapter check it means.
+
+## 2026-09-24 — Corrects canonical description D's "redacts or refuses" to "refuses"
+
+Description D ("Data Prism is an open-source privacy layer... It
+pseudonymises personal data per privacy scope, redacts or refuses anything
+unclassified, and can keep a hash-chained audit trail.") said unclassified
+data is redacted *or* refused, but both shipped profiles (`DEFAULT`,
+`STRICT`) set `unclassified: FAIL_REQUEST` only — refusal, never redaction,
+for an unclassified field. D now reads "...refuses anything unclassified,
+and can keep..." wherever it appeared: `README.md`, `pom.xml`,
+`CITATION.cff`, the mkdocs `site_description` (hence `llms.txt`),
+`.github/workflows/pages.yml`'s D assertion, the discoverability spec's own
+D definition (which also gained a dated correction note), and the four
+`docs/plan/outreach/*.md` drafts carrying D or a close paraphrase. The two
+use-case pages with the related "redacted or the call is refused outright"
+phrasing (`docs/use-cases/gdpr-data-minimisation-mcp.md`,
+`docs/use-cases/pseudonymise-customer-data-spring-boot.md`) now say the call
+is refused outright, with no redaction option, matching the same fact.
+Left alone: classified-field wording (a sensitive field genuinely is
+redacted per its classification — that's unchanged and correct), the home
+page's tagline T (doesn't contain the phrase), `server.json` and the OCI
+image `LABEL org.opencontainers.image.description`/`io.modelcontextprotocol.
+server.name` (neither contains D, so out of scope and untouched), and the
+GitHub repo "About" text, which is an owner action via `gh repo edit`.
+**Cost:** none — a wording-only fix across near-identical copies of one
+sentence; the strict `mkdocs build` and all `docs-site/hooks/check_*.py`
+pass, and `site/llms.txt` was checked by hand to contain the corrected D
+verbatim (the `pages.yml` CI assertion that also checks this only runs in
+GitHub Actions).
+
+## 2026-09-24 — Corrects the released 0.3.0 `AuditChainVerifier` CHANGELOG wording
+
+`CHANGELOG.md`'s 0.3.0 "Added" and "Not changed" bullets said an edit or
+deletion inside one writer's chain is "caught even on that chain's own last
+record", attaching the tail guarantee to deletion as well as edits. Per
+`docs/audit.md`'s "What this does and does not prove", only edits are caught
+anywhere including the last record; a deletion is caught only when a later
+record follows it, and both bullets now say so. `[Unreleased]` gained a
+`### Changed` note recording the correction (so the changelog page renders it
+open first, summary line "[Unreleased] · 1 changed"). A repo-wide grep for
+"edit or deletion", "last record" and "tamper" found no other CHANGELOG
+occurrence, and no identical overclaim copied into `README.md`, `docs/faq.md`
+or `docs/index.md` — those already state the edit/deletion asymmetry
+correctly or don't mention "last record" at all.
+**Cost:** none — a wording-only fix; the strict `mkdocs build` and all
+`docs-site/hooks/check_*.py` (including `check_changelog.py`) pass unchanged.
+
+## 2026-09-24 — Corrects `docs/tools.md:120`'s "unclassified values dropped" claim
+
+`get_entity_context`'s response table now says the `entity` field's real
+values are pseudonymised, sensitive values redacted or removed per their
+classification, and that under the shipped profiles an unclassified field
+refuses the whole response rather than being dropped — matching
+`docs/configuration.md`'s existing wording for the same fact. A repo-wide
+grep for the same claim found no other occurrence to fix.
+**Cost:** none — a one-line correction, traced through
+`PrivacyProfiles`/`ProfilePrivacyPolicyResolver`/`privacy-profiles-default.yaml`
+to confirm `DROP_AND_WARN` exists in code but neither bundled profile
+(`DEFAULT`, `STRICT`) selects it, and no `dataprism.*` property loads a
+custom profile file, so it is not reachable today. Left open (already
+tracked in `PLAN.md` "Found on task 81"): `README.md:12` and
+`docs/use-cases/gdpr-data-minimisation-mcp.md:25`'s "redacted or refused"
+wording, which is a different inaccuracy on the same topic and out of this
+fix's scope.
+
+## 2026-09-24 — Task 88: draw five concept diagrams and embed each in context
+
+`docs-site/diagrams/*.mmd` holds five Mermaid sources (system overview, one
+`get_entity_context` call, how a pseudonym is made, fail-closed field
+decisions, the audit chain), rendered by `render.sh` to committed SVGs in
+`docs/assets/diagrams/` via a digest-pinned `minlag/mermaid-cli`, run
+`--network none` as the caller's uid; output is byte-stable across runs, and
+each SVG carries padding plus a thin border so it reads as a framed panel on
+dark pages. Each diagram is embedded insert-only in the page that already
+covers it — one intro sentence and a linked image that opens full size — in
+`docs/architecture.md` (system overview), `docs/tools.md` (the
+`get_entity_context` call, and pseudonym generation at "Scope isolation"),
+`docs/configuration.md` (fail-closed decisions), and `docs/audit.md` (the
+audit chain); diagrams 2-4 add a "Select the diagram to open it full size."
+caption. New `docs-site/hooks/check_diagrams.py` enforces `.mmd`/`.svg`
+pairing, that every SVG is referenced by a built page, non-empty alt text,
+and no off-w3.org URL/script/`@import` in any SVG. `docs-site/diagrams/README.md`
+carries a trace table mapping every node and edge to a code or doc line.
+
+**Cost:** Two attempts. Attempt 1 passed the tester on legibility grounds
+undetected until screenshots: both `flowchart LR` diagrams (system overview,
+audit chain) are wide enough that Material's ~688px content column shrank
+them to single-digit-pixel text — no automated check catches this, only
+looking at the rendered page did. The reviewer separately caught diagram 5
+overclaiming what the audit chain detects (attributing "including the last
+record" to deletions as well as edits, contradicting `docs/audit.md`'s own
+"What this does and does not prove"), a hard white SVG background reading as
+a bare strip on the dark theme, and an incomplete line-shift list. Attempt 2
+redrew both wide diagrams top-to-bottom, corrected diagram 5's wording and
+alt text to audit.md's own phrasing, added SVG padding and a border, and
+re-verified byte-stable re-rendering plus a full screenshot pass in light
+and dark at 1280px. Two lessons worth keeping: wide `flowchart LR` layouts
+are illegible in a narrow docs column — draw top-to-bottom and always link
+to the full-size SVG; and legibility has to be checked by screenshot, since
+no structural check (mmd validity, SVG well-formedness, trace-table
+completeness) catches a diagram that renders correctly but unreadably small.
+PASS + APPROVE on attempt 2 (a focused review checked the attempt-2 diff at
+95e9fd7, and the main session checked 2abe300's two `audit.md` citations
+directly), merged onto local `site-polish` (not `main`). Line-shift note for
+future citations: `docs/architecture.md`'s embed grows the file, so two
+already-retired task files' historical citations now point short —
+`docs/architecture.md:106-155` (retired task 12) now ends at 159, and
+`:135-141` (retired task 13) has its old 136-141 now at 140-145;
+`docs/plan/HISTORY.md`'s own `architecture.md:156-159` citation (already
+stale before this task) is now shifted a further 4 lines. None of these were
+edited — retired task files and past HISTORY.md entries are left as written.
+No live `docs/plan/PLAN.md` citation shifted. Left unblocked, not done here:
+`docs/tools.md:120` still says "unclassified values dropped" though the
+shipped profiles use `FAIL_REQUEST`; this task's diagram-2 embed lands
+elsewhere in the same file and does not touch that line, so the correction
+is a standalone follow-up.
+
+## 2026-09-24 — Task 89: start the developer guide with a tested adapter tutorial
+
+`docs/developer-guide/index.md` (replacing task 85's stub) now covers the
+extension points — `DataSourceAdapter`, `IdentityResolver`, and `AuditSink`
+plus the classification annotations flagged as covered later in the guide —
+each linked to its source on GitHub and its `docs/extending.md` section,
+followed by the learning path (tutorial 1, then tutorial 2). Tutorial 1,
+`docs/developer-guide/write-an-adapter.md`, walks seven steps from the
+`@LlmExposedModel` record through to running the packaged server and seeing
+a pseudonymised MCP response, with every code, pom, YAML and Dockerfile
+block pulled at build time via `--8<--` snippet includes from marked regions
+in `data-prism-quickstart-extension` and `docker/`, never hand-copied. The
+tutorial's commands were run literally from a clean clone and the page
+quotes the real output: `customerName` pseudonymised, `email` redacted.
+`data-prism-quickstart-extension/pom.xml` uses single-dash `-8<-` markers,
+since `--` inside an XML comment is illegal. New
+`docs-site/hooks/check_snippet_markers.py` reuses pymdownx 12.1's own
+section regex and fails on a missing, duplicate, unmatched or out-of-order
+marker, naming the file and section. `docs/extending.md` gains a five-line
+pointer to the guide. `QuickstartSmokeIT` stays green (3 tests, 0 failures).
+
+**Cost:** Two attempts. Attempt 1 passed the tester (tutorial ran clean,
+9 snippets byte-identical, `mvn verify` and `QuickstartSmokeIT` green) but
+the reviewer found the tutorial prose drifting from its own snippets: it
+said the pom marked everything but core/annotations `provided` right under
+a snippet showing all four `provided` (the loader.path trap the tutorial
+exists to avoid), and said `@SensitiveData` "states what should happen" and
+email is redacted "per that field's own action" when the profile rule, or
+the stricter of the two, actually decides. It also found that
+`pymdownx.snippets`' own `check_paths` only guards a missing *start* marker
+— a missing `[end:x]` is read silently to EOF rather than failing the
+build, which the task's own acceptance criterion had assumed would fail
+loudly; `check_snippet_markers.py` was added in attempt 2 to close that gap
+with its own pairing check. The task-authored marker syntax
+(`<!-- --8<-- [start:x] -->`) also did not survive contact with XML comment
+grammar in `pom.xml` and had to become single-dash. All fixed in attempt 2:
+PASS + APPROVE, merged onto local `site-polish` (not `main`). Left as
+unscheduled follow-ups: the annotation-authority sentence still omits two
+edge cases (no profile rule → the suggestion is used as-is; a profile rule
+with `override: true` applies even if looser); `check_snippet_markers.py`
+would flag a future prose file under `base_path` that quotes the marker
+syntax itself; and its docstring should say to always read this
+repository's own `mkdocs.yml` rather than assume the values it currently
+hardcodes.
+
+## 2026-09-24 — Task 86: give the docs site an identity
+
+The docs site now has its own visual identity instead of stock Material
+defaults: the owner's prism mark as the header logo (`docs/assets/logo.svg`,
+byte-identical to the supplied `mark-dark.svg`; the supplied files themselves
+are kept unchanged under `docs-site/logo/supplied/`), a script-derived
+favicon (`docs/assets/favicon.svg`, an SVG with a `prefers-color-scheme`
+switch dropping the incoming ray and thickening the two indigo bars, plus a
+32px `favicon.png` rendered by `docs-site/logo/make_favicon.py`), and a
+dark-slate `#1e293b` header in both colour schemes with one indigo accent at
+two AA-tuned shades (`#4f46e5` light, `#818cf8` dark). `docs/index.md` opens
+with a hero (tagline T, Quickstart and Developer guide buttons) and three
+cards — pseudonymise per scope, fail closed, verifiable audit trail — each
+worded from the page it links to, before the existing README include and
+"Where to go next" list. `docs-site/hooks/check_contrast.py` is new: it
+checks WCAG AA contrast for body text, links, the header and the logo, and
+both hero buttons, in both schemes. `docs/stylesheets/extra.css` covers only
+palette, tables, code, cards and buttons — no web fonts, no JavaScript, no
+animation.
+
+**Cost:** Two attempts. Attempt 1 passed the tester on text-contrast checks
+alone; the reviewer's own screenshot review in the main session caught that
+the Developer guide button was invisible in the slate scheme (light-indigo
+text on a light-indigo button) — the automated contrast check covered the
+default scheme's buttons but not slate's. Fixed in attempt 2, and
+`check_contrast.py` extended to check both hero buttons in both schemes.
+Attempt 1 also copied the audit card's "caught even on that chain's own last
+record" wording from `CHANGELOG.md`'s 0.3.0 bullet by way of the spec;
+`docs/audit.md` — the binding source — draws the line at edits only, not
+deletions, so the card was corrected to say no more than that. Lesson for
+future visual/UI tasks: a tester must look at a rendered screenshot of every
+interactive element in every colour scheme the task touches, not just run a
+text-contrast script — a script only checks what it was told to check.
+Left as a small unblocking follow-up rather than fixed in this task: the
+hero buttons' *hover* state in slate is ~2.98:1 (white text on `#818cf8`),
+below AA, and `check_contrast.py` does not measure hover at all.
+
+## 2026-09-24 — Task 87: collapse the changelog page per release
+
+`docs/changelog.md` renders each `CHANGELOG.md` release as a
+`pymdownx.details` block instead of one long wall of text, replacing task
+85's no-op `changelog.py` stub: the newest release starts open, every other
+release starts closed, and an empty `[Unreleased]` section is dropped
+entirely. Each release's `<summary>` line reads "version — date · N added ·
+N changed · …", built from a top-level-list-item count per `###`
+subsection, omitting any subsection with zero items and using the singular
+label for a count of 1 ("1 behavioural change"). The changelog page's own
+right-hand TOC is hidden via `page.meta["hide"]` set inside the hook, since
+the `###` headings buried in collapsed blocks would otherwise show as 12
+unlabelled entries. `docs-site/hooks/check_changelog.py` is new: it fails,
+naming what's missing, unless every release marker and its `<summary>`
+survive the transform and every link-reference definition both stays at
+top level (anchored with `^`/`MULTILINE` so one indented into a details
+block fails) and resolves to a real `<a href>`. `CHANGELOG.md` itself is
+untouched — `git diff -- CHANGELOG.md` against `site-polish` is empty — and
+the only rendering side effect anywhere else is `llms-full.txt`, whose
+release headings become plain "[x.y.z](url) — date · counts" lines with no
+`???` syntax.
+
+**Cost:** Two attempts. Attempt 1 passed the tester but the reviewer found
+one class of defect worth naming for future guard/formatting tasks: a
+comment describing the counting rule ("a subsection with zero items still
+renders … never silently dropped from the count") said the opposite of what
+the code did (lines 119/126 actually omit zero-item subsections from the
+summary, correctly — only the comment was wrong), a plural-only summary
+label ("1 behavioural changes"), a missing per-page TOC suppression, and an
+unanchored link-reference-definition check that a definition indented into
+the last details block would still pass. All four fixed in attempt 2, kept
+green alongside the existing planted faults and the strict build. Lesson
+recorded for future coordination: diff a task branch against a moving
+integration branch with `git diff site-polish...HEAD` (three dots), not two
+— a two-dot diff against `site-polish` showed unrelated plan-only commits as
+a false `Owns` violation during review.
+
+Lays every piece of `mkdocs.yml`, the guard scripts and the CI workflow that
+the site-polish plan's wave-1 tasks (look, changelog, diagrams, developer
+guide) would otherwise collide over. Adds `attr_list`, `md_in_html` and
+`pymdownx.snippets` (`check_paths: true`,
+`base_path: [data-prism-quickstart-extension, docker]`,
+`restrict_base_path: true`, `dedent_subsections: true`) to the four existing
+markdown extensions, and pins `pymdown-extensions` to the exact version the
+existing pins already resolved. Adds a "Developer guide" nav section (three
+new stub pages, placed before "Reference") mirrored in `llmstxt.sections`,
+and `docs-site/hooks/changelog.py`, a no-op `on_page_markdown` stub with a
+docstring naming task 87 as its owner. Widens `check_site.py`'s third-party
+check to a pattern covering fonts/analytics/`unpkg`/`jsdelivr`/`cdnjs`, and
+resolves the one real conflict with Material 9.7.7 itself: Material's own
+`bundle.*.min.js`/`.map` already contains two `unpkg.com` mermaid/polyfill
+strings, so the guard allows exactly those two strings and only inside that
+bundle, and fails on every other hit anywhere in `site/`, on any
+`class="mermaid"` element, and on any off-origin `<script src>`/
+`<link href>`/CSS `@import`/`url(`. `pages.yml`'s single `check_site.py`
+step becomes a loop over every `docs-site/hooks/check_*.py` in sorted order,
+and its grep step is widened to the same pattern with the same bundle
+carve-out. A new merge-only `check_no_stub_pages.py` fails a build that still
+carries the stub body "This page is being written." when
+`DP_REQUIRE_NO_STUBS` is true — true only for a PR into `main` or a push to
+`main`, read from an explicit workflow env var rather than guessed from other
+variables, so wave branches keep building with the stubs in place until
+tasks 89 and 90 replace them. `CONTRIBUTING.md` gains a "## Docs site"
+section: the `check_*.py` convention, that tutorial snippets must come from
+`--8<--` markers under `base_path` and never be hand-copied, the Docker
+build recipe, and the stub-guard variable.
+
+Four attempts, all on the third-party guard, and closed with a deliberately
+bounded final round. Attempt 1: protocol-relative URLs (`//host/...`)
+counted as local; the attribute/scheme match was double-quote-only and
+case-sensitive; scheme-less bundle tokens (`//cdn.jsdelivr.net/...`,
+`unpkg.com/other@1/...`) passed uncompared; the `.map` exemption was too
+broad; and the stub guard didn't exist yet. Attempt 2: backslash- and
+tab/CR/LF-mangled URLs (`src="/\evil.example.com/x.js"`,
+`src="https:\\evil.example.com/x.js"`) still read as local, and the mermaid
+class match fired only in double quotes. Attempt 3: `SRC=`, spaces around
+`=`, HTML-entity slashes, `URL(` and leading whitespace all closed, plus
+false-positive and label checks. Attempt 4 (merged): minified `@import` with
+no space (`@import"https://...";`) was missed, and attribute separators
+other than whitespace (`<script/src=`, a closing quote before `class=`)
+weren't recognised. PASS + APPROVE on attempt 4.
+
+**Cost:** four rounds chasing an ever-more-obscure family of URL-obfuscation
+bypasses in the third-party guard, each review finding a real but
+increasingly narrow gap. The task file's own attempt-3 review named the fix:
+state the threat model up front. This guard defends against *accidentally*
+shipping a third-party script, font or tracker in our own generated site —
+not against a hostile author who can already edit the repository — so the
+final round was bounded explicitly, and the deliberately out-of-scope
+obfuscation forms (C0 control characters inside attribute values other than
+whitespace, CSS escapes like `\2f` or `h\ttps` inside `url()`, quoted
+`url()` strings containing the other quote) are named in a `check_site.py`
+comment rather than chased into a fifth attempt. Separately: `pages.yml`'s
+grep step only checks a fixed, named list of hosts
+(`fonts.googleapis|...|unpkg|jsdelivr|cdnjs`), so it cannot catch an
+arbitrary off-origin host; `check_site.py`'s build-time check is what
+catches any off-origin `src`/`href`/`@import`/`url(` in general. The two are
+complementary by design, not redundant — do not try to make the grep step
+do the general-purpose job the build check already does.
+
+Merged onto local `site-polish` (not `main` — see the site-polish plan
+entry in `docs/plan/PLAN.md`; `site-polish` must not reach `main` before
+task 90 closes, since it now carries the three stub developer-guide pages,
+enforced by the merge-only `DP_REQUIRE_NO_STUBS` guard this task added).
+Worktree and branch removed; task file retired.
+
 ## 2026-09-24 — Task 83: README and `server.json` wired to the live docs site
 
 Now that `https://aindriub.github.io/data-prism/` is live (task 82, deployed

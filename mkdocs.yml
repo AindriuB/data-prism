@@ -8,8 +8,8 @@ site_url: https://aindriub.github.io/data-prism/
 site_description: >-
   Data Prism is an open-source privacy layer for Java/Spring teams putting
   LLM agents or MCP clients in front of internal APIs holding customer data.
-  It pseudonymises personal data per privacy scope, redacts or refuses
-  anything unclassified, and can keep a hash-chained audit trail.
+  It pseudonymises personal data per privacy scope, refuses anything
+  unclassified, and can keep a hash-chained audit trail.
 repo_url: https://github.com/AindriuB/data-prism
 repo_name: AindriuB/data-prism
 edit_uri: ""
@@ -36,14 +36,31 @@ theme:
   # the build if fonts.googleapis or fonts.gstatic appear anywhere in site/.
   font: false
   custom_dir: docs-site/overrides
+  # The supplied prism mark (docs-site/logo/supplied/mark-dark.svg, light
+  # strokes), copied byte-for-byte to docs/assets/logo.svg — see
+  # docs-site/logo/README.md. mark-dark.svg, not mark-light.svg, because
+  # the header background (--md-primary-fg-color, set below) is dark slate
+  # in both colour schemes.
+  logo: assets/logo.svg
+  # Material 9.7.7's base.html emits the favicon <link> before its
+  # extrahead block, so this PNG link renders first; docs-site/overrides/
+  # main.html adds one more <link rel="icon" type="image/svg+xml"> for
+  # favicon.svg inside extrahead, after it. Both are derived from the
+  # supplied mark by docs-site/logo/make_favicon.py — see
+  # docs-site/logo/README.md.
+  favicon: assets/favicon.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -54,11 +71,19 @@ theme:
     - content.code.copy
     - search.suggest
 
+# The palette's actual colour values: a dark-slate primary (the header
+# background, in both schemes, so the light-stroke logo works in both) and
+# one indigo accent. See docs/stylesheets/extra.css and
+# docs-site/hooks/check_contrast.py.
+extra_css:
+  - stylesheets/extra.css
+
 # No analytics, no trackers (spec: "Measurement" decision) — deliberately no
 # `extra.analytics` key here.
 
 hooks:
   - docs-site/hooks/site.py
+  - docs-site/hooks/changelog.py
 
 plugins:
   - search
@@ -78,6 +103,10 @@ plugins:
           - agents/README.md
           - agents/stdio.md
           - agents/remote-http.md
+        Developer guide:
+          - developer-guide/index.md
+          - developer-guide/write-an-adapter.md
+          - developer-guide/custom-identity-resolver.md
         Reference:
           - configuration.md
           - tools.md
@@ -110,10 +139,19 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.superfences
   - tables
+  - attr_list
+  - md_in_html
+  - pymdownx.snippets:
+      check_paths: true
+      base_path:
+        - data-prism-quickstart-extension
+        - docker
+      restrict_base_path: true
+      dedent_subsections: true
 
-# Exactly these seven top-level sections, covering every published page.
+# Exactly these eight top-level sections, covering every published page.
 # docs/index.md (the home page) is the first page of "Get started" rather
-# than its own top-level entry, so it doesn't add an eighth section.
+# than its own top-level entry, so it doesn't add a ninth section.
 nav:
   - Get started:
       - index.md
@@ -127,6 +165,10 @@ nav:
       - agents/README.md
       - agents/stdio.md
       - agents/remote-http.md
+  - Developer guide:
+      - developer-guide/index.md
+      - developer-guide/write-an-adapter.md
+      - developer-guide/custom-identity-resolver.md
   - Reference:
       - configuration.md
       - tools.md

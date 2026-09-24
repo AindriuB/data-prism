@@ -58,7 +58,7 @@ happen to be Java/Spring" — which is exactly why this project doesn't fit yet 
 ## Exact entry line
 
 ```markdown
-- [Data Prism](https://github.com/AindriuB/data-prism) - Fail-closed MCP privacy layer for Java/Spring: pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail. Spring Boot starter or standalone server.
+- [Data Prism](https://github.com/AindriuB/data-prism) - Fail-closed MCP privacy layer for Java/Spring: pseudonymises personal data per privacy scope, refuses anything unclassified, and can keep a hash-chained audit trail. Spring Boot starter or standalone server.
 ```
 
 ## PR title
@@ -69,7 +69,7 @@ happen to be Java/Spring" — which is exactly why this project doesn't fit yet 
 
 ```markdown
 Adds one entry under "MCP Servers for Spring Projects" for Data Prism, a Java/Spring MCP privacy layer. It
-pseudonymises personal data per privacy scope, redacts or refuses anything it cannot classify, and can keep a
+pseudonymises personal data per privacy scope, refuses anything it cannot classify, and can keep a
 hash-chained audit trail (opt-in). It ships two supported deployment surfaces: a standalone MCP server and a
 Spring Boot starter for embedding.
 

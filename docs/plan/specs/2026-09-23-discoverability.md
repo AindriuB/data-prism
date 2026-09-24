@@ -61,9 +61,11 @@ the 15-question assistant check once.
 ## Canonical description (use exactly this everywhere)
 
 - **Tagline T** (at most 100 chars): `Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents and MCP clients.`
-- **Description D** (about 290 chars):
-  `Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, redacts or refuses anything unclassified, and can keep a hash-chained audit trail.`
+- **Description D** (about 285 chars):
+  `Data Prism is an open-source privacy layer for Java/Spring teams putting LLM agents or MCP clients in front of internal APIs holding customer data. It pseudonymises personal data per privacy scope, refuses anything unclassified, and can keep a hash-chained audit trail.`
   It says "can keep" because the hash-chained sink is opt-in.
+  - 2026-09-24: "redacts or refuses" → "refuses", owner decision; shipped
+    profiles use `FAIL_REQUEST`.
 - **Primary keywords:** MCP privacy; pseudonymise/pseudonymize PII for LLM
   agents; LLM data privacy for internal APIs; Spring Boot MCP server; GDPR data
   minimisation for LLM/MCP tools.

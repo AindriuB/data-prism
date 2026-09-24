@@ -41,7 +41,7 @@ decorative, not required.
 
 ```markdown
 Adds one entry under Tools for Data Prism, a fail-closed privacy layer for the MCP/LLM-agent data-access path.
-It pseudonymises personal data per privacy scope and redacts or refuses anything it cannot classify before it
+It pseudonymises personal data per privacy scope and refuses anything it cannot classify before it
 reaches the model, so it sits in the "reduce what an LLM/agent can see" part of this list's scope. It is not a
 prompt-injection or jailbreak defence, and the entry says so.
 

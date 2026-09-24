@@ -1,0 +1,15 @@
+flowchart TD
+    Field["Response field"]
+    Classified{"Classified?"}
+    Action["Pseudonymise, redact or remove per classification"]
+    Unclassified["Unclassified: whole response refused, FAIL_REQUEST"]
+    Scan{"Response contains a detected identifier shape?"}
+    RefusedShape["Refused"]
+    Returned["Field returned"]
+
+    Field --> Classified
+    Classified -->|yes| Action
+    Action --> Scan
+    Classified -->|no| Unclassified
+    Scan -->|yes| RefusedShape
+    Scan -->|no| Returned

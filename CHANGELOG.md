@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CHANGELOG: corrected the 0.3.0 `AuditChainVerifier` entry, which attached
+  "caught even on the last record" to deletions as well as edits; only edits
+  are caught at a chain's tail, a deletion is caught only when a later record
+  follows it (see `docs/audit.md`).
+
 ## [0.3.0] - 2026-09-23
 
 Nested JSON catalogues, one level deep, and a durable, hash-chained audit
@@ -37,8 +44,9 @@ trail — protect a real API without writing Java, and prove what happened.
   including `timestamp` and `sourceSystems`.
 - An offline `AuditChainVerifier` CLI replays a hash-chained audit file's
   writers from a copy and reports one of five outcomes: exit 0 intact; 1
-  unreadable input; 2 a detected break — an edit or deletion inside one
-  writer's chain, caught even on that chain's own last record; 3 the final
+  unreadable input; 2 a detected break — an edit inside one writer's chain,
+  caught anywhere including that chain's own last record, or a deletion
+  caught only when a later record follows it in the same chain; 3 the final
   record has no terminating newline, reported as possibly in flight, which
   is proof of neither health nor tampering; and 4 a structural anomaly (an
   interrupted-write fragment, a duplicate sequence, or a chain not starting
@@ -171,8 +179,10 @@ trail — protect a real API without writing Java, and prove what happened.
 ### Not changed
 
 - What the hash-chained audit trail's tamper-evidence covers, stated
-  precisely: an edit or deletion of a record inside one writer's chain,
-  including that writer's own last record. It does not cover truncation of a
+  precisely: an edit of a record inside one writer's chain, caught anywhere
+  including that writer's own last record, and a deletion of a record inside
+  one writer's chain, caught only when a later record follows it. It does
+  not cover truncation of a
   writer's most recent records, or deletion of an entire process boot's
   records — both are undetectable from inside the file alone (see the
   verifier entry above). `AuditEventHash` is also unkeyed SHA-256, so anyone

@@ -23,7 +23,7 @@ pseudonym everywhere the caller sees them within one privacy scope (case).
 A different case gives the same subject a different, unrelated-looking
 pseudonym, on purpose — see
 [`docs/use-cases/consistent-pseudonyms-across-systems.md`](consistent-pseudonyms-across-systems.md).
-Fields that are not classified are redacted or the call is refused
+Fields that are not classified cause the call to be refused
 outright, rather than passed through unexamined. See
 [`docs/tools.md`](../tools.md) for what the two shipped tools,
 `get_entity_context` and `compare_entity_sources`, take and return.
