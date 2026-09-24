@@ -1375,6 +1375,41 @@ PR #101 on 2026-09-24; the site redeployed. See `HISTORY.md`.
   `site-polish` (2026-09-24, see `HISTORY.md`); the row now states an
   unclassified field refuses the whole response under the shipped profiles.
 
+### Task 91 — done. No task file remains under `docs/plan/tasks/`.
+
+Cut 0.3.1 for GHCR and the MCP Registry only — the owner decided Maven
+Central stays at 0.3.0. The version bump covers 19 poms, `server.json`
+(`.version` and `.packages[0].identifier`, a two-line diff), the Dockerfile
+`ARG`, the publish-image dispatch default, the MCP `serverInfo` literals, the
+IT jar literals, local build paths and `QUICKSTART_IMAGE_TAG`. Every
+remaining `0.3.0` hit is classified as either a Central coordinate a reader
+would copy, or a historical, past-tense record — those are marked "(recorded
+against 0.3.0)" rather than bumped. The docs now say `data-prism-server` is
+never on Central (`skipPublishing`) and comes from a source build, a GitHub
+Release or GHCR; `data-prism-connectors-rest`'s source is unchanged since
+v0.3.0. `CHANGELOG.md [0.3.1]` is dated 2026-09-24 and states "Not published
+to Maven Central; the Maven artifacts remain at 0.3.0." verbatim. Attempt 1
+was tester-PASS, reviewer-CHANGES (docs/CHANGELOG accuracy against the
+no-Central decision); attempt 2 fixed those, and a final review approved all
+but one CHANGELOG bullet, fixed directly in `0afe325`. Merged into local
+`release-0.3.1`, not `main`; not pushed. See `docs/plan/HISTORY.md`, grep
+`Task 91`, for what landed and the two classification lessons.
+
+**Next owner step — the 0.3.1 release checklist, run in this order from an
+up-to-date `main` once `release-0.3.1` reaches it:**
+
+1. Confirm the CHANGELOG date matches tag day.
+2. `git tag -a v0.3.1 -m "v0.3.1" && git push origin v0.3.1`
+3. Watch `release.yml`.
+4. Dispatch `publish-image` with `-f version=0.3.1`, then verify the GHCR
+   manifests for `data-prism-server` and the four quickstart images.
+5. Dispatch `publish-mcp`, then verify the registry shows 0.3.1 with the new
+   description and `websiteUrl`.
+6. Do **not** dispatch `publish-central`.
+
+Follow-up, not scheduled: `publish-mcp.yml` installs `mcp-publisher` from
+`releases/latest`, unpinned.
+
 ## Remaining slices past the adopted core
 
 S10-S12 were deferred past V1 on 2026-09-09, and adoption work (tasks 14-25)
