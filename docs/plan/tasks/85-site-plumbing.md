@@ -130,3 +130,30 @@ the `theme:` block) touches `mkdocs.yml`, and none touches `check_site.py` or
 - `docs-site/hooks/site.py`, `docs-site/page-meta.yml` and `docs-site/overrides/**`. Nothing in this plan needs them changed.
 - Adding snippet markers to any Java, pom, YAML or Dockerfile (tasks 89, 90).
 - Bumping the mkdocs or Material pins.
+
+## Attempt 1 — failed
+
+Tester: PASS. Reviewer: CHANGES. The third-party guard has holes, and there is one criterion I have added. Rebase onto LOCAL `site-polish` (not `origin/`), which now carries this section, and fix all of the following. Prove each fix with its own planted fault in a scratch copy of `site/`, and quote the failure in your report.
+
+1. **Protocol-relative URLs pass** (`check_site.py` `_is_offsite`, about line 273). Anything starting with `/` counts as local, so `<script src="//plausible.io/js/x.js">` and `url(//fonts.bunny.net/x.woff2)` get through. Treat `//host` as off-site. Planted faults: both of those examples.
+2. **The attribute match is too narrow** (`_ATTR_SRC_HREF_RE`, about line 266, and the scheme test, about line 277). Only double-quoted `src`/`href` values are matched, and schemes match case-sensitively. Match single-quoted, double-quoted and unquoted values, and match schemes case-insensitively. Planted faults: `<script src='https://cdn.jsdelivr.net/x.js'>` and `<script src="HTTPS://cdn.jsdelivr.net/x.js">`.
+3. **Scheme-less references in the bundle pass** (`check_site.py` about lines 215 and 233, and the `pages.yml` grep step about line 117). Inside the Material bundle, only `https?://` tokens are compared with the allowlist. Compare every URL-like hit of the guard pattern in the bundle, including `//host/...` and bare `unpkg.com/...` or `cdn.jsdelivr.net/...`, against exactly the two allowed strings. Do this in both `check_site.py` and the `pages.yml` step. Planted faults: `"//cdn.jsdelivr.net/x.js"` and `"unpkg.com/other@1/x.js"` appended to the bundle. Each must fail in both places.
+4. **The `.map` exemption is too broad.** Narrow it to the one known prose occurrence, matched as exactly as practical, and only in `bundle.*.min.js.map`. Any other pattern hit in a `.map` fails. Planted fault: a third unpkg URL appended to the `.map`.
+5. **Stub guard (new criterion).** Add a check that fails when any built page contains the stub body "This page is being written.", but only when `pages.yml` runs for a pull request into `main` or a push to `main`. Pass the condition through an env var set in the workflow, e.g. `DP_REQUIRE_NO_STUBS: ${{ github.base_ref == 'main' || github.ref == 'refs/heads/main' }}`. Don't make the script guess from other variables. Locally and on wave branches it must pass, so wave builds keep working. Proof:
+   - the real build fails with the variable set to `true`, naming the three stub pages;
+   - it passes with the variable unset or `false`;
+   - actionlint stays clean.
+   Document the variable in the CONTRIBUTING "## Docs site" section in one sentence.
+6. **Suggestions, not blocking:**
+   - make the `class="mermaid"` match not fire on `language-mermaid` (a fenced code block showing Mermaid source is fine; only a rendered `mermaid` class is the runtime hook);
+   - leave `img`/`srcset`/`iframe`/`fetch` out of scope, but add one comment line saying so.
+
+The re-run must keep everything the tester verified in attempt 1 green:
+- the strict build;
+- every `check_*.py`;
+- the four original planted faults;
+- the snippets `check_paths` and `restrict_base_path` cases;
+- lychee `--offline`;
+- actionlint;
+- the verbatim CONTRIBUTING Docker recipe;
+- `git diff --stat site-polish` limited to **Owns**.
