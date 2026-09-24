@@ -17,6 +17,23 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — Corrects the released 0.3.0 `AuditChainVerifier` CHANGELOG wording
+
+`CHANGELOG.md`'s 0.3.0 "Added" and "Not changed" bullets said an edit or
+deletion inside one writer's chain is "caught even on that chain's own last
+record", attaching the tail guarantee to deletion as well as edits. Per
+`docs/audit.md`'s "What this does and does not prove", only edits are caught
+anywhere including the last record; a deletion is caught only when a later
+record follows it, and both bullets now say so. `[Unreleased]` gained a
+`### Changed` note recording the correction (so the changelog page renders it
+open first, summary line "[Unreleased] · 1 changed"). A repo-wide grep for
+"edit or deletion", "last record" and "tamper" found no other CHANGELOG
+occurrence, and no identical overclaim copied into `README.md`, `docs/faq.md`
+or `docs/index.md` — those already state the edit/deletion asymmetry
+correctly or don't mention "last record" at all.
+**Cost:** none — a wording-only fix; the strict `mkdocs build` and all
+`docs-site/hooks/check_*.py` (including `check_changelog.py`) pass unchanged.
+
 ## 2026-09-24 — Corrects `docs/tools.md:120`'s "unclassified values dropped" claim
 
 `get_entity_context`'s response table now says the `entity` field's real

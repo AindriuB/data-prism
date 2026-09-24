@@ -1341,13 +1341,12 @@ it now carries three stub developer-guide pages; the merge-only
   `extra.css`.
 
 **Open items for the owner, found closing task 87:**
-- `CHANGELOG.md`'s 0.3.0 `AuditChainVerifier` bullet says "an edit or
+- ~~`CHANGELOG.md`'s 0.3.0 `AuditChainVerifier` bullet says "an edit or
   deletion inside one writer's chain, caught even on that chain's own last
-  record". That is the same ambiguity `docs/audit.md` resolves: only edits
-  are caught at the tail, and deleting a writer's most recent records goes
-  undetected. The site-polish spec copied the same wording and has been
-  corrected; whether to amend the already-released changelog entry is the
-  owner's call.
+  record"~~ — corrected on `site-polish` (2026-09-24, see `HISTORY.md`): the
+  0.3.0 "Added" and "Not changed" bullets now attach "caught even on the last
+  record" to edits only, with deletion caught only when a later record
+  follows it; `[Unreleased]` records the correction.
 - ~~`docs/tools.md:120` says "unclassified values dropped"~~ — corrected on
   `site-polish` (2026-09-24, see `HISTORY.md`); the row now states an
   unclassified field refuses the whole response under the shipped profiles.
