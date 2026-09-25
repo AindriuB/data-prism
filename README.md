@@ -5,6 +5,7 @@
 [![Build](https://github.com/AindriuB/data-prism/actions/workflows/build.yml/badge.svg)](https://github.com/AindriuB/data-prism/actions/workflows/build.yml)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.aindriub/data-prism-spring-boot-starter.svg)](https://central.sonatype.com/artifact/io.github.aindriub/data-prism-spring-boot-starter)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/aindriub/data-prism)
 
 <!-- site-intro:start -->
 Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents and MCP clients.
