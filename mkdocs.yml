@@ -71,10 +71,10 @@ theme:
     - content.code.copy
     - search.suggest
 
-# The palette's actual colour values: a dark-slate primary (the header
-# background, in both schemes, so the light-stroke logo works in both) and
-# one indigo accent. See docs/stylesheets/extra.css and
-# docs-site/hooks/check_contrast.py.
+# The palette's actual colour values: the auth server's "Slate + Emerald"
+# tokens, with a dark primary (the header background, in both schemes, so
+# the light-stroke logo works in both) and an emerald accent. See
+# docs/stylesheets/extra.css and docs-site/hooks/check_contrast.py.
 extra_css:
   - stylesheets/extra.css
 
