@@ -521,7 +521,7 @@ jobs:
       # rather than nesting them under artifact-name subdirectories, so the
       # step below can read /tmp/digests/amd64 and /tmp/digests/arm64
       # directly.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           path: /tmp/digests
