@@ -25,7 +25,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The registry cross-checks the published name against the image's own
       # label, so server.json, the README marker and the Dockerfile LABEL
@@ -73,7 +73,7 @@ jobs:
       startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The tag guard below only reads .version, and the image guard further
       # down derives its coordinate from .packages[0].identifier — two
