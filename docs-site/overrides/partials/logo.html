@@ -1,0 +1,11 @@
+{#-
+  Both supplied marks, one per colour scheme: the light scheme's header is
+  white (auth's app bar), so it needs mark-light.svg's dark strokes; the
+  slate scheme's header is dark, so it keeps mark-dark.svg's light ones.
+  docs/stylesheets/extra.css hides whichever doesn't match the scheme.
+  Replaces Material's own partials/logo.html, which renders one
+  `config.theme.logo` image — that key still points at logo.svg, so
+  anything else reading it (and the no-override fallback) is unchanged.
+-#}
+<img class="dp-logo dp-logo--on-light" src="{{ 'assets/logo-light.svg' | url }}" alt="logo">
+<img class="dp-logo dp-logo--on-dark" src="{{ config.theme.logo | url }}" alt="logo">

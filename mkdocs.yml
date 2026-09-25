@@ -38,9 +38,10 @@ theme:
   custom_dir: docs-site/overrides
   # The supplied prism mark (docs-site/logo/supplied/mark-dark.svg, light
   # strokes), copied byte-for-byte to docs/assets/logo.svg — see
-  # docs-site/logo/README.md. mark-dark.svg, not mark-light.svg, because
-  # the header background (--md-primary-fg-color, set below) is dark slate
-  # in both colour schemes.
+  # docs-site/logo/README.md. This is the slate scheme's header logo; the
+  # light scheme's white header shows mark-light.svg instead
+  # (docs/assets/logo-light.svg), swapped in by
+  # docs-site/overrides/partials/logo.html.
   logo: assets/logo.svg
   # Material 9.7.7's base.html emits the favicon <link> before its
   # extrahead block, so this PNG link renders first; docs-site/overrides/
@@ -72,8 +73,8 @@ theme:
     - search.suggest
 
 # The palette's actual colour values: the auth server's "Slate + Emerald"
-# tokens, with a dark primary (the header background, in both schemes, so
-# the light-stroke logo works in both) and an emerald accent. See
+# tokens: auth's app bar (white in the light scheme, dark in slate) as the
+# primary, and an emerald accent. See
 # docs/stylesheets/extra.css and docs-site/hooks/check_contrast.py.
 extra_css:
   - stylesheets/extra.css
