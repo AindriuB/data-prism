@@ -17,6 +17,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  MCP_PUBLISHER_VERSION: "1.8.1"
+  MCP_PUBLISHER_SHA256: "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -41,8 +45,15 @@ jobs:
           fi
 
       - name: Install mcp-publisher
+        # Pinned, and checked against the release's published checksum, so an
+        # upstream release can never change what a publish runs unannounced.
+        # Bump MCP_PUBLISHER_VERSION and MCP_PUBLISHER_SHA256 together, taking
+        # the hash from that release's registry_<version>_checksums.txt.
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher --version
 
       # Schema compliance checked by a command, not by eye: this fails the
       # run on any structural error, not only when someone happens to read
@@ -131,8 +142,15 @@ jobs:
           fi
 
       - name: Install mcp-publisher
+        # Pinned, and checked against the release's published checksum, so an
+        # upstream release can never change what a publish runs unannounced.
+        # Bump MCP_PUBLISHER_VERSION and MCP_PUBLISHER_SHA256 together, taking
+        # the hash from that release's registry_<version>_checksums.txt.
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher --version
 
       # OIDC needs no stored secret: the `id-token: write` permission above
       # lets mcp-publisher mint a short-lived token scoped to this repo and

@@ -1375,7 +1375,7 @@ PR #101 on 2026-09-24; the site redeployed. See `HISTORY.md`.
   `site-polish` (2026-09-24, see `HISTORY.md`); the row now states an
   unclassified field refuses the whole response under the shipped profiles.
 
-### Task 91 — done. No task file remains under `docs/plan/tasks/`.
+### Task 91 — done, and the 0.3.1 release is complete. No task file remains under `docs/plan/tasks/`.
 
 Cut 0.3.1 for GHCR and the MCP Registry only — the owner decided Maven
 Central stays at 0.3.0. The version bump covers 19 poms, `server.json`
@@ -1395,20 +1395,58 @@ but one CHANGELOG bullet, fixed directly in `0afe325`. Merged into local
 `release-0.3.1`, not `main`; not pushed. See `docs/plan/HISTORY.md`, grep
 `Task 91`, for what landed and the two classification lessons.
 
-**Next owner step — the 0.3.1 release checklist, run in this order from an
-up-to-date `main` once `release-0.3.1` reaches it:**
+**Post-merge release checklist — done, verified 2026-09-24:**
 
-1. Confirm the CHANGELOG date matches tag day.
-2. `git tag -a v0.3.1 -m "v0.3.1" && git push origin v0.3.1`
-3. Watch `release.yml`.
-4. Dispatch `publish-image` with `-f version=0.3.1`, then verify the GHCR
-   manifests for `data-prism-server` and the four quickstart images.
-5. Dispatch `publish-mcp`, then verify the registry shows 0.3.1 with the new
-   description and `websiteUrl`.
-6. Do **not** dispatch `publish-central`.
+1. ~~Confirm the CHANGELOG date matches tag day.~~ — done.
+2. ~~`git tag -a v0.3.1 -m "v0.3.1" && git push origin v0.3.1`~~ — done; tag
+   `v0.3.1` is on the #105 merge commit. The GitHub Release is live.
+3. ~~Watch `release.yml`.~~ — done.
+4. ~~Dispatch `publish-image` with `-f version=0.3.1`, then verify the GHCR
+   manifests for `data-prism-server` and the four quickstart images.~~ —
+   done: `ghcr.io/aindriub/data-prism-server:0.3.1` and the four
+   `data-prism-quickstart-*:0.3.1` images all published and confirmed
+   pullable.
+5. ~~Dispatch `publish-mcp`, then verify the registry shows 0.3.1 with the new
+   description and `websiteUrl`.~~ — done: the registry lists 0.3.1 as
+   latest, with the new description and `websiteUrl`
+   `https://aindriub.github.io/data-prism/`.
+6. `publish-central` was **not** dispatched, by decision. Central stays at
+   0.3.0.
 
 Follow-up, not scheduled: `publish-mcp.yml` installs `mcp-publisher` from
-`releases/latest`, unpinned.
+`releases/latest`, unpinned. — **closed 2026-09-24** on branch
+`pin-mcp-publisher` (commit `0e2fe46`): both `publish-mcp.yml` jobs now
+download the pinned `mcp-publisher` 1.8.1 `linux_amd64` tarball and check it
+against the SHA-256 from that release's `registry_1.8.1_checksums.txt`
+before running it. To bump the version, change `MCP_PUBLISHER_VERSION` and
+`MCP_PUBLISHER_SHA256` together, taking the new hash from that release's own
+checksums file.
+
+**Glama and awesome-mcp-servers, also 2026-09-24:**
+
+- The Glama listing (<https://glama.ai/mcp/servers/AindriuB/data-prism>) is
+  now claimed by the owner through `glama.json` at the repository root (PR
+  #106), which grants Admin access to the listed GitHub user.
+- The `docs/plan/outreach/awesome-mcp-servers.md` draft was posted:
+  [PR #15059](https://github.com/punkpeye/awesome-mcp-servers/pull/15059) is
+  open, from the `AindriuB` fork, in the Security section. Its entry carries
+  ☕ 🏠 ☁️ (the draft's own scope-emoji reasoning is corrected in the draft
+  file, which only counted ☕ 🏠 before posting). The list's
+  check-submission CI passed, and its Glama badge bot commented. Awaiting
+  the maintainers.
+
+**Still open, unscheduled:**
+
+- ~~The mcpservers.org free-form submission — owner action.~~ Submitted by the
+  owner on 2026-09-25 through the free form (tagline as the short description);
+  the free plan's review takes up to two weeks.
+- The `docs/plan/outreach/awesome-java.md` submission — draft ready, not yet
+  posted.
+- The `docs/plan/outreach/launch-post.md` draft — owner's call on timing.
+- The first monthly 15-question assistant check (see the discoverability
+  section above) — still open.
+- The next `snapshot.sh` run, due by 2026-10-08 (14 days from the
+  2026-09-24 baseline).
 
 ## Remaining slices past the adopted core
 
