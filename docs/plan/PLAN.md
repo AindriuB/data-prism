@@ -1437,7 +1437,9 @@ checksums file.
 
 **Still open, unscheduled:**
 
-- The mcpservers.org free-form submission — owner action.
+- ~~The mcpservers.org free-form submission — owner action.~~ Submitted by the
+  owner on 2026-09-25 through the free form (tagline as the short description);
+  the free plan's review takes up to two weeks.
 - The `docs/plan/outreach/awesome-java.md` submission — draft ready, not yet
   posted.
 - The `docs/plan/outreach/launch-post.md` draft — owner's call on timing.

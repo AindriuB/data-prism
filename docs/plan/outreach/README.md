@@ -13,6 +13,7 @@ that list's own repository, quoted in full in each draft below, with source URL 
 |---|---|---|---|---|
 | punkpeye/awesome-mcp-servers | [awesome-mcp-servers.md](awesome-mcp-servers.md) | ready | 2026-09-24 | open: [PR #15059](https://github.com/punkpeye/awesome-mcp-servers/pull/15059), from the AindriuB fork, in Security; check-submission CI passed, Glama badge bot commented; awaiting maintainers |
 | Canonical Spring/Spring AI list — identified as spring-ai-community/awesome-spring-ai | [awesome-spring.md](awesome-spring.md) | hold | | |
+| mcpservers.org (wong2/awesome-mcp-servers; submissions by web form only) | — | ready | 2026-09-25 | submitted via the free form by the owner; review up to two weeks |
 | akullpp/awesome-java | [awesome-java.md](awesome-java.md) | ready | | draft ready, not yet submitted |
 | corca-ai/awesome-llm-security (optional) | [awesome-llm-security.md](awesome-llm-security.md) | hold | | |
 | Launch write-up (Show HN, r/java) | [launch-post.md](launch-post.md) | drafted; owner's call on timing | | draft ready, not yet posted |
