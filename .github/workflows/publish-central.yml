@@ -43,7 +43,7 @@ jobs:
       # job below — which requests that environment — can read them at all.
       # Do not add them back here; a job that can read the Central token no
       # longer needs a human in the loop to reach Central.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: "21"
           distribution: temurin
@@ -98,7 +98,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: "21"
           distribution: temurin
