@@ -3,6 +3,13 @@
 Target list: <https://github.com/punkpeye/awesome-mcp-servers>
 Access date: 2026-09-23
 
+**Status (2026-09-24):** posted. Open as
+[PR #15059](https://github.com/punkpeye/awesome-mcp-servers/pull/15059), from the AindriuB fork, in the
+Security section. The entry as submitted carries ☕ 🏠 ☁️ (see "Scope" below — the draft's earlier ☕ 🏠 only
+undercounted; Data Prism also reaches sources over the network as a REST connector, so both scope emoji
+apply). The list's `check-glama.yml` check-submission CI passed and its Glama badge bot commented on the PR.
+Awaiting maintainer review.
+
 ## Contribution rules (quoted)
 
 Source: <https://github.com/punkpeye/awesome-mcp-servers/blob/main/CONTRIBUTING.md>, fetched 2026-09-23 via
@@ -129,9 +136,10 @@ Existing entries in that section follow:
 `- [owner/repo](url) [optional glama badge] <language emoji> <scope emoji> [<os emoji>...] - Description. [install command]`
 
 The legend defines `☕` for a Java codebase and, for scope, `☁️` (cloud service, talking to a remote API) vs.
-`🏠` (local service, talking to locally installed software). Data Prism is operator-installed software that
-sits in front of a deployment's own internal APIs, not a call to a third-party cloud API, so `🏠` fits; no
-`🎖️` (this is not a reference/official implementation of the MCP spec itself).
+`🏠` (local service, talking to locally installed software). Data Prism is operator-installed software, so
+`🏠` fits; it also carries a REST connector that reaches a deployment's own remote APIs over the network, so
+`☁️` applies too. As submitted, the entry carries both. No `🎖️` (this is not a reference/official
+implementation of the MCP spec itself).
 
 ## Exact entry line
 
@@ -140,7 +148,7 @@ alphabetical order in the live list, so insert relative to the nearest alphabeti
 post time, per the "Alphabetical order" rule above):
 
 ```markdown
-- [AindriuB/data-prism](https://github.com/AindriuB/data-prism) [![AindriuB/data-prism MCP server](https://glama.ai/mcp/servers/AindriuB/data-prism/badges/score.svg)](https://glama.ai/mcp/servers/AindriuB/data-prism) ☕ 🏠 - Fail-closed privacy layer for MCP: pseudonymises personal data per privacy scope, refuses anything unclassified, and can keep a hash-chained audit trail. Spring Boot starter or standalone server. `docker compose up` (local quickstart)
+- [AindriuB/data-prism](https://github.com/AindriuB/data-prism) [![AindriuB/data-prism MCP server](https://glama.ai/mcp/servers/AindriuB/data-prism/badges/score.svg)](https://glama.ai/mcp/servers/AindriuB/data-prism) ☕ 🏠 ☁️ - Fail-closed privacy layer for MCP: pseudonymises personal data per privacy scope, refuses anything unclassified, and can keep a hash-chained audit trail. Spring Boot starter or standalone server. `docker compose up` (local quickstart)
 ```
 
 ## PR title

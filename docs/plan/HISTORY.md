@@ -17,6 +17,40 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-09-24 — 0.3.1 release completed; mcp-publisher pinned; Glama claimed; awesome-mcp-servers PR open
+
+The 0.3.1 post-merge release checklist closed: tag `v0.3.1` sits on the #105
+merge commit, the GitHub Release is live, `publish-image` published
+`ghcr.io/aindriub/data-prism-server:0.3.1` and the four
+`data-prism-quickstart-*:0.3.1` images (all confirmed pullable), and
+`publish-mcp` published 0.3.1 to the MCP Registry, now listed as latest with
+the new description and `websiteUrl` `https://aindriub.github.io/data-prism/`.
+`publish-central` was not dispatched, by decision; Maven Central stays at
+0.3.0. Separately, `publish-mcp.yml`'s "unpinned mcp-publisher" follow-up
+closed on branch `pin-mcp-publisher` (commit `0e2fe46`): both jobs now
+download the pinned `mcp-publisher` 1.8.1 `linux_amd64` tarball and verify it
+against the SHA-256 from that release's own `registry_1.8.1_checksums.txt`
+before running it; bumping the version means changing
+`MCP_PUBLISHER_VERSION` and `MCP_PUBLISHER_SHA256` together. `glama.json`
+(PR #106) let the owner claim the Glama listing with Admin access. The
+`docs/plan/outreach/awesome-mcp-servers.md` draft was posted as
+[PR #15059](https://github.com/punkpeye/awesome-mcp-servers/pull/15059) from
+the `AindriuB` fork, in Security, carrying ☕ 🏠 ☁️ (the draft under-scoped
+this to ☕ 🏠 before posting; corrected in the draft); the list's
+check-submission CI passed and its Glama badge bot commented; it now awaits
+the maintainers. Still open: the mcpservers.org free-form submission
+(owner), the awesome-java submission (draft ready), the launch post draft,
+the first monthly assistant check, and the next `snapshot.sh` run, due by
+2026-10-08.
+
+**Cost:** none of this needed new design; it was verification and one small
+CI hardening. The only thing worth flagging for later: the
+awesome-mcp-servers scope emoji was drafted as ☕ 🏠 only, on the reasoning
+that Data Prism is purely local software — but the REST connector reaches a
+deployment's own remote APIs over the network, which the list's own legend
+counts as ☁️ too. The submitted entry corrected this to ☕ 🏠 ☁️; any future
+outreach draft describing Data Prism's scope should default to both.
+
 ## 2026-09-24 — Task 91: 0.3.1 cut for GHCR and the MCP Registry, Maven Central held at 0.3.0
 
 Merged into local `release-0.3.1` (not `main`, not pushed). 0.3.1 is a
