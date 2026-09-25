@@ -10,80 +10,144 @@
  * value, so the CSS custom properties below (loaded after Material's own
  * stylesheets, so they win the cascade at equal selector specificity) are
  * the only thing that gives `--md-primary-fg-color` etc. a value.
+ *
+ * The palette is the auth server's "Slate + Emerald" design tokens
+ * (auth: src/main/resources/static/auth.css), under the same names, so the
+ * two sites read as one family and a later change there is a copy of values
+ * here. Each scheme block first sets those tokens, then maps Material's
+ * variables onto them; nothing below the scheme blocks holds a colour
+ * literal.
  */
 
 [data-md-color-scheme="default"] {
-  /* Dark-slate header background, in both schemes, so the light-stroke
-     logo mark (docs/assets/logo.svg) reads on it either way. Same value
-     the owner measured the supplied mark's indigo bar against (about
-     3.3:1 — see docs-site/hooks/check_contrast.py). */
-  --md-primary-fg-color: #1e293b;
-  /* Header text/site-name colour: the mark's own light-slate stroke
-     colour, so header text and logo read as one family. */
-  --md-primary-bg-color: #e2e8f0;
-  /* The one indigo accent. Material ties link colour to the *primary*
-     colour by default (`--md-typeset-a-color: var(--md-primary-fg-color)`
-     in its own palette CSS), which would make links dark-slate-on-white —
-     legible, but not the accent. Retargeting it at the accent colour below
-     is what actually puts indigo on the page. A single #6366F1 (the
-     supplied mark's indigo) fails 4.5:1 against both a white and a slate
-     dark background, so light and dark schemes each get their own AA-safe
-     shade of the same hue, the same way Material's own built-in indigo
-     palette lightens its link colour for the slate scheme.
-     Default (light) scheme: indigo-600, ~6.3:1 on white. */
-  --md-accent-fg-color: #4f46e5;
-  --md-typeset-a-color: var(--md-accent-fg-color);
+  /* auth.css `:root` (light) values, verbatim. */
+  --accent: #059669;
+  --accent-soft: #d1fae5;
+  --accent-text: #065f46;
+  --background: #f5f7f8;
+  --card: #ffffff;
+  --lines: #e7e9ec;
+  --text: #111827;
+  --text-muted: #5b6570;
+  --on-accent: #ffffff;
+
+  /* The header stays dark in both schemes: the supplied logo mark
+     (docs/assets/logo.svg) has light strokes and must not be edited, so
+     it needs a dark header to read on. It takes auth's dark-scheme card
+     and text colours rather than auth's light app bar (white). */
+  --app-bar: #171e22;
+  --app-bar-text: #e5e7eb;
+
+  --md-default-bg-color: var(--background);
+  --md-default-fg-color: var(--text);
+  --md-default-fg-color--light: var(--text-muted);
+  --md-default-fg-color--lightest: var(--lines);
+  --md-code-bg-color: var(--card);
+
+  --md-primary-fg-color: var(--app-bar);
+  --md-primary-bg-color: var(--app-bar-text);
+  --md-footer-bg-color: var(--app-bar);
+  --md-footer-fg-color: var(--app-bar-text);
+
+  /* Material ties link colour to the *primary* colour by default; point it
+     at the accent instead. auth.css never sets text in --accent itself
+     (#059669 is only ~3.6:1 on --background): accent-coloured text there
+     is --accent-text, and so it is here. --accent stays for hover, focus
+     and the card edges, which are not body text. */
+  --md-accent-fg-color: var(--accent);
+  --md-accent-bg-color: var(--on-accent);
+  --md-typeset-a-color: var(--accent-text);
 }
 
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #1e293b;
-  --md-primary-bg-color: #e2e8f0;
-  /* Slate (dark) scheme: indigo-400, ~5.4:1 on Material's default slate
-     background. */
-  --md-accent-fg-color: #818cf8;
-  --md-typeset-a-color: var(--md-accent-fg-color);
+  /* auth.css `@media (prefers-color-scheme: dark)` values, verbatim. */
+  --accent: #34d399;
+  --accent-soft: #0b3b2e;
+  --accent-text: #a7f3d0;
+  --background: #0f1417;
+  --card: #171e22;
+  --lines: #26313a;
+  --text: #e5e7eb;
+  --text-muted: #93a1ac;
+  --on-accent: #052e1a;
+
+  --app-bar: #171e22;
+  --app-bar-text: #e5e7eb;
+
+  /* Material derives the rest of its slate greys (search, shadows, admonition
+     fills) from this hue; auth's dark greys sit at about 202deg, not
+     Material's blue 225deg. */
+  --md-hue: 202deg;
+
+  --md-default-bg-color: var(--background);
+  --md-default-fg-color: var(--text);
+  --md-default-fg-color--light: var(--text-muted);
+  --md-default-fg-color--lightest: var(--lines);
+  --md-code-bg-color: var(--card);
+
+  --md-primary-fg-color: var(--app-bar);
+  --md-primary-bg-color: var(--app-bar-text);
+  --md-footer-bg-color: var(--app-bar);
+  --md-footer-fg-color: var(--app-bar-text);
+
+  /* Dark scheme: --accent is light enough to be text itself (~10:1). */
+  --md-accent-fg-color: var(--accent);
+  --md-accent-bg-color: var(--on-accent);
+  --md-typeset-a-color: var(--accent);
 }
 
-/* Slate-scheme hero-button fix: Material colours a plain `.md-button`'s
-   text/border with `--md-primary-fg-color` (#1e293b), and fills
-   `.md-button--primary` with the same colour. Both are dark-slate-on-
-   dark-slate here, since the slate scheme's own page background
-   (`--md-default-bg-color`, Material's un-overridden default) is close to
-   that value. Retarget both, slate only:
-   - the plain button (Developer guide) takes the accent shade already used
-     for slate links, which reads against the slate page background;
-   - the primary button (Quickstart) swaps to the header's own pairing —
-     `--md-primary-bg-color` fill with `--md-primary-fg-color` text — the
-     same two colours already checked as header text on primary, and a fill
-     that stands well clear of the dark slate page. */
+/* Hero buttons (docs/index.md). Material colours a plain `.md-button` with
+   `--md-primary-fg-color` and fills `.md-button--primary` with it — here
+   the dark header colour, which is dark-on-dark in the slate scheme. Both
+   schemes follow auth's buttons instead: an accent-coloured outline button,
+   and an accent-filled primary one. Light scheme fills with --accent-text,
+   not auth's --accent: white text on #059669 is only ~3.8:1, under AA. */
+[data-md-color-scheme="default"] .md-button {
+  color: var(--accent-text);
+  border-color: var(--accent-text);
+}
+
+[data-md-color-scheme="default"] .md-button--primary {
+  background-color: var(--accent-text);
+  border-color: var(--accent-text);
+  color: var(--on-accent);
+}
+
 [data-md-color-scheme="slate"] .md-button {
-  color: var(--md-accent-fg-color);
-  border-color: var(--md-accent-fg-color);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 [data-md-color-scheme="slate"] .md-button--primary {
-  background-color: var(--md-primary-bg-color);
-  border-color: var(--md-primary-bg-color);
-  color: var(--md-primary-fg-color);
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 
 /* Tables: a visible header row, so a plain reference table (e.g.
-   docs/configuration.md) reads as a table at a glance. */
+   docs/configuration.md) reads as a table at a glance. auth's lists are
+   rows on a card, with muted header text. */
+.md-typeset table:not([class]) {
+  background-color: var(--card);
+}
+
 .md-typeset table:not([class]) th {
-  background-color: var(--md-default-fg-color--lightest);
+  background-color: var(--lines);
+  color: var(--text-muted);
 }
 
 /* Code blocks: an outline matching the table border, so both read as one
    family of "structured content" boxes. */
 .md-typeset pre > code {
-  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border: 0.05rem solid var(--lines);
 }
 
-/* Landing-page cards (docs/index.md): an accent-coloured top edge, since
-   the cards are text-only (no icons) and would otherwise be
-   indistinguishable from Material's default grid-card look. */
+/* Landing-page cards (docs/index.md): auth's card — a --card box on the
+   --background page — with an accent-coloured top edge, since the cards
+   are text-only (no icons). */
 .md-typeset .grid.cards > ul > li {
-  border-top: 0.15rem solid var(--md-accent-fg-color);
+  background-color: var(--card);
+  border-top: 0.15rem solid var(--accent);
 }
 
 /* Landing-page card layout: Material's own `.md-typeset .grid` rule fits as

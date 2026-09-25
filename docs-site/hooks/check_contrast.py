@@ -28,7 +28,7 @@ Checks the hero's two buttons (`.md-button` / `.md-button--primary`) in
 both schemes, against Material's own compiled defaults for those classes,
 overridden per scheme where `extra.css` says so (its
 `[data-md-color-scheme="..."] .md-button(--primary)?` rules — currently
-slate only):
+both schemes):
 - plain-button text/border against the page background, at 4.5:1;
 - primary-button text against its own fill, at 4.5:1;
 - primary-button fill against the page background, at 3:1 (fill and border
