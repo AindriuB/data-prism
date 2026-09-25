@@ -31,12 +31,11 @@
   --text-muted: #5b6570;
   --on-accent: #ffffff;
 
-  /* The header stays dark in both schemes: the supplied logo mark
-     (docs/assets/logo.svg) has light strokes and must not be edited, so
-     it needs a dark header to read on. It takes auth's dark-scheme card
-     and text colours rather than auth's light app bar (white). */
-  --app-bar: #171e22;
-  --app-bar-text: #e5e7eb;
+  /* auth's light app bar: a --card bar with --text on it, separated from
+     the page by a --lines rule (below). The header shows the supplied
+     dark-stroke mark in this scheme (docs-site/overrides/partials/logo.html). */
+  --app-bar: var(--card);
+  --app-bar-text: var(--text);
 
   --md-default-bg-color: var(--background);
   --md-default-fg-color: var(--text);
@@ -46,8 +45,12 @@
 
   --md-primary-fg-color: var(--app-bar);
   --md-primary-bg-color: var(--app-bar-text);
-  --md-footer-bg-color: var(--app-bar);
-  --md-footer-fg-color: var(--app-bar-text);
+  --md-primary-bg-color--light: var(--text-muted);
+  --md-footer-bg-color: var(--card);
+  --md-footer-bg-color--dark: var(--background);
+  --md-footer-fg-color: var(--text);
+  --md-footer-fg-color--light: var(--text-muted);
+  --md-footer-fg-color--lighter: var(--text-muted);
 
   /* Material ties link colour to the *primary* colour by default; point it
      at the accent instead. auth.css never sets text in --accent itself
@@ -71,8 +74,9 @@
   --text-muted: #93a1ac;
   --on-accent: #052e1a;
 
-  --app-bar: #171e22;
-  --app-bar-text: #e5e7eb;
+  /* The header is auth's dark app bar: a --card bar with --text on it. */
+  --app-bar: var(--card);
+  --app-bar-text: var(--text);
 
   /* Material derives the rest of its slate greys (search, shadows, admonition
      fills) from this hue; auth's dark greys sit at about 202deg, not
@@ -96,9 +100,50 @@
   --md-typeset-a-color: var(--accent);
 }
 
+/* Header logo: show the supplied mark whose strokes suit the scheme's
+   header (see docs-site/overrides/partials/logo.html). `.md-logo img` is
+   needed to outrank Material's own `.md-header__button.md-logo img
+   { display: block }`. */
+[data-md-color-scheme="default"] .md-logo img.dp-logo--on-dark,
+[data-md-color-scheme="slate"] .md-logo img.dp-logo--on-light {
+  display: none;
+}
+
+/* Light-scheme header: a white bar on a near-white page needs auth's
+   --lines rule under it, and Material's header search field (normally a
+   translucent white on a coloured bar) needs a visible fill. Material only
+   ships these for its own named `white` primary, which `primary: custom`
+   never matches. The rule sits under the tabs row where there is one, and
+   under the header itself below Material's tabs breakpoint, where the tabs
+   are hidden. */
+[data-md-color-scheme="default"] .md-tabs {
+  border-bottom: 1px solid var(--lines);
+}
+
+@media screen and (max-width: 76.234375em) {
+  [data-md-color-scheme="default"] .md-header {
+    border-bottom: 1px solid var(--lines);
+  }
+}
+
+[data-md-color-scheme="default"] .md-search__form {
+  background-color: var(--background);
+  border: 1px solid var(--lines);
+}
+
+[data-md-color-scheme="default"] .md-search__form:hover {
+  background-color: var(--lines);
+}
+
+[data-md-color-scheme="default"] .md-search__input + .md-search__icon,
+[data-md-color-scheme="default"] .md-search__input::placeholder {
+  color: var(--text-muted);
+}
+
 /* Hero buttons (docs/index.md). Material colours a plain `.md-button` with
    `--md-primary-fg-color` and fills `.md-button--primary` with it — here
-   the dark header colour, which is dark-on-dark in the slate scheme. Both
+   the header colour, which is --card: near-invisible on the page in both
+   schemes. Both
    schemes follow auth's buttons instead: an accent-coloured outline button,
    and an accent-filled primary one. Light scheme fills with --accent-text,
    not auth's --accent: white text on #059669 is only ~3.8:1, under AA. */

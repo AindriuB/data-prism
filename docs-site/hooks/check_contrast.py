@@ -18,8 +18,11 @@ Checks, at WCAG AA (4.5:1) for text, in both schemes:
 - links on background
 - header text on the header (primary) colour
 
-Checks the supplied logo mark (`docs/assets/logo.svg`) against the header
-colour at WCAG 1.4.11's 3:1 non-text minimum: the stroke colour, and the
+Checks each scheme's header logo against that scheme's header colour at
+WCAG 1.4.11's 3:1 non-text minimum — `docs/assets/logo-light.svg` (the
+supplied dark-stroke mark) in the default scheme, `docs/assets/logo.svg`
+(the light-stroke mark) in slate, as `docs-site/overrides/partials/logo.html`
+renders them: the stroke colour, and the
 fully opaque indigo bar. The 85%/70%-opacity bars are printed for
 information only — their geometry is the owner's, not this script's, to
 change.
@@ -43,7 +46,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 EXTRA_CSS = REPO_ROOT / "docs" / "stylesheets" / "extra.css"
-LOGO_SVG = REPO_ROOT / "docs" / "assets" / "logo.svg"
+# Which supplied mark each scheme's header shows — see
+# docs-site/overrides/partials/logo.html and extra.css's `.dp-logo--on-*`.
+LOGO_SVG_BY_SCHEME = {
+    "default": REPO_ROOT / "docs" / "assets" / "logo-light.svg",
+    "slate": REPO_ROOT / "docs" / "assets" / "logo.svg",
+}
 
 AA_TEXT = 4.5
 AA_NON_TEXT = 3.0
@@ -312,8 +320,8 @@ def _path_attrs(svg_text: str) -> list[dict[str, str]]:
     return paths
 
 
-def logo_colors() -> dict[str, RGBA]:
-    svg_text = LOGO_SVG.read_text(encoding="utf-8")
+def logo_colors(logo_svg: Path) -> dict[str, RGBA]:
+    svg_text = logo_svg.read_text(encoding="utf-8")
     paths = _path_attrs(svg_text)
 
     stroke_hex = None
@@ -328,9 +336,9 @@ def logo_colors() -> dict[str, RGBA]:
             bars.append((fill, opacity))
 
     if stroke_hex is None:
-        fail(f"{LOGO_SVG}: no stroked path found (expected the prism outline)")
+        fail(f"{logo_svg}: no stroked path found (expected the prism outline)")
     if len(bars) != 3:
-        fail(f"{LOGO_SVG}: expected 3 indigo (#6366F1) bar paths, found {len(bars)}")
+        fail(f"{logo_svg}: expected 3 indigo (#6366F1) bar paths, found {len(bars)}")
 
     # Highest opacity first: the supplied mark orders them 100%, 85%, 70%.
     bars.sort(key=lambda item: item[1], reverse=True)
@@ -382,8 +390,8 @@ def check_text_contrast(scheme_vars: dict[str, dict[str, str]]) -> list[str]:
 
 def check_logo_contrast(scheme_vars: dict[str, dict[str, str]]) -> list[str]:
     lines = []
-    logo = logo_colors()
     for scheme in SCHEMES:
+        logo = logo_colors(LOGO_SVG_BY_SCHEME[scheme])
         decls = {**MATERIAL_DEFAULTS[scheme], **scheme_vars[scheme]}
         header_bg = effective_color(decls, "--md-primary-fg-color")
 
@@ -456,8 +464,9 @@ def check_button_contrast(
 def main() -> int:
     if not EXTRA_CSS.exists():
         fail(f"{EXTRA_CSS} does not exist")
-    if not LOGO_SVG.exists():
-        fail(f"{LOGO_SVG} does not exist")
+    for logo_svg in LOGO_SVG_BY_SCHEME.values():
+        if not logo_svg.exists():
+            fail(f"{logo_svg} does not exist")
 
     css_text = EXTRA_CSS.read_text(encoding="utf-8")
     scheme_vars = parse_extra_css(css_text)

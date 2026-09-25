@@ -14,9 +14,12 @@ working file — `diff -r <the original delivery> supplied/` must stay empty.
 If the mark ever needs to change, get a new delivery from the owner and
 replace the whole directory, rather than hand-editing a path here.
 
-The site uses `supplied/mark-dark.svg` (light strokes, for the site's
-dark-slate header in both colour schemes) as `docs/assets/logo.svg` — copied
-byte-for-byte, not redrawn. The wordmarks are not used on the site: the
+The site uses both marks, copied byte-for-byte, not redrawn:
+`supplied/mark-dark.svg` (light strokes) as `docs/assets/logo.svg`, for the
+dark header in the slate scheme, and `supplied/mark-light.svg` (dark
+strokes) as `docs/assets/logo-light.svg`, for the white header in the
+light scheme. `docs-site/overrides/partials/logo.html` renders both and
+`docs/stylesheets/extra.css` hides whichever doesn't match the scheme. The wordmarks are not used on the site: the
 theme already renders "Data Prism" as live text beside the logo.
 
 ## Regenerating the favicon
