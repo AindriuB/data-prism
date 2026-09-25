@@ -79,7 +79,7 @@ jobs:
       - name: List staged artifacts and signatures
         run: find . -path '*/target/*' -name '*.asc' | sort
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: central-staged-artifacts
           retention-days: 14
