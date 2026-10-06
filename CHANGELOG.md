@@ -13,7 +13,7 @@ Human oversight, a separate operator surface, audited re-identification, and
 an audit trail with daily segments, external checkpoints and retention. These
 features support an operator's work toward the human-oversight, record-keeping
 and special-category obligations in the EU AI Act and GDPR Art. 9; they do not
-by themselves make a deployment compliant. Several defaults and refusals change
+by themselves establish that a deployment meets those obligations. Several defaults and refusals change
 (see "Breaking and behaviour changes").
 
 ### Breaking and behaviour changes
@@ -29,8 +29,6 @@ by themselves make a deployment compliant. Several defaults and refusals change
 - Audit record version 2: the hash is computed over an unambiguous,
   length-prefixed encoding and the record carries per-field dispositions and
   approval identity. Version 1 records still verify.
-- The file audit sink writes daily segments named `audit-YYYY-MM-DD.log`
-  instead of one file.
 - A configured audit retention below 6 months refuses startup unless
   `dataprism.audit.retention-override` is set.
 - Audited calls are refused with `AUDIT_CHECKPOINT_UNAVAILABLE` while an audit
@@ -39,9 +37,15 @@ by themselves make a deployment compliant. Several defaults and refusals change
   `PrivacyRefusedException`) with code `REQUEST_FAILED` for audited internal
   failures. Starter users who map `PrivacyRefusedException` to 403 should check
   `code()`.
-- The MCP server always enforces admission (pause, rate limit, approval), and
-  four-eyes approval is on by default with at most 5 live pending approvals per
-  requester and kind (`TOO_MANY_PENDING`).
+- The MCP server always enforces admission (pause, rate limit, approval).
+  Four-eyes defaults to on for re-identification
+  (`dataprism.reidentification.four-eyes=true`). Tool calls need an approval
+  only when the tool is listed in `dataprism.oversight.approval-required-tools`,
+  which is empty by default. There are at most 5 live pending approvals per
+  requester (`TOO_MANY_PENDING`).
+- `data-prism-server` now excludes Spring Boot's `HazelcastAutoConfiguration`.
+  This is visible only with a `hazelcast.xml` or `hazelcast.yaml` on its
+  classpath.
 - Refusal codes returned by application scrubbers, validators and resolvers are
   validated before they reach the client; a malformed one becomes
   `INVALID_REFUSAL_CODE`.
@@ -62,6 +66,9 @@ by themselves make a deployment compliant. Several defaults and refusals change
   that purges expired segments behind `RETENTION_ANCHOR` checkpoints; the
   verifier gains directory mode and `--checkpoints`, which exits 5 on tail
   truncation or a missing boot.
+- Opt-in daily audit segments named `audit-YYYY-MM-DD.log`, written when
+  `dataprism.audit.directory` is set. `dataprism.audit.file-path` still writes
+  a single file.
 - Per-field dispositions in the audit record, and a `correlationId` returned in
   the MCP tool result `_meta`.
 - The EU AI Act and GDPR Art. 9 support page, mapping what the project

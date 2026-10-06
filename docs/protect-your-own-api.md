@@ -45,7 +45,8 @@ destination, without writing code.
   always comes from a from-source build like this one, a GitHub Release, or
   the GHCR image, never from Central. `data-prism-connectors-rest`, like the
   other library modules, is on Central at `0.4.0`, and the jar this
-  walkthrough builds is that same artifact, `io.github.aindriub:data-prism-connectors-rest`.
+  walkthrough builds is built from the same source as (at the v0.4.0 tag)
+  `io.github.aindriub:data-prism-connectors-rest`.
   "Build the jars, then start the two fixtures" below gives the exact build
   command; every path in this walkthrough is relative to the repository
   root, and every command below is run from there.
@@ -500,10 +501,11 @@ is a complete, runnable program, `public` but living in
 `ConfiguredJsonSources.fromYaml` this connector uses to read every
 `json-sources:` catalogue, and the same `ConfiguredJsonScrubbingEngine` that
 test drives directly. Its own header comment gives the exact `javac`/`java`
-invocation; in short, `install` first — `package` alone leaves
-`data-prism-pseudonymisation` and `data-prism-orchestration` (imported here
-transitively) unresolved from this reactor, so `mvn dependency:build-classpath`
-fails to resolve them from this reactor. The `-am` flag
+invocation; in short, `install` first, to run this branch's code —
+`package` alone leaves `data-prism-pseudonymisation` and
+`data-prism-orchestration` (imported here transitively) unbuilt in your local
+repository, so `mvn dependency:build-classpath` would resolve `0.4.0` from
+Maven Central instead of this branch. The `-am` flag
 installs every upstream module this one depends on, not just those two
 (`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`) — note this
 installs this branch's build at `0.4.0` into the reader's local `~/.m2`
