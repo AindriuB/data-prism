@@ -151,6 +151,11 @@ public final class AuditChainVerifierCli {
                             + "follow the break above and are reported as after the break, not as separate "
                             + "breaks.");
                 }
+            } else if (writer.retentionAnchor().isPresent()) {
+                AuditCheckpoint a = writer.retentionAnchor().get();
+                out.println("  intact: every surviving record chains from the retention anchor at sequence "
+                        + a.sequence() + " (head hash " + a.headHash() + ", recorded " + a.recordedAt()
+                        + "); earlier records were purged under retention and are not verified here.");
             } else if (writer.nonGenesisStart().isEmpty()) {
                 out.println("  intact: every record in this writer's chain verified against the one before it.");
             }
@@ -184,6 +189,9 @@ public final class AuditChainVerifierCli {
     private static void printHelp(PrintStream out) {
         out.println("Usage: java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli "
                 + "<audit-log-file> [--checkpoints <checkpoint-file>]");
+        out.println();
+        out.println("<audit-log-file> may also be a directory of audit-YYYY-MM-DD.jsonl segments written by");
+        out.println("SegmentedFileAuditSink, read in date order.");
         out.println();
         out.println("Replays each writer's hash chain in a file written by FileAuditSink and reports either");
         out.println("an intact chain or the first edit or deletion detected, per writer.");

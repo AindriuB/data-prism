@@ -19,8 +19,9 @@ import java.util.Objects;
  * {@link AuditCheckpointSink} held apart from the audit file, so that deleting
  * the audit file's tail or a whole boot can be noticed by comparing the two.
  *
- * <p>{@link Kind#RETENTION_ANCHOR} is reserved for retention (task 102); the
- * verifier does not yet draw any conclusion from it.
+ * <p>{@link Kind#RETENTION_ANCHOR} is written by {@link AuditRetention} for each
+ * writer's last record in a segment it is about to delete; the verifier accepts
+ * a chain that starts right after one.
  */
 public record AuditCheckpoint(Kind kind, String instanceId, long sequence, String headHash, Instant recordedAt) {
 

@@ -94,12 +94,44 @@ public final class AuditChainVerifier {
 
     /** Reads and verifies {@code path} in one pass. */
     public static VerificationReport verify(Path path) throws IOException {
-        return verify(Files.readAllBytes(path));
+        return verify(readAudit(path), List.of());
+    }
+
+    /**
+     * Reads {@code path}: a single file as is, or a directory as every {@code audit-YYYY-MM-DD.jsonl}
+     * segment in date order. A non-final segment that ends without a newline (a torn write) has one
+     * added so its fragment cannot fuse with the next segment's first record; it then reads as an
+     * interrupted-write fragment. Byte offsets in a directory report are into that concatenation.
+     */
+    private static byte[] readAudit(Path path) throws IOException {
+        if (!Files.isDirectory(path)) {
+            return Files.readAllBytes(path);
+        }
+        java.util.TreeMap<java.time.LocalDate, Path> segments = new java.util.TreeMap<>();
+        try (java.util.stream.Stream<Path> files = Files.list(path)) {
+            files.filter(Files::isRegularFile).forEach(f -> {
+                java.time.LocalDate date = SegmentedFileAuditSink.segmentDate(f);
+                if (date != null) {
+                    segments.put(date, f);
+                }
+            });
+        }
+        java.io.ByteArrayOutputStream all = new java.io.ByteArrayOutputStream();
+        int remaining = segments.size();
+        for (Path segment : segments.values()) {
+            byte[] bytes = Files.readAllBytes(segment);
+            all.write(bytes);
+            remaining--;
+            if (remaining > 0 && bytes.length > 0 && bytes[bytes.length - 1] != '\n') {
+                all.write('\n');
+            }
+        }
+        return all.toByteArray();
     }
 
     /** Reads and verifies every byte {@code in} produces before EOF. */
     public static VerificationReport verify(InputStream in) throws IOException {
-        return verify(in.readAllBytes());
+        return verify(in.readAllBytes(), List.of());
     }
 
     /**
@@ -110,7 +142,7 @@ public final class AuditChainVerifier {
      * file must not silently verify as "no checkpoints".
      */
     public static VerificationReport verify(Path auditFile, Path checkpointFile) throws IOException {
-        byte[] content = Files.readAllBytes(auditFile);
+        byte[] content = readAudit(auditFile);
         List<AuditCheckpoint> checkpoints = new ArrayList<>();
         int lineNo = 0;
         for (String line : Files.readAllLines(checkpointFile, StandardCharsets.UTF_8)) {
@@ -128,12 +160,14 @@ public final class AuditChainVerifier {
         return verify(content, checkpoints);
     }
 
-    private static VerificationReport verify(byte[] content) {
-        return verify(content, List.of());
-    }
-
     private static VerificationReport verify(byte[] content, List<AuditCheckpoint> checkpoints) {
         Map<String, WriterState> writers = new LinkedHashMap<>();
+        Map<String, List<AuditCheckpoint>> retentionAnchors = new LinkedHashMap<>();
+        for (AuditCheckpoint cp : checkpoints) {
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR) {
+                retentionAnchors.computeIfAbsent(cp.instanceId(), k -> new ArrayList<>()).add(cp);
+            }
+        }
         List<StructuralAnomaly> anomalies = new ArrayList<>();
         TailAnomaly tail = null;
 
@@ -147,7 +181,7 @@ public final class AuditChainVerifier {
             if (content[i] == '\n') {
                 String line = new String(content, start, i - start, StandardCharsets.UTF_8);
                 int anomaliesBefore = anomalies.size();
-                processLine(line, start, writers, anomalies, precedingAnomalyOffset);
+                processLine(line, start, writers, anomalies, precedingAnomalyOffset, retentionAnchors);
                 precedingAnomalyOffset = anomalies.size() > anomaliesBefore ? (long) start : null;
                 start = i + 1;
             }
@@ -176,7 +210,9 @@ public final class AuditChainVerifier {
      * checkpointed head at the same sequence marks that writer broken (exit 2). A writer whose
      * last surviving sequence is below its highest checkpointed sequence, or which has a
      * checkpoint past sequence 0 and no surviving record, is reported as a finding (exit 5).
-     * {@link AuditCheckpoint.Kind#RETENTION_ANCHOR} is not interpreted here.
+     * {@link AuditCheckpoint.Kind#RETENTION_ANCHOR} is not compared as a head; it is used while
+     * replaying (a chain that starts right after an anchor is intact) and to explain a writer
+     * whose every record was purged.
      */
     private static List<CheckpointFinding> applyCheckpoints(Map<String, WriterState> writers,
                                                             List<AuditCheckpoint> checkpoints) {
@@ -208,7 +244,7 @@ public final class AuditChainVerifier {
             WriterState writer = writers.get(e.getKey());
             long checkpointed = e.getValue();
             if (writer == null) {
-                if (checkpointed > 0) {
+                if (checkpointed > 0 && !anchoredPast(checkpoints, e.getKey(), checkpointed)) {
                     findings.add(new CheckpointFinding(CheckpointFindingType.MISSING_WRITER, e.getKey(),
                             checkpointed, -1,
                             "MISSING_WRITER: writer " + e.getKey() + " has a checkpoint at sequence "
@@ -229,8 +265,15 @@ public final class AuditChainVerifier {
         return findings;
     }
 
+    /** True if a retention anchor records that this writer's chain was purged through {@code sequence}. */
+    private static boolean anchoredPast(List<AuditCheckpoint> checkpoints, String instanceId, long sequence) {
+        return checkpoints.stream().anyMatch(cp -> cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR
+                && cp.instanceId().equals(instanceId) && cp.sequence() >= sequence);
+    }
+
     private static void processLine(String line, long offset, Map<String, WriterState> writers,
-                                      List<StructuralAnomaly> anomalies, Long precedingAnomalyOffset) {
+                                      List<StructuralAnomaly> anomalies, Long precedingAnomalyOffset,
+                                      Map<String, List<AuditCheckpoint>> retentionAnchors) {
         if (line.isEmpty()) {
             return;
         }
@@ -263,7 +306,13 @@ public final class AuditChainVerifier {
         boolean firstRecordSeenForWriter = writer.firstSequence == null;
         if (firstRecordSeenForWriter) {
             writer.firstSequence = event.sequence();
-            if (!GENESIS.equals(event.previousHash())) {
+            AuditCheckpoint anchor = GENESIS.equals(event.previousHash()) ? null
+                    : matchingAnchor(retentionAnchors.get(event.instanceId()), event);
+            if (anchor != null) {
+                // The chain legitimately starts here: a purge recorded this writer's last purged
+                // record, and this record follows it exactly. Fall through to the ordinary checks.
+                writer.retentionAnchor = anchor;
+            } else if (!GENESIS.equals(event.previousHash())) {
                 if (precedingAnomalyOffset != null) {
                     // A structural anomaly was reported for the immediately preceding line -- for
                     // example the mid-file field-count shape of an interrupted write followed by a
@@ -313,6 +362,18 @@ public final class AuditChainVerifier {
 
         writer.lastHash = event.eventHash();
         writer.headHash = event.eventHash();
+    }
+
+    private static AuditCheckpoint matchingAnchor(List<AuditCheckpoint> candidates, AuditEvent event) {
+        if (candidates == null) {
+            return null;
+        }
+        for (AuditCheckpoint a : candidates) {
+            if (a.sequence() + 1 == event.sequence() && a.headHash().equals(event.previousHash())) {
+                return a;
+            }
+        }
+        return null;
     }
 
     /**
@@ -407,6 +468,7 @@ public final class AuditChainVerifier {
         private Break firstBreak;
         private Long firstSequence;
         private NonGenesisStart nonGenesisStart;
+        private AuditCheckpoint retentionAnchor;
 
         WriterState(String instanceId) {
             this.instanceId = instanceId;
@@ -414,7 +476,8 @@ public final class AuditChainVerifier {
 
         WriterResult toResult() {
             return new WriterResult(instanceId, recordCount, headHash, broken, Optional.ofNullable(firstBreak),
-                    afterBreakCount, firstSequence, Optional.ofNullable(nonGenesisStart));
+                    afterBreakCount, firstSequence, Optional.ofNullable(nonGenesisStart),
+                    Optional.ofNullable(retentionAnchor));
         }
     }
 
@@ -453,7 +516,15 @@ public final class AuditChainVerifier {
     /** One writer's replayed chain. {@code firstSequence} is the sequence of the first record this pass saw. */
     public record WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
                                 Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
-                                Optional<NonGenesisStart> nonGenesisStart) {
+                                Optional<NonGenesisStart> nonGenesisStart,
+                                Optional<AuditCheckpoint> retentionAnchor) {
+
+        public WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
+                            Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
+                            Optional<NonGenesisStart> nonGenesisStart) {
+            this(instanceId, sequenceCount, headHash, broken, firstBreak, afterBreakCount, firstSequence,
+                    nonGenesisStart, Optional.empty());
+        }
     }
 
     /** What an external checkpoint contradicts about the surviving file. */

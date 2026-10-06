@@ -93,6 +93,61 @@ A few properties are deliberate, not accidental gaps:
   fixture identifying values the same way `PiiLogScanTest` scans captured log
   output, closing the audit half of architecture boundary 7.
 
+## Retention
+
+`FileAuditSink` is unchanged and still never rotates. For deployments that must
+keep logs for a bounded period and then let them go, `SegmentedFileAuditSink`
+writes one file per UTC day, `directory/audit-YYYY-MM-DD.jsonl`, the date being
+the UTC date of the event's timestamp. Each segment is written with
+`FileAuditSink`'s own discipline (fsync before return; the sink poisons after
+any failed write, and does so for every day, not just the failing one). The
+record format and the per-writer hash chain are the same; a chain simply runs
+across segment files.
+
+### The six-month minimum
+
+`AuditRetention` refuses a retention period shorter than six months with
+`IllegalArgumentException` containing `AUDIT_RETENTION_BELOW_MINIMUM`. The
+reason is EU AI Act Arts. 19 and 26(6), which ask deployers to keep
+automatically generated logs for at least six months. Art. 19 also says
+"unless provided otherwise in applicable Union or national law", so other
+periods can be lawful. An explicit override
+(`allowBelowMinimum`, configured as `dataprism.audit.retention-override`)
+lets a shorter period through. Using the override is the operator's legal
+responsibility; Data Prism does not judge whether it applies. GDPR storage
+limitation points the other way: logs should not be kept longer than needed.
+
+### Purge is deletion
+
+`AuditRetention.purge()` deletes every whole segment dated strictly before
+today (UTC) minus the retention period, and never today's segment. The records
+in a deleted segment are gone; nothing here archives them. Archiving to
+external storage before purge is an operator responsibility.
+
+### Retention anchors
+
+Deleting the front of a chain would otherwise look like tampering. So, before
+deleting anything, purge writes a `RETENTION_ANCHOR` checkpoint to the
+checkpoint sink for each writer's last record in each segment about to go,
+carrying that record's sequence and hash. If any anchor cannot be written,
+nothing is deleted and purge throws. The anchors belong in the checkpoint file,
+under different custody from the audit directory, like any other checkpoint.
+
+With `--checkpoints`, the verifier accepts a writer whose first surviving
+record has `previousHash` equal to an anchor's hash and sequence equal to the
+anchor's sequence plus one. That writer is reported intact, with a line naming
+the anchor, and the surviving records still verify end to end; the purged
+records are not verified, since they no longer exist. The same chain with no
+matching anchor is reported as it always was for a chain that does not start
+at `GENESIS`. A segment removed by hand leaves no anchor: later segments then
+report a break, and a checkpointed writer with no surviving records is
+`MISSING_WRITER` (exit 5). A writer whose every record was purged is not
+reported missing when an anchor covers its checkpointed sequence.
+
+This shows that purge was recorded; it does not prove the purge was
+authorised, and an anchor is only as trustworthy as the custody of the
+checkpoint file.
+
 ## The offline verifier
 
 `AuditChainVerifierCli` replays each writer's chain from a copy of this file
@@ -304,8 +359,16 @@ checkpoint on `close()`. Each is one JSON line, fsynced, holding the writer's
 `FileAuditCheckpointSink` refuses a path equal to the audit file
 (`AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE`). Calling `checkpoint()` on a schedule
 is up to the embedding application; this release adds no configuration for it.
-`RETENTION_ANCHOR` is a reserved checkpoint kind that the verifier does not
-yet interpret.
+`RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
+[Retention](#retention).
+
+### Directory mode
+
+Given a directory instead of a file, the verifier reads every
+`audit-YYYY-MM-DD.jsonl` segment in date order as one stream and replays it as
+usual. A non-final segment ending in a torn write is reported as an
+interrupted-write fragment rather than fused with the next segment's first
+record. Byte offsets in a directory report are offsets into that concatenation.
 
 If a checkpoint write fails, the recorder refuses every later `record(...)`
 with `AuditCheckpointUnavailableException`, without advancing the chain, until
