@@ -133,3 +133,18 @@ Required for attempt 2:
 4. Note in the compose.yaml header that `!override`/`!reset` need Docker Compose ≥ 2.24.0.
 5. server.json `DATAPRISM_OPERATOR_PORT`: also mention that it must differ from the
    management port (`OPERATOR_PORT_SHARED`).
+
+## Attempt 2 — failed
+
+Tester: PASS (the subnet does not clash locally). Reviewer: CHANGES (head 842ee27). Items 2, 3 and 5 are met.
+- The SECURITY claim "does not listen on the `default` network" becomes true
+  once `ClusterMembership` sets `hazelcast.socket.bind.any=false` whenever an
+  interface is given. That fix goes into task 131 attempt 2, not here; keep the
+  claim. Do not weaken it.
+Required for attempt 3:
+1. compose.yaml:11: `!override` needs Docker Compose **>= 2.24.4** (`!reset` 2.18.0). Fix the note.
+2. One comment line at the subnet: `172.28.57.0/24` may collide with an existing
+   Docker or VPN network ("Pool overlaps"). Say to change it in all the places it appears,
+   and list them.
+3. SECURITY block, under "does not protect against": add processes on the Linux host,
+   which can usually route to container addresses on bridge networks, internal ones included.

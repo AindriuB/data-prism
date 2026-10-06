@@ -132,3 +132,14 @@ described under Acceptance.
 - Map sizing and the other PLAN follow-ups listed under 127, such as the
   failure metric and the size cap.
 - Changing the Hazelcast version or adding `hazelcast-enterprise`.
+
+## Added from task 133 review (2026-10-06), required
+
+- `ClusterMembership.toConfig()` must set `hazelcast.socket.bind.any=false`
+  whenever an interface pattern is configured, for TcpIp and Kubernetes as well as
+  None. Hazelcast's default `bind.any=true` makes the member listen on every
+  interface; `interfaces` only chooses the advertised address. Test it: the
+  built `Config` has `bind.any=false` whenever an interface is set. If no interface is
+  set for tcp-ip or kubernetes, decide and test whether to refuse
+  (fail closed, e.g. `MISSING_MEMBER_INTERFACE`) or bind to any. Recommended:
+  allow bind-any, but document it. Task 133's Compose example relies on this.
