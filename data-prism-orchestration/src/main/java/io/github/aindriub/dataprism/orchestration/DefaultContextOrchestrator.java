@@ -214,8 +214,10 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             if (failure instanceof PrivacyRefusedException) {
                 metrics.increment(Metric.PRIVACY_FAILCLOSED);
             }
-            if (failure instanceof PrivacyRefusedException refused) {
-                dispositions.put(collapseIndices(refused.path()), "REFUSED");
+            if (failure instanceof PrivacyRefusedException
+                    && !dispositions.containsValue("REFUSED")) {
+                // Refusal paths are built from payload keys, so none is ever recorded.
+                dispositions.put("merged:<refused>", "REFUSED");
             }
             audit(request, subjectToken, fingerprint, context, investigationContext, "DENY", sources,
                     correlationId, dispositions);
@@ -293,7 +295,14 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                     record));
             prohibited.addAll(SourceValues.prohibited(record, resolver));
 
-            ScrubResult scrubbed = scrubber.scrub(record, context);
+            ScrubResult scrubbed;
+            try {
+                scrubbed = scrubber.scrub(record, context);
+            } catch (PrivacyRefusedException refused) {
+                // Fixed key from the declared source name; the exception path may carry payload keys.
+                dispositions.put(fetched.outcome().sourceName() + ":<refused>", "REFUSED");
+                throw refused;
+            }
             metrics.increment(Metric.PRIVACY_TRANSFORMATIONS);
             emitted.addAll(scrubbed.emitted());
             // Real source name, never the alias: the audit trail is operator-facing.
@@ -343,10 +352,5 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 context.redactionProfile(), context.scopeId(), context.purpose(),
                 investigationContext.caseId(), decision, names, request.rejectedArguments(),
                 correlationId, dispositions, request.approvalId(), request.approverId()));
-    }
-
-    /** A refusal path is a field path, never a value; array indices are collapsed to {@code *}. */
-    private static String collapseIndices(String path) {
-        return path.replaceAll("\\[\\d+]", "[*]").replaceAll("/\\d+(?=/|$)", "/*");
     }
 }

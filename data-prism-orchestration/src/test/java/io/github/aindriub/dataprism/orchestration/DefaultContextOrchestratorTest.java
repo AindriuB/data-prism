@@ -281,9 +281,8 @@ class DefaultContextOrchestratorTest {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         ObjectMapper mapper = new ObjectMapper();
         ScrubbingEngine scrubber = (source, ctx) -> {
-            Thing thing = (Thing) source;
             return new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of(),
-                    Map.of("/" + thing.value(), PrivacyAction.SYNTHESIZE,
+                    Map.of("/name", PrivacyAction.SYNTHESIZE,
                             "/items/*", PrivacyAction.REMOVE));
         };
         return new DefaultContextOrchestrator(
@@ -312,8 +311,8 @@ class DefaultContextOrchestratorTest {
         assertThat(events).hasSize(1);
         assertThat(events.get(0).policyDecision()).isEqualTo("ALLOW");
         assertThat(events.get(0).fieldDispositions()).containsExactlyInAnyOrderEntriesOf(Map.of(
-                "alpha:/one", "SYNTHESIZE", "alpha:/items/*", "REMOVE",
-                "beta:/two", "SYNTHESIZE", "beta:/items/*", "REMOVE"));
+                "alpha:/name", "SYNTHESIZE", "alpha:/items/*", "REMOVE",
+                "beta:/name", "SYNTHESIZE", "beta:/items/*", "REMOVE"));
         assertThat(response.correlationId()).isNotEmpty()
                 .isEqualTo(events.get(0).correlationId());
     }
@@ -331,7 +330,7 @@ class DefaultContextOrchestratorTest {
 
         assertThat(events).hasSize(1);
         assertThat(events.get(0).policyDecision()).isEqualTo("DENY");
-        assertThat(events.get(0).fieldDispositions()).containsEntry("/value", "REFUSED");
+        assertThat(events.get(0).fieldDispositions()).containsEntry("merged:<refused>", "REFUSED");
     }
 
     @Test
