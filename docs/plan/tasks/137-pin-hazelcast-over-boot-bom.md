@@ -7,6 +7,7 @@
 - pom.xml *(the `<dependencyManagement>` block only: one new entry for `com.hazelcast:hazelcast`)*
 - data-prism-hazelcast/pom.xml *(the hazelcast `<version>` element only, if it becomes redundant)*
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/ServerPackagingIT.java *(one new assertion)*
+- data-prism-server/pom.xml *(the failsafe `systemPropertyVariables` only: add `hazelcast.version`; added 2026-10-06 after the implementer's BLOCKED return)*
 
 ## Goal
 
