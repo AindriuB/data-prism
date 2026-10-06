@@ -322,8 +322,8 @@ public record CustomerModel(
   `SEX_LIFE_ORIENTATION`. No profile can expose them: a profile that maps one
   weaker than `REDACT` fails at startup with `SPECIAL_CATEGORY_EXPOSED`, and a
   field carrying one is removed when the profile has no rule for it. This
-  supports data minimisation under GDPR Art. 9; it does not by itself make a
-  deployment compliant.
+  supports data minimisation under GDPR Art. 9; it is one control among
+  those a deployment needs.
 - `@NonSensitive` asserts a field is safe to emit unchanged and requires a
   `reason()` — that string is the review artefact; "not sensitive" is
   explicitly called out as not a reason

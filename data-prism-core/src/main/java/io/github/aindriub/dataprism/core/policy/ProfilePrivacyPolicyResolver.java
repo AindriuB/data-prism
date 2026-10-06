@@ -92,7 +92,9 @@ public final class ProfilePrivacyPolicyResolver implements PrivacyPolicyResolver
                             override || suggested == null ? PrivacyAction.REDACT : suggested)
                     : PrivacyAction.REMOVE;
             return new EffectivePrivacyPolicy(action, field.namespace(), true, profile.name(),
-                    EffectivePrivacyPolicy.Decided.PROFILE_RULE);
+                    specialCovered
+                            ? EffectivePrivacyPolicy.Decided.PROFILE_RULE
+                            : EffectivePrivacyPolicy.Decided.SPECIAL_CATEGORY_DEFAULT);
         }
 
         if (fromProfile == null) {

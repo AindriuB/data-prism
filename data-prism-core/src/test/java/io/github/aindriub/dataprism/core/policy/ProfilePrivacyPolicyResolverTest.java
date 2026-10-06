@@ -177,6 +177,10 @@ class ProfilePrivacyPolicyResolverTest {
         assertThat(resolver(profile(fail, Map.of())).resolve(
                 sensitive(PrivacyAction.PASS_THROUGH, DataClassification.BIOMETRIC),
                 context("DEFAULT")).action()).isEqualTo(PrivacyAction.REMOVE);
+        assertThat(resolver(profile(fail, Map.of())).resolve(
+                sensitive(PrivacyAction.PASS_THROUGH, DataClassification.BIOMETRIC),
+                context("DEFAULT")).source())
+                .isEqualTo(EffectivePrivacyPolicy.Decided.SPECIAL_CATEGORY_DEFAULT);
 
         // PII is SYNTHESIZE; the special category must not ride along with it.
         var mixed = resolver(profile(fail, Map.of(
