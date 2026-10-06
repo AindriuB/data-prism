@@ -1,0 +1,50 @@
+# Pinned AuditEventHash vectors. Synthetic values only.
+# One block per record version, introduced by [vN]. Task 109 appends a [v3] block.
+# Set fields are comma-separated; fieldDispositions are semicolon-separated key=VALUE pairs.
+# expected is the hex SHA-256 the encoding for that version must produce.
+[v1]
+eventId=evt-0001
+timestamp=2026-01-01T00:00:00Z
+instanceId=inst-a
+sequence=7
+principalId=investigator-1
+clientId=client-1
+tool=get_entity_context
+entityType=CUSTOMER
+subjectPseudonym=pseudo-1
+parameterFingerprint=fp-1
+privacyProfile=DEFAULT
+scopeId=scope-1
+purpose=investigation
+caseId=CASE-1
+policyDecision=ALLOW
+correlationId=corr-1
+sourceSystems=erp:ANSWERED,crm:ANSWERED
+rejectedArguments=y,x
+previousHash=0000000000000000000000000000000000000000000000000000000000000000
+expected=1da4de706b9c93c1ba841df9913dd19a625c1caffa9dbb788d69248d12a52a19
+
+[v2]
+eventId=evt-0001
+timestamp=2026-01-01T00:00:00Z
+instanceId=inst-a
+sequence=7
+principalId=investigator-1
+clientId=client-1
+tool=get_entity_context
+entityType=CUSTOMER
+subjectPseudonym=pseudo-1
+parameterFingerprint=fp-1
+privacyProfile=DEFAULT
+scopeId=scope-1
+purpose=investigation
+caseId=CASE-1
+policyDecision=ALLOW
+correlationId=corr-1
+sourceSystems=erp:ANSWERED,crm:ANSWERED
+rejectedArguments=y,x
+previousHash=0000000000000000000000000000000000000000000000000000000000000000
+fieldDispositions=crm:/b=REFUSED;crm:/a=REDACT
+approvalId=appr-1
+approverId=approver-2
+expected=5aa0d48cc0571437209f5f93dab61ccb7a1b28db4f6d0dba7cc178e78ae99911
