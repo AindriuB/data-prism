@@ -53,6 +53,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class QuickstartSmokeIT {
 
+    private static final String VERSION = requireVersion();
+
+    private static String requireVersion() {
+        String v = System.getProperty("project.version");
+        if (v == null || v.isBlank() || v.contains("${")) {
+            throw new IllegalStateException(
+                    "System property project.version was not passed by the build "
+                            + "(failsafe systemPropertyVariables); refusing to guess the artifact version");
+        }
+        return v;
+    }
+
     private static final String ISSUER_ID = "https://issuer.quickstart.invalid";
     private static final String AUDIENCE = "data-prism-quickstart-mcp";
     private static final String STORE_PASSWORD = "quickstart-smoke-test-only";
@@ -250,11 +262,11 @@ class QuickstartSmokeIT {
     }
 
     private static Path extensionJar() {
-        return Path.of("target", "data-prism-quickstart-extension-0.3.1.jar").toAbsolutePath();
+        return Path.of("target", "data-prism-quickstart-extension-" + VERSION + ".jar").toAbsolutePath();
     }
 
     private static Path jarFor(String moduleName) {
-        return Path.of("..", moduleName, "target", moduleName + "-0.3.1.jar").toAbsolutePath();
+        return Path.of("..", moduleName, "target", moduleName + "-" + VERSION + ".jar").toAbsolutePath();
     }
 
     private static Process startProcess(Path jar, List<String> programArguments, Map<String, String> env)
@@ -272,7 +284,7 @@ class QuickstartSmokeIT {
 
     private static Process startServerProcess(List<String> jvmArguments, List<String> programArguments,
             Map<String, String> env) throws IOException {
-        Path jar = Path.of("..", "data-prism-server", "target", "data-prism-server-0.3.1.jar")
+        Path jar = Path.of("..", "data-prism-server", "target", "data-prism-server-" + VERSION + ".jar")
                 .toAbsolutePath();
         assertThat(java.nio.file.Files.isRegularFile(jar))
                 .as("expected the packaged standalone server at %s", jar)
