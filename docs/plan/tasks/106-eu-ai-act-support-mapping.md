@@ -66,4 +66,7 @@ them.
 - `README.md`, `server.json` and the site landing page.
 - `docs/plan/PLAN.md` and `HISTORY.md`, which belong to scribe.
 - Legal advice. The page says it is not legal advice.
-- The keyed-chain decision entry. That is task 107.
+- A keyed-chain decision entry. Task 107 was dropped (D2, 2026-10-06); the
+  2026-09-23 decision stands. The mapping must not claim the chain resists an
+  operator; tamper evidence is the unkeyed chain plus external checkpoints
+  held under separate custody.

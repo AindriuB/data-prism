@@ -344,3 +344,9 @@ all of these is in `design-review.md` under the section named.
   depending on an operational guarantee this library cannot itself enforce,
   left for the owner to schedule. See `docs/plan/PLAN.md` for the consequences
   and follow-ups this decision opens.
+  *Reaffirmed 2026-10-06 (owner decision D2).* The proposal to supersede this
+  decision with a keyed chain (task 107) was considered and dropped, for the
+  same two reasons: the key would live in the operator's own process, and
+  third-party verification would need the key, which also lets its holder
+  forge. Tamper evidence rests on the unkeyed hash chain plus external
+  checkpoints (task 97), with the checkpoints held under separate custody.

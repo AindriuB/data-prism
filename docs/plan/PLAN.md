@@ -28,9 +28,9 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### EU AI Act plan (tasks 92-107) — in flight, wave 1 landed
+### EU AI Act plan (tasks 92-106) — in flight, wave 1 landed
 
-Sixteen tasks that make the audit, oversight and re-identification surfaces
+Fifteen tasks that make the audit, oversight and re-identification surfaces
 support an EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The
 work is on the planning branch `claude/data-prism-eu-compliance-04cf83`, not
 `main`. Task files are in `docs/plan/tasks/`; each carries its own contract.
@@ -48,43 +48,58 @@ its "Depends on" has merged.
 | 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
 | 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | done 2026-10-06 |
 | 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | done 2026-10-06 |
-| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | next; D8 approval flow open |
-| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 (97 merged; code unblocked) |
-| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | D3, D5 |
+| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | next; D8 answered |
+| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | next; D3, D5 answered (override property) |
+| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | D3, D5 answered |
 | 5 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103 | |
-| 6 | 105 | Operator surface on a separate port: pause, approvals, re-identification | 104 | D4, D8 |
+| 6 | 105 | Operator surface on a separate port: pause, approvals, re-identification | 104 | D4 open |
 | 7 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
-| 8 | 107 | Keyed audit chain (HMAC under a dedicated key) | 104, 106 | blocked on D2 |
 
-Next wave: 101 (96 and 98 both merged; D8's approval flow is still open, so
-check the task file before starting). 100 has merged. 102 is unblocked in code
-by 97 but waits on D3 and D5. 104 waits on 101 and 103 (99 and 100 merged).
+Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
+file deleted. The 2026-09-23 decision against keying the chain stands, and
+tamper evidence rests on the unkeyed chain plus external checkpoints (task 97)
+under separate custody. Nothing depends on 107 any more.
 
-Open owner decisions, each blocking or shaping the tasks named. D1 is answered
-and D8 is answered in part:
+Next wave: 101 and 102, which are independent and can run in parallel (101
+needs 96 and 98; 102 needs 97; all merged). 103 follows 102. 104 waits on 101
+and 103 (99 and 100 merged). 105 waits on 104 and on D4. 106 waits on 94 and
+105. Tasks 102 and 103 carry notes that a retention below six months refuses
+startup unless `dataprism.audit.retention-override` is set.
+
+Owner decisions. D1, D2, D3, D5 and D8 are answered; D7 is implemented and
+awaits confirmation; D4 and D6 are open.
 
 - D1: answered 2026-10-06. The 2026-09-08 deferral of the re-identification
   operator surface is lifted; 100, 104, 105 and 106 are no longer blocked on it.
   Recorded in `docs/architecture.md#decisions-worth-knowing`.
-- D2: supersede the 2026-09-23 decision that rejected a keyed audit chain.
-  Blocks 107. The planner recommends dropping 107.
-- D3: allow a segmented audit sink so retention can delete expired data.
-  Blocks 102, 103.
-- D4: operator surface as a second connector in the same process, or a separate
-  JVM. Shapes 105.
-- D5: retention below six months as a hard refusal, or an override. Shapes 102
-  and 103.
-- D6: no Art. 10(5) bias-detection profile has been filed. Affects what 106 may
-  claim.
-- D7: a checkpoint-write failure refuses all audited calls. Implemented as
-  planned in 97, pending owner confirmation.
-- D8: answered in part 2026-10-06. Four-eyes for re-identification defaults ON.
-  Still open: the tool-call approval flow. Shapes 101 and 105.
+- D2: answered 2026-10-06. Task 107 dropped; the 2026-09-23 decision rejecting
+  a keyed chain is reaffirmed in `docs/architecture.md`. The key would live in
+  the operator's process, and third-party verification would need a key that
+  also lets its holder forge.
+- D3: answered 2026-10-06. A new segmented audit sink writes daily files, writes
+  a `RETENTION_ANCHOR` checkpoint, then deletes segments past retention. The
+  single-file `FileAuditSink` is unchanged. Unblocks 102 and 103.
+- D4: open. Operator surface as a second connector in the same process, or a
+  separate JVM. Shapes 105.
+- D5: answered 2026-10-06. A configured retention below six months fails
+  startup unless an explicit override property is set (Art. 19 allows other
+  periods under Union or national law). Tasks 102 and 103 were amended to
+  require the override, a test and documentation that the override is the
+  operator's legal responsibility.
+- D6: open, informational. No Art. 10(5) bias-detection profile has been filed.
+  Affects what 106 may claim.
+- D7: implemented as planned in 97, pending owner confirmation. A
+  checkpoint-write failure refuses all audited calls.
+- D8: answered 2026-10-06. Four-eyes for re-identification defaults ON. The
+  tool-call approval flow is approved as planned: a configured high-impact call
+  is refused with `APPROVAL_REQUIRED` and an `approvalId`, a different person
+  approves it on the operator port, and the identical call with the same
+  argument fingerprint then succeeds once. Unblocks 101.
 
-Open follow-up, independent of task 107: `AuditEventHash` joins `sourceSystems`
+Open follow-up: `AuditEventHash` joins `sourceSystems`
 and `dispositions` without escaping `,` or `=`, so two distinct records can
-produce the same hash. It needs an unambiguous encoding. Fix it whether or not
-107 goes ahead, since the chain's tamper detection rests on it.
+produce the same hash. It needs an unambiguous encoding. It was never dependent on the dropped task 107. The chain's tamper
+detection rests on it.
 
 Follow-ups from the task 100 review, not yet tasks:
 

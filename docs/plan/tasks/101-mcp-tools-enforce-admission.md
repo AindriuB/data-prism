@@ -74,6 +74,15 @@ into the audit record.
       deployer's AI-system log entry to the matching Data Prism audit record,
       and is a random identifier that carries no data.
 
+## Note from owner decision D8 (2026-10-06)
+
+The approval flow is approved as planned and D8 is fully answered. A
+configured high-impact tool call is refused with `APPROVAL_REQUIRED` and an
+`approvalId`. A different person approves it on the operator port. The
+identical call, with the same argument fingerprint, then succeeds exactly
+once. Tests should cover the retry succeeding once and a second retry being
+refused again, and an altered argument being refused.
+
 ## Out of scope
 
 - Wiring a real `ToolAdmission` in Spring. That is task 104.

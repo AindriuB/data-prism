@@ -67,9 +67,27 @@ misconfiguration refuses startup with a stable code.
       codes and the six-month default. It notes that with `file-path` (single
       file) retention is not enforced in-process and is an operator task.
 
+## Note from owner decision D5 (2026-10-06)
+
+Retention below six months refuses startup **unless an explicit override
+property is set**; it is not an unconditional refusal. The table row for
+`AUDIT_RETENTION_BELOW_MINIMUM` is amended accordingly. Required:
+
+- A boolean property `dataprism.audit.retention-override` (default `false`).
+  Only when it is `true` is a `retention` under six months accepted, and
+  `AuditRetention` is constructed with the override.
+- Tests: below six months without the override refuses with
+  `AUDIT_RETENTION_BELOW_MINIMUM`; the same value with the override starts;
+  six months or more starts either way; the override with a compliant value
+  is accepted and inert.
+- `docs/configuration.md` states that Art. 19 allows other periods under
+  Union or national law, and that setting the override is the operator's own
+  legal responsibility. Data Prism does not judge whether the law applies.
+- D3 is answered: the segmented sink is approved; `FileAuditSink` stays as is.
+
 ## Out of scope
 
 - Oversight, re-identification and operator properties. That is task 104,
   which edits these same files after this task.
-- Keyed-chain properties. That is task 107.
+- Keyed-chain properties. Task 107 was dropped (D2, 2026-10-06).
 - `server.json` and Compose environment variables.

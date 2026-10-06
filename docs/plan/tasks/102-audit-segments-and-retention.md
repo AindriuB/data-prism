@@ -32,6 +32,23 @@ right after an anchor, and still flags any gap no anchor explains.
 - Art. 19: "at least six months, unless provided otherwise in applicable
   Union or national law".
 
+## Note from owner decisions D3 and D5 (2026-10-06)
+
+D3 is answered: the segmented sink, anchors and purge are approved, and the
+existing `FileAuditSink` stays unchanged. D5 is answered: a retention below
+six months is refused **unless an explicit override is passed**; the
+acceptance item below that reads as a hard refusal is amended. Required:
+
+- `AuditRetention` takes an explicit `boolean allowBelowMinimum` (named
+  `retention-override` in configuration, `dataprism.audit.retention-override`,
+  wired by task 103). Without it, a short retention throws
+  `IllegalArgumentException` containing `AUDIT_RETENTION_BELOW_MINIMUM`.
+- Tests: refusal without the override, acceptance with it, and the six-month
+  boundary accepted either way.
+- `docs/audit.md` states that Art. 19 allows other periods under Union or
+  national law and that using the override is the operator's legal
+  responsibility.
+
 ## Acceptance
 
 - [ ] `SegmentedFileAuditSink(Path directory)` appends each event to
