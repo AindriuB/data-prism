@@ -134,12 +134,17 @@ a profile that maps one weaker than `REDACT` refuses startup with
 `SPECIAL_CATEGORY_EXPOSED`, and a field carrying one is removed when the profile
 has no rule for it. The bundled `DEFAULT` and `STRICT` profiles remove all of
 them except `PHI`, which they redact. A field nobody classified is handled by the profile's
-`unclassified` setting. By default, and in the bundled `DEFAULT` and `STRICT`
-profiles, that refuses the whole response (`FAIL_REQUEST`). A deployer profile can
-instead set `unclassified` to `REDACT_AND_WARN`, `DROP_AND_WARN` or the `UNSAFE`
-pass-through, and under `UNSAFE` an unclassified field, including one that holds a
-special-category value nobody labelled, reaches the model unchanged. With the
-default handling this supports data minimisation: a classified special-category
+`unclassified` setting. In the bundled `DEFAULT` and `STRICT` profiles, and
+wherever the setting is omitted, that refuses the whole response
+(`FAIL_REQUEST`). The Spring Boot starter and the server always load those
+bundled profiles and refuse an application `PrivacyPolicyResolver` bean
+(`FORBIDDEN_PRIVACY_OVERRIDE`), so a server deployment always has
+`FAIL_REQUEST`. A weaker setting is possible only when you assemble the core
+library yourself and load your own YAML with `PrivacyProfiles.fromYaml`: there
+`unclassified` can be `REDACT_AND_WARN`, `DROP_AND_WARN` or
+`PASS_THROUGH_UNSAFE`, and under `PASS_THROUGH_UNSAFE` an unclassified field,
+including one that holds a special-category value nobody labelled, reaches the
+model unchanged. With `FAIL_REQUEST` this supports data minimisation: a classified special-category
 value does not reach the model, and an unclassified field is refused rather than
 passed. See [Extending](extending.md) and
 [configuration](configuration.md).
@@ -159,9 +164,11 @@ whether a biometric categorisation practice is prohibited under Art. 5(1)(g); it
 only removes fields classified as biometric or as another special category.
 
 **What remains the deployer's responsibility.** Classifying the fields of every
-model correctly, and reviewing the `@NonSensitive` reasons. Choosing a weaker
-`unclassified` handling than `FAIL_REQUEST`, especially `UNSAFE`, which is the
-deployer's decision and removes the refusal described above. Establishing a
+model correctly, and reviewing the `@NonSensitive` reasons. If you assemble the
+core library directly with your own profiles, choosing a weaker `unclassified`
+handling than `FAIL_REQUEST`, especially `PASS_THROUGH_UNSAFE`, which is your
+decision and removes the refusal described above. The starter and server do not
+allow it. Establishing a
 condition under GDPR Art. 9(2) before processing special categories anywhere in
 your system, including outside Data Prism. Assessing whether your system falls
 under Art. 5 or Art. 10(5), and what bias testing you need, with your own
