@@ -191,6 +191,86 @@ public class DataPrismProperties {
         }
     }
 
+    /**
+     * The explicit-membership checks for {@code topology: embedded}, which are all on property
+     * names, never values. When the application supplies its own cluster these settings would do
+     * nothing, so setting any of them is refused rather than ignored.
+     *
+     * @param clusterSupplied whether the application defined its own {@code PrivacyCluster}
+     * @param serverPort      the effective {@code server.port}, or {@code null} when not known
+     * @param managementPort  the effective {@code management.server.port}, or {@code null}
+     */
+    void validateCluster(boolean clusterSupplied, Integer serverPort, Integer managementPort) {
+        if (!"embedded".equals(hazelcast.topology)) {
+            return;
+        }
+        if (clusterSupplied) {
+            if (hazelcast.clusterSettingsSet()) {
+                refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.* and member.* "
+                        + "have no effect when the application supplies its own PrivacyCluster");
+            }
+            return;
+        }
+        Hazelcast h = hazelcast;
+        required(h.clusterName, "MISSING_CLUSTER_NAME", "dataprism.hazelcast.cluster-name");
+        if ("dev".equalsIgnoreCase(h.clusterName.strip())) {
+            refuse("RESERVED_CLUSTER_NAME", "dataprism.hazelcast.cluster-name must not be the Hazelcast default");
+        }
+        required(h.join.mode, "MISSING_CLUSTER_JOIN", "dataprism.hazelcast.join.mode");
+        Hazelcast.Kubernetes k = h.join.kubernetes;
+        boolean kubernetesSet = !blank(k.namespace) || !blank(k.serviceName) || !blank(k.serviceDns);
+        switch (h.join.mode.strip()) {
+            case "tcp-ip" -> {
+                if (h.join.members.isEmpty()) {
+                    refuse("INVALID_CLUSTER_MEMBERS", "dataprism.hazelcast.join.members must name at least one member");
+                }
+                if (kubernetesSet) {
+                    refuse("INVALID_KUBERNETES_JOIN", "dataprism.hazelcast.join.kubernetes.* applies only to "
+                            + "join.mode kubernetes");
+                }
+            }
+            case "kubernetes" -> {
+                if (blank(k.namespace)) {
+                    refuse("INVALID_KUBERNETES_JOIN", "dataprism.hazelcast.join.kubernetes.namespace must be set");
+                }
+                if (blank(k.serviceName) == blank(k.serviceDns)) {
+                    refuse("INVALID_KUBERNETES_JOIN", "exactly one of dataprism.hazelcast.join.kubernetes."
+                            + "service-name and service-dns must be set");
+                }
+                if (!h.join.members.isEmpty()) {
+                    refuse("INVALID_CLUSTER_MEMBERS", "dataprism.hazelcast.join.members applies only to "
+                            + "join.mode tcp-ip");
+                }
+            }
+            case "none" -> {
+                if (!h.join.members.isEmpty()) {
+                    refuse("INVALID_CLUSTER_MEMBERS", "dataprism.hazelcast.join.members applies only to "
+                            + "join.mode tcp-ip");
+                }
+                if (kubernetesSet) {
+                    refuse("INVALID_KUBERNETES_JOIN", "dataprism.hazelcast.join.kubernetes.* applies only to "
+                            + "join.mode kubernetes");
+                }
+                if (!blank(h.member.interfaceAddress)) {
+                    refuse("INVALID_CLUSTER_INTERFACE", "dataprism.hazelcast.member.interface cannot be set "
+                            + "with join.mode none, which binds 127.0.0.1");
+                }
+            }
+            default -> refuse("UNSUPPORTED_CLUSTER_JOIN", "dataprism.hazelcast.join.mode must be tcp-ip, "
+                    + "kubernetes or none");
+        }
+        int port = h.member.port == null ? 5701 : h.member.port;
+        if (serverPort != null && serverPort > 0 && port == serverPort) {
+            refuse("CLUSTER_PORT_SHARED", "dataprism.hazelcast.member.port must differ from server.port");
+        }
+        if (managementPort != null && managementPort > 0 && port == managementPort) {
+            refuse("CLUSTER_PORT_SHARED", "dataprism.hazelcast.member.port must differ from management.server.port");
+        }
+        if (operator.enabled && operator.port != null && port == operator.port) {
+            refuse("CLUSTER_PORT_SHARED", "dataprism.hazelcast.member.port must differ from dataprism.operator.port");
+        }
+    }
+
     private void validateOversight() {
         for (String tool : oversight.approvalRequiredTools) {
             if (!OVERSIGHT_TOOLS.contains(tool)) {
@@ -388,8 +468,15 @@ public class DataPrismProperties {
         if (hazelcast.persistenceEnabled || hazelcast.mapStoreEnabled) {
             refuse("UNSAFE_HAZELCAST_PERSISTENCE", "persistence and MapStore require a reviewed configuration");
         }
-        if (blank(hazelcast.tlsKeyReference) != blank(hazelcast.tlsTrustReference)) {
-            refuse("INVALID_HAZELCAST_TLS", "configure both Hazelcast TLS references");
+        if (!blank(hazelcast.tlsKeyReference) || !blank(hazelcast.tlsTrustReference)) {
+            refuse("HAZELCAST_TLS_UNSUPPORTED", "dataprism.hazelcast.tls-key-reference and "
+                    + "dataprism.hazelcast.tls-trust-reference are not supported: Hazelcast member-to-member "
+                    + "TLS is not available in the open-source edition. Isolate the cluster network instead "
+                    + "(network isolation: a private network or Kubernetes NetworkPolicy)");
+        }
+        if ("single-node".equals(hazelcast.topology) && hazelcast.clusterSettingsSet()) {
+            refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.* and member.* "
+                    + "have no effect with topology single-node; remove them or use topology embedded");
         }
         if (hazelcast.reidentificationEnabled && blank(hazelcast.reidentificationControlsReference)) {
             refuse("MISSING_REIDENTIFICATION_CONTROLS",

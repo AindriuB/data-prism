@@ -197,6 +197,9 @@ final class OperatorHarness implements AutoCloseable {
                 "--dataprism.operator.required-scope=" + OPERATOR_SCOPE));
         if (embedded) {
             arguments.addAll(List.of(
+                    "--dataprism.hazelcast.cluster-name=operator-harness-" + System.nanoTime(),
+                    "--dataprism.hazelcast.join.mode=none",
+                    "--dataprism.hazelcast.member.port=" + freePort(),
                     "--dataprism.hazelcast.reidentification-enabled=true",
                     "--dataprism.hazelcast.reidentification-controls-reference=REVIEWED_CONTROLS",
                     "--dataprism.reidentification.enabled=true",

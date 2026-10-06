@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
@@ -44,11 +43,13 @@ import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
+import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
 import io.github.aindriub.dataprism.hazelcast.HazelcastApprovalStore;
 import io.github.aindriub.dataprism.hazelcast.HazelcastCallerRateLimiter;
 import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
 import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal;
 import io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
@@ -84,7 +85,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.util.ClassUtils;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
@@ -99,6 +102,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.Arrays;
@@ -272,15 +276,37 @@ public class DataPrismAutoConfiguration {
             ObjectProvider<IdentityResolver> identities, ObjectProvider<HmacKeyReferenceResolver> keys,
             ObjectProvider<AuditSink> audit, ObjectProvider<PrivacyMetrics> metrics,
             @Qualifier(CONFIGURED_JSON_SOURCE_NAMES_BEAN) ObjectProvider<Set<String>> configuredJsonSourceNames,
-            Environment environment) {
+            Environment environment, ConfigurableListableBeanFactory beanFactory) {
         properties.validate();
-        properties.validateOperatorPort(environment.getProperty("server.port", Integer.class, 8080),
-                environment.getProperty("management.server.port", Integer.class));
+        Integer serverPort = environment.getProperty("server.port", Integer.class, 8080);
+        Integer managementPort = environment.getProperty("management.server.port", Integer.class);
+        properties.validateOperatorPort(serverPort, managementPort);
+        properties.validateCluster(applicationSuppliesCluster(beanFactory), serverPort, managementPort);
         DataPrismContractValidator.validateIntegrations(properties, adapters, identities, keys, audit, metrics,
                 configuredJsonSourceNames);
         validateProfile(properties);
         validateKey(properties, keys.getIfAvailable());
         return new Object();
+    }
+    private static final String CLUSTER_TYPE = "io.github.aindriub.dataprism.hazelcast.PrivacyCluster";
+    private static final String DEFAULT_CLUSTER_BEAN = "dataPrismPrivacyCluster";
+
+    /**
+     * Whether a {@code PrivacyCluster} other than this auto-configuration's own is defined. Looked up
+     * by type name so a {@code single-node} consumer without {@code data-prism-hazelcast} never
+     * resolves the optional class.
+     */
+    private static boolean applicationSuppliesCluster(ConfigurableListableBeanFactory beanFactory) {
+        if (!ClassUtils.isPresent(CLUSTER_TYPE, beanFactory.getBeanClassLoader())) {
+            return false;
+        }
+        try {
+            Class<?> type = ClassUtils.forName(CLUSTER_TYPE, beanFactory.getBeanClassLoader());
+            return Arrays.stream(beanFactory.getBeanNamesForType(type, true, false))
+                    .anyMatch(name -> !DEFAULT_CLUSTER_BEAN.equals(name));
+        } catch (ClassNotFoundException | LinkageError e) {
+            return false;
+        }
     }
     /**
      * Matches {@code data-prism-connectors-rest}'s {@code
@@ -537,8 +563,9 @@ public class DataPrismAutoConfiguration {
     @ConditionalOnBean({IdentityResolver.class, SecretKeyProvider.class, AuditSink.class, PrivacyMetrics.class, DataSourceAdapter.class})
     @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
     @ConditionalOnClass(HazelcastInstance.class)
-    ScopeBudget dataPrismClusterScopeBudget(ObjectProvider<PrivacyCluster> cluster) {
-        return ClusterBackedState.budgetOver(cluster);
+    ScopeBudget dataPrismClusterScopeBudget(ObjectProvider<PrivacyCluster> cluster,
+            ConfigurableListableBeanFactory beanFactory) {
+        return ClusterBackedState.budgetOver(cluster, beanFactory, "dataPrismClusterScopeBudget");
     }
 
     /**
@@ -555,14 +582,47 @@ public class DataPrismAutoConfiguration {
     @ConditionalOnClass(HazelcastInstance.class)
     @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
     static class ClusterBackedState {
-        @Bean @ConditionalOnMissingBean
+        /**
+         * Built from the explicit {@code dataprism.hazelcast} cluster settings, never from a default
+         * {@code Config}. Waits for {@link #dataPrismPropertiesValidated} so a refused configuration
+         * never starts a member.
+         */
+        @Bean @ConditionalOnMissingBean @DependsOn("dataPrismPropertiesValidated")
         PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties) {
-            return PrivacyCluster.embedded(new Config(), properties.getHazelcast().isReidentificationEnabled());
+            DataPrismProperties.Hazelcast h = properties.getHazelcast();
+            try {
+                ClusterMembership membership = new ClusterMembership(h.getClusterName(), join(h.getJoin()),
+                        h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
+                        Optional.ofNullable(h.getMember().getInterface()));
+                return PrivacyCluster.embedded(membership, h.isReidentificationEnabled());
+            } catch (PrivacyClusterRefusal refusal) {
+                String code = refusal.code().name();
+                throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
+            }
         }
 
-        /** Called by {@link #dataPrismClusterScopeBudget}; this class is never loaded unless that runs. */
-        static ScopeBudget budgetOver(ObjectProvider<PrivacyCluster> cluster) {
-            return new HazelcastScopeBudget(cluster.getObject());
+        private static ClusterMembership.Join join(DataPrismProperties.Hazelcast.Join join) {
+            DataPrismProperties.Hazelcast.Kubernetes k = join.getKubernetes();
+            return switch (join.getMode().strip()) {
+                case "tcp-ip" -> new ClusterMembership.TcpIp(join.getMembers());
+                case "kubernetes" -> new ClusterMembership.Kubernetes(k.getNamespace(), k.getServiceName(),
+                        k.getServiceDns());
+                default -> new ClusterMembership.None();
+            };
+        }
+
+        /**
+         * Called by {@link #dataPrismClusterScopeBudget}; this class is never loaded unless that runs.
+         * Registers the budget as dependent on whichever cluster bean it is built over, so the
+         * budget is destroyed before the member it uses is shut down.
+         */
+        static ScopeBudget budgetOver(ObjectProvider<PrivacyCluster> cluster,
+                ConfigurableListableBeanFactory beanFactory, String budgetBeanName) {
+            PrivacyCluster resolved = cluster.getObject();
+            for (String name : beanFactory.getBeanNamesForType(PrivacyCluster.class, true, false)) {
+                beanFactory.registerDependentBean(name, budgetBeanName);
+            }
+            return new HazelcastScopeBudget(resolved);
         }
 
         @Bean @ConditionalOnMissingBean

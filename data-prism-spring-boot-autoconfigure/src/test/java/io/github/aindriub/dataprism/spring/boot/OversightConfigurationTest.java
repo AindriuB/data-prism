@@ -79,6 +79,8 @@ class OversightConfigurationTest {
                 .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
                 .withUserConfiguration(RecordingIntegrations.class)
                 .withPropertyValues(base(topology))
+                .withPropertyValues("embedded".equals(topology)
+                        ? ClusterConfigurationTest.singleMember() : new String[0])
                 .withPropertyValues(extra);
     }
 
