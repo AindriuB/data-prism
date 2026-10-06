@@ -94,14 +94,25 @@ class UndeclaredKeyRefusalTest {
         var declared = java.util.Set.of("/a", "/a/*", "/a/*/b", "/c");
 
         assertThat(RefusalPaths.redact("$", declared)).isEqualTo("$");
-        assertThat(RefusalPaths.redact("$.a[2].b", declared)).isEqualTo("$.a[2].b");
+        assertThat(RefusalPaths.redact("$.a[2].b", declared)).isEqualTo("$.a[*].b");
         assertThat(RefusalPaths.redact("$.c", declared)).isEqualTo("$.c");
-        assertThat(RefusalPaths.redact("$.a[0]." + KEY, declared)).isEqualTo("$.a[0].<undeclared>");
+        assertThat(RefusalPaths.redact("$.a[0]." + KEY, declared)).isEqualTo("$.a[*].<undeclared>");
         assertThat(RefusalPaths.redact("$." + KEY + ".b", declared)).isEqualTo("$.<undeclared>");
         assertThat(RefusalPaths.redact("$.a[x" + TOKEN + "]", declared)).isEqualTo("$.a.<undeclared>");
         assertThat(RefusalPaths.redact("$.a" + TOKEN, declared)).isEqualTo("$.<undeclared>");
         assertThat(RefusalPaths.redact("no-dollar-" + TOKEN, declared)).isEqualTo("<undeclared>");
         assertThat(RefusalPaths.redact(null, declared)).isEqualTo("<undeclared>");
+    }
+
+    @Test
+    @DisplayName("RefusalPaths never emits index digits: a bracketed-digit key after a declared name and a real index both render [*]")
+    void refusalPathsCollapseIndices() {
+        var declared = java.util.Set.of("/a", "/a/*", "/a/*/b", "/c", "/email");
+
+        assertThat(RefusalPaths.redact("$.email[07700900123]", declared)).isEqualTo("$.email[*]");
+        assertThat(RefusalPaths.redact("$.email[07700900123][5]", declared)).isEqualTo("$.email[*][*]");
+        assertThat(RefusalPaths.redact("$.c[12]", declared)).isEqualTo("$.c[*]");
+        assertThat(RefusalPaths.redact("$.a[3].b", declared)).isEqualTo("$.a[*].b");
     }
 
     @Test

@@ -76,6 +76,11 @@ class UndeclaredKeyToolRefusalTest {
     record Open(@InternalIdentifier String id, @JsonAnyGetter Map<String, Object> extra) {
     }
 
+    @LlmExposedModel
+    record WithEmail(@InternalIdentifier String id, @InternalIdentifier String email,
+                     @JsonAnyGetter Map<String, Object> extra) {
+    }
+
     private final List<AuditEvent> audited = new ArrayList<>();
 
     private static PrivacyPolicyResolver profile(PrivacyProfile.UnclassifiedBehaviour behaviour) {
@@ -99,22 +104,26 @@ class UndeclaredKeyToolRefusalTest {
     }
 
     private DefaultContextOrchestrator orchestrator(PrivacyPolicyResolver policies, Object value) {
+        return orchestrator(policies, Open.class, new Open("1", Map.of(KEY, value)));
+    }
+
+    private <T> DefaultContextOrchestrator orchestrator(PrivacyPolicyResolver policies, Class<T> type, T payload) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         var scrubber = new JsonTreeScrubbingEngine(resolver, policies, (subject, namespace, ctx) -> "synthetic");
-        DataSourceAdapter<Open> adapter = new DataSourceAdapter<>() {
+        DataSourceAdapter<T> adapter = new DataSourceAdapter<>() {
             @Override
             public String sourceName() {
                 return "open-api";
             }
 
             @Override
-            public Class<Open> responseType() {
-                return Open.class;
+            public Class<T> responseType() {
+                return type;
             }
 
             @Override
-            public Open fetch(DataRequest request) {
-                return new Open("1", Map.of(KEY, value));
+            public T fetch(DataRequest request) {
+                return payload;
             }
         };
         return new DefaultContextOrchestrator(List.of(adapter), scrubber, resolver,
@@ -127,6 +136,10 @@ class UndeclaredKeyToolRefusalTest {
     }
 
     private void assertBothToolsRefuse(DefaultContextOrchestrator orchestrator, String code) {
+        assertBothToolsRefuse(orchestrator, code, TOKEN);
+    }
+
+    private void assertBothToolsRefuse(DefaultContextOrchestrator orchestrator, String code, String forbidden) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
         AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
@@ -151,9 +164,9 @@ class UndeclaredKeyToolRefusalTest {
 
             assertThat(result.isError()).as(name).isEqualTo(Boolean.TRUE);
             String text = ((McpSchema.TextContent) result.content().get(0)).text();
-            assertThat(text).as(name).contains(code).doesNotContain(TOKEN);
-            assertThat(result.toString()).as(name + " whole result").doesNotContain(TOKEN);
-            assertThat(audited.toString()).as(name + " audit").doesNotContain(TOKEN);
+            assertThat(text).as(name).contains(code).doesNotContain(forbidden);
+            assertThat(result.toString()).as(name + " whole result").doesNotContain(forbidden);
+            assertThat(audited.toString()).as(name + " audit").doesNotContain(forbidden);
         });
     }
 
@@ -177,5 +190,13 @@ class UndeclaredKeyToolRefusalTest {
         // A fresh resolver per orchestrator and the alternation inside it make this hold for both tool calls.
         assertBothToolsRefuse(orchestrator(refusesStructureOnly(), Map.of("inner", "v")),
                 "UNCLASSIFIED_STRUCTURE");
+    }
+
+    @Test
+    @DisplayName("VALIDATION_FAILED text carries no digits from a bracketed payload key after a declared name")
+    void bracketedDigitKey() {
+        var payload = new WithEmail("1", "plain", Map.of("email[07700900123]", "someone.else@example.com"));
+        assertBothToolsRefuse(orchestrator(profile(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE),
+                WithEmail.class, payload), "VALIDATION_FAILED", "07700900123");
     }
 }

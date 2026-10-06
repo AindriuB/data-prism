@@ -16,6 +16,10 @@ import java.util.Set;
  * does not resolve to one of them is undeclared, and so is everything after
  * it, so the path stops there. Anything that cannot be parsed is treated the
  * same way: unresolvable means undeclared.
+ *
+ * <p>Array indices are never copied. A bracketed digit run may be the tail of a
+ * payload key such as {@code email[07700900123]}, and the declared set cannot
+ * tell a scalar array from a scalar, so every index renders as {@code [*]}.
  */
 public final class RefusalPaths {
 
@@ -29,7 +33,7 @@ public final class RefusalPaths {
      * @param path     a dotted path from a scanned tree, such as {@code $.a.b[0].c}
      * @param declared JSON pointers of every declared field, array indices
      *                 collapsed to {@code *}, as in {@link ScrubResult#dispositions()}
-     * @return {@code path} up to the first segment that is not declared, with that
+     * @return {@code path}, indices collapsed to {@code [*]}, up to the first segment that is not declared, with that
      *         segment (and what follows it) rendered as {@link #UNDECLARED}
      */
     public static String redact(String path, Set<String> declared) {
@@ -46,7 +50,7 @@ public final class RefusalPaths {
                 if (close < 0 || !isIndex(path, i + 1, close)) {
                     return out.append('.').append(UNDECLARED).toString();
                 }
-                out.append(path, i, close + 1);
+                out.append("[*]");
                 pointer += "/*";
                 i = close + 1;
             } else if (c == '.') {

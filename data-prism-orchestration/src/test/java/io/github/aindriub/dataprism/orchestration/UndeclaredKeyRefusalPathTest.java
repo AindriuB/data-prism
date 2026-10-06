@@ -58,6 +58,12 @@ class UndeclaredKeyRefusalPathTest {
                 @JsonAnyGetter Map<String, String> extra) {
     }
 
+    @LlmExposedModel
+    record WithEmail(@InternalIdentifier String id,
+                     @InternalIdentifier String email,
+                     @JsonAnyGetter Map<String, String> extra) {
+    }
+
     private static PrivacyContext context() {
         return new PrivacyContext("SCOPE-1", PrivacyScopeType.CASE, "DEFAULT", "test",
                 Instant.parse("2030-01-01T00:00:00Z"), PseudonymisationVersion.HMAC_SHA256_V1);
@@ -65,26 +71,32 @@ class UndeclaredKeyRefusalPathTest {
 
     private static DefaultContextOrchestrator orchestrator(PrivacyProfile.UnclassifiedBehaviour behaviour,
                                                            String keyedValue, List<AuditEvent> events) {
+        return orchestrator(behaviour, Open.class, new Open("1", Map.of(KEY, keyedValue)), events);
+    }
+
+    private static <T> DefaultContextOrchestrator orchestrator(PrivacyProfile.UnclassifiedBehaviour behaviour,
+                                                               Class<T> type, T payload,
+                                                               List<AuditEvent> events) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         var profile = new PrivacyProfile("DEFAULT", behaviour, Map.of(DataClassification.PII,
                 PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
         var scrubber = new JsonTreeScrubbingEngine(resolver,
                 new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile)),
                 (subject, namespace, ctx) -> "synthetic");
-        DataSourceAdapter<Open> adapter = new DataSourceAdapter<>() {
+        DataSourceAdapter<T> adapter = new DataSourceAdapter<>() {
             @Override
             public String sourceName() {
                 return "open-api";
             }
 
             @Override
-            public Class<Open> responseType() {
-                return Open.class;
+            public Class<T> responseType() {
+                return type;
             }
 
             @Override
-            public Open fetch(DataRequest request) {
-                return new Open("1", Map.of(KEY, keyedValue));
+            public T fetch(DataRequest request) {
+                return payload;
             }
         };
         return new DefaultContextOrchestrator(List.of(adapter), scrubber, resolver,
@@ -141,5 +153,21 @@ class UndeclaredKeyRefusalPathTest {
         assertThat(refused.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(refused.path()).isEqualTo("$.<undeclared>");
         assertNothingLeaks(refused, events);
+    }
+
+    @Test
+    @DisplayName("VALIDATION_FAILED never carries digits from a bracketed payload key after a declared name")
+    void bracketedDigitKeyAfterDeclaredName() {
+        var events = new ArrayList<AuditEvent>();
+        var payload = new WithEmail("1", "plain", Map.of("email[07700900123]", "someone.else@example.com"));
+        var refused = refusal(orchestrator(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE,
+                WithEmail.class, payload, events));
+
+        assertThat(refused.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(refused.path()).isEqualTo("$.email[*]");
+        assertThat(refused.path()).doesNotContain("07700900123");
+        assertThat(refused.getMessage()).doesNotContain("07700900123");
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).toString()).doesNotContain("07700900123");
     }
 }

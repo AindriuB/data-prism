@@ -14,6 +14,7 @@ import io.github.aindriub.dataprism.core.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
+import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
@@ -35,6 +36,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -77,7 +79,7 @@ public final class DataPrismAssembly {
     /** As above, with the named profiles supplied rather than loaded from the shipped defaults. */
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
                              String profile, String localeTag,
-                             java.util.Map<String, io.github.aindriub.dataprism.core.policy.PrivacyProfile> profiles) {
+                             Map<String, PrivacyProfile> profiles) {
         SecretKeyProvider keys = StaticSecretKeyProvider.of(DEV_KEY);
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve(localeTag);
@@ -122,7 +124,7 @@ public final class DataPrismAssembly {
         this.clock = clock;
     }
 
-    private static java.util.Map<String, io.github.aindriub.dataprism.core.policy.PrivacyProfile>
+    private static Map<String, PrivacyProfile>
             defaultProfiles() {
         try (var in = DataPrismAssembly.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
             return PrivacyProfiles.fromYaml(in);
