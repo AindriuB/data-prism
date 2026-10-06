@@ -90,7 +90,8 @@ import java.util.Arrays;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(DataPrismProperties.class)
-@Import({DataPrismAutoConfiguration.IdentityResolverSelection.class, DataPrismAutoConfiguration.AuditSinkSelection.class})
+@Import({DataPrismAutoConfiguration.IdentityResolverSelection.class, DataPrismAutoConfiguration.AuditSinkSelection.class,
+        DataPrismAutoConfiguration.AuditIntegrityHealth.class})
 public class DataPrismAutoConfiguration {
     /**
      * Resolve this before singleton creation: an empty protected pipeline is never
@@ -440,10 +441,33 @@ public class DataPrismAutoConfiguration {
      */
     @Bean(destroyMethod = "close")
     AuditMaintenance dataPrismAuditMaintenance(DataPrismProperties properties, ObjectProvider<AuditRecorder> recorder,
-            ObjectProvider<AuditRetention> retention) {
+            ObjectProvider<AuditRetention> retention, ObjectProvider<PrivacyMetrics> metrics) {
         String checkpointPath = properties.getAudit().getCheckpoint().getFilePath();
         return new AuditMaintenance(checkpointPath == null || checkpointPath.isBlank() ? null : recorder.getIfAvailable(),
-                retention.getIfAvailable(), properties.getAudit().getCheckpoint().getInterval());
+                retention.getIfAvailable(), properties.getAudit().getCheckpoint().getInterval(),
+                metrics.getIfAvailable(PrivacyMetrics::none));
+    }
+    /** The {@code auditIntegrity} health contributor; present only when Spring Boot Actuator is. */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(org.springframework.boot.actuate.health.HealthIndicator.class)
+    static class AuditIntegrityHealth {
+        /** The bean name minus {@code HealthIndicator} is the contributor name: {@code auditIntegrity}. */
+        @Bean
+        org.springframework.boot.actuate.health.HealthIndicator auditIntegrityHealthIndicator(
+                AuditMaintenance maintenance) {
+            return () -> {
+                String code = maintenance.failureCode();
+                if (code == null) {
+                    return org.springframework.boot.actuate.health.Health.up().build();
+                }
+                org.springframework.boot.actuate.health.Health.Builder down =
+                        org.springframework.boot.actuate.health.Health.down().withDetail("code", code);
+                if (maintenance.failureSegmentDate() != null) {
+                    down.withDetail("segmentDate", maintenance.failureSegmentDate());
+                }
+                return down.build();
+            };
+        }
     }
     /**
      * {@code single-node}, or no topology configured at all (fixture-development,

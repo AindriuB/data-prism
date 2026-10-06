@@ -208,6 +208,18 @@ While a checkpoint cannot be written, audited calls are refused with
 cannot anchor, or whose chain does not verify, deletes nothing and logs the
 error.
 
+A purge failure keeps the server running and deletes nothing, and is made
+visible two ways. A counter named for the refusal code is incremented:
+`dataprism.audit.retention.unverified` (`AUDIT_RETENTION_CHAIN_UNVERIFIED`, a
+chain in an expiring segment does not verify, which can be evidence of
+tampering), `dataprism.audit.retention.anchor_failed`,
+`dataprism.audit.retention.delete_failed` or `dataprism.audit.retention.failed`.
+With Spring Boot Actuator present, the `auditIntegrity` health contributor
+reports `DOWN` with only `code` and, where the failure names one, `segmentDate`
+as details (no paths, no writer ids), until a later purge succeeds, when it
+returns to `UP`. Purge runs at startup and then every 24 hours, so a failure
+persists at least until the next run.
+
 With `file-path` (a single file), retention is not enforced in-process: it is
 an operator task.
 

@@ -27,7 +27,11 @@ class PrivacyMetricsTest {
                 "dataprism.source.errors",
                 "dataprism.identity.collision",
                 "dataprism.privacy.failclosed",
-                "dataprism.reidentification");
+                "dataprism.reidentification",
+                "dataprism.audit.retention.unverified",
+                "dataprism.audit.retention.anchor_failed",
+                "dataprism.audit.retention.delete_failed",
+                "dataprism.audit.retention.failed");
 
         Set<String> actual = Arrays.stream(Metric.values())
                 .map(Metric::metricName)

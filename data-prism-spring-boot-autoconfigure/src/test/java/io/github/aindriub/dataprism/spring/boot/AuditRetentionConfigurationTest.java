@@ -170,7 +170,7 @@ class AuditRetentionConfigurationTest {
                 "dataprism.audit.checkpoint.file-path=" + dir.resolve("cp.jsonl"));
     }
 
-    private static String[] valid() {
+    static String[] valid() {
         return new String[] {
                 "dataprism.security.jwt.issuer=https://issuer.example", "dataprism.security.jwt.audience=mcp",
                 "dataprism.security.jwt.jwk-set-uri=https://issuer.example/jwks",
