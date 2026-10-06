@@ -469,8 +469,8 @@ checkpoint on `close()`. Each is one JSON line, fsynced, holding the writer's
 (`AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE`). A server built from the Spring Boot
 starter calls `checkpoint()` on a schedule: `dataprism.audit.checkpoint.interval`
 (default `PT5M`) sets it. The schedule runs only when a checkpoint location
-(`dataprism.audit.checkpoint.file-path`) is configured; without one nothing
-checkpoints. An application that builds `AuditRecorder` itself must
+(`dataprism.audit.checkpoint.file-path`) is configured; without one no PERIODIC
+checkpoint is written. An application that builds `AuditRecorder` itself must
 call `checkpoint()` on its own schedule.
 `RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
 [Retention](#retention).

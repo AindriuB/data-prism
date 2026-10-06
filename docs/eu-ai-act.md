@@ -140,13 +140,13 @@ wherever the setting is omitted, that refuses the whole response
 bundled profiles and refuse an application `PrivacyPolicyResolver` bean
 (`FORBIDDEN_PRIVACY_OVERRIDE`), so a server deployment always has
 `FAIL_REQUEST`. A weaker setting is possible only when you assemble the core
-library yourself and load your own YAML with `PrivacyProfiles.fromYaml`: there
+library yourself (for example with `PrivacyProfiles.fromYaml`): there
 `unclassified` can be `REDACT_AND_WARN`, `DROP_AND_WARN` or
 `PASS_THROUGH_UNSAFE`, and under `PASS_THROUGH_UNSAFE` an unclassified field,
 including one that holds a special-category value nobody labelled, reaches the
-model unchanged. With `FAIL_REQUEST` this supports data minimisation: a classified special-category
-value does not reach the model, and an unclassified field is refused rather than
-passed. See [Extending](extending.md) and
+model unchanged. With `FAIL_REQUEST` this supports data minimisation: a
+classified special-category value does not reach the model, and an unclassified
+field is refused rather than passed. See [Extending](extending.md) and
 [configuration](configuration.md).
 
 **No bias-detection profile ships.** Art. 10(5) is a narrow exception for
@@ -168,11 +168,10 @@ model correctly, and reviewing the `@NonSensitive` reasons. If you assemble the
 core library directly with your own profiles, choosing a weaker `unclassified`
 handling than `FAIL_REQUEST`, especially `PASS_THROUGH_UNSAFE`, which is your
 decision and removes the refusal described above. The starter and server do not
-allow it. Establishing a
-condition under GDPR Art. 9(2) before processing special categories anywhere in
-your system, including outside Data Prism. Assessing whether your system falls
-under Art. 5 or Art. 10(5), and what bias testing you need, with your own
-counsel.
+allow it. Establishing a condition under GDPR Art. 9(2) before processing
+special categories anywhere in your system, including outside Data Prism.
+Assessing whether your system falls under Art. 5 or Art. 10(5), and what bias
+testing you need, with your own counsel.
 
 ## Where each feature is documented
 
