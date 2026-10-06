@@ -9,6 +9,7 @@ import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 
 /**
  * The embedded member and the maps it holds.
@@ -30,9 +31,17 @@ import com.hazelcast.core.HazelcastInstance;
  * <p>Three settings here are security rather than tuning. No {@code MapStore}, so
  * nothing is written through to a database nobody audited. No persistence, so the
  * maps do not survive on disk by accident. A TTL on every entry, so a scope that
- * is never explicitly ended still expires. The transport security the
- * specification requires — TLS, member authentication, network isolation — is
- * deployment configuration and is not, and cannot be, defaulted here.
+ * is never explicitly ended still expires.
+ *
+ * <p>Membership is explicit and enforced. Auto-detection, multicast and phone-home
+ * are always off, and a member refuses to start under the Hazelcast default cluster
+ * name {@code dev} or a blank one, so it cannot join an unrelated cluster by
+ * accident. A {@code Config} that enables TLS or Hazelcast security is refused,
+ * because the open-source distribution has no member TLS engine and no member
+ * authentication: both are Enterprise features and are not provided here. Network
+ * isolation of the cluster port is therefore the deployer's responsibility.
+ * {@link #using} validates a supplied instance the same way and never shuts down
+ * an instance it did not start.
  */
 public final class PrivacyCluster implements AutoCloseable {
 
@@ -62,23 +71,58 @@ public final class PrivacyCluster implements AutoCloseable {
         this.reidentificationEnabled = reidentificationEnabled;
     }
 
+    /** Starts a member from an explicit, already validated membership description. */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled) {
+        return embedded(membership.toConfig(), reidentificationEnabled);
+    }
+
+    /** Validates and hardens the config, then starts a member. Refuses before anything starts. */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled) {
         return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config)),
                 reidentificationEnabled);
     }
 
-    /** Wraps a member someone else started, for a host that manages its own instance. */
+    /**
+     * Wraps a member someone else started, for a host that manages its own instance.
+     * The instance is validated and, if refused, left running: it is not ours to stop.
+     */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled) {
+        Config config = instance.getConfig();
+        checkClusterName(config);
+        var join = config.getNetworkConfig().getJoin();
+        if (join.getAutoDetectionConfig().isEnabled() || join.getMulticastConfig().isEnabled()) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_DISCOVERY,
+                    "auto-detection and multicast must be disabled on the supplied instance");
+        }
         return new PrivacyCluster(instance, reidentificationEnabled);
     }
 
+    private static void checkClusterName(Config config) {
+        String name = config.getClusterName();
+        if (name == null || name.isBlank()) {
+            throw new PrivacyClusterRefusal(Code.MISSING_CLUSTER_NAME, "clusterName is required");
+        }
+        if (ClusterMembership.isReserved(name)) {
+            throw new PrivacyClusterRefusal(Code.RESERVED_CLUSTER_NAME,
+                    "clusterName is the Hazelcast default and is refused");
+        }
+    }
+
     /**
-     * Applies the settings that are not the caller's to choose. Everything else on
-     * the supplied config — cluster name, discovery, TLS, member authentication —
-     * is left alone, because those are deployment decisions and guessing at them
-     * is how a cluster ends up reachable from somewhere it should not be.
+     * Refuses an unsafe config, forces discovery and phone-home off, and applies the
+     * settings that are not the caller's to choose. The join list and interface are
+     * still the caller's, but nothing is discovered implicitly.
      */
     static Config configure(Config config) {
+        checkClusterName(config);
+        var ssl = config.getNetworkConfig().getSSLConfig();
+        if ((ssl != null && ssl.isEnabled()) || config.getSecurityConfig().isEnabled()) {
+            throw new PrivacyClusterRefusal(Code.HAZELCAST_TLS_UNSUPPORTED,
+                    "TLS and member authentication are not available in the open-source distribution");
+        }
+        config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
+        config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
+        config.setProperty("hazelcast.phone.home.enabled", "false");
         config.addMapConfig(privacyMap(new MapConfig(IDENTITY_MAP)));
         config.addMapConfig(privacyMap(new MapConfig(REIDENTIFICATION_MAP)));
         config.addMapConfig(privacyMap(new MapConfig(BUDGET_MAP)));

@@ -123,7 +123,7 @@ class PrivacyClusterMembershipTest {
     @Test
     void embeddedConfigRefusesTlsAndSecurityBeforeStarting() {
         Config tls = new Config().setClusterName("c-tls");
-        tls.getNetworkConfig().getSSLConfig().setEnabled(true);
+        tls.getNetworkConfig().setSSLConfig(new com.hazelcast.config.SSLConfig().setEnabled(true));
         refuses(Code.HAZELCAST_TLS_UNSUPPORTED, () -> PrivacyCluster.embedded(tls, false));
         Config sec = new Config().setClusterName("c-sec");
         sec.getSecurityConfig().setEnabled(true);
