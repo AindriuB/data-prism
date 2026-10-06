@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.orchestration;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.DataRequest;
 import io.github.aindriub.dataprism.core.ConsistencyFinding;
@@ -160,6 +161,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         // response contains, and it is only ever read by the validators.
         Set<String> emitted = new LinkedHashSet<>();
         ObjectNode merged = null;
+        Map<String, String> dispositions = new LinkedHashMap<>();
 
         try {
             if (!budget.tryRead(context.scopeId(), request.subjectId(), limits.scopeReadBudget())) {
@@ -172,7 +174,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             }
 
             FetchOutcome fetched = fetchScrubAndMerge(request, context, investigationContext,
-                    sources, prohibited, emitted);
+                    sources, prohibited, emitted, dispositions);
             merged = fetched.merged();
             raw = fetched.raw();
 
@@ -212,15 +214,21 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             if (failure instanceof PrivacyRefusedException) {
                 metrics.increment(Metric.PRIVACY_FAILCLOSED);
             }
+            if (failure instanceof PrivacyRefusedException
+                    && !dispositions.containsValue("REFUSED")) {
+                // Refusal paths are built from payload keys, so none is ever recorded.
+                dispositions.put("merged:<refused>", "REFUSED");
+            }
             audit(request, subjectToken, fingerprint, context, investigationContext, "DENY", sources,
-                    correlationId);
+                    correlationId, dispositions);
             throw failure;
         }
 
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
-                correlationId);
+                correlationId, dispositions);
         return ContextResponse.of(request.entityType(), subjectToken, sources,
-                findings, merged, fieldsByNamespace(raw), aliasing, investigationContext, context);
+                findings, merged, fieldsByNamespace(raw), aliasing, investigationContext, context,
+                correlationId);
     }
 
     /**
@@ -271,7 +279,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     private FetchOutcome fetchScrubAndMerge(ContextRequest request, PrivacyContext context,
                                             InvestigationContext investigationContext,
                                             List<SourceOutcome> sources, Set<String> prohibited,
-                                            Set<String> emitted) {
+                                            Set<String> emitted,
+                                            Map<String, String> dispositions) {
         List<EntityCorrelationService.SourceRecord> raw = new ArrayList<>();
         ObjectNode merged = null;
         for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
@@ -286,9 +295,20 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                     record));
             prohibited.addAll(SourceValues.prohibited(record, resolver));
 
-            ScrubResult scrubbed = scrubber.scrub(record, context);
+            ScrubResult scrubbed;
+            try {
+                scrubbed = scrubber.scrub(record, context);
+            } catch (PrivacyRefusedException refused) {
+                // Fixed key from the declared source name; the exception path may carry payload keys.
+                dispositions.put(fetched.outcome().sourceName() + ":<refused>", "REFUSED");
+                throw refused;
+            }
             metrics.increment(Metric.PRIVACY_TRANSFORMATIONS);
             emitted.addAll(scrubbed.emitted());
+            // Real source name, never the alias: the audit trail is operator-facing.
+            String sourceName = fetched.outcome().sourceName();
+            scrubbed.dispositions().forEach((pointer, action) ->
+                    dispositions.put(sourceName + ":" + pointer, action.name()));
             if (merged == null) {
                 merged = scrubbed.tree();
             } else {
@@ -319,17 +339,18 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
 
     private void audit(ContextRequest request, String subjectToken, String fingerprint,
                        PrivacyContext context, InvestigationContext investigationContext,
-                       String decision, List<SourceOutcome> sources, String correlationId) {
+                       String decision, List<SourceOutcome> sources, String correlationId,
+                       Map<String, String> dispositions) {
         // Name and status only, and always the real source name: the audit trail
         // is an operational record for an operator, not a view a caller sees, so
         // it is never subject to SourceAliasing's capability check.
         Set<String> names = sources.stream()
                 .map(outcome -> outcome.sourceName() + ":" + outcome.status())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        audit.record(investigationContext.principalId(), investigationContext.clientId(),
+        audit.record(new AuditEntry(investigationContext.principalId(), investigationContext.clientId(),
                 request.toolName(), request.entityType(), subjectToken, fingerprint,
                 context.redactionProfile(), context.scopeId(), context.purpose(),
                 investigationContext.caseId(), decision, names, request.rejectedArguments(),
-                correlationId);
+                correlationId, dispositions, request.approvalId(), request.approverId()));
     }
 }

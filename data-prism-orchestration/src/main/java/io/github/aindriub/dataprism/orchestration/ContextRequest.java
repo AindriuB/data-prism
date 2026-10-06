@@ -32,9 +32,13 @@ import java.util.Set;
  *                                 filtered out. Agreement is only knowable before
  *                                 scrubbing, so this cannot be decided later from a
  *                                 {@link ContextResponse}; it has to be asked for here.
+ * @param approvalId               the four-eyes approval this call runs under, or {@code ""}.
+ * @param approverId               the second principal who approved it, or {@code ""}.
+ *                                 Both are copied verbatim into the audit entry.
  */
 public record ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
-                             String toolName, boolean includeAgreementFindings) {
+                             String toolName, boolean includeAgreementFindings,
+                             String approvalId, String approverId) {
 
     /** The tool every pre-task-42 constructor and factory audits a request under. */
     public static final String DEFAULT_TOOL_NAME = "get_entity_context";
@@ -51,6 +55,14 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
             throw new IllegalArgumentException("toolName must not be blank");
         }
         rejectedArguments = Set.copyOf(rejectedArguments);
+        approvalId = approvalId == null ? "" : approvalId;
+        approverId = approverId == null ? "" : approverId;
+    }
+
+    /** Source-compatible with every call site that predates approval ids: both are {@code ""}. */
+    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
+                          String toolName, boolean includeAgreementFindings) {
+        this(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings, "", "");
     }
 
     /** Source-compatible with every call site that predates {@code toolName} and agreement findings. */
