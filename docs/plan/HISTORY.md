@@ -17,6 +17,33 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 100: `data-prism-reidentification` module
+
+A new module, `data-prism-reidentification`, resolves a synthetic subject id back
+to a source subject through `ReidentificationService`. Every request, approval,
+rejection and collection is audited with purpose and case id. Four-eyes approval
+is optional in the library (`ReidentificationPolicy.fourEyes`), requires a
+distinct approver, and binds each approval to the requester, scope, tool and a
+fingerprint that includes purpose and case. An ArchUnit rule confines
+`ScopeIdentityIndex.subjectFor` to the reidentification package, and
+`docs/reidentification.md` documents the module. Merged onto the planning
+branch, not `main`.
+
+**Cost:** Attempt 1 consumed approvals by binding rather than by id, so with two
+approvals for the same synthetic, `collect(B)` consumed A while auditing B, and a
+second `collect(B)` succeeded. Its fingerprint also omitted purpose and case id,
+so a request for a different purpose returned the pending approval and audited
+the new purpose against an approval nobody saw. The audit write after an approve
+or open could fail and leave an unaudited usable approval, and the ArchUnit rule
+missed method references. Attempt 2 checks the id, status and binding before
+consuming, refuses unless the consumed id matches, undoes the store change when
+the audit write fails, re-checks `REQUEST` on collect, and uses an access-target
+rule. Identical-request dedup was dropped to make consume-by-binding
+unambiguous; do not restore it without a per-requester cap, since requesters can
+now flood approvers. Undoing an unaudited approve is done by consuming it,
+because core `ApprovalStore` has no revoke. `ServerStartupTest` flaked once with
+a 404 on the first full run.
+
 ## 2026-10-06 — Task 96: orchestrator audits field dispositions, exposes correlationId
 
 Every ALLOW and DENY event the orchestrator writes now carries per-field

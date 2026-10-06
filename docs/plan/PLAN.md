@@ -47,7 +47,7 @@ its "Depends on" has merged.
 | 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | done 2026-10-06 |
 | 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
 | 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | done 2026-10-06 |
-| 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | in flight (D1 answered) |
+| 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | done 2026-10-06 |
 | 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | next; D8 approval flow open |
 | 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 (97 merged; code unblocked) |
 | 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | D3, D5 |
@@ -57,9 +57,8 @@ its "Depends on" has merged.
 | 8 | 107 | Keyed audit chain (HMAC under a dedicated key) | 104, 106 | blocked on D2 |
 
 Next wave: 101 (96 and 98 both merged; D8's approval flow is still open, so
-check the task file before starting) and 100 (in flight, in its own worktree).
-102 is unblocked in code by 97 but waits on D3 and D5. 104 waits on 100, 101 and
-103 (99 merged).
+check the task file before starting). 100 has merged. 102 is unblocked in code
+by 97 but waits on D3 and D5. 104 waits on 101 and 103 (99 and 100 merged).
 
 Open owner decisions, each blocking or shaping the tasks named. D1 is answered
 and D8 is answered in part:
@@ -86,6 +85,26 @@ Open follow-up, independent of task 107: `AuditEventHash` joins `sourceSystems`
 and `dispositions` without escaping `,` or `=`, so two distinct records can
 produce the same hash. It needs an unambiguous encoding. Fix it whether or not
 107 goes ahead, since the chain's tamper detection rests on it.
+
+Follow-ups from the task 100 review, not yet tasks:
+
+- `ServerStartupTest.minimalReviewedExtensionStartsAndExposesOnlySafeUnauthenticatedHealth`
+  returned 404 instead of 200 once on a full reactor run and did not reproduce
+  on the rerun. Investigate.
+- The core `ApprovalStore` needs an explicit revoke or expire path for APPROVED
+  requests. `ReidentificationService` rolls back an unaudited approve by
+  consuming it, which looks the same as a real collect.
+- Move `SubjectForMethodReferenceFixture` into a nested class of
+  `ArchitectureTest`; it sits outside task 100's Owns list.
+- Document the `DECISION:<code>` `policyDecision` suffix form in
+  `docs/audit.md`, so consumers stop testing for an exact `DENY`.
+- `findPending` on `InMemoryApprovalStore` and `HazelcastApprovalStore` is no
+  longer used by re-identification. Check whether `ToolAdmission` still needs
+  it; remove it if not.
+- Per-requester cap on live pending re-identification approvals (an audited
+  refusal such as `TOO_MANY_PENDING`) or a rate limit on the operator surface.
+  Task 100 dropped dedup of identical requests, so one requester can flood
+  approvers. Noted on tasks 104 and 105.
 
 Follow-ups from the task 96 review, not yet tasks:
 

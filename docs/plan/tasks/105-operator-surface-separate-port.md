@@ -87,3 +87,9 @@ port, and the operator endpoints are not served on the MCP port.
   follow-up if needed.
 - Changes to the MCP JWT chain beyond restricting it to `server.port`.
 - `docs/architecture.md`. That is task 106.
+
+## Note from task 100's review (flooding)
+
+Task 100 dropped dedup of identical re-identification requests, so one requester
+can flood approvers. If task 104 does not cap live pending approvals per
+requester, this task must rate-limit the operator surface instead.

@@ -103,3 +103,12 @@ until it is settled.
 `ReidentificationPolicy.fourEyes` is a primitive with no library default. This
 task's property binding must default `dataprism.reidentification.four-eyes` to
 `true`, with a test asserting the default. Add it to acceptance.
+
+## Note from task 100's review (flooding)
+
+Task 100 dropped dedup of identical re-identification requests, because
+consume-by-binding must be unambiguous. One requester can therefore flood
+approvers with pending requests. Wiring should add a per-requester cap on live
+pending approvals, refused with an audit event (for example `TOO_MANY_PENDING`),
+unless task 105 takes a rate limit on the operator surface instead. Decide in
+one of the two and say which.
