@@ -205,7 +205,8 @@ final class OperatorHarness implements AutoCloseable {
                     "--dataprism.reidentification.roles.approver[0]=APPROVE"));
         }
         arguments.addAll(List.of(extraArguments));
-        context = new SpringApplicationBuilder(DataPrismServerApplication.class)
+        try {
+            context = new SpringApplicationBuilder(DataPrismServerApplication.class)
                 .web(WebApplicationType.SERVLET)
                 .logStartupInfo(false)
                 .initializers(applicationContext -> {
@@ -222,6 +223,11 @@ final class OperatorHarness implements AutoCloseable {
                     beans.registerSingleton("testMetrics", PrivacyMetrics.none());
                 })
                 .run(arguments.toArray(String[]::new));
+        } catch (RuntimeException | Error failure) {
+            System.clearProperty(CATALOGUE_LOCATION_PROPERTY);
+            identityServer.stop(0);
+            throw failure;
+        }
         mcpPort = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
     }
 

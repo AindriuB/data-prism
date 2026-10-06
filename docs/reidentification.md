@@ -79,8 +79,9 @@ is written to the reverse map.
   source that is already a `CachingSyntheticValueSource` over a different `PrivacyCluster` is left
   unwrapped, so its entries are never written where `ScopeIdentityIndex` reads and every request
   returns `REIDENTIFICATION_NOT_FOUND`.
-- Cache and reverse-index write failures are reported through the application's `PrivacyMetrics`
-  bean, as the identity cache hit and miss counters.
+- A reverse-map write failure is not reported as a distinct metric. It shows only as one identity
+  cache miss on the application's `PrivacyMetrics` bean, which is indistinguishable from a healthy
+  miss, plus a WARN log line ("identity cache unavailable").
 - The reverse map holds subject ids only, keyed by scope, namespace and pseudonym, and the entry ends
   with its scope.
 

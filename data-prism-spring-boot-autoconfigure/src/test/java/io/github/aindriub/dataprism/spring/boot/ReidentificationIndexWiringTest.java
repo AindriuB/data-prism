@@ -128,7 +128,7 @@ class ReidentificationIndexWiringTest {
         });
     }
 
-    @Test void a_cluster_failure_is_visible_as_a_metric_and_the_value_is_unchanged() {
+    @Test void a_cluster_failure_records_a_cache_miss_and_the_value_is_unchanged() {
         runner("embedded", all(INDEX, ENABLED, OPERATOR)).withUserConfiguration(RecordingMetrics.class).run(result -> {
             assertThat(result).hasNotFailed();
             String healthy = produce(result);
