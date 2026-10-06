@@ -182,8 +182,37 @@ public class DataPrismProperties {
         // at property-validation time, means a missing path is a startup refusal
         // with a stable code rather than a NullPointerException once that bean is
         // actually constructed.
+        if (!blank(audit.directory) && !blank(audit.filePath)) {
+            refuse("AMBIGUOUS_AUDIT_LOCATION",
+                    "set either dataprism.audit.directory or dataprism.audit.file-path, not both");
+        }
         if ("hash-chained".equals(audit.sink)) {
-            required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
+            if (blank(audit.directory)) {
+                required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
+            } else if (blank(audit.checkpoint.filePath)) {
+                // Purge reads its earlier anchors back from the checkpoint file; without one
+                // it could never prove a chain's start, so retention cannot run at all.
+                refuse("RETENTION_REQUIRES_CHECKPOINT",
+                        "dataprism.audit.directory requires dataprism.audit.checkpoint.file-path");
+            }
+        }
+        if (audit.checkpoint.interval == null || audit.checkpoint.interval.isZero()
+                || audit.checkpoint.interval.isNegative()) {
+            refuse("INVALID_AUDIT_CHECKPOINT_INTERVAL", "dataprism.audit.checkpoint.interval must be positive");
+        }
+        if (audit.retention == null) {
+            refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention must be set");
+        }
+        if (!audit.retentionOverride) {
+            try {
+                // AuditRetention owns the six-month rule; reuse it rather than restate it.
+                new io.github.aindriub.dataprism.audit.AuditRetention(java.nio.file.Path.of("."), audit.retention,
+                        c -> { }, java.time.Clock.systemUTC());
+            } catch (IllegalArgumentException e) {
+                refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention " + audit.retention
+                        + " is below six months; EU AI Act Art. 19 allows other periods only under Union or"
+                        + " national law, in which case set dataprism.audit.retention-override=true");
+            }
         }
         required(audit.writerId, "MISSING_AUDIT_WRITER", "dataprism.audit.writer-id");
         // AuditRecorder appends "/" plus a per-boot suffix to build its instanceId, so a
@@ -543,7 +572,59 @@ public class DataPrismProperties {
     }
 
     public static class Audit {
-        private String sink, writerId, credentialReference, filePath;
+        private String sink, writerId, credentialReference, filePath, directory;
+        private java.time.Period retention = java.time.Period.ofMonths(6);
+        private boolean retentionOverride;
+        private final Checkpoint checkpoint = new Checkpoint();
+
+        public String getDirectory() {
+            return directory;
+        }
+
+        public void setDirectory(String v) {
+            directory = v;
+        }
+
+        public java.time.Period getRetention() {
+            return retention;
+        }
+
+        public void setRetention(java.time.Period v) {
+            retention = v;
+        }
+
+        public boolean isRetentionOverride() {
+            return retentionOverride;
+        }
+
+        public void setRetentionOverride(boolean v) {
+            retentionOverride = v;
+        }
+
+        public Checkpoint getCheckpoint() {
+            return checkpoint;
+        }
+
+        public static class Checkpoint {
+            private String filePath;
+            private Duration interval = Duration.ofMinutes(5);
+
+            public String getFilePath() {
+                return filePath;
+            }
+
+            public void setFilePath(String v) {
+                filePath = v;
+            }
+
+            public Duration getInterval() {
+                return interval;
+            }
+
+            public void setInterval(Duration v) {
+                interval = v;
+            }
+        }
 
         public String getSink() {
             return sink;

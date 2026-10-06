@@ -2,7 +2,11 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
+import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.audit.AuditRetention;
+import io.github.aindriub.dataprism.audit.FileAuditCheckpointSink;
+import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.FileAuditSink;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
@@ -210,18 +214,21 @@ public class DataPrismAutoConfiguration {
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
         AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties) {
-            Path path = Path.of(properties.getAudit().getFilePath());
+            String directory = properties.getAudit().getDirectory();
+            Path path = Path.of(directory == null || directory.isBlank()
+                    ? properties.getAudit().getFilePath() : directory);
             try {
-                return new FileAuditSink(path);
+                return directory == null || directory.isBlank() ? new FileAuditSink(path)
+                        : new SegmentedFileAuditSink(path);
             } catch (FileAuditSink.OpenFailedException e) {
                 // Logging the caught exception object here is the same sanctioned
                 // exception docs/conventions.md records for GetEntityContextTool and
                 // CompareEntitySourcesTool: the cause can name a server filesystem
                 // path, so it stays server-side only, never repeated in the
                 // DataPrismConfigurationException message thrown below.
-                LOG.error("dataprism.audit.file-path could not be opened for the hash-chained audit sink", e);
+                LOG.error("dataprism.audit.file-path or directory could not be opened for the hash-chained audit sink", e);
                 throw new DataPrismConfigurationException("AUDIT_SINK_FILE_UNUSABLE",
-                        "dataprism.audit.file-path could not be opened for the hash-chained audit sink");
+                        "dataprism.audit.file-path or directory could not be opened for the hash-chained audit sink");
             }
         }
     }
@@ -387,7 +394,57 @@ public class DataPrismAutoConfiguration {
     @Bean @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties) { return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()))); }
     @Bean @ConditionalOnMissingBean @ConditionalOnBean(AuditSink.class)
-    AuditRecorder dataPrismAuditRecorder(AuditSink sink, Clock clock, DataPrismProperties properties) { return new AuditRecorder(sink, clock, properties.getAudit().getWriterId()); }
+    AuditRecorder dataPrismAuditRecorder(AuditSink sink, Clock clock, DataPrismProperties properties,
+            ObjectProvider<AuditCheckpointSink> checkpoints) {
+        AuditCheckpointSink checkpoint = checkpoints.getIfAvailable();
+        return checkpoint == null ? new AuditRecorder(sink, clock, properties.getAudit().getWriterId())
+                : new AuditRecorder(sink, clock, properties.getAudit().getWriterId(), checkpoint);
+    }
+    private static final org.slf4j.Logger AUDIT_LOG = org.slf4j.LoggerFactory.getLogger(DataPrismAutoConfiguration.class);
+    /**
+     * The checkpoint file, kept apart from the audit file. A path that cannot be opened is logged
+     * server-side only; the client-visible message never repeats it.
+     */
+    @Bean @ConditionalOnMissingBean(AuditCheckpointSink.class)
+    @ConditionalOnProperty(prefix = "dataprism.audit.checkpoint", name = "file-path")
+    FileAuditCheckpointSink dataPrismAuditCheckpointSink(DataPrismProperties properties) {
+        DataPrismProperties.Audit audit = properties.getAudit();
+        String auditLocation = audit.getDirectory() != null && !audit.getDirectory().isBlank()
+                ? audit.getDirectory() : audit.getFilePath();
+        try {
+            return new FileAuditCheckpointSink(Path.of(audit.getCheckpoint().getFilePath()),
+                    Path.of(auditLocation == null || auditLocation.isBlank() ? "." : auditLocation));
+        } catch (FileAuditCheckpointSink.CheckpointSinkException e) {
+            if (FileAuditCheckpointSink.SAME_AS_AUDIT_FILE.equals(e.code())) {
+                throw new DataPrismConfigurationException(FileAuditCheckpointSink.SAME_AS_AUDIT_FILE,
+                        "dataprism.audit.checkpoint.file-path must not be the audit file");
+            }
+            AUDIT_LOG.error("dataprism.audit.checkpoint.file-path could not be opened", e);
+            throw new DataPrismConfigurationException("AUDIT_CHECKPOINT_FILE_UNUSABLE",
+                    "dataprism.audit.checkpoint.file-path could not be opened");
+        }
+    }
+    /** Daily purge of expired segments; present only when {@code dataprism.audit.directory} is set. */
+    @Bean @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "dataprism.audit", name = "directory")
+    AuditRetention dataPrismAuditRetention(DataPrismProperties properties, Clock clock,
+            ObjectProvider<AuditCheckpointSink> checkpoints) {
+        DataPrismProperties.Audit audit = properties.getAudit();
+        return new AuditRetention(Path.of(audit.getDirectory()), audit.getRetention(),
+                checkpoints.getObject(), clock, audit.isRetentionOverride());
+    }
+    /**
+     * Runs the purge once now and then every 24h, and a PERIODIC checkpoint every {@code
+     * checkpoint.interval}, the first soon after boot. Declared to depend on the recorder, so on
+     * context close it stops before the recorder writes its SHUTDOWN checkpoint.
+     */
+    @Bean(destroyMethod = "close")
+    AuditMaintenance dataPrismAuditMaintenance(DataPrismProperties properties, ObjectProvider<AuditRecorder> recorder,
+            ObjectProvider<AuditRetention> retention) {
+        String checkpointPath = properties.getAudit().getCheckpoint().getFilePath();
+        return new AuditMaintenance(checkpointPath == null || checkpointPath.isBlank() ? null : recorder.getIfAvailable(),
+                retention.getIfAvailable(), properties.getAudit().getCheckpoint().getInterval());
+    }
     /**
      * {@code single-node}, or no topology configured at all (fixture-development,
      * where {@link DataPrismProperties#validate()} never requires one): the budget

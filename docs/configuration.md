@@ -178,6 +178,39 @@ It accepts exactly three values:
 
 An unrecognised `sink` value refuses startup with `UNKNOWN_AUDIT_SINK`.
 
+#### Segmented files, checkpoints and retention
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.audit.directory` | unset | With `hash-chained`: write one `audit-YYYY-MM-DD.log` segment per UTC day into this directory, instead of one file. Mutually exclusive with `file-path`. |
+| `dataprism.audit.checkpoint.file-path` | unset | A separate file receiving `BOOT`, `PERIODIC`, `SHUTDOWN` and `RETENTION_ANCHOR` checkpoints. Required with `directory`. Put it behind different access controls from the audit files, or it protects nothing. |
+| `dataprism.audit.checkpoint.interval` | `PT5M` | How often a `PERIODIC` checkpoint is written, the first soon after boot (within ten seconds). A `SHUTDOWN` checkpoint is written when the context closes. |
+| `dataprism.audit.retention` | `P6M` | With `directory`: segments dated before today minus this period are deleted, after a `RETENTION_ANCHOR` is recorded for each writer's last record in them. Run once at startup, then every 24 hours. |
+| `dataprism.audit.retention-override` | `false` | Must be `true` to accept a `retention` shorter than six months. Inert with a compliant value. |
+
+Refusal codes, each at startup:
+
+- `AMBIGUOUS_AUDIT_LOCATION` -- `directory` and `file-path` are both set.
+- `RETENTION_REQUIRES_CHECKPOINT` -- `directory` is set without `checkpoint.file-path`.
+- `AUDIT_RETENTION_BELOW_MINIMUM` -- `retention` is under six months and `retention-override` is not `true`.
+- `INVALID_AUDIT_CHECKPOINT_INTERVAL` -- `checkpoint.interval` is zero or negative.
+- `AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE` -- the checkpoint path is the audit file.
+- `AUDIT_CHECKPOINT_FILE_UNUSABLE` -- the checkpoint path cannot be opened. The path is logged server-side only, never in the message.
+
+The six-month default follows EU AI Act Art. 19, which sets a floor of six
+months for automatically generated logs "unless provided otherwise in
+applicable Union or national law". Other periods may be lawful under Union or
+national law; setting `retention-override` is the operator's own legal
+responsibility, and Data Prism does not judge whether such a law applies.
+
+While a checkpoint cannot be written, audited calls are refused with
+`AUDIT_CHECKPOINT_UNAVAILABLE` until the next checkpoint succeeds. A purge that
+cannot anchor, or whose chain does not verify, deletes nothing and logs the
+error.
+
+With `file-path` (a single file), retention is not enforced in-process: it is
+an operator task.
+
 `writer-id` is required for **every** sink, not only `hash-chained` — a
 missing one refuses startup with `MISSING_AUDIT_WRITER` regardless of which
 sink is configured. It need not be unique per boot: each boot mints its own
