@@ -17,6 +17,11 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 127: re-identification index wired over the application value source
+
+When re-identification is enabled, the application's `SyntheticValueSource` is wrapped so the reverse index is populated as synthetic values are issued, and operator re-identification now finds subjects in a running server. Wiring tests and a configured-JSON end-to-end test cover it, and the 0.4.0 task list is complete.
+**Cost:** It took three attempts and three review rounds. The red-first check on d92b2c1 failed 2 of 5 wiring tests, and the configured-JSON test was confirmed to fail with the wrapper disabled. Review fixes were a metrics doc error, a test-harness system-property leak and a test name. Reverse-index write failures are swallowed and show only as `IDENTITY_CACHE_MISS` plus a WARN; the follow-ups (failure metric, embedded forward cache, uncapped wrapper memory) are in PLAN. Merged by hand into the planning branch, not via `wt-merge.sh`.
+
 ## 2026-10-06 — Task 106: EU AI Act support mapping
 
 `docs/eu-ai-act.md` now maps, article by article (Arts. 9, 10, 12, 14, 26 and GDPR Art. 9), what Data Prism supports for a deployer, what it does not do, and what stays the deployer's job. It says "supports" throughout and never "compliant". `docs/architecture.md` records boundary 5 as mechanically enforced and carries two dated decisions, lifting the S10 deferral and reversing the v0.3.0 no-rotation choice. `audit.md`, `configuration.md` and `reidentification.md` were corrected to match 0.4.0 behaviour (daily segments, retention, checkpoints, operator port and codes).

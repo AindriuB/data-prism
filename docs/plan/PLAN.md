@@ -68,14 +68,14 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 6 | 126 | Reconcile 104's test with 123's `DENY:<code>` form | 104, 123 | done 2026-10-06 |
 | 6 | 128 | Refusal codes validated before reaching client text (shared `RefusalCodes`) | 123 | done 2026-10-06 |
 | 7 | 105 | Operator surface on a second port in the same process | 104 | done 2026-10-06 (attempt 3) |
-| 8 | 127 | Wire the re-identification index (wrap application `SyntheticValueSource`) | 105 | D-127 answered |
+| 8 | 127 | Wire the re-identification index (wrap application `SyntheticValueSource`) | 105 | done 2026-10-06 (attempt 3; `mvn clean verify`, `mkdocs build --strict`, `check_site.py` exit 0 on merged head) |
 | 9 | 106 | EU AI Act support mapping and architecture records | 94, 105 | done 2026-10-06 (attempt 4; `mkdocs build --strict` and `check_site.py` exit 0) |
 
 Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next for 0.4.0: 127 only (in flight). 106 merged 2026-10-06; 105 merged earlier the same day (`mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
+Next for 0.4.0: nothing open; 127 was the last 0.4.0 task and merged 2026-10-06. 106 merged 2026-10-06; 105 merged earlier the same day (`mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
 126 merged on 2026-10-06; `mvn clean verify` of the merged head exited 0 only
 after 126.
 Tasks 102 and 103 carried notes that a retention below six months refuses
@@ -120,6 +120,17 @@ Follow-ups from task 106, for 0.4.x, not yet tasks:
 10. `docs/reidentification.md` (around lines 152-153) says Docker Compose
     publishing of the operator port is "not yet done". That is true until the
     known 0.4.x Docker item lands; update the sentence then.
+
+Follow-ups from task 127, for 0.4.x, not yet tasks:
+
+11. Emit a dedicated failure metric in the `CachingSyntheticValueSource` catch
+    block (data-prism-hazelcast) and wire `failures()` into health. Today a
+    reverse-index write failure shows only as `IDENTITY_CACHE_MISS` plus a WARN.
+12. The forward identity cache is not wired for embedded topology when
+    re-identification is disabled. Performance only.
+13. The `CachingSyntheticValueSource` wrapper is built over a cluster with no
+    size cap, so memory grows with scopes x subjects x namespaces. Pre-existing;
+    document it or cap it.
 
 Accepted current behaviour: an approval-required call still consumes a
 rate-limit token. This is documented.
