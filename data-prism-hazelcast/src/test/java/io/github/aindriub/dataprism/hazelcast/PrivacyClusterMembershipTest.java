@@ -77,6 +77,49 @@ class PrivacyClusterMembershipTest {
     void interfaceIsAppliedWhenGiven() {
         Config c = ClusterMembership.tcpIp("c1", List.of("10.1.2.3")).withInterface("10.0.*.*").toConfig();
         assertThat(c.getNetworkConfig().getInterfaces().getInterfaces()).containsExactly("10.0.*.*");
+        assertThat(c.getProperty("hazelcast.socket.bind.any")).isEqualTo("false");
+        Config k = ClusterMembership.kubernetes("c1", "ns", "svc", null).withInterface("10.0.*.*").toConfig();
+        assertThat(k.getProperty("hazelcast.socket.bind.any")).isEqualTo("false");
+    }
+
+    @Test
+    void withoutAnInterfaceTcpIpAndKubernetesBindAny() {
+        // Documented choice: no interface means bind-any, which is Hazelcast's default.
+        for (ClusterMembership m : List.of(ClusterMembership.tcpIp("c1", List.of("10.1.2.3")),
+                ClusterMembership.kubernetes("c1", "ns", "svc", null))) {
+            Config c = m.toConfig();
+            assertThat(c.getProperty("hazelcast.socket.bind.any")).isNotEqualTo("false");
+            assertThat(c.getNetworkConfig().getInterfaces().isEnabled()).isFalse();
+        }
+    }
+
+    @Test
+    void noneRefusesAnInterfaceRatherThanIgnoringIt() {
+        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.none("c").withInterface("10.0.*.*"));
+        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.none("c").withInterface("127.0.0.1"));
+    }
+
+    @Test
+    void embeddedConfigRefusesAnEnabledAdvancedNetwork() {
+        Config c = new Config().setClusterName("c-adv");
+        c.getAdvancedNetworkConfig().setEnabled(true);
+        refuses(Code.UNSAFE_HAZELCAST_DISCOVERY, () -> PrivacyCluster.embedded(c, false));
+    }
+
+    @Test
+    void usingRefusesAnEnabledAdvancedNetworkAndLeavesItRunning() {
+        Config c = quiet("using-adv-" + System.nanoTime());
+        c.getAdvancedNetworkConfig().setEnabled(true);
+        c.getAdvancedNetworkConfig().setMemberEndpointConfig(new com.hazelcast.config.ServerSocketEndpointConfig()
+                .setPort(FreePorts.consecutive(1)).setPortAutoIncrement(false));
+        c.getAdvancedNetworkConfig().setJoin(c.getNetworkConfig().getJoin());
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(c);
+        try {
+            refuses(Code.UNSAFE_HAZELCAST_DISCOVERY, () -> PrivacyCluster.using(instance, false));
+            assertThat(instance.getLifecycleService().isRunning()).isTrue();
+        } finally {
+            instance.shutdown();
+        }
     }
 
     @Test
@@ -95,10 +138,10 @@ class PrivacyClusterMembershipTest {
         refuses(Code.INVALID_KUBERNETES_JOIN, () -> ClusterMembership.kubernetes("c", "ns", null, null));
         refuses(Code.INVALID_CLUSTER_PORT, () -> ClusterMembership.none("c").withPort(0));
         refuses(Code.INVALID_CLUSTER_PORT, () -> ClusterMembership.none("c").withPort(65536));
-        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.none("c").withInterface("example.com"));
-        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.none("c").withInterface("10.0.0.256"));
-        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.none("c").withInterface("10.0.0"));
-        assertThat(ClusterMembership.none("c").withInterface("10.0.*.*").interfaceAddress())
+        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.tcpIp("c", ok).withInterface("example.com"));
+        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.tcpIp("c", ok).withInterface("10.0.0.256"));
+        refuses(Code.INVALID_CLUSTER_INTERFACE, () -> ClusterMembership.tcpIp("c", ok).withInterface("10.0.0"));
+        assertThat(ClusterMembership.tcpIp("c", ok).withInterface("10.0.*.*").interfaceAddress())
                 .isEqualTo(Optional.of("10.0.*.*"));
     }
 
