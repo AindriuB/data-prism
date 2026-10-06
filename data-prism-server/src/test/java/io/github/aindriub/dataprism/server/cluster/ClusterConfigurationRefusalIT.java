@@ -1,7 +1,10 @@
 package io.github.aindriub.dataprism.server.cluster;
 
+import io.github.aindriub.dataprism.core.DataRequest;
+import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.server.operator.FixtureCustomer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -73,6 +76,8 @@ class ClusterConfigurationRefusalIT {
                 "--dataprism.privacy.hmac-key.environment-variable=DATAPRISM_TASK134_TEST_KEY",
                 "--dataprism.audit.sink=slf4j", "--dataprism.audit.writer-id=cluster-refusal-test",
                 "--dataprism.metrics.sink=micrometer",
+                "--dataprism.sources.customer.base-url=https://customer.example",
+                "--dataprism.sources.customer.timeout=2s",
                 "--dataprism.hazelcast.topology=embedded"));
         args.addAll(List.of(clusterArguments));
 
@@ -106,15 +111,31 @@ class ClusterConfigurationRefusalIT {
                     "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"));
             output.write((IdentityResolverExtension.class.getName() + "\n").getBytes(StandardCharsets.UTF_8));
             output.closeEntry();
-            String resource = IdentityResolverExtension.class.getName().replace('.', '/') + ".class";
-            output.putNextEntry(new ZipEntry(resource));
-            try (var input = ClusterConfigurationRefusalIT.class.getClassLoader().getResourceAsStream(resource)) {
-                if (input == null) {
-                    throw new IOException("missing test extension class " + resource);
+            for (Class<?> type : List.of(IdentityResolverExtension.class, FixtureCustomer.class,
+                    FixtureAdapter.class)) {
+                String resource = type.getName().replace('.', '/') + ".class";
+                output.putNextEntry(new ZipEntry(resource));
+                try (var input = ClusterConfigurationRefusalIT.class.getClassLoader().getResourceAsStream(resource)) {
+                    if (input == null) {
+                        throw new IOException("missing test extension class " + resource);
+                    }
+                    input.transferTo(output);
                 }
-                input.transferTo(output);
+                output.closeEntry();
             }
-            output.closeEntry();
+        }
+    }
+
+    /**
+     * A source adapter, so the shared budget bean exists. Without one the budget is never created
+     * and the build-time preflight reports {@code MISSING_SHARED_BUDGET} before the cluster
+     * settings are validated.
+     */
+    public static class FixtureAdapter implements DataSourceAdapter<FixtureCustomer> {
+        @Override public String sourceName() { return "customer"; }
+        @Override public Class<FixtureCustomer> responseType() { return FixtureCustomer.class; }
+        @Override public FixtureCustomer fetch(DataRequest request) {
+            return new FixtureCustomer(request.subjectId(), "Fixture Person", "ACTIVE");
         }
     }
 
@@ -123,6 +144,11 @@ class ClusterConfigurationRefusalIT {
         @Bean
         IdentityResolver identityResolver() {
             return new PassThroughIdentityResolver();
+        }
+
+        @Bean
+        FixtureAdapter fixtureAdapter() {
+            return new FixtureAdapter();
         }
     }
 }
