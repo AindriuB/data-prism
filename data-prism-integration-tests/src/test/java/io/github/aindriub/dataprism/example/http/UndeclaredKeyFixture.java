@@ -89,6 +89,36 @@ final class UndeclaredKeyFixture {
         };
     }
 
+    /** A different synthetic key for the successful-result scan (task 124). */
+    static final String RESULT_TOKEN = "zzResultKeyWv4";
+    static final String RESULT_KEY = RESULT_TOKEN + "@example.com";
+
+    /** The undeclared property's value is benign, so a pass-through run still succeeds. */
+    @LlmExposedModel
+    record Benign(@InternalIdentifier String id,
+                  @NonSensitive(reason = "carrier for undeclared properties; none are declared") @JsonAnyGetter
+                  Map<String, Object> extra) {
+    }
+
+    static DataSourceAdapter<Benign> benignAdapter() {
+        return new DataSourceAdapter<>() {
+            @Override
+            public String sourceName() {
+                return "benign-api";
+            }
+
+            @Override
+            public Class<Benign> responseType() {
+                return Benign.class;
+            }
+
+            @Override
+            public Benign fetch(DataRequest request) {
+                return new Benign("123", Map.of(RESULT_KEY, "benign-note"));
+            }
+        };
+    }
+
     static DataSourceAdapter<Open> adapter() {
         return new DataSourceAdapter<>() {
             @Override
@@ -145,6 +175,39 @@ final class UndeclaredKeyFixture {
                 GetEntityContextTool.NAME, Map.of("entityType", "CUSTOMER", "subjectId", "123")))));
         results.add(whole(compare.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(
                 CompareEntitySourcesTool.NAME, Map.of("entityType", "CUSTOMER", "subjectId", "123")))));
+        return results;
+    }
+
+    /** As {@link #run}, but against {@link #benignAdapter()} and returning the results themselves. */
+    static List<McpSchema.CallToolResult> runBenign(PrivacyProfile.UnclassifiedBehaviour behaviour,
+                                                    AuditSink sink, Clock clock) {
+        String purpose = "demonstration";
+        String role = "investigator";
+        DataPrismAssembly assembly = new DataPrismAssembly(List.of(benignAdapter()), clock, sink, "DEFAULT", "en",
+                profiles(behaviour));
+        AuditRecorder toolAudit = new AuditRecorder(sink, clock, "result-key-mcp");
+        SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
+                Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
+        AuthorizationService authorizationService =
+                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
+                new PurposeValidator(Set.of(purpose)));
+        GetEntityContextTool get = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock);
+        CompareEntitySourcesTool compare = new CompareEntitySourcesTool(assembly.orchestrator(),
+                authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
+                toolAudit, clock);
+        AuthenticatedCaller caller = new AuthenticatedCaller(
+                "result-key-principal", "result-key-client", Set.of(role), purpose, "CASE-RK-1", null);
+        McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(
+                "result-key-session", null, null, null,
+                McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller))));
+
+        List<McpSchema.CallToolResult> results = new ArrayList<>();
+        results.add(get.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(
+                GetEntityContextTool.NAME, Map.of("entityType", "CUSTOMER", "subjectId", "123"))));
+        results.add(compare.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(
+                CompareEntitySourcesTool.NAME, Map.of("entityType", "CUSTOMER", "subjectId", "123"))));
         return results;
     }
 
