@@ -75,6 +75,11 @@ RUN chown dataprism:dataprism /app/data-prism-server.jar
 USER dataprism
 
 EXPOSE 8080
+# 5701 is the Hazelcast member port: for private networks only, never published
+# to a host. Member traffic is unencrypted and unauthenticated.
+EXPOSE 5701
+# The operator port is set by dataprism.operator.port and has no fixed default,
+# so it is not EXPOSEd; publish it explicitly.
 
 # --server.port=8080 is a command-line argument, which Spring Boot ranks
 # above a mounted /app/config/application.yaml's own server.port — an
