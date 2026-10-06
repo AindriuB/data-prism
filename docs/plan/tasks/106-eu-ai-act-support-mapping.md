@@ -131,3 +131,16 @@ Required for attempt 3, all inside the existing Owns:
 4. docs/audit.md:465: say outright that the schedule runs only when a
    checkpoint location is configured (DataPrismAutoConfiguration.java:478-480).
 5. Re-wrap docs/audit.md:391-392 to the file's line width.
+
+## Attempt 3 — failed
+
+Tester: PASS. Reviewer: CHANGES (head 6bbd496). Attempt-2 items 1-5 are met and there are no regressions.
+Required for attempt 4. This is wording only, so change nothing else:
+1. docs/audit.md:472: "without one nothing checkpoints" is false. An
+   application-supplied `AuditCheckpointSink` bean with no `checkpoint.file-path` still
+   gets BOOT and SHUTDOWN checkpoints; only PERIODIC is skipped. Change it to
+   "without one no PERIODIC checkpoint is written".
+2. docs/eu-ai-act.md:142-143: `PrivacyProfile` is a public record, so a profile
+   built in Java can also carry `PASS_THROUGH_UNSAFE`. Change it to "assemble the core library
+   yourself (for example with `PrivacyProfiles.fromYaml`)".
+3. Re-wrap docs/eu-ai-act.md:147 and :170-171 to the paragraph width.
