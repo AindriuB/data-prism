@@ -419,6 +419,55 @@ only `GET_ENTITY_CONTEXT`:
 No source adapter is ever invoked for a refused call: authorisation happens
 before the orchestrator is asked for anything.
 
+## Admission codes: oversight refusals
+
+After authorisation and scope resolution, and before any source is touched,
+both tools check admission. A refused call returns `isError` with the code as
+its text, is counted as denied, and is audited as a DENY event carrying the same
+code. No source adapter is invoked.
+
+| Code | Meaning |
+|---|---|
+| `DATAPRISM_PAUSED` | An operator has paused every call. |
+| `TOOL_PAUSED` | An operator has paused this tool. |
+| `SCOPE_PAUSED` | An operator has paused the caller's privacy scope. |
+| `CALLER_RATE_LIMITED` | The caller has used its request allowance for the current window. |
+| `APPROVAL_REQUIRED` | The tool needs a second person's approval. The text is `APPROVAL_REQUIRED approvalId=<id>`. |
+| `APPROVAL_PENDING` | The approval is requested and not yet decided. The text is `APPROVAL_PENDING approvalId=<id>`. |
+| `OVERSIGHT_UNAVAILABLE` | Admission could not be evaluated, so the call is refused rather than let through. |
+
+After a different person approves, the identical call succeeds once. "Identical"
+means the same entity type and subject, and also the same purpose, privacy
+profile and client: an approval granted for one purpose does not cover a retry
+under another. A second retry, or a call with any changed argument, purpose,
+profile or client, is refused with `APPROVAL_REQUIRED` and a new approval id,
+and the earlier approval is left unconsumed. The approval id and the
+approver's id are written to the audit record of the call that ran under it.
+Neither is an argument: a caller cannot supply them.
+
+A call that needs approval consumes one of the caller's rate-limit tokens before
+it is refused with `APPROVAL_REQUIRED` or `APPROVAL_PENDING`. That is the current
+behaviour: a caller that polls while waiting for an approval can rate-limit
+itself with `CALLER_RATE_LIMITED`. This will be revisited when oversight is
+wired into the server.
+
+## Correlating with your AI-system logs
+
+Every tool result that the audit trail records carries that call's
+`correlationId` in the result's `_meta`, under the key
+`io.github.aindriub.dataprism/correlationId`. Store it in your AI system's own
+log entry for the call. It is the key that joins that entry to the matching
+Data Prism audit record, which carries the same value, for both successful
+calls and refusals.
+
+The `correlationId` is a random identifier. It is derived from nothing in the
+request or the response and carries no data. It is never placed in
+`structuredContent` or in the text of a successful result, so the model does not
+see it. A refusal the orchestrator audits (for example `VALIDATION_FAILED`,
+`NO_SOURCE_DATA` or `SCOPE_READ_BUDGET`) and a failure it audits as a DENY carry
+the id of that DENY record. A call rejected for missing `entityType` or
+`subjectId` is not audited, so it carries no `_meta` correlation id.
+
 ## Scope isolation
 
 `subjectId` never appears in a response — the pseudonym does, and the

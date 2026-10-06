@@ -221,7 +221,12 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             }
             audit(request, subjectToken, fingerprint, context, investigationContext, "DENY", sources,
                     correlationId, dispositions);
-            throw failure;
+            // The DENY event is written; hand its id to the caller so a refusal can
+            // be joined to it. Still a PrivacyRefusedException, so existing catches hold.
+            if (failure instanceof PrivacyRefusedException refused) {
+                throw new AuditedRefusalException(refused, correlationId);
+            }
+            throw new AuditedRefusalException(failure, request.entityType(), correlationId);
         }
 
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,

@@ -10,14 +10,18 @@ import io.github.aindriub.dataprism.core.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
+import io.github.aindriub.dataprism.audit.AuditEntry;
+import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
+import io.github.aindriub.dataprism.security.AdmissionDecision;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
+import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.github.aindriub.dataprism.security.AuthorizationDecision;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PrivacySession;
-import io.github.aindriub.dataprism.security.ReservedArguments;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
 import io.github.aindriub.dataprism.security.ToolInvocation;
@@ -87,6 +91,8 @@ public final class CompareEntitySourcesTool {
     private final AuditRecorder audit;
     private final Clock clock;
     private final AuthenticatedCaller developmentCaller;
+    private final ToolAdmission admission;
+    private final ParameterFingerprinter fingerprinter;
 
     public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                     ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
@@ -103,6 +109,28 @@ public final class CompareEntitySourcesTool {
     public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                     ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
                                     AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                ToolAdmission.none(), null, true);
+    }
+
+    /**
+     * @param admission     checked after scope resolution and before the orchestrator; any
+     *                      failure to evaluate it refuses the call
+     * @param fingerprinter binds an approval to this call's arguments; required with a real admission
+     */
+    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                                    ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
+                                    AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller,
+                                    ToolAdmission admission, ParameterFingerprinter fingerprinter) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), true);
+    }
+
+    /** {@code fingerprinter} is {@code null} only on the overloads that predate admission, which pass {@link ToolAdmission#none()}. */
+    private CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
+            ParameterFingerprinter fingerprinter, boolean canonical) {
         this.orchestrator = Objects.requireNonNull(orchestrator, "orchestrator");
         this.authorizationService = Objects.requireNonNull(authorizationService, "authorizationService");
         this.scopeResolver = Objects.requireNonNull(scopeResolver, "scopeResolver");
@@ -111,6 +139,8 @@ public final class CompareEntitySourcesTool {
         this.audit = Objects.requireNonNull(audit, "audit");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.developmentCaller = developmentCaller;
+        this.admission = Objects.requireNonNull(admission, "admission");
+        this.fingerprinter = fingerprinter;
     }
 
     public McpServerFeatures.SyncToolSpecification specification() {
@@ -145,8 +175,7 @@ public final class CompareEntitySourcesTool {
         Map<String, Object> arguments = request.arguments();
         String entityType = text(arguments, "entityType");
         String subjectId = text(arguments, "subjectId");
-        Set<String> rejectedArguments = ReservedArguments.rejected(
-                arguments == null ? Set.of() : arguments.keySet());
+        Set<String> rejectedArguments = ToolCalls.rejectedArguments(arguments);
 
         if (entityType == null || subjectId == null) {
             return error("entityType and subjectId are both required");
@@ -169,26 +198,41 @@ public final class CompareEntitySourcesTool {
             return deny(caller, refused.code(), entityType, rejectedArguments);
         }
 
-        // Past this point the call is accepted: authorisation and scope
-        // resolution both succeeded, regardless of what the orchestrator does
+        // Admission runs before anything reaches the orchestrator. It is never
+        // told an approval id by the caller: the id and approver below come
+        // only from the approval store's own record.
+        AdmissionDecision admitted = ToolCalls.admit(admission, fingerprinter, caller, NAME,
+                session.privacyContext(), ToolCalls.binding(entityType, subjectId, session.privacyContext(),
+                        session.investigationContext()));
+        if (!admitted.admitted()) {
+            return deny(caller, admitted.code(), admitted.approvalId(), entityType, rejectedArguments);
+        }
+
+        // Past this point the call is accepted: authorisation, scope
+        // resolution and admission all succeeded, regardless of what the orchestrator does
         // with it next.
         metrics.increment(Metric.MCP_REQUESTS);
 
+        ContextResponse response = null;
         try {
-            ContextResponse response = orchestrator.buildContext(
-                    ContextRequest.comparison(entityType, subjectId, rejectedArguments, NAME),
+            response = orchestrator.buildContext(
+                    new ContextRequest(entityType, subjectId, rejectedArguments, NAME, true,
+                            admitted.approvalId(), admitted.approverPrincipalId()),
                     session.privacyContext(), session.investigationContext());
             ComparisonResponse comparison = new ComparisonResponse(
                     response.entityType(), response.subject(), identity(response), findings(response));
-            return McpSchema.CallToolResult.builder()
+            return ToolCalls.withCorrelation(McpSchema.CallToolResult.builder()
                     .structuredContent(mapper.convertValue(comparison, Map.class))
-                    .addTextContent(mapper.writeValueAsString(comparison))
+                    .addTextContent(mapper.writeValueAsString(comparison)), response.correlationId())
                     .build();
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             // The tree is already scrubbed, so this is a serialisation fault
             // rather than a privacy one — but it still must not return a partial
             // body, so it is refused like any other failure.
-            return error("the response could not be serialised");
+            return ToolCalls.audited(error("the response could not be serialised"), response);
+        } catch (AuditedRefusalException refused) {
+            // Already audited as DENY by the orchestrator: return that event's id.
+            return ToolCalls.refused(refused);
         } catch (PrivacyRefusedException refused) {
             // The code and path are safe to return; the value that caused it was
             // never put in the exception in the first place.
@@ -282,9 +326,10 @@ public final class CompareEntitySourcesTool {
      */
     private McpSchema.CallToolResult denyUnauthenticated(String entityType, Set<String> rejectedArguments) {
         metrics.increment(Metric.MCP_DENIED);
+        String correlationId = UUID.randomUUID().toString();
         try {
             audit.record(UNAUTHENTICATED_PRINCIPAL, UNAUTHENTICATED_PRINCIPAL, NAME, entityType, "", "", "", "",
-                    "", "", NO_AUTHENTICATED_CALLER, Set.of(), rejectedArguments, UUID.randomUUID().toString());
+                    "", "", NO_AUTHENTICATED_CALLER, Set.of(), rejectedArguments, correlationId);
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
             // the server's own log; only the stable code below crosses to the
@@ -293,7 +338,7 @@ public final class CompareEntitySourcesTool {
                     + "serving an unaudited decision", auditFailure);
             throw new AuditUnavailableException(auditFailure);
         }
-        return error(NO_AUTHENTICATED_CALLER);
+        return denied(NO_AUTHENTICATED_CALLER, correlationId);
     }
 
     /**
@@ -304,11 +349,19 @@ public final class CompareEntitySourcesTool {
      */
     private McpSchema.CallToolResult deny(AuthenticatedCaller caller, String code, String entityType,
                                           Set<String> rejectedArguments) {
+        return deny(caller, code, null, entityType, rejectedArguments);
+    }
+
+    /** As above; {@code approvalId}, when not {@code null}, is audited and returned with the code. */
+    private McpSchema.CallToolResult deny(AuthenticatedCaller caller, String code, String approvalId,
+                                          String entityType, Set<String> rejectedArguments) {
         metrics.increment(Metric.MCP_DENIED);
+        String correlationId = UUID.randomUUID().toString();
+        String audited = approvalId == null ? "" : approvalId;
         try {
-            audit.record(caller.principalId(), caller.clientId(), NAME, entityType, "", "", "", "",
-                    caller.purpose(), caller.caseId(), code, Set.of(), rejectedArguments,
-                    UUID.randomUUID().toString());
+            audit.record(new AuditEntry(caller.principalId(), caller.clientId(), NAME, entityType, "", "", "", "",
+                    caller.purpose(), caller.caseId(), code, Set.of(), rejectedArguments, correlationId,
+                    Map.of(), audited, ""));
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
             // the server's own log; only the stable code below crosses to the
@@ -317,7 +370,12 @@ public final class CompareEntitySourcesTool {
                     + "unaudited decision", auditFailure);
             throw new AuditUnavailableException(auditFailure);
         }
-        return error(code);
+        return denied(approvalId == null ? code : ToolCalls.refusalText(code, approvalId), correlationId);
+    }
+
+    private static McpSchema.CallToolResult denied(String text, String correlationId) {
+        return ToolCalls.withCorrelation(McpSchema.CallToolResult.builder().isError(true).addTextContent(text),
+                correlationId).build();
     }
 
     private static String text(Map<String, Object> arguments, String key) {
