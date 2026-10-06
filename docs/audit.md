@@ -198,6 +198,24 @@ deletion of segments older than the retention window look legitimate. Keep
 checkpoint custody separate from the audit directory's, and treat an anchor as
 only as trustworthy as that custody.
 
+### policyDecision values
+
+The `policyDecision` field is not only `ALLOW` or `DENY`. Five forms are
+written today, by three modules.
+
+| Form | Written by | Meaning | Example |
+|---|---|---|---|
+| `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
+| `DENY` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused after fetching; the reason is in the field dispositions | `DENY` |
+| bare `<CODE>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran. The value is the refusal code: authorisation, scope, admission, or no authenticated caller | `TOOL_NOT_PERMITTED`, `NO_AUTHENTICATED_CALLER`, `CALLER_RATE_LIMITED`, `APPROVAL_REQUIRED` |
+| `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
+| `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |
+
+Classify by prefix and code, not by an exact `DENY`. A value is a denial
+unless it is `ALLOW` or starts with `ALLOW:`. A consumer that tests only for
+`DENY` misses every bare code and every `DENY:<code>`. Treat a value you do
+not recognise as a denial. The set of codes can grow between releases.
+
 ## The offline verifier
 
 `AuditChainVerifierCli` replays each writer's chain from a copy of this file

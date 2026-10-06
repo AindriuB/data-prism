@@ -197,9 +197,13 @@ resolution, the orchestrator, a source adapter, scrubbing, validation and
 audit.
 
 Each call's audit record also lists its field dispositions: the path of every
-field scrubbed from every answering source and the action taken on it (or
-`REFUSED` for the path that caused a refusal). It names paths and actions,
-never values.
+field scrubbed from every answering source and the action taken on it. A
+refusal is recorded as `REFUSED` under a fixed key, never a path. The key is
+`<source>:<refused>` when one source's scrub refused, and `merged:<refused>`
+for every other refusal after fetching. No path from the payload is ever
+recorded, because payload keys can carry data. `merged:<refused>` also marks
+refusals that are not validation failures, such as `NO_SOURCE_DATA` or an
+exhausted budget. It names paths and actions, never values.
 
 [![Sequence diagram of one get_entity_context call: the MCP client calls the tool, which authorises the caller, resolves a privacy session, then asks the orchestrator to fan out to a source adapter, scrub the record, validate it and record an audit event, before returning the response to the client.](assets/diagrams/entity-context-call.svg)](assets/diagrams/entity-context-call.svg)
 Select the diagram to open it full size.
