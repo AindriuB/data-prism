@@ -48,7 +48,14 @@ public record PrivacyProfile(
         /** Refuse the whole response. The default, and the right choice for production. */
         FAIL_REQUEST,
 
-        /** Keep the field, replace the value, record a warning. */
+        /**
+         * Keep the field, replace the value, record a warning.
+         *
+         * <p>An undeclared property is also renamed to a numbered placeholder,
+         * {@code <undeclared-1>}, {@code <undeclared-2>} and so on, because a
+         * payload key can itself be personal data. Numbers follow the raw keys in
+         * {@link String#compareTo} order and restart in each object.
+         */
         REDACT_AND_WARN,
 
         /**
@@ -59,7 +66,7 @@ public record PrivacyProfile(
          * properties it does not recognise rather than passing them along, and
          * ignoring is what makes it safe. Use this when a source adds fields
          * faster than the models can be updated and a failed request is worse
-         * than a missing field.
+         * than a missing field. An undeclared property's name is omitted with it.
          */
         DROP_AND_WARN,
 
@@ -80,6 +87,10 @@ public record PrivacyProfile(
          * for a specific dataset, made deliberately. It is not a default, it is
          * spelled UNSAFE in configuration so that it cannot be enabled without
          * reading it, and every field it releases is counted and warned about.
+         *
+         * <p>Undeclared property names pass through unchanged as well as values,
+         * and the leak validators scan values only, so a key that is personal
+         * data reaches the model unchecked.
          */
         PASS_THROUGH_UNSAFE;
 

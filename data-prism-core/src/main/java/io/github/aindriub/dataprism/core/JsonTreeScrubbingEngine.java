@@ -45,6 +45,9 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     /** Stands in a disposition path for a property the model does not declare. */
     static final String UNDECLARED = RefusalPaths.UNDECLARED;
 
+    /** Stands in an output tree for a property the model does not declare; numbered from 1 per object. */
+    private static final String PLACEHOLDER_PREFIX = "<undeclared-";
+
     /**
      * Guards against a self-referencing structure. A cycle in the source object
      * would already have failed when Jackson built the tree, so this catches
@@ -153,6 +156,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         String declaredSubject = subjectValue(in, byName, null, type);
         String ownSubject = declaredSubject != null ? declaredSubject : inheritedSubject;
 
+        Map<String, String> placeholders = placeholders(in, byName);
         ObjectNode out = SourceTree.newObject();
         for (String field : fieldNames(in)) {
             FieldMetadata md = byName.get(field);
@@ -183,10 +187,45 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             JsonNode scrubbed = apply(value, md, policy, run, fieldPath, fieldPointer, depth, ownSubject,
                     new OwnerScope(in, byName, type));
             if (scrubbed != null) {
-                out.set(field, scrubbed);
+                // The key is payload data and can be personal data. Unless the profile
+                // releases unclassified data wholesale, the model sees a placeholder.
+                boolean rename = unknownProperty && policy.action() != PrivacyAction.PASS_THROUGH;
+                out.set(rename ? placeholders.get(field) : field, scrubbed);
             }
         }
         return out;
+    }
+
+    /**
+     * Names for this object's undeclared properties, numbered by raw key order
+     * ({@link String#compareTo}) so the assignment does not depend on the order a
+     * source happens to serialise a map in. A number is skipped when its
+     * placeholder equals a declared property present in the same object, so no
+     * output property is overwritten.
+     */
+    private static Map<String, String> placeholders(ObjectNode in, Map<String, FieldMetadata> byName) {
+        List<String> undeclared = new ArrayList<>();
+        Set<String> taken = new HashSet<>();
+        for (String field : fieldNames(in)) {
+            if (byName.containsKey(field)) {
+                taken.add(field);
+            } else {
+                undeclared.add(field);
+            }
+        }
+        undeclared.sort(null);
+        Map<String, String> names = new java.util.HashMap<>();
+        int next = 1;
+        for (String field : undeclared) {
+            String name = PLACEHOLDER_PREFIX + next + ">";
+            while (taken.contains(name)) {
+                next++;
+                name = PLACEHOLDER_PREFIX + next + ">";
+            }
+            names.put(field, name);
+            next++;
+        }
+        return names;
     }
 
     /** @return the value to emit, or null to drop the field entirely */
