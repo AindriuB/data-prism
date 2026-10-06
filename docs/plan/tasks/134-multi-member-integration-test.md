@@ -105,3 +105,15 @@ without clustering, and the budget-100 deviation is accepted. Required for attem
    throws between the increment (:140) and the try (:242).
 Follow-up, not 134: in the packaged server, `topology=embedded` with no source adapter refuses with a
 misleading MISSING_SHARED_BUDGET before the cluster validation runs. It is fail-closed; record it for 0.4.x.
+
+## Attempt 2 — approved, with CI hardening required before merge
+
+Tester: PASS (3 sequential full-reactor runs green; MultiMemberOperatorTest took 19–52s). Reviewer: APPROVE.
+These go in **before merge**, because the 0.4.1 PR's CI is the first CI run of this test and GitHub
+runners have 2–4 vCPUs. Attempt 3 is test code only:
+1. In `ClusterMembers.start`, after the member count is reached, wait for
+   `getPartitionService().isClusterSafe()` on every member (bounded, e.g. 60s, failing with the state seen).
+2. The member-loss test calls `ownerOf` again just before `terminate`, and asserts the owner is unchanged.
+3. Raise the test MCP client's initialization and request timeouts to 180s wherever the
+   cluster tests build clients. If the helper is shared with OperatorHarness, change it only for the
+   cluster tests, unless raising it globally is harmless.
