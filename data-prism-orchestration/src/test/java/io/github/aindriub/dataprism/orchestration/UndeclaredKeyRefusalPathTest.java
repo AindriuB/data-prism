@@ -140,6 +140,7 @@ class UndeclaredKeyRefusalPathTest {
 
         assertThat(refused.code()).isEqualTo("UNKNOWN_FIELD");
         assertThat(refused.path()).isEqualTo("$.<undeclared>");
+        assertThat(events.get(0).policyDecision()).isEqualTo("DENY:UNKNOWN_FIELD");
         assertNothingLeaks(refused, events);
     }
 
@@ -152,6 +153,7 @@ class UndeclaredKeyRefusalPathTest {
 
         assertThat(refused.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(refused.path()).isEqualTo("$.<undeclared>");
+        assertThat(events.get(0).policyDecision()).isEqualTo("DENY:VALIDATION_FAILED");
         assertNothingLeaks(refused, events);
     }
 

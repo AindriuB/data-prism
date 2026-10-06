@@ -208,7 +208,7 @@ only as trustworthy as that custody.
 ### policyDecision values
 
 The `policyDecision` field is not only `ALLOW` or `DENY`. Five forms are
-recognised, written by four modules; two of them are written only by releases
+recognised, written by three modules; two of them are written only by releases
 before 0.4.0.
 
 | Form | Written by | Meaning | Example |
