@@ -301,10 +301,18 @@ all of these is in `design-review.md` under the section named.
   have limited it to live scopes. Reference implementations, if any, go in
   optional modules.
 - **2026-09-08 — Re-identification: the reverse map is built in S7, the operator
-  surface is deferred past V1.** Rejected: deferring both, because a reverse map
+  surface is deferred past V1.** *Superseded 2026-10-06, see below; the deferral
+  is lifted.* Rejected: deferring both, because a reverse map
   added later cannot resolve any pseudonym issued before it existed, so every
   scope created in the interim would be permanently opaque. The map is cheap; the
   surface is what needs the security review, and that can wait.
+- **2026-10-06 — Re-identification operator surface is in scope for V1
+  (supersedes the 2026-09-08 deferral above).** The owner lifted the deferral so
+  the EU AI Act plan (tasks 100, 104, 105, 106) can deliver an audited,
+  purpose-bound re-identification path. The reverse map is unchanged; the
+  surface needs the security review the original entry said it would. Four-eyes
+  for re-identification defaults ON (part of D8). The tool-call approval flow
+  is not yet decided.
 - **2026-09-13 — One configuration core serves the standalone server and Spring
   Boot starter.** The server is the primary product and the starter an embedded
   option; both bind and validate the same `dataprism.*` vocabulary. Rejected:

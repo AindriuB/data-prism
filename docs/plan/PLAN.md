@@ -24,7 +24,7 @@ brief; the reasoning and the rejected alternatives are in
 | MCP | Official MCP Java SDK directly, with Spring wiring written here. stdio in development, streamable HTTP in production |
 | HMAC key | Local key supplied at startup through a `SecretKeyProvider` SPI. No vendor client in core |
 | Audit sink | `AuditSink` SPI with a file/SLF4J implementation. No vendor client in core |
-| Re-identification | Reverse map built in S7. The operator surface (S10) is deferred past V1 |
+| Re-identification | Reverse map built in S7. The operator surface (S10) was deferred past V1; that deferral was lifted 2026-10-06 (D1) |
 
 ## Now
 
@@ -43,29 +43,30 @@ its "Depends on" has merged.
 | 1 | 93 | Scrubbing engines report per-field dispositions | none | done 2026-10-06 |
 | 1 | 94 | GDPR Art. 9 special-category classifications that fail closed | none | done 2026-10-06 |
 | 1 | 95 | Oversight SPIs in core | none | done 2026-10-06 |
-| 2 | 96 | Orchestrator audits dispositions, exposes `correlationId` | 92, 93 | |
+| 2 | 96 | Orchestrator audits dispositions, exposes `correlationId` | 92, 93 | done 2026-10-06 |
 | 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | done 2026-10-06 |
 | 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
 | 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | done 2026-10-06 |
-| 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | D1 |
-| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | D8 |
+| 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | in flight (D1 answered) |
+| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | next; D8 approval flow open |
 | 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 (97 merged; code unblocked) |
 | 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | D3, D5 |
-| 5 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103 | D1 |
-| 6 | 105 | Operator surface on a separate port: pause, approvals, re-identification | 104 | D1, D4, D8 |
-| 7 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D1, D6 |
+| 5 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103 | |
+| 6 | 105 | Operator surface on a separate port: pause, approvals, re-identification | 104 | D4, D8 |
+| 7 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
 | 8 | 107 | Keyed audit chain (HMAC under a dedicated key) | 104, 106 | blocked on D2 |
 
-Next wave: 96 (needs 92 and 93, both merged; attempt 2 in flight) and 100 (needs
-92 and 95; blocked on D1) can start now. 102 is unblocked in code by 97 but
-waits on D3 and D5. 101 waits on 96 (98 merged, 96 not). 104 waits on 100, 101
-and 103 (99 merged).
+Next wave: 101 (96 and 98 both merged; D8's approval flow is still open, so
+check the task file before starting) and 100 (in flight, in its own worktree).
+102 is unblocked in code by 97 but waits on D3 and D5. 104 waits on 100, 101 and
+103 (99 merged).
 
-Open owner decisions. None is answered yet, and each blocks or shapes the tasks
-named:
+Open owner decisions, each blocking or shaping the tasks named. D1 is answered
+and D8 is answered in part:
 
-- D1: lift the 2026-09-08 deferral of the re-identification operator surface.
-  Blocks 100, 104, 105, 106.
+- D1: answered 2026-10-06. The 2026-09-08 deferral of the re-identification
+  operator surface is lifted; 100, 104, 105 and 106 are no longer blocked on it.
+  Recorded in `docs/architecture.md#decisions-worth-knowing`.
 - D2: supersede the 2026-09-23 decision that rejected a keyed audit chain.
   Blocks 107. The planner recommends dropping 107.
 - D3: allow a segmented audit sink so retention can delete expired data.
@@ -78,12 +79,21 @@ named:
   claim.
 - D7: a checkpoint-write failure refuses all audited calls. Implemented as
   planned in 97, pending owner confirmation.
-- D8: approval flow and four-eyes default on. Shapes 98, 101, 105.
+- D8: answered in part 2026-10-06. Four-eyes for re-identification defaults ON.
+  Still open: the tool-call approval flow. Shapes 101 and 105.
 
 Open follow-up, independent of task 107: `AuditEventHash` joins `sourceSystems`
 and `dispositions` without escaping `,` or `=`, so two distinct records can
 produce the same hash. It needs an unambiguous encoding. Fix it whether or not
 107 goes ahead, since the chain's tamper detection rests on it.
+
+Follow-ups from the task 96 review, not yet tasks:
+
+- `docs/tools.md:201` says `REFUSED` is recorded "for the path that caused a
+  refusal", but the key is now a fixed `<source>:<refused>` or
+  `merged:<refused>` placeholder. Fix the wording.
+- Non-scrub refusals (budget exhaustion, `NO_SOURCE_DATA`) also get
+  `merged:<refused>`, which wrongly suggests a validation failure.
 
 Follow-ups from the task 97 review, not yet tasks:
 

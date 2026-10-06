@@ -17,6 +17,29 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 96: orchestrator audits field dispositions, exposes correlationId
+
+Every ALLOW and DENY event the orchestrator writes now carries per-field
+dispositions keyed `<source>:<pointer>`, joined from task 93's scrubbing
+outcomes to task 92's audit record. `ContextResponse` gains a non-serialised
+`correlationId` equal to the one in the audit event, and `ContextRequest` gains
+`approvalId` and `approverId` (empty when absent), copied into the audit entry;
+task 101 will populate them. A refusal records a fixed `REFUSED` key, never a
+path. Merged onto the planning branch, not `main`; full reactor `mvn verify`
+exited 0 after the merge. The same day, owner decision D1 lifted the deferral of
+the re-identification operator surface, and D8 was answered in part (four-eyes
+defaults ON); both are in `docs/architecture.md`.
+
+**Cost:** Attempt 1 keyed the DENY disposition on the exception path verbatim.
+Those paths are built from payload keys (unknown field, unclassified structure,
+validation of the merged tree), so a source returning an email address as a key
+put it in the audit file, the leak task 93 had closed for ALLOW. Attempt 2 uses
+fixed keys, `<source>:<refused>` or `merged:<refused>`, and
+`denyDoesNotRecordPayloadKeys` fails against attempt 1. Do not derive any audit
+key from the exception path. The fixed keys are coarse: budget exhaustion and
+`NO_SOURCE_DATA` also get `merged:<refused>`, which reads like a validation
+failure (a follow-up in PLAN.md).
+
 ## 2026-10-06 — Task 97: external audit checkpoints, verifier exit 5
 
 The audit recorder can now write `(instanceId, sequence, headHash)` checkpoints
