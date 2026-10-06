@@ -223,6 +223,23 @@ class ClusterConfigurationTest {
             assertThat(result.getBean(ScopeBudget.class)).isNotNull();
         });
     }
+    @Configuration(proxyBeanMethods = false)
+    static class DefaultNamedCluster {
+        @Bean(destroyMethod = "close") PrivacyCluster dataPrismPrivacyCluster() {
+            return new SuppliedCluster().suppliedCluster();
+        }
+    }
+
+    @Test void an_application_cluster_under_the_default_bean_name_needs_no_cluster_settings() {
+        runner("embedded").withUserConfiguration(DefaultNamedCluster.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(result.getBeansOfType(PrivacyCluster.class)).hasSize(1);
+        });
+    }
+    @Test void cluster_settings_beside_an_application_cluster_under_the_default_bean_name_are_refused() {
+        runner("embedded", NAME, NONE).withUserConfiguration(DefaultNamedCluster.class)
+                .run(result -> assertRefused(result, "CLUSTER_SETTINGS_IGNORED"));
+    }
     @Test void cluster_settings_beside_an_application_cluster_are_refused() {
         runner("embedded", NAME, NONE).withUserConfiguration(SuppliedCluster.class)
                 .run(result -> assertRefused(result, "CLUSTER_SETTINGS_IGNORED"));
@@ -275,6 +292,36 @@ class ClusterConfigurationTest {
     }
 
     // ---- property names bind from the environment, as the examples write them ------------------
+
+    @Test void the_environment_variables_reach_the_built_cluster_configuration() {
+        int port = freePort();
+        String name = uniqueName();
+        runner("embedded").withInitializer(context -> TestPropertyValues.of(
+                "DATAPRISM_HAZELCAST_CLUSTERNAME=" + name,
+                "DATAPRISM_HAZELCAST_JOIN_MODE=tcp-ip",
+                "DATAPRISM_HAZELCAST_JOIN_MEMBERS=127.0.0.1:" + port + ",127.0.0.1:" + (port + 1),
+                "DATAPRISM_HAZELCAST_MEMBER_PORT=" + port,
+                "DATAPRISM_HAZELCAST_MEMBER_INTERFACE=127.0.0.1")
+                .applyTo(context.getEnvironment(), TestPropertyValues.Type.SYSTEM_ENVIRONMENT)).run(result -> {
+            assertThat(result).hasNotFailed();
+            Config config = result.getBean(PrivacyCluster.class).instance().getConfig();
+            assertThat(config.getClusterName()).isEqualTo(name);
+            assertThat(config.getNetworkConfig().getPort()).isEqualTo(port);
+            assertThat(config.getNetworkConfig().getJoin().getTcpIpConfig().getMembers())
+                    .containsExactly("127.0.0.1:" + port, "127.0.0.1:" + (port + 1));
+            assertThat(config.getNetworkConfig().getInterfaces().getInterfaces()).containsExactly("127.0.0.1");
+        });
+    }
+
+    @Test void the_cluster_name_is_passed_stripped_as_validated() {
+        String name = uniqueName();
+        runner("embedded", "dataprism.hazelcast.cluster-name=  " + name + "  ", NONE,
+                "dataprism.hazelcast.member.port=" + freePort()).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(result.getBean(PrivacyCluster.class).instance().getConfig().getClusterName())
+                    .isEqualTo(name);
+        });
+    }
 
     @Test void the_example_environment_variables_bind() {
         StandardEnvironment env = new StandardEnvironment();
