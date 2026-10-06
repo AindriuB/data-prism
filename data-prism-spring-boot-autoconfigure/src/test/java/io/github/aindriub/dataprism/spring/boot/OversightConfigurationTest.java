@@ -247,7 +247,7 @@ class OversightConfigurationTest {
                     Map.of("entityType", "CUSTOMER", "subjectId", "456"));
             assertThat(second.isError()).isTrue();
             assertThat(text(second)).startsWith("TOO_MANY_PENDING");
-            assertThat(AUDITED).anySatisfy(event -> assertThat(event.policyDecision()).isEqualTo("TOO_MANY_PENDING"));
+            assertThat(AUDITED).anySatisfy(event -> assertThat(event.policyDecision()).isEqualTo("DENY:TOO_MANY_PENDING"));
         });
     }
 
