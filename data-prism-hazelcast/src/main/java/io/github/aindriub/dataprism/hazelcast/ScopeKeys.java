@@ -38,6 +38,40 @@ final class ScopeKeys {
         return scopeId + SEPARATOR + subjectId;
     }
 
+    /** Scope first, so ending the scope removes its approvals by prefix. A null scope keys as empty. */
+    static String approval(String scopeId, String approvalId) {
+        return (scopeId == null ? "" : scopeId) + SEPARATOR + approvalId;
+    }
+
+    static String approvalPrefix(String scopeId) {
+        return scopePrefix(scopeId == null ? "" : scopeId);
+    }
+
+    /** The approval id is whatever follows the first separator. */
+    static String approvalId(String approvalKey) {
+        return approvalKey.substring(approvalKey.indexOf(SEPARATOR) + 1);
+    }
+
+    static String scopeOf(String approvalKey) {
+        return approvalKey.substring(0, approvalKey.indexOf(SEPARATOR));
+    }
+
+    /**
+     * Pause keys. The global and tool keys contain no separator and every scope
+     * prefix ends in one, so ending a scope by prefix can never remove them.
+     */
+    static String pausedAll() {
+        return "all";
+    }
+
+    static String pausedTool(String tool) {
+        return "tool:" + tool;
+    }
+
+    static String pausedScope(String scopeId) {
+        return scopeId + SEPARATOR + "paused";
+    }
+
     static String scopePrefix(String scopeId) {
         return scopeId + SEPARATOR;
     }

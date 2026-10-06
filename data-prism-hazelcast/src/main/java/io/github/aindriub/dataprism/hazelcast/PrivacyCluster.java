@@ -45,6 +45,15 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Per-subject read counts, shared so the budget means what it says. */
     public static final String BUDGET_MAP = "dataprism.budget";
 
+    /** Pause flags: global, per tool, per scope. No TTL and no eviction, because losing one reopens a paused path. */
+    public static final String OVERSIGHT_MAP = "dataprism.oversight";
+
+    /** Approval requests, keyed scope first. Each entry lives until the request's expiry. */
+    public static final String APPROVAL_MAP = "dataprism.approval";
+
+    /** Per-caller fixed-window request counts. */
+    public static final String CALLER_RATE_MAP = "dataprism.callerrate";
+
     private final HazelcastInstance instance;
     private final boolean reidentificationEnabled;
 
@@ -73,6 +82,12 @@ public final class PrivacyCluster implements AutoCloseable {
         config.addMapConfig(privacyMap(new MapConfig(IDENTITY_MAP)));
         config.addMapConfig(privacyMap(new MapConfig(REIDENTIFICATION_MAP)));
         config.addMapConfig(privacyMap(new MapConfig(BUDGET_MAP)));
+        MapConfig oversight = privacyMap(new MapConfig(OVERSIGHT_MAP));
+        // An evicted pause flag is a path silently reopened.
+        oversight.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
+        config.addMapConfig(oversight);
+        config.addMapConfig(privacyMap(new MapConfig(APPROVAL_MAP)));
+        config.addMapConfig(privacyMap(new MapConfig(CALLER_RATE_MAP)));
         return config;
     }
 
