@@ -1,14 +1,22 @@
 version: 2
 updates:
+  # One grouped pull request per ecosystem per week, rather than one per
+  # dependency: each pull request runs the full build.
   - package-ecosystem: "maven"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      maven:
+        patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
 
   - package-ecosystem: "docker"
     directories:
@@ -18,3 +26,6 @@ updates:
       - "/docker/issuer"
     schedule:
       interval: "weekly"
+    groups:
+      docker:
+        patterns: ["*"]

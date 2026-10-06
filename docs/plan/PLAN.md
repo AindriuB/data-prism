@@ -140,6 +140,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
+| 1 | 130 | Clear the dependency backlog (`docs/plan/tasks/130-clear-dependency-backlog.md`). Runs only after 0.4.0 finishes publishing. Owns no files shared with 108-116 | none |
 | 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
 | 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
 | 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
@@ -151,7 +152,14 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
-before 0.4.0. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
+before 0.4.0. Task 130 likewise has no dependency but starts only once 0.4.0
+has finished publishing, and it owns no files shared with tasks 108-116, so it
+can run alongside any of them.
+
+**Owner decision, 2026-10-06:** Dependabot stays on, with version updates
+grouped into one PR per ecosystem per week (`.github/dependabot.yml`).
+GitHub-hosted runner minutes are free on this public repo, so the concern was
+noise and queueing, not cost. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
 full text follows, recorded here because no other file holds it.
 
 - **C1** — Record the external correlation id inside the hash, as
@@ -1693,13 +1701,13 @@ PR #101 on 2026-09-24; the site redeployed. See `HISTORY.md`.
 
 Owner decision D-129(a): publish to Maven Central (library modules), GHCR and
 the MCP Registry. `data-prism-server` stays off Central (`skipPublishing`) and
-comes from source, a GitHub Release or GHCR. Nothing below has been done; each
+comes from source, a GitHub Release or GHCR. Each remaining
 step is an outward action and needs the owner's go-ahead.
 
-1. Push `claude/data-prism-eu-compliance-04cf83` and open a PR to `main`.
-2. Wait for CI green, then merge.
-3. Tag `v0.4.0` on the merge commit, signed (`git tag -s v0.4.0 -m "v0.4.0"`), and push the tag. Watch `release.yml`.
-4. Create the GitHub Release for `v0.4.0`.
+1. Done: pushed `claude/data-prism-eu-compliance-04cf83` and opened PR #112 to `main`.
+2. Done: CI green, merged as `1e79904`.
+3. Done: annotated tag `v0.4.0` pushed on the merge commit, matching `v0.3.1`. It is not signed.
+4. In progress: the `release.yml` run for `v0.4.0`. When it finishes, create the GitHub Release for `v0.4.0` if the workflow has not.
 5. Dispatch `publish-central`, then verify the library modules at 0.4.0 on Central (`data-prism-server` must not appear).
 6. Dispatch `publish-image` with `-f version=0.4.0`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
 7. Dispatch `publish-mcp`, then verify the registry lists 0.4.0 as latest.
