@@ -135,9 +135,21 @@ including 5701, on random host ports. Publish 8080 explicitly with `-p`.
 
 The example in `docker/multi-instance/` runs two servers. Each lists both
 members by fixed address on a private `cluster` network and binds only that
-subnet. It publishes 8080 for one server on loopback and does not publish 5701.
-It needs Docker Compose 2.24.4 or later. It has been checked statically; a live
-two-member run is not yet part of this documentation.
+subnet, so a member does not listen on the `default` network. It publishes 8080
+for one server on loopback and does not publish 5701. It needs Docker Compose
+2.24.4 or later.
+
+!!! warning "A Compose network is not a security boundary"
+    Whether a container on another Docker network can route to the `cluster`
+    addresses depends on the engine. Linux Docker's iptables isolation blocks
+    it. Docker Desktop and OrbStack were observed to allow it: a container on
+    the `default` network only could not use the members' `default` addresses
+    but did reach the `cluster` addresses on port 5701. Treat the example as a
+    local proving setup. In production, isolate 5701 with a host firewall, a
+    `NetworkPolicy` or a private network.
+
+A live run of this example formed a two-member cluster (`Members {size:2`) on
+both servers.
 
 ```yaml
 --8<-- "multi-instance/compose.yaml:cluster-env"
@@ -175,7 +187,9 @@ flag.
 Data Prism supports a deployment that provides isolation from outside. It does
 not provide it:
 
-- Use a private network, such as a Docker `internal` network, for the members.
+- Use a private network for the members, enforced by a host firewall or your
+  platform. A Docker `internal` network is not enough on every engine (see
+  [Docker Compose](#docker-compose)).
 - On Kubernetes, enforce a `NetworkPolicy` on port 5701. It only works if your
   CNI enforces policies.
 - Or use a service mesh with mutual TLS between pods.
@@ -188,6 +202,45 @@ not provide it:
 
 Once that policy selects the pods, every other ingress is denied, port 8080
 included, until you add an allow rule for your ingress.
+
+## Using the starter
+
+An application that embeds the starter gets Hazelcast 5.7.0 only if its own build
+says so, because Data Prism's `dependencyManagement` is not inherited. Without
+it, Spring Boot's dependency management can select an older Hazelcast (0.4.0
+shipped 5.5.0).
+
+- With `spring-boot-starter-parent`, set the property:
+
+    ```xml
+    <properties>
+      <hazelcast.version>5.7.0</hazelcast.version>
+    </properties>
+    ```
+
+- When you import `spring-boot-dependencies`, add your own entry. The property
+  override does nothing for an imported BOM:
+
+    ```xml
+    <dependencyManagement>
+      <dependencies>
+        <dependency>
+          <groupId>com.hazelcast</groupId>
+          <artifactId>hazelcast</artifactId>
+          <version>5.7.0</version>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
+    ```
+
+- With Gradle and the Spring dependency-management plugin:
+
+    ```groovy
+    ext['hazelcast.version'] = '5.7.0'
+    ```
+
+0.4.0's multi-member behaviour was only ever exercised on 5.5.0 in the server
+module.
 
 ## Failure behaviour
 

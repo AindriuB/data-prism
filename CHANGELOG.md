@@ -78,6 +78,20 @@ do not authenticate each other: open-source Hazelcast has neither.
   did not exist. The configuration, EU AI Act support, architecture and
   re-identification pages now say what clustering shares and what it does not.
 
+### Publication
+
+0.4.1 publishes the library modules to Maven Central (not `data-prism-server`),
+the quickstart images to GHCR, and the server entry to the MCP Registry, as
+0.4.0 did.
+
+### Known limitations
+
+- The Docker Compose example's `cluster` network is not a security boundary. The
+  members bind and advertise only their cluster address, but on Docker Desktop
+  and OrbStack a container on another network was observed to reach port 5701 on
+  that address. Linux Docker's iptables isolation blocks it. Isolate 5701 with a
+  host firewall, a `NetworkPolicy` or a private network in production.
+
 ### Upgrading starter consumers to Hazelcast 5.7.0
 
 Our `dependencyManagement` is not inherited by your build, so a starter
@@ -90,6 +104,8 @@ consumer gets Hazelcast 5.7.0 only by saying so:
   for an imported BOM.
 - With Gradle and the Spring dependency-management plugin:
   `ext['hazelcast.version'] = '5.7.0'`.
+
+See "Using the starter" in `docs/multiple-instances.md`.
 
 ## [0.4.0] - 2026-10-06
 
