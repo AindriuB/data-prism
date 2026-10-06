@@ -474,6 +474,9 @@ it audits as `DENY:REQUEST_FAILED` carry the id of that DENY record. A call
 rejected for missing `entityType` or
 `subjectId` is not audited, so it carries no `_meta` correlation id.
 
+A refusal code that is not an upper-case token (`[A-Z][A-Z0-9_]{0,63}`) is shown to the
+client, and recorded in the audit, as `INVALID_REFUSAL_CODE`.
+
 ## Scope isolation
 
 `subjectId` never appears in a response — the pseudonym does, and the

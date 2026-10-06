@@ -10,6 +10,7 @@ import io.github.aindriub.dataprism.core.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.RefusalCodes;
 import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
@@ -236,7 +237,7 @@ public final class CompareEntitySourcesTool {
         } catch (PrivacyRefusedException refused) {
             // The code and path are safe to return; the value that caused it was
             // never put in the exception in the first place.
-            return error("refused: " + refused.code() + " at " + refused.path());
+            return error("refused: " + RefusalCodes.sanitise(refused.code()) + " at " + refused.path());
         } catch (RuntimeException e) {
             // Deliberately does not echo the message: a downstream failure can
             // carry a payload fragment, and this string goes to the model.
@@ -372,7 +373,7 @@ public final class CompareEntitySourcesTool {
                     + "unaudited decision", auditFailure);
             throw new AuditUnavailableException(auditFailure);
         }
-        return denied(approvalId == null ? code : ToolCalls.refusalText(code, approvalId), correlationId);
+        return denied(ToolCalls.refusalText(code, approvalId), correlationId);
     }
 
     private static McpSchema.CallToolResult denied(String text, String correlationId) {
