@@ -132,6 +132,7 @@ or `--help` for a shorter summary.
 | 2 | Break detected — an edit or deletion was found in at least one writer's chain, or a line could not be ruled out as tampering. |
 | 3 | Possibly-in-flight tail — the final record has no terminating newline; not a break. Only reported when nothing scored higher: a run with both a break and an in-flight tail exits 2, and a run with both a structural anomaly and an in-flight tail exits 4 (precedence is break, then anomaly, then in-flight tail). |
 | 4 | Structural anomaly — an interrupted-write fragment, a sink-contract duplicate-sequence violation, or a writer's chain not starting at `GENESIS` immediately after another structural anomaly, which offers plausible (never certain) context for the missing head. A writer's chain not starting at `GENESIS` in any other position is a break, exit code 2, not this. Never returned together with exit code 2. |
+| 5 | Checkpoint mismatch — only with `--checkpoints`: a writer's last surviving sequence is lower than its highest checkpointed sequence (`TRUNCATED_BEFORE_CHECKPOINT`), or a writer has a checkpoint past sequence 0 and no surviving records (`MISSING_WRITER`). Each is named per writer. Returned only when no break was found, and takes precedence over 3 and 4. A record whose hash differs from the checkpointed head at the same sequence is a break, exit 2. |
 
 ### What a run actually looks like
 
@@ -254,13 +255,15 @@ writer's chain as after it, not as separate breaks, at exit code 2.
 
 **What it does not prove — deliberately, not as an oversight:**
 
-- **Truncation of the most recent records is undetectable, structurally.** An
-  append-only file with its tail removed verifies perfectly end to end: there
-  is nothing left in the file to disagree with. The demonstration above is
-  not a corner case, it is the general shape of this gap. Detecting it needs
-  an external checkpoint — a periodically recorded expected head hash, held
-  somewhere the same actor who could truncate the file cannot also reach —
-  and this release does not build one. A final record with no terminating
+- **Truncation of the most recent records is undetectable from the audit
+  file alone.** An append-only file with its tail removed verifies perfectly
+  end to end: there is nothing left in the file to disagree with. The
+  demonstration above is not a corner case, it is the general shape of this
+  gap. Detecting it needs an external checkpoint — a recorded head hash held
+  somewhere the same actor who could truncate the file cannot also reach.
+  [External checkpoints](#external-checkpoints) narrow this gap when you
+  supply a checkpoint file; they do not close it, because records written
+  after a writer's last checkpoint remain undetectable if deleted. A final record with no terminating
   newline is reported as "possibly in flight" (exit code 3) precisely because
   it is *not* proof of either tampering or health: it is exactly as
   consistent with an in-progress write as with a truncation caught mid-line.
@@ -269,15 +272,16 @@ writer's chain as after it, not as separate breaks, at exit code 2.
   the surviving writers each still verify intact, and the report simply never
   mentions the boot whose every record is gone, because the verifier can only
   report on the writers it finds records for (demonstrated above alongside
-  the restart case).
+  the restart case). A checkpoint file makes such a boot visible only if it
+  recorded a checkpoint past sequence 0.
 - **This is intra-writer edit and delete detection, not a guarantee against
   a capable adversary.** `AuditEventHash` is unkeyed SHA-256 over the joined
   record body. Anyone able to write to this file directly can edit or delete
   a record and then simply recompute every hash that follows it — the
   resulting chain verifies perfectly, because nothing about an unkeyed hash
   stops whoever holds write access from recomputing it. Resisting that needs
-  a keyed MAC (a secret the adversary does not also have) or an external
-  checkpoint, and this release builds neither.
+  a keyed MAC (a secret the adversary does not also have), which this release
+  does not build, or a checkpoint file the adversary cannot also rewrite.
 - **Durable append-only-ness is an operator responsibility, not something
   this class enforces.** `FileAuditSink` opens the file with `O_APPEND`
   semantics; it does not configure WORM storage, an object-lock policy, or
@@ -288,6 +292,45 @@ writer's chain as after it, not as separate breaks, at exit code 2.
   boundary 7 covers logs (`PiiLogScanTest`) and this file
   (`AuditFilePiiScanTest`); metric labels and trace attributes are unscanned
   by any test in this release.
+
+### External checkpoints
+
+An `AuditRecorder` built with an `AuditCheckpointSink` writes checkpoints to a
+second file, separate from the audit file: a `BOOT` checkpoint at construction
+(sequence 0, `GENESIS` head; construction fails if it cannot be written),
+`PERIODIC` checkpoints whenever `checkpoint()` is called, and a `SHUTDOWN`
+checkpoint on `close()`. Each is one JSON line, fsynced, holding the writer's
+`instanceId`, the sequence reached, the head hash and a timestamp.
+`FileAuditCheckpointSink` refuses a path equal to the audit file
+(`AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE`). Calling `checkpoint()` on a schedule
+is up to the embedding application; this release adds no configuration for it.
+`RETENTION_ANCHOR` is a reserved checkpoint kind that the verifier does not
+yet interpret.
+
+If a checkpoint write fails, the recorder refuses every later `record(...)`
+with `AuditCheckpointUnavailableException`, without advancing the chain, until
+a later `checkpoint()` succeeds.
+
+```sh
+java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli \
+    /path/to/audit.log --checkpoints /path/to/checkpoints.jsonl
+```
+
+With `--checkpoints`, a writer whose last surviving sequence is below its
+highest checkpointed sequence, and a writer with a checkpoint past sequence 0
+and no surviving records, are each named and exit 5. The two walkthroughs
+above that exit 0 (a truncated tail, a deleted boot) exit 5 once the
+checkpoint file is supplied. A missing or malformed checkpoint file exits 1.
+
+What this still does not prove:
+
+- Records written after a writer's last checkpoint are undetectable if
+  deleted: nothing external says they existed.
+- A checkpoint only helps if whoever can edit the audit file cannot also edit
+  the checkpoint file. Keep them under different custody. A person who can
+  rewrite both can make them agree.
+- Neither file resists tampering by anyone who can write to it. Checkpoints
+  are unkeyed and unsigned; keyed or signed checkpoints are not built.
 
 No sentence above, or anywhere else in this file, should be read as a claim
 that the durable audit log is tamper-proof, immutable, or independently
