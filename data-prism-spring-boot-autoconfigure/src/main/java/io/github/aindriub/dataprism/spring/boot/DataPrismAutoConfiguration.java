@@ -289,7 +289,26 @@ public class DataPrismAutoConfiguration {
         return new Object();
     }
     private static final String CLUSTER_TYPE = "io.github.aindriub.dataprism.hazelcast.PrivacyCluster";
-    private static final String DEFAULT_CLUSTER_BEAN = "dataPrismPrivacyCluster";
+
+    /**
+     * Ownership is the bean definition's origin, never its name: this auto-configuration's cluster is
+     * the one produced by {@link ClusterBackedState}, so an application bean that happens to share
+     * the default name is still the application's.
+     */
+    private static boolean isFrameworkCluster(ConfigurableListableBeanFactory beanFactory, String name) {
+        if (!beanFactory.containsBeanDefinition(name)) {
+            return false;
+        }
+        String factoryBean = beanFactory.getBeanDefinition(name).getFactoryBeanName();
+        if (factoryBean == null) {
+            return false;
+        }
+        if (beanFactory.containsBeanDefinition(factoryBean)) {
+            String factoryClass = beanFactory.getBeanDefinition(factoryBean).getBeanClassName();
+            return ClusterBackedState.class.getName().equals(factoryClass);
+        }
+        return false;
+    }
 
     /**
      * Whether a {@code PrivacyCluster} other than this auto-configuration's own is defined. Looked up
@@ -303,7 +322,7 @@ public class DataPrismAutoConfiguration {
         try {
             Class<?> type = ClassUtils.forName(CLUSTER_TYPE, beanFactory.getBeanClassLoader());
             return Arrays.stream(beanFactory.getBeanNamesForType(type, true, false))
-                    .anyMatch(name -> !DEFAULT_CLUSTER_BEAN.equals(name));
+                    .anyMatch(name -> !isFrameworkCluster(beanFactory, name));
         } catch (ClassNotFoundException | LinkageError e) {
             return false;
         }
@@ -591,7 +610,7 @@ public class DataPrismAutoConfiguration {
         PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties) {
             DataPrismProperties.Hazelcast h = properties.getHazelcast();
             try {
-                ClusterMembership membership = new ClusterMembership(h.getClusterName(), join(h.getJoin()),
+                ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                         h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
                         Optional.ofNullable(h.getMember().getInterface()));
                 return PrivacyCluster.embedded(membership, h.isReidentificationEnabled());
@@ -607,7 +626,9 @@ public class DataPrismAutoConfiguration {
                 case "tcp-ip" -> new ClusterMembership.TcpIp(join.getMembers());
                 case "kubernetes" -> new ClusterMembership.Kubernetes(k.getNamespace(), k.getServiceName(),
                         k.getServiceDns());
-                default -> new ClusterMembership.None();
+                case "none" -> new ClusterMembership.None();
+                default -> throw new DataPrismConfigurationException("UNSUPPORTED_CLUSTER_JOIN",
+                        "dataprism.hazelcast.join.mode is not a supported mode");
             };
         }
 
