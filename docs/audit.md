@@ -205,6 +205,26 @@ deletion of segments older than the retention window look legitimate. Keep
 checkpoint custody separate from the audit directory's, and treat an anchor as
 only as trustworthy as that custody.
 
+### policyDecision values
+
+The `policyDecision` field is not only `ALLOW` or `DENY`. Five forms are
+written today, by three modules.
+
+| Form | Written by | Meaning | Example |
+|---|---|---|---|
+| `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
+| `DENY` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching (for example an exhausted read budget), or failed with an internal error such as a scrubber or validator failure. Adapter failures are recorded per source, and if every source fails the result is `NO_SOURCE_DATA`. The record does not carry the refusal code. A refusal itself is marked only as `REFUSED` under one of two fixed keys, `<source>:<refused>` or `merged:<refused>`, with no code; dispositions for fields already scrubbed from earlier sources may also be present, and an internal error adds no `REFUSED` mark. For a refusal, the client-facing code is in the MCP result, joined by `correlationId`; for an internal error the client sees only "the request could not be completed", with no code | `DENY` |
+| bare `<CODE>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran. The value is the refusal code: authorisation, scope, admission, or no authenticated caller | `TOOL_NOT_PERMITTED`, `NO_AUTHENTICATED_CALLER`, `CALLER_RATE_LIMITED`, `APPROVAL_REQUIRED` |
+| `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
+| `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |
+
+Classify by prefix and code, not by an exact `DENY`. `ALLOW` or a value
+starting with `ALLOW:` is a success. An empty value is unknown; it is
+reserved and never written today. Anything else is a denial or failure. A
+consumer that tests only for `DENY` misses every bare code and every
+`DENY:<code>`. Treat a value you do not recognise as a denial. The set of
+codes can grow between releases.
+
 ## The offline verifier
 
 `AuditChainVerifierCli` replays each writer's chain from a copy of this file
