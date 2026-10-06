@@ -16,8 +16,13 @@ import java.util.Map;
 /**
  * Every error body is {@code {"code":"..."}}. No exception message is ever copied into a response,
  * and only the exception's class name is logged: a message could carry a request value.
+ *
+ * <p>Not narrowed to the operator controllers: a request that matches no handler (an unknown path or
+ * a wrong method) never reaches one, so a controller-scoped advice would leave Spring's default body
+ * in its place. Only the operator port serves anything else but {@code /health}, which has no error
+ * path of its own.
  */
-@RestControllerAdvice(basePackageClasses = OperatorErrorAdvice.class)
+@RestControllerAdvice
 @ConditionalOnProperty(prefix = "dataprism.operator", name = "enabled", havingValue = "true")
 final class OperatorErrorAdvice {
 
