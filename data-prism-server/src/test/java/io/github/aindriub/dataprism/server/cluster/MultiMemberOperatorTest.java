@@ -32,7 +32,7 @@ class MultiMemberOperatorTest {
     Path tempDir;
 
     private static McpSyncClient client(OperatorHarness member) throws Exception {
-        return member.mcpClient(member.mcpToken(PRINCIPAL, CASE));
+        return member.mcpClient(member.mcpToken(PRINCIPAL, CASE), java.time.Duration.ofSeconds(180));
     }
 
     private static void post(OperatorHarness member, String path, String body) throws Exception {
@@ -189,6 +189,8 @@ class MultiMemberOperatorTest {
                 assertThat(OperatorHarness.text(survivorTwo.getEntityContext(onTwo, SUBJECT)))
                         .isEqualTo("DATAPRISM_PAUSED");
 
+                assertThat(cluster.ownerOf(PrivacyCluster.OVERSIGHT_MAP, "all"))
+                        .as("pause-key owner moved before the terminate").isEqualTo(owner);
                 cluster.terminate(owner);
                 cluster.awaitMembers(2);
 

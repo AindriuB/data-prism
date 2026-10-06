@@ -18,6 +18,8 @@ final class ClusterMembers implements AutoCloseable {
 
     private static final long JOIN_TIMEOUT_MILLIS = 30_000;
 
+    private static final long SAFE_TIMEOUT_MILLIS = 60_000;
+
     private final List<OperatorHarness> members = new ArrayList<>();
 
     static ClusterMembers start(Path tempDir, int count, String... extraArguments) throws Exception {
@@ -50,6 +52,7 @@ final class ClusterMembers implements AutoCloseable {
             members.add(OperatorHarness.startMember(tempDir, cluster, extraArguments));
         }
         awaitMembers(count);
+        awaitClusterSafe();
     }
 
     OperatorHarness member(int index) {
@@ -100,6 +103,33 @@ final class ClusterMembers implements AutoCloseable {
             if (System.nanoTime() > deadline) {
                 throw new AssertionError("expected " + expected + " cluster members within "
                         + JOIN_TIMEOUT_MILLIS / 1000 + "s; observed sizes per member: " + observed);
+            }
+            Thread.sleep(100);
+        }
+    }
+
+    /** Waits until every running member reports the cluster safe (no partition lacks its backup). */
+    void awaitClusterSafe() throws InterruptedException {
+        long deadline = System.nanoTime() + SAFE_TIMEOUT_MILLIS * 1_000_000;
+        List<Boolean> observed = new ArrayList<>();
+        while (true) {
+            observed.clear();
+            boolean safe = true;
+            for (OperatorHarness member : members) {
+                if (!member.context.isActive()) {
+                    continue;
+                }
+                boolean memberSafe = member.context.getBean(PrivacyCluster.class).instance()
+                        .getPartitionService().isClusterSafe();
+                observed.add(memberSafe);
+                safe &= memberSafe;
+            }
+            if (safe) {
+                return;
+            }
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("cluster not safe within " + SAFE_TIMEOUT_MILLIS / 1000
+                        + "s; isClusterSafe per member: " + observed);
             }
             Thread.sleep(100);
         }

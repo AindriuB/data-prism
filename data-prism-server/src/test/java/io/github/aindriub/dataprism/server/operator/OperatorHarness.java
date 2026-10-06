@@ -355,11 +355,20 @@ public final class OperatorHarness implements AutoCloseable {
     }
 
     public McpSyncClient mcpClient(String token) {
+        return mcpClient(token, null);
+    }
+
+    /** As {@link #mcpClient(String)}, with the given initialization and request timeouts when non-null. */
+    public McpSyncClient mcpClient(String token, java.time.Duration timeout) {
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
                 .builder("http://127.0.0.1:" + mcpPort).endpoint("/mcp")
                 .requestBuilder(HttpRequest.newBuilder().header("Authorization", "Bearer " + token)).build();
-        McpSyncClient client = McpClient.sync(transport)
-                .clientInfo(new McpSchema.Implementation("operator-test", "1.0.0")).build();
+        McpClient.SyncSpec spec = McpClient.sync(transport)
+                .clientInfo(new McpSchema.Implementation("operator-test", "1.0.0"));
+        if (timeout != null) {
+            spec = spec.initializationTimeout(timeout).requestTimeout(timeout);
+        }
+        McpSyncClient client = spec.build();
         client.initialize();
         return client;
     }
