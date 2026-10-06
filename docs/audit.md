@@ -371,6 +371,25 @@ chain is indistinguishable from that boot never having run.)
 Every run also prints a limitation statement, regardless of outcome; the
 section below is the full account of what that statement summarises.
 
+## Joining to your AI-system logs
+
+Every tool result that the audit trail records carries that call's
+`correlationId` in the result's `_meta`, under the key
+`io.github.aindriub.dataprism/correlationId`. The audit record for the same call
+carries the same value in its `correlationId` field, which is one of the fields
+the record hash covers, for successful calls and for refusals the orchestrator
+audits (`DENY:<code>`). To join your AI system's logs to this trail, store the
+`correlationId` from `_meta` in your own log entry for the call, then look it up
+in the audit file or directory. See
+[Correlating with your AI-system logs](tools.md#correlating-with-your-ai-system-logs)
+for what the id is derived from and which calls carry none.
+
+The id is the only join key. It is random and carries no data, and the model
+never sees it. This supports a deployer's own record-keeping; it does not make
+the Data Prism trail a record of your AI system's inputs or outputs, which are
+yours to log. A call rejected for a missing argument is not audited and has no
+id to join. See [EU AI Act and GDPR Art. 9 support](eu-ai-act.md).
+
 ## What this does and does not prove
 
 Read this before treating an intact report, or this file's mere existence,
