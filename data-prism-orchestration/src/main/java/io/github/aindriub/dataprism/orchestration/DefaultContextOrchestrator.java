@@ -16,6 +16,7 @@ import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.RefusalPaths;
 import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
 import io.github.aindriub.dataprism.core.RequestLimits;
@@ -162,6 +163,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         Set<String> emitted = new LinkedHashSet<>();
         ObjectNode merged = null;
         Map<String, String> dispositions = new LinkedHashMap<>();
+        // Every declared pointer any source reported: what a validator's path is
+        // checked against before it is allowed into a refusal.
+        Set<String> declared = new LinkedHashSet<>();
 
         try {
             if (!budget.tryRead(context.scopeId(), request.subjectId(), limits.scopeReadBudget())) {
@@ -174,7 +178,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             }
 
             FetchOutcome fetched = fetchScrubAndMerge(request, context, investigationContext,
-                    sources, prohibited, emitted, dispositions);
+                    sources, prohibited, emitted, dispositions, declared);
             merged = fetched.merged();
             raw = fetched.raw();
 
@@ -205,8 +209,10 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             if (!violations.isEmpty()) {
                 violations.forEach(v -> metrics.increment(Metric.PRIVACY_VALIDATION_FAILURES));
                 // Named by classification and path; the values themselves stay in
-                // the withheld response, which no caller ever sees.
-                throw new PrivacyRefusedException("VALIDATION_FAILED", violations.get(0).path(),
+                // the withheld response, which no caller ever sees. The validators walk
+                // the merged tree, which can hold payload keys the model never declared.
+                throw new PrivacyRefusedException("VALIDATION_FAILED",
+                        RefusalPaths.redact(violations.get(0).path(), declared),
                         violations.size() + " violation(s), first " + violations.get(0).code()
                                 + " by " + violations.get(0).detectionMethod() + "; response withheld");
             }
@@ -285,7 +291,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                             InvestigationContext investigationContext,
                                             List<SourceOutcome> sources, Set<String> prohibited,
                                             Set<String> emitted,
-                                            Map<String, String> dispositions) {
+                                            Map<String, String> dispositions,
+                                            Set<String> declared) {
         List<EntityCorrelationService.SourceRecord> raw = new ArrayList<>();
         ObjectNode merged = null;
         for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
@@ -314,6 +321,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             String sourceName = fetched.outcome().sourceName();
             scrubbed.dispositions().forEach((pointer, action) ->
                     dispositions.put(sourceName + ":" + pointer, action.name()));
+            declared.addAll(scrubbed.dispositions().keySet());
             if (merged == null) {
                 merged = scrubbed.tree();
             } else {

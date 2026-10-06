@@ -87,4 +87,27 @@ class UndeclaredKeyRefusalTest {
                     assertThat(e.getMessage()).doesNotContain(TOKEN);
                 });
     }
+
+    @Test
+    @DisplayName("RefusalPaths keeps declared segments and indices, and stops at the first undeclared one")
+    void refusalPaths() {
+        var declared = java.util.Set.of("/a", "/a/*", "/a/*/b", "/c");
+
+        assertThat(RefusalPaths.redact("$", declared)).isEqualTo("$");
+        assertThat(RefusalPaths.redact("$.a[2].b", declared)).isEqualTo("$.a[2].b");
+        assertThat(RefusalPaths.redact("$.c", declared)).isEqualTo("$.c");
+        assertThat(RefusalPaths.redact("$.a[0]." + KEY, declared)).isEqualTo("$.a[0].<undeclared>");
+        assertThat(RefusalPaths.redact("$." + KEY + ".b", declared)).isEqualTo("$.<undeclared>");
+        assertThat(RefusalPaths.redact("$.a[x" + TOKEN + "]", declared)).isEqualTo("$.a.<undeclared>");
+        assertThat(RefusalPaths.redact("$.a" + TOKEN, declared)).isEqualTo("$.<undeclared>");
+        assertThat(RefusalPaths.redact("no-dollar-" + TOKEN, declared)).isEqualTo("<undeclared>");
+        assertThat(RefusalPaths.redact(null, declared)).isEqualTo("<undeclared>");
+    }
+
+    @Test
+    @DisplayName("FieldMetadata.undeclared never stores the payload key; unannotated keeps the declared name")
+    void metadataNames() {
+        assertThat(FieldMetadata.undeclared(KEY).fieldName()).isEqualTo("<undeclared>");
+        assertThat(FieldMetadata.unannotated("note").fieldName()).isEqualTo("note");
+    }
 }

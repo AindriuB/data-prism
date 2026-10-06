@@ -7,6 +7,11 @@ package io.github.aindriub.dataprism.core;
  * offending value — an exception message is one of the places sensitive data
  * most often escapes, since it ends up in logs, traces and error responses at
  * once. See docs/pack.md §48.
+ *
+ * <p>The same goes for property names in the source payload, which can be
+ * personal data themselves (a map keyed by email address). A path segment that
+ * the reviewed model does not declare is rendered as {@code <undeclared>}; see
+ * {@link RefusalPaths}.
  */
 public class PrivacyRefusedException extends RuntimeException {
 

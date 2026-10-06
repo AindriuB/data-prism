@@ -43,7 +43,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     public static final String REDACTED = "[REDACTED]";
 
     /** Stands in a disposition path for a property the model does not declare. */
-    static final String UNDECLARED = "<undeclared>";
+    static final String UNDECLARED = RefusalPaths.UNDECLARED;
 
     /**
      * Guards against a self-referencing structure. A cycle in the source object
@@ -155,10 +155,11 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
         ObjectNode out = SourceTree.newObject();
         for (String field : fieldNames(in)) {
-            String fieldPath = path + "." + field;
-
             FieldMetadata md = byName.get(field);
             boolean unknownProperty = md == null;
+            // The same rule as the pointer below, for the same reason: an undeclared
+            // property's name is payload data, and this path ends up in refusals.
+            String fieldPath = path + "." + (unknownProperty ? UNDECLARED : field);
             // An undeclared property's name comes from the payload, not from the
             // model, so it must never reach the record of dispositions.
             String fieldPointer = unknownProperty ? pointer + "/" + UNDECLARED : child(pointer, field);
@@ -242,7 +243,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         // says nothing about the fields inside, which nobody has classified, so
         // the profile's setting for unclassified data decides, not the field's.
         EffectivePrivacyPolicy structure =
-                policies.resolve(FieldMetadata.undeclared(md.fieldName()), run.context());
+                policies.resolve(FieldMetadata.unannotated(md.fieldName()), run.context());
 
         if (!structure.allowed()) {
             throw new PrivacyRefusedException("UNCLASSIFIED_STRUCTURE", path,
