@@ -16,6 +16,36 @@ import java.util.Set;
  * offline verifier calls it again to recompute a recorded event's hash for
  * comparison. Neither keeps its own copy of the join format, so the two can
  * never drift apart from each other.
+ *
+ * <h2>Version 1 body</h2>
+ * <p>The nineteen original fields joined with {@code |}, set elements joined with
+ * {@code ,}, none escaped. Some distinct version 1 records therefore share a hash
+ * (for example {@code sourceSystems} {@code {"a,b"}} and {@code {"a","b"}}). The
+ * format is frozen so committed version 1 chains still verify.
+ *
+ * <h2>Version 2 and later body</h2>
+ * <p>The hash input is the concatenation, in this exact order, of {@code enc(x)} for:
+ * <ol>
+ *   <li>the {@code recordVersion} as a decimal string;</li>
+ *   <li>the sixteen scalar fields, in the version 1 order: {@code eventId},
+ *       {@code timestamp} (ISO-8601, {@code Instant.toString()}), {@code instanceId},
+ *       {@code sequence} (decimal), {@code principalId}, {@code clientId}, {@code tool},
+ *       {@code entityType}, {@code subjectPseudonym}, {@code parameterFingerprint},
+ *       {@code privacyProfile}, {@code scopeId}, {@code purpose}, {@code caseId},
+ *       {@code policyDecision}, {@code correlationId};</li>
+ *   <li>{@code sourceSystems}, then {@code rejectedArguments}: each is {@code enc(count)}
+ *       followed by its elements sorted by {@code String.compareTo}, each written with
+ *       {@code enc};</li>
+ *   <li>{@code previousHash};</li>
+ *   <li>{@code fieldDispositions}: {@code enc(count)} followed by {@code enc(key)} and
+ *       {@code enc(value)} for each entry in key order;</li>
+ *   <li>{@code approvalId}, then {@code approverId}.</li>
+ * </ol>
+ * <p>{@code enc(s)} is {@code <decimal UTF-8 byte length of s>:<s>}. A null scalar is
+ * written as the single character {@code ~}, which no {@code enc} output can start with.
+ * Because every item is length-prefixed, no two different records produce the same
+ * input. A later version extends this layout by appending further {@code enc} items
+ * after {@code approverId}, and must leave every item above untouched.
  */
 public final class AuditEventHash {
 
@@ -39,9 +69,10 @@ public final class AuditEventHash {
     }
 
     /**
-     * As the nineteen-field overload, and for {@code recordVersion >= 2} also
-     * folds the sorted {@code path=ACTION} dispositions, {@code approvalId} and
-     * {@code approverId}. Version 1 hashes over exactly the original nineteen.
+     * As the nineteen-field overload for {@code recordVersion} 1. For
+     * {@code recordVersion >= 2} the hash is over the length-prefixed encoding in the
+     * class documentation, which includes {@code recordVersion}, the dispositions,
+     * {@code approvalId} and {@code approverId}.
      */
     public static String compute(String eventId, Instant timestamp, String instanceId, long sequence,
                                   String principalId, String clientId, String tool, String entityType,
@@ -50,6 +81,12 @@ public final class AuditEventHash {
                                   String correlationId, Set<String> sourceSystems, Set<String> rejectedArguments,
                                   String previousHash, int recordVersion, Map<String, String> fieldDispositions,
                                   String approvalId, String approverId) {
+        if (recordVersion >= 2) {
+            return sha256(lengthPrefixedBody(eventId, timestamp, instanceId, sequence, principalId, clientId, tool,
+                    entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
+                    policyDecision, correlationId, sourceSystems, rejectedArguments, previousHash, recordVersion,
+                    fieldDispositions, approvalId, approverId));
+        }
         // Sorted so the hash does not depend on the iteration order of whatever
         // Set implementation the caller happened to pass in.
         String sources = String.join(",", sourceSystems.stream().sorted().toList());
@@ -61,12 +98,50 @@ public final class AuditEventHash {
         String body = String.join("|", eventId, renderedTimestamp, instanceId, Long.toString(sequence),
                 principalId, clientId, tool, entityType, subjectPseudonym, parameterFingerprint, privacyProfile,
                 scopeId, purpose, caseId, policyDecision, correlationId, sources, rejected, previousHash);
-        if (recordVersion >= 2) {
-            String dispositions = String.join(",", new java.util.TreeMap<>(fieldDispositions).entrySet().stream()
-                    .map(e -> e.getKey() + "=" + e.getValue()).toList());
-            body = String.join("|", body, dispositions, approvalId, approverId);
-        }
         return sha256(body);
+    }
+
+    private static String lengthPrefixedBody(String eventId, Instant timestamp, String instanceId, long sequence,
+                                             String principalId, String clientId, String tool, String entityType,
+                                             String subjectPseudonym, String parameterFingerprint,
+                                             String privacyProfile, String scopeId, String purpose, String caseId,
+                                             String policyDecision, String correlationId,
+                                             Set<String> sourceSystems, Set<String> rejectedArguments,
+                                             String previousHash, int recordVersion,
+                                             Map<String, String> fieldDispositions, String approvalId,
+                                             String approverId) {
+        StringBuilder b = new StringBuilder();
+        enc(b, Integer.toString(recordVersion));
+        for (String scalar : new String[] {eventId, timestamp == null ? null : timestamp.toString(), instanceId,
+                Long.toString(sequence), principalId, clientId, tool, entityType, subjectPseudonym,
+                parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, correlationId}) {
+            enc(b, scalar);
+        }
+        encSet(b, sourceSystems);
+        encSet(b, rejectedArguments);
+        enc(b, previousHash);
+        enc(b, Integer.toString(fieldDispositions.size()));
+        new java.util.TreeMap<>(fieldDispositions).forEach((k, v) -> {
+            enc(b, k);
+            enc(b, v);
+        });
+        enc(b, approvalId);
+        enc(b, approverId);
+        return b.toString();
+    }
+
+    private static void encSet(StringBuilder b, Set<String> elements) {
+        enc(b, Integer.toString(elements.size()));
+        elements.stream().sorted().forEach(e -> enc(b, e));
+    }
+
+    /** Appends {@code enc(s)}: UTF-8 byte length, a colon, then the text; {@code ~} for null. */
+    private static void enc(StringBuilder b, String s) {
+        if (s == null) {
+            b.append('~');
+            return;
+        }
+        b.append(s.getBytes(StandardCharsets.UTF_8).length).append(':').append(s);
     }
 
     /** @return the hex-encoded SHA-256 {@code eventHash} an already-built {@link AuditEvent} should carry. */

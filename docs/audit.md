@@ -81,8 +81,15 @@ A few properties are deliberate, not accidental gaps:
 
   Record version 2 adds four fields. `recordVersion` is `2` for every record
   written now; a line with no `recordVersion` is version 1 and still verifies,
-  hashed over exactly the nineteen fields above. For version 2 the hash also
-  folds in `fieldDispositions`, `approvalId` and `approverId`.
+  hashed over exactly the nineteen fields above, joined with `|` and `,` as
+  before. Because that joining does not escape its separators, some distinct
+  version 1 records can share a hash; version 1 keeps it so that committed
+  chains still verify. Version 2 hashes a length-prefixed encoding (each item
+  is written as its UTF-8 byte length, a colon and the text, so no two
+  different records produce the same input) that includes `recordVersion`,
+  `fieldDispositions`, `approvalId` and `approverId` as well as the nineteen
+  fields. Editing a version 2 record's `recordVersion` to `1` is therefore
+  reported as a break.
   `fieldDispositions` maps a field path to the action taken on it. Paths look
   like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
   example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
@@ -347,7 +354,8 @@ as more than it is.
 
 **What it proves.** For every record the verifier could see, in every
 writer's chain, replaying the chain found no edit or deletion of any of the
-nineteen hashed fields. Editing a record breaks its own stored hash the
+hashed fields (the nineteen of version 1; for version 2 also `recordVersion`,
+`fieldDispositions`, `approvalId` and `approverId`). Editing a record breaks its own stored hash the
 moment its content no longer matches what `AuditEventHash` recomputes from
 that content, so an edit is caught anywhere in the chain, including the very
 last record written — a chain does not have to have a successor record to

@@ -135,9 +135,16 @@ class AuditEventHashTest {
         assertThat(AuditChainVerifierCli.run(new String[] {path.toString()}, sink, sink))
                 .isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
         String content = Files.readString(path, StandardCharsets.UTF_8);
-        assertThat(content).contains("\"recordVersion\":2");
-        Files.writeString(path, content.replaceFirst("\"recordVersion\":2", "\"recordVersion\":1"),
-                StandardCharsets.UTF_8);
+        // recordVersion is the 21st unit-separator-delimited field of a version 2 line.
+        StringBuilder edited = new StringBuilder();
+        for (String line : content.split("\n")) {
+            String[] fields = line.split("\u001f", -1);
+            assertThat(fields).hasSize(24);
+            assertThat(fields[20]).isEqualTo("2");
+            fields[20] = "1";
+            edited.append(String.join("\u001f", fields)).append('\n');
+        }
+        Files.writeString(path, edited.toString(), StandardCharsets.UTF_8);
         assertThat(AuditChainVerifierCli.run(new String[] {path.toString()}, sink, sink))
                 .isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
     }
