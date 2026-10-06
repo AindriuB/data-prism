@@ -169,9 +169,24 @@ public class DataPrismProperties {
      * @param serverPort the effective {@code server.port}, or {@code null} when it is not known
      */
     void validateOperatorPort(Integer serverPort) {
+        validateOperatorPort(serverPort, null);
+    }
+
+    /**
+     * As {@link #validateOperatorPort(Integer)}, and also refuses a port equal to
+     * {@code management.server.port}: the actuator listener must not share the operator connector.
+     *
+     * @param managementPort the effective {@code management.server.port}, or {@code null} when it is
+     *                       unset or not known
+     */
+    void validateOperatorPort(Integer serverPort, Integer managementPort) {
         if (operator.enabled && operator.port != null && serverPort != null && serverPort > 0
                 && operator.port.equals(serverPort)) {
             refuse("OPERATOR_PORT_SHARED", "dataprism.operator.port must differ from server.port");
+        }
+        if (operator.enabled && operator.port != null && managementPort != null && managementPort > 0
+                && operator.port.equals(managementPort)) {
+            refuse("OPERATOR_PORT_SHARED", "dataprism.operator.port must differ from management.server.port");
         }
     }
 
@@ -222,6 +237,18 @@ public class DataPrismProperties {
                 || blank(operator.requiredAudience) || blank(operator.requiredScope))) {
             refuse("MISSING_OPERATOR_SECURITY",
                     "dataprism.operator.enabled requires port, required-audience and required-scope");
+        }
+        if (operator.enabled && !blank(operator.requiredAudience)
+                && operator.requiredAudience.equals(security.jwt.audience)) {
+            refuse("OPERATOR_AUDIENCE_SHARED",
+                    "dataprism.operator.required-audience must differ from dataprism.security.jwt.audience");
+        }
+        if (operator.enabled && !blank(operator.address)) {
+            try {
+                java.net.InetAddress.getByName(operator.address.trim());
+            } catch (java.net.UnknownHostException | RuntimeException unresolvable) {
+                refuse("INVALID_OPERATOR_ADDRESS", "dataprism.operator.address is not a usable address");
+            }
         }
         if (!operator.enabled && (!oversight.approvalRequiredTools.isEmpty()
                 || oversight.callerRateLimit.requests != null)) {
@@ -1105,6 +1132,8 @@ public class DataPrismProperties {
         private boolean enabled;
         private Integer port;
         private String requiredAudience, requiredScope;
+        /** The address the operator connector binds to; unset means the same as {@code server.address}. */
+        private String address;
 
         public boolean isEnabled() {
             return enabled;
@@ -1112,6 +1141,14 @@ public class DataPrismProperties {
 
         public void setEnabled(boolean v) {
             enabled = v;
+        }
+
+        public String getAddress() {
+            return address;
+        }
+
+        public void setAddress(String v) {
+            address = v;
         }
 
         public Integer getPort() {
