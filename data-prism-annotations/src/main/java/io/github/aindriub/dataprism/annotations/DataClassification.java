@@ -16,5 +16,20 @@ public enum DataClassification {
     CONTACT,
     CREDENTIAL,
     SECURITY,
-    CONFIDENTIAL
+    CONFIDENTIAL,
+    BIOMETRIC,
+    GENETIC,
+    ETHNIC_ORIGIN,
+    POLITICAL_OPINION,
+    RELIGIOUS_BELIEF,
+    TRADE_UNION,
+    SEX_LIFE_ORIENTATION;
+
+    /**
+     * GDPR Art. 9 special categories. Policy never lets a field carrying any of
+     * these reach the model weaker than {@code REDACT}.
+     */
+    public static final java.util.Set<DataClassification> SPECIAL_CATEGORIES = java.util.Set.of(
+            PHI, BIOMETRIC, GENETIC, ETHNIC_ORIGIN, POLITICAL_OPINION,
+            RELIGIOUS_BELIEF, TRADE_UNION, SEX_LIFE_ORIENTATION);
 }

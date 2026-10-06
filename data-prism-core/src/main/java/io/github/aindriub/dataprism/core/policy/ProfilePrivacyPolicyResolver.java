@@ -61,6 +61,9 @@ public final class ProfilePrivacyPolicyResolver implements PrivacyPolicyResolver
                     profile.name(), EffectivePrivacyPolicy.Decided.DECLARED_NON_SENSITIVE);
         }
 
+        boolean special = field.classifications().stream()
+                .anyMatch(DataClassification.SPECIAL_CATEGORIES::contains);
+        boolean specialCovered = false;
         PrivacyAction fromProfile = null;
         boolean override = false;
         for (DataClassification classification : field.classifications()) {
@@ -68,6 +71,7 @@ public final class ProfilePrivacyPolicyResolver implements PrivacyPolicyResolver
             if (rule == null) {
                 continue;
             }
+            specialCovered |= DataClassification.SPECIAL_CATEGORIES.contains(classification);
             // A field classified both PII and BANKING gets whichever rule is
             // stricter, not whichever the enum happens to list first.
             fromProfile = fromProfile == null
@@ -77,6 +81,19 @@ public final class ProfilePrivacyPolicyResolver implements PrivacyPolicyResolver
         }
 
         PrivacyAction suggested = field.suggestedAction();
+
+        if (special) {
+            // Art. 9 data never reaches the model in a recognisable form: no
+            // rule for the category means REMOVE, and no rule or override can
+            // pull a covered one below REDACT.
+            PrivacyAction action = specialCovered
+                    ? ActionStrictness.stricter(
+                            ActionStrictness.stricter(fromProfile, PrivacyAction.REDACT),
+                            override || suggested == null ? PrivacyAction.REDACT : suggested)
+                    : PrivacyAction.REMOVE;
+            return new EffectivePrivacyPolicy(action, field.namespace(), true, profile.name(),
+                    EffectivePrivacyPolicy.Decided.PROFILE_RULE);
+        }
 
         if (fromProfile == null) {
             return suggested == null
