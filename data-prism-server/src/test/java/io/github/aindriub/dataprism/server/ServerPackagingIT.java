@@ -31,6 +31,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ServerPackagingIT {
 
+    private static final String VERSION = requireVersion();
+
+    private static String requireVersion() {
+        String v = System.getProperty("project.version");
+        if (v == null || v.isBlank() || v.contains("${")) {
+            throw new IllegalStateException(
+                    "System property project.version was not passed by the build "
+                            + "(failsafe systemPropertyVariables); refusing to guess the artifact version");
+        }
+        return v;
+    }
+
     /**
      * Literal development key material this scan looks for, each documented with the
      * build artefact that actually emits it. A marker that no build artefact in this
@@ -79,7 +91,7 @@ class ServerPackagingIT {
      */
     @Test
     void executableUsesPropertiesLauncherAndContainsNoFixtureRuntime() throws IOException {
-        Path artifact = Path.of("target", "data-prism-server-0.3.1.jar");
+        Path artifact = Path.of("target", "data-prism-server-" + VERSION + ".jar");
         assertThat(Files.isRegularFile(artifact)).isTrue();
 
         try (JarFile jar = new JarFile(artifact.toFile())) {
@@ -191,7 +203,7 @@ class ServerPackagingIT {
      */
     @Test
     void executableLoadsAReviewedAdapterExtensionFromLoaderPath() throws Exception {
-        Path artifact = Path.of("target", "data-prism-server-0.3.1.jar").toAbsolutePath();
+        Path artifact = Path.of("target", "data-prism-server-" + VERSION + ".jar").toAbsolutePath();
         Path extension = Files.createTempFile("data-prism-reviewed-extension-", ".jar");
         Process process = null;
         try {
@@ -279,7 +291,7 @@ class ServerPackagingIT {
 
     @Test
     void executableRefusesAnExtensionWithoutAnIdentityResolver() throws Exception {
-        Path artifact = Path.of("target", "data-prism-server-0.3.1.jar").toAbsolutePath();
+        Path artifact = Path.of("target", "data-prism-server-" + VERSION + ".jar").toAbsolutePath();
         Path extension = Files.createTempFile("data-prism-adapter-only-extension-", ".jar");
         try {
             writeExtension(extension, AdapterOnlyExtension.class);
@@ -408,7 +420,7 @@ class ServerPackagingIT {
 
         Path outer = Files.createTempFile("data-prism-packaging-positive-control-", ".jar");
         try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
-            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-integration-tests-0.3.1.jar"));
+            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-integration-tests-" + VERSION + ".jar"));
             outerOutput.write(Files.readAllBytes(nestedLib));
             outerOutput.closeEntry();
         } finally {
@@ -437,7 +449,7 @@ class ServerPackagingIT {
 
         Path outer = Files.createTempFile("data-prism-packaging-manifest-positive-control-", ".jar");
         try (JarOutputStream outerOutput = new JarOutputStream(Files.newOutputStream(outer))) {
-            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-integration-tests-0.3.1.jar"));
+            outerOutput.putNextEntry(new ZipEntry("BOOT-INF/lib/data-prism-integration-tests-" + VERSION + ".jar"));
             outerOutput.write(Files.readAllBytes(nestedLib));
             outerOutput.closeEntry();
         } finally {
