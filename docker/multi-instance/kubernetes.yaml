@@ -64,6 +64,11 @@ spec:
       labels:
         app: data-prism
     spec:
+      # DNS join mode needs no Kubernetes API access, so no token is mounted.
+      # Set this to true (or remove it) only for the API mode alternative at
+      # the end of this file, and use its dedicated ServiceAccount.
+      automountServiceAccountToken: false
+      # serviceAccountName: data-prism-discovery   # API mode only
       containers:
         - name: data-prism
           # Pin a released tag; never "latest" in production.
@@ -106,9 +111,17 @@ spec:
                   key: hmac-key
 ---
 # --8<-- [start:k8s-networkpolicy]
-# Admits member traffic only from pods carrying the same app label. The
-# MCP port stays open to whatever your ingress layer needs; add it as a
-# separate rule in your own policy.
+# Admits member traffic on 5701 only from pods carrying the same app label.
+# Once this policy selects the pods, every other ingress is denied, port 8080
+# included. 8080 therefore stays CLOSED until you add an allow rule for your
+# ingress, for example this extra entry under `ingress:` (placeholder labels):
+#   - from:
+#       - namespaceSelector:
+#           matchLabels:
+#             kubernetes.io/metadata.name: ingress-system
+#     ports:
+#       - protocol: TCP
+#         port: 8080
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -131,8 +144,17 @@ spec:
 # --8<-- [end:k8s-networkpolicy]
 #
 # Alternative: join with service-name (Kubernetes API mode). Use it instead
-# of SERVICEDNS above. It needs get and list on endpoints and pods:
+# of SERVICEDNS above. It needs get and list on endpoints and pods. Also set
+# serviceAccountName: data-prism-discovery in the pod spec and flip
+# automountServiceAccountToken to true, or the pods have no token to call the
+# API with:
 #
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: data-prism-discovery
+#   namespace: data-prism
+# ---
 # apiVersion: rbac.authorization.k8s.io/v1
 # kind: Role
 # metadata:
@@ -150,7 +172,7 @@ spec:
 #   namespace: data-prism
 # subjects:
 #   - kind: ServiceAccount
-#     name: default
+#     name: data-prism-discovery
 #     namespace: data-prism
 # roleRef:
 #   kind: Role

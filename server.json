@@ -183,7 +183,7 @@
         },
         {
           "name": "DATAPRISM_OPERATOR_PORT",
-          "description": "Port of the operator listener; required when DATAPRISM_OPERATOR_ENABLED=true, must differ from the server and member ports, and has no fixed default (publish it explicitly)",
+          "description": "Port of the operator listener; required when DATAPRISM_OPERATOR_ENABLED=true, must differ from the server, management (OPERATOR_PORT_SHARED otherwise) and member ports, and has no fixed default (publish it explicitly)",
           "isRequired": false
         },
         {
