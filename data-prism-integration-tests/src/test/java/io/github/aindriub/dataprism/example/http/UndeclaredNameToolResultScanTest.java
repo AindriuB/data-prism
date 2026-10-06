@@ -122,7 +122,7 @@ class UndeclaredNameToolResultScanTest {
     }
 
     @Test
-    @DisplayName("the scan is not vacuous: the token planted in a result, the log or an audit event is caught")
+    @DisplayName("the scan is not vacuous: the token planted in a result or in the log is caught")
     void scanIsNotVacuous() {
         var planted = McpSchema.CallToolResult.builder()
                 .addTextContent("note " + UndeclaredKeyFixture.RESULT_KEY).build();

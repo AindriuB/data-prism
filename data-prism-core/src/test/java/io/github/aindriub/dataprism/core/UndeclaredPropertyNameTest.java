@@ -100,33 +100,17 @@ class UndeclaredPropertyNameTest {
     @Test
     @DisplayName("the same input in a different insertion order gets the same name-to-placeholder assignment")
     void assignmentIsOrderIndependent() {
-        var forward = new Open("s-1", "ACTIVE", null, ordered(ZETA, ALPHA, "mid"));
-        var reverse = new Open("s-1", "ACTIVE", null, ordered("mid", ALPHA, ZETA));
+        var child = new Child("OPEN", ordered("yy@example.com", "bb@example.com"));
+        var forward = new Open("s-1", "ACTIVE", child, ordered(ZETA, ALPHA, "mid"));
+        var reverse = new Open("s-1", "ACTIVE", child, ordered("mid", ALPHA, ZETA));
         var engine = engine(UnclassifiedBehaviour.REDACT_AND_WARN);
-
-        // Make the values distinguishable so the assignment is visible: pass-through shows it.
-        var tagged = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
-                policies(UnclassifiedBehaviour.PASS_THROUGH_UNSAFE), (s, n, c) -> "synthetic");
-        Map<String, Object> a = new LinkedHashMap<>();
-        a.put(ZETA, "z");
-        a.put(ALPHA, "a");
-        a.put("mid", "m");
-        Map<String, Object> b = new LinkedHashMap<>();
-        b.put("mid", "m");
-        b.put(ALPHA, "a");
-        b.put(ZETA, "z");
-        ObjectNode rawA = tagged.scrub(new Open("s", "x", null, a), context()).tree();
-        ObjectNode rawB = tagged.scrub(new Open("s", "x", null, b), context()).tree();
-        assertThat(rawA.get(ALPHA).asText()).isEqualTo("a");
-        assertThat(rawB.get(ZETA).asText()).isEqualTo("z");
 
         ObjectNode outA = engine.scrub(forward, context()).tree();
         ObjectNode outB = engine.scrub(reverse, context()).tree();
-        assertThat(outA.get("<undeclared-1>")).isNotNull();
-        assertThat(outA.get("<undeclared-3>")).isNotNull();
-        assertThat(outB.get("<undeclared-1>")).isNotNull();
-        assertThat(outB.get("<undeclared-3>")).isNotNull();
-        assertThat(names(outA)).containsExactlyInAnyOrderElementsOf(names(outB));
+
+        // Numbered by String.compareTo over raw keys (alpha=1, mid=2, zeta=3); each keeps its input position.
+        assertThat(names(outA)).containsExactly("status", "child", "<undeclared-3>", "<undeclared-1>", "<undeclared-2>");
+        assertThat(names(outB)).containsExactly("status", "child", "<undeclared-2>", "<undeclared-1>", "<undeclared-3>");
     }
 
     /** Declares a property literally named like the first placeholder. */
