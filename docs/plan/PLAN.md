@@ -62,9 +62,10 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 4 | 122 | Find and remove the cause of `ServerStartupTest`'s intermittent `/health` 404 | none | done 2026-10-06 (cause unproven) |
 | 4 | 125 | Integration tests derive the artifact version from the build | none | done 2026-10-06 |
 | 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | done 2026-10-06 |
-| 5 | 123 | Orchestrator records the refusal code as `DENY:<code>` | 118, 121 | in flight |
+| 5 | 123 | Orchestrator records the refusal code as `DENY:<code>` | 118, 121 | done 2026-10-06 |
 | 5 | 124 | Undeclared property names never reach the model (`<undeclared-N>`) | 118 | done 2026-10-06 |
-| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | in flight |
+| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | done 2026-10-06 |
+| 6 | 126 | Reconcile 104's test with 123's `DENY:<code>` form | 104, 123 | done 2026-10-06 |
 | 7 | 105 | Operator surface on a second port in the same process | 104 | |
 | 8 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
 
@@ -72,9 +73,9 @@ Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next wave for 0.4.0, in order: 104 and 123 (both in flight), then 105, then
-106. Task 124 merged on 2026-10-06; a clean `mvn clean verify` of the merged
-head exited 0.
+Next wave for 0.4.0, in order: 105 (unblocked), then 106. Tasks 104, 123 and
+126 merged on 2026-10-06; `mvn clean verify` of the merged head exited 0 only
+after 126.
 Tasks 102 and 103 carried notes that a retention below six months refuses
 startup unless `dataprism.audit.retention-override` is set.
 
@@ -84,6 +85,38 @@ with a PHI rule weaker than `REDACT` now refuses to start with
 PHI to `REMOVE`. It is recorded in `HISTORY.md` under task 94 (grep
 `Release note (94)`), and `CHANGELOG.md` does not carry it yet. Task 101 added
 the `AuditedRefusalException` line there and nothing else has.
+
+Follow-ups from tasks 104 and 123, not yet tasks:
+
+1. Deprecate `ToolAdmission.none()` and the old `DataPrismMcpServer`
+   stdio/streamableHttp overloads, and move the integration-tests
+   `ExampleApplication` (stdio) to the admission overload. Owned by
+   data-prism-mcp and data-prism-security.
+2. Consider upgrading `ToolAdmission` and `OversightPolicy` to
+   PRIVACY_CRITICAL with a COMPETING_BEAN_REFUSAL guard: an application
+   `@Primary` `ToolAdmission` could silently disable admission.
+   `dataPrismHttpTransport` and `dataPrismAuthorizationService` are also
+   REPLACEABLE.
+3. Delete the now-unused `ClusterScopeBudgetConfiguration`.
+4. The cluster budget reaches `PrivacyCluster` through an `ObjectProvider`, so
+   the destroy-order dependency is not registered. Harmless today; register it
+   explicitly.
+5. Remove the duplicated refusal-code regex in `DefaultContextOrchestrator`
+   and `ToolCalls` by moving it to a shared helper.
+6. Amend task 112's acceptance wording: bare refusal codes and plain `DENY`
+   appear only in pre-0.4.0 files.
+7. Proposed for 0.4.0, pending the owner's decision: refusal codes from
+   application-supplied scrubbers or validators reach the client unvalidated in
+   `refused: <code> at <path>` (`ToolCalls.refused` ~:135, and the MCP deny text
+   from `denialCode()`/`SecurityRefusedException.code()`). Validate them like
+   the audit value and replace a malformed one with `INVALID_REFUSAL_CODE` in
+   client text.
+8. Process: when two parallel tasks change the same record format or
+   vocabulary, test the merged result before recording. 104 and 123 each passed
+   against base 2c32884 and failed together.
+
+Accepted current behaviour: an approval-required call still consumes a
+rate-limit token. This is documented.
 
 #### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116)
 

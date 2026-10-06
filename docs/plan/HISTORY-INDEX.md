@@ -20,6 +20,9 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-06 | 126 | One-line test fix: 104's `TOO_MANY_PENDING` assertion now expects `DENY:TOO_MANY_PENDING`. Clash arose because each branch was verified only against its base. | `## 2026-10-06 — Task 126: task 104's test reconciled with 123's DENY:<code> form` |
+| 2026-10-06 | 123 | Refused calls audited as `DENY:<code>` from orchestrator and MCP tools; malformed codes become `DENY:INVALID_REFUSAL_CODE`; old records still verify. | `## 2026-10-06 — Task 123: refused calls are audited as DENY:<code> from the orchestrator and the MCP tools` |
+| 2026-10-06 | 104 | Oversight, re-identification and operator settings bound and validated; MCP server always enforces admission; four-eyes default on; pending cap 5. | `## 2026-10-06 — Task 104: oversight, re-identification and operator-surface configuration wired` |
 | 2026-10-06 | 124 | Undeclared property names become `<undeclared-N>` (REDACT_AND_WARN) or are dropped (DROP_AND_WARN) before reaching the model; names are not scanned by validators. | `## 2026-10-06 — Task 124: undeclared property names never reach the model` |
 | 2026-10-06 | 120 | Per-requester cap (default 5) on live pending approvals, per kind, enforced in both stores; over-cap refused `TOO_MANY_PENDING` and audited. | `## 2026-10-06 — Task 120: live pending approvals capped per requester` |
 | 2026-10-06 | 125 | Integration tests read the project version from a build-set system property. The earlier "build passed after the bump" was masked by stale 0.3.1 jars. | `## 2026-10-06 — Task 125: integration tests derive the artifact version from the build` |

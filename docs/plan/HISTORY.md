@@ -17,6 +17,21 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 126: task 104's test reconciled with 123's DENY:<code> form
+
+One assertion in `OversightConfigurationTest` (line 250) now expects `DENY:TOO_MANY_PENDING` instead of the bare `TOO_MANY_PENDING`, matching what task 123 made the audit record. The change is one line, exact equality, no production code.
+**Cost:** 104 and 123 were each verified only against their shared base 2c32884, so each passed alone and the first merged build exited 1. A repo-wide grep found no other bare-code or plain-DENY `policyDecision` assertions. Test the merged result when parallel tasks change the same record vocabulary.
+
+## 2026-10-06 — Task 123: refused calls are audited as DENY:<code> from the orchestrator and the MCP tools
+
+Audit records for refused calls now carry the refusal code as `DENY:<code>`, from both the orchestrator and the MCP tools (e.g. `DENY:SCOPE_READ_BUDGET`, `DENY:REQUEST_FAILED`, `DENY:TOOL_NOT_PERMITTED`); malformed codes are recorded as `DENY:INVALID_REFUSAL_CODE`. 0.3.x records with a plain `DENY` or bare code still verify. Update any consumer matching the exact string `DENY`.
+**Cost:** Attempt 1 failed review. Attempt 2 added a docs word, an MCP test and literal assertions; a mutation check fails 7 of 7 tests on the old code. The refusal-code regex is duplicated in `DefaultContextOrchestrator` and `ToolCalls`, and codes from application scrubbers still reach client text unvalidated; both are PLAN follow-ups. Approval-required calls still consume a rate-limit token, accepted and documented.
+
+## 2026-10-06 — Task 104: oversight, re-identification and operator-surface configuration wired
+
+Oversight, re-identification and operator-surface settings (`dataprism.oversight.*`, `dataprism.reidentification.*`, `dataprism.operator.*`) are bound and validated with stable refusal codes; the Spring-built MCP server always enforces tool admission; four-eyes for re-identification defaults to on; live pending approvals are capped at 5 per requester per kind.
+**Cost:** `OversightConfigurationTest` (19) and `ReidentificationConfigurationTest` (11) cover it. A production-path audit found no path using `ToolAdmission.none()` or the old server overloads, but those remain public (PLAN follow-up). The cluster budget reaches `PrivacyCluster` through an `ObjectProvider`, so destroy order is unregistered. Its test clashed with 123 at merge (task 126).
+
 ## 2026-10-06 — Task 124: undeclared property names never reach the model
 
 Undeclared property names are now replaced by numbered placeholders (`<undeclared-N>`, numbered alphabetically by raw key) under REDACT_AND_WARN, or dropped under DROP_AND_WARN, so payload keys no longer reach the model. PASS_THROUGH_UNSAFE still passes names through, and no validator scans names (0.4.x follow-up).
