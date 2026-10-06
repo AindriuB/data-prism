@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -19,15 +20,26 @@ import java.util.Objects;
  * {@link AuditCheckpointSink} held apart from the audit file, so that deleting
  * the audit file's tail or a whole boot can be noticed by comparing the two.
  *
- * <p>{@link Kind#RETENTION_ANCHOR} is reserved for retention (task 102); the
- * verifier does not yet draw any conclusion from it.
+ * <p>{@link Kind#RETENTION_ANCHOR} is written by {@link AuditRetention} for each
+ * writer's last record in a segment it is about to delete; the verifier accepts
+ * a chain that starts right after one. An anchor also carries {@code segmentDate}, the UTC
+ * date of the purged segment it covers, so the verifier can refuse an anchor that claims to
+ * cover a segment too recent to have been legitimately purged. {@code segmentDate} is
+ * {@code null} for every other kind and for anchors written before the field existed; such an
+ * anchor covers nothing.
  */
-public record AuditCheckpoint(Kind kind, String instanceId, long sequence, String headHash, Instant recordedAt) {
+public record AuditCheckpoint(Kind kind, String instanceId, long sequence, String headHash, Instant recordedAt,
+                              LocalDate segmentDate) {
 
     // Streaming API only: ArchitectureTest allows exactly one ObjectMapper in the build.
     private static final JsonFactory JSON = new JsonFactory();
 
     public enum Kind { BOOT, PERIODIC, SHUTDOWN, RETENTION_ANCHOR }
+
+    /** A checkpoint with no segment date: every kind but {@link Kind#RETENTION_ANCHOR}, or a legacy anchor. */
+    public AuditCheckpoint(Kind kind, String instanceId, long sequence, String headHash, Instant recordedAt) {
+        this(kind, instanceId, sequence, headHash, recordedAt, null);
+    }
 
     public AuditCheckpoint {
         Objects.requireNonNull(kind, "kind");
@@ -55,6 +67,9 @@ public record AuditCheckpoint(Kind kind, String instanceId, long sequence, Strin
             g.writeNumberField("sequence", sequence);
             g.writeStringField("headHash", headHash);
             g.writeStringField("recordedAt", recordedAt.toString());
+            if (segmentDate != null) {
+                g.writeStringField("segmentDate", segmentDate.toString());
+            }
             g.writeEndObject();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -87,7 +102,8 @@ public record AuditCheckpoint(Kind kind, String instanceId, long sequence, Strin
                     required(fields, "instanceId"),
                     Long.parseLong(required(fields, "sequence")),
                     required(fields, "headHash"),
-                    Instant.parse(required(fields, "recordedAt")));
+                    Instant.parse(required(fields, "recordedAt")),
+                    fields.containsKey("segmentDate") ? LocalDate.parse(fields.get("segmentDate")) : null);
         } catch (IOException e) {
             throw new IllegalArgumentException("checkpoint line could not be parsed: " + e.getMessage(), e);
         } catch (IllegalArgumentException e) {

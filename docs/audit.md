@@ -93,6 +93,111 @@ A few properties are deliberate, not accidental gaps:
   fixture identifying values the same way `PiiLogScanTest` scans captured log
   output, closing the audit half of architecture boundary 7.
 
+## Retention
+
+`FileAuditSink` is unchanged and still never rotates. For deployments that must
+keep logs for a bounded period and then let them go, `SegmentedFileAuditSink`
+writes one file per UTC day, `directory/audit-YYYY-MM-DD.log`, the date being
+the UTC date of the event's timestamp. The `.log` suffix is deliberate: a
+record is a field-separated line, not JSON. Each segment is written with
+`FileAuditSink`'s own discipline (fsync before return; the sink poisons after
+any failed write, and does so for every day, not just the failing one). The
+record format and the per-writer hash chain are the same; a chain simply runs
+across segment files.
+
+### The six-month minimum
+
+`AuditRetention` refuses a retention period that can be shorter than six
+calendar months with `IllegalArgumentException` containing
+`AUDIT_RETENTION_BELOW_MINIMUM`. A day count is not safe merely for being
+"about six months": six calendar months span 181 to 184 days, so `P181D` to
+`P183D` are refused and `P184D` and `P6M` are accepted. `purge()` also checks
+at run time that its cutoff is no later than today minus six calendar months,
+and refuses with the same code if not. The
+reason is EU AI Act Arts. 19 and 26(6), which ask deployers to keep
+automatically generated logs for at least six months. Art. 19 also says
+"unless provided otherwise in applicable Union or national law", so other
+periods can be lawful. An explicit override
+(`allowBelowMinimum`, configured as `dataprism.audit.retention-override`)
+lets a shorter period through. Using the override is the operator's legal
+responsibility; Data Prism does not judge whether it applies. GDPR storage
+limitation points the other way: logs should not be kept longer than needed.
+
+### Purge is deletion
+
+`AuditRetention.purge()` deletes every whole segment dated strictly before
+today (UTC) minus the retention period, and never today's segment. Before it
+anchors or deletes anything it verifies the chains of the expiring segments;
+if a segment's chain does not verify, that segment and every later expired one
+are left in place and purge throws a `RetentionException` containing
+`AUDIT_RETENTION_CHAIN_UNVERIFIED`, so purge never erases evidence of
+tampering. Purge also reads the checkpoint sink's earlier retention anchors:
+each writer's first expiring record must start at `GENESIS` or follow an earlier
+anchor exactly (anchor sequence plus one, anchor hash equal to its
+`previousHash`). If not, a segment was deleted by hand or its front was cut, and
+purge refuses with the same code rather than anchor and delete the evidence. A
+checkpoint sink that cannot read its anchors back leaves only the `GENESIS`
+start acceptable, so purge fails closed. A segment's date never goes backwards within one sink: if the clock
+steps back across UTC midnight, later events stay in the later-dated segment,
+so one writer's chain is never split backwards across files. That rule is per
+sink instance: after a restart with the clock behind, a reused writer id's
+record can land in an earlier-dated file than its predecessor, and the verifier
+reports a break. That fails loud, which is the intended direction. The records
+in a deleted segment are gone; nothing here archives them. Archiving to
+external storage before purge is an operator responsibility.
+
+### Retention anchors
+
+Deleting the front of a chain would otherwise look like tampering. So, before
+deleting anything, purge writes a `RETENTION_ANCHOR` checkpoint to the
+checkpoint sink for each writer's last record in each segment about to go,
+carrying that record's sequence and hash, and the UTC date of the segment it
+covers (`segmentDate`). Checkpoint files written before this field existed
+still parse, but an anchor without a date covers nothing. If any anchor cannot be written,
+nothing is deleted and purge throws. The anchors belong in the checkpoint file,
+under different custody from the audit directory, like any other checkpoint.
+
+With `--checkpoints`, the verifier accepts a writer whose first surviving
+record has `previousHash` equal to an anchor's hash and sequence equal to the
+anchor's sequence plus one. That writer is reported intact, with a line naming
+the anchor, and the surviving records still verify end to end; the purged
+records are not verified, since they no longer exist. The same chain with no
+matching anchor is reported as it always was for a chain that does not start
+at `GENESIS`. A segment removed by hand leaves no anchor: later segments then
+report a break, and a checkpointed writer with no surviving records is
+`MISSING_WRITER` (exit 5). A writer whose every record was purged is not
+reported missing when an anchor covers its checkpointed sequence.
+
+The verifier accepts an anchored start only if all of these hold:
+
+- the anchor's `segmentDate` is at least the minimum retention before its
+  `recordedAt`. A purge only deletes segments older than the retention period,
+  so an anchor over a younger segment did not come from one. The minimum
+  defaults to `P6M`; a deployment that runs purge with the below-minimum
+  override passes its own period with `--min-retention <ISO-8601 period>`;
+- the same writer has no `BOOT`, `PERIODIC` or `SHUTDOWN` checkpoint at a lower
+  sequence recorded on a UTC date after the anchor's `segmentDate`. Such a
+  checkpoint says the writer had not yet reached the anchored sequence by that
+  date, so the date is forged;
+- the first surviving record after the anchor is dated no earlier than the
+  anchor's `segmentDate`.
+
+An anchor that matches a writer's start but fails any of these is reported as
+`RETENTION_ANCHOR_REJECTED`, naming the writer, at exit 2, and explains nothing.
+An undated, too-recent or contradicted anchor also does not suppress
+`MISSING_WRITER`.
+
+This shows that purge was recorded; it does not prove the purge was
+authorised. Whoever can append to the checkpoint file can still make a recent
+deletion look like a purge when the writer has no head checkpoint recorded after
+the forged date: they delete the segments, then append an anchor carrying an
+old date. Regular `PERIODIC` checkpoints (task 103 schedules them) narrow that
+window, because each one pins the date by which the writer had reached a
+sequence. They do not close it. Anyone with that access can also make the
+deletion of segments older than the retention window look legitimate. Keep
+checkpoint custody separate from the audit directory's, and treat an anchor as
+only as trustworthy as that custody.
+
 ## The offline verifier
 
 `AuditChainVerifierCli` replays each writer's chain from a copy of this file
@@ -129,7 +234,7 @@ or `--help` for a shorter summary.
 |---|---|
 | 0 | Intact — every writer's chain verified: no break, no structural anomaly, no in-flight tail. |
 | 1 | Unreadable input — the file could not be opened or read, or the invocation was malformed. |
-| 2 | Break detected — an edit or deletion was found in at least one writer's chain, or a line could not be ruled out as tampering. |
+| 2 | Break detected — an edit or deletion was found in at least one writer's chain, a line could not be ruled out as tampering, or a retention anchor was refused (`RETENTION_ANCHOR_REJECTED`: too recent, undated, contradicted by a head checkpoint, or starting after the first surviving record's date). |
 | 3 | Possibly-in-flight tail — the final record has no terminating newline; not a break. Only reported when nothing scored higher: a run with both a break and an in-flight tail exits 2, and a run with both a structural anomaly and an in-flight tail exits 4 (precedence is break, then anomaly, then in-flight tail). |
 | 4 | Structural anomaly — an interrupted-write fragment, a sink-contract duplicate-sequence violation, or a writer's chain not starting at `GENESIS` immediately after another structural anomaly, which offers plausible (never certain) context for the missing head. A writer's chain not starting at `GENESIS` in any other position is a break, exit code 2, not this. Never returned together with exit code 2. |
 | 5 | Checkpoint mismatch — only with `--checkpoints`: a writer's last surviving sequence is lower than its highest checkpointed sequence (`TRUNCATED_BEFORE_CHECKPOINT`), or a writer has a checkpoint past sequence 0 and no surviving records (`MISSING_WRITER`). Each is named per writer. Returned only when no break was found, and takes precedence over 3 and 4. A record whose hash differs from the checkpointed head at the same sequence is a break, exit 2. |
@@ -304,8 +409,16 @@ checkpoint on `close()`. Each is one JSON line, fsynced, holding the writer's
 `FileAuditCheckpointSink` refuses a path equal to the audit file
 (`AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE`). Calling `checkpoint()` on a schedule
 is up to the embedding application; this release adds no configuration for it.
-`RETENTION_ANCHOR` is a reserved checkpoint kind that the verifier does not
-yet interpret.
+`RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
+[Retention](#retention).
+
+### Directory mode
+
+Given a directory instead of a file, the verifier reads every
+`audit-YYYY-MM-DD.log` segment in date order as one stream and replays it as
+usual. A non-final segment ending in a torn write is reported as an
+interrupted-write fragment rather than fused with the next segment's first
+record. Byte offsets in a directory report are offsets into that concatenation.
 
 If a checkpoint write fails, the recorder refuses every later `record(...)`
 with `AuditCheckpointUnavailableException`, without advancing the chain, until
