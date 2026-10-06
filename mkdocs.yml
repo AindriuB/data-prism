@@ -110,6 +110,7 @@ plugins:
           - developer-guide/custom-identity-resolver.md
         Reference:
           - configuration.md
+          - multiple-instances.md
           - tools.md
           - extending.md
           - audit.md
@@ -174,6 +175,7 @@ nav:
       - developer-guide/custom-identity-resolver.md
   - Reference:
       - configuration.md
+      - multiple-instances.md
       - tools.md
       - extending.md
       - audit.md

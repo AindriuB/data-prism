@@ -74,7 +74,7 @@ for the relevant group.
 | `dataprism.privacy.hmac-key` | `key-id` and one provider reference/environment-variable name are required; the selected key is pinned for each scope | **Yes, by reference** | Refuse startup if a literal key is configured, the reference is blank/unresolvable, the key is too weak, or `key-id` cannot be resolved; never fall back to a generated key |
 | `dataprism.audit` | `sink` is required in production, one of `approved-sink`, `slf4j`, `hash-chained`; `writer-id` is required for every sink, not only a hash-chained one; `file-path` is required only when `sink: hash-chained` | Sink credentials are **yes, by reference** | Refuse startup for an unknown sink, missing required sink reference, a hash-chained sink's file path missing or unusable, or missing/invalid writer identity; do not downgrade to no or `slf4j` auditing |
 | `dataprism.metrics` | Defaults to the framework's no-op implementation only for fixture development; production requires an approved sink/registry binding | Sink credentials are **yes, by reference** when applicable | Refuse startup in production for an unknown or absent required sink; metrics failures after startup remain fail-safe and cannot change a privacy decision |
-| `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget across every member of the cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but the budget it produces is enforced once per process, so a configured budget of 100 becomes 100 times the number of running processes — identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | Cluster/TLS credentials are **yes, by reference** when configured | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration, invalid member/TLS settings, non-positive TTL, or an enabled index without its required controls |
+| `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget, pause state, approvals and rate limits across members that have joined one cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but its state is per process, so a configured budget of 100 becomes 100 times the number of running processes. With `embedded`, `cluster-name` (never `dev`), `join.mode` (`tcp-ip`, `kubernetes` or `none`), `join.members`, `join.kubernetes.namespace`, `join.kubernetes.service-name` or `service-dns`, `member.port` (default 5701) and `member.interface` are the cluster properties; see [`dataprism.hazelcast`](#dataprismhazelcast). Identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | No | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration (`UNSAFE_HAZELCAST_PERSISTENCE`), TLS references (`HAZELCAST_TLS_UNSUPPORTED`: member TLS is not available in the open-source distribution), a missing or reserved cluster name (`MISSING_CLUSTER_NAME`, `RESERVED_CLUSTER_NAME`), a missing or unsupported join mode (`MISSING_CLUSTER_JOIN`, `UNSUPPORTED_CLUSTER_JOIN`), invalid members, Kubernetes join, port or interface (`INVALID_CLUSTER_MEMBERS`, `INVALID_KUBERNETES_JOIN`, `INVALID_CLUSTER_PORT`, `INVALID_CLUSTER_INTERFACE`), a member port shared with another listener (`CLUSTER_PORT_SHARED`), cluster settings that would be ignored (`CLUSTER_SETTINGS_IGNORED`), a non-positive TTL (`INVALID_HAZELCAST_TTL`), or an enabled index without its required controls (`MISSING_REIDENTIFICATION_CONTROLS`) |
 | `dataprism.oversight` | All optional. `approval-required-tools` defaults to empty; `approval-ttl` `PT15M`; `caller-rate-limit.requests` unset (no limit); `caller-rate-limit.window` `PT1M`; `max-pending-per-requester` `5` | No | Refuse startup for an unknown tool name (`UNKNOWN_OVERSIGHT_TOOL`), a non-positive limit, window, TTL or cap (`INVALID_OVERSIGHT_LIMIT`), or approval-required tools or a rate limit without `dataprism.operator.enabled` (`OVERSIGHT_REQUIRES_OPERATOR_SURFACE`) |
 | `dataprism.reidentification` | `enabled` defaults to `false`; `four-eyes` defaults to `true`; `approval-ttl` `PT15M`; `max-pending-per-requester` `5`; `purposes` and `roles` are required once enabled | No | Refuse startup for the refusals listed under [`dataprism.reidentification`](#dataprismreidentification) |
 | `dataprism.operator` | `enabled` defaults to `false`; `port`, `required-audience` and `required-scope` are required once enabled; `address` is optional and follows `server.address` when unset | No | Refuse startup for an enabled surface missing any of the required three (`MISSING_OPERATOR_SECURITY`), sharing `server.port` (`OPERATOR_PORT_SHARED`), using the MCP audience (`OPERATOR_AUDIENCE_SHARED`), or an `address` that does not resolve (`INVALID_OPERATOR_ADDRESS`); and `dataprism.reidentification.enabled=true` without the `data-prism-reidentification` module on the classpath (`REIDENTIFICATION_MODULE_MISSING`) |
@@ -255,6 +255,30 @@ to.
 [![Fail-closed field decisions: a classified field is pseudonymised, redacted or removed according to its classification; an unclassified field refuses the whole response (FAIL_REQUEST); and a response where something looks like a sensitive identifier shape is also refused.](assets/diagrams/fail-closed-decisions.svg)](assets/diagrams/fail-closed-decisions.svg)
 Select the diagram to open it full size.
 
+### `dataprism.hazelcast`
+
+With `topology: embedded`, each instance starts an embedded Hazelcast member, and
+the state the members share (identity cache, read budget, pause flags,
+approvals, caller-rate windows and, if enabled, the re-identification index) is
+shared across members that have joined one cluster. Membership is explicit:
+`cluster-name` and `join.mode` are required, and auto-detection, multicast and
+phone-home are always off.
+
+- `join.mode: tcp-ip` takes `join.members`, a list of `host` or `host:port`.
+- `join.mode: kubernetes` takes `join.kubernetes.namespace` and exactly one of
+  `service-name` (API mode) or `service-dns` (DNS mode).
+- `join.mode: none` is an explicit single member, bound to `127.0.0.1`.
+- `members` with a mode other than `tcp-ip` is refused (`INVALID_CLUSTER_MEMBERS`),
+  and `kubernetes.*` with a mode other than `kubernetes` is refused
+  (`INVALID_KUBERNETES_JOIN`).
+- Without `member.interface`, a `tcp-ip` or `kubernetes` member binds every
+  network interface. Member traffic is not encrypted or authenticated, so isolate
+  it on a private network.
+
+The full property list, every refusal code, the Compose and Kubernetes examples
+and the network isolation you must supply are on
+[Running multiple instances](multiple-instances.md).
+
 ## Oversight, re-identification and the operator surface
 
 Three groups, all off or empty by default. Together they turn the oversight and
@@ -278,9 +302,10 @@ nothing here is configured. Approval-required calls count against the caller
 rate limit, as a call that is refused with `APPROVAL_REQUIRED` or
 `APPROVAL_PENDING` has still been made; set a limit with that in mind.
 
-With `dataprism.hazelcast.topology=embedded` the pause state, the approval
-store and the rate limiter are shared across every member of the cluster.
-Otherwise they are per process.
+With `dataprism.hazelcast.topology=embedded` and a join mode, the pause state,
+the approval store and the rate limiter are shared across members that have
+joined one cluster. With `single-node` they are per process. See
+[Running multiple instances](multiple-instances.md).
 
 | Code | Condition |
 |---|---|
