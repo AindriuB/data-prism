@@ -113,13 +113,14 @@ and [`design-review.md`](https://github.com/AindriuB/data-prism/blob/main/docs/d
 
 No — [`SECURITY.md`](../SECURITY.md#supported-versions) states plainly that
 the project is pre-1.0, and that only the latest released version receives
-security fixes. Version 0.4.0 is that latest release, and across its
+security fixes. Version 0.4.1 is that latest release, and across its
 history the privacy engine, deterministic pseudonymisation, correlation and
 consistency findings, the JSON REST and reviewed-adapter connectors, the
 OAuth2 resource server, an opt-in durable hash-chained audit sink with
 an offline verifier, human oversight (pause, rate limits, approvals and
 four-eyes), audit evidence (daily segments, external checkpoints and
-retention), and audited re-identification on a separate operator port have
+retention), audited re-identification on a separate operator port, and an
+explicit, fail-closed Hazelcast cluster membership have
 all been built and are covered by tests — see the
 full release history in [`CHANGELOG.md`](../CHANGELOG.md). Two of the four
 originally designed MCP tools, `search_entity_data` and

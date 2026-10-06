@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-06
+
+Real, explicit clustering. In 0.4.0, `topology: embedded` started a bare
+Hazelcast member that was never configured to join anything, so separate
+instances never shared pause, approvals, the read budget or rate limits, even
+though the docs said they did. This release lets members join one cluster by
+explicit configuration, refuses to start without it, and says plainly what is
+and is not shared and protected. Member traffic is **not encrypted** and members
+do not authenticate each other: open-source Hazelcast has neither.
+
+### Breaking
+
+- `topology: embedded` now refuses startup unless `dataprism.hazelcast.cluster-name`
+  and `dataprism.hazelcast.join.mode` are set (`MISSING_CLUSTER_NAME`,
+  `MISSING_CLUSTER_JOIN`), and the cluster name must not be `dev`
+  (`RESERVED_CLUSTER_NAME`). The migration for a single member is one line:
+  `dataprism.hazelcast.join.mode: none` (plus a `cluster-name`), an explicit
+  single member bound to loopback. A multi-instance deployment chooses `tcp-ip`
+  or `kubernetes` instead. 0.4.0 `embedded` members never clustered, so no
+  working multi-instance deployment breaks; only the configuration needs
+  editing.
+- `dataprism.hazelcast.tls-key-reference` and `tls-trust-reference` now refuse
+  startup with `HAZELCAST_TLS_UNSUPPORTED`. They were read by nothing in 0.4.0.
+
+### Security
+
+- Hazelcast auto-detection, multicast and phone-home are always disabled, so a
+  member can no longer join an unrelated cluster named `dev` by discovery.
+  `PrivacyCluster` also refuses an enabled advanced network config and an
+  application-supplied instance that has auto-detection or multicast on
+  (`UNSAFE_HAZELCAST_DISCOVERY`). Application `PrivacyCluster` beans are
+  validated, and cluster properties set beside one refuse with
+  `CLUSTER_SETTINGS_IGNORED`.
+- Member TLS is unsupported, because open-source Hazelcast 5.7.0 has no member
+  TLS engine and no member authentication. Member traffic is not encrypted.
+  Network isolation (a private network, a `NetworkPolicy` or an mTLS mesh) is
+  the deployer's responsibility, and `member.interface` should pin the member to
+  that network. Without it, a `tcp-ip` or `kubernetes` member binds every
+  interface.
+- The server and starter now ship Hazelcast 5.7.0. 0.4.0 shipped 5.5.0, because
+  Spring Boot's dependency management overrode the declared version; the root
+  pom now pins 5.7.0 ahead of the Boot BOM. 0.4.0's multi-member behaviour was
+  only ever exercised on 5.5.0.
+
+### Added
+
+- `dataprism.hazelcast.cluster-name`, `join.mode` (`tcp-ip`, `kubernetes` or
+  `none`), `join.members`, `join.kubernetes.namespace`, `join.kubernetes.service-name`
+  or `service-dns`, `member.port` (default 5701) and `member.interface`, with
+  startup refusals for missing or invalid values and for a member port shared
+  with another listener (`CLUSTER_PORT_SHARED`).
+- `docker/multi-instance/`: a two-member Docker Compose example and a
+  Kubernetes manifest (DNS mode first; API mode, with its own ServiceAccount and
+  Role, commented).
+- A new "multiple instances" page, `docs/multiple-instances.md`, covering what
+  members share, what they do not, and the residual risk that losing an entry's
+  owner and its backup together loses the entry (backup count is 1).
+- `EXPOSE 5701` in the server image. It is for private networks only; do not
+  publish it, for example with `docker run -P`.
+- `server.json` gains the cluster variables (`DATAPRISM_HAZELCAST_CLUSTERNAME`,
+  join and member settings) and the operator variables (`DATAPRISM_OPERATOR_*`).
+- A multi-member test that runs real server members and checks pause, approvals,
+  the read budget, rate limits and re-identification are shared, and that
+  refusals survive losing the member that owns the pause key.
+
+### Fixed
+
+- The docs claimed cluster-wide sharing, member TLS and member validation that
+  did not exist. The configuration, EU AI Act support, architecture and
+  re-identification pages now say what clustering shares and what it does not.
+
+### Upgrading starter consumers to Hazelcast 5.7.0
+
+Our `dependencyManagement` is not inherited by your build, so a starter
+consumer gets Hazelcast 5.7.0 only by saying so:
+
+- With `spring-boot-starter-parent`: set `<hazelcast.version>5.7.0</hazelcast.version>`
+  in your `<properties>`.
+- When importing `spring-boot-dependencies`: add your own `<dependencyManagement>`
+  entry for `com.hazelcast:hazelcast:5.7.0`. The property override does nothing
+  for an imported BOM.
+- With Gradle and the Spring dependency-management plugin:
+  `ext['hazelcast.version'] = '5.7.0'`.
+
 ## [0.4.0] - 2026-10-06
 
 Human oversight, a separate operator surface, audited re-identification, and
@@ -416,6 +500,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.4.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.1
 [0.4.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.0
 [0.3.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.1
 [0.3.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.0
