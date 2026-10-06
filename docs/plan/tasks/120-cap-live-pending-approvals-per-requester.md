@@ -101,3 +101,10 @@ maps the refusal to an HTTP status and adds no separate rate limit.
 - HTTP status mapping on the operator port. That is task 105.
 - Deduplicating identical requests.
 - Changing the order of the rate-limit and approval steps (task 98 / 104).
+
+## Note from task 119's review
+
+When extending ApprovalStoreContractTest, also add negative consumeApproved
+cases that change one binding field at a time (fingerprint, scope, tool,
+principal, kind) and assert no match on both stores. That pins exact binding
+matching.
