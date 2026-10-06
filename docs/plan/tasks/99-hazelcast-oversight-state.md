@@ -79,3 +79,32 @@ that runs against both implementations.
 - `ApprovalStore.create` should require status `PENDING` and refuse a duplicate
   id. The in-memory store accepts either.
 - `ApprovalStore.approve` should refuse a null approver.
+
+## Attempt 1 — failed
+
+Branch `task/99-hazelcast-oversight-state` (074d7ca). Reviewer: CHANGES (6/7 met, build not run by reviewer).
+
+- Defect — HazelcastApprovalStore.java:54-59 with `locate` (~:209-213): the
+  duplicate-id check is not atomic across scopes. Concurrent
+  `create(id X, scope S1, alice, F1)` and `create(id X, scope S2, carol, F2)`
+  both pass the `locate()` scan and both `putIfAbsent` (keys `S1 NUL X`,
+  `S2 NUL X` differ). `find`/`approve`/`reject` then resolve "X" to whichever
+  key `keySet()` yields first, so approving S2's reviewed request can approve
+  S1's, and `consumeApproved` admits an unreviewed call. An approval for one
+  request must never admit another.
+- Fix: claim the bare id atomically (e.g. an id → scope `putIfAbsent` index, or
+  a lock on the bare id around check-and-put), and make `locate` refuse with
+  `UNKNOWN_APPROVAL` when an id matches more than one key. Add a two-member
+  concurrent test with the same id in two scopes.
+- Also fix (cheap, same files):
+  - CALLER_RATE_MAP keeps LRU eviction at 100,000 entries/node; an evicted
+    counter resets a caller's window and lets them exceed the limit. Use
+    `EvictionPolicy.NONE` like OVERSIGHT_MAP; the 2-window TTL bounds size.
+  - HazelcastStoredValueBoundaryTest fixture value
+    `generated:CASE-42:PERSON_NAME:subject-42` contains the subject id, so the
+    test cannot assert no subject id reaches the new maps. Use a value without
+    it and add `doesNotContain(SUBJECT_ID)` for the three new maps (insertions
+    only, unless changing the fixture line is unavoidable — say so).
+  - HazelcastOversightState.snapshot() classifies by a `tool:` prefix; a scope
+    id starting with `tool:` is misreported. Check the NUL separator first.
+- Run the full reactor `mvn verify` and report the real exit code.
