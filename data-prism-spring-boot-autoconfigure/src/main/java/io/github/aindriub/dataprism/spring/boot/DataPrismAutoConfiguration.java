@@ -49,6 +49,7 @@ import io.github.aindriub.dataprism.hazelcast.HazelcastCallerRateLimiter;
 import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
 import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+import io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
@@ -73,6 +74,7 @@ import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTrans
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -628,6 +630,28 @@ public class DataPrismAutoConfiguration {
                     .map(p -> Permission.valueOf(p.name())).collect(java.util.stream.Collectors.toSet())));
             return new ReidentificationPolicy(Set.copyOf(r.getPurposes()), roles, r.isFourEyes(),
                     r.getApprovalTtl(), r.getMaxPendingPerRequester());
+        }
+
+        /**
+         * Feeds the reverse index: every {@link SyntheticValueSource} in the context, the default or
+         * the application's own, is wrapped in {@link CachingSyntheticValueSource} over the shared
+         * {@link PrivacyCluster}, so each pseudonym handed out is entered where
+         * {@link ScopeIdentityIndex} reads it. A decorator rather than a competing bean, so the
+         * default's {@code @ConditionalOnMissingBean} still backs off for an application source. An
+         * already-caching source is left alone, and a cache failure falls back to the wrapped source.
+         * Only {@code embedded}; the cluster is resolved lazily to keep this post-processor early-safe.
+         */
+        @Bean @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
+        static BeanPostProcessor dataPrismReidentificationIndexFeed(ObjectProvider<PrivacyCluster> cluster) {
+            return new BeanPostProcessor() {
+                @Override
+                public Object postProcessAfterInitialization(Object bean, String beanName) {
+                    if (bean instanceof SyntheticValueSource source && !(bean instanceof CachingSyntheticValueSource)) {
+                        return new CachingSyntheticValueSource(source, cluster.getObject());
+                    }
+                    return bean;
+                }
+            };
         }
 
         @Bean
