@@ -257,12 +257,12 @@ class ApprovalStoreContractTest {
         // The first has expired by `later`, so it does not count.
         store.create(request("e2", Kind.TOOL_CALL, "alice", later, later.plus(1, ChronoUnit.HOURS)), 1);
         // Approved, rejected, consumed: none count.
-        for (String id : new String[]{"a", "r", "k"}) {
-            ApprovalRequest r = request(id, Kind.TOOL_CALL, "carol", later, later.plus(1, ChronoUnit.HOURS));
-            store.create(r, 1);
-        }
+        Instant end = later.plus(1, ChronoUnit.HOURS);
+        store.create(request("a", Kind.TOOL_CALL, "carol", later, end), 1);
         store.approve("a", "bob", later);
+        store.create(request("r", Kind.TOOL_CALL, "carol", later, end), 1);
         store.reject("r", "bob", later);
+        store.create(request("k", Kind.TOOL_CALL, "carol", later, end), 1);
         store.approve("k", "bob", later);
         assertThat(store.consumeApproved(Kind.TOOL_CALL, "carol", "CASE-A", "search", "fp-k", later)).isPresent();
         store.create(request("c-new", Kind.TOOL_CALL, "carol", later, later.plus(1, ChronoUnit.HOURS)), 1);
