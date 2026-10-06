@@ -22,6 +22,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.firewall.HttpStatusRequestRejectedHandler;
+import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
 import java.util.Optional;
@@ -70,6 +72,31 @@ class ServerSecurityConfiguration {
                         .anyRequest().hasAuthority("SCOPE_" + operator.getRequiredScope()))
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(decoder)));
         return http.build();
+    }
+
+    /**
+     * A request Spring Security's firewall refuses (a double slash, a path parameter, an encoded
+     * traversal) never reaches a controller. On the operator port it is answered with
+     * {@code {"code":"INVALID_REQUEST"}} and nothing derived from the request; on the MCP port the
+     * default behaviour is kept. (Lives here because Spring Security stays at this one edge class.)
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "dataprism.operator", name = "enabled", havingValue = "true")
+    RequestRejectedHandler operatorRequestRejectedHandler(DataPrismProperties properties) {
+        Integer configured = properties.getOperator().getPort();
+        int port = configured == null ? -1 : configured;
+        RequestRejectedHandler fallback = new HttpStatusRequestRejectedHandler();
+        return (request, response, rejected) -> {
+            if (request.getLocalPort() != port) {
+                fallback.handle(request, response, rejected);
+                return;
+            }
+            response.setStatus(400);
+            response.setContentType("application/json");
+            response.setHeader("Cache-Control", "no-store");
+            response.getWriter().write("{\"code\":\"INVALID_REQUEST\"}");
+            response.getWriter().flush();
+        };
     }
 
     /**
