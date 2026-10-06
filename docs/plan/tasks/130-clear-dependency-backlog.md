@@ -2,7 +2,7 @@
 
 **Repo:** `.`
 **Release:** 0.5.0
-**Depends on:** none (any time after 0.4.0 has finished publishing)
+**Depends on:** 136 (changed 2026-10-06 by the 0.4.1 plan: was "none, any time after 0.4.0 has finished publishing". Task 136 sets the project version in every pom and `ARG VERSION`, and task 133 adds `EXPOSE 5701` to `docker/distribution/Dockerfile`, all files this task owns. Run after the 0.4.1 cut. Owns is unchanged.)
 **Owns:**
 - pom.xml and module `*/pom.xml` *(dependency and plugin versions only)*
 - .github/workflows/** *(action versions only, plus any input renames a major bump requires)*

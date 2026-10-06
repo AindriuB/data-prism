@@ -131,6 +131,95 @@ Follow-ups from task 127, for 0.4.x, not yet tasks:
 Accepted current behaviour: an approval-required call still consumes a
 rate-limit token. This is documented.
 
+#### Release 0.4.1 — real, safe, honestly documented clustering (tasks 131-136)
+
+Planned 2026-10-06 on `claude/release-0.4.1`. These facts were found against
+v0.4.0:
+- `topology=embedded` starts a bare Hazelcast 5.7.0 `Config`, with cluster name
+  `dev`, auto-detection on, no join list and no TLS. Separate instances
+  therefore never cluster.
+- On Kubernetes, auto-detection may join an unrelated `dev` cluster without
+  authentication.
+- `tls-*-reference` is read by nothing.
+- The docs claim cluster-wide sharing.
+
+Each effect fails closed: budget, pause, approvals and rate limits are per
+instance. The danger is exposure and an overstated guarantee.
+
+| Wave | Task | What | Depends on |
+|---|---|---|---|
+| 1 | 131 | `PrivacyCluster` membership explicit; auto-detection, multicast and phone-home off; refuse `dev`, TLS config and unsafe `using()` | none |
+| 1 | 133 | Multi-instance Compose and Kubernetes examples; `EXPOSE 5701`; `server.json` cluster and operator variables | none |
+| 2 | 132 | `dataprism.hazelcast.cluster-name`, `join.*`, `member.*`; startup refusals; TLS references refuse | 131 |
+| 3 | 134 | Multi-member server test: pause, approvals, budget, rate limit, re-identification, member loss, refusals | 132 |
+| 3 | 135 | Correct configuration, eu-ai-act, architecture and reidentification docs; new `multiple-instances.md` | 132, 133 |
+| 4 | 136 | Cut 0.4.1 (task 129 pattern) | 131-135 |
+
+Sequencing with 0.5.0, recorded in the task files with Owns unchanged:
+- 113 now depends on 132 and 135, because they touch the same files
+  (`DataPrismProperties`, `DataPrismAutoConfiguration` and `configuration.md`).
+- 116 depends on 135 (`mkdocs.yml`).
+- 130 depends on 136 (poms and `docker/distribution/Dockerfile`).
+
+Planner's choice: the 0.4.x item "expose the operator port in Docker Compose,
+`server.json` and the image" is folded into 133 for `server.json` and the image
+only. Operator use end to end in the Compose quickstart needs the issuer to
+mint operator-audience tokens, so it stays a follow-up.
+
+Owner decisions, open:
+
+- **D-0.4.1-A — member security.** Verified against the jar: OSS 5.7.0 has no
+  member TLS engine (`BasicSSLContextFactory` is absent) and no member
+  authentication (`SecurityConfig` is Enterprise). Kubernetes discovery is OSS
+  core. The options:
+  - **(A1)** Hazelcast Enterprise for TLS and member authentication. This
+    costs a commercial licence, a non-OSS dependency, licence-key handling and
+    a dual build or classpath. It contradicts "Hazelcast stays OSS".
+  - **(A2)** A home-grown encryption layer, such as a custom
+    `SSLEngineFactory` or socket interceptor. The interceptor is Enterprise,
+    and a custom engine is unsupported, security-critical code to own.
+    Rejected.
+  - **(B)** Keep the `tls-*-reference` property names, but make setting either
+    one refuse startup with `HAZELCAST_TLS_UNSUPPORTED`. Do not delete them,
+    because Boot would then ignore them silently. Document network isolation
+    (a private network, `NetworkPolicy`, or an mTLS mesh) as the deployer's
+    responsibility, and never claim encryption.
+
+  **Recommended: B.** Tasks 132 and 135 are written for B.
+- **D-0.4.1-B — is the new refusal a breaking change for a patch?** `embedded`
+  without `cluster-name` and `join.mode` now refuses startup. The options:
+  - **(a)** Ship it in 0.4.1 as a Breaking changelog entry, with a one-line
+    migration (`join.mode: none` is an explicit single member bound to
+    loopback). 0.4.0 `embedded` never clustered, so no working multi-instance
+    deployment breaks; only a config edit is forced. Fail closed, as the repo
+    rule requires.
+  - **(b)** Make it 0.5.0. That renumbers the queued 0.5.0 work and leaves
+    0.4.0 users on an auto-detecting `dev` member for longer.
+  - **(c)** Ship in 0.4.1 but default to `none` with a WARN when `join` is
+    unset. This keeps 0.4.0 configs starting. However, a deployer who runs N
+    replicas expecting a shared budget is silently N times over budget, which
+    breaks the fail-closed rule.
+
+  **Recommended: (a).** 0.x semver permits it, the old behaviour was a
+  defect, and if 0.4.0 has not been published yet the cost is near zero.
+  Tasks 132 and 136 are written for (a). Under (c), 132 drops
+  `MISSING_CLUSTER_JOIN` in favour of a WARN, and 136 moves the entry from
+  Breaking to Changed.
+- **D-0.4.1-C — application `PrivacyCluster` beans.** Keep them allowed, but
+  validate them: `using()` refuses auto-detection or multicast
+  (`UNSAFE_HAZELCAST_DISCOVERY`) and a `dev` name, and `embedded(Config)`
+  forces both off. Setting the properties alongside such a bean refuses with
+  `CLUSTER_SETTINGS_IGNORED`. **Recommended: as described.** The alternative,
+  forbidding custom beans, breaks hosts that manage their own instance.
+- **D-0.4.1-D — Kubernetes join mode.** Support both DNS mode (`service-dns`,
+  a headless service, no RBAC) and API mode (`service-name`, which needs get
+  and list on endpoints and pods). **Recommended: both, with DNS shown first in
+  the examples**, because it grants the pod no Kubernetes API rights.
+
+Known residual risk, documented by 135 and pinned by 134: the maps have backup
+count 1, so losing an entry's owner and its backup together loses it. For a
+pause flag, that reopens a paused path.
+
 #### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116)
 
 Lets an organisation's own correlation id flow from its MCP client through the
@@ -140,7 +229,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
-| 1 | 130 | Clear the dependency backlog (`docs/plan/tasks/130-clear-dependency-backlog.md`). Runs only after 0.4.0 finishes publishing. Owns no files shared with 108-116 | none |
+| 1 | 130 | Clear the dependency backlog (`docs/plan/tasks/130-clear-dependency-backlog.md`). Runs only after the 0.4.1 cut (136). Owns no files shared with 108-116 | 136 |
 | 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
 | 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
 | 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
@@ -152,8 +241,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
-before 0.4.0. Task 130 likewise has no dependency but starts only once 0.4.0
-has finished publishing, and it owns no files shared with tasks 108-116, so it
+before 0.4.0. Task 130 starts only after the 0.4.1 cut (task 136), and it owns no files shared with tasks 108-116, so it
 can run alongside any of them.
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates

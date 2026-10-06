@@ -3,6 +3,7 @@
 **Repo:** `.`
 **Depends on:** 103, 104, 110, 112, 127
 *(127 added 2026-10-06: task 127 edits `DataPrismAutoConfiguration`, owned here.)*
+*(132 and 135 added 2026-10-06 by the 0.4.1 plan: 132 edits the `Hazelcast` section of `DataPrismProperties` and `ClusterBackedState` in `DataPrismAutoConfiguration`; 135 edits the `dataprism.hazelcast` row and section of `docs/configuration.md`. Rebase on the 0.4.1 cut (136) before starting. Owns is unchanged.)*
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java
