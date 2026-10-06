@@ -61,10 +61,10 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 4 | 121 | Correct REFUSED wording; document every `policyDecision` form | 101 | done 2026-10-06 |
 | 4 | 122 | Find and remove the cause of `ServerStartupTest`'s intermittent `/health` 404 | none | done 2026-10-06 (cause unproven) |
 | 4 | 125 | Integration tests derive the artifact version from the build | none | done 2026-10-06 |
-| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | next (final build after merging the new head) |
-| 5 | 123 | Orchestrator records the refusal code as `DENY:<code>` | 118, 121 | next |
-| 5 | 124 | Undeclared property names never reach the model (`<undeclared-N>`) | 118 | next |
-| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | after 120 |
+| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | done 2026-10-06 |
+| 5 | 123 | Orchestrator records the refusal code as `DENY:<code>` | 118, 121 | next (unblocked; needs 120, now merged) |
+| 5 | 124 | Undeclared property names never reach the model (`<undeclared-N>`) | 118 | in flight, attempt 2 pending |
+| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | next (unblocked) |
 | 7 | 105 | Operator surface on a second port in the same process | 104 | |
 | 8 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
 
@@ -72,10 +72,9 @@ Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next wave for 0.4.0, in order: 120 (and a final build after merging the new
-head), 123, 124, then 104 (needs 120), then 105, then 106. Tasks 103, 117, 118,
-121 and 125 merged on 2026-10-06; a clean `mvn clean verify` of the merged head
-exited 0.
+Next wave for 0.4.0, in order: 104 (unblocked), 123 (unblocked now that 120
+has merged), and 124 (attempt 2 pending), then 105, then 106. Task 120 merged
+on 2026-10-06; a clean `mvn clean verify` of the merged head exited 0.
 Tasks 102 and 103 carried notes that a retention below six months refuses
 startup unless `dataprism.audit.retention-override` is set.
 
@@ -178,6 +177,13 @@ Owner decisions of 2026-10-06 taken during tasks 103, 118, 123 and 124:
   codes. A malformed code is recorded as `DENY:INVALID_REFUSAL_CODE`.
 - Task 124 numbers the placeholders `<undeclared-N>` alphabetically by name.
 - Scanning property names in the leak validators is a 0.4.x follow-up.
+
+Follow-ups from the task 120 review, not yet tasks:
+
+- `HazelcastApprovalStore`'s cap count scans all approvals under the requester
+  lock (O(n)); consider an index or a predicate.
+- The two-member contract test picks a port from `nanoTime` with auto-increment
+  off and does not retry on collision.
 
 Follow-ups from the wave 4 reviews (tasks 103, 117, 118, 121, 125), not yet tasks:
 

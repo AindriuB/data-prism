@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 120: live pending approvals capped per requester
+
+Each requester may now hold at most 5 live pending approvals (default), counted separately for tool-call and re-identification approvals. The cap is enforced atomically inside the approval store, in both `InMemoryApprovalStore` and `HazelcastApprovalStore`, and a request over the cap is refused with `TOO_MANY_PENDING` (HTTP 429), audited, and creates no approval.
+
+Release note: Live pending approvals are capped per requester (default 5, counted separately for tool-call and re-identification approvals); over-cap requests are refused TOO_MANY_PENDING and audited.
+
+**Cost:** The cap tests were written first and cannot compile before 120; the mutation check confirmed it. The 32 `ApprovalStoreContractTest` cases passed three extra times to look for flakiness. The owner accepted an Owns extension for the setup in `data-prism-mcp` `ToolAdmissionEnforcementTest`. Two weaknesses were left as follow-ups: the Hazelcast count scans every approval under the requester lock (O(n)), and the two-member contract test picks its port from `nanoTime` with auto-increment off and does not retry on collision, so a clash would fail it.
+
 ## 2026-10-06 — Task 125: integration tests derive the artifact version from the build
 
 The server and quickstart integration tests now read the project version from a `project.version` system property that the failsafe configuration sets from `${project.version}`, and fail with a clear message if it is missing. No test source carries a literal version any more, so the next version bump cannot break them the same way.
