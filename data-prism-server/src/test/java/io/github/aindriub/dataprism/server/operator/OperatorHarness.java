@@ -64,6 +64,8 @@ final class OperatorHarness implements AutoCloseable {
     private static final String STORE_PASSWORD = "task-105-test-only";
 
     final List<AuditEvent> audit = new CopyOnWriteArrayList<>();
+    /** While true the audit sink refuses every event, to exercise the audit-unavailable paths. */
+    volatile boolean failAudit;
     final int mcpPort;
     final int operatorPort;
     final ConfigurableApplicationContext context;
@@ -179,7 +181,10 @@ final class OperatorHarness implements AutoCloseable {
                     beans.registerSingleton("testKeys", (HmacKeyReferenceResolver) (keyId, reference) ->
                             "task-105-test-key-material-longer-than-thirty-two-bytes"
                                     .getBytes(StandardCharsets.UTF_8));
-                    beans.registerSingleton("testAudit", (AuditSink) audit::add);
+                    beans.registerSingleton("testAudit", (AuditSink) event -> {
+                        if (failAudit) throw new IllegalStateException("audit down");
+                        audit.add(event);
+                    });
                     beans.registerSingleton("testMetrics", PrivacyMetrics.none());
                 })
                 .run(arguments.toArray(String[]::new));

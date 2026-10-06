@@ -305,7 +305,8 @@ class OperatorSurfaceTest {
         for (String path : new String[] {"/operator//state", "/operator;x=1/state", "/operator/state;x=1",
                 "/operator/./state", "/operator/%2e%2e/state", "/operator/%2Fstate", "/operator/state%00"}) {
             for (String token : new String[] {operator, null}) {
-                assertCodeOnly(app.operator("GET", path, token, null), path + (token == null ? " (anon)" : ""));
+                HttpResponse<String> probe = app.operator("GET", path, token, null);
+                assertCodeOnly(probe, path + (token == null ? " (anon)" : ""));
             }
         }
     }
@@ -379,6 +380,35 @@ class OperatorSurfaceTest {
             assertThat(response.statusCode()).isEqualTo(200);
         } finally {
             app.operator("POST", "/operator/resume", operator, "{\"target\":\"TOOL\",\"name\":\"chunked-tool\"}");
+        }
+    }
+
+    // ---- applied but not audited ---------------------------------------------------------------
+
+    @Test
+    void aPauseOrRejectThatTookEffectButCouldNotBeAuditedSaysSo() throws Exception {
+        String operator = app.operatorToken("operator-appliedaudit");
+        try (McpSyncClient client = app.mcpClient(app.mcpToken("analyst-applied", "CASE-APPLIED"))) {
+            String refusal = OperatorHarness.text(app.getEntityContext(client, "999"));
+            String approvalId = refusal.substring(refusal.indexOf('=') + 1).trim();
+            app.failAudit = true;
+            try {
+                HttpResponse<String> pause = app.operator("POST", "/operator/pause", operator,
+                        "{\"target\":\"TOOL\",\"name\":\"applied-tool\"}");
+                HttpResponse<String> reject = app.operator("POST", "/operator/approvals/" + approvalId + "/reject",
+                        operator, null);
+                for (HttpResponse<String> response : List.of(pause, reject)) {
+                    assertThat(response.statusCode()).isEqualTo(503);
+                    assertThat(response.body()).isEqualTo("{\"code\":\"APPLIED_AUDIT_UNAVAILABLE\"}");
+                }
+            } finally {
+                app.failAudit = false;
+            }
+            assertThat(body(app.operator("GET", "/operator/state", operator, null)).path("pausedTools")
+                    .toString()).contains("applied-tool");
+            assertThat(app.operator("POST", "/operator/approvals/" + approvalId + "/approve", operator, null)
+                    .body()).isEqualTo("{\"code\":\"APPROVAL_NOT_PENDING\"}");
+            app.operator("POST", "/operator/resume", operator, "{\"target\":\"TOOL\",\"name\":\"applied-tool\"}");
         }
     }
 }

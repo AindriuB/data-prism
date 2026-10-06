@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.server.operator;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
@@ -52,9 +53,23 @@ final class OversightOperatorController {
 
     record PauseRequest(String target, String name) { }
 
+    /**
+     * What an approver sees. For a re-identification request that includes the synthetic value and its
+     * namespace, so the approver can tell what is being asked for; the subject id is never part of an
+     * approval and so never appears. Both are absent for a tool-call approval.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     record ApprovalView(String approvalId, String kind, String requesterPrincipalId, String requesterClientId,
                         String scopeId, String tool, String purpose, String caseId, Instant createdAt,
-                        Instant expiresAt) { }
+                        Instant expiresAt, String namespace, String syntheticValue) {
+        static ApprovalView of(ApprovalRequest a) {
+            boolean reidentification = a.kind() == Kind.REIDENTIFICATION;
+            return new ApprovalView(a.approvalId(), a.kind().name(), a.requesterPrincipalId(),
+                    a.requesterClientId(), a.scopeId(), a.tool(), a.purpose(), a.caseId(), a.createdAt(),
+                    a.expiresAt(), reidentification ? a.namespace() : null,
+                    reidentification ? a.syntheticValue() : null);
+        }
+    }
 
     @PostMapping("/operator/pause")
     Map<String, Object> pause(@RequestBody PauseRequest body) {
@@ -69,7 +84,8 @@ final class OversightOperatorController {
         } catch (RuntimeException unavailable) {
             throw unavailable(caller, "pause", target);
         }
-        audit.record(caller, "pause", target.entityType(), target.scopeId(), "ALLOW:PAUSED", "", "");
+        appliedAudit(() -> audit.record(caller, "pause", target.entityType(), target.scopeId(), "ALLOW:PAUSED",
+                "", ""));
         return Map.of("status", "PAUSED", "target", target.type().name());
     }
 
@@ -114,11 +130,26 @@ final class OversightOperatorController {
         } catch (RuntimeException unavailable) {
             throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
         }
-        // Deliberately no synthetic value, namespace or binding fingerprint: what is listed is who is
-        // asking, for which tool and scope, for how long.
-        return Map.of("approvals", pending.stream().map(a -> new ApprovalView(a.approvalId(), a.kind().name(),
-                a.requesterPrincipalId(), a.requesterClientId(), a.scopeId(), a.tool(), a.purpose(), a.caseId(),
-                a.createdAt(), a.expiresAt())).toList());
+        // Never the binding fingerprint, and never a subject id (an approval has no field for one).
+        return Map.of("approvals", pending.stream().map(ApprovalView::of).toList());
+    }
+
+    @GetMapping("/operator/approvals/{id}")
+    ApprovalView approval(@PathVariable("id") String id) {
+        AuthenticatedCaller caller = caller();
+        ApprovalRequest found;
+        try {
+            found = approvals.find(id).orElse(null);
+        } catch (RuntimeException unavailable) {
+            audit.recordDenial(caller, "approval", "", "", "OVERSIGHT_UNAVAILABLE", "");
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+        }
+        if (found == null) {
+            audit.recordDenial(caller, "approval", "", "", "APPROVAL_NOT_FOUND", "");
+            throw new OperatorException(HttpStatus.NOT_FOUND, "APPROVAL_NOT_FOUND");
+        }
+        audit.record(caller, "approval", found.tool(), found.scopeId(), "ALLOW:READ", id, "");
+        return ApprovalView.of(found);
     }
 
     @PostMapping("/operator/approvals/{id}/approve")
@@ -155,8 +186,21 @@ final class OversightOperatorController {
             audit.recordDenial(caller, "reject", found.tool(), found.scopeId(), "OVERSIGHT_UNAVAILABLE", id);
             throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
         }
-        audit.record(caller, "reject", found.tool(), found.scopeId(), "ALLOW:REJECTED", id, caller.principalId());
+        appliedAudit(() -> audit.record(caller, "reject", found.tool(), found.scopeId(), "ALLOW:REJECTED", id,
+                caller.principalId()));
         return Map.of("status", "REJECTED", "approvalId", id);
+    }
+
+    /**
+     * Runs the audit write for an action that has already taken effect. If it fails the operator is told
+     * so with a distinct code, not that the action failed: the pause or rejection is in force.
+     */
+    private static void appliedAudit(Runnable write) {
+        try {
+            write.run();
+        } catch (OperatorException auditDown) {
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "APPLIED_AUDIT_UNAVAILABLE");
+        }
     }
 
     // ---- helpers -------------------------------------------------------------------------------

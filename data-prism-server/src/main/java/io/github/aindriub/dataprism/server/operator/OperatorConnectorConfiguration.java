@@ -35,10 +35,22 @@ class OperatorConnectorConfiguration {
             Connector connector = new Connector(TomcatServletWebServerFactory.DEFAULT_PROTOCOL);
             connector.setPort(port);
             connector.setMaxPostSize((int) OperatorPortFilter.MAX_BODY_BYTES);
-            if (server.getAddress() != null) {
+            String address = properties.getOperator().getAddress();
+            if (address != null && !address.isBlank()) {
+                // Validated at startup (INVALID_OPERATOR_ADDRESS), so this resolves.
+                connector.setProperty("address", resolve(address.trim()));
+            } else if (server.getAddress() != null) {
                 connector.setProperty("address", server.getAddress().getHostAddress());
             }
             factory.addAdditionalTomcatConnectors(connector);
+            // Tomcat's own error report is HTML and echoes the failure; on this port it is a code.
+            factory.addContextCustomizers(context -> {
+                if (context.getParent() instanceof org.apache.catalina.core.StandardHost host) {
+                    OperatorErrorReportValve valve = new OperatorErrorReportValve(port);
+                    host.setErrorReportValveClass(valve.getClass().getName());
+                    host.getPipeline().addValve(valve);
+                }
+            });
         };
     }
 
@@ -51,6 +63,14 @@ class OperatorConnectorConfiguration {
         registration.addUrlPatterns("/*");
         registration.setAsyncSupported(true);
         return registration;
+    }
+
+    private static String resolve(String address) {
+        try {
+            return java.net.InetAddress.getByName(address).getHostAddress();
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalStateException("INVALID_OPERATOR_ADDRESS");
+        }
     }
 
     private static boolean validPort(Integer port) {
