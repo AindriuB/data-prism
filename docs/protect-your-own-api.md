@@ -503,9 +503,10 @@ is a complete, runnable program, `public` but living in
 test drives directly. Its own header comment gives the exact `javac`/`java`
 invocation; in short, `install` first, to run this branch's code —
 `package` alone leaves `data-prism-pseudonymisation` and
-`data-prism-orchestration` (imported here transitively) unbuilt in your local
-repository, so `mvn dependency:build-classpath` would resolve `0.4.0` from
-Maven Central instead of this branch. The `-am` flag
+`data-prism-orchestration` (imported here transitively) not installed in your
+local repository, so `mvn dependency:build-classpath` fails to resolve them
+until 0.4.0 reaches Maven Central, and after that resolves the published
+`0.4.0` instead of this branch's code. The `-am` flag
 installs every upstream module this one depends on, not just those two
 (`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`) — note this
 installs this branch's build at `0.4.0` into the reader's local `~/.m2`

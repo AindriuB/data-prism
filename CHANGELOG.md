@@ -42,7 +42,8 @@ by themselves establish that a deployment meets those obligations. Several defau
   (`dataprism.reidentification.four-eyes=true`). Tool calls need an approval
   only when the tool is listed in `dataprism.oversight.approval-required-tools`,
   which is empty by default. There are at most 5 live pending approvals per
-  requester (`TOO_MANY_PENDING`).
+  requester and kind, by default (`TOO_MANY_PENDING`); the oversight and
+  re-identification caps are configured separately.
 - `data-prism-server` now excludes Spring Boot's `HazelcastAutoConfiguration`.
   This is visible only with a `hazelcast.xml` or `hazelcast.yaml` on its
   classpath.
