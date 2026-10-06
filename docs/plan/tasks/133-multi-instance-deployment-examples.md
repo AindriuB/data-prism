@@ -109,3 +109,27 @@ touches the same files.
 - Docs pages, including the `docs/reidentification.md:178-179` sentence. That
   is task 135.
 - A Helm chart.
+
+## Attempt 1 — failed
+
+Tester: PASS. Reviewer: CHANGES (head 9059feb). The env names, structure and
+scope are all right. Deferring the live 2-member run is accepted; it moves to task 136.
+Required for attempt 2:
+1. **The Compose isolation claim is false.** Both servers are also on the non-internal
+   `default` network and Hazelcast listens on every interface, so `issuer`,
+   `fixtures` and the Linux host can reach `server-a:5701`. Give the `cluster`
+   network a fixed ipam subnet and set `DATAPRISM_HAZELCAST_MEMBER_INTERFACE` to it
+   (task 132 defines `member.interface`). The join members must resolve to cluster-network
+   addresses: use fixed `ipv4_address`es on `cluster` in `join.members`, or
+   network aliases that exist only on `cluster`. Then make the SECURITY comment
+   say exactly what is isolated.
+2. **The kubernetes.yaml NetworkPolicy comment (:112-113) is false.** Once the policy
+   selects the pods, 8080 is denied too. Say that 8080 stays closed until the
+   deployer adds an allow rule for their ingress, and include a commented
+   example rule.
+3. Set `automountServiceAccountToken: false` in the pod spec for DNS mode. The
+   commented API mode must use a dedicated ServiceAccount (commented) bound to the
+   Role, and tell the reader to flip automount back.
+4. Note in the compose.yaml header that `!override`/`!reset` need Docker Compose ≥ 2.24.0.
+5. server.json `DATAPRISM_OPERATOR_PORT`: also mention that it must differ from the
+   management port (`OPERATOR_PORT_SHARED`).
