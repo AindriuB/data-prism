@@ -49,6 +49,11 @@ class ScrubDispositionsTest {
     record Unclassified(@InternalIdentifier String subjectRef, String loose) {
     }
 
+    @LlmExposedModel
+    record Open(@InternalIdentifier String subjectRef,
+                @com.fasterxml.jackson.annotation.JsonAnyGetter Map<String, String> extra) {
+    }
+
     private static PrivacyContext context() {
         return new PrivacyContext("C", PrivacyScopeType.CASE, "DEFAULT", "test",
                 Instant.parse("2030-01-01T00:00:00Z"), PseudonymisationVersion.HMAC_SHA256_V1);
@@ -106,5 +111,22 @@ class ScrubDispositionsTest {
                 .isInstanceOf(PrivacyRefusedException.class)
                 .extracting(e -> ((PrivacyRefusedException) e).path())
                 .isEqualTo("$.loose");
+    }
+
+    @Test
+    @DisplayName("an undeclared property's payload-supplied name never reaches dispositions")
+    void undeclaredKeyNotRecorded() {
+        String key = "alice@example.com";
+        var profile = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN,
+                Map.of());
+        var engine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile)),
+                (subject, namespace, ctx) -> "synthetic");
+
+        ScrubResult result = engine.scrub(new Open("s-1", Map.of(key, "x")), context());
+
+        assertThat(result.dispositions()).containsEntry("/<undeclared>", PrivacyAction.REDACT);
+        assertThat(result.dispositions().keySet()).noneMatch(k -> k.contains(key));
+        assertThat(result.toString()).doesNotContain(key);
     }
 }

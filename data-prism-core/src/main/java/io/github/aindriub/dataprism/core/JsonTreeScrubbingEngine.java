@@ -42,6 +42,9 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
     public static final String REDACTED = "[REDACTED]";
 
+    /** Stands in a disposition path for a property the model does not declare. */
+    static final String UNDECLARED = "<undeclared>";
+
     /**
      * Guards against a self-referencing structure. A cycle in the source object
      * would already have failed when Jackson built the tree, so this catches
@@ -153,10 +156,12 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         ObjectNode out = SourceTree.newObject();
         for (String field : fieldNames(in)) {
             String fieldPath = path + "." + field;
-            String fieldPointer = child(pointer, field);
 
             FieldMetadata md = byName.get(field);
             boolean unknownProperty = md == null;
+            // An undeclared property's name comes from the payload, not from the
+            // model, so it must never reach the record of dispositions.
+            String fieldPointer = unknownProperty ? pointer + "/" + UNDECLARED : child(pointer, field);
             if (unknownProperty) {
                 // Present in the serialised source, absent from the model. Same
                 // question as an unannotated field, so the same setting answers it.
