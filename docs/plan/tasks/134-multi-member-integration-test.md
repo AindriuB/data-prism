@@ -85,3 +85,23 @@ failure analyzer.
   report it with the failing assertion. Do not fix it here.
 - Partition (split-brain) behaviour and Hazelcast split-brain protection.
 - Docker or Kubernetes runs. That is task 133.
+
+## Attempt 1 — failed
+
+Tester: PASS (two full-reactor runs green; MultiMemberOperatorTest took 53s and 20s; no port leaks).
+Reviewer: CHANGES (head c3bb155). Every scenario except member loss is shown to fail
+without clustering, and the budget-100 deviation is accepted. Required for attempt 2:
+1. **The member-loss test does not pin backup-count 1.** `a.close()` is a graceful shutdown,
+   which migrates partitions, and nothing ensures A owns the `pausedAll` partition. The test passes
+   even with backup-count 0. Fix: find the member that owns the pause key (partition owner,
+   or the oversight map's `localKeySet()`), stop it **ungracefully**
+   (`getLifecycleService().terminate()`), then close its harness. Assert that the
+   survivors still refuse. Show it red: with backup-count 0 it must fail. Prove it locally,
+   e.g. by temporarily patching, and describe how; do not commit the patch.
+2. ClusterConfigurationRefusalIT: also assert `doesNotContain("\tat ")`.
+3. ClusterMembers.close(): close each member in its own try, so that one failure does not
+   leak the rest.
+4. OperatorHarness: release the SSL ref-count, and restore the JVM default, if startup
+   throws between the increment (:140) and the try (:242).
+Follow-up, not 134: in the packaged server, `topology=embedded` with no source adapter refuses with a
+misleading MISSING_SHARED_BUDGET before the cluster validation runs. It is fail-closed; record it for 0.4.x.
