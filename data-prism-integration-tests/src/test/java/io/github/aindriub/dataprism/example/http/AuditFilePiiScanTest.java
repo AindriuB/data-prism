@@ -394,6 +394,13 @@ class AuditFilePiiScanTest {
                 for (Object element : collection) {
                     checkField(leaked, name, (String) element, bannedValues);
                 }
+            } else if (value instanceof Map<?, ?> map) {
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    checkField(leaked, name, (String) entry.getKey(), bannedValues);
+                    checkField(leaked, name, (String) entry.getValue(), bannedValues);
+                }
+            } else if (value instanceof Integer) {
+                continue; // recordVersion: a non-PII scalar
             } else {
                 throw new IllegalStateException(
                         "AuditEvent component " + name + " has unrecognised type "

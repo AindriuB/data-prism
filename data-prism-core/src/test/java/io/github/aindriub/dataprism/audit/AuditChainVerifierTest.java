@@ -603,7 +603,7 @@ class AuditChainVerifierTest {
         List<String> lines = new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
         String original = lines.get(0);
         String fieldSep = "";
-        String[] fields = original.split(fieldSep);
+        String[] fields = original.split(fieldSep, -1);
         fields[17] = "not-a-number";
         lines.set(0, String.join(fieldSep, fields));
         Files.writeString(path, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);

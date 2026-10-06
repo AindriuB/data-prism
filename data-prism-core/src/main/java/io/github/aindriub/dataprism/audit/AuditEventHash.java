@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -32,6 +33,23 @@ public final class AuditEventHash {
                                   String scopeId, String purpose, String caseId, String policyDecision,
                                   String correlationId, Set<String> sourceSystems, Set<String> rejectedArguments,
                                   String previousHash) {
+        return compute(eventId, timestamp, instanceId, sequence, principalId, clientId, tool, entityType,
+                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision,
+                correlationId, sourceSystems, rejectedArguments, previousHash, 1, Map.of(), "", "");
+    }
+
+    /**
+     * As the nineteen-field overload, and for {@code recordVersion >= 2} also
+     * folds the sorted {@code path=ACTION} dispositions, {@code approvalId} and
+     * {@code approverId}. Version 1 hashes over exactly the original nineteen.
+     */
+    public static String compute(String eventId, Instant timestamp, String instanceId, long sequence,
+                                  String principalId, String clientId, String tool, String entityType,
+                                  String subjectPseudonym, String parameterFingerprint, String privacyProfile,
+                                  String scopeId, String purpose, String caseId, String policyDecision,
+                                  String correlationId, Set<String> sourceSystems, Set<String> rejectedArguments,
+                                  String previousHash, int recordVersion, Map<String, String> fieldDispositions,
+                                  String approvalId, String approverId) {
         // Sorted so the hash does not depend on the iteration order of whatever
         // Set implementation the caller happened to pass in.
         String sources = String.join(",", sourceSystems.stream().sorted().toList());
@@ -43,6 +61,11 @@ public final class AuditEventHash {
         String body = String.join("|", eventId, renderedTimestamp, instanceId, Long.toString(sequence),
                 principalId, clientId, tool, entityType, subjectPseudonym, parameterFingerprint, privacyProfile,
                 scopeId, purpose, caseId, policyDecision, correlationId, sources, rejected, previousHash);
+        if (recordVersion >= 2) {
+            String dispositions = String.join(",", new java.util.TreeMap<>(fieldDispositions).entrySet().stream()
+                    .map(e -> e.getKey() + "=" + e.getValue()).toList());
+            body = String.join("|", body, dispositions, approvalId, approverId);
+        }
         return sha256(body);
     }
 
@@ -52,7 +75,8 @@ public final class AuditEventHash {
                 event.principalId(), event.clientId(), event.tool(), event.entityType(), event.subjectPseudonym(),
                 event.parameterFingerprint(), event.privacyProfile(), event.scopeId(), event.purpose(),
                 event.caseId(), event.policyDecision(), event.correlationId(), event.sourceSystems(),
-                event.rejectedArguments(), event.previousHash());
+                event.rejectedArguments(), event.previousHash(), event.recordVersion(), event.fieldDispositions(),
+                event.approvalId(), event.approverId());
     }
 
     private static String sha256(String value) {

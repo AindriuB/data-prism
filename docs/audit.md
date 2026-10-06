@@ -77,7 +77,18 @@ A few properties are deliberate, not accidental gaps:
   `subjectPseudonym`, `parameterFingerprint`, `privacyProfile`, `scopeId`,
   `purpose`, `caseId`, `policyDecision`, `correlationId`, `sourceSystems`,
   `rejectedArguments` and `previousHash` — never a raw source value, only what
-  `Slf4jAuditSink` already emitted. `AuditFilePiiScanTest`
+  `Slf4jAuditSink` already emitted.
+
+  Record version 2 adds four fields. `recordVersion` is `2` for every record
+  written now; a line with no `recordVersion` is version 1 and still verifies,
+  hashed over exactly the nineteen fields above. For version 2 the hash also
+  folds in `fieldDispositions`, `approvalId` and `approverId`.
+  `fieldDispositions` maps a field path to the action taken on it. Paths look
+  like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
+  example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
+  `REFUSED`. Dispositions name field paths and actions and never values.
+  `approvalId` and `approverId` identify a four-eyes approval request and the
+  second principal, or are empty. `AuditFilePiiScanTest`
   (`data-prism-integration-tests`) scans this file's own output for stub
   fixture identifying values the same way `PiiLogScanTest` scans captured log
   output, closing the audit half of architecture boundary 7.

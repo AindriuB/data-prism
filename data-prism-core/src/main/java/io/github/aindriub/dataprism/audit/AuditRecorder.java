@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.audit;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -79,6 +80,12 @@ public final class AuditRecorder {
                                           String scopeId, String purpose, String caseId,
                                           String policyDecision, Set<String> sourceSystems,
                                           Set<String> rejectedArguments, String correlationId) {
+        return record(new AuditEntry(principalId, clientId, tool, entityType, subjectPseudonym,
+                parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, sourceSystems,
+                rejectedArguments, correlationId, Map.of(), "", ""));
+    }
+
+    public synchronized AuditEvent record(AuditEntry entry) {
         long seq = sequence.incrementAndGet();
         String id = UUID.randomUUID().toString();
         String prior = previousHash;
@@ -87,14 +94,29 @@ public final class AuditRecorder {
         // record's stored hash disagreeing with its own stored timestamp and the
         // chain breaking on its very first record.
         Instant timestamp = clock.instant();
-        String hash = AuditEventHash.compute(id, timestamp, instanceId, seq, principalId, clientId, tool,
-                entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
-                policyDecision, correlationId, sourceSystems, rejectedArguments, prior);
-
-        AuditEvent event = new AuditEvent(id, timestamp, principalId, clientId, tool, entityType,
-                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
-                policyDecision, sourceSystems, rejectedArguments, correlationId, instanceId, seq, prior,
-                hash);
+        // Dispositions are validated and sorted by AuditEvent's constructor; build with a
+        // placeholder hash first so the hash is computed over the normalised event.
+        int version = AuditEvent.CURRENT_VERSION;
+        AuditEvent draft;
+        try {
+            draft = new AuditEvent(id, timestamp, entry.principalId(), entry.clientId(), entry.tool(),
+                entry.entityType(), entry.subjectPseudonym(), entry.parameterFingerprint(),
+                entry.privacyProfile(), entry.scopeId(), entry.purpose(), entry.caseId(),
+                entry.policyDecision(), entry.sourceSystems(), entry.rejectedArguments(),
+                entry.correlationId(), instanceId, seq, prior, "", version, entry.fieldDispositions(),
+                entry.approvalId(), entry.approverId());
+        } catch (RuntimeException e) {
+            // An invalid disposition must not consume a sequence number.
+            sequence.decrementAndGet();
+            throw e;
+        }
+        String hash = AuditEventHash.compute(draft);
+        AuditEvent event = new AuditEvent(id, timestamp, draft.principalId(), draft.clientId(), draft.tool(),
+                draft.entityType(), draft.subjectPseudonym(), draft.parameterFingerprint(),
+                draft.privacyProfile(), draft.scopeId(), draft.purpose(), draft.caseId(),
+                draft.policyDecision(), draft.sourceSystems(), draft.rejectedArguments(),
+                draft.correlationId(), instanceId, seq, prior, hash, version, draft.fieldDispositions(),
+                draft.approvalId(), draft.approverId());
 
         try {
             sink.record(event);
