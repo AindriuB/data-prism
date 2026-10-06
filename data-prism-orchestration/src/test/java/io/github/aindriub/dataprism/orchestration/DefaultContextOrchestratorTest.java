@@ -275,4 +275,100 @@ class DefaultContextOrchestratorTest {
         assertThat(audited).singleElement()
                 .satisfies(e -> assertThat(e.tool()).isEqualTo("compare_entity_sources"));
     }
+
+    private static DefaultContextOrchestrator dispositionOrchestrator(
+            List<AuditEvent> sink, LlmResponseValidator validator, PrivacyMetrics metrics) {
+        FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
+        ObjectMapper mapper = new ObjectMapper();
+        ScrubbingEngine scrubber = (source, ctx) -> {
+            Thing thing = (Thing) source;
+            return new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of(),
+                    Map.of("/" + thing.value(), PrivacyAction.SYNTHESIZE,
+                            "/items/*", PrivacyAction.REMOVE));
+        };
+        return new DefaultContextOrchestrator(
+                List.of(answering("alpha", new Thing("1", "one")), answering("beta", new Thing("1", "two"))),
+                scrubber, resolver, List.of(validator, new SensitivePatternValidator()),
+                (subjectId, namespace, ctx) -> "SUBJ-1",
+                new ParameterFingerprinter(KEYS),
+                new AuditRecorder(sink::add, CLOCK, "test-1"),
+                new PassThroughIdentityResolver(),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), metrics),
+                new InMemoryScopeBudget(), RequestLimits.DEFAULT,
+                new NamespaceCorrelationService(resolver),
+                new SourceAliasing(new HmacValueTokenSource(KEYS)),
+                metrics);
+    }
+
+    @Test
+    @DisplayName("an ALLOW event lists every scrubbed field from every answering source, by real source name")
+    void allowRecordsDispositionsPerSource() {
+        List<AuditEvent> events = new ArrayList<>();
+        LlmResponseValidator alwaysOk = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
+
+        ContextResponse response = dispositionOrchestrator(events, alwaysOk, PrivacyMetrics.none())
+                .buildContext(ContextRequest.of("THING", "1"), context(), caller());
+
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).policyDecision()).isEqualTo("ALLOW");
+        assertThat(events.get(0).fieldDispositions()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "alpha:/one", "SYNTHESIZE", "alpha:/items/*", "REMOVE",
+                "beta:/two", "SYNTHESIZE", "beta:/items/*", "REMOVE"));
+        assertThat(response.correlationId()).isNotEmpty()
+                .isEqualTo(events.get(0).correlationId());
+    }
+
+    @Test
+    @DisplayName("a DENY from a refusal records the refusing path as REFUSED")
+    void denyRecordsRefusedPath() {
+        List<AuditEvent> events = new ArrayList<>();
+        LlmResponseValidator refusing = (response, prohibited, emitted, ctx) ->
+                ValidationResult.failed(List.of(new Violation("/value", "X", "TEST")));
+
+        assertThatThrownBy(() -> dispositionOrchestrator(events, refusing, PrivacyMetrics.none())
+                .buildContext(ContextRequest.of("THING", "1"), context(), caller()))
+                .isInstanceOf(PrivacyRefusedException.class);
+
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).policyDecision()).isEqualTo("DENY");
+        assertThat(events.get(0).fieldDispositions()).containsEntry("/value", "REFUSED");
+    }
+
+    @Test
+    @DisplayName("correlationId is not serialised; the 5-argument constructor still compiles")
+    void correlationIdIsNotSerialised() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ContextResponse response = new ContextResponse("THING", "S", Map.of(), List.of(),
+                mapper.createObjectNode(), Map.of(), "corr-id-123");
+
+        assertThat(mapper.writeValueAsString(response)).doesNotContain("corr-id-123");
+        assertThat(new ContextResponse("THING", "S", Map.of(), List.of(), mapper.createObjectNode())
+                .correlationId()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("approvalId and approverId default to empty and are copied into the audit entry")
+    void approvalIdsReachTheAudit() {
+        assertThat(ContextRequest.of("THING", "1").approvalId()).isEmpty();
+        assertThat(new ContextRequest("THING", "1", Set.of()).approverId()).isEmpty();
+        assertThat(ContextRequest.comparison("THING", "1", Set.of(), "t").approvalId()).isEmpty();
+
+        List<AuditEvent> events = new ArrayList<>();
+        LlmResponseValidator alwaysOk = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
+        LlmResponseValidator refusing = (response, prohibited, emitted, ctx) ->
+                ValidationResult.failed(List.of(new Violation("/value", "X", "TEST")));
+        ContextRequest request = new ContextRequest("THING", "1", Set.of(),
+                ContextRequest.DEFAULT_TOOL_NAME, false, "APR-1", "approver-2");
+
+        dispositionOrchestrator(events, alwaysOk, PrivacyMetrics.none())
+                .buildContext(request, context(), caller());
+        assertThatThrownBy(() -> dispositionOrchestrator(events, refusing, PrivacyMetrics.none())
+                .buildContext(request, context(), caller()));
+
+        assertThat(events).extracting(AuditEvent::policyDecision).containsExactly("ALLOW", "DENY");
+        assertThat(events).allSatisfy(e -> {
+            assertThat(e.approvalId()).isEqualTo("APR-1");
+            assertThat(e.approverId()).isEqualTo("approver-2");
+        });
+    }
 }
