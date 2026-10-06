@@ -145,3 +145,24 @@ keeps working with a one-line change; see owner decision **D-0.4.1-B**.
   interface. 135's docs must say so; 132's property javadoc must too.
 - Version note: the project is at 0.4.0, which is published on Central. Always build
   with `-am` and never `-rf`.
+
+## Attempt 1 — failed
+
+Tester: PASS (full reactor and `-Prelease` are green; 25 of 31 tests were red by assertion). Reviewer:
+CHANGES (head ba234a2). Every other criterion is met, and OperatorHarness is inside Owns.
+Required for attempt 2:
+1. **CLUSTER_SETTINGS_IGNORED can be bypassed through the bean name.** `applicationSuppliesCluster`
+   (DataPrismAutoConfiguration.java:292,305) treats any bean named
+   `dataPrismPrivacyCluster` as the framework's own. An application `@Bean PrivacyCluster
+   dataPrismPrivacyCluster()` is wrongly refused with MISSING_CLUSTER_NAME when it has no settings, and has its
+   settings silently ignored when it has them. Decide ownership from the bean definition's
+   origin (factory bean `ClusterBackedState`), not from its name. Add tests with an application
+   bean under the default name, both with and without settings.
+2. `the_example_environment_variables_bind` also passed at the red commit 7425f5e,
+   so it may assert nothing 132 adds. Make it fail without 132's binding, e.g.
+   assert the bound `ClusterMembership` or the built `Config` (cluster name, members,
+   interface, port), not just the raw environment. Show it red, by reverting the binding locally,
+   or explain why it cannot be.
+3. `join()` (DataPrismAutoConfiguration.java:607-614) must throw on an
+   unrecognised mode and never fall back to `None`.
+4. Pass the stripped cluster name to `ClusterMembership`, the same value that was validated.
