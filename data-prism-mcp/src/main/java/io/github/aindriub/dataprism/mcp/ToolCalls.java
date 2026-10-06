@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.mcp;
 
 import io.github.aindriub.dataprism.core.InvestigationContext;
 import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.RefusalCodes;
 import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
@@ -17,7 +18,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /** What both tools share: the admission step, the rejected-argument names and the result {@code _meta}. */
 final class ToolCalls {
@@ -34,8 +34,6 @@ final class ToolCalls {
      * names are only noted so the attempt is audited.
      */
     private static final Set<String> APPROVAL_ARGUMENTS = Set.of("approvalId", "approverId");
-
-    private static final Pattern REFUSAL_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,63}");
 
     private ToolCalls() {
     }
@@ -78,14 +76,17 @@ final class ToolCalls {
      * is not a plain upper-case token is never copied into the audit file.
      */
     static String denyDecision(String code) {
-        return "DENY:" + (code != null && REFUSAL_CODE.matcher(code).matches() ? code : "INVALID_REFUSAL_CODE");
+        return "DENY:" + RefusalCodes.sanitise(code);
     }
 
-    /** The code, plus the approval id for the two codes a caller can act on. */
+    /**
+     * The code, plus the approval id for the two codes a caller can act on. A code
+     * that is not an upper-case token is replaced, as in {@link #denyDecision}.
+     */
     static String refusalText(String code, String approvalId) {
         boolean carriesApproval = ("APPROVAL_REQUIRED".equals(code) || "APPROVAL_PENDING".equals(code))
                 && approvalId != null && !approvalId.isBlank();
-        return carriesApproval ? code + " approvalId=" + approvalId : code;
+        return carriesApproval ? code + " approvalId=" + approvalId : RefusalCodes.sanitise(code);
     }
 
     /**
@@ -132,7 +133,7 @@ final class ToolCalls {
     static McpSchema.CallToolResult refused(AuditedRefusalException refused) {
         String text = AuditedRefusalException.REQUEST_FAILED.equals(refused.code())
                 ? "the request could not be completed"
-                : "refused: " + refused.code() + " at " + refused.path();
+                : "refused: " + RefusalCodes.sanitise(refused.code()) + " at " + refused.path();
         return withCorrelation(McpSchema.CallToolResult.builder().isError(true).addTextContent(text),
                 refused.correlationId()).build();
     }
