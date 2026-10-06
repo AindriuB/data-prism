@@ -126,7 +126,7 @@ class UndeclaredKeyRefusalPathTest {
         assertThat(refused.getMessage()).doesNotContain(TOKEN);
         assertThat(events).hasSize(1);
         AuditEvent event = events.get(0);
-        assertThat(event.policyDecision()).isEqualTo("DENY");
+        assertThat(event.policyDecision()).isEqualTo("DENY:" + refused.code());
         // The record's toString names every component, so this checks each field of the event.
         assertThat(event.toString()).doesNotContain(TOKEN);
         assertThat(event.fieldDispositions().keySet()).noneMatch(k -> k.contains(TOKEN));

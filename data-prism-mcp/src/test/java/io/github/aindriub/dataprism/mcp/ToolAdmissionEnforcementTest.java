@@ -138,7 +138,7 @@ class ToolAdmissionEnforcementTest {
         assertThat(orchestrator.requests).as(tool.name).isEmpty();
         assertThat(metrics.incremented).as(tool.name).containsExactly(Metric.MCP_DENIED);
         AuditEvent event = audited.get(audited.size() - 1);
-        assertThat(event.policyDecision()).isEqualTo(code);
+        assertThat(event.policyDecision()).isEqualTo("DENY:" + code);
         assertThat(meta(result)).isEqualTo(event.correlationId());
     }
 

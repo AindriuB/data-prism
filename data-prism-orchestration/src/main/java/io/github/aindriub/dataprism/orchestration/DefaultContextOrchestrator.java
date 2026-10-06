@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * The S0 pipeline, in order and without shortcuts.
@@ -225,7 +226,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 // Refusal paths are built from payload keys, so none is ever recorded.
                 dispositions.put("merged:<refused>", "REFUSED");
             }
-            audit(request, subjectToken, fingerprint, context, investigationContext, "DENY", sources,
+            audit(request, subjectToken, fingerprint, context, investigationContext, denyDecision(failure), sources,
                     correlationId, dispositions);
             // The DENY event is written; hand its id to the caller so a refusal can
             // be joined to it. Still a PrivacyRefusedException, so existing catches hold.
@@ -266,6 +267,23 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             }
         }
         return out;
+    }
+
+    /** An application-supplied exception's code is recorded only if it is a plain upper-case token. */
+    private static final Pattern REFUSAL_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,63}");
+
+    /**
+     * The audited decision for a failed call: {@code DENY:<code>}, the form
+     * the re-identification service writes. A code that is not a plain token
+     * is never copied into the operator-facing audit file.
+     */
+    private static String denyDecision(RuntimeException failure) {
+        if (failure instanceof PrivacyRefusedException refused) {
+            String code = refused.code();
+            return "DENY:" + (code != null && REFUSAL_CODE.matcher(code).matches()
+                    ? code : "INVALID_REFUSAL_CODE");
+        }
+        return "DENY:" + AuditedRefusalException.REQUEST_FAILED;
     }
 
     /**

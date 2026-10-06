@@ -5,14 +5,14 @@ import io.github.aindriub.dataprism.core.PrivacyRefusedException;
 import java.util.Objects;
 
 /**
- * A refusal the orchestrator has already written to the audit trail as a DENY
- * event, carrying that event's correlation id so the caller can return it.
+ * A refusal the orchestrator has already written to the audit trail as a
+ * {@code DENY:<code>} event, carrying that event's correlation id so the caller can return it.
  *
  * <p>It is a {@link PrivacyRefusedException}, so every existing
  * {@code catch (PrivacyRefusedException)} keeps working, with the original
  * code, path and message. A failure that was not itself a privacy refusal (a
- * source or scrubber fault) is also audited as DENY and surfaces as code
- * {@link #REQUEST_FAILED} with the original as cause; its message is fixed and
+ * source or scrubber fault) is also audited, as {@code DENY:REQUEST_FAILED}, and
+ * surfaces as code {@link #REQUEST_FAILED} with the original as cause; its message is fixed and
  * never repeats the original's, which can carry a payload fragment.
  */
 public final class AuditedRefusalException extends PrivacyRefusedException {

@@ -456,7 +456,9 @@ class AuditFilePiiScanTest {
             List<String> lines = Files.readAllLines(auditFile, StandardCharsets.UTF_8);
             assertThat(lines).as(behaviour + ": the run must have written audit records").isNotEmpty();
             assertThat(lines.stream().map(AuditRecordFormat::parse).map(AuditEvent::policyDecision))
-                    .as(behaviour.name()).contains("DENY");
+                    .as(behaviour.name()).contains("DENY:" + (behaviour
+                            == io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST
+                            ? "UNKNOWN_FIELD" : "VALIDATION_FAILED"));
             List<String> leaked = new ArrayList<>();
             for (String line : lines) {
                 leaked.addAll(leaksIn(AuditRecordFormat.parse(line), List.of(UndeclaredKeyFixture.TOKEN)));

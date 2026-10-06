@@ -57,7 +57,7 @@ class ValidationBoundaryTest {
                 .hasMessageContaining("VALIDATION_FAILED");
         assertThat(audited).singleElement()
                 .extracting(AuditEvent::policyDecision)
-                .isEqualTo("DENY");
+                .isEqualTo("DENY:VALIDATION_FAILED");
     }
 
     private static DefaultContextOrchestrator orchestrator(LlmResponseValidator validator,

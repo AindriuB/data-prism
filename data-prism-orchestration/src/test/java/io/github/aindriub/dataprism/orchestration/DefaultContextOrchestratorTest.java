@@ -329,7 +329,7 @@ class DefaultContextOrchestratorTest {
                 .isInstanceOf(PrivacyRefusedException.class);
 
         assertThat(events).hasSize(1);
-        assertThat(events.get(0).policyDecision()).isEqualTo("DENY");
+        assertThat(events.get(0).policyDecision()).isEqualTo("DENY:VALIDATION_FAILED");
         assertThat(events.get(0).fieldDispositions()).containsEntry("merged:<refused>", "REFUSED");
     }
 
@@ -364,7 +364,7 @@ class DefaultContextOrchestratorTest {
         assertThatThrownBy(() -> dispositionOrchestrator(events, refusing, PrivacyMetrics.none())
                 .buildContext(request, context(), caller()));
 
-        assertThat(events).extracting(AuditEvent::policyDecision).containsExactly("ALLOW", "DENY");
+        assertThat(events).extracting(AuditEvent::policyDecision).containsExactly("ALLOW", "DENY:VALIDATION_FAILED");
         assertThat(events).allSatisfy(e -> {
             assertThat(e.approvalId()).isEqualTo("APR-1");
             assertThat(e.approverId()).isEqualTo("approver-2");

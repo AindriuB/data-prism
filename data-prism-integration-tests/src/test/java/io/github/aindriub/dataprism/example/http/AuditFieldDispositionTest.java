@@ -165,7 +165,7 @@ class AuditFieldDispositionTest {
 
         String file = Files.readString(auditFile, StandardCharsets.UTF_8);
         List<AuditEvent> denies = file.lines().map(AuditRecordFormat::parse)
-                .filter(event -> "DENY".equals(event.policyDecision())
+                .filter(event -> "DENY:UNKNOWN_FIELD".equals(event.policyDecision())
                         && !event.fieldDispositions().isEmpty()).toList();
 
         assertThat(denies).hasSize(1);

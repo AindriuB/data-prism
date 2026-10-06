@@ -268,7 +268,8 @@ public final class GetEntityContextTool {
         String correlationId = UUID.randomUUID().toString();
         try {
             audit.record(UNAUTHENTICATED_PRINCIPAL, UNAUTHENTICATED_PRINCIPAL, NAME, entityType, "", "", "", "",
-                    "", "", NO_AUTHENTICATED_CALLER, Set.of(), rejectedArguments, correlationId);
+                    "", "", ToolCalls.denyDecision(NO_AUTHENTICATED_CALLER), Set.of(), rejectedArguments,
+                    correlationId);
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
             // the server's own log; only the stable code below crosses to the
@@ -299,7 +300,8 @@ public final class GetEntityContextTool {
         String audited = approvalId == null ? "" : approvalId;
         try {
             audit.record(new AuditEntry(caller.principalId(), caller.clientId(), NAME, entityType, "", "", "", "",
-                    caller.purpose(), caller.caseId(), code, Set.of(), rejectedArguments, correlationId,
+                    caller.purpose(), caller.caseId(), ToolCalls.denyDecision(code), Set.of(), rejectedArguments,
+                    correlationId,
                     Map.of(), audited, ""));
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
