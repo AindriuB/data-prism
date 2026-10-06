@@ -42,6 +42,7 @@ public final class PrivacyExtensionPoints {
 
     private static final Map<String, BeanContract> BEANS = Map.ofEntries(
             entry("dataPrismIdentityResolverPreflight", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationModulePreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismPropertiesValidated", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContractValidator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismClock", Classification.REPLACEABLE, Guard.NONE),
