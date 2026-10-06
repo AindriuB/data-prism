@@ -78,4 +78,23 @@ class OperatorSurfacePreflightTest {
                 "dataprism.operator.required-audience=operator-audience", "dataprism.operator.required-scope=s")
                 .run(result -> assertThat(result).hasNotFailed());
     }
+
+    @Test void refuses_an_operator_address_that_does_not_resolve() {
+        runner("single-node", "server.port=9001",
+                "dataprism.operator.enabled=true", "dataprism.operator.port=9443",
+                "dataprism.operator.address=no-such-host.invalid",
+                "dataprism.operator.required-audience=operator", "dataprism.operator.required-scope=s")
+                .run(result -> {
+                    assertThat(result).hasFailed();
+                    assertThat(rootMessage(result.getStartupFailure())).startsWith("INVALID_OPERATOR_ADDRESS:");
+                });
+    }
+
+    @Test void accepts_a_loopback_operator_address() {
+        runner("single-node", "server.port=9001",
+                "dataprism.operator.enabled=true", "dataprism.operator.port=9443",
+                "dataprism.operator.address=127.0.0.1",
+                "dataprism.operator.required-audience=operator", "dataprism.operator.required-scope=s")
+                .run(result -> assertThat(result).hasNotFailed());
+    }
 }

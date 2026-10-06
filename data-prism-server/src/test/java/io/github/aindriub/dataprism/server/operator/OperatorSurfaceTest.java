@@ -411,4 +411,141 @@ class OperatorSurfaceTest {
             app.operator("POST", "/operator/resume", operator, "{\"target\":\"TOOL\",\"name\":\"applied-tool\"}");
         }
     }
+
+    // ---- attempt 3: the MCP port is untouched; operator-port errors are code-only -----------------
+
+    /** A hand-written request line, because the JDK client refuses to send these targets. */
+    private static String rawExchange(int port, String requestTarget) throws Exception {
+        try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
+            socket.setSoTimeout(5000);
+            socket.getOutputStream().write(("GET " + requestTarget + " HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                    + "Connection: close\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+            return new String(socket.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
+    @Test
+    void tomcatsOwnErrorPageOnTheMcpPortShowsNoMessageTraceOrServerVersion() throws Exception {
+        for (String target : new String[] {"/a{b}", "/mcp%2Fx"}) {
+            String response = rawExchange(app.mcpPort, target);
+            assertThat(response).as(target).startsWith("HTTP/1.1 400");
+            assertThat(response).as(target).doesNotContain("Apache Tomcat").doesNotContain("Exception")
+                    .doesNotContain("org.apache").doesNotContain("Message").doesNotContain("Description")
+                    .doesNotContain("Invalid").doesNotContain("\tat ").doesNotContain("code");
+        }
+    }
+
+    @Test
+    void theOperatorPortStillAnswersTheSameInputsWithACodeOnly() throws Exception {
+        for (String target : new String[] {"/a{b}", "/operator%2Fx"}) {
+            String response = rawExchange(app.operatorPort, target);
+            assertThat(response).as(target).contains("{\"code\":\"").doesNotContain("Apache Tomcat")
+                    .doesNotContain("Exception").doesNotContain("Message");
+        }
+    }
+
+    @Test
+    void theOperatorErrorAdviceIsLimitedToTheOperatorControllers() {
+        var advice = org.springframework.web.method.ControllerAdviceBean.findAnnotatedBeans(app.context).stream()
+                .filter(bean -> bean.getBeanType() == OperatorErrorAdvice.class).findFirst().orElseThrow();
+
+        assertThat(advice.isApplicableToBeanType(OversightOperatorController.class)).isTrue();
+        assertThat(advice.isApplicableToBeanType(ReidentificationOperatorController.class)).isTrue();
+        assertThat(advice.isApplicableToBeanType(
+                org.springframework.boot.autoconfigure.web.servlet.error.BasicErrorController.class)).isFalse();
+        assertThat(advice.isApplicableToBeanType(Object.class)).isFalse();
+    }
+
+    @Test
+    void unknownPathsAndWrongMethodsOnTheOperatorPortStillGetTheirCodes() throws Exception {
+        String operator = app.operatorToken("operator-codes");
+        HttpResponse<String> unknown = app.operator("GET", "/operator/nothing-here", operator, null);
+        HttpResponse<String> wrongMethod = app.operator("GET", "/operator/pause", operator, null);
+
+        assertThat(unknown.statusCode()).isEqualTo(404);
+        assertThat(unknown.body()).isEqualTo("{\"code\":\"NOT_FOUND\"}");
+        assertThat(wrongMethod.statusCode()).isEqualTo(405);
+        assertThat(wrongMethod.body()).isEqualTo("{\"code\":\"METHOD_NOT_ALLOWED\"}");
+    }
+
+    private static HttpResponse<String> htmlGet(int port, String path, String token) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + port + path))
+                .header("Accept", "text/html");
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return java.net.http.HttpClient.newHttpClient().send(request.GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void anUnauthenticatedOperatorRequestGetsAnUnauthenticatedCode() throws Exception {
+        HttpResponse<String> none = app.operator("GET", "/operator/state", null, null);
+        HttpResponse<String> wrongAudience = app.operator("GET", "/operator/state",
+                app.mcpToken("analyst-401", "CASE-1"), null);
+
+        for (HttpResponse<String> response : List.of(none, wrongAudience)) {
+            assertThat(response.statusCode()).isEqualTo(401);
+            assertThat(response.body()).isEqualTo("{\"code\":\"UNAUTHENTICATED\"}");
+            assertThat(response.headers().firstValue("WWW-Authenticate")).isPresent();
+        }
+    }
+
+    @Test
+    void aTokenWithoutTheOperatorScopeGetsAForbiddenCode() throws Exception {
+        String noScope = app.token("operator-noscope", "operator-console", OperatorHarness.OPERATOR_AUDIENCE, null,
+                List.of(), "CASE-OPS");
+
+        HttpResponse<String> response = app.operator("GET", "/operator/state", noScope, null);
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).isEqualTo("{\"code\":\"FORBIDDEN\"}");
+    }
+
+    @Test
+    void anHtmlAcceptHeaderOnTheOperatorPortStillGetsACodeOnlyBody() throws Exception {
+        String operator = app.operatorToken("operator-html");
+
+        HttpResponse<String> unknown = htmlGet(app.operatorPort, "/operator/nothing-here", operator);
+        HttpResponse<String> unauthenticated = htmlGet(app.operatorPort, "/operator/state", null);
+        HttpResponse<String> firewalled = htmlGet(app.operatorPort, "/operator//state", operator);
+
+        assertThat(unknown.statusCode()).isEqualTo(404);
+        assertThat(unknown.body()).isEqualTo("{\"code\":\"NOT_FOUND\"}");
+        assertThat(unauthenticated.statusCode()).isEqualTo(401);
+        assertThat(unauthenticated.body()).isEqualTo("{\"code\":\"UNAUTHENTICATED\"}");
+        assertThat(firewalled.statusCode()).isEqualTo(400);
+        assertThat(firewalled.body()).isEqualTo("{\"code\":\"INVALID_REQUEST\"}");
+    }
+
+    @Test
+    void theMcpPortKeepsItsEmptyBodied401And403() throws Exception {
+        HttpResponse<String> anonymous = app.mcpPort("POST", "/mcp", null, "{}");
+        HttpResponse<String> denied = app.mcpPort("GET", "/nothing-here", app.mcpToken("analyst-403", "CASE-1"),
+                null);
+
+        assertThat(anonymous.statusCode()).isEqualTo(401);
+        assertThat(anonymous.body()).isEmpty();
+        assertThat(denied.statusCode()).isEqualTo(403);
+        assertThat(denied.body()).isEmpty();
+    }
+
+    @Test
+    void aDoubleSlashPathOnTheOperatorPortGetsACodeOnlyBody() throws Exception {
+        String operator = app.operatorToken("operator-slash");
+        for (String path : new String[] {"/operator//state", "//operator/state", "/operator/approvals//x"}) {
+            HttpResponse<String> response = app.operator("GET", path, operator, null);
+            assertCodeOnly(response, path);
+        }
+    }
+
+    @Test
+    void aSemicolonParameterPathOnTheOperatorPortGetsACodeOnlyBody() throws Exception {
+        String operator = app.operatorToken("operator-semi");
+        for (String path : new String[] {"/operator;x=1/state", "/operator/state;jsessionid=1", "/operator/state;"}) {
+            HttpResponse<String> response = app.operator("GET", path, operator, null);
+            assertCodeOnly(response, path);
+        }
+    }
 }
