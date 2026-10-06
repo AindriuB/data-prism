@@ -143,3 +143,23 @@ described under Acceptance.
   set for tcp-ip or kubernetes, decide and test whether to refuse
   (fail closed, e.g. `MISSING_MEMBER_INTERFACE`) or bind to any. Recommended:
   allow bind-any, but document it. Task 133's Compose example relies on this.
+
+## Attempt 1 — failed
+
+Tester: the hazelcast module passes. The full reactor fails only in autoconfigure, on
+RESERVED_CLUSTER_NAME, as expected; 132 fixes that. Reviewer: CHANGES (head e5f825f).
+Integration: 132 is stacked on this branch, and both merge together.
+Required for attempt 2:
+1. **The advanced network config gets around the hardening.** `configure()` and `using()` harden only
+   `getNetworkConfig().getJoin()`. With `getAdvancedNetworkConfig().isEnabled()`,
+   Hazelcast uses the advanced join, which keeps auto-detection on, and endpoint SSL
+   skips the TLS check. Refuse an enabled advanced network config in both
+   `embedded(Config)` and `using()`, with code `UNSAFE_HAZELCAST_DISCOVERY` or a new
+   stable code. Test both paths.
+2. **bind.any** (the item added above): when an interface is present, `toConfig()` sets
+   `hazelcast.socket.bind.any=false` for TcpIp and Kubernetes. Assert it in
+   `interfaceIsAppliedWhenGiven`. Without an interface, keep bind-any and document it in the javadoc.
+3. Refuse `withInterface(...)` on `None` with a stable code (e.g. `INVALID_CLUSTER_INTERFACE`)
+   rather than silently ignoring it, and test it.
+4. FreePorts class comment: say the retry covers only the probe, not the gap between probe
+   and bind. Do not claim collisions are retried.
