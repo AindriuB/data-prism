@@ -7,6 +7,8 @@
 - mkdocs.yml *(one nav entry only)*
 - docs/architecture.md *(boundary 5, and new dated decision entries only)*
 - docs/audit.md *(a new "Joining to your AI-system logs" section only)*
+- docs/configuration.md *(the operator settings and refusal-code list near line 80 only; added after task 105)*
+- docs/reidentification.md *(the Errors list at lines 89-94 only; added after task 105)*
 
 ## Goal
 
@@ -70,3 +72,15 @@ them.
   2026-09-23 decision stands. The mapping must not claim the chain resists an
   operator; tamper evidence is the unkeyed chain plus external checkpoints
   held under separate custody.
+
+## Added after task 105 merged (2026-10-06)
+
+Task 105's own Owns did not cover these two doc gaps, so they come here. Owns
+above was extended with `docs/configuration.md` and `docs/reidentification.md`
+(neither was covered before).
+
+- `docs/configuration.md:80` must list `dataprism.operator.address`, and the
+  refusal codes `OPERATOR_AUDIENCE_SHARED`, `INVALID_OPERATOR_ADDRESS` and
+  `REIDENTIFICATION_MODULE_MISSING`.
+- The Errors list at `docs/reidentification.md:89-94` must name
+  `UNAUTHENTICATED` (401) and `FORBIDDEN` (403).

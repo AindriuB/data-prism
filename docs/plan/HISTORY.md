@@ -17,6 +17,11 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 105: operator surface served on a separate port
+
+When `dataprism.operator.enabled=true`, a second connector in the same process listens on `dataprism.operator.port` with its own security filter chain requiring the operator audience and scope. It hosts pause/resume and the kill switch, approval listing and decisions, and re-identification request, approval and collection, all audited. The MCP endpoint is not served on that port and the operator endpoints are not served on the MCP port. Operator error responses are `{"code":...}` bodies only (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `OPERATOR_ERROR`), and startup refuses with `INVALID_OPERATOR_ADDRESS`, `OPERATOR_AUDIENCE_SHARED` or `REIDENTIFICATION_MODULE_MISSING` when the setup is unsafe.
+**Cost:** It took three attempts. Attempt 2's error-report valve sat on the shared host and changed MCP-port behaviour for malformed paths (`/a{b}`, `/mcp%2Fx`) to Tomcat's message, trace and server version; the fix is `showReport=false` and `showServerInfo=false` plus an MCP-port test matching the base's bare 400. The operator error advice was first global and caught MCP-port MVC exceptions; it is now limited to the operator controllers, so check any new advice for scope. The red-first check failed 5 of 30 `OperatorSurfaceTest` cases. Full-reactor `mvn clean verify` exited 0 on the merged head. Follow-ups are in PLAN, and `docs/configuration.md` and `docs/reidentification.md` gaps went into task 106.
+
 ## 2026-10-06 — Task 128: refusal codes validated before reaching the MCP client
 
 Refusal codes from application-supplied scrubbers, validators and resolvers are validated before reaching the MCP client; a malformed code is shown as `INVALID_REFUSAL_CODE`, the same rule the audit uses (one shared `RefusalCodes` helper). The duplicated regex in `DefaultContextOrchestrator` and `ToolCalls` is gone.

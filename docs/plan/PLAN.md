@@ -67,7 +67,7 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | done 2026-10-06 |
 | 6 | 126 | Reconcile 104's test with 123's `DENY:<code>` form | 104, 123 | done 2026-10-06 |
 | 6 | 128 | Refusal codes validated before reaching client text (shared `RefusalCodes`) | 123 | done 2026-10-06 |
-| 7 | 105 | Operator surface on a second port in the same process | 104 | attempt 2 |
+| 7 | 105 | Operator surface on a second port in the same process | 104 | done 2026-10-06 (attempt 3) |
 | 8 | 127 | Wire the re-identification index (wrap application `SyntheticValueSource`) | 105 | D-127 answered |
 | 9 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
 
@@ -75,7 +75,7 @@ Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next wave for 0.4.0, in order: 105 (on attempt 2, in flight), then 127 and 106, both of which follow 105. Tasks 104, 123 and
+Next wave for 0.4.0: 127 and 106, both unblocked by 105 (merged 2026-10-06; `mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
 126 merged on 2026-10-06; `mvn clean verify` of the merged head exited 0 only
 after 126.
 Tasks 102 and 103 carried notes that a retention below six months refuses
@@ -267,6 +267,16 @@ Follow-ups from the task 100 review, not yet tasks:
 - `findPending` on `InMemoryApprovalStore` and `HazelcastApprovalStore` is no
   longer used by re-identification. Check whether `ToolAdmission` still needs
   it; remove it if not. Tasks 119 and 120 touch both stores, so decide there.
+
+Follow-ups from the task 105 review (0.4.x), not yet tasks:
+
+- Add a behavioural test that an MCP-port MVC error still reaches Boot's
+  `/error`. Today it is checked only structurally, through `ControllerAdviceBean`.
+- `data-prism-architecture` tests log the SLF4J multiple-providers warning
+  (logback-classic plus slf4j-simple). Remove one from that module's test
+  classpath.
+- Operator 401s keep the Bearer `error_description` header. Informational; it
+  matches the MCP port.
 
 Follow-ups from the task 128 review, not yet tasks:
 
