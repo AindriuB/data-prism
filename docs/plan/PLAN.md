@@ -46,7 +46,7 @@ its "Depends on" has merged.
 | 2 | 96 | Orchestrator audits dispositions, exposes `correlationId` | 92, 93 | |
 | 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | |
 | 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
-| 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | retry in flight; attempt 1 failed |
+| 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | done 2026-10-06 |
 | 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | D1 |
 | 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | D8 |
 | 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 |
@@ -57,8 +57,8 @@ its "Depends on" has merged.
 | 8 | 107 | Keyed audit chain (HMAC under a dedicated key) | 104, 106 | blocked on D2 |
 
 Next wave: 96 (needs 92 and 93, both merged), 97 (needs 92) and 100 (needs
-92 and 95; blocked on D1) can start now. 99 is being retried. 101 waits on 96
-and 98 (98 merged, 96 not).
+92 and 95; blocked on D1) can start now. 101 waits on 96 (98 merged, 96 not).
+104 waits on 100, 101 and 103 (99 merged).
 
 Open owner decisions. None is answered yet, and each blocks or shapes the tasks
 named:
@@ -87,6 +87,12 @@ Follow-ups from the wave 1 reviews, not yet tasks:
 
 - `AuditChainVerifierCli` may still print limitation text that lists only the
   version-1 hashed fields. Check it against version 2 and correct it.
+- Rename `HazelcastOversightTest`'s `sameIdCreatedConcurrently...NeverCrossApproves`
+  or assert approve and consume after the race; the name claims more than the
+  test checks.
+- Add a direct test for `reject()` on an ambiguous id.
+- Fix the `HazelcastApprovalStore.java:55` comment, which says the bare-id lock
+  key "is never an entry key". That holds only while ids contain no NUL.
 - `InMemoryApprovalStore` (core) lacks the PENDING-only, duplicate-id and
   null-approver checks that the Hazelcast store (99) has. Bring it in line.
 - Add a test pinning that undeclared object or array values are never descended

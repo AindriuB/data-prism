@@ -17,6 +17,31 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 99: Hazelcast-backed oversight state, failing closed
+
+The Hazelcast module now implements task 95's three SPIs over the embedded
+member: `HazelcastOversightState`, `HazelcastApprovalStore` and
+`HazelcastCallerRateLimiter`, on three new maps declared in `PrivacyCluster`. A
+pause set on one member is seen by the others, `consumeApproved` and
+`tryAcquire` are atomic across members, and with the instance shut down every
+method throws rather than returning a default. `endScope` also purges the new
+maps' scope-prefixed keys. Merged onto the planning branch, not `main`; full
+reactor `mvn verify` exited 0 after the merge.
+
+**Cost:** Attempt 1 was rejected because the duplicate-id check scanned for the
+bare id and then `putIfAbsent` on `scope NUL id` keys, so the same id created
+concurrently in two scopes passed both checks and `find`/`approve` resolved to
+whichever key came first, letting one request's approval admit another. Attempt
+2 claims the bare id atomically and makes lookup refuse with `UNKNOWN_APPROVAL`
+when an id matches more than one key. Also fixed: `CALLER_RATE_MAP` used LRU
+eviction, so an evicted counter reset a caller's window (now `EvictionPolicy.NONE`,
+bounded by the two-window TTL); the boundary-test fixture contained the subject
+id; and `snapshot()` classified by a `tool:` prefix, misreporting a scope id that
+began with `tool:`. Do not classify keys by prefix before checking the NUL
+separator, and do not scan-then-put for uniqueness across differently keyed
+entries. Mutation check confirmed the race, ambiguous-id and `tool:`-scope tests
+fail against the attempt-1 store.
+
 ## 2026-10-06 — Tasks 92, 93, 94, 98: dispositions, special categories and tool admission (EU AI Act wave 1 completed)
 
 The audit record now has a version-2 shape with per-field `fieldDispositions`
