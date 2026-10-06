@@ -108,3 +108,29 @@ Option (a): when re-identification is on, an application-supplied
 SyntheticValueSource is wrapped like the default one, and the wrapper falls
 back to the wrapped source on any cache failure. There is no
 REIDENTIFICATION_INDEX_UNWIRED refusal.
+
+## Attempt 1 — failed
+
+Reviewer: CHANGES. All other criteria are met; fail-closed on a non-embedded
+topology, the BPP declaration, the absence of a bypass and the E2E test were
+all confirmed.
+
+Owns widened: data-prism-server/src/test/resources/** *(new fixture files only)*.
+
+Required for attempt 2:
+1. **The configured-JSON engine is unasserted.** `ConfiguredJsonScrubbingEngine` exists.
+   It is not a bean: `ConfiguredJsonSourcesAutoConfiguration.java:128-141`
+   (data-prism-connectors-rest) builds it from the injected `SyntheticValueSource`.
+   The attempt-1 note saying it "does not exist" is wrong. Add a server-level test,
+   in ReidentificationEndToEndTest or a new test class under
+   data-prism-server/src/test, that sets `dataprism.json-sources.config-location`
+   to a synthetic fixture, gets a pseudonym from a configured-JSON tool result
+   and resolves it RESOLVED through the operator surface. It must fail if
+   that engine were built from an unwrapped source.
+2. **Metrics.** DataPrismAutoConfiguration.java:650 builds the wrapper with
+   `PrivacyMetrics.none()`. Pass the PrivacyMetrics bean lazily (ObjectProvider) so
+   that identity-cache and reverse-index write failures are visible as metrics, and test it.
+3. **Docs.** In docs/reidentification.md "How the index is fed", add one sentence:
+   an application-supplied source that already caches over a *different*
+   PrivacyCluster is left unwrapped, so its entries are never found and every
+   request returns NOT_FOUND.
