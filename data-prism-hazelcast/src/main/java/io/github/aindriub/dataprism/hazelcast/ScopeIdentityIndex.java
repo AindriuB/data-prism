@@ -65,7 +65,8 @@ public final class ScopeIdentityIndex {
     public void endScope(String scopeId) {
         String prefix = ScopeKeys.scopePrefix(scopeId);
         for (String map : new String[]{PrivacyCluster.IDENTITY_MAP,
-                PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP}) {
+                PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP,
+                PrivacyCluster.APPROVAL_MAP, PrivacyCluster.OVERSIGHT_MAP}) {
             IMap<String, ?> entries = cluster.instance().getMap(map);
             entries.keySet().stream()
                     .filter(key -> key.startsWith(prefix))
