@@ -200,7 +200,7 @@ Each call's audit record also lists its field dispositions: the path of every
 field scrubbed from every answering source and the action taken on it. A
 refusal is recorded as `REFUSED` under a fixed key, never a path. The key is
 `<source>:<refused>` when one source's scrub refused, and `merged:<refused>`
-for every other refusal after fetching. No path from the payload is ever
+for every other refusal. No path from the payload is ever
 recorded, because payload keys can carry data. `merged:<refused>` also marks
 refusals that are not validation failures, such as `NO_SOURCE_DATA` or an
 exhausted budget. It names paths and actions, never values.

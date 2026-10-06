@@ -206,15 +206,17 @@ written today, by three modules.
 | Form | Written by | Meaning | Example |
 |---|---|---|---|
 | `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
-| `DENY` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused after fetching; the reason is in the field dispositions | `DENY` |
+| `DENY` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching (for example an exhausted read budget), or failed with an internal error such as an adapter or scrubber failure. The record does not carry the refusal code; dispositions hold only `REFUSED` under `<source>:<refused>` or `merged:<refused>`, and only for refusals, not internal errors. The client-facing code is in the MCP result, joined by `correlationId` | `DENY` |
 | bare `<CODE>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran. The value is the refusal code: authorisation, scope, admission, or no authenticated caller | `TOOL_NOT_PERMITTED`, `NO_AUTHENTICATED_CALLER`, `CALLER_RATE_LIMITED`, `APPROVAL_REQUIRED` |
 | `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
 | `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |
 
-Classify by prefix and code, not by an exact `DENY`. A value is a denial
-unless it is `ALLOW` or starts with `ALLOW:`. A consumer that tests only for
-`DENY` misses every bare code and every `DENY:<code>`. Treat a value you do
-not recognise as a denial. The set of codes can grow between releases.
+Classify by prefix and code, not by an exact `DENY`. `ALLOW` or a value
+starting with `ALLOW:` is a success. An empty value is unknown; it is
+reserved and never written today. Anything else is a denial or failure. A
+consumer that tests only for `DENY` misses every bare code and every
+`DENY:<code>`. Treat a value you do not recognise as a denial. The set of
+codes can grow between releases.
 
 ## The offline verifier
 
