@@ -208,22 +208,26 @@ only as trustworthy as that custody.
 ### policyDecision values
 
 The `policyDecision` field is not only `ALLOW` or `DENY`. Five forms are
-written today, by three modules.
+recognised, written by four modules; two of them are written only by releases
+before 0.4.0.
 
 | Form | Written by | Meaning | Example |
 |---|---|---|---|
 | `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
-| `DENY` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching (for example an exhausted read budget), or failed with an internal error such as a scrubber or validator failure. Adapter failures are recorded per source, and if every source fails the result is `NO_SOURCE_DATA`. The record does not carry the refusal code. A refusal itself is marked only as `REFUSED` under one of two fixed keys, `<source>:<refused>` or `merged:<refused>`, with no code; dispositions for fields already scrubbed from earlier sources may also be present, and an internal error adds no `REFUSED` mark. For a refusal, the client-facing code is in the MCP result, joined by `correlationId`; for an internal error the client sees only "the request could not be completed", with no code | `DENY` |
-| bare `<CODE>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran. The value is the refusal code: authorisation, scope, admission, or no authenticated caller | `TOOL_NOT_PERMITTED`, `NO_AUTHENTICATED_CALLER`, `CALLER_RATE_LIMITED`, `APPROVAL_REQUIRED` |
+| `DENY:<code>` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching, with the refusal code (for example an exhausted read budget, `DENY:SCOPE_READ_BUDGET`). A failure that is not a privacy refusal, such as a scrubber or validator fault, is `DENY:REQUEST_FAILED`; the client sees only "the request could not be completed". Adapter failures are recorded per source, and if every source fails the result is `DENY:NO_SOURCE_DATA`. A code that is not a plain upper-case token (`[A-Z][A-Z0-9_]{0,63}`), which an application-supplied scrubber or validator could throw, is recorded as `DENY:INVALID_REFUSAL_CODE`. A refusal is also marked `REFUSED` under one of two fixed keys, `<source>:<refused>` or `merged:<refused>`, with no code; dispositions for fields already scrubbed from earlier sources may also be present, and an internal error adds no `REFUSED` mark. The code is joined to the client's result by `correlationId` | `DENY:SCOPE_READ_BUDGET`, `DENY:REQUEST_FAILED` |
+| `DENY:<code>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran, with the refusal code: authorisation, scope, admission, or no authenticated caller. The client's result carries the bare code | `DENY:TOOL_NOT_PERMITTED`, `DENY:NO_AUTHENTICATED_CALLER`, `DENY:CALLER_RATE_LIMITED`, `DENY:APPROVAL_REQUIRED` |
 | `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
 | `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |
+| `DENY` (plain) | Releases before 0.4.0 (the orchestrator) | A refusal or internal failure, without the code. Never written by 0.4.0; still read, and still verifies, in files written by 0.3.x | `DENY` |
+| bare `<CODE>` | Releases before 0.4.0 (the MCP tools) | A tool refusal, recorded as the code alone. Never written by 0.4.0; still read, and still verifies, in files written by 0.3.x | `TOOL_NOT_PERMITTED` |
 
-Classify by prefix and code, not by an exact `DENY`. `ALLOW` or a value
-starting with `ALLOW:` is a success. An empty value is unknown; it is
-reserved and never written today. Anything else is a denial or failure. A
-consumer that tests only for `DENY` misses every bare code and every
-`DENY:<code>`. Treat a value you do not recognise as a denial. The set of
-codes can grow between releases.
+From 0.4.0 every denial is `DENY:<code>`. Classify by prefix and code, not by
+an exact `DENY`. `ALLOW` or a value starting with `ALLOW:` is a success. An
+empty value is unknown; it is reserved and never written today. Anything else
+is a denial or failure. A consumer that tests only for an exact `DENY` misses
+every `DENY:<code>`, and, when it reads files written before 0.4.0, every bare
+code. Treat a value you do not recognise as a denial. The set of codes can grow
+between releases.
 
 ## The offline verifier
 
