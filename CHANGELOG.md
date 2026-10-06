@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `ContextOrchestrator.buildContext` now throws `AuditedRefusalException` (a
+  `PrivacyRefusedException`) with code `REQUEST_FAILED` for audited internal
+  failures. Starter users who map `PrivacyRefusedException` to 403 should check
+  `code()`.
+
 ## [0.3.1] - 2026-09-24
 
 No runtime behaviour changed on the server. This release refreshes the

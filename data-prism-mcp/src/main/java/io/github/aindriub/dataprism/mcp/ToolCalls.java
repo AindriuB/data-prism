@@ -11,7 +11,10 @@ import io.github.aindriub.dataprism.security.ReservedArguments;
 import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.modelcontextprotocol.spec.McpSchema;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -75,19 +78,41 @@ final class ToolCalls {
 
     /**
      * What an approval is bound to: the entity and subject, and everything in
-     * the call that decides what the orchestrator will do with them: purpose,
-     * privacy profile and client. Length-prefixed, so no caller-chosen value
-     * can shift a boundary into another field.
+     * the call that decides what the orchestrator will do with them. Each
+     * {@link InvestigationContext} field is accounted for:
+     * <ul>
+     *   <li>{@code principalId}: bound by {@code ToolAdmission}, which keys
+     *       every approval on the caller, scope and tool.</li>
+     *   <li>{@code clientId}: bound here.</li>
+     *   <li>{@code capabilities}: bound here, sorted. They change the output
+     *       (for example real source names under {@code EXPOSE_SOURCE_NAMES}),
+     *       so a changed set is a different call.</li>
+     *   <li>{@code caseId}: not bound. The orchestrator only copies it into
+     *       the audit event; it does not alter what is returned.</li>
+     * </ul>
+     * From the privacy context: purpose and redaction profile are bound; the
+     * scope is bound by {@code ToolAdmission}. Length-prefixed, so no
+     * caller-chosen value can shift a boundary into another field.
      */
     static String binding(String entityType, String subjectId, PrivacyContext context,
                           InvestigationContext investigation) {
         StringBuilder out = new StringBuilder();
         for (String part : new String[] {entityType, subjectId, context.purpose(),
                 context.redactionProfile(), investigation.clientId()}) {
-            String value = part == null ? "" : part;
-            out.append(value.length()).append(':').append(value).append('\u0000');
+            append(out, part);
+        }
+        List<String> capabilities = new ArrayList<>(investigation.capabilities());
+        Collections.sort(capabilities);
+        out.append(capabilities.size()).append('#');
+        for (String capability : capabilities) {
+            append(out, capability);
         }
         return out.toString();
+    }
+
+    private static void append(StringBuilder out, String part) {
+        String value = part == null ? "" : part;
+        out.append(value.length()).append(':').append(value).append('\u0000');
     }
 
     /** An orchestrator refusal that was already audited: its text, with that audit event's id. */

@@ -134,7 +134,7 @@ class OrchestratorRefusalCorrelationTest {
                     new McpSchema.CallToolRequest(names[i], ARGS));
             assertThat(result.isError()).as(names[i]).isEqualTo(Boolean.TRUE);
             assertThat(((McpSchema.TextContent) result.content().get(0)).text()).as(names[i])
-                    .startsWith(refusalText);
+                    .startsWith(refusalText).doesNotContain("scrubber down");
             assertThat(audited).as(names[i]).hasSize(1);
             assertThat(audited.get(0).policyDecision()).isEqualTo("DENY");
             assertThat(result.meta()).as(names[i]).isNotNull();

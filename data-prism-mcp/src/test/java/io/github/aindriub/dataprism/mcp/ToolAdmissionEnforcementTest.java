@@ -100,7 +100,8 @@ class ToolAdmissionEnforcementTest {
 
     private List<Tool> tools(ToolAdmission admission, String privacyProfile) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration", "marketing"),
-                Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
+                Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES"),
+                        "source-viewer", Set.of("EXPOSE_SOURCE_NAMES")));
         AuthorizationService authz = new AuthorizationService(security, privacyProfile, PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
                 new PurposeValidator(Set.of("demonstration", "marketing")));
@@ -319,14 +320,16 @@ class ToolAdmissionEnforcementTest {
     }
 
     @Test
-    @DisplayName("an approval is bound to purpose, privacy profile and client: a retry under another value is refused and the approval is not consumed")
+    @DisplayName("an approval is bound to purpose, privacy profile, client and capabilities: a retry under another value is refused and the approval is not consumed")
     void approvalIsBoundToPurposeProfileAndClient() {
         OversightPolicy p = policy(Set.of(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME), OptionalInt.empty());
         AuthenticatedCaller otherPurpose =
                 new AuthenticatedCaller("principal-1", "client-1", Set.of("investigator"), "marketing", "case-1", null);
         AuthenticatedCaller otherClient =
                 new AuthenticatedCaller("principal-1", "client-2", Set.of("investigator"), "demonstration", "case-1", null);
-        for (String variant : List.of("purpose", "profile", "client")) {
+        AuthenticatedCaller moreCapabilities = new AuthenticatedCaller("principal-1", "client-1",
+                Set.of("investigator", "source-viewer"), "demonstration", "case-1", null);
+        for (String variant : List.of("purpose", "profile", "client", "capabilities")) {
             for (int i = 0; i < 2; i++) {
                 audited.clear();
                 orchestrator.requests.clear();
@@ -338,7 +341,8 @@ class ToolAdmissionEnforcementTest {
 
                 Tool other = variant.equals("profile") ? tools(admission, "STRICT").get(i) : tool;
                 AuthenticatedCaller as = variant.equals("purpose") ? otherPurpose
-                        : variant.equals("client") ? otherClient : CALLER;
+                        : variant.equals("client") ? otherClient
+                        : variant.equals("capabilities") ? moreCapabilities : CALLER;
                 McpSchema.CallToolResult retried = other.call(as, ARGS);
                 assertThat(retried.isError()).as(variant + " " + tool.name).isEqualTo(Boolean.TRUE);
                 assertThat(text(retried)).as(variant + " " + tool.name)
