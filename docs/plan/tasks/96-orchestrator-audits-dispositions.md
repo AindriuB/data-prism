@@ -80,3 +80,28 @@ never under the payload's own key. Array and structure fields get their own
 entry plus entries for their children. A REMOVE rule is recorded as `REMOVE`.
 Prefix with `<sourceName>:` and collapse array indices as task 92 specifies;
 the `<undeclared>` placeholder must pass through unchanged.
+
+## Attempt 1 — failed
+
+Branch `task/96-orchestrator-audits-dispositions` (1865c98). Reviewer: CHANGES (7/8 met; build not run by reviewer).
+
+- Defect — DefaultContextOrchestrator.java:218: on DENY the REFUSED disposition
+  key is the exception path verbatim. Refusal paths are built from payload
+  keys: UNKNOWN_FIELD (`path + "." + field`, JsonTreeScrubbingEngine.java:173-174),
+  UNCLASSIFIED_STRUCTURE (:248), and VALIDATION_FAILED (:209, validators walk
+  the merged tree which keeps undeclared keys a looser profile passed through).
+  A source returning `{"alice@example.com": 1}` under a refusing profile puts
+  `alice@example.com` into the audit file — the leak task 93 closed for ALLOW.
+- Fix, within Owns (do not edit core): never derive the REFUSED key from the
+  exception path. Record a fixed, declared-only key, e.g.
+  `<sourceName>:<refused>` → REFUSED (source name from the outcome, never the
+  payload); for VALIDATION_FAILED use a fixed key such as `merged:<refused>`.
+  The refusal reason code already lives in the audit event's policyDecision.
+  This also fixes the key-shape mismatch with the `<source>:<pointer>` ALLOW keys.
+- Tests:
+  - AuditFieldDispositionTest: add a DENY case — a payload with a distinctive
+    undeclared key under a refusing profile — and assert the key is absent from
+    the audit file. Use a reserved domain (example.com).
+  - DefaultContextOrchestratorTest: the stub scrubber builds pointers from
+    payload values (`"/" + thing.value()`); use fixed pointers instead.
+- Run the full reactor `mvn verify` and report the real exit code.
