@@ -17,6 +17,35 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Tasks 92, 93, 94, 98: dispositions, special categories and tool admission (EU AI Act wave 1 completed)
+
+The audit record now has a version-2 shape with per-field `fieldDispositions`
+(path to action, never a value), `approvalId`, `approverId` and a
+`recordVersion`; version-1 files still verify and hash over the original 19
+fields (92). The scrubbing engines return a `dispositions` map, recording an
+undeclared property as `<parent>/<undeclared>` so payload keys never reach it
+(93). `DataClassification` gains seven GDPR Art. 9 categories, all `REMOVE` by
+default, and no profile can expose a special category (94). Security gains
+`ToolAdmission`, `AdmissionDecision` and `OversightPolicy`: ordered pause,
+rate-limit and approval checks with stable refusal codes, and
+`OVERSIGHT_UNAVAILABLE` on any backing-state error (98). Nothing calls
+`ToolAdmission` or writes dispositions yet; tasks 96 and 101 do. Merged by hand
+onto the planning branch, not `main`; full 19-module `mvn verify` passed on each
+branch.
+
+**Release note (94):** a profile with a PHI rule weaker than `REDACT` now
+refuses to start with `SPECIAL_CATEGORY_EXPOSED`, and a Java-built profile with
+no PHI rule now resolves PHI to `REMOVE`. No shipped configuration is affected.
+
+**Cost:** 93 first built disposition keys from the payload's own field names, so
+a permissive `unclassified` profile would have written an email-shaped key into
+the audit record; the fix is the `<undeclared>` placeholder and a test where the
+value is a payload key. 94 failed once on a docs word ("compliant") that the
+task forbids, even though the sentence denied it; say "supports" and nothing
+else. 98 consumes a rate-limit token before an approval-required refusal, which
+may be unintended and is noted in tasks 101 and 104. Task 99 failed review and
+is being retried.
+
 ## 2026-10-06 — Task 95: oversight SPIs in core (EU AI Act wave 1, first task to land)
 
 Core now has a `oversight` package with three SPIs and in-memory implementations:

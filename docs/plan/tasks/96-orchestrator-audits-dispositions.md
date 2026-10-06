@@ -72,3 +72,11 @@ the MCP client as the join key to the deployer's AI-system logs.
 - Returning `correlationId` to the client in `_meta`. That is task 101.
 - MCP-layer deny paths (unauthenticated, unauthorised). That is task 101.
 - Accepting a caller-supplied correlation id.
+
+## Note from tasks 92 and 93 (merged)
+
+Task 93's dispositions record an undeclared property as `<parent>/<undeclared>`,
+never under the payload's own key. Array and structure fields get their own
+entry plus entries for their children. A REMOVE rule is recorded as `REMOVE`.
+Prefix with `<sourceName>:` and collapse array indices as task 92 specifies;
+the `<undeclared>` placeholder must pass through unchanged.

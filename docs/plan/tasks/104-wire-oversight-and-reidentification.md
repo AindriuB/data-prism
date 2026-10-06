@@ -89,3 +89,11 @@ these properties, so their shape is fixed here.
 - `MISSING_REIDENTIFICATION_CONTROLS` and
   `reidentification-controls-reference`, which keep their current meaning.
 - `connectors-rest`'s own auto-configuration.
+
+## Note from task 98 (merged)
+
+`ToolAdmission` takes a `Clock` as its fifth constructor argument, so the
+wiring must supply one. Approval-required calls consume a rate-limit token
+before the `APPROVAL_REQUIRED`/`APPROVAL_PENDING` refusal. Task 101 owns the
+decision on whether that is intended; do not set a tight caller limit here
+until it is settled.

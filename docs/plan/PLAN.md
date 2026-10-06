@@ -28,7 +28,7 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### EU AI Act plan (tasks 92-107) — in flight, wave 1 partly landed
+### EU AI Act plan (tasks 92-107) — in flight, wave 1 landed
 
 Sixteen tasks that make the audit, oversight and re-identification surfaces
 support an EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The
@@ -39,14 +39,14 @@ its "Depends on" has merged.
 
 | Wave | Task | What | Depends on | State |
 |---|---|---|---|---|
-| 1 | 92 | Audit record carries per-field dispositions and approval identity | none | tester FAIL, reviewer APPROVE; branch open |
-| 1 | 93 | Scrubbing engines report per-field dispositions | none | tester PASS, reviewer CHANGES; branch open |
-| 1 | 94 | GDPR Art. 9 special-category classifications that fail closed | none | reviewer CHANGES, tester still running; branch open |
+| 1 | 92 | Audit record carries per-field dispositions and approval identity | none | done 2026-10-06 |
+| 1 | 93 | Scrubbing engines report per-field dispositions | none | done 2026-10-06 |
+| 1 | 94 | GDPR Art. 9 special-category classifications that fail closed | none | done 2026-10-06 |
 | 1 | 95 | Oversight SPIs in core | none | done 2026-10-06 |
 | 2 | 96 | Orchestrator audits dispositions, exposes `correlationId` | 92, 93 | |
 | 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | |
-| 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | |
-| 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | carries 95's review notes |
+| 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
+| 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | retry in flight; attempt 1 failed |
 | 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | D1 |
 | 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | D8 |
 | 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 |
@@ -56,9 +56,9 @@ its "Depends on" has merged.
 | 7 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D1, D6 |
 | 8 | 107 | Keyed audit chain (HMAC under a dedicated key) | 104, 106 | blocked on D2 |
 
-Next wave: finish 92, 93 and 94 (each has an attempt note in its task file),
-then wave 2 can start. 97, 98, 99 and 100 need only 92 or 95, so they can start
-before 93 and 94 close; 96 needs both 92 and 93.
+Next wave: 96 (needs 92 and 93, both merged), 97 (needs 92) and 100 (needs
+92 and 95; blocked on D1) can start now. 99 is being retried. 101 waits on 96
+and 98 (98 merged, 96 not).
 
 Open owner decisions. None is answered yet, and each blocks or shapes the tasks
 named:
@@ -82,6 +82,18 @@ Open follow-up, independent of task 107: `AuditEventHash` joins `sourceSystems`
 and `dispositions` without escaping `,` or `=`, so two distinct records can
 produce the same hash. It needs an unambiguous encoding. Fix it whether or not
 107 goes ahead, since the chain's tamper detection rests on it.
+
+Follow-ups from the wave 1 reviews, not yet tasks:
+
+- `AuditChainVerifierCli` may still print limitation text that lists only the
+  version-1 hashed fields. Check it against version 2 and correct it.
+- `InMemoryApprovalStore` (core) lacks the PENDING-only, duplicate-id and
+  null-approver checks that the Hazelcast store (99) has. Bring it in line.
+- Add a test pinning that undeclared object or array values are never descended
+  into when recording dispositions.
+- `data-prism-integration-tests` surefire reports "kill self fork JVM" after
+  about 30 seconds following `ShippedDefaultsTest`. A non-daemon thread is the
+  likely cause. The build still passes.
 
 ### S8 and S9a — done
 

@@ -80,3 +80,12 @@ into the audit record.
 - Accepting a caller-supplied correlation id.
 - The operator endpoints. That is task 105.
 - `docs/audit.md`. Task 106 adds the join-key paragraph there.
+
+## Note from task 98 (merged)
+
+`ToolAdmission` takes a `Clock` as its fifth constructor argument. An
+approval-required call consumes a rate-limit token before it is refused with
+`APPROVAL_REQUIRED` or `APPROVAL_PENDING`, so a caller who retries while
+waiting for approval burns its own limit. Decide whether that is intended; if
+not, move the approval step ahead of the rate-limit step or refund the token.
+Tasks 101 and 104 are where it becomes visible.
