@@ -108,3 +108,26 @@ Required for attempt 2:
 4. docs/audit.md:385: "the model never sees it" → "Data Prism never puts it in model-visible content" (an MCP client may forward `_meta`).
 
 Leave reidentification.md:152-153 (Docker Compose "not yet done") alone. It is still true and is a known 0.4.x item.
+
+## Attempt 2 — failed
+
+Tester: PASS. Reviewer: CHANGES (head 22f4f63). Items 2b, 2c, 3 and 4 are approved.
+Required for attempt 3, all inside the existing Owns:
+
+1. **Wrong value name.** docs/eu-ai-act.md:139-140 and 163: the enum constant is
+   `PASS_THROUGH_UNSAFE` (PrivacyProfile.java:95), and `unclassified: UNSAFE` fails to
+   load. Write `PASS_THROUGH_UNSAFE` everywhere.
+2. **Where weaker `unclassified` handling is possible.** The starter and server
+   always load the bundled `privacy-profiles-default.yaml`
+   (DataPrismAutoConfiguration.java:384-388) and refuse an application resolver
+   bean. A weaker `unclassified` is therefore possible only when assembling the
+   core library directly via `PrivacyProfiles.fromYaml`. State this precisely in
+   eu-ai-act.md:136-144 and in the responsibility paragraph; verify it in code first.
+3. **False checkpoint claim.** docs/audit.md:39-42 says checkpoints come from directory
+   mode. `file-path` mode plus `dataprism.audit.checkpoint.file-path` also
+   writes BOOT, PERIODIC and SHUTDOWN checkpoints
+   (DataPrismAutoConfiguration.java:440-449; DataPrismProperties.java:323-330). Only
+   daily segments and retention are directory-only.
+4. docs/audit.md:465: say outright that the schedule runs only when a
+   checkpoint location is configured (DataPrismAutoConfiguration.java:478-480).
+5. Re-wrap docs/audit.md:391-392 to the file's line width.
