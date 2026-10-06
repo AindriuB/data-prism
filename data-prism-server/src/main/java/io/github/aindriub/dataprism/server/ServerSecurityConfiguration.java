@@ -70,8 +70,32 @@ class ServerSecurityConfiguration {
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .anyRequest().hasAuthority("SCOPE_" + operator.getRequiredScope()))
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(decoder)));
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(decoder))
+                        .authenticationEntryPoint(OPERATOR_UNAUTHENTICATED)
+                        .accessDeniedHandler(OPERATOR_FORBIDDEN));
         return http.build();
+    }
+
+    /** 401 on the operator port: the bearer challenge header, then a code and nothing else. */
+    private static final org.springframework.security.web.AuthenticationEntryPoint OPERATOR_UNAUTHENTICATED =
+            (request, response, failure) -> {
+                new org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint()
+                        .commence(request, response, failure);
+                codeOnly(response, 401, "UNAUTHENTICATED");
+            };
+
+    /** 403 on the operator port: a code and nothing else. */
+    private static final org.springframework.security.web.access.AccessDeniedHandler OPERATOR_FORBIDDEN =
+            (request, response, denied) -> codeOnly(response, 403, "FORBIDDEN");
+
+    private static void codeOnly(jakarta.servlet.http.HttpServletResponse response, int status, String code)
+            throws java.io.IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        response.setHeader("Cache-Control", "no-store");
+        response.getWriter().write("{\"code\":\"" + code + "\"}");
+        response.getWriter().flush();
     }
 
     /**

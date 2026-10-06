@@ -18,6 +18,10 @@ final class OperatorErrorReportValve extends ErrorReportValve {
 
     OperatorErrorReportValve(int operatorPort) {
         this.operatorPort = operatorPort;
+        // Off the operator port this valve must behave as Boot's own does: a bare status page, with
+        // no message, no stack trace and no server version.
+        setShowReport(false);
+        setShowServerInfo(false);
     }
 
     @Override

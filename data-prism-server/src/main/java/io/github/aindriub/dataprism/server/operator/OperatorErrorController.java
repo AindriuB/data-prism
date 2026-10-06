@@ -41,9 +41,14 @@ final class OperatorErrorController implements ErrorController {
     }
 
     @RequestMapping(produces = MediaType.TEXT_HTML_VALUE)
-    ModelAndView errorHtml(HttpServletRequest request, HttpServletResponse response) {
+    ModelAndView errorHtml(HttpServletRequest request, HttpServletResponse response)
+            throws java.io.IOException {
         if (onOperatorPort(request)) {
-            response.setStatus(status(request).value());
+            HttpStatus status = status(request);
+            response.setStatus(status.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write("{\"code\":\"" + codeFor(status) + "\"}");
             return null;
         }
         return boot.errorHtml(request, response);
