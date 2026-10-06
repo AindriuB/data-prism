@@ -1,7 +1,7 @@
 # 104 — Wire oversight, re-identification and operator-surface configuration
 
 **Repo:** `.`
-**Depends on:** 99, 100, 101, 103
+**Depends on:** 99, 100, 101, 103, 120
 **Owns:**
 - data-prism-spring-boot-autoconfigure/pom.xml
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
@@ -112,3 +112,32 @@ approvers with pending requests. Wiring should add a per-requester cap on live
 pending approvals, refused with an audit event (for example `TOO_MANY_PENDING`),
 unless task 105 takes a rate limit on the operator surface instead. Decide in
 one of the two and say which.
+
+**Decided 2026-10-06 (planning):** task 120 builds the cap. It lives in the
+store, per requester and per approval kind, and is enforced atomically. This
+task binds it. Task 105 adds no operator rate limit. Required here, in
+addition to the acceptance list:
+
+- Two properties: `dataprism.oversight.max-pending-per-requester` and
+  `dataprism.reidentification.max-pending-per-requester`. Each is an int,
+  default `5`, and is passed into `OversightPolicy` and
+  `ReidentificationPolicy` respectively.
+- A non-positive value refuses startup with `INVALID_OVERSIGHT_LIMIT`. One
+  test per property.
+- A context test with `approval-required-tools: [get_entity_context]` and
+  `max-pending-per-requester: 1` makes two calls by one principal with
+  different arguments. The second returns `TOO_MANY_PENDING`, and a recording
+  `AuditSink` shows a DENY event with that code.
+- `docs/configuration.md` documents both properties and their default.
+
+## Note from task 101's review (fail-closed wiring)
+
+Production HTTP wiring (DataPrismAutoConfiguration ~:543) still calls the old
+`streamableHttp` overload, so admission is `ToolAdmission.none()` (admit
+everything) until this task. Required here:
+- wire the admission overload unconditionally;
+- deprecate the `none()` overloads and keep them off every production path;
+- add an autoconfig test through the Spring-built server proving a paused tool
+  and an approval-required tool are refused.
+Also decide whether approval-required calls should stop consuming a rate-limit
+token (task 98 behaviour).

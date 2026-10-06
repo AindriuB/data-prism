@@ -87,3 +87,85 @@ acceptance item below that reads as a hard refusal is amended. Required:
 - `dataprism.*` properties and scheduling the daily purge. That is task 103.
 - Changing `FileAuditSink`'s single-file behaviour.
 - Archiving to external storage. That is an operator responsibility.
+
+## Attempt 1 — failed
+
+Branch `task/102-audit-segments-and-retention` (93ce165). Reviewer: CHANGES.
+
+- Defect 1 — anchors can launder recent deletions (AuditChainVerifier.java
+  :269-272, :367-376; docs/audit.md:146-149). Someone who can append one line
+  to the checkpoint file and delete from the audit directory can hide a recent
+  deletion: delete the last three days' segments, append a RETENTION_ANCHOR
+  with the last deleted seq/hash, and the verifier reports intact (exit 0).
+  The same trick on a whole writer suppresses MISSING_WRITER. Fix:
+  - RETENTION_ANCHOR records the purged segment's UTC date (and the anchored
+    sequence). Update AuditCheckpoint and its parser; older checkpoint files
+    without the field must still parse, and a RETENTION_ANCHOR without it is
+    treated as not covering anything.
+  - The verifier accepts an anchored start only if the anchor's segment date is
+    at least the minimum retention before the anchor's recordedAt. Add a
+    verifier option for the minimum (default P6M) so deployments that use the
+    override can pass their period. Otherwise report it as an anchor anomaly
+    (non-zero exit) naming the writer.
+  - Disclose plainly in docs/audit.md that whoever can append to the checkpoint
+    file can make deletions of segments older than the retention window look
+    legitimate, so checkpoint custody must be separate.
+- Defect 2 — day-based Periods bypass the 6-month floor (AuditRetention.java:55).
+  P181D–P183D are accepted, yet a six-month window can be up to 184 days.
+  Fix both:
+  - the constructor refuses any Period that can be shorter than six calendar
+    months from some start date (e.g. require totalMonths ≥ 6, or days ≥ 184
+    when the Period has no month or year part);
+  - purge() also guards at run time: refuse unless
+    cutoff ≤ today.minusMonths(6), or the override is set.
+  Tests: P181D, P183D refused; P184D and P6M accepted; a purge on 2026-12-31
+  never deletes a segment dated after 2026-06-30.
+- Defect 3 — a clock stepping back across UTC midnight writes one writer's
+  consecutive records into earlier files (SegmentedFileAuditSink.java:84-87),
+  which gives a false break. Fix: the segment date never goes backwards, i.e.
+  date = max(current segment date, event date). Add a test.
+- Also required:
+  - purge() verifies an expiring segment's chain before anchoring it. If the
+    chain doesn't verify, refuse to purge that segment (and every later one)
+    with a coded RetentionException, so purge never erases evidence of
+    tampering.
+  - Add a test for the torn-fragment newline insertion between segments.
+- Run the full reactor `mvn verify` and mkdocs `--strict`; report real exit codes.
+
+## Attempt 2 — failed
+
+Branch `task/102-audit-segments-and-retention` (eaa32da). Reviewer: CHANGES. Minimum-retention probe, run-time guard, monotonic date, old-checkpoint parsing and test edit all confirmed correct.
+
+- Defect 1 — a forged anchor date still launders recent deletions
+  (AuditChainVerifier `anchorIsOldEnough`; docs/audit.md "Retention anchors").
+  Delete the last 3 days, append a RETENTION_ANCHOR with the last deleted
+  seq/hash, recordedAt = now and segmentDate = 2020-01-01: the verifier reports
+  intact (exit 0), and the same through `anchoredPast` hides MISSING_WRITER.
+  Fix:
+  - Reject an anchor (seq n, date D) if the same writer has any BOOT, PERIODIC
+    or SHUTDOWN checkpoint with seq < n and recordedAt UTC date after D.
+  - Also require the first surviving record after the anchor to be dated ≥ D.
+  - Test each case, including a forged anchor rejected because of a later
+    head checkpoint.
+  - Rewrite the disclosure accurately: whoever can append to the checkpoint
+    file can still make a recent deletion look like a purge when the writer
+    has no head checkpoint after the forged date. Regular PERIODIC
+    checkpoints (task 103 schedules them) narrow that window. Checkpoint
+    custody must be separate.
+- Defect 2 — purge erases evidence of a hand deletion (`verifySegments` with
+  lenientStart, used at AuditRetention.java:133). If segment D0 is deleted by
+  hand, or the front of D1 is cut, purge anchors D1 and deletes it, and the
+  verifier then reports intact. Fix: AuditRetention reads the existing
+  checkpoint file's earlier anchors. Each writer's first expiring record must
+  start at GENESIS or follow an earlier RETENTION_ANCHOR exactly (same seq − 1
+  and hash); otherwise refuse with CHAIN_UNVERIFIED. Test both inputs.
+- Defect 3 — docs/audit.md exit-codes table row 2 must name RETENTION_ANCHOR_REJECTED.
+- Suggestion to take: document that the monotonic segment date is per sink
+  instance, so a restart with the clock behind can put a reused writer-id's
+  record in an earlier-dated file. The verifier reports a break, which fails
+  loud; say so.
+- Run the full reactor `mvn verify` and mkdocs `--strict`; report real exit codes.
+- Owner decision (2026-10-06): rename the native segment files from
+  `audit-YYYY-MM-DD.jsonl` to `audit-YYYY-MM-DD.log`, because the content is
+  not JSON. Change SUFFIX/SEGMENT_NAME (SegmentedFileAuditSink.java:32-33),
+  the verifier's directory-mode glob, the tests and docs/audit.md.

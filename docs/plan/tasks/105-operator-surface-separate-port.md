@@ -93,3 +93,19 @@ port, and the operator endpoints are not served on the MCP port.
 Task 100 dropped dedup of identical re-identification requests, so one requester
 can flood approvers. If task 104 does not cap live pending approvals per
 requester, this task must rate-limit the operator surface instead.
+
+**Decided 2026-10-06 (planning):** task 120 caps live pending approvals per
+requester, and task 104 binds the cap. This task adds no operator-surface
+rate limit. `POST /operator/reidentifications` maps the `TOO_MANY_PENDING`
+refusal to 429, with body `{"code":"TOO_MANY_PENDING"}`. A test asserts the
+status and the body, and that the refusal was audited once (by
+`ReidentificationService`, not a second time by the endpoint).
+`docs/reidentification.md` lists the 429 in the HTTP section.
+
+## Owner decisions (2026-10-06)
+
+- D4: a second port in the same process — a separate connector with its own
+  JWT audience/scope and filter chain inside the existing server. Not a
+  separate JVM.
+- D8: the tool-call approval flow is approved as planned, and four-eyes for
+  re-identification defaults ON.

@@ -98,3 +98,83 @@ approval-required call consumes a rate-limit token before it is refused with
 waiting for approval burns its own limit. Decide whether that is intended; if
 not, move the approval step ahead of the rate-limit step or refund the token.
 Tasks 101 and 104 are where it becomes visible.
+
+## Attempt 1 — failed
+
+Branch `task/101-mcp-tools-enforce-admission` (72642c8). Reviewer: CHANGES.
+
+- Defect 1 — approval binding too narrow (same class as task 100). The binding
+  value is `entityType NUL subjectId`. Case is bound through scope, but
+  purpose (JWT claim), privacyProfile (role-derived) and clientId are not. P is
+  refused under purpose `fraud-review`, the approver approves, then P retries
+  with a token whose purpose is `marketing` (also allow-listed), or with roles
+  giving a looser profile. The call runs, and the ALLOW event shows an approval
+  next to a purpose nobody approved.
+  Fix: include purpose, privacyProfile and clientId in the HMAC'd binding value
+  (GetEntityContextTool ~:211, CompareEntitySourcesTool ~:211). Add a test per
+  field: approve under one value, retry under another → APPROVAL_REQUIRED and
+  approval not consumed.
+- Defect 2 — orchestrator-refusal results carry no `_meta` correlationId,
+  although DefaultContextOrchestrator writes a DENY audit event (:213-226). An
+  audited refusal, possibly after consuming an approval, cannot be joined.
+  Owns is EXTENDED for this attempt (planning decision, main session):
+  `data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java`
+  and one new exception type under the same package. Make the orchestrator's
+  correlationId available to the caller on every audited refusal, e.g. a new
+  orchestration exception carrying it with the original as cause. Keep any
+  existing `catch (PrivacyRefusedException …)` in other modules working:
+  grep callers repo-wide. If that is impossible without editing core or other
+  modules, stop and report. Return the id in `_meta` on those paths, with a
+  test per path.
+- Fix docs/tools.md: "Every tool result that the audit trail records
+  carries…" must be true after the fix. Keep input-validation results (no audit
+  event) explicitly excluded.
+- Tests: correlation equality on the scope-resolution deny path, and the
+  authorisation-deny test for CompareEntitySourcesTool too.
+- Record the task-98 decision in docs/tools.md: an approval-required call
+  consumes a rate-limit token before APPROVAL_REQUIRED/PENDING. State it as
+  current behaviour, with a polling caller able to rate-limit itself, and
+  revisit in 104.
+- Not a defect here, for 104: production wiring (DataPrismAutoConfiguration
+  ~:543) still uses the `none()` overload. Do not change autoconfigure in 101.
+- Run the full reactor `mvn verify` and mkdocs `--strict`; report real exit codes.
+
+## Attempt 2 — failed
+
+Branch `task/101-mcp-tools-enforce-admission` (50f9d32). Reviewer: CHANGES. Everything else from attempt 1 is now met.
+
+- Defect — capabilities are not bound (ToolCalls.java:82-90). They come from
+  the token's roles (SecurityPolicy.capabilitiesFor) and change the output:
+  SourceAliasing.java:42 returns real source names under EXPOSE_SOURCE_NAMES.
+  P is refused APPROVAL_REQUIRED holding {investigator}, gets approved, then
+  retries with an added role that grants EXPOSE_SOURCE_NAMES. The call is
+  admitted, real source names are returned, and the ALLOW event shows an
+  approval for output nobody approved. Fix: bind the sorted capability set in
+  the length-prefixed encoding, and extend approvalIsBoundToPurposeProfileAndClient
+  (or add a test) to cover a capability change on both tools.
+  Also re-audit the binding javadoc's claim ("everything in the call that
+  decides what the orchestrator will do") against InvestigationContext: list
+  each field and either bind it or justify it in a comment.
+- Also:
+  - OrchestratorRefusalCorrelationTest: assert that the REQUEST_FAILED
+    result text does not contain the cause's message (e.g. "scrubber down").
+  - Add a CHANGELOG [Unreleased] line: ContextOrchestrator.buildContext now
+    throws AuditedRefusalException (a PrivacyRefusedException) with
+    code REQUEST_FAILED for audited internal failures. Starter users who map
+    PrivacyRefusedException to 403 should check `code()`. CHANGELOG.md is
+    added to Owns for this one line.
+- Run the full reactor `mvn verify` and mkdocs `--strict`; report real exit codes.
+
+## Attempt 3 — failed
+
+Reviewer: CHANGES — one comment line; behaviour is correct and every other criterion is met.
+
+- ToolCalls.java:90-91: the binding javadoc says "caseId: not bound. The
+  orchestrator only copies it into the audit event; it does not alter what is
+  returned." That is false. ScopeResolver.java:73/:86-87 sets
+  scopeId = "case:" + caseId. That scope is part of the ToolAdmission approval
+  key, keys the ParameterFingerprinter HMAC and pseudonymisation, and so does
+  change the output. Replace the bullet with: "caseId: bound by ToolAdmission
+  through scopeId `case:<caseId>`; it also keys the binding HMAC and
+  pseudonymisation." No code change.
+- Run the full reactor `mvn verify`; report the real exit code.
