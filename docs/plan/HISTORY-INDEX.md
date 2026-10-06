@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-06 | 128 | Refusal codes from application scrubbers, validators and resolvers are validated before client text; malformed becomes `INVALID_REFUSAL_CODE`; one shared `RefusalCodes` helper. | `## 2026-10-06 — Task 128: refusal codes validated before reaching the MCP client` |
 | 2026-10-06 | 126 | One-line test fix: 104's `TOO_MANY_PENDING` assertion now expects `DENY:TOO_MANY_PENDING`. Clash arose because each branch was verified only against its base. | `## 2026-10-06 — Task 126: task 104's test reconciled with 123's DENY:<code> form` |
 | 2026-10-06 | 123 | Refused calls audited as `DENY:<code>` from orchestrator and MCP tools; malformed codes become `DENY:INVALID_REFUSAL_CODE`; old records still verify. | `## 2026-10-06 — Task 123: refused calls are audited as DENY:<code> from the orchestrator and the MCP tools` |
 | 2026-10-06 | 104 | Oversight, re-identification and operator settings bound and validated; MCP server always enforces admission; four-eyes default on; pending cap 5. | `## 2026-10-06 — Task 104: oversight, re-identification and operator-surface configuration wired` |

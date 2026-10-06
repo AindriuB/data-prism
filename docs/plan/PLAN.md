@@ -66,14 +66,16 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 5 | 124 | Undeclared property names never reach the model (`<undeclared-N>`) | 118 | done 2026-10-06 |
 | 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | done 2026-10-06 |
 | 6 | 126 | Reconcile 104's test with 123's `DENY:<code>` form | 104, 123 | done 2026-10-06 |
-| 7 | 105 | Operator surface on a second port in the same process | 104 | |
-| 8 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
+| 6 | 128 | Refusal codes validated before reaching client text (shared `RefusalCodes`) | 123 | done 2026-10-06 |
+| 7 | 105 | Operator surface on a second port in the same process | 104 | attempt 2 |
+| 8 | 127 | Wire the re-identification index (wrap application `SyntheticValueSource`) | 105 | D-127 answered |
+| 9 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
 
 Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next wave for 0.4.0, in order: 105 (unblocked), then 106. Tasks 104, 123 and
+Next wave for 0.4.0, in order: 105 (on attempt 2, in flight), then 127 and 106, both of which follow 105. Tasks 104, 123 and
 126 merged on 2026-10-06; `mvn clean verify` of the merged head exited 0 only
 after 126.
 Tasks 102 and 103 carried notes that a retention below six months refuses
@@ -101,16 +103,12 @@ Follow-ups from tasks 104 and 123, not yet tasks:
 4. The cluster budget reaches `PrivacyCluster` through an `ObjectProvider`, so
    the destroy-order dependency is not registered. Harmless today; register it
    explicitly.
-5. Remove the duplicated refusal-code regex in `DefaultContextOrchestrator`
-   and `ToolCalls` by moving it to a shared helper.
+5. Resolved by task 128: the duplicated refusal-code regex now lives in one
+   shared `RefusalCodes` helper.
 6. Amend task 112's acceptance wording: bare refusal codes and plain `DENY`
    appear only in pre-0.4.0 files.
-7. Proposed for 0.4.0, pending the owner's decision: refusal codes from
-   application-supplied scrubbers or validators reach the client unvalidated in
-   `refused: <code> at <path>` (`ToolCalls.refused` ~:135, and the MCP deny text
-   from `denialCode()`/`SecurityRefusedException.code()`). Validate them like
-   the audit value and replace a malformed one with `INVALID_REFUSAL_CODE` in
-   client text.
+7. Resolved by task 128: codes from application scrubbers, validators and
+   resolvers are validated before client text.
 8. Process: when two parallel tasks change the same record format or
    vocabulary, test the merged result before recording. 104 and 123 each passed
    against base 2c32884 and failed together.
@@ -210,6 +208,14 @@ Owner decisions of 2026-10-06 taken during tasks 103, 118, 123 and 124:
   codes. A malformed code is recorded as `DENY:INVALID_REFUSAL_CODE`.
 - Task 124 numbers the placeholders `<undeclared-N>` alphabetically by name.
 - Scanning property names in the leak validators is a 0.4.x follow-up.
+- D-127(a), answered for task 127: when re-identification is on, an
+  application `SyntheticValueSource` is wrapped like the default, and the
+  wrapper falls back to the wrapped source on any cache failure. There is no
+  `REIDENTIFICATION_INDEX_UNWIRED` refusal.
+- Approvers on the operator port see the pseudonym and namespace, never the
+  subject id.
+- Exposing the operator port in Docker Compose, `server.json` and the image is
+  a 0.4.x follow-up.
 
 Follow-ups from the task 124 review, not yet tasks:
 
@@ -261,6 +267,13 @@ Follow-ups from the task 100 review, not yet tasks:
 - `findPending` on `InMemoryApprovalStore` and `HazelcastApprovalStore` is no
   longer used by re-identification. Check whether `ToolAdmission` still needs
   it; remove it if not. Tasks 119 and 120 touch both stores, so decide there.
+
+Follow-ups from the task 128 review, not yet tasks:
+
+- `MalformedRefusalCodeTest`'s log assertion uses the throwable proxy's
+  `toString`; also check `getThrowableProxy().getMessage()`.
+- `ToolCalls` copies `approvalId` into client text unchecked. It comes from the
+  store, so the risk is low; consider validating its format.
 
 Follow-ups from the task 96 review, not yet tasks:
 

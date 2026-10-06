@@ -17,6 +17,11 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 128: refusal codes validated before reaching the MCP client
+
+Refusal codes from application-supplied scrubbers, validators and resolvers are validated before reaching the MCP client; a malformed code is shown as `INVALID_REFUSAL_CODE`, the same rule the audit uses (one shared `RefusalCodes` helper). The duplicated regex in `DefaultContextOrchestrator` and `ToolCalls` is gone.
+**Cost:** The red test came first; a mutation check fails 5 of 6 `MalformedRefusalCodeTest` cases on the old code. The test adds Mockito and logback-classic as test-scope only in `data-prism-mcp`, with a single SLF4J provider on that classpath. The log assertion matches the throwable proxy's `toString` only, and `ToolCalls` still copies `approvalId` unchecked; both are PLAN follow-ups. Full-reactor `mvn clean verify` exited 0 after the merge.
+
 ## 2026-10-06 — Task 126: task 104's test reconciled with 123's DENY:<code> form
 
 One assertion in `OversightConfigurationTest` (line 250) now expects `DENY:TOO_MANY_PENDING` instead of the bare `TOO_MANY_PENDING`, matching what task 123 made the audit record. The change is one line, exact equality, no production code.
