@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -83,9 +84,9 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             throw new PrivacyRefusedException("NOT_AN_OBJECT", type.getName(),
                     "source did not read as a JSON object");
         }
-        Run run = new Run(context, new HashSet<>());
-        ObjectNode tree = scrubObject((ObjectNode) read, type, run, "$", 0, null);
-        return new ScrubResult(tree, run.emitted());
+        Run run = new Run(context, new HashSet<>(), new TreeMap<>());
+        ObjectNode tree = scrubObject((ObjectNode) read, type, run, "$", "", 0, null);
+        return new ScrubResult(tree, run.emitted(), run.dispositions());
     }
 
     /**
@@ -96,7 +97,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * scopes, and a shared set would leak one scope's values into another's
      * allowlist.
      */
-    private record Run(PrivacyContext context, Set<String> emitted) {
+    private record Run(PrivacyContext context, Set<String> emitted, Map<String, PrivacyAction> dispositions) {
 
         /** Records a generated value and hands it straight back, so call sites read as one expression. */
         String emit(String value) {
@@ -105,6 +106,16 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             }
             return value;
         }
+
+        /** Records the action applied at a field, keyed by its declared-name pointer. */
+        void disposed(String pointer, PrivacyAction action) {
+            dispositions.put(pointer, action);
+        }
+    }
+
+    /** Appends one declared field name to a JSON pointer, escaped per RFC 6901. */
+    private static String child(String pointer, String name) {
+        return pointer + "/" + name.replace("~", "~0").replace("/", "~1");
     }
 
     /**
@@ -125,7 +136,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      *                         fail for want of a subject
      */
     private ObjectNode scrubObject(ObjectNode in, Class<?> type, Run run,
-                                   String path, int depth, String inheritedSubject) {
+                                   String path, String pointer, int depth, String inheritedSubject) {
         if (depth > MAX_DEPTH) {
             throw new PrivacyRefusedException("TOO_DEEP", path,
                     "nesting exceeded " + MAX_DEPTH + " levels");
@@ -142,6 +153,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         ObjectNode out = SourceTree.newObject();
         for (String field : fieldNames(in)) {
             String fieldPath = path + "." + field;
+            String fieldPointer = child(pointer, field);
 
             FieldMetadata md = byName.get(field);
             boolean unknownProperty = md == null;
@@ -160,8 +172,9 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                                 : "field on an @LlmExposedModel carries neither @SensitiveData nor @NonSensitive");
             }
 
+            run.disposed(fieldPointer, policy.action());
             JsonNode value = in.get(field);
-            JsonNode scrubbed = apply(value, md, policy, run, fieldPath, depth, ownSubject,
+            JsonNode scrubbed = apply(value, md, policy, run, fieldPath, fieldPointer, depth, ownSubject,
                     new OwnerScope(in, byName, type));
             if (scrubbed != null) {
                 out.set(field, scrubbed);
@@ -172,7 +185,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
     /** @return the value to emit, or null to drop the field entirely */
     private JsonNode apply(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,
-                           Run run, String path, int depth, String ownSubject, OwnerScope scope) {
+                           Run run, String path, String pointer, int depth, String ownSubject, OwnerScope scope) {
         if (policy.action() == PrivacyAction.REMOVE) {
             return null;
         }
@@ -183,7 +196,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         }
 
         if (value.isObject()) {
-            return scrubNestedObject((ObjectNode) value, md, run, path, depth, ownSubject);
+            return scrubNestedObject((ObjectNode) value, md, run, path, pointer, depth, ownSubject);
         }
         if (value.isArray()) {
             ArrayNode out = SourceTree.newArray();
@@ -192,7 +205,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 JsonNode element = in.get(i);
                 String elementPath = path + "[" + i + "]";
                 JsonNode scrubbed = element.isObject()
-                        ? scrubNestedObject((ObjectNode) element, md, run, elementPath, depth, ownSubject)
+                        ? scrubNestedObject((ObjectNode) element, md, run, elementPath, pointer + "/*", depth, ownSubject)
                         : scalar(element, md, policy, run, elementPath, ownSubject, scope);
                 if (scrubbed != null) {
                     out.add(scrubbed);
@@ -210,13 +223,13 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * unclassified data decides, exactly as it would for a scalar.
      */
     private JsonNode scrubNestedObject(ObjectNode value, FieldMetadata md, Run run,
-                                       String path, int depth, String inheritedSubject) {
+                                       String path, String pointer, int depth, String inheritedSubject) {
         Class<?> nested = md.elementType() != null && md.elementType() != Object.class
                 ? md.elementType()
                 : md.valueType();
 
         if (nested != null && resolver.descendable(nested)) {
-            return scrubObject(value, nested, run, path, depth + 1, inheritedSubject);
+            return scrubObject(value, nested, run, path, pointer, depth + 1, inheritedSubject);
         }
 
         // The field holding this structure may well be declared non-sensitive --
@@ -232,6 +245,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                             + "classify the field that holds it, or choose a looser "
                             + "`unclassified` setting for this profile");
         }
+        run.disposed(pointer, structure.action());
         return switch (structure.action()) {
             case PASS_THROUGH -> value;
             case REDACT -> SourceTree.text(REDACTED);
