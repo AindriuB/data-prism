@@ -101,3 +101,40 @@ mechanical.
 - Resolving a subject id to a person. That is the source systems' job.
 - Updating boundary 5's enforcement status in `docs/architecture.md`. That is
   task 106.
+
+## Attempt 1 — failed
+
+Branch `task/100-reidentification` (7cfed28). Tester: PASS (full reactor exit 0, 20/20; mkdocs NOT RUN — not installed). Reviewer: CHANGES.
+
+Owner decisions in force: D1 lifted; D8 four-eyes defaults ON (bound in 104, see below).
+
+- Defect 1 — ArchitectureTest.java:349-354: `callMethod` misses method
+  references, so `index::subjectFor` outside `..reidentification..` passes the
+  rule (the service itself uses one, ReidentificationService.java:49). Use
+  `accessTargetWhere(owner == ScopeIdentityIndex && name == "subjectFor")` (or
+  equivalent covering calls and references), and add a negative fixture proving
+  a method reference from another package fails the rule.
+- Defect 2 — ReidentificationService.java:141-143: `collect(approvalId)`
+  consumes by binding (requester, scope, tool, fingerprint), not by id. Two
+  approvals A (case C1, bob) and B (case C2, carol) for the same synthetic:
+  `collect(alice, B)` consumes A but audits B/carol/C2; a second `collect(B)`
+  succeeds. Fix within Owns if possible:
+  - before consuming, `find(approvalId)` and require status APPROVED, requester
+    == caller, and a binding that matches;
+  - after `consumeApproved`, refuse (and audit) unless the consumed request's id
+    equals `approvalId`;
+  - prevent two live (PENDING or APPROVED, unconsumed) approvals for one
+    binding, so consume-by-binding is unambiguous.
+  If a correct fix needs a `consumeApproved(id, …)` on the core `ApprovalStore`
+  SPI (outside Owns), stop and report rather than editing core.
+- Defect 3 — :229-233 with :160-161: the binding fingerprint omits purpose and
+  caseId, so `request(P2, C2)` while A is pending for (P1, C1) returns A and
+  audits P2/C2 against an approval nobody saw for that purpose. Include purpose
+  and caseId in the binding fingerprint.
+- Tests for each defect (a test that fails on 7cfed28).
+- Also fix (cheap):
+  - `approve` (:108-113) and `open` (:166-169): if the audit write fails after
+    the store change, undo it (reject/expire the approval) so nothing
+    unaudited stays usable.
+  - `collect` should re-check `Permission.REQUEST` for the caller.
+- Run full reactor `mvn verify`; report the real exit code.

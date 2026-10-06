@@ -97,3 +97,9 @@ wiring must supply one. Approval-required calls consume a rate-limit token
 before the `APPROVAL_REQUIRED`/`APPROVAL_PENDING` refusal. Task 101 owns the
 decision on whether that is intended; do not set a tight caller limit here
 until it is settled.
+
+## Note from task 100's review (owner decision D8)
+
+`ReidentificationPolicy.fourEyes` is a primitive with no library default. This
+task's property binding must default `dataprism.reidentification.four-eyes` to
+`true`, with a test asserting the default. Add it to acceptance.
