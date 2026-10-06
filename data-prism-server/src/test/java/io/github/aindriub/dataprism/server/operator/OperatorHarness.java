@@ -80,11 +80,29 @@ final class OperatorHarness implements AutoCloseable {
     private final SSLSocketFactory previousDefaultSocketFactory;
 
     static OperatorHarness start(Path tempDir, boolean embedded, String... extraArguments) throws Exception {
-        return new OperatorHarness(tempDir, embedded, extraArguments);
+        return new OperatorHarness(tempDir, embedded, null, null, extraArguments);
     }
 
-    private OperatorHarness(Path tempDir, boolean embedded, String... extraArguments) throws Exception {
+    /**
+     * Embedded, with a configured-JSON source (task 127) served over this harness's own HTTPS
+     * endpoint, which the application already trusts. {@code catalogueTemplate} may contain
+     * {@code @HOST@}, replaced by {@code https://127.0.0.1:<port>}; every {@code /records/*} request
+     * answers {@code recordJson}. The location is passed as a system property, as the packaged
+     * server is run, because {@code DataPrismProperties} refuses unknown {@code dataprism.*} keys
+     * from every other source.
+     */
+    static OperatorHarness startWithJsonSource(Path tempDir, String catalogueTemplate, String recordJson,
+                                               String... extraArguments) throws Exception {
+        return new OperatorHarness(tempDir, true, catalogueTemplate, recordJson, extraArguments);
+    }
+
+    private static final String CATALOGUE_LOCATION_PROPERTY = "dataprism.json-sources.config-location";
+    private final boolean catalogueLocationSet;
+
+    private OperatorHarness(Path tempDir, boolean embedded, String catalogueTemplate, String recordJson,
+                            String... extraArguments) throws Exception {
         this.embedded = embedded;
+        this.catalogueLocationSet = catalogueTemplate != null;
         signingKey = new RSAKeyGenerator(2048).keyID("task-105-key").algorithm(JWSAlgorithm.RS256).generate();
         Path keyStore = tempDir.resolve("identity-server.p12");
         Path trustStore = tempDir.resolve("identity-trust.p12");
@@ -135,7 +153,23 @@ final class OperatorHarness implements AutoCloseable {
                 out.write(jwks);
             }
         });
+        if (recordJson != null) {
+            byte[] record = recordJson.getBytes(StandardCharsets.UTF_8);
+            identityServer.createContext("/records/", exchange -> {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, record.length);
+                try (var out = exchange.getResponseBody()) {
+                    out.write(record);
+                }
+            });
+        }
         identityServer.start();
+        if (catalogueTemplate != null) {
+            Path catalogue = tempDir.resolve("json-sources.yaml");
+            Files.writeString(catalogue, catalogueTemplate.replace("@HOST@",
+                    "https://127.0.0.1:" + identityServer.getAddress().getPort()));
+            System.setProperty(CATALOGUE_LOCATION_PROPERTY, "file:" + catalogue.toAbsolutePath());
+        }
         String jwksUri = "https://127.0.0.1:" + identityServer.getAddress().getPort() + "/jwks";
 
         operatorPort = freePort();
@@ -171,7 +205,8 @@ final class OperatorHarness implements AutoCloseable {
                     "--dataprism.reidentification.roles.approver[0]=APPROVE"));
         }
         arguments.addAll(List.of(extraArguments));
-        context = new SpringApplicationBuilder(DataPrismServerApplication.class)
+        try {
+            context = new SpringApplicationBuilder(DataPrismServerApplication.class)
                 .web(WebApplicationType.SERVLET)
                 .logStartupInfo(false)
                 .initializers(applicationContext -> {
@@ -188,6 +223,11 @@ final class OperatorHarness implements AutoCloseable {
                     beans.registerSingleton("testMetrics", PrivacyMetrics.none());
                 })
                 .run(arguments.toArray(String[]::new));
+        } catch (RuntimeException | Error failure) {
+            System.clearProperty(CATALOGUE_LOCATION_PROPERTY);
+            identityServer.stop(0);
+            throw failure;
+        }
         mcpPort = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
     }
 
@@ -297,6 +337,9 @@ final class OperatorHarness implements AutoCloseable {
     public void close() {
         context.close();
         identityServer.stop(0);
+        if (catalogueLocationSet) {
+            System.clearProperty(CATALOGUE_LOCATION_PROPERTY);
+        }
         if (embedded) {
             Hazelcast.shutdownAll();
         }

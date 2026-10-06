@@ -89,6 +89,7 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismParameterFingerprinter", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismReidentificationPolicy", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismReidentificationService", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationIndexFeed", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismPassThroughIdentityResolver", Classification.REPLACEABLE, Guard.NONE));
 
     /** @throws IllegalStateException if {@code beanMethodName} has no checked-in row. */

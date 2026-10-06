@@ -8,8 +8,6 @@ import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.SyntheticValueSource;
-import io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource;
-import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -47,16 +45,13 @@ class ReidentificationOperatorTest {
     }
 
     /**
-     * A real pseudonym for {@code SUBJECT} in {@code case:<caseId>}, entered in the re-identification
-     * index the way an index-feeding deployment would: the application's own generator, wrapped by
-     * {@code CachingSyntheticValueSource} over the application's own cluster.
+     * A real pseudonym for {@code SUBJECT} in {@code case:<caseId>}, produced through the application's
+     * own {@link SyntheticValueSource} bean, which feeds the re-identification index itself.
      */
     private static String synthetic(String caseId) {
-        CachingSyntheticValueSource indexing = new CachingSyntheticValueSource(
-                app.context.getBean(SyntheticValueSource.class), app.context.getBean(PrivacyCluster.class));
         PrivacyContext scope = new PrivacyContext("case:" + caseId, PrivacyScopeType.INVESTIGATION, "DEFAULT",
                 "investigation", Instant.parse("2100-01-01T00:00:00Z"), app.context.getBean(PseudonymisationVersion.class));
-        return indexing.syntheticValue(SUBJECT, PrivacyNamespace.PERSON_NAME, scope);
+        return app.context.getBean(SyntheticValueSource.class).syntheticValue(SUBJECT, PrivacyNamespace.PERSON_NAME, scope);
     }
 
     private static String requestBody(String caseId, String synthetic, String purpose) {

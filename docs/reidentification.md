@@ -59,6 +59,32 @@ Each refusal writes an audit event whose decision is `DENY:<code>`.
 
 Resolving a subject id to a person remains the source systems' job.
 
+## How the index is fed
+
+The starter feeds the re-identification index automatically. With
+`dataprism.reidentification.enabled=true`, `dataprism.hazelcast.reidentification-enabled=true` and
+`dataprism.hazelcast.topology=embedded`, every `SyntheticValueSource` in the context, the default
+generator or one the application supplies, is wrapped in `CachingSyntheticValueSource` over the
+shared cluster member. Each pseudonym handed out is then entered in the reverse map that
+`ScopeIdentityIndex` reads. A source that is already a `CachingSyntheticValueSource` is not wrapped
+twice. With re-identification disabled, or with `single-node` topology, nothing is wrapped and nothing
+is written to the reverse map.
+
+- **Values produced while the index was disabled are not re-identifiable.** Switching it on does not
+  back-fill; those pseudonyms resolve to `REIDENTIFICATION_NOT_FOUND`.
+- **A cluster write failure leaves the value unresolvable.** The wrapper falls back to computing the
+  value from the wrapped source, so the pseudonym is unchanged, but no entry exists and a later request
+  returns `REIDENTIFICATION_NOT_FOUND`. It never resolves to a different subject.
+- **A source that already caches over a different cluster is not rewrapped.** An application-supplied
+  source that is already a `CachingSyntheticValueSource` over a different `PrivacyCluster` is left
+  unwrapped, so its entries are never written where `ScopeIdentityIndex` reads and every request
+  returns `REIDENTIFICATION_NOT_FOUND`.
+- A reverse-map write failure is not reported as a distinct metric. It shows only as one identity
+  cache miss on the application's `PrivacyMetrics` bean, which is indistinguishable from a healthy
+  miss, plus a WARN log line ("identity cache unavailable").
+- The reverse map holds subject ids only, keyed by scope, namespace and pseudonym, and the entry ends
+  with its scope.
+
 ## The operator HTTP surface
 
 Humans exercise oversight on a second port that an LLM, or any credential an LLM holds, cannot
