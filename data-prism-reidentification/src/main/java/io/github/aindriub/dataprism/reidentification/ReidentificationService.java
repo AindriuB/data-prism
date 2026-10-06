@@ -102,6 +102,7 @@ public final class ReidentificationService {
                 case NOT_PENDING -> "APPROVAL_NOT_PENDING";
                 case EXPIRED -> "APPROVAL_EXPIRED";
                 case SELF_APPROVAL -> "SELF_APPROVAL";
+                case TOO_MANY_PENDING -> "REIDENTIFICATION_UNAVAILABLE";
             }, true);
         } catch (RuntimeException unavailable) {
             return refuseApproval(caller, pending, approvalId, "REIDENTIFICATION_UNAVAILABLE", true);
@@ -168,10 +169,23 @@ public final class ReidentificationService {
         String approvalId = UUID.randomUUID().toString();
         String fingerprint = fingerprint(request.scopeId(), request.namespace().name(), request.syntheticValue(),
                 purpose, caseId, approvalId);
-        ApprovalRequest created = approvals.create(new ApprovalRequest(approvalId,
-                Kind.REIDENTIFICATION, caller.principalId(), caller.clientId(), request.scopeId(), TOOL,
-                fingerprint, request.namespace().name(), request.syntheticValue(), purpose, caseId, now,
-                now.plus(policy.approvalTtl()), Status.PENDING, null, null));
+        ApprovalRequest created;
+        try {
+            created = approvals.create(new ApprovalRequest(approvalId,
+                    Kind.REIDENTIFICATION, caller.principalId(), caller.clientId(), request.scopeId(), TOOL,
+                    fingerprint, request.namespace().name(), request.syntheticValue(), purpose, caseId, now,
+                    now.plus(policy.approvalTtl()), Status.PENDING, null, null), policy.maxPendingPerRequester());
+        } catch (ApprovalRefusedException tooMany) {
+            if (tooMany.code() != ApprovalRefusedException.Code.TOO_MANY_PENDING) {
+                throw tooMany;
+            }
+            try {
+                audit.record(entry(caller, request, purpose, caseId, "DENY:TOO_MANY_PENDING", "", ""));
+            } catch (RuntimeException auditDown) {
+                return new ReidentificationOutcome.Refused("AUDIT_UNAVAILABLE");
+            }
+            return new ReidentificationOutcome.Refused("TOO_MANY_PENDING");
+        }
         try {
             audit.record(entry(caller, request, purpose, caseId, "ALLOW:REQUESTED", approvalId, "", fingerprint));
         } catch (RuntimeException auditDown) {

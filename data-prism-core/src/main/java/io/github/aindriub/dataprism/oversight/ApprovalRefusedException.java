@@ -1,9 +1,9 @@
 package io.github.aindriub.dataprism.oversight;
 
-/** An approve or reject that the store refused. */
+/** An approve, reject or bounded create that the store refused. */
 public final class ApprovalRefusedException extends RuntimeException {
 
-    public enum Code { UNKNOWN_APPROVAL, NOT_PENDING, EXPIRED, SELF_APPROVAL }
+    public enum Code { UNKNOWN_APPROVAL, NOT_PENDING, EXPIRED, SELF_APPROVAL, TOO_MANY_PENDING }
 
     private final Code code;
 

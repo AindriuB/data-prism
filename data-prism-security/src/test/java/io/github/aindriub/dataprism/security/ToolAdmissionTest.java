@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.security;
 
+import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
 import io.github.aindriub.dataprism.oversight.InMemoryApprovalStore;
@@ -97,6 +98,63 @@ class ToolAdmissionTest {
         assertEquals("APPROVAL_PENDING", second.code());
         assertEquals(first.approvalId(), second.approvalId());
         assertEquals(1, approvals.pending(CLOCK.instant()).size());
+    }
+
+    private static OversightPolicy capped(int max) {
+        return new OversightPolicy(Set.of("risky"), OptionalInt.empty(), Duration.ofMinutes(1),
+                Duration.ofHours(1), max);
+    }
+
+    @Test
+    void aRequesterOverTheCapIsRefusedTooManyPendingAndNothingIsCreated() {
+        ToolAdmission a = admission(capped(2));
+        assertEquals("APPROVAL_REQUIRED", a.admit(CALLER, "risky", "s", "f1").code());
+        assertEquals("APPROVAL_REQUIRED", a.admit(CALLER, "risky", "s", "f2").code());
+
+        AdmissionDecision over = a.admit(CALLER, "risky", "s", "f3");
+
+        assertFalse(over.admitted());
+        assertEquals("TOO_MANY_PENDING", over.code());
+        assertNull(over.approvalId());
+        assertEquals(2, approvals.pending(CLOCK.instant()).size());
+    }
+
+    @Test
+    void aMatchingRetryAtTheCapIsStillApprovalPending() {
+        ToolAdmission a = admission(capped(1));
+        String id = a.admit(CALLER, "risky", "s", "f1").approvalId();
+
+        AdmissionDecision retry = a.admit(CALLER, "risky", "s", "f1");
+
+        assertEquals("APPROVAL_PENDING", retry.code());
+        assertEquals(id, retry.approvalId());
+    }
+
+    @Test
+    void anotherCallerIsNotAffectedByTheCap() {
+        ToolAdmission a = admission(capped(1));
+        a.admit(CALLER, "risky", "s", "f1");
+        AuthenticatedCaller bob = new AuthenticatedCaller("bob", "client", Set.of(), "purpose", "case-1", null);
+
+        assertEquals("APPROVAL_REQUIRED", a.admit(bob, "risky", "s", "f1").code());
+    }
+
+    @Test
+    void anyOtherStoreFailureOnCreateIsStillOversightUnavailable() {
+        ApprovalStore failingCreate = (ApprovalStore) Proxy.newProxyInstance(
+                ApprovalStore.class.getClassLoader(), new Class<?>[] {ApprovalStore.class}, (p, m, args) -> {
+                    if (m.getName().equals("create")) {
+                        throw new ApprovalRefusedException(ApprovalRefusedException.Code.NOT_PENDING);
+                    }
+                    try {
+                        return m.invoke(approvals, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+        ToolAdmission a = new ToolAdmission(state, failingCreate, limiter, approval(), CLOCK);
+
+        assertEquals("OVERSIGHT_UNAVAILABLE", a.admit(CALLER, "risky", "s", "f").code());
     }
 
     @Test

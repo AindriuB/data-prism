@@ -333,11 +333,14 @@ class ToolAdmissionEnforcementTest {
             for (int i = 0; i < 2; i++) {
                 audited.clear();
                 orchestrator.requests.clear();
-                ToolAdmission admission = admission(p);
+                // a fresh store each time, so the iterations stay under the per-requester pending cap
+                ApprovalStore iterationApprovals = new InMemoryApprovalStore();
+                ToolAdmission admission = new ToolAdmission(state, iterationApprovals,
+                        new InMemoryCallerRateLimiter(), p, FIXED);
                 Tool tool = tools(admission).get(i);
                 tool.call(ARGS);
                 String approvalId = audited.get(audited.size() - 1).approvalId();
-                approvals.approve(approvalId, "approver-9", FIXED.instant());
+                iterationApprovals.approve(approvalId, "approver-9", FIXED.instant());
 
                 Tool other = variant.equals("profile") ? tools(admission, "STRICT").get(i) : tool;
                 AuthenticatedCaller as = variant.equals("purpose") ? otherPurpose

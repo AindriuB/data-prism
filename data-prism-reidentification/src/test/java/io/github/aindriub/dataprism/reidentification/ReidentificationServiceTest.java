@@ -55,8 +55,12 @@ class ReidentificationServiceTest {
             "viewer", Set.of());
 
     private ReidentificationService service(boolean fourEyes) {
+        return service(fourEyes, ReidentificationPolicy.DEFAULT_MAX_PENDING_PER_REQUESTER);
+    }
+
+    private ReidentificationService service(boolean fourEyes, int maxPending) {
         ReidentificationPolicy policy = new ReidentificationPolicy(Set.of("fraud-investigation", "audit-review"), ROLES,
-                fourEyes, Duration.ofMinutes(10));
+                fourEyes, Duration.ofMinutes(10), maxPending);
         return new ReidentificationService((scope, ns, synth) -> {
             lookups++;
             return found;
@@ -269,5 +273,42 @@ class ReidentificationServiceTest {
         s.approve(caller("bob", "supervisor"), id);
         assertDenied(s.collect(caller("alice", "viewer"), id), "REIDENTIFICATION_NOT_PERMITTED");
         assertThat(lookups).isZero();
+    }
+
+    @Test
+    void maxPendingDefaultsToFiveAndMustBePositive() {
+        assertThat(new ReidentificationPolicy(Set.of(), ROLES, true, Duration.ofMinutes(1))
+                .maxPendingPerRequester()).isEqualTo(5);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new ReidentificationPolicy(Set.of(), ROLES, true, Duration.ofMinutes(1), 0));
+    }
+
+    @Test
+    void aRequesterOverTheCapIsRefusedAndAuditedWithoutAnApprovalId() {
+        ReidentificationService s = service(true, 2);
+        AuthenticatedCaller alice = caller("alice", "supervisor");
+        assertThat(s.request(alice, req("fraud-investigation"))).isInstanceOf(PendingApproval.class);
+        assertThat(s.request(alice, req("fraud-investigation"))).isInstanceOf(PendingApproval.class);
+        int before = events.size();
+
+        assertDenied(s.request(alice, req("fraud-investigation")), "TOO_MANY_PENDING");
+
+        assertThat(events).hasSize(before + 1);
+        assertThat(events.get(before).approvalId()).isNullOrEmpty();
+        assertThat(store.pending(now.get())).hasSize(2);
+        assertThat(s.request(caller("bob", "supervisor"), req("fraud-investigation")))
+                .isInstanceOf(PendingApproval.class);
+    }
+
+    @Test
+    void anAuditFailureOnTheCapRefusalIsAuditUnavailableAndNothingIsStored() {
+        ReidentificationService s = service(true, 1);
+        AuthenticatedCaller alice = caller("alice", "supervisor");
+        s.request(alice, req("fraud-investigation"));
+        auditDown = true;
+
+        assertThat(s.request(alice, req("fraud-investigation"))).isEqualTo(new Refused("AUDIT_UNAVAILABLE"));
+
+        assertThat(store.pending(now.get())).hasSize(1);
     }
 }

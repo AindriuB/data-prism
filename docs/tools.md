@@ -438,6 +438,7 @@ code. No source adapter is invoked.
 | `CALLER_RATE_LIMITED` | The caller has used its request allowance for the current window. |
 | `APPROVAL_REQUIRED` | The tool needs a second person's approval. The text is `APPROVAL_REQUIRED approvalId=<id>`. |
 | `APPROVAL_PENDING` | The approval is requested and not yet decided. The text is `APPROVAL_PENDING approvalId=<id>`. |
+| `TOO_MANY_PENDING` | The caller already holds the maximum number of live pending tool-call approvals (`OversightPolicy.maxPendingPerRequester`, default 5). No approval is created. A matching retry still gets `APPROVAL_PENDING`. |
 | `OVERSIGHT_UNAVAILABLE` | Admission could not be evaluated, so the call is refused rather than let through. |
 
 After a different person approves, the identical call succeeds once. "Identical"

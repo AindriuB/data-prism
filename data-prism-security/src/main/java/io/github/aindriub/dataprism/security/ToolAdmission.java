@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.security;
 
+import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
+import io.github.aindriub.dataprism.oversight.ApprovalRefusedException.Code;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
@@ -69,6 +71,9 @@ public class ToolAdmission {
                 return AdmissionDecision.admit();
             }
             return approvalStep(caller, tool, scopeId, bindingFingerprint, now);
+        } catch (ApprovalRefusedException e) {
+            return AdmissionDecision.refuse(e.code() == Code.TOO_MANY_PENDING
+                    ? "TOO_MANY_PENDING" : "OVERSIGHT_UNAVAILABLE");
         } catch (RuntimeException e) {
             return AdmissionDecision.refuse("OVERSIGHT_UNAVAILABLE");
         }
@@ -90,7 +95,7 @@ public class ToolAdmission {
         ApprovalRequest created = approvals.create(new ApprovalRequest(
                 UUID.randomUUID().toString(), Kind.TOOL_CALL, caller.principalId(), caller.clientId(),
                 scopeId, tool, fingerprint, null, null, caller.purpose(), caller.caseId(),
-                now, now.plus(policy.approvalTtl()), Status.PENDING, null, null));
+                now, now.plus(policy.approvalTtl()), Status.PENDING, null, null), policy.maxPendingPerRequester());
         return new AdmissionDecision(false, "APPROVAL_REQUIRED", created.approvalId(), null);
     }
 }

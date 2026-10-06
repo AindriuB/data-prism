@@ -30,6 +30,27 @@ public final class InMemoryApprovalStore implements ApprovalStore {
     }
 
     @Override
+    public synchronized ApprovalRequest create(ApprovalRequest pending, int maxLivePendingPerRequester) {
+        if (maxLivePendingPerRequester <= 0) {
+            throw new IllegalArgumentException("maxLivePendingPerRequester must be positive");
+        }
+        Objects.requireNonNull(pending, "pending");
+        if (pending.status() != Status.PENDING) {
+            throw new IllegalArgumentException("a new approval must be PENDING");
+        }
+        long live = requests.values().stream()
+                .filter(r -> r.status() == Status.PENDING
+                        && r.kind() == pending.kind()
+                        && Objects.equals(r.requesterPrincipalId(), pending.requesterPrincipalId())
+                        && pending.createdAt().isBefore(r.expiresAt()))
+                .count();
+        if (live >= maxLivePendingPerRequester) {
+            throw new ApprovalRefusedException(Code.TOO_MANY_PENDING);
+        }
+        return create(pending);
+    }
+
+    @Override
     public synchronized Optional<ApprovalRequest> find(String approvalId) {
         return Optional.ofNullable(requests.get(approvalId));
     }

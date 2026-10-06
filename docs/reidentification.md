@@ -53,6 +53,7 @@ Each refusal writes an audit event whose decision is `DENY:<code>`.
 | `APPROVAL_EXPIRED` | The approval's time to live has passed |
 | `APPROVAL_NOT_PENDING` | `approve` on a request that was already decided |
 | `APPROVAL_NOT_APPROVED` | `collect` before approval, or after it was used |
+| `TOO_MANY_PENDING` | The requester already holds the maximum number of live pending re-identification approvals (`ReidentificationPolicy.maxPendingPerRequester`, default 5, counted apart from tool-call approvals). No approval is created, and the event carries no approval id |
 | `REIDENTIFICATION_UNAVAILABLE` | A store or lookup failed; the request fails closed |
 | `AUDIT_UNAVAILABLE` | The audit write failed; nothing is returned |
 
