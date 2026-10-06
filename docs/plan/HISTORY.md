@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 129: 0.4.0 release candidate cut
+
+The branch is now the 0.4.0 release candidate: all 20 poms, `server.json`, the Dockerfile `ARG`, the `publish-image.yml` default and the docs' version literals say 0.4.0, and `CHANGELOG.md` has a dated `[0.4.0]` section carrying the behaviour changes (PHI release note from 94, `DENY:<code>`, audit v2, daily segments, retention floor, checkpoint refusal). `DataPrismMcpServer` reports its version from a Maven-filtered resource and falls back to `unknown`; a test compares it with `project.version`. Nothing is pushed, tagged or published; owner decision D-129(a) is Central (library modules), GHCR and MCP Registry.
+
+**Cost:** It took three attempts, all on wording. Attempt 1 used "compliant" even in a denial and mis-stated daily segments as default rather than opt-in; attempt 2 got the pending cap wrong (per requester and kind) and a local-repository phrase. A `release`-profile build needed javadoc fixes first (recorded in the task notes), so run `mvn -Prelease -Dgpg.skip=true clean verify` before any release, not only plain verify. The merged head passed both builds, `mkdocs build --strict`, `check_site.py` and `check_changelog.py`. Merged by hand with `--no-ff`, not `wt-merge.sh`.
+
 ## 2026-10-06 — Task 127: re-identification index wired over the application value source
 
 When re-identification is enabled, the application's `SyntheticValueSource` is wrapped so the reverse index is populated as synthetic values are issued, and operator re-identification now finds subjects in a running server. Wiring tests and a configured-JSON end-to-end test cover it, and the 0.4.0 task list is complete.

@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-06 | 129 | 0.4.0 release candidate: versions, dated CHANGELOG section, `serverInfo` read from the build; nothing published. | `## 2026-10-06 — Task 129: 0.4.0 release candidate cut` |
 | 2026-10-06 | 127 | Re-identification index wired over the application `SyntheticValueSource`; wiring and configured-JSON end-to-end tests. | `## 2026-10-06 — Task 127: re-identification index wired over the application value source` |
 | 2026-10-06 | 106 | EU AI Act and GDPR Art. 9 support mapping page, architecture decisions (S10 deferral lifted, rotation reversed), stale audit/configuration/reidentification text corrected. | `## 2026-10-06 — Task 106: EU AI Act support mapping` |
 | 2026-10-06 | 105 | Operator surface on `dataprism.operator.port` in the same process, own filter chain, audited pause, approvals and re-identification; MCP and operator endpoints never share a port. | `## 2026-10-06 — Task 105: operator surface served on a separate port` |

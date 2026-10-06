@@ -70,23 +70,19 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 7 | 105 | Operator surface on a second port in the same process | 104 | done 2026-10-06 (attempt 3) |
 | 8 | 127 | Wire the re-identification index (wrap application `SyntheticValueSource`) | 105 | done 2026-10-06 (attempt 3; `mvn clean verify`, `mkdocs build --strict`, `check_site.py` exit 0 on merged head) |
 | 9 | 106 | EU AI Act support mapping and architecture records | 94, 105 | done 2026-10-06 (attempt 4; `mkdocs build --strict` and `check_site.py` exit 0) |
+| 10 | 129 | Cut 0.4.0: poms, `server.json`, CHANGELOG, version literals, `serverInfo` from the build | all | done 2026-10-06 (attempt 3; release-profile and plain `mvn clean verify`, `mkdocs build --strict`, `check_site.py`, `check_changelog.py` exit 0) |
 
 Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next for 0.4.0: nothing open; 127 was the last 0.4.0 task and merged 2026-10-06. 106 merged 2026-10-06; 105 merged earlier the same day (`mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
+**0.4.0 release candidate is ready** (task 129 merged 2026-10-06; nothing is pushed, tagged or published). Next is the owner-gated checklist below. 127 was the last feature task. 106 merged 2026-10-06; 105 merged earlier the same day (`mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
 126 merged on 2026-10-06; `mvn clean verify` of the merged head exited 0 only
 after 126.
 Tasks 102 and 103 carried notes that a retention below six months refuses
 startup unless `dataprism.audit.retention-override` is set.
 
-0.4.0 release note, to add to `CHANGELOG.md` when the release is cut: a profile
-with a PHI rule weaker than `REDACT` now refuses to start with
-`SPECIAL_CATEGORY_EXPOSED`, and a Java-built profile with no PHI rule resolves
-PHI to `REMOVE`. It is recorded in `HISTORY.md` under task 94 (grep
-`Release note (94)`), and `CHANGELOG.md` does not carry it yet. Task 101 added
-the `AuditedRefusalException` line there and nothing else has.
+~~0.4.0 release note (94) for `CHANGELOG.md`~~ — closed 2026-10-06: task 129 put it in `CHANGELOG.md [0.4.0]` with the other behaviour changes.
 
 Follow-ups from tasks 104 and 123, not yet tasks:
 
@@ -263,10 +259,10 @@ Follow-ups from the wave 4 reviews (tasks 103, 117, 118, 121, 125), not yet task
   `NoUniqueBeanDefinitionException`.
 - Task 125: `requireVersion()` is duplicated in four integration tests; consider
   a shared helper.
-- `DataPrismMcpServer.serverInfo` still hardcodes `"0.3.1"`. Derive it from the
-  build. `data-prism-mcp` is free now that 118 has merged.
-- Release time: the Dockerfile `ARG VERSION=0.3.1` and the `publish-image.yml`
-  default.
+- ~~`DataPrismMcpServer.serverInfo` hardcodes `"0.3.1"`~~ — closed 2026-10-06 by
+  task 129: it reads a Maven-filtered version resource and falls back to `unknown`.
+- ~~Release time: the Dockerfile `ARG VERSION` and the `publish-image.yml`
+  default~~ — closed 2026-10-06 by task 129 (both say 0.4.0).
 
 Follow-ups from the task 102 review, not yet tasks:
 
@@ -1692,6 +1688,22 @@ PR #101 on 2026-09-24; the site redeployed. See `HISTORY.md`.
 - ~~`docs/tools.md:120` says "unclassified values dropped"~~ — corrected on
   `site-polish` (2026-09-24, see `HISTORY.md`); the row now states an
   unclassified field refuses the whole response under the shipped profiles.
+
+### 0.4.0 release checklist (owner go-ahead required)
+
+Owner decision D-129(a): publish to Maven Central (library modules), GHCR and
+the MCP Registry. `data-prism-server` stays off Central (`skipPublishing`) and
+comes from source, a GitHub Release or GHCR. Nothing below has been done; each
+step is an outward action and needs the owner's go-ahead.
+
+1. Push `claude/data-prism-eu-compliance-04cf83` and open a PR to `main`.
+2. Wait for CI green, then merge.
+3. Tag `v0.4.0` on the merge commit, signed (`git tag -s v0.4.0 -m "v0.4.0"`), and push the tag. Watch `release.yml`.
+4. Create the GitHub Release for `v0.4.0`.
+5. Dispatch `publish-central`, then verify the library modules at 0.4.0 on Central (`data-prism-server` must not appear).
+6. Dispatch `publish-image` with `-f version=0.4.0`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
+7. Dispatch `publish-mcp`, then verify the registry lists 0.4.0 as latest.
+8. After Central publishes, re-verify the `docs/extending.md` consumer snippet against Central 0.4.0 (throwaway project, no local repository). If it passes, drop the "(recorded against 0.3.0)" markers (four, around lines 513, 528, 539, 701) in a follow-up commit.
 
 ### Task 91 — done, and the 0.3.1 release is complete. No task file remains under `docs/plan/tasks/`.
 
