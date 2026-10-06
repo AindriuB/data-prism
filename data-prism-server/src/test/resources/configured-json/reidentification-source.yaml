@@ -1,6 +1,6 @@
 json-sources:
   crm-json:
-    base-url: http://127.0.0.1:@PORT@
+    base-url: @HOST@
     path: /records/{subject}
     timeout: PT5S
     model-version: crm-v1

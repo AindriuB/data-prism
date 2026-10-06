@@ -75,6 +75,12 @@ is written to the reverse map.
 - **A cluster write failure leaves the value unresolvable.** The wrapper falls back to computing the
   value from the wrapped source, so the pseudonym is unchanged, but no entry exists and a later request
   returns `REIDENTIFICATION_NOT_FOUND`. It never resolves to a different subject.
+- **A source that already caches over a different cluster is not rewrapped.** An application-supplied
+  source that is already a `CachingSyntheticValueSource` over a different `PrivacyCluster` is left
+  unwrapped, so its entries are never written where `ScopeIdentityIndex` reads and every request
+  returns `REIDENTIFICATION_NOT_FOUND`.
+- Cache and reverse-index write failures are reported through the application's `PrivacyMetrics`
+  bean, as the identity cache hit and miss counters.
 - The reverse map holds subject ids only, keyed by scope, namespace and pseudonym, and the entry ends
   with its scope.
 
