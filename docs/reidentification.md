@@ -89,7 +89,7 @@ separate application. Set `dataprism.operator.enabled=true` with `port`, `requir
 - **Errors.** Every error body is `{"code":"<CODE>"}`. No exception message and no request value is
   ever copied into a response. Requests to a path that does not exist or with the wrong method get
   `NOT_FOUND` and `METHOD_NOT_ALLOWED`. A body that cannot be read or fails validation gets 400
-  `INVALID_REQUEST`. Anything unexpected is 500 `OPERATOR_ERROR`. This holds for requests the HTTP
+  `INVALID_REQUEST`. A request without a valid operator token gets 401 `UNAUTHENTICATED`, and one with the right audience but no scope gets 403 `FORBIDDEN`. Anything unexpected is 500 `OPERATOR_ERROR`. This holds for requests the HTTP
   firewall or Tomcat refuses before a controller sees them (a double slash, a path parameter, an
   encoded slash, a trailing-dot path): they get a `{"code":...}` body and never an echo of the path.
 - **Subject ids.** A subject id appears in exactly one response: `RESOLVED`, returned to the

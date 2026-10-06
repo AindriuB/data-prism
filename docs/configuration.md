@@ -77,7 +77,7 @@ for the relevant group.
 | `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget across every member of the cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but the budget it produces is enforced once per process, so a configured budget of 100 becomes 100 times the number of running processes — identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | Cluster/TLS credentials are **yes, by reference** when configured | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration, invalid member/TLS settings, non-positive TTL, or an enabled index without its required controls |
 | `dataprism.oversight` | All optional. `approval-required-tools` defaults to empty; `approval-ttl` `PT15M`; `caller-rate-limit.requests` unset (no limit); `caller-rate-limit.window` `PT1M`; `max-pending-per-requester` `5` | No | Refuse startup for an unknown tool name (`UNKNOWN_OVERSIGHT_TOOL`), a non-positive limit, window, TTL or cap (`INVALID_OVERSIGHT_LIMIT`), or approval-required tools or a rate limit without `dataprism.operator.enabled` (`OVERSIGHT_REQUIRES_OPERATOR_SURFACE`) |
 | `dataprism.reidentification` | `enabled` defaults to `false`; `four-eyes` defaults to `true`; `approval-ttl` `PT15M`; `max-pending-per-requester` `5`; `purposes` and `roles` are required once enabled | No | Refuse startup for the refusals listed under [`dataprism.reidentification`](#dataprismreidentification) |
-| `dataprism.operator` | `enabled` defaults to `false`; `port`, `required-audience` and `required-scope` are required once enabled | No | Refuse startup for an enabled surface missing any of them (`MISSING_OPERATOR_SECURITY`) or sharing `server.port` (`OPERATOR_PORT_SHARED`) |
+| `dataprism.operator` | `enabled` defaults to `false`; `port`, `required-audience` and `required-scope` are required once enabled; `address` is optional and follows `server.address` when unset | No | Refuse startup for an enabled surface missing any of the required three (`MISSING_OPERATOR_SECURITY`), sharing `server.port` (`OPERATOR_PORT_SHARED`), using the MCP audience (`OPERATOR_AUDIENCE_SHARED`), or an `address` that does not resolve (`INVALID_OPERATOR_ADDRESS`); and `dataprism.reidentification.enabled=true` without the `data-prism-reidentification` module on the classpath (`REIDENTIFICATION_MODULE_MISSING`) |
 | `dataprism.sources` | One named source entry per configured Java-first REST adapter; each entry declares a server-controlled HTTPS base URL and positive timeout | mTLS key, trust material, and service credentials are **yes, by reference** | Refuse startup for duplicate names, an unapproved/non-HTTPS URL (local fixture exception only), user-info/query/fragment in a base URL, invalid timeout, unresolved mTLS reference, or a configured source without its explicit adapter bean |
 
 `dataprism.sources.<name>` is intentionally limited to transport parameters
@@ -317,11 +317,15 @@ keep their existing meaning and are checked first.
 | `port` | none | The operator port; must differ from `server.port` (default `8080`) |
 | `required-audience` | none | The JWT audience an operator token must carry |
 | `required-scope` | none | The scope an operator token must carry |
+| `address` | follows `server.address` | The address the operator connector binds to, for example `127.0.0.1`. Set independently of `server.address` so the operator port can stay on an internal interface |
 
 | Code | Condition |
 |---|---|
 | `MISSING_OPERATOR_SECURITY` | Enabled without a valid `port`, `required-audience` or `required-scope` |
 | `OPERATOR_PORT_SHARED` | `port` equal to `server.port` |
+| `OPERATOR_AUDIENCE_SHARED` | `required-audience` equal to `dataprism.security.jwt.audience`, which would let one token serve both surfaces |
+| `INVALID_OPERATOR_ADDRESS` | `address` is set and cannot be resolved to an address |
+| `REIDENTIFICATION_MODULE_MISSING` | `dataprism.reidentification.enabled=true` with `data-prism-reidentification` absent from the classpath. The standalone server carries it; an embedded application using the starter must add it |
 
 ## Java-first now; generic JSON as a separately reviewed extension
 
