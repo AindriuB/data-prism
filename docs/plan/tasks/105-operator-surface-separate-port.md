@@ -172,3 +172,34 @@ Required:
 7. Enforce the 16 KiB operator body limit for chunked requests too (bounded
    read), not only via Content-Length.
 - Run `mvn clean verify` over the full reactor and mkdocs --strict; report real exit codes.
+
+## Attempt 2 — failed
+
+Tester: PASS (full `mvn clean verify`, `mkdocs build --strict`). Reviewer: CHANGES.
+Attempt 1 items 2–7 are done and need no rework. Required for attempt 3:
+
+1. **MCP-port regression (blocker).** `OperatorErrorReportValve` is installed on
+   the shared host, reports before Boot's valve, and off the operator port calls
+   `super.report()` with Tomcat defaults. `GET /a{b}` or `/mcp%2Fx` on the MCP
+   port now returns Tomcat's message, a full stack trace and
+   "Apache Tomcat/10.1.x"; base returns the bare 400 page. Set
+   `showReport=false` and `showServerInfo=false` on this valve instance, and add
+   an MCP-port test asserting no message, trace or server version for both
+   inputs, matching base.
+2. **`OperatorErrorAdvice` is global.** Its catch-all `Exception` handler now
+   turns MCP-port MVC exceptions into 500 `OPERATOR_ERROR` logged as "operator
+   request failed". Limit it to the operator controllers (e.g.
+   `@RestControllerAdvice(assignableTypes = …)` or basePackageClasses), and
+   test that an MCP-port error still goes to Boot's `/error` as on base.
+3. **Empty error bodies on the operator port.** 401 (bearer entry point), 403
+   (access-denied handler) and any error requested with `Accept: text/html`
+   return empty bodies. Each must return `{"code":...}` only
+   (e.g. `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`), and only on the operator
+   port; MCP-port 401/403 behaviour is unchanged. Test all three.
+4. **Test the `INVALID_OPERATOR_ADDRESS` startup refusal.**
+5. Add explicit tests for `//` and `;`-parameter paths on the operator port
+   (attempt 1 item 1 named them; none targets them by name).
+
+Follow-up, not 105: `docs/configuration.md:80` lacks `dataprism.operator.address`,
+`OPERATOR_AUDIENCE_SHARED`, `INVALID_OPERATOR_ADDRESS` and
+`REIDENTIFICATION_MODULE_MISSING` (outside Owns).
