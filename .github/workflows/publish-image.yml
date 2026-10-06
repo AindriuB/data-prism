@@ -325,7 +325,7 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.arch }}
           path: /tmp/digest/*
@@ -363,7 +363,7 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-quickstart-server-${{ matrix.arch }}
           path: /tmp/digest-quickstart/server-${{ matrix.arch }}
@@ -393,7 +393,7 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-quickstart-fixtures-${{ matrix.arch }}
           path: /tmp/digest-quickstart/fixtures-${{ matrix.arch }}
@@ -423,7 +423,7 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-quickstart-issuer-${{ matrix.arch }}
           path: /tmp/digest-quickstart/issuer-${{ matrix.arch }}
@@ -453,7 +453,7 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-quickstart-certs-init-${{ matrix.arch }}
           path: /tmp/digest-quickstart/certs-init-${{ matrix.arch }}
