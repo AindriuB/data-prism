@@ -342,6 +342,32 @@ one retrofit decision for every field nobody annotated, instead of annotating
 each of them
 (`data-prism-annotations/src/main/java/io/github/aindriub/dataprism/annotations/LlmExposedModel.java:26-37`).
 
+### Profiles that admit unclassified data
+
+A source payload can carry a property the model does not declare. Its name comes
+from the payload, not from reviewed code, and a name can be personal data (a map
+keyed by email address). The profile's `unclassified` setting decides what
+happens to an undeclared property's name and value:
+
+| Setting | Name | Value |
+|---|---|---|
+| `FAIL_REQUEST` (default) | the request is refused with `UNKNOWN_FIELD`; the refusal path shows `<undeclared>`, never the key | not emitted |
+| `REDACT_AND_WARN` | replaced by `<undeclared-1>`, `<undeclared-2>`, and so on, numbered by raw key in alphabetical order within each object | `[REDACTED]` |
+| `DROP_AND_WARN` | not emitted | not emitted |
+| `PASS_THROUGH_UNSAFE` | **emitted unchanged** | emitted unchanged |
+
+Under `PASS_THROUGH_UNSAFE`, property names from the source payload reach the
+model unchanged, and no validator checks names: the leak validators scan values
+only. Use that setting only for data that carries nothing sensitive, keys
+included.
+
+Declared fields keep their names under every setting. Audit records and
+disposition keys use the single segment `<undeclared>` for any undeclared
+property, never the numbered form.
+
+No `dataprism.*` property selects a profile that admits unclassified data. Such
+a profile is built in Java.
+
 ### What the processor actually rejects — proven by compiling
 
 The rule above is not a style preference; `LlmExposedModelProcessor` fails

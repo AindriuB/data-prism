@@ -133,4 +133,15 @@ class ConfiguredJsonUndeclaredKeyRefusalTest {
         assertThat(structure.path()).isEqualTo("customer-with-address$.address[0]");
         assertThat(structure.getMessage()).doesNotContain(TOKEN);
     }
+
+    @Test
+    @DisplayName("a configured source under REDACT_AND_WARN emits <undeclared-1> for an undeclared body key (task 124)")
+    void redactAndWarnRenamesUndeclaredKey() {
+        var result = engine(PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN).scrub(
+                payload("{\"id\":\"C-1\",\"ssn\":\"123-45-6789\",\"" + KEY + "\":\"x\"}"), context());
+
+        assertThat(result.tree().has("<undeclared-1>")).isTrue();
+        assertThat(result.tree().get("<undeclared-1>").asText()).isEqualTo("[REDACTED]");
+        assertThat(result.tree().toString()).doesNotContain(TOKEN);
+    }
 }
