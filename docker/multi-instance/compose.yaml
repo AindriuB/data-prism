@@ -8,8 +8,8 @@
 # or, with published images:
 #   docker compose -f docker/multi-instance/compose.yaml up
 #
-# Requires Docker Compose >= 2.24.0: `ports: !override` and `ports: !reset`
-# below are not understood by older versions.
+# Requires Docker Compose >= 2.24.4: `ports: !override` needs 2.24.4 and
+# `ports: !reset` needs 2.18.0; older versions do not understand them.
 #
 # SECURITY: Hazelcast member traffic on port 5701 is UNENCRYPTED and
 # UNAUTHENTICATED. data-prism refuses TLS settings for it (D-0.4.1-A), so
@@ -23,7 +23,9 @@
 #     server-a and server-b. Join members are fixed addresses on it.
 # What it does not do: it does not encrypt or authenticate anything, and it
 # does not protect against a process with access to the Docker daemon or to
-# either server container. Never attach another service to `cluster`.
+# either server container, or against processes on the Linux host, which can
+# usually route to container addresses on bridge networks, internal ones
+# included. Never attach another service to `cluster`.
 
 name: data-prism-multi-instance
 
@@ -38,6 +40,11 @@ networks:
     internal: true
     ipam:
       config:
+        # 172.28.57.0/24 may collide with an existing Docker or VPN network
+        # ("Pool overlaps"). If so, change it everywhere it appears in this
+        # file: this subnet, both DATAPRISM_HAZELCAST_JOIN_MEMBERS lines,
+        # both DATAPRISM_HAZELCAST_MEMBER_INTERFACE lines, and both
+        # ipv4_address lines (server-a .11, server-b .12).
         # Fixed private subnet so members can bind to it and be addressed by IP.
         - subnet: 172.28.57.0/24
 
