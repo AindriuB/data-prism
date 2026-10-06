@@ -18,6 +18,13 @@ public final class InMemoryApprovalStore implements ApprovalStore {
 
     @Override
     public synchronized ApprovalRequest create(ApprovalRequest pending) {
+        Objects.requireNonNull(pending, "pending");
+        if (pending.status() != Status.PENDING) {
+            throw new IllegalArgumentException("a new approval must be PENDING");
+        }
+        if (requests.containsKey(pending.approvalId())) {
+            throw new IllegalArgumentException("duplicate approval id");
+        }
         requests.put(pending.approvalId(), pending);
         return pending;
     }
@@ -35,6 +42,7 @@ public final class InMemoryApprovalStore implements ApprovalStore {
 
     @Override
     public synchronized ApprovalRequest approve(String approvalId, String approver, Instant now) {
+        Objects.requireNonNull(approver, "approver");
         ApprovalRequest request = pendingOrRefuse(approvalId, now);
         if (Objects.equals(request.requesterPrincipalId(), approver)) {
             throw new ApprovalRefusedException(Code.SELF_APPROVAL);

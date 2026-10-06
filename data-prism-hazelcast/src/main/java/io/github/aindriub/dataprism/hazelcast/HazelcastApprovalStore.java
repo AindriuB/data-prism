@@ -52,8 +52,9 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             throw new IllegalArgumentException("a new approval must be PENDING");
         }
         IMap<String, String> approvals = approvals();
-        // The bare id holds no separator, so it is never an entry key; locking it
-        // makes the duplicate check and the put atomic across scopes.
+        // The bare id is never an entry key as long as ids contain no NUL, the
+        // ScopeKeys separator (an entry key always holds one); locking it makes
+        // the duplicate check and the put atomic across scopes.
         String idLock = pending.approvalId();
         approvals.lock(idLock);
         try {

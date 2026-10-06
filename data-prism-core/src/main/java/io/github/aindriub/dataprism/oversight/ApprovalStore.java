@@ -12,6 +12,10 @@ import java.util.Optional;
  */
 public interface ApprovalStore {
 
+    /**
+     * @throws IllegalArgumentException if the request is not {@code PENDING} or its id is already stored in
+     *                                  any status, in any scope; stored state is unchanged
+     */
     ApprovalRequest create(ApprovalRequest pending);
 
     Optional<ApprovalRequest> find(String approvalId);
@@ -19,7 +23,10 @@ public interface ApprovalStore {
     Optional<ApprovalRequest> findPending(Kind kind, String requesterPrincipalId, String scopeId, String tool,
                                           String bindingFingerprint, Instant now);
 
-    /** @throws ApprovalRefusedException when unknown, not pending, expired, or approved by its requester */
+    /**
+     * @throws ApprovalRefusedException when unknown, not pending, expired, or approved by its requester
+     * @throws NullPointerException     for a null approver, before any state changes
+     */
     ApprovalRequest approve(String approvalId, String approverPrincipalId, Instant now);
 
     /** @throws ApprovalRefusedException when unknown, not pending or expired */
