@@ -213,4 +213,43 @@ class ReidentificationOperatorTest {
         assertThat(app.auditFor("operator:reidentify-request")).singleElement().satisfies(e ->
                 assertThat(e.policyDecision()).isEqualTo("ALLOW:FORWARDED"));
     }
+
+    @Test
+    void theApproverSeesThePseudonymAndNamespaceButNeverTheSubjectId() throws Exception {
+        String synthetic = synthetic("CASE-VIEW");
+        String requester = app.operatorToken("requester-view", "requester");
+        String approver = app.operatorToken("approver-view", "approver");
+        HttpResponse<String> requested = app.operator("POST", "/operator/reidentifications", requester,
+                requestBody("CASE-VIEW", synthetic, "fraud-review"));
+        String approvalId = body(requested).path("approvalId").asText();
+        app.audit.clear();
+
+        HttpResponse<String> list = app.operator("GET", "/operator/approvals", approver, null);
+        JsonNode listed = null;
+        for (JsonNode entry : body(list).path("approvals")) {
+            if (entry.path("approvalId").asText().equals(approvalId)) listed = entry;
+        }
+        assertThat(listed).isNotNull();
+        assertThat(listed.path("syntheticValue").asText()).isEqualTo(synthetic);
+        assertThat(listed.path("namespace").asText()).isEqualTo("PERSON_NAME");
+        assertThat(listed.path("requesterPrincipalId").asText()).isEqualTo("requester-view");
+        assertThat(listed.path("purpose").asText()).isEqualTo("fraud-review");
+        assertThat(listed.path("caseId").asText()).isEqualTo("CASE-VIEW");
+        assertThat(listed.path("expiresAt").asText()).isNotBlank();
+        assertThat(list.body()).doesNotContain(SUBJECT).doesNotContain("bindingFingerprint");
+
+        HttpResponse<String> detail = app.operator("GET", "/operator/approvals/" + approvalId, approver, null);
+        assertThat(detail.statusCode()).isEqualTo(200);
+        JsonNode view = body(detail);
+        assertThat(view.path("syntheticValue").asText()).isEqualTo(synthetic);
+        assertThat(view.path("namespace").asText()).isEqualTo("PERSON_NAME");
+        assertThat(view.path("scopeId").asText()).isEqualTo("case:CASE-VIEW");
+        assertThat(detail.body()).doesNotContain(SUBJECT).doesNotContain("bindingFingerprint");
+        assertThat(app.auditFor("operator:approval")).singleElement()
+                .satisfies(e -> assertThat(e.approvalId()).isEqualTo(approvalId));
+
+        HttpResponse<String> unknown = app.operator("GET", "/operator/approvals/does-not-exist", approver, null);
+        assertThat(unknown.statusCode()).isEqualTo(404);
+        assertThat(unknown.body()).isEqualTo("{\"code\":\"APPROVAL_NOT_FOUND\"}");
+    }
 }

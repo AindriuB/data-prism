@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.List;
@@ -286,5 +287,98 @@ class OperatorSurfaceTest {
 
         assertThat(response.statusCode()).isEqualTo(404);
         assertThat(response.body()).isEqualTo("{\"code\":\"REIDENTIFICATION_DISABLED\"}");
+    }
+
+    // ---- error bodies on the operator port: code only, no path echo ---------------------------------
+
+    private static void assertCodeOnly(HttpResponse<String> response, String what) throws Exception {
+        assertThat(response.statusCode()).as(what).isBetween(400, 499);
+        JsonNode json = JSON.readTree(response.body());
+        assertThat(json.fieldNames()).as(what + " " + response.body()).toIterable().containsExactly("code");
+        assertThat(response.body()).as(what).doesNotContain("path").doesNotContain("timestamp")
+                .doesNotContain("/operator").doesNotContain("state");
+    }
+
+    @Test
+    void requestsTheFirewallRejectsGetACodeOnlyBodyOnTheOperatorPort() throws Exception {
+        String operator = app.operatorToken("operator-firewall");
+        for (String path : new String[] {"/operator//state", "/operator;x=1/state", "/operator/state;x=1",
+                "/operator/./state", "/operator/%2e%2e/state", "/operator/%2Fstate", "/operator/state%00"}) {
+            for (String token : new String[] {operator, null}) {
+                assertCodeOnly(app.operator("GET", path, token, null), path + (token == null ? " (anon)" : ""));
+            }
+        }
+    }
+
+    @Test
+    void aTrailingDotGetsACodeOnlyBodyOnTheOperatorPort() throws Exception {
+        String operator = app.operatorToken("operator-dot");
+        for (String path : new String[] {"/operator/state.", "/operator./state", "/operator/state/."}) {
+            assertCodeOnly(app.operator("GET", path, operator, null), path);
+        }
+    }
+
+    @Test
+    void forwardedHeadersChangeNeitherWhichSurfaceAPortServesNorTheErrorShape() throws Exception {
+        String operator = app.operatorToken("operator-fwd");
+        String[][] spoofs = {
+                {"X-Forwarded-Port", String.valueOf(app.mcpPort)},
+                {"X-Forwarded-Port", String.valueOf(app.operatorPort)},
+                {"X-Forwarded-Host", "127.0.0.1:" + app.operatorPort},
+                {"X-Forwarded-Host", "127.0.0.1:" + app.mcpPort},
+                {"Forwarded", "host=127.0.0.1:" + app.operatorPort}};
+        for (String[] spoof : spoofs) {
+            String what = spoof[0] + "=" + spoof[1];
+            // The operator port keeps serving the operator surface, and keeps refusing the MCP one.
+            assertThat(app.raw(true, "GET", "/operator/state", operator, HttpRequest.BodyPublishers.noBody(),
+                    spoof).statusCode()).as(what).isEqualTo(200);
+            assertCodeOnly(app.raw(true, "GET", "/operator/nothing-here", operator,
+                    HttpRequest.BodyPublishers.noBody(), spoof), what);
+            assertThat(app.raw(true, "POST", "/mcp", operator, HttpRequest.BodyPublishers.ofString("{}"),
+                    spoof).statusCode()).as(what).isEqualTo(404);
+            // The MCP port never serves the operator surface, whatever the headers claim.
+            assertThat(app.raw(false, "GET", "/operator/state", operator, HttpRequest.BodyPublishers.noBody(),
+                    spoof).statusCode()).as(what).isEqualTo(404);
+            assertThat(app.raw(false, "GET", "/health", null, HttpRequest.BodyPublishers.noBody(), spoof)
+                    .statusCode()).as(what).isEqualTo(200);
+        }
+    }
+
+    // ---- body limit ----------------------------------------------------------------------------
+
+    private static String oversizedPause() {
+        return "{\"target\":\"TOOL\",\"name\":\"" + "a".repeat(20 * 1024) + "\"}";
+    }
+
+    @Test
+    void aBodyOverTheLimitIsRefusedWhetherOrNotItDeclaresALength() throws Exception {
+        String operator = app.operatorToken("operator-big");
+        String body = oversizedPause();
+
+        HttpResponse<String> declared = app.raw(true, "POST", "/operator/pause", operator,
+                HttpRequest.BodyPublishers.ofString(body));
+        HttpResponse<String> chunked = app.raw(true, "POST", "/operator/pause", operator,
+                HttpRequest.BodyPublishers.fromPublisher(HttpRequest.BodyPublishers.ofString(body)));
+
+        for (HttpResponse<String> response : List.of(declared, chunked)) {
+            assertThat(response.statusCode()).isEqualTo(413);
+            assertThat(response.body()).isEqualTo("{\"code\":\"PAYLOAD_TOO_LARGE\"}");
+        }
+        assertThat(body(app.operator("GET", "/operator/state", operator, null)).path("pausedTools").toString())
+                .doesNotContain("aaaa");
+    }
+
+    @Test
+    void aChunkedBodyWithinTheLimitIsStillServed() throws Exception {
+        String operator = app.operatorToken("operator-small");
+        String pause = "{\"target\":\"TOOL\",\"name\":\"chunked-tool\"}";
+
+        HttpResponse<String> response = app.raw(true, "POST", "/operator/pause", operator,
+                HttpRequest.BodyPublishers.fromPublisher(HttpRequest.BodyPublishers.ofString(pause)));
+        try {
+            assertThat(response.statusCode()).isEqualTo(200);
+        } finally {
+            app.operator("POST", "/operator/resume", operator, "{\"target\":\"TOOL\",\"name\":\"chunked-tool\"}");
+        }
     }
 }

@@ -61,4 +61,21 @@ class OperatorSurfacePreflightTest {
                 .withClassLoader(new FilteredClassLoader(ReidentificationService.class))
                 .run(result -> assertThat(result).hasNotFailed());
     }
+
+    @Test void refuses_an_operator_audience_equal_to_the_mcp_audience() {
+        runner("single-node", "server.port=9001", "dataprism.security.jwt.audience=shared-audience",
+                "dataprism.operator.enabled=true", "dataprism.operator.port=9443",
+                "dataprism.operator.required-audience=shared-audience", "dataprism.operator.required-scope=s")
+                .run(result -> {
+                    assertThat(result).hasFailed();
+                    assertThat(rootMessage(result.getStartupFailure())).startsWith("OPERATOR_AUDIENCE_SHARED:");
+                });
+    }
+
+    @Test void accepts_an_operator_audience_distinct_from_the_mcp_audience() {
+        runner("single-node", "server.port=9001", "dataprism.security.jwt.audience=mcp-audience",
+                "dataprism.operator.enabled=true", "dataprism.operator.port=9443",
+                "dataprism.operator.required-audience=operator-audience", "dataprism.operator.required-scope=s")
+                .run(result -> assertThat(result).hasNotFailed());
+    }
 }

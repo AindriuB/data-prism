@@ -247,6 +247,22 @@ final class OperatorHarness implements AutoCloseable {
         return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /** A request with extra headers and a caller-chosen body publisher (e.g. unknown length, so chunked). */
+    HttpResponse<String> raw(boolean onOperatorPort, String method, String path, String token,
+                             HttpRequest.BodyPublisher body, String... headers) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(
+                        URI.create("http://127.0.0.1:" + (onOperatorPort ? operatorPort : mcpPort) + path))
+                .header("Content-Type", "application/json").header("Accept", "application/json");
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        for (int i = 0; i < headers.length; i += 2) {
+            request.header(headers[i], headers[i + 1]);
+        }
+        request.method(method, body);
+        return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     McpSyncClient mcpClient(String token) {
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
                 .builder("http://127.0.0.1:" + mcpPort).endpoint("/mcp")
