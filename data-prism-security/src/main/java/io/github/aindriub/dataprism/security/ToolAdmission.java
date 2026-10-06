@@ -47,12 +47,6 @@ public class ToolAdmission {
                 new InMemoryCallerRateLimiter(), OversightPolicy.none(), Clock.systemUTC());
     }
 
-    public AdmissionDecision admit(AuthenticatedCaller caller, String tool, String scopeId,
-                                           String bindingFingerprint) {
-                return AdmissionDecision.admit();
-            }
-        };
-    }
 
     public AdmissionDecision admit(AuthenticatedCaller caller, String tool, String scopeId,
                                    String bindingFingerprint) {
