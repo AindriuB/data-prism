@@ -177,7 +177,8 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
                 new ConfiguredJsonPayload("customer-with-address", body), context(vocabulary)))
                 .isInstanceOf(PrivacyRefusedException.class)
                 .hasMessageContaining("UNKNOWN_FIELD")
-                .hasMessageContaining("address.country")
+                .hasMessageContaining("address.<undeclared>")
+                .hasMessageNotContaining("country")
                 // core's UNKNOWN_FIELD message interpolates type.getName() for the
                 // descended nested type -- this must be a stable, greppable name
                 // (a pre-declared marker slot), never a hidden class's per-run address.
@@ -445,7 +446,7 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
                 new ConfiguredJsonPayload("supplier-with-address", wrongSourceBody), context(vocabulary)))
                 .isInstanceOf(PrivacyRefusedException.class)
                 .hasMessageContaining("UNKNOWN_FIELD")
-                .hasMessageContaining("address.ssn")
+                .hasMessageContaining("address.<undeclared>")
                 .hasMessageNotContaining("123-45-6789");
     }
 

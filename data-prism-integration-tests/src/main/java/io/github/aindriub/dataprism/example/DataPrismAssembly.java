@@ -14,6 +14,7 @@ import io.github.aindriub.dataprism.core.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
+import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
@@ -35,6 +36,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -71,11 +73,18 @@ public final class DataPrismAssembly {
 
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
                              String profile, String localeTag) {
+        this(adapters, clock, sink, profile, localeTag, defaultProfiles());
+    }
+
+    /** As above, with the named profiles supplied rather than loaded from the shipped defaults. */
+    public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
+                             String profile, String localeTag,
+                             Map<String, PrivacyProfile> profiles) {
         SecretKeyProvider keys = StaticSecretKeyProvider.of(DEV_KEY);
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve(localeTag);
         SyntheticValueSource synthetics = new HmacSyntheticGenerator(keys, vocabulary);
-        PrivacyPolicyResolver policies = new ProfilePrivacyPolicyResolver(defaultProfiles());
+        PrivacyPolicyResolver policies = new ProfilePrivacyPolicyResolver(profiles);
         ValueTokenSource tokens = new HmacValueTokenSource(keys);
         ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics, tokens);
         LlmResponseValidator validator = new RawValueLeakValidator();
@@ -115,7 +124,7 @@ public final class DataPrismAssembly {
         this.clock = clock;
     }
 
-    private static java.util.Map<String, io.github.aindriub.dataprism.core.policy.PrivacyProfile>
+    private static Map<String, PrivacyProfile>
             defaultProfiles() {
         try (var in = DataPrismAssembly.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
             return PrivacyProfiles.fromYaml(in);
