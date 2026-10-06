@@ -35,11 +35,15 @@ control to the caller.
 
 A few properties are deliberate, not accidental gaps:
 
-- **Single file, no rotation.** This release does not rotate, truncate or
-  compact this file. Rotation, retention and shipping this file anywhere are
-  operational concerns this release does not build; an operator wanting them
-  supplies them outside Data Prism, against a file whose own shape (below)
-  those tools must not break.
+- **`file-path` mode is a single file, with no rotation.** `FileAuditSink`
+  itself never rotates, truncates or compacts the file it is given. Daily
+  segments, checkpoints and retention come from the directory mode
+  (`dataprism.audit.directory`), described under [Directory mode](#directory-mode)
+  and in
+  [configuration](configuration.md#segmented-files-checkpoints-and-retention).
+  With `file-path` there is no retention: shipping the file anywhere, and
+  pruning it, are operational concerns an operator supplies outside Data Prism,
+  against a file whose own shape (below) those tools must not break.
 - **Append-only by the OS's own guarantee, not by anything this class
   enforces.** `FileAuditSink` opens the file with `StandardOpenOption.APPEND`,
   which is only as durable as the surrounding deployment makes it. Nothing
@@ -384,8 +388,8 @@ in the audit file or directory. See
 [Correlating with your AI-system logs](tools.md#correlating-with-your-ai-system-logs)
 for what the id is derived from and which calls carry none.
 
-The id is the only join key. It is random and carries no data, and the model
-never sees it. This supports a deployer's own record-keeping; it does not make
+The id is the only join key. It is random and carries no data, and Data Prism
+never puts it in model-visible content (an MCP client may forward `_meta`). This supports a deployer's own record-keeping; it does not make
 the Data Prism trail a record of your AI system's inputs or outputs, which are
 yours to log. A call rejected for a missing argument is not audited and has no
 id to join. See [EU AI Act and GDPR Art. 9 support](eu-ai-act.md).
@@ -458,8 +462,10 @@ second file, separate from the audit file: a `BOOT` checkpoint at construction
 checkpoint on `close()`. Each is one JSON line, fsynced, holding the writer's
 `instanceId`, the sequence reached, the head hash and a timestamp.
 `FileAuditCheckpointSink` refuses a path equal to the audit file
-(`AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE`). Calling `checkpoint()` on a schedule
-is up to the embedding application; this release adds no configuration for it.
+(`AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE`). A server built from the Spring Boot
+starter calls `checkpoint()` on a schedule: `dataprism.audit.checkpoint.interval`
+(default `PT5M`) sets it. An application that builds `AuditRecorder` itself must
+call `checkpoint()` on its own schedule.
 `RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
 [Retention](#retention).
 

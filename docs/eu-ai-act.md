@@ -105,7 +105,10 @@ audit record. See [Re-identification](reidentification.md).
 
 **Failing closed.** If pause state, the approval store or the audit write cannot
 be reached, the call is refused (`OVERSIGHT_UNAVAILABLE`, `AUDIT_UNAVAILABLE`)
-and not let through.
+and not let through. The same holds while an audit checkpoint cannot be written:
+audited calls are refused with `AUDIT_CHECKPOINT_UNAVAILABLE` until the next
+checkpoint succeeds. That is an availability trade the deployer must plan for,
+for example by monitoring the checkpoint file's storage.
 
 **What remains the deployer's responsibility.** Deciding who the oversight people
 are, training them, and giving them the authority to pause and to decline. Deciding
@@ -130,9 +133,15 @@ conditions that the Act sets out.
 a profile that maps one weaker than `REDACT` refuses startup with
 `SPECIAL_CATEGORY_EXPOSED`, and a field carrying one is removed when the profile
 has no rule for it. The bundled `DEFAULT` and `STRICT` profiles remove all of
-them except `PHI`, which they redact. A field nobody classified refuses the whole
-response (`FAIL_REQUEST`). This supports data minimisation: the special-category
-value never reaches the model. See [Extending](extending.md) and
+them except `PHI`, which they redact. A field nobody classified is handled by the profile's
+`unclassified` setting. By default, and in the bundled `DEFAULT` and `STRICT`
+profiles, that refuses the whole response (`FAIL_REQUEST`). A deployer profile can
+instead set `unclassified` to `REDACT_AND_WARN`, `DROP_AND_WARN` or the `UNSAFE`
+pass-through, and under `UNSAFE` an unclassified field, including one that holds a
+special-category value nobody labelled, reaches the model unchanged. With the
+default handling this supports data minimisation: a classified special-category
+value does not reach the model, and an unclassified field is refused rather than
+passed. See [Extending](extending.md) and
 [configuration](configuration.md).
 
 **No bias-detection profile ships.** Art. 10(5) is a narrow exception for
@@ -150,7 +159,9 @@ whether a biometric categorisation practice is prohibited under Art. 5(1)(g); it
 only removes fields classified as biometric or as another special category.
 
 **What remains the deployer's responsibility.** Classifying the fields of every
-model correctly, and reviewing the `@NonSensitive` reasons. Establishing a
+model correctly, and reviewing the `@NonSensitive` reasons. Choosing a weaker
+`unclassified` handling than `FAIL_REQUEST`, especially `UNSAFE`, which is the
+deployer's decision and removes the refusal described above. Establishing a
 condition under GDPR Art. 9(2) before processing special categories anywhere in
 your system, including outside Data Prism. Assessing whether your system falls
 under Art. 5 or Art. 10(5), and what bias testing you need, with your own

@@ -259,7 +259,8 @@ Select the diagram to open it full size.
 
 Three groups, all off or empty by default. Together they turn the oversight and
 re-identification libraries into deployed behaviour; the HTTP endpoints that
-operate them, on a second port, are a separate task and are not described here.
+operate them exist on a second port and are described in
+[Re-identification](reidentification.md#the-operator-http-surface).
 
 ### `dataprism.oversight`
 
