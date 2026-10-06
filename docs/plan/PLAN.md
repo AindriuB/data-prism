@@ -44,21 +44,22 @@ its "Depends on" has merged.
 | 1 | 94 | GDPR Art. 9 special-category classifications that fail closed | none | done 2026-10-06 |
 | 1 | 95 | Oversight SPIs in core | none | done 2026-10-06 |
 | 2 | 96 | Orchestrator audits dispositions, exposes `correlationId` | 92, 93 | |
-| 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | |
+| 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | done 2026-10-06 |
 | 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
 | 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | done 2026-10-06 |
 | 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | D1 |
 | 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | D8 |
-| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 |
+| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 (97 merged; code unblocked) |
 | 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | D3, D5 |
 | 5 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103 | D1 |
 | 6 | 105 | Operator surface on a separate port: pause, approvals, re-identification | 104 | D1, D4, D8 |
 | 7 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D1, D6 |
 | 8 | 107 | Keyed audit chain (HMAC under a dedicated key) | 104, 106 | blocked on D2 |
 
-Next wave: 96 (needs 92 and 93, both merged), 97 (needs 92) and 100 (needs
-92 and 95; blocked on D1) can start now. 101 waits on 96 (98 merged, 96 not).
-104 waits on 100, 101 and 103 (99 merged).
+Next wave: 96 (needs 92 and 93, both merged; attempt 2 in flight) and 100 (needs
+92 and 95; blocked on D1) can start now. 102 is unblocked in code by 97 but
+waits on D3 and D5. 101 waits on 96 (98 merged, 96 not). 104 waits on 100, 101
+and 103 (99 merged).
 
 Open owner decisions. None is answered yet, and each blocks or shapes the tasks
 named:
@@ -75,13 +76,25 @@ named:
   and 103.
 - D6: no Art. 10(5) bias-detection profile has been filed. Affects what 106 may
   claim.
-- D7: a checkpoint-write failure refuses all audited calls. Shapes 97.
+- D7: a checkpoint-write failure refuses all audited calls. Implemented as
+  planned in 97, pending owner confirmation.
 - D8: approval flow and four-eyes default on. Shapes 98, 101, 105.
 
 Open follow-up, independent of task 107: `AuditEventHash` joins `sourceSystems`
 and `dispositions` without escaping `,` or `=`, so two distinct records can
 produce the same hash. It needs an unambiguous encoding. Fix it whether or not
 107 goes ahead, since the chain's tamper detection rests on it.
+
+Follow-ups from the task 97 review, not yet tasks:
+
+- `AuditRecorder.writeCheckpoint` clears `checkpointFailure` directly, outside
+  the two D7 methods. Move it into a D7 method or fix the field javadoc.
+- `docs/audit.md:133`: the exit-3 row's precedence text omits exit 5.
+- `AuditChainVerifierCli`: a malformed checkpoint file prints "could not read
+  <audit path>". It should name the checkpoint file.
+- A whole deleted boot is detectable only if that boot wrote a checkpoint past
+  sequence 0. Consider a periodic checkpoint soon after boot (task 103's
+  scheduling).
 
 Follow-ups from the wave 1 reviews, not yet tasks:
 

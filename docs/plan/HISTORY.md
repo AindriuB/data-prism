@@ -17,6 +17,30 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 97: external audit checkpoints, verifier exit 5
+
+The audit recorder can now write `(instanceId, sequence, headHash)` checkpoints
+to a second sink, `AuditCheckpointSink`, with `FileAuditCheckpointSink` as the
+fsync-per-line file implementation. It writes `BOOT` at construction, `PERIODIC`
+on `checkpoint()` and `SHUTDOWN` on `close()`. Given `--checkpoints <file>`, the
+verifier exits 5 for a chain truncated before a checkpoint or a boot with
+checkpointed records and none surviving, cases that previously exited 0. Without
+the flag nothing changes. Merged onto the planning branch, not `main`; full
+reactor `mvn verify` exited 0 after the merge.
+
+D7 is implemented as planned and awaits owner confirmation: while a checkpoint
+write has failed, every `record(...)` throws `AuditCheckpointUnavailableException`
+and the chain head does not advance, until a later `checkpoint()` succeeds. If
+the owner chooses otherwise, that is a change in `AuditRecorder` only.
+
+**Cost:** Checkpoint lines were first parsed with an `ObjectMapper`; the reviewer
+had it replaced with the streaming parser in `AuditCheckpoint`, so do not go
+back. Detection has two limits that the docs state and the verifier repeats:
+records written after the last checkpoint can be deleted undetected, and a whole
+boot is caught only if it checkpointed past sequence 0. Checkpoints help only
+when whoever edits the audit file cannot edit the checkpoint file. Scheduling
+and configuration are task 103, not here.
+
 ## 2026-10-06 — Task 99: Hazelcast-backed oversight state, failing closed
 
 The Hazelcast module now implements task 95's three SPIs over the embedded
