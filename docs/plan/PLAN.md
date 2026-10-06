@@ -69,13 +69,13 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 6 | 128 | Refusal codes validated before reaching client text (shared `RefusalCodes`) | 123 | done 2026-10-06 |
 | 7 | 105 | Operator surface on a second port in the same process | 104 | done 2026-10-06 (attempt 3) |
 | 8 | 127 | Wire the re-identification index (wrap application `SyntheticValueSource`) | 105 | D-127 answered |
-| 9 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
+| 9 | 106 | EU AI Act support mapping and architecture records | 94, 105 | done 2026-10-06 (attempt 4; `mkdocs build --strict` and `check_site.py` exit 0) |
 
 Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next wave for 0.4.0: 127 and 106, both unblocked by 105 (merged 2026-10-06; `mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
+Next for 0.4.0: 127 only (in flight). 106 merged 2026-10-06; 105 merged earlier the same day (`mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
 126 merged on 2026-10-06; `mvn clean verify` of the merged head exited 0 only
 after 126.
 Tasks 102 and 103 carried notes that a retention below six months refuses
@@ -112,6 +112,14 @@ Follow-ups from tasks 104 and 123, not yet tasks:
 8. Process: when two parallel tasks change the same record format or
    vocabulary, test the merged result before recording. 104 and 123 each passed
    against base 2c32884 and failed together.
+
+Follow-ups from task 106, for 0.4.x, not yet tasks:
+
+9. `wt-new.sh` and `wt-merge.sh` default to `main`; they need a base-branch
+   argument. Task 106 had to be merged by hand into the planning branch.
+10. `docs/reidentification.md` (around lines 152-153) says Docker Compose
+    publishing of the operator port is "not yet done". That is true until the
+    known 0.4.x Docker item lands; update the sentence then.
 
 Accepted current behaviour: an approval-required call still consumes a
 rate-limit token. This is documented.

@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-06 | 106 | EU AI Act and GDPR Art. 9 support mapping page, architecture decisions (S10 deferral lifted, rotation reversed), stale audit/configuration/reidentification text corrected. | `## 2026-10-06 — Task 106: EU AI Act support mapping` |
 | 2026-10-06 | 105 | Operator surface on `dataprism.operator.port` in the same process, own filter chain, audited pause, approvals and re-identification; MCP and operator endpoints never share a port. | `## 2026-10-06 — Task 105: operator surface served on a separate port` |
 | 2026-10-06 | 128 | Refusal codes from application scrubbers, validators and resolvers are validated before client text; malformed becomes `INVALID_REFUSAL_CODE`; one shared `RefusalCodes` helper. | `## 2026-10-06 — Task 128: refusal codes validated before reaching the MCP client` |
 | 2026-10-06 | 126 | One-line test fix: 104's `TOO_MANY_PENDING` assertion now expects `DENY:TOO_MANY_PENDING`. Clash arose because each branch was verified only against its base. | `## 2026-10-06 — Task 126: task 104's test reconciled with 123's DENY:<code> form` |

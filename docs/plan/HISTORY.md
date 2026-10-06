@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 106: EU AI Act support mapping
+
+`docs/eu-ai-act.md` now maps, article by article (Arts. 9, 10, 12, 14, 26 and GDPR Art. 9), what Data Prism supports for a deployer, what it does not do, and what stays the deployer's job. It says "supports" throughout and never "compliant". `docs/architecture.md` records boundary 5 as mechanically enforced and carries two dated decisions, lifting the S10 deferral and reversing the v0.3.0 no-rotation choice. `audit.md`, `configuration.md` and `reidentification.md` were corrected to match 0.4.0 behaviour (daily segments, retention, checkpoints, operator port and codes).
+
+**Cost:** It took four attempts, all on wording that outran the code. Attempt 1 claimed unclassified fields always refuse; that holds only for the bundled profiles, and a weaker `unclassified` (including `PASS_THROUGH_UNSAFE`) is possible only when the core library is assembled directly. Attempt 2 got the enum name wrong and said checkpoints need directory mode (`file-path` mode with `checkpoint.file-path` also writes them). Attempt 3 said nothing checkpoints without a location, but an application `AuditCheckpointSink` still gets BOOT and SHUTDOWN. Check every "always", "never" and "only" against the code before writing it. The task was merged by hand into the planning branch, not via `wt-merge.sh`, which targets `main`.
+
 ## 2026-10-06 — Task 105: operator surface served on a separate port
 
 When `dataprism.operator.enabled=true`, a second connector in the same process listens on `dataprism.operator.port` with its own security filter chain requiring the operator audience and scope. It hosts pause/resume and the kill switch, approval listing and decisions, and re-identification request, approval and collection, all audited. The MCP endpoint is not served on that port and the operator endpoints are not served on the MCP port. Operator error responses are `{"code":...}` bodies only (`UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `OPERATOR_ERROR`), and startup refuses with `INVALID_OPERATOR_ADDRESS`, `OPERATOR_AUDIENCE_SHARED` or `REIDENTIFICATION_MODULE_MISSING` when the setup is unsafe.
