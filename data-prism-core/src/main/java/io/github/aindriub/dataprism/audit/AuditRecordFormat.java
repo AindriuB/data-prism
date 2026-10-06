@@ -2,6 +2,8 @@ package io.github.aindriub.dataprism.audit;
 
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.Set;
 
 /**
@@ -67,13 +69,26 @@ public final class AuditRecordFormat {
         appendField(line, event.instanceId());
         appendField(line, Long.toString(event.sequence()));
         appendField(line, event.previousHash());
-        appendRawField(line, encodeField(event.eventHash()), false);
+        if (event.recordVersion() < 2) {
+            appendRawField(line, encodeField(event.eventHash()), false);
+            return line.toString();
+        }
+        appendField(line, event.eventHash());
+        appendField(line, Integer.toString(event.recordVersion()));
+        appendRawField(line, encodeDispositions(event.fieldDispositions()), true);
+        appendField(line, event.approvalId());
+        appendRawField(line, encodeField(event.approverId()), false);
         return line.toString();
     }
 
     /** Parses a line previously produced by {@link #serialize(AuditEvent)}. */
     public static AuditEvent parse(String line) {
-        String[] raw = splitRaw(line, FIELD_SEP, 20);
+        // A line without recordVersion has exactly 20 fields and is version 1.
+        String[] raw = splitRaw(line, FIELD_SEP, -1);
+        if (raw.length != 20 && raw.length != 24) {
+            throw new IllegalArgumentException(
+                    "malformed audit record: expected 20 or 24 fields, found " + raw.length);
+        }
 
         String eventId = decode(raw[0]);
         Instant timestamp = Instant.parse(decode(raw[1]));
@@ -96,9 +111,53 @@ public final class AuditRecordFormat {
         String previousHash = decode(raw[18]);
         String eventHash = decode(raw[19]);
 
+        if (raw.length == 20) {
+            return new AuditEvent(eventId, timestamp, principalId, clientId, tool, entityType, subjectPseudonym,
+                    parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, sourceSystems,
+                    rejectedArguments, correlationId, instanceId, sequence, previousHash, eventHash);
+        }
+        int recordVersion = Integer.parseInt(decode(raw[20]));
+        Map<String, String> dispositions = decodeDispositions(raw[21]);
+        String approvalId = decode(raw[22]);
+        String approverId = decode(raw[23]);
+
         return new AuditEvent(eventId, timestamp, principalId, clientId, tool, entityType, subjectPseudonym,
                 parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, sourceSystems,
-                rejectedArguments, correlationId, instanceId, sequence, previousHash, eventHash);
+                rejectedArguments, correlationId, instanceId, sequence, previousHash, eventHash, recordVersion,
+                dispositions, approvalId, approverId);
+    }
+
+    /** Each entry is {@code path=ACTION}; the action never contains '=', so the last one splits it. */
+    private static String encodeDispositions(Map<String, String> dispositions) {
+        if (dispositions.isEmpty()) {
+            return EMPTY_SET_TOKEN;
+        }
+        StringBuilder encoded = new StringBuilder();
+        boolean first = true;
+        for (Map.Entry<String, String> e : dispositions.entrySet()) {
+            if (!first) {
+                encoded.append(SET_SEP);
+            }
+            encoded.append(escape(e.getKey() + "=" + e.getValue()));
+            first = false;
+        }
+        return encoded.toString();
+    }
+
+    private static Map<String, String> decodeDispositions(String raw) {
+        Map<String, String> values = new TreeMap<>();
+        if (raw.equals(EMPTY_SET_TOKEN)) {
+            return values;
+        }
+        for (String item : splitRaw(raw, SET_SEP, -1)) {
+            String entry = decode(item);
+            int eq = entry.lastIndexOf('=');
+            if (eq < 0) {
+                throw new IllegalArgumentException("malformed audit record: disposition without '='");
+            }
+            values.put(entry.substring(0, eq), entry.substring(eq + 1));
+        }
+        return values;
     }
 
     private static String encodeSet(Set<String> values) {
