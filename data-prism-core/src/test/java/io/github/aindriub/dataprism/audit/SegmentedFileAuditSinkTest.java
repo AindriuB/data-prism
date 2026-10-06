@@ -44,16 +44,16 @@ class SegmentedFileAuditSinkTest {
             sink.record(event("e3", "2026-03-02T10:00:00+05:00", 3, "h2", "h3"));
         }
 
-        assertThat(Files.readAllLines(dir.resolve("audit-2026-03-01.jsonl"))).hasSize(1);
-        assertThat(Files.readAllLines(dir.resolve("audit-2026-03-02.jsonl"))).hasSize(2);
-        assertThat(dir.toFile().list()).containsExactlyInAnyOrder("audit-2026-03-01.jsonl",
-                "audit-2026-03-02.jsonl");
+        assertThat(Files.readAllLines(dir.resolve("audit-2026-03-01.log"))).hasSize(1);
+        assertThat(Files.readAllLines(dir.resolve("audit-2026-03-02.log"))).hasSize(2);
+        assertThat(dir.toFile().list()).containsExactlyInAnyOrder("audit-2026-03-01.log",
+                "audit-2026-03-02.log");
     }
 
     @Test
     void aShortWriteThatThrowsPoisonsTheWholeSinkIncludingOtherDays() throws IOException {
         Path dir = tempDir.resolve("segments");
-        Path day1 = dir.resolve("audit-2026-03-01.jsonl");
+        Path day1 = dir.resolve("audit-2026-03-01.log");
         Files.createDirectories(dir);
         FileChannel real = FileChannel.open(day1, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
                 StandardOpenOption.APPEND);
@@ -70,7 +70,7 @@ class SegmentedFileAuditSinkTest {
                 .isInstanceOf(FileAuditSink.PoisonedException.class);
         assertThatThrownBy(() -> sink.record(event("e3", "2026-03-02T00:00:00Z", 3, "h2", "h3")))
                 .isInstanceOf(FileAuditSink.PoisonedException.class);
-        assertThat(Files.exists(dir.resolve("audit-2026-03-02.jsonl"))).isFalse();
+        assertThat(Files.exists(dir.resolve("audit-2026-03-02.log"))).isFalse();
         assertThat(Files.readAllBytes(day1)).hasSize(5);
         faulty.close();
     }
@@ -81,7 +81,7 @@ class SegmentedFileAuditSinkTest {
         SegmentedFileAuditSink sink = new SegmentedFileAuditSink(dir);
         sink.record(event("event-1", "2026-03-01T00:00:00Z", 1, "root", "h1"));
 
-        assertThat(Files.readString(dir.resolve("audit-2026-03-01.jsonl"))).contains("event-1");
+        assertThat(Files.readString(dir.resolve("audit-2026-03-01.log"))).contains("event-1");
         sink.close();
     }
 

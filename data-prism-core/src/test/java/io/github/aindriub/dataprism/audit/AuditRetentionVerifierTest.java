@@ -93,8 +93,8 @@ class AuditRetentionVerifierTest {
         writeChain("w1", "2026-03-01T01:00:00Z", "2026-03-02T01:00:00Z", "2026-09-09T01:00:00Z",
                 "2026-09-10T01:00:00Z");
         purgeInto(checkpoints);
-        assertThat(dir.toFile().list()).containsExactlyInAnyOrder("audit-2026-09-09.jsonl",
-                "audit-2026-09-10.jsonl");
+        assertThat(dir.toFile().list()).containsExactlyInAnyOrder("audit-2026-09-09.log",
+                "audit-2026-09-10.log");
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         int code = cli(dir, checkpoints, out);
@@ -132,7 +132,7 @@ class AuditRetentionVerifierTest {
     @Test
     void aSegmentDeletedByHandWithoutAnAnchorIsStillABreak() throws IOException {
         writeChain("w1", "2026-09-07T01:00:00Z", "2026-09-08T01:00:00Z", "2026-09-09T01:00:00Z");
-        Files.delete(dir.resolve("audit-2026-09-07.jsonl"));
+        Files.delete(dir.resolve("audit-2026-09-07.log"));
 
         assertThat(cli(dir, checkpoints, new ByteArrayOutputStream()))
                 .isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
@@ -147,7 +147,7 @@ class AuditRetentionVerifierTest {
         for (String name : dir.toFile().list()) {
             Files.copy(dir.resolve(name), again.resolve(name));
         }
-        Files.delete(again.resolve("audit-2026-09-08.jsonl"));
+        Files.delete(again.resolve("audit-2026-09-08.log"));
         // remaining: only 09-09 whose chain starts at sequence 3 with a non-genesis previousHash
         assertThat(cli(again, checkpoints, new ByteArrayOutputStream()))
                 .isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
@@ -160,7 +160,7 @@ class AuditRetentionVerifierTest {
             sink.record(new AuditCheckpoint(AuditCheckpoint.Kind.PERIODIC, events.get(0).instanceId(), 2, events.get(1).eventHash(),
                     Instant.parse("2026-09-07T03:00:00Z")));
         }
-        Files.delete(dir.resolve("audit-2026-09-07.jsonl"));
+        Files.delete(dir.resolve("audit-2026-09-07.log"));
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         assertThat(cli(dir, checkpoints, out)).isEqualTo(AuditChainVerifierCli.EXIT_CHECKPOINT_MISMATCH);

@@ -148,6 +148,17 @@ public final class AuditRetention {
             }
         }
 
+        if (verified > 0) {
+            int unanchored = firstUnanchoredStart(segments.subList(0, verified), earlierAnchors());
+            if (unanchored >= 0) {
+                verified = unanchored;
+                unverified = CHAIN_UNVERIFIED + ": a writer's first expiring record in "
+                        + segments.get(verified).getFileName() + " neither starts at GENESIS nor follows an earlier "
+                        + "retention anchor exactly, so records before it were deleted or cut by hand; it and every "
+                        + "later expired segment were not purged, because purge would erase the evidence";
+            }
+        }
+
         List<AuditCheckpoint> toAnchor = new ArrayList<>();
         for (int i = 0; i < verified; i++) {
             toAnchor.addAll(anchorsFor(segments.get(i), dates.get(i)));
@@ -174,6 +185,54 @@ public final class AuditRetention {
             throw new RetentionException(unverified, null);
         }
         return deleted;
+    }
+
+    private List<AuditCheckpoint> earlierAnchors() {
+        try {
+            return anchors.retentionAnchors();
+        } catch (RuntimeException e) {
+            throw new RetentionException(CHAIN_UNVERIFIED + ": could not read the earlier retention anchors, so "
+                    + "the start of the expiring chain cannot be checked; nothing was deleted", e);
+        }
+    }
+
+    /**
+     * The index of the first segment holding a writer's first expiring record that neither has a
+     * GENESIS previous hash nor follows an earlier anchor exactly (anchor sequence + 1 and anchor
+     * hash equal to the record's previous hash), or -1. Such a start means the records before it
+     * were deleted or cut other than by a purge.
+     */
+    private static int firstUnanchoredStart(List<Path> segments, List<AuditCheckpoint> earlier) {
+        String genesis = "0".repeat(64);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < segments.size(); i++) {
+            List<String> lines;
+            try {
+                lines = Files.readAllLines(segments.get(i), java.nio.charset.StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new RetentionException(ANCHOR_FAILED + ": could not read " + segments.get(i), e);
+            }
+            for (String line : lines) {
+                if (line.isEmpty()) {
+                    continue;
+                }
+                AuditEvent event;
+                try {
+                    event = AuditRecordFormat.parse(line);
+                } catch (RuntimeException e) {
+                    continue;
+                }
+                if (!seen.add(event.instanceId()) || genesis.equals(event.previousHash())) {
+                    continue;
+                }
+                boolean follows = earlier.stream().anyMatch(a -> a.instanceId().equals(event.instanceId())
+                        && a.sequence() + 1 == event.sequence() && a.headHash().equals(event.previousHash()));
+                if (!follows) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     /** The lowest byte offset at which the report shows tampering, or -1 if it shows none. */

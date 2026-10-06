@@ -12,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Appends each event to {@code directory/audit-YYYY-MM-DD.jsonl}, the date
+ * Appends each event to {@code directory/audit-YYYY-MM-DD.log}, the date
  * being the UTC date of {@link AuditEvent#timestamp()}. One day, one file:
  * that is what lets {@link AuditRetention} delete a whole expired day without
  * rewriting any file that survives.
@@ -29,8 +29,8 @@ import java.util.regex.Pattern;
 public final class SegmentedFileAuditSink implements AuditSink, Closeable {
 
     private static final String PREFIX = "audit-";
-    private static final String SUFFIX = ".jsonl";
-    private static final Pattern SEGMENT_NAME = Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})\\.jsonl");
+    private static final String SUFFIX = ".log";
+    private static final Pattern SEGMENT_NAME = Pattern.compile("audit-(\\d{4}-\\d{2}-\\d{2})\\.log");
 
     /** Opens the channel for one segment; replaceable in tests to inject write failures. */
     @FunctionalInterface

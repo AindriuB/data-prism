@@ -102,8 +102,8 @@ public final class AuditChainVerifier {
     }
 
     /** Everything one replay needs beyond the bytes: the anchors, the retention floor, the start rule. */
-    private record Replay(Map<String, List<AuditCheckpoint>> anchors, Period minimumRetention,
-                          boolean lenientStart) {
+    private record Replay(Map<String, List<AuditCheckpoint>> anchors, List<AuditCheckpoint> checkpoints,
+                          Period minimumRetention, boolean lenientStart) {
     }
 
     /** Reads and verifies {@code path} in one pass. */
@@ -124,7 +124,7 @@ public final class AuditChainVerifier {
     }
 
     /**
-     * Reads {@code path}: a single file as is, or a directory as every {@code audit-YYYY-MM-DD.jsonl}
+     * Reads {@code path}: a single file as is, or a directory as every {@code audit-YYYY-MM-DD.log}
      * segment in date order. A non-final segment that ends without a newline (a torn write) has one
      * added so its fragment cannot fuse with the next segment's first record; it then reads as an
      * interrupted-write fragment. Byte offsets in a directory report are into that concatenation.
@@ -215,7 +215,7 @@ public final class AuditChainVerifier {
                 retentionAnchors.computeIfAbsent(cp.instanceId(), k -> new ArrayList<>()).add(cp);
             }
         }
-        Replay replay = new Replay(retentionAnchors, minimumRetention, lenientStart);
+        Replay replay = new Replay(retentionAnchors, checkpoints, minimumRetention, lenientStart);
         List<StructuralAnomaly> anomalies = new ArrayList<>();
         TailAnomaly tail = null;
 
@@ -328,7 +328,7 @@ public final class AuditChainVerifier {
                                         Period minimumRetention) {
         return checkpoints.stream().anyMatch(cp -> cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR
                 && cp.instanceId().equals(instanceId) && cp.sequence() >= sequence
-                && anchorIsOldEnough(cp, minimumRetention));
+                && anchorIsOldEnough(cp, minimumRetention) && anchorContradiction(cp, checkpoints) == null);
     }
 
     /**
@@ -342,6 +342,31 @@ public final class AuditChainVerifier {
         }
         java.time.LocalDate recorded = anchor.recordedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
         return !anchor.segmentDate().plus(minimumRetention).isAfter(recorded);
+    }
+
+    /**
+     * Why a head checkpoint of the same writer shows the anchor's date is forged, or {@code null}.
+     * An anchor for sequence n and segment date D says the writer had reached n by D. A BOOT,
+     * PERIODIC or SHUTDOWN checkpoint at a lower sequence, recorded on a UTC date after D, says it
+     * had not.
+     */
+    private static String anchorContradiction(AuditCheckpoint anchor, List<AuditCheckpoint> checkpoints) {
+        if (anchor.segmentDate() == null) {
+            return null;
+        }
+        for (AuditCheckpoint cp : checkpoints) {
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR || !cp.instanceId().equals(anchor.instanceId())
+                    || cp.sequence() >= anchor.sequence()) {
+                continue;
+            }
+            java.time.LocalDate recorded = cp.recordedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+            if (recorded.isAfter(anchor.segmentDate())) {
+                return "a " + cp.kind() + " checkpoint at sequence " + cp.sequence() + " was recorded on "
+                        + recorded + ", after the anchor's segment date " + anchor.segmentDate()
+                        + ", yet the anchor claims sequence " + anchor.sequence() + " by that date";
+            }
+        }
+        return null;
     }
 
     private static void processLine(String line, long offset, Map<String, WriterState> writers,
@@ -387,11 +412,17 @@ public final class AuditChainVerifier {
                             || !candidate.headHash().equals(event.previousHash())) {
                         continue;
                     }
-                    if (anchorIsOldEnough(candidate, replay.minimumRetention())) {
+                    String contradiction = anchorIsOldEnough(candidate, replay.minimumRetention())
+                            ? anchorContradiction(candidate, replay.checkpoints()) : null;
+                    boolean startsBeforeSegment = candidate.segmentDate() != null && event.timestamp()
+                            .atZone(java.time.ZoneOffset.UTC).toLocalDate().isBefore(candidate.segmentDate());
+                    if (anchorIsOldEnough(candidate, replay.minimumRetention()) && contradiction == null
+                            && !startsBeforeSegment) {
                         anchor = candidate;
                         break;
                     }
-                    writer.anchorRejection = anchorRejectionMessage(event, candidate, replay.minimumRetention());
+                    writer.anchorRejection = anchorRejectionMessage(event, candidate, replay.minimumRetention(),
+                            contradiction, startsBeforeSegment);
                 }
             }
             if (anchor != null) {
@@ -451,7 +482,18 @@ public final class AuditChainVerifier {
         writer.headHash = event.eventHash();
     }
 
-    private static String anchorRejectionMessage(AuditEvent event, AuditCheckpoint anchor, Period minimumRetention) {
+    private static String anchorRejectionMessage(AuditEvent event, AuditCheckpoint anchor, Period minimumRetention,
+                                                 String contradiction, boolean startsBeforeSegment) {
+        if (contradiction != null || startsBeforeSegment) {
+            return "RETENTION_ANCHOR_REJECTED: writer " + event.instanceId() + " starts at sequence "
+                    + event.sequence() + " right after a retention anchor (sequence " + anchor.sequence()
+                    + ", segment date " + anchor.segmentDate() + ", recorded " + anchor.recordedAt() + "), but "
+                    + (contradiction != null ? contradiction
+                            : "the first surviving record is dated before the anchor's segment date")
+                    + ". The anchor's date cannot be genuine, so it does not explain the missing records: the chain "
+                    + "is reported as it would be without it. Anyone able to append to the checkpoint file could "
+                    + "have written it to hide a recent deletion.";
+        }
         return "RETENTION_ANCHOR_REJECTED: writer " + event.instanceId() + " starts at sequence "
                 + event.sequence() + " right after a retention anchor (sequence " + anchor.sequence()
                 + ", recorded " + anchor.recordedAt() + "), but the anchor "

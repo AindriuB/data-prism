@@ -107,7 +107,7 @@ class AuditRetentionDefectsTest {
 
         new AuditRetention(dir, Period.ofDays(184), anchorSink, fixed("2026-12-31T12:00:00Z")).purge();
 
-        assertThat(names(dir)).containsExactly("audit-2026-06-30.jsonl", "audit-2026-07-01.jsonl");
+        assertThat(names(dir)).containsExactly("audit-2026-06-30.log", "audit-2026-07-01.log");
     }
 
     // ---- Defect 3: a clock stepping back across UTC midnight
@@ -117,7 +117,7 @@ class AuditRetentionDefectsTest {
         Path dir = tempDir.resolve("seg");
         write(dir, "w1", "2026-03-02T00:00:01Z", "2026-03-01T23:59:59Z", "2026-03-02T00:10:00Z");
 
-        assertThat(names(dir)).containsExactly("audit-2026-03-02.jsonl");
+        assertThat(names(dir)).containsExactly("audit-2026-03-02.log");
         AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(dir);
         assertThat(report.hasBreak()).isFalse();
         assertThat(report.writers()).singleElement().satisfies(w -> assertThat(w.sequenceCount()).isEqualTo(3));
@@ -130,9 +130,9 @@ class AuditRetentionDefectsTest {
         Path dir = tempDir.resolve("seg");
         List<AuditEvent> events = write(dir, "w1", "2026-09-06T01:00:00Z", "2026-09-07T01:00:00Z",
                 "2026-09-08T01:00:00Z", "2026-09-09T01:00:00Z");
-        Files.delete(dir.resolve("audit-2026-09-06.jsonl"));
-        Files.delete(dir.resolve("audit-2026-09-07.jsonl"));
-        Files.delete(dir.resolve("audit-2026-09-08.jsonl"));
+        Files.delete(dir.resolve("audit-2026-09-06.log"));
+        Files.delete(dir.resolve("audit-2026-09-07.log"));
+        Files.delete(dir.resolve("audit-2026-09-08.log"));
         Path checkpoints = tempDir.resolve("cp.jsonl");
         Files.writeString(checkpoints, new AuditCheckpoint(AuditCheckpoint.Kind.RETENTION_ANCHOR,
                 events.get(0).instanceId(), 3, events.get(2).eventHash(), Instant.parse("2026-09-10T00:00:00Z"))
@@ -147,10 +147,10 @@ class AuditRetentionDefectsTest {
         Path dir = tempDir.resolve("seg");
         List<AuditEvent> events = write(dir, "w1", "2026-09-08T01:00:00Z", "2026-09-09T01:00:00Z");
         write(dir.resolveSibling("other"), "w2", "2026-09-09T05:00:00Z");
-        Files.delete(dir.resolve("audit-2026-09-08.jsonl"));
-        Files.delete(dir.resolve("audit-2026-09-09.jsonl"));
-        Files.copy(dir.resolveSibling("other").resolve("audit-2026-09-09.jsonl"),
-                dir.resolve("audit-2026-09-09.jsonl"));
+        Files.delete(dir.resolve("audit-2026-09-08.log"));
+        Files.delete(dir.resolve("audit-2026-09-09.log"));
+        Files.copy(dir.resolveSibling("other").resolve("audit-2026-09-09.log"),
+                dir.resolve("audit-2026-09-09.log"));
         Path checkpoints = tempDir.resolve("cp.jsonl");
         Files.writeString(checkpoints,
                 new AuditCheckpoint(AuditCheckpoint.Kind.PERIODIC, events.get(0).instanceId(), 2,
@@ -168,16 +168,16 @@ class AuditRetentionDefectsTest {
     void purgeRefusesASegmentWhoseChainDoesNotVerifyAndEveryLaterOne() throws IOException {
         Path dir = tempDir.resolve("seg");
         write(dir, "w1", "2026-03-01T01:00:00Z", "2026-03-02T01:00:00Z", "2026-03-03T01:00:00Z");
-        Path tampered = dir.resolve("audit-2026-03-02.jsonl");
+        Path tampered = dir.resolve("audit-2026-03-02.log");
         Files.writeString(tampered, Files.readString(tampered).replace("ALLOW", "DENY"));
 
         assertThatThrownBy(() -> new AuditRetention(dir, Period.ofMonths(6), anchorSink,
                 fixed("2026-09-10T12:00:00Z")).purge())
                 .isInstanceOf(AuditRetention.RetentionException.class)
                 .hasMessageContaining("AUDIT_RETENTION_CHAIN_UNVERIFIED")
-                .hasMessageContaining("audit-2026-03-02.jsonl");
+                .hasMessageContaining("audit-2026-03-02.log");
 
-        assertThat(names(dir)).contains("audit-2026-03-02.jsonl", "audit-2026-03-03.jsonl");
+        assertThat(names(dir)).contains("audit-2026-03-02.log", "audit-2026-03-03.log");
         assertThat(anchors).allSatisfy(a -> assertThat(a.sequence()).isLessThan(2));
     }
 
@@ -187,7 +187,7 @@ class AuditRetentionDefectsTest {
     void aTornFragmentAtTheEndOfOneSegmentDoesNotSwallowTheNextSegmentsFirstRecord() throws IOException {
         Path dir = tempDir.resolve("seg");
         write(dir, "w1", "2026-03-01T01:00:00Z");
-        Files.write(dir.resolve("audit-2026-03-01.jsonl"), "torn-fragment".getBytes(StandardCharsets.UTF_8),
+        Files.write(dir.resolve("audit-2026-03-01.log"), "torn-fragment".getBytes(StandardCharsets.UTF_8),
                 StandardOpenOption.APPEND);
         write(dir, "w2", "2026-03-02T01:00:00Z");
 

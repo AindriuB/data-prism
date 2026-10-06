@@ -113,7 +113,7 @@ class AuditRetentionAnchorDateTest {
     @Test
     void anAnchorWhoseSegmentIsOldEnoughIsAccepted() throws IOException {
         writeChain("2026-03-01T01:00:00Z", "2026-09-09T01:00:00Z");
-        Files.delete(dir.resolve("audit-2026-03-01.jsonl"));
+        Files.delete(dir.resolve("audit-2026-03-01.log"));
         anchor(0, "2026-03-01", "2026-09-10T00:00:00Z");
 
         assertThat(cli(new ByteArrayOutputStream(), dir.toString(), "--checkpoints", checkpoints.toString()))
@@ -123,7 +123,7 @@ class AuditRetentionAnchorDateTest {
     @Test
     void anAnchorOverARecentSegmentIsRejectedNamingTheWriter() throws IOException {
         writeChain("2026-09-07T01:00:00Z", "2026-09-09T01:00:00Z");
-        Files.delete(dir.resolve("audit-2026-09-07.jsonl"));
+        Files.delete(dir.resolve("audit-2026-09-07.log"));
         anchor(0, "2026-09-07", "2026-09-10T00:00:00Z");
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -137,7 +137,7 @@ class AuditRetentionAnchorDateTest {
     @Test
     void anAnchorWithNoSegmentDateCoversNothing() throws IOException {
         writeChain("2026-03-01T01:00:00Z", "2026-09-09T01:00:00Z");
-        Files.delete(dir.resolve("audit-2026-03-01.jsonl"));
+        Files.delete(dir.resolve("audit-2026-03-01.log"));
         anchor(0, null, "2026-09-10T00:00:00Z");
 
         assertThat(cli(new ByteArrayOutputStream(), dir.toString(), "--checkpoints", checkpoints.toString()))
@@ -147,7 +147,7 @@ class AuditRetentionAnchorDateTest {
     @Test
     void minRetentionLetsAnOverrideDeploymentVerifyItsOwnShorterPurge() throws IOException {
         writeChain("2026-09-01T01:00:00Z", "2026-09-09T01:00:00Z");
-        Files.delete(dir.resolve("audit-2026-09-01.jsonl"));
+        Files.delete(dir.resolve("audit-2026-09-01.log"));
         anchor(0, "2026-09-01", "2026-09-10T00:00:00Z");
 
         assertThat(cli(new ByteArrayOutputStream(), dir.toString(), "--checkpoints", checkpoints.toString()))

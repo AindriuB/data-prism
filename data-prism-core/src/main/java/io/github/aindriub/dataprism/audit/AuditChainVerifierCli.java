@@ -205,7 +205,7 @@ public final class AuditChainVerifierCli {
                 + AuditChainVerifier.DEFAULT_MINIMUM_RETENTION + "); pass your own period if you run the purge with");
         out.println("the below-minimum override. An anchor over a segment younger than this is rejected.");
         out.println();
-        out.println("<audit-log-file> may also be a directory of audit-YYYY-MM-DD.jsonl segments written by");
+        out.println("<audit-log-file> may also be a directory of audit-YYYY-MM-DD.log segments written by");
         out.println("SegmentedFileAuditSink, read in date order.");
         out.println();
         out.println("Replays each writer's hash chain in a file written by FileAuditSink and reports either");

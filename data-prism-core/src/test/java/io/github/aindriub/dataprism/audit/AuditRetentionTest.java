@@ -121,9 +121,9 @@ class AuditRetentionTest {
         List<Path> deleted = new AuditRetention(dir, Period.ofMonths(6), anchorSink, NOW).purge();
 
         assertThat(deleted.stream().map(p -> p.getFileName().toString()))
-                .containsExactly("audit-2026-03-08.jsonl", "audit-2026-03-09.jsonl");
-        assertThat(names(dir)).containsExactlyInAnyOrder("audit-2026-03-10.jsonl", "audit-2026-03-11.jsonl",
-                "audit-2026-09-10.jsonl");
+                .containsExactly("audit-2026-03-08.log", "audit-2026-03-09.log");
+        assertThat(names(dir)).containsExactlyInAnyOrder("audit-2026-03-10.log", "audit-2026-03-11.log",
+                "audit-2026-09-10.log");
         assertThat(anchors).allMatch(c -> c.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR);
         assertThat(anchors).extracting(AuditCheckpoint::instanceId, AuditCheckpoint::sequence,
                 AuditCheckpoint::headHash).containsExactlyInAnyOrder(
@@ -139,8 +139,8 @@ class AuditRetentionTest {
 
         List<Path> deleted = new AuditRetention(dir, Period.ZERO, anchorSink, NOW, true).purge();
 
-        assertThat(deleted.stream().map(p -> p.getFileName().toString())).containsExactly("audit-2026-09-09.jsonl");
-        assertThat(names(dir)).containsExactly("audit-2026-09-10.jsonl");
+        assertThat(deleted.stream().map(p -> p.getFileName().toString())).containsExactly("audit-2026-09-09.log");
+        assertThat(names(dir)).containsExactly("audit-2026-09-10.log");
     }
 
     @Test
@@ -159,7 +159,7 @@ class AuditRetentionTest {
                 .isInstanceOf(AuditRetention.RetentionException.class)
                 .hasMessageContaining("nothing was deleted");
 
-        assertThat(names(dir)).containsExactlyInAnyOrder("audit-2026-03-01.jsonl", "audit-2026-03-02.jsonl");
+        assertThat(names(dir)).containsExactlyInAnyOrder("audit-2026-03-01.log", "audit-2026-03-02.log");
     }
 
     @Test
@@ -168,7 +168,7 @@ class AuditRetentionTest {
         write(dir, "writer-a", "2026-03-01T01:00:00Z");
         AuditCheckpointSink checking = cp -> {
             try {
-                assertThat(names(dir)).contains("audit-2026-03-01.jsonl");
+                assertThat(names(dir)).contains("audit-2026-03-01.log");
             } catch (IOException e) {
                 throw new java.io.UncheckedIOException(e);
             }
