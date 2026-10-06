@@ -10,6 +10,7 @@ import io.github.aindriub.dataprism.core.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
@@ -201,7 +202,8 @@ public final class CompareEntitySourcesTool {
         // told an approval id by the caller: the id and approver below come
         // only from the approval store's own record.
         AdmissionDecision admitted = ToolCalls.admit(admission, fingerprinter, caller, NAME,
-                session.privacyContext(), entityType + "\u0000" + subjectId);
+                session.privacyContext(), ToolCalls.binding(entityType, subjectId, session.privacyContext(),
+                        session.investigationContext()));
         if (!admitted.admitted()) {
             return deny(caller, admitted.code(), admitted.approvalId(), entityType, rejectedArguments);
         }
@@ -211,8 +213,9 @@ public final class CompareEntitySourcesTool {
         // with it next.
         metrics.increment(Metric.MCP_REQUESTS);
 
+        ContextResponse response = null;
         try {
-            ContextResponse response = orchestrator.buildContext(
+            response = orchestrator.buildContext(
                     new ContextRequest(entityType, subjectId, rejectedArguments, NAME, true,
                             admitted.approvalId(), admitted.approverPrincipalId()),
                     session.privacyContext(), session.investigationContext());
@@ -226,7 +229,10 @@ public final class CompareEntitySourcesTool {
             // The tree is already scrubbed, so this is a serialisation fault
             // rather than a privacy one — but it still must not return a partial
             // body, so it is refused like any other failure.
-            return error("the response could not be serialised");
+            return ToolCalls.audited(error("the response could not be serialised"), response);
+        } catch (AuditedRefusalException refused) {
+            // Already audited as DENY by the orchestrator: return that event's id.
+            return ToolCalls.refused(refused);
         } catch (PrivacyRefusedException refused) {
             // The code and path are safe to return; the value that caused it was
             // never put in the exception in the first place.

@@ -86,16 +86,24 @@ class ToolAdmissionEnforcementTest {
         }
 
         McpSchema.CallToolResult call(Map<String, Object> arguments) {
-            return handler.apply(exchange(), new McpSchema.CallToolRequest(name, arguments));
+            return call(CALLER, arguments);
+        }
+
+        McpSchema.CallToolResult call(AuthenticatedCaller caller, Map<String, Object> arguments) {
+            return handler.apply(exchange(caller), new McpSchema.CallToolRequest(name, arguments));
         }
     }
 
     private List<Tool> tools(ToolAdmission admission) {
-        SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
+        return tools(admission, "DEFAULT");
+    }
+
+    private List<Tool> tools(ToolAdmission admission, String privacyProfile) {
+        SecurityPolicy security = new SecurityPolicy(Set.of("demonstration", "marketing"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, privacyProfile, PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration", "marketing")));
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
                 DataPrismObjectMapper.create(), metrics, audit, FIXED, null, admission, fingerprinter);
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
@@ -106,8 +114,12 @@ class ToolAdmissionEnforcementTest {
     }
 
     private static McpSyncServerExchange exchange() {
+        return exchange(CALLER);
+    }
+
+    private static McpSyncServerExchange exchange(AuthenticatedCaller caller) {
         McpTransportContext context = McpTransportContext.create(
-                Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, CALLER));
+                Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller));
         return new McpSyncServerExchange(new McpAsyncServerExchange("session-1", null, null, null, context));
     }
 
@@ -307,6 +319,42 @@ class ToolAdmissionEnforcementTest {
     }
 
     @Test
+    @DisplayName("an approval is bound to purpose, privacy profile and client: a retry under another value is refused and the approval is not consumed")
+    void approvalIsBoundToPurposeProfileAndClient() {
+        OversightPolicy p = policy(Set.of(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME), OptionalInt.empty());
+        AuthenticatedCaller otherPurpose =
+                new AuthenticatedCaller("principal-1", "client-1", Set.of("investigator"), "marketing", "case-1", null);
+        AuthenticatedCaller otherClient =
+                new AuthenticatedCaller("principal-1", "client-2", Set.of("investigator"), "demonstration", "case-1", null);
+        for (String variant : List.of("purpose", "profile", "client")) {
+            for (int i = 0; i < 2; i++) {
+                audited.clear();
+                orchestrator.requests.clear();
+                ToolAdmission admission = admission(p);
+                Tool tool = tools(admission).get(i);
+                tool.call(ARGS);
+                String approvalId = audited.get(audited.size() - 1).approvalId();
+                approvals.approve(approvalId, "approver-9", FIXED.instant());
+
+                Tool other = variant.equals("profile") ? tools(admission, "STRICT").get(i) : tool;
+                AuthenticatedCaller as = variant.equals("purpose") ? otherPurpose
+                        : variant.equals("client") ? otherClient : CALLER;
+                McpSchema.CallToolResult retried = other.call(as, ARGS);
+                assertThat(retried.isError()).as(variant + " " + tool.name).isEqualTo(Boolean.TRUE);
+                assertThat(text(retried)).as(variant + " " + tool.name)
+                        .startsWith("APPROVAL_REQUIRED approvalId=").doesNotContain(approvalId);
+                assertThat(orchestrator.requests).as(variant + " " + tool.name).isEmpty();
+
+                // the approval was not consumed: the identical original call still succeeds once
+                McpSchema.CallToolResult original = tool.call(ARGS);
+                assertThat(original.isError()).as(variant + " " + tool.name).isNotEqualTo(Boolean.TRUE);
+                assertThat(orchestrator.requests).hasSize(1);
+                assertThat(audited.get(audited.size() - 1).approvalId()).isEqualTo(approvalId);
+            }
+        }
+    }
+
+    @Test
     @DisplayName("a successful result carries the correlationId in _meta only, never in structuredContent or text")
     void successCarriesCorrelationInMetaOnly() {
         for (Tool tool : tools(ToolAdmission.none())) {
@@ -335,7 +383,7 @@ class ToolAdmissionEnforcementTest {
     }
 
     @Test
-    @DisplayName("an authorisation denial carries the correlationId written to its audit event")
+    @DisplayName("an authorisation denial carries the correlationId written to its audit event, on both tools")
     void authorisationDenialCarriesCorrelation() {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"), Map.of("investigator", Set.of()));
         AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
@@ -343,11 +391,32 @@ class ToolAdmissionEnforcementTest {
                 new PurposeValidator(Set.of("demonstration")));
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
                 DataPrismObjectMapper.create(), metrics, audit, FIXED);
-        McpSchema.CallToolResult result = get.specification().callHandler().apply(
-                exchange(), new McpSchema.CallToolRequest(GetEntityContextTool.NAME, ARGS));
-        assertThat(result.isError()).isEqualTo(Boolean.TRUE);
-        assertThat(meta(result)).isEqualTo(audited.get(0).correlationId());
-        assertThat(orchestrator.requests).isEmpty();
+        CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
+                DataPrismObjectMapper.create(), metrics, audit, FIXED);
+        for (Tool tool : List.of(new Tool(GetEntityContextTool.NAME, get.specification().callHandler()),
+                new Tool(CompareEntitySourcesTool.NAME, compare.specification().callHandler()))) {
+            audited.clear();
+            McpSchema.CallToolResult result = tool.call(ARGS);
+            assertThat(result.isError()).isEqualTo(Boolean.TRUE);
+            assertThat(meta(result)).as(tool.name).isEqualTo(audited.get(0).correlationId());
+            assertThat(orchestrator.requests).isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("a scope-resolution denial carries the correlationId written to its audit event, on both tools")
+    void scopeResolutionDenialCarriesCorrelation() {
+        AuthenticatedCaller unknownPurpose = new AuthenticatedCaller(
+                "principal-1", "client-1", Set.of("investigator"), "not-a-purpose", "case-1", null);
+        for (Tool tool : tools(ToolAdmission.none())) {
+            audited.clear();
+            McpSchema.CallToolResult result = tool.call(unknownPurpose, ARGS);
+            assertThat(result.isError()).isEqualTo(Boolean.TRUE);
+            assertThat(audited).as(tool.name).hasSize(1);
+            assertThat(audited.get(0).policyDecision()).isNotEqualTo("ALLOW");
+            assertThat(meta(result)).as(tool.name).isEqualTo(audited.get(0).correlationId());
+            assertThat(orchestrator.requests).isEmpty();
+        }
     }
 
     /** Audits an ALLOW event the way the real orchestrator does, copying the request's approval ids. */
