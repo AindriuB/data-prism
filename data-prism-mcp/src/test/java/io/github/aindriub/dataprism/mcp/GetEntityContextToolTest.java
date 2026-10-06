@@ -125,7 +125,7 @@ class GetEntityContextToolTest {
         assertThat(orchestrator.requests).isEmpty();
         assertThat(metrics.incremented).containsExactly(Metric.MCP_DENIED);
         assertThat(audited).singleElement().satisfies(event -> {
-            assertThat(event.policyDecision()).isEqualTo("TOOL_NOT_PERMITTED");
+            assertThat(event.policyDecision()).isEqualTo("DENY:TOOL_NOT_PERMITTED");
             assertThat(event.principalId()).isEqualTo("principal-1");
         });
     }
@@ -163,7 +163,8 @@ class GetEntityContextToolTest {
         assertThat(orchestrator.requests).isEmpty();
         assertThat(metrics.incremented).containsExactly(Metric.MCP_DENIED);
         assertThat(audited).singleElement()
-                .satisfies(event -> assertThat(event.policyDecision()).isEqualTo(PurposeValidator.UNKNOWN_PURPOSE));
+                .satisfies(event -> assertThat(event.policyDecision())
+                        .isEqualTo("DENY:" + PurposeValidator.UNKNOWN_PURPOSE));
     }
 
     @Test

@@ -126,7 +126,7 @@ class UndeclaredKeyRefusalPathTest {
         assertThat(refused.getMessage()).doesNotContain(TOKEN);
         assertThat(events).hasSize(1);
         AuditEvent event = events.get(0);
-        assertThat(event.policyDecision()).isEqualTo("DENY");
+        assertThat(event.policyDecision()).isEqualTo("DENY:" + refused.code());
         // The record's toString names every component, so this checks each field of the event.
         assertThat(event.toString()).doesNotContain(TOKEN);
         assertThat(event.fieldDispositions().keySet()).noneMatch(k -> k.contains(TOKEN));
@@ -140,6 +140,7 @@ class UndeclaredKeyRefusalPathTest {
 
         assertThat(refused.code()).isEqualTo("UNKNOWN_FIELD");
         assertThat(refused.path()).isEqualTo("$.<undeclared>");
+        assertThat(events.get(0).policyDecision()).isEqualTo("DENY:UNKNOWN_FIELD");
         assertNothingLeaks(refused, events);
     }
 
@@ -152,6 +153,7 @@ class UndeclaredKeyRefusalPathTest {
 
         assertThat(refused.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(refused.path()).isEqualTo("$.<undeclared>");
+        assertThat(events.get(0).policyDecision()).isEqualTo("DENY:VALIDATION_FAILED");
         assertNothingLeaks(refused, events);
     }
 

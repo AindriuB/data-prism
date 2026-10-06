@@ -152,7 +152,7 @@ class EndToEndTest {
 
         assertThat(result.isError()).isEqualTo(Boolean.TRUE);
         assertThat(audited).singleElement()
-                .satisfies(event -> assertThat(event.policyDecision()).isEqualTo("DENY"));
+                .satisfies(event -> assertThat(event.policyDecision()).isEqualTo("DENY:NO_SOURCE_DATA"));
     }
 
     @Test

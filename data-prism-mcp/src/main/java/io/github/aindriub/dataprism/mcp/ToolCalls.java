@@ -17,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** What both tools share: the admission step, the rejected-argument names and the result {@code _meta}. */
 final class ToolCalls {
@@ -33,6 +34,8 @@ final class ToolCalls {
      * names are only noted so the attempt is audited.
      */
     private static final Set<String> APPROVAL_ARGUMENTS = Set.of("approvalId", "approverId");
+
+    private static final Pattern REFUSAL_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,63}");
 
     private ToolCalls() {
     }
@@ -67,6 +70,15 @@ final class ToolCalls {
         } catch (RuntimeException e) {
             return AdmissionDecision.refuse(OVERSIGHT_UNAVAILABLE);
         }
+    }
+
+    /**
+     * The audited decision for a refusal: {@code DENY:<code>}, the form the
+     * orchestrator and the re-identification service also write. A code that
+     * is not a plain upper-case token is never copied into the audit file.
+     */
+    static String denyDecision(String code) {
+        return "DENY:" + (code != null && REFUSAL_CODE.matcher(code).matches() ? code : "INVALID_REFUSAL_CODE");
     }
 
     /** The code, plus the approval id for the two codes a caller can act on. */

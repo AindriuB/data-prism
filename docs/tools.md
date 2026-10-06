@@ -427,7 +427,7 @@ before the orchestrator is asked for anything.
 
 After authorisation and scope resolution, and before any source is touched,
 both tools check admission. A refused call returns `isError` with the code as
-its text, is counted as denied, and is audited as a DENY event carrying the same
+its text, is counted as denied, and is audited as a `DENY:<code>` event carrying the same
 code. No source adapter is invoked.
 
 | Code | Meaning |
@@ -469,8 +469,9 @@ The `correlationId` is a random identifier. It is derived from nothing in the
 request or the response and carries no data. It is never placed in
 `structuredContent` or in the text of a successful result, so the model does not
 see it. A refusal the orchestrator audits (for example `VALIDATION_FAILED`,
-`NO_SOURCE_DATA` or `SCOPE_READ_BUDGET`) and a failure it audits as a DENY carry
-the id of that DENY record. A call rejected for missing `entityType` or
+`NO_SOURCE_DATA` or `SCOPE_READ_BUDGET`, recorded as `DENY:<code>`) and a failure
+it audits as `DENY:REQUEST_FAILED` carry the id of that DENY record. A call
+rejected for missing `entityType` or
 `subjectId` is not audited, so it carries no `_meta` correlation id.
 
 ## Scope isolation

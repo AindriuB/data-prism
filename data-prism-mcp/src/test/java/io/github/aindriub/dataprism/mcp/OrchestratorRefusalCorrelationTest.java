@@ -122,7 +122,8 @@ class OrchestratorRefusalCorrelationTest {
         return List.of(get.specification().callHandler(), compare.specification().callHandler());
     }
 
-    private void assertEveryToolCarriesTheAuditedDeny(DefaultContextOrchestrator orchestrator, String refusalText) {
+    private void assertEveryToolCarriesTheAuditedDeny(DefaultContextOrchestrator orchestrator, String refusalText,
+                                                         String expectedDecision) {
         String[] names = {GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME};
         var handlers = handlers(orchestrator);
         for (int i = 0; i < 2; i++) {
@@ -136,7 +137,7 @@ class OrchestratorRefusalCorrelationTest {
             assertThat(((McpSchema.TextContent) result.content().get(0)).text()).as(names[i])
                     .startsWith(refusalText).doesNotContain("scrubber down");
             assertThat(audited).as(names[i]).hasSize(1);
-            assertThat(audited.get(0).policyDecision()).isEqualTo("DENY");
+            assertThat(audited.get(0).policyDecision()).isEqualTo(expectedDecision);
             assertThat(result.meta()).as(names[i]).isNotNull();
             assertThat(result.meta().get(META_KEY))
                     .as(names[i]).isEqualTo(audited.get(0).correlationId());
@@ -150,14 +151,15 @@ class OrchestratorRefusalCorrelationTest {
                 ValidationResult.failed(List.of(new Violation("value", "LEAKED", "test")));
         assertEveryToolCarriesTheAuditedDeny(
                 orchestrator(new Thing("1", "raw"), OK_SCRUBBER, fails, new InMemoryScopeBudget()),
-                "refused: VALIDATION_FAILED");
+                "refused: VALIDATION_FAILED", "DENY:VALIDATION_FAILED");
     }
 
     @Test
     @DisplayName("a NO_SOURCE_DATA refusal carries the audited correlationId")
     void noSourceDataCarriesCorrelation() {
         assertEveryToolCarriesTheAuditedDeny(
-                orchestrator(null, OK_SCRUBBER, OK, new InMemoryScopeBudget()), "refused: NO_SOURCE_DATA");
+                orchestrator(null, OK_SCRUBBER, OK, new InMemoryScopeBudget()),
+                "refused: NO_SOURCE_DATA", "DENY:NO_SOURCE_DATA");
     }
 
     @Test
@@ -179,7 +181,8 @@ class OrchestratorRefusalCorrelationTest {
             }
         };
         assertEveryToolCarriesTheAuditedDeny(
-                orchestrator(new Thing("1", "raw"), OK_SCRUBBER, OK, exhausted), "refused: SCOPE_READ_BUDGET");
+                orchestrator(new Thing("1", "raw"), OK_SCRUBBER, OK, exhausted), "refused: SCOPE_READ_BUDGET",
+                "DENY:SCOPE_READ_BUDGET");
     }
 
     @Test
@@ -190,6 +193,6 @@ class OrchestratorRefusalCorrelationTest {
         };
         assertEveryToolCarriesTheAuditedDeny(
                 orchestrator(new Thing("1", "raw"), broken, OK, new InMemoryScopeBudget()),
-                "the request could not be completed");
+                "the request could not be completed", "DENY:REQUEST_FAILED");
     }
 }
