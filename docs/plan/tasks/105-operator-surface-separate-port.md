@@ -109,3 +109,16 @@ status and the body, and that the refusal was audited once (by
   separate JVM.
 - D8: the tool-call approval flow is approved as planned, and four-eyes for
   re-identification defaults ON.
+
+## Notes from task 104's review (2026-10-06)
+
+- Fail closed: with `dataprism.reidentification.enabled=true`, embedded topology,
+  and data-prism-reidentification absent from the classpath (the starter
+  makes it optional), `@ConditionalOnClass` silently skips ReidentificationWiring
+  and startup succeeds with no service. Since this task depends on that bean,
+  add a preflight that refuses with a stable code (e.g.
+  REIDENTIFICATION_MODULE_MISSING) when re-identification is enabled but the
+  module is absent. Owns: the autoconfigure files this task already touches.
+- OPERATOR_PORT_SHARED (DataPrismAutoConfiguration ~:275) compares only with
+  `server.port`. When the operator connector is bound here, also refuse an
+  operator port equal to `management.server.port`.

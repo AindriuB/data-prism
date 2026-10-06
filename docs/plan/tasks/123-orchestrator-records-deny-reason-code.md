@@ -135,3 +135,16 @@ error without the client's copy of the result.
   docs/audit.md policyDecision table. Drop the "bare <CODE>" row, or mark it
   pre-0.4.0 only.
 - A malformed code is recorded as `DENY:INVALID_REFUSAL_CODE`, as the planner proposed.
+
+## Attempt 1 — failed
+
+Branch at 88cacd8. Reviewer: CHANGES. One wording defect; the code is correct.
+
+- docs/audit.md:211: the intro says "written by four modules"; only three
+  write policyDecision (orchestration, mcp, reidentification). Say "three".
+- Also add (cheap, within Owns): a unit test for `ToolCalls.denyDecision` with
+  a malformed code on the MCP path, asserting `DENY:INVALID_REFUSAL_CODE`, to
+  guard against the copied regex drifting.
+- Optional: in UndeclaredKeyRefusalPathTest:129, assert the literal
+  `DENY:UNKNOWN_FIELD`, not `"DENY:" + refused.code()`.
+- Run `mvn clean verify` over the full reactor and mkdocs --strict; report real exit codes.
