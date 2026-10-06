@@ -68,3 +68,14 @@ identity cache, these fail closed: if the cluster is unreachable, they throw.
 - Any change to `subjectFor` or the identity cache.
 - Persistence or MapStore. Both are refused by configuration today and stay
   refused.
+
+## Notes carried forward from task 95's review
+
+Task 95 merged with these two suggestions, which belong in the Hazelcast store
+rather than in a second pass on the in-memory one. Make both hold in
+`HazelcastApprovalStore` and, where the SPI allows, in a shared contract test
+that runs against both implementations.
+
+- `ApprovalStore.create` should require status `PENDING` and refuse a duplicate
+  id. The in-memory store accepts either.
+- `ApprovalStore.approve` should refuse a null approver.

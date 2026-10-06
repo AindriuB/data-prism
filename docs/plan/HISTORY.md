@@ -17,6 +17,24 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 95: oversight SPIs in core (EU AI Act wave 1, first task to land)
+
+Core now has a `oversight` package with three SPIs and in-memory implementations:
+`OversightState` (global, per-tool and per-scope pause flags, with a snapshot),
+`ApprovalStore` (pending and decided approval requests, including
+`Kind.REIDENTIFICATION`) and `CallerRateLimiter` (per-caller counters, clock
+injected). Any `RuntimeException` from an implementation means unavailable and
+callers fail closed. Nothing consumes them yet; tool admission (98), the
+Hazelcast stores (99), re-identification (100) and the operator surface (105)
+build on them. Merged onto the planning branch `claude/data-prism-eu-compliance-04cf83`,
+not `main`; tester PASS on a full 19-module `mvn verify`, reviewer APPROVE.
+
+**Cost:** the reviewer's two suggestions were not applied here and now live in
+task 99's file: `ApprovalStore.create` accepts any status and a duplicate id,
+and `approve` accepts a null approver. Tasks 92, 93 and 94 of the same wave did
+not pass (92 tester FAIL, 93 and 94 reviewer CHANGES) and stay open on their
+branches with attempt notes in their task files.
+
 ## 2026-09-24 — 0.3.1 release completed; mcp-publisher pinned; Glama claimed; awesome-mcp-servers PR open
 
 The 0.3.1 post-merge release checklist closed: tag `v0.3.1` sits on the #105

@@ -28,6 +28,61 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
+### EU AI Act plan (tasks 92-107) — in flight, wave 1 partly landed
+
+Sixteen tasks that make the audit, oversight and re-identification surfaces
+support an EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The
+work is on the planning branch `claude/data-prism-eu-compliance-04cf83`, not
+`main`. Task files are in `docs/plan/tasks/`; each carries its own contract.
+Waves follow from the dependencies, so a task starts only when everything in
+its "Depends on" has merged.
+
+| Wave | Task | What | Depends on | State |
+|---|---|---|---|---|
+| 1 | 92 | Audit record carries per-field dispositions and approval identity | none | tester FAIL, reviewer APPROVE; branch open |
+| 1 | 93 | Scrubbing engines report per-field dispositions | none | tester PASS, reviewer CHANGES; branch open |
+| 1 | 94 | GDPR Art. 9 special-category classifications that fail closed | none | reviewer CHANGES, tester still running; branch open |
+| 1 | 95 | Oversight SPIs in core | none | done 2026-10-06 |
+| 2 | 96 | Orchestrator audits dispositions, exposes `correlationId` | 92, 93 | |
+| 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | |
+| 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | |
+| 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | carries 95's review notes |
+| 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | D1 |
+| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | D8 |
+| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | D3, D5 |
+| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | D3, D5 |
+| 5 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103 | D1 |
+| 6 | 105 | Operator surface on a separate port: pause, approvals, re-identification | 104 | D1, D4, D8 |
+| 7 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D1, D6 |
+| 8 | 107 | Keyed audit chain (HMAC under a dedicated key) | 104, 106 | blocked on D2 |
+
+Next wave: finish 92, 93 and 94 (each has an attempt note in its task file),
+then wave 2 can start. 97, 98, 99 and 100 need only 92 or 95, so they can start
+before 93 and 94 close; 96 needs both 92 and 93.
+
+Open owner decisions. None is answered yet, and each blocks or shapes the tasks
+named:
+
+- D1: lift the 2026-09-08 deferral of the re-identification operator surface.
+  Blocks 100, 104, 105, 106.
+- D2: supersede the 2026-09-23 decision that rejected a keyed audit chain.
+  Blocks 107. The planner recommends dropping 107.
+- D3: allow a segmented audit sink so retention can delete expired data.
+  Blocks 102, 103.
+- D4: operator surface as a second connector in the same process, or a separate
+  JVM. Shapes 105.
+- D5: retention below six months as a hard refusal, or an override. Shapes 102
+  and 103.
+- D6: no Art. 10(5) bias-detection profile has been filed. Affects what 106 may
+  claim.
+- D7: a checkpoint-write failure refuses all audited calls. Shapes 97.
+- D8: approval flow and four-eyes default on. Shapes 98, 101, 105.
+
+Open follow-up, independent of task 107: `AuditEventHash` joins `sourceSystems`
+and `dispositions` without escaping `,` or `=`, so two distinct records can
+produce the same hash. It needs an unambiguous encoding. Fix it whether or not
+107 goes ahead, since the chain's tamper detection rests on it.
+
 ### S8 and S9a — done
 
 S8 (security: OAuth2 resource server, scope/principal/purpose/case derived from
