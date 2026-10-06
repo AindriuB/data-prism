@@ -51,13 +51,22 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         if (pending.status() != Status.PENDING) {
             throw new IllegalArgumentException("a new approval must be PENDING");
         }
-        if (locate(pending.approvalId()).isPresent()) {
-            throw new IllegalArgumentException("duplicate approval id");
-        }
-        String key = ScopeKeys.approval(pending.scopeId(), pending.approvalId());
-        long ttl = Math.max(1L, Duration.between(pending.createdAt(), pending.expiresAt()).toMillis());
-        if (approvals().putIfAbsent(key, Codec.encode(pending), ttl, TimeUnit.MILLISECONDS) != null) {
-            throw new IllegalArgumentException("duplicate approval id");
+        IMap<String, String> approvals = approvals();
+        // The bare id holds no separator, so it is never an entry key; locking it
+        // makes the duplicate check and the put atomic across scopes.
+        String idLock = pending.approvalId();
+        approvals.lock(idLock);
+        try {
+            if (!locateAll(pending.approvalId()).isEmpty()) {
+                throw new IllegalArgumentException("duplicate approval id");
+            }
+            String key = ScopeKeys.approval(pending.scopeId(), pending.approvalId());
+            long ttl = Math.max(1L, Duration.between(pending.createdAt(), pending.expiresAt()).toMillis());
+            if (approvals.putIfAbsent(key, Codec.encode(pending), ttl, TimeUnit.MILLISECONDS) != null) {
+                throw new IllegalArgumentException("duplicate approval id");
+            }
+        } finally {
+            unlock(approvals, idLock);
         }
         return pending;
     }
@@ -207,10 +216,19 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         return approvals().keySet().stream().filter(key -> key.startsWith(prefix)).toList();
     }
 
-    private Optional<String> locate(String approvalId) {
+    private List<String> locateAll(String approvalId) {
         return approvals().keySet().stream()
                 .filter(key -> ScopeKeys.approvalId(key).equals(approvalId))
-                .findFirst();
+                .toList();
+    }
+
+    /** The one key for an id; an id that matches several keys is refused, never guessed. */
+    private Optional<String> locate(String approvalId) {
+        List<String> keys = locateAll(approvalId);
+        if (keys.size() > 1) {
+            throw new ApprovalRefusedException(Code.UNKNOWN_APPROVAL);
+        }
+        return keys.stream().findFirst();
     }
 
     private IMap<String, String> approvals() {

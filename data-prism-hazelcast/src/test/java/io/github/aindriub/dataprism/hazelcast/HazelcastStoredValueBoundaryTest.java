@@ -79,7 +79,7 @@ class HazelcastStoredValueBoundaryTest {
     @Test
     void oversightMapsContainOnlyPrincipalsFingerprintsAndCounts() {
         start();
-        String synthetic = "generated:" + SCOPE_ID + ":PERSON_NAME:" + SUBJECT_ID;
+        String synthetic = "generated:" + SCOPE_ID + ":PERSON_NAME:pseudonym-7";
         Instant now = Instant.now();
         var approvals = new HazelcastApprovalStore(cluster);
         approvals.create(new io.github.aindriub.dataprism.oversight.ApprovalRequest("ap-1",
@@ -99,6 +99,10 @@ class HazelcastStoredValueBoundaryTest {
                 PrivacyCluster.APPROVAL_MAP, PrivacyCluster.CALLER_RATE_MAP);
         assertThat(List.copyOf(maps.values())).allSatisfy(map -> assertThat(map.size()).isPositive());
         assertRawValueIsAbsent(maps);
+        maps.forEach((name, map) -> {
+            assertThat(map.keySet().toString()).doesNotContain(SUBJECT_ID);
+            assertThat(map.values().toString()).doesNotContain(SUBJECT_ID);
+        });
         maps.forEach((name, map) -> assertMapContainsOnlyExpectedState(name, map, new DeterministicGenerator()));
 
         // The guard bites: a raw value smuggled into any of these maps is caught.

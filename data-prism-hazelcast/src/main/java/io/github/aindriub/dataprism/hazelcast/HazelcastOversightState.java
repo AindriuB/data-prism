@@ -76,10 +76,10 @@ public final class HazelcastOversightState implements OversightState {
         for (String key : flags().keySet()) {
             if (key.equals(ScopeKeys.pausedAll())) {
                 all = true;
+            } else if (key.indexOf(0) >= 0) {
+                scopes.add(ScopeKeys.scopeOf(key));
             } else if (key.startsWith("tool:")) {
                 tools.add(key.substring("tool:".length()));
-            } else {
-                scopes.add(ScopeKeys.scopeOf(key));
             }
         }
         return new OversightSnapshot(all, tools, scopes);

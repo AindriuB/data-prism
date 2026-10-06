@@ -105,6 +105,66 @@ class HazelcastOversightTest {
     }
 
     @Test
+    void sameIdCreatedConcurrentlyInTwoScopesAdmitsOnlyOneAndNeverCrossApproves() throws Exception {
+        pair();
+        var viaA = new HazelcastApprovalStore(a);
+        var viaB = new HazelcastApprovalStore(b);
+        for (int round = 0; round < 20; round++) {
+            String id = "dup-" + round;
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                CountDownLatch go = new CountDownLatch(1);
+                Callable<Boolean> one = () -> {
+                    go.await();
+                    try {
+                        viaA.create(request(id, "S1", NOW.plus(1, ChronoUnit.HOURS)));
+                        return true;
+                    } catch (IllegalArgumentException e) {
+                        return false;
+                    }
+                };
+                Callable<Boolean> two = () -> {
+                    go.await();
+                    try {
+                        viaB.create(request(id, "S2", NOW.plus(1, ChronoUnit.HOURS)));
+                        return true;
+                    } catch (IllegalArgumentException e) {
+                        return false;
+                    }
+                };
+                Future<Boolean> f1 = pool.submit(one);
+                Future<Boolean> f2 = pool.submit(two);
+                go.countDown();
+                assertThat(List.of(f1.get(), f2.get())).containsExactlyInAnyOrder(true, false);
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+    }
+
+    @Test
+    void anIdHeldInTwoScopesIsRefusedAsUnknown() {
+        single();
+        var store = new HazelcastApprovalStore(a);
+        var raw = a.instance().<String, String>getMap(PrivacyCluster.APPROVAL_MAP);
+        raw.put(ScopeKeys.approval("S1", "x"), HazelcastApprovalStore.Codec.encode(request("x", "S1", NOW.plus(1, ChronoUnit.HOURS))));
+        raw.put(ScopeKeys.approval("S2", "x"), HazelcastApprovalStore.Codec.encode(request("x", "S2", NOW.plus(1, ChronoUnit.HOURS))));
+
+        assertThatThrownBy(() -> store.approve("x", "bob", NOW))
+                .isInstanceOf(ApprovalRefusedException.class);
+        assertThatThrownBy(() -> store.find("x")).isInstanceOf(ApprovalRefusedException.class);
+    }
+
+    @Test
+    void aScopeIdStartingWithToolIsReportedAsAScope() {
+        single();
+        var state = new HazelcastOversightState(a);
+        state.pauseScope("tool:weird");
+        assertThat(state.snapshot().pausedScopes()).containsExactly("tool:weird");
+        assertThat(state.snapshot().pausedTools()).isEmpty();
+    }
+
+    @Test
     void twoMembersConsumingOneApprovalYieldExactlyOneSuccess() throws Exception {
         pair();
         var viaA = new HazelcastApprovalStore(a);

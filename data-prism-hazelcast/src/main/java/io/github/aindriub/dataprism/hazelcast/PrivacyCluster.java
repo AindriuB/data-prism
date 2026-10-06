@@ -87,7 +87,10 @@ public final class PrivacyCluster implements AutoCloseable {
         oversight.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
         config.addMapConfig(oversight);
         config.addMapConfig(privacyMap(new MapConfig(APPROVAL_MAP)));
-        config.addMapConfig(privacyMap(new MapConfig(CALLER_RATE_MAP)));
+        MapConfig callerRate = privacyMap(new MapConfig(CALLER_RATE_MAP));
+        // An evicted counter resets a caller's window; the 2-window TTL bounds size.
+        callerRate.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
+        config.addMapConfig(callerRate);
         return config;
     }
 
