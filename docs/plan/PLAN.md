@@ -57,10 +57,10 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | next |
 | 4 | 117 | Hash audit record v2 over an unambiguous, length-prefixed encoding | 102 | next |
 | 4 | 118 | Undeclared payload keys render as `<undeclared>` on every refusal and warning sink | 101 | next |
-| 4 | 119 | `InMemoryApprovalStore` matches `HazelcastApprovalStore` under one contract test | none | in flight |
+| 4 | 119 | `InMemoryApprovalStore` matches `HazelcastApprovalStore` under one contract test | none | done 2026-10-06 |
 | 4 | 121 | Correct REFUSED wording; document every `policyDecision` form | 101 | next |
-| 4 | 122 | Find and remove the cause of `ServerStartupTest`'s intermittent `/health` 404 | none | in flight |
-| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | waits on 119 |
+| 4 | 122 | Find and remove the cause of `ServerStartupTest`'s intermittent `/health` 404 | none | done 2026-10-06 (cause unproven) |
+| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | next |
 | 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | |
 | 7 | 105 | Operator surface on a second port in the same process | 104 | |
 | 8 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
@@ -70,8 +70,8 @@ file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
 Next wave for 0.4.0: 103, 117, 118 and 121 can start now (each needs only 101
-or 102, both merged). 119 and 122 are in flight in their own worktrees. 120
-starts when 119 merges. 104 needs 103 and 120; 105 needs 104; 106 needs 105.
+or 102, both merged). 103, 117, 118 and 121 are in flight in their own
+worktrees. 119 and 122 are merged, so 120 can start now. 104 needs 103 and 120; 105 needs 104; 106 needs 105.
 Tasks 102 and 103 carry notes that a retention below six months refuses
 startup unless `dataprism.audit.retention-override` is set.
 
@@ -102,10 +102,32 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
-before 0.4.0. Open owner decisions for 0.5.0: C1, C3, C4, C5, C6 and C7.
-Only C3 and C5 are cited in task files (task 112); the full question list was
-in the planner's return and is not recorded in a file. C2 is resolved by task
-117.
+before 0.4.0. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
+full text follows, recorded here because no other file holds it.
+
+- **C1** — Record the external correlation id inside the hash, as
+  `recordVersion` 3. Recommended: yes. The alternative, a field outside the
+  hash, could be edited without breaking the chain.
+- **C2** — Resolved: task 117 fixes the v2 encoding before release, and v3
+  appends to it.
+- **C3** — Keep the hash-chained native `.log` segments authoritative and write
+  a separate JSON projection through a tee. Recommended. The alternative is JSON
+  as the chained format, which means the verifier must know the mapping. Cost:
+  a second copy on disk, purged on the same retention.
+- **C4** — The default inbound correlation-id pattern `[A-Za-z0-9._:-]{1,128}`
+  also admits name-like tokens such as `jane.doe`. Keep it, or default to
+  stricter UUID/hex only. Open.
+- **C5** — ECS `event.outcome` is derived from `policyDecision` (`ALLOW` or
+  `ALLOW:*` is success, empty is unknown, anything else is failure), and
+  operator-set routing constants (dataset, namespace) are added to each output
+  line. Is this acceptable as reshaping? The raw decision is kept as well. Open.
+- **C6** — Defer OpenTelemetry and Micrometer Tracing. Traceparent mode covers
+  W3C propagation without a tracing dependency, and Micrometer's ThreadLocal
+  context propagation conflicts with the parallel fan-out. Recommended: defer.
+- **C7** — No direct Elasticsearch sink; ship from local files with Filebeat or
+  Elastic Agent. Recommended: confirm.
+
+Task 112 cites C3 and C5.
 
 #### Owner decisions
 
@@ -165,6 +187,13 @@ Follow-ups from the task 96 review, not yet tasks:
 
 - Non-scrub refusals (budget exhaustion, `NO_SOURCE_DATA`) also get
   `merged:<refused>`, which wrongly suggests a validation failure.
+
+Follow-up from the task 122 review, not yet a task:
+
+- `ServerStartupTest.java:224-225`: the comment says a port collision makes
+  startup fail. With `--server.port=0` a held 127.0.0.1 port is simply never
+  assigned, so reword it. The 404 cause is also unproven (mechanism
+  reproduced only); reopen 122 if the flake returns.
 
 Follow-ups from the task 97 review, not yet tasks:
 

@@ -17,6 +17,37 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 122: `ServerStartupTest` binds 127.0.0.1 to stop the `/health` 404 flake
+
+`ServerStartupTest` now starts its server with `--server.address=127.0.0.1`
+alongside `--server.port=0`, so the address the test calls is the address the
+server binds. The intermittent `/health` 404 did not recur in 30 isolated and 30
+concurrent runs by the implementer, nor in 10 more by the tester.
+
+**Cost:** The cause is unproven. What was reproduced is the mechanism: on macOS a
+socket bound to 127.0.0.1 shadows a wildcard bind on the same port, so a request
+to `127.0.0.1:<port>` can be answered by another process that holds that address.
+That fits a 404 from a foreign server, but nobody observed the foreign process
+during a real failure, so a recurrence would reopen this. The comment at
+`ServerStartupTest.java:224-225` says a port collision makes startup fail; with
+port 0 a held 127.0.0.1 port is simply never assigned, so the comment is wrong
+and is a PLAN follow-up.
+
+## 2026-10-06 — Task 119: `InMemoryApprovalStore` matches `HazelcastApprovalStore` under one contract test
+
+`InMemoryApprovalStore` now refuses a non-`PENDING` create, a duplicate id in any
+status and a null approver, as the Hazelcast store already did. `ApprovalStoreContractTest`
+in `data-prism-hazelcast` runs 18 cases against both stores, and the
+`HazelcastApprovalStore.java:55` comment now states that the bare-id lock key is
+safe only while ids contain no NUL, the `ScopeKeys` separator.
+
+**Cost:** There is no test-jar in this build, so the contract test lives in the
+hazelcast module, which already depends on core, rather than next to the
+in-memory store. Mutation check: against the old in-memory store 4 of the 18
+cases fail, which is the evidence the test pins the gap. Do not move the
+in-memory store to a looser rule to make a single-instance deployment easier;
+`ToolAdmission.none()` uses it.
+
 ## 2026-10-06 — Task 101: MCP tools enforce admission and return correlationId
 
 Both MCP tools now call `ToolAdmission` after scope resolution and before the
