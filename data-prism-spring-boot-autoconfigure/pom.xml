@@ -6,7 +6,7 @@
   <parent>
     <groupId>io.github.aindriub</groupId>
     <artifactId>data-prism</artifactId>
-    <version>0.3.1</version>
+    <version>0.4.0</version>
   </parent>
   <artifactId>data-prism-spring-boot-autoconfigure</artifactId>
   <name>Data Prism :: Spring Boot auto-configuration</name>
@@ -19,7 +19,11 @@
          single-node consumer, which never touches these classes, does not take
          Hazelcast onto its classpath through this starter. -->
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-hazelcast</artifactId><optional>true</optional></dependency>
+    <!-- Optional for the same reason: the controlled reverse lookup, built only when
+         dataprism.reidentification.enabled=true and never exposed as an MCP tool. -->
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-reidentification</artifactId><optional>true</optional></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-autoconfigure</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-actuator</artifactId><optional>true</optional></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
     <dependency><groupId>jakarta.servlet</groupId><artifactId>jakarta.servlet-api</artifactId><version>6.1.0</version><scope>provided</scope></dependency>
     <!-- JwtDecoderSupport and JwtCallerContextExtractor are static-factory /

@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves task 57's operator-facing presentation against the packaged distribution itself,
- * not a hand-built exception: {@code docker run ghcr.io/aindriub/data-prism-server:0.3.1} with
+ * not a hand-built exception: {@code docker run ghcr.io/aindriub/data-prism-server:<version>} with
  * no configuration must print a block naming the stable code, what to supply, {@code
  * docs/configuration.md} and the runnable demo — and no Java stack frame — while still exiting
  * non-zero. This is the same failure {@code .github/workflows/publish-image.yml}'s "Verify the
@@ -31,6 +31,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that workflow step are proven against the same literal text, not two different contracts.
  */
 class ConfigurationRefusalMessageIT {
+
+    private static final String VERSION = requireVersion();
+
+    private static String requireVersion() {
+        String v = System.getProperty("project.version");
+        if (v == null || v.isBlank() || v.contains("${")) {
+            throw new IllegalStateException(
+                    "System property project.version was not passed by the build "
+                            + "(failsafe systemPropertyVariables); refusing to guess the artifact version");
+        }
+        return v;
+    }
 
     private final List<Path> tempFiles = new ArrayList<>();
 
@@ -119,7 +131,7 @@ class ConfigurationRefusalMessageIT {
 
     private static ProcessResult runPackagedServer(List<String> extraJvmArgs, List<String> programArgs)
             throws Exception {
-        Path artifact = Path.of("target", "data-prism-server-0.3.1.jar").toAbsolutePath();
+        Path artifact = Path.of("target", "data-prism-server-" + VERSION + ".jar").toAbsolutePath();
         List<String> command = new ArrayList<>();
         command.add(javaCommand());
         command.addAll(extraJvmArgs);

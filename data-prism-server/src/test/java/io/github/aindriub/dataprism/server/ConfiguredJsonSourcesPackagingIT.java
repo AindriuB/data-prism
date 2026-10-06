@@ -48,6 +48,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ConfiguredJsonSourcesPackagingIT {
 
+    private static final String VERSION = requireVersion();
+
+    private static String requireVersion() {
+        String v = System.getProperty("project.version");
+        if (v == null || v.isBlank() || v.contains("${")) {
+            throw new IllegalStateException(
+                    "System property project.version was not passed by the build "
+                            + "(failsafe systemPropertyVariables); refusing to guess the artifact version");
+        }
+        return v;
+    }
+
     private final List<Path> tempFiles = new ArrayList<>();
 
     @AfterEach
@@ -188,7 +200,7 @@ class ConfiguredJsonSourcesPackagingIT {
         tempFiles.add(identityResolverExtension);
         writeIdentityResolverExtension(identityResolverExtension);
 
-        Path serverArtifact = Path.of("target", "data-prism-server-0.3.1.jar").toAbsolutePath();
+        Path serverArtifact = Path.of("target", "data-prism-server-" + VERSION + ".jar").toAbsolutePath();
 
         List<String> command = new ArrayList<>();
         command.add(javaCommand());
@@ -274,7 +286,7 @@ class ConfiguredJsonSourcesPackagingIT {
 
     private static Path connectorsRestJarPath() {
         Path jar = Path.of("..", "data-prism-connectors-rest", "target",
-                "data-prism-connectors-rest-0.3.1.jar").toAbsolutePath().normalize();
+                "data-prism-connectors-rest-" + VERSION + ".jar").toAbsolutePath().normalize();
         assertThat(Files.isRegularFile(jar))
                 .as("data-prism-connectors-rest jar not found at %s; the reactor build must produce it "
                         + "before data-prism-server's integration tests run", jar)

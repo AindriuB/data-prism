@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.connectors.rest;
 import io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.RefusalPaths;
 import io.github.aindriub.dataprism.core.ScrubResult;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.SourceValues;
@@ -99,7 +100,10 @@ public final class ConfiguredJsonScrubbingEngine implements ScrubbingEngine {
             ValidationResult check = leakCheck.validate(scrubbed.tree(), prohibited, scrubbed.emitted(), context);
             if (!check.valid()) {
                 Violation first = check.violations().get(0);
-                throw new PrivacyRefusedException(first.code(), payload.sourceName() + first.path(),
+                // The validator walked the scrubbed tree, which can hold payload keys the
+                // catalogue never declared; only declared segments may reach the path.
+                throw new PrivacyRefusedException(first.code(),
+                        payload.sourceName() + RefusalPaths.redact(first.path(), scrubbed.dispositions().keySet()),
                         "configured source raw-value leak check failed: " + check.violations().size()
                                 + " violation(s)");
             }

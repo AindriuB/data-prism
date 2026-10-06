@@ -19,7 +19,12 @@ public enum Metric {
     SOURCE_ERRORS("dataprism.source.errors"),
     IDENTITY_COLLISION("dataprism.identity.collision"),
     PRIVACY_FAILCLOSED("dataprism.privacy.failclosed"),
-    REIDENTIFICATION("dataprism.reidentification");
+    REIDENTIFICATION("dataprism.reidentification"),
+    // One constant per refusal code, because PrivacyMetrics takes no free-form tag.
+    AUDIT_RETENTION_CHAIN_UNVERIFIED("dataprism.audit.retention.unverified"),
+    AUDIT_RETENTION_ANCHOR_FAILED("dataprism.audit.retention.anchor_failed"),
+    AUDIT_RETENTION_DELETE_FAILED("dataprism.audit.retention.delete_failed"),
+    AUDIT_RETENTION_FAILED("dataprism.audit.retention.failed");
 
     private final String metricName;
 

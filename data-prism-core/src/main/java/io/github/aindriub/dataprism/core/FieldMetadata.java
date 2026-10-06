@@ -50,9 +50,24 @@ public record FieldMetadata(
      * A property that appeared in the serialised source with no declaration at
      * all behind it. Undeclared by construction, so the profile's setting for
      * unclassified data decides what happens to it.
+     *
+     * <p>The payload's name for it is deliberately not stored: a property name
+     * is data, not model, and can itself be personal (a map keyed by email
+     * address). {@link #fieldName()} is {@code <undeclared>}, so nothing that
+     * logs or reports the field can repeat the key.
+     *
+     * @param payloadKey the key as it appeared in the payload; ignored
      */
-    public static FieldMetadata undeclared(String fieldName) {
-        return new FieldMetadata(fieldName, false, null, List.of(), PrivacyNamespace.NONE,
+    public static FieldMetadata undeclared(String payloadKey) {
+        return unannotated(RefusalPaths.UNDECLARED);
+    }
+
+    /**
+     * A field the reviewed model declares but nobody classified. Its name comes
+     * from the model, so unlike {@link #undeclared} it is safe to name.
+     */
+    public static FieldMetadata unannotated(String declaredName) {
+        return new FieldMetadata(declaredName, false, null, List.of(), PrivacyNamespace.NONE,
                 null, "", null, Object.class, null);
     }
 

@@ -24,9 +24,323 @@ brief; the reasoning and the rejected alternatives are in
 | MCP | Official MCP Java SDK directly, with Spring wiring written here. stdio in development, streamable HTTP in production |
 | HMAC key | Local key supplied at startup through a `SecretKeyProvider` SPI. No vendor client in core |
 | Audit sink | `AuditSink` SPI with a file/SLF4J implementation. No vendor client in core |
-| Re-identification | Reverse map built in S7. The operator surface (S10) is deferred past V1 |
+| Re-identification | Reverse map built in S7. The operator surface (S10) was deferred past V1; that deferral was lifted 2026-10-06 (D1) |
 
 ## Now
+
+### EU AI Act plan — in flight, waves 1 to 4 mostly landed
+
+Tasks that make the audit, oversight and re-identification surfaces support an
+EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The work is on
+the planning branch `claude/data-prism-eu-compliance-04cf83`, not `main`. Task
+files are in `docs/plan/tasks/`; each carries its own contract. A task starts
+only when everything in its "Depends on" has merged.
+
+On 2026-10-06 the owner split the work into two releases. 0.4.0 is EU AI Act
+support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
+
+#### Release 0.4.0 — EU AI Act support (tasks 92-106, follow-ups 117-125)
+
+| Wave | Task | What | Depends on | State |
+|---|---|---|---|---|
+| 1 | 92 | Audit record carries per-field dispositions and approval identity | none | done 2026-10-06 |
+| 1 | 93 | Scrubbing engines report per-field dispositions | none | done 2026-10-06 |
+| 1 | 94 | GDPR Art. 9 special-category classifications that fail closed | none | done 2026-10-06 |
+| 1 | 95 | Oversight SPIs in core | none | done 2026-10-06 |
+| 2 | 96 | Orchestrator audits dispositions, exposes `correlationId` | 92, 93 | done 2026-10-06 |
+| 2 | 97 | External audit checkpoints (tail truncation, missing boots) | 92 | done 2026-10-06 |
+| 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
+| 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | done 2026-10-06 |
+| 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | done 2026-10-06 |
+| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | done 2026-10-06 |
+| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | done 2026-10-06 |
+| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | done 2026-10-06 |
+| 4 | 117 | Hash audit record v2 over an unambiguous, length-prefixed encoding | 102 | done 2026-10-06 |
+| 4 | 118 | Undeclared payload keys render as `<undeclared>` on every refusal and warning sink | 101 | done 2026-10-06 |
+| 4 | 119 | `InMemoryApprovalStore` matches `HazelcastApprovalStore` under one contract test | none | done 2026-10-06 |
+| 4 | 121 | Correct REFUSED wording; document every `policyDecision` form | 101 | done 2026-10-06 |
+| 4 | 122 | Find and remove the cause of `ServerStartupTest`'s intermittent `/health` 404 | none | done 2026-10-06 (cause unproven) |
+| 4 | 125 | Integration tests derive the artifact version from the build | none | done 2026-10-06 |
+| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | done 2026-10-06 |
+| 5 | 123 | Orchestrator records the refusal code as `DENY:<code>` | 118, 121 | done 2026-10-06 |
+| 5 | 124 | Undeclared property names never reach the model (`<undeclared-N>`) | 118 | done 2026-10-06 |
+| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | done 2026-10-06 |
+| 6 | 126 | Reconcile 104's test with 123's `DENY:<code>` form | 104, 123 | done 2026-10-06 |
+| 6 | 128 | Refusal codes validated before reaching client text (shared `RefusalCodes`) | 123 | done 2026-10-06 |
+| 7 | 105 | Operator surface on a second port in the same process | 104 | done 2026-10-06 (attempt 3) |
+| 8 | 127 | Wire the re-identification index (wrap application `SyntheticValueSource`) | 105 | done 2026-10-06 (attempt 3; `mvn clean verify`, `mkdocs build --strict`, `check_site.py` exit 0 on merged head) |
+| 9 | 106 | EU AI Act support mapping and architecture records | 94, 105 | done 2026-10-06 (attempt 4; `mkdocs build --strict` and `check_site.py` exit 0) |
+| 10 | 129 | Cut 0.4.0: poms, `server.json`, CHANGELOG, version literals, `serverInfo` from the build | all | done 2026-10-06 (attempt 3; release-profile and plain `mvn clean verify`, `mkdocs build --strict`, `check_site.py`, `check_changelog.py` exit 0) |
+
+Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
+file deleted. Tamper evidence rests on the unkeyed chain plus external
+checkpoints (task 97) under separate custody.
+
+**0.4.0 release candidate is ready** (task 129 merged 2026-10-06; nothing is pushed, tagged or published). Next is the owner-gated checklist below. 127 was the last feature task. 106 merged 2026-10-06; 105 merged earlier the same day (`mvn clean verify` of the merged head exited 0). Tasks 104, 123 and
+126 merged on 2026-10-06; `mvn clean verify` of the merged head exited 0 only
+after 126.
+Tasks 102 and 103 carried notes that a retention below six months refuses
+startup unless `dataprism.audit.retention-override` is set.
+
+~~0.4.0 release note (94) for `CHANGELOG.md`~~ — closed 2026-10-06: task 129 put it in `CHANGELOG.md [0.4.0]` with the other behaviour changes.
+
+Follow-ups from tasks 104 and 123, not yet tasks:
+
+1. Deprecate `ToolAdmission.none()` and the old `DataPrismMcpServer`
+   stdio/streamableHttp overloads, and move the integration-tests
+   `ExampleApplication` (stdio) to the admission overload. Owned by
+   data-prism-mcp and data-prism-security.
+2. Consider upgrading `ToolAdmission` and `OversightPolicy` to
+   PRIVACY_CRITICAL with a COMPETING_BEAN_REFUSAL guard: an application
+   `@Primary` `ToolAdmission` could silently disable admission.
+   `dataPrismHttpTransport` and `dataPrismAuthorizationService` are also
+   REPLACEABLE.
+3. Delete the now-unused `ClusterScopeBudgetConfiguration`.
+4. The cluster budget reaches `PrivacyCluster` through an `ObjectProvider`, so
+   the destroy-order dependency is not registered. Harmless today; register it
+   explicitly.
+5. Resolved by task 128: the duplicated refusal-code regex now lives in one
+   shared `RefusalCodes` helper.
+6. Amend task 112's acceptance wording: bare refusal codes and plain `DENY`
+   appear only in pre-0.4.0 files.
+7. Resolved by task 128: codes from application scrubbers, validators and
+   resolvers are validated before client text.
+8. Process: when two parallel tasks change the same record format or
+   vocabulary, test the merged result before recording. 104 and 123 each passed
+   against base 2c32884 and failed together.
+
+Follow-ups from task 106, for 0.4.x, not yet tasks:
+
+9. `wt-new.sh` and `wt-merge.sh` default to `main`; they need a base-branch
+   argument. Task 106 had to be merged by hand into the planning branch.
+10. `docs/reidentification.md` (around lines 152-153) says Docker Compose
+    publishing of the operator port is "not yet done". That is true until the
+    known 0.4.x Docker item lands; update the sentence then.
+
+Follow-ups from task 127, for 0.4.x, not yet tasks:
+
+11. Emit a dedicated failure metric in the `CachingSyntheticValueSource` catch
+    block (data-prism-hazelcast) and wire `failures()` into health. Today a
+    reverse-index write failure shows only as `IDENTITY_CACHE_MISS` plus a WARN.
+12. The forward identity cache is not wired for embedded topology when
+    re-identification is disabled. Performance only.
+13. The `CachingSyntheticValueSource` wrapper is built over a cluster with no
+    size cap, so memory grows with scopes x subjects x namespaces. Pre-existing;
+    document it or cap it.
+
+Accepted current behaviour: an approval-required call still consumes a
+rate-limit token. This is documented.
+
+#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116)
+
+Lets an organisation's own correlation id flow from its MCP client through the
+audit record and on to its REST sources, and writes audit events as JSON that
+Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
+(102), hash encoding (117) and configuration wiring (103, 104).
+
+| Wave | Task | What | Depends on |
+|---|---|---|---|
+| 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
+| 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
+| 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
+| 3 | 110 | MCP tools and orchestrator carry the id to audit and sources | 101, 108, 109, 118 |
+| 3 | 112 | JSON audit projection with ECS field mapping and routing hints | 109, 118 |
+| 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112 |
+| 4 | 114 | PII scans cover the correlation id and the JSON projection | 110, 112 |
+| 5 | 115 | Client correlation-header snippets and log-shipping recipes as examples | 113 |
+| 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
+
+108 has no dependency and could start at any time, but nothing in 0.5.0 ships
+before 0.4.0. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
+full text follows, recorded here because no other file holds it.
+
+- **C1** — Record the external correlation id inside the hash, as
+  `recordVersion` 3. Recommended: yes. The alternative, a field outside the
+  hash, could be edited without breaking the chain.
+- **C2** — Resolved: task 117 fixes the v2 encoding before release, and v3
+  appends to it.
+- **C3** — Keep the hash-chained native `.log` segments authoritative and write
+  a separate JSON projection through a tee. Recommended. The alternative is JSON
+  as the chained format, which means the verifier must know the mapping. Cost:
+  a second copy on disk, purged on the same retention.
+- **C4** — The default inbound correlation-id pattern `[A-Za-z0-9._:-]{1,128}`
+  also admits name-like tokens such as `jane.doe`. Keep it, or default to
+  stricter UUID/hex only. Open.
+- **C5** — ECS `event.outcome` is derived from `policyDecision` (`ALLOW` or
+  `ALLOW:*` is success, empty is unknown, anything else is failure), and
+  operator-set routing constants (dataset, namespace) are added to each output
+  line. Is this acceptable as reshaping? The raw decision is kept as well. Open.
+- **C6** — Defer OpenTelemetry and Micrometer Tracing. Traceparent mode covers
+  W3C propagation without a tracing dependency, and Micrometer's ThreadLocal
+  context propagation conflicts with the parallel fan-out. Recommended: defer.
+- **C7** — No direct Elasticsearch sink; ship from local files with Filebeat or
+  Elastic Agent. Recommended: confirm.
+
+Task 112 cites C3 and C5.
+
+#### Owner decisions
+
+D1, D2, D3, D4, D5, D7 and D8 are answered; D6 is open and informational.
+
+- D1: answered 2026-10-06. The 2026-09-08 deferral of the re-identification
+  operator surface is lifted. Recorded in
+  `docs/architecture.md#decisions-worth-knowing`.
+- D2: answered 2026-10-06. Task 107 dropped; the 2026-09-23 decision rejecting
+  a keyed chain is reaffirmed. The key would live in the operator's process,
+  and third-party verification would need a key that also lets its holder
+  forge.
+- D3: answered 2026-10-06. A segmented audit sink writes daily files, writes a
+  `RETENTION_ANCHOR` checkpoint, then deletes segments past retention. The
+  single-file `FileAuditSink` is unchanged. Native segment files are named
+  `audit-YYYY-MM-DD.log`.
+- D4: answered 2026-10-06. The operator surface is a second port in the same
+  process, not a separate JVM. Shapes 105.
+- D5: answered 2026-10-06. A retention below six months fails startup unless
+  `dataprism.audit.retention-override` is set (Art. 19 allows other periods
+  under Union or national law); using it is the operator's legal
+  responsibility.
+- D6: open, informational. No Art. 10(5) bias-detection profile has been filed.
+  Affects what 106 may claim.
+- D7: confirmed 2026-10-06. A checkpoint-write failure refuses all audited
+  calls until a checkpoint can be written again. Implemented in 97.
+- D8: answered 2026-10-06. Four-eyes for re-identification defaults ON. A
+  configured high-impact tool call is refused with `APPROVAL_REQUIRED` and an
+  `approvalId`; a different person approves it on the operator port; the
+  identical call with the same argument fingerprint then succeeds once.
+
+Pending-approval cap (planner's choice, accepted by the owner, task 120):
+default 5 live pending approvals per requester, counted separately for
+tool-call and re-identification approvals. The operator surface has no rate
+limit. `TOO_MANY_PENDING` maps to HTTP 429.
+
+Owner decisions of 2026-10-06 taken during tasks 103, 118, 123 and 124:
+
+- A purge integrity failure (task 103) gives an ERROR log, metrics, and the
+  `auditIntegrity` health status DOWN, while serving continues. Four separate
+  metric names (`dataprism.audit.retention.unverified`, `.anchor_failed`,
+  `.delete_failed`, `.failed`) are accepted in place of one tagged metric.
+- Task 123 unifies every denial as `DENY:<code>`, including the MCP tools' bare
+  codes. A malformed code is recorded as `DENY:INVALID_REFUSAL_CODE`.
+- Task 124 numbers the placeholders `<undeclared-N>` alphabetically by name.
+- Scanning property names in the leak validators is a 0.4.x follow-up.
+- D-127(a), answered for task 127: when re-identification is on, an
+  application `SyntheticValueSource` is wrapped like the default, and the
+  wrapper falls back to the wrapped source on any cache failure. There is no
+  `REIDENTIFICATION_INDEX_UNWIRED` refusal.
+- Approvers on the operator port see the pseudonym and namespace, never the
+  subject id.
+- Exposing the operator port in Docker Compose, `server.json` and the image is
+  a 0.4.x follow-up.
+
+Follow-ups from the task 124 review, not yet tasks:
+
+- `UndeclaredNameToolResultScanTest` never plants an `AuditEvent`; add a
+  not-vacuous audit case.
+- The orchestrator's shallow merge collapses `<undeclared-1>` from two sources
+  into one key. No readable data is lost, but the count is understated.
+
+Follow-ups from the task 120 review, not yet tasks:
+
+- `HazelcastApprovalStore`'s cap count scans all approvals under the requester
+  lock (O(n)); consider an index or a predicate.
+- The two-member contract test picks a port from `nanoTime` with auto-increment
+  off and does not retry on collision.
+
+Follow-ups from the wave 4 reviews (tasks 103, 117, 118, 121, 125), not yet tasks:
+
+- `AuditEventHashTest`: add a non-ASCII pair, so that the length prefix is
+  pinned to byte length and not char length.
+- Docs: the shape guard still renders real loop-counter indices (safe), which
+  is inconsistent with `[*]` elsewhere.
+- `RefusalPaths`: `email[07700900123]` next to a declared `email` is reported as
+  `$.email[*]`, which can mislead triage.
+- Task 103: the containment refusal messages for the same code differ between
+  validation and the bean re-check. Also note that two `AuditSink` beans raise
+  `NoUniqueBeanDefinitionException`.
+- Task 125: `requireVersion()` is duplicated in four integration tests; consider
+  a shared helper.
+- ~~`DataPrismMcpServer.serverInfo` hardcodes `"0.3.1"`~~ — closed 2026-10-06 by
+  task 129: it reads a Maven-filtered version resource and falls back to `unknown`.
+- ~~Release time: the Dockerfile `ARG VERSION` and the `publish-image.yml`
+  default~~ — closed 2026-10-06 by task 129 (both say 0.4.0).
+
+Follow-ups from the task 102 review, not yet tasks:
+
+- Document in `docs/audit.md` that a custom `AuditCheckpointSink` without a
+  `retentionAnchors()` implementation refuses every purge after the first.
+- Add a comment at `AuditRetention.java` near line 224 explaining why skipping
+  unparseable lines is safe: `verifySegments` runs first and refuses a segment
+  it cannot parse.
+
+Follow-ups from the task 100 review, not yet tasks:
+
+- The core `ApprovalStore` needs an explicit revoke or expire path for APPROVED
+  requests. `ReidentificationService` rolls back an unaudited approve by
+  consuming it, which looks the same as a real collect.
+- Move `SubjectForMethodReferenceFixture` into a nested class of
+  `ArchitectureTest`; it sits outside task 100's Owns list.
+- `findPending` on `InMemoryApprovalStore` and `HazelcastApprovalStore` is no
+  longer used by re-identification. Check whether `ToolAdmission` still needs
+  it; remove it if not. Tasks 119 and 120 touch both stores, so decide there.
+
+Follow-ups from the task 105 review (0.4.x), not yet tasks:
+
+- Add a behavioural test that an MCP-port MVC error still reaches Boot's
+  `/error`. Today it is checked only structurally, through `ControllerAdviceBean`.
+- `data-prism-architecture` tests log the SLF4J multiple-providers warning
+  (logback-classic plus slf4j-simple). Remove one from that module's test
+  classpath.
+- Operator 401s keep the Bearer `error_description` header. Informational; it
+  matches the MCP port.
+
+Follow-ups from the task 128 review, not yet tasks:
+
+- `MalformedRefusalCodeTest`'s log assertion uses the throwable proxy's
+  `toString`; also check `getThrowableProxy().getMessage()`.
+- `ToolCalls` copies `approvalId` into client text unchecked. It comes from the
+  store, so the risk is low; consider validating its format.
+
+Follow-ups from the task 96 review, not yet tasks:
+
+- Non-scrub refusals (budget exhaustion, `NO_SOURCE_DATA`) also get
+  `merged:<refused>`, which wrongly suggests a validation failure.
+
+Follow-up from the task 122 review, not yet a task:
+
+- `ServerStartupTest.java:224-225`: the comment says a port collision makes
+  startup fail. With `--server.port=0` a held 127.0.0.1 port is simply never
+  assigned, so reword it. The 404 cause is also unproven (mechanism
+  reproduced only); reopen 122 if the flake returns.
+
+Follow-ups from the task 97 review, not yet tasks:
+
+- `AuditRecorder.writeCheckpoint` clears `checkpointFailure` directly, outside
+  the two D7 methods. Move it into a D7 method or fix the field javadoc.
+- `docs/audit.md:133`: the exit-3 row's precedence text omits exit 5.
+- `AuditChainVerifierCli`: a malformed checkpoint file prints "could not read
+  <audit path>". It should name the checkpoint file.
+- A whole deleted boot is detectable only if that boot wrote a checkpoint past
+  sequence 0. Consider a periodic checkpoint soon after boot (task 103's
+  scheduling).
+
+Follow-ups from the wave 1 reviews, not yet tasks:
+
+- Rename `HazelcastOversightTest`'s `sameIdCreatedConcurrently...NeverCrossApproves`
+  or assert approve and consume after the race; the name claims more than the
+  test checks.
+- Add a direct test for `reject()` on an ambiguous id.
+- Add a test pinning that undeclared object or array values are never descended
+  into when recording dispositions.
+- `data-prism-integration-tests` surefire reports "kill self fork JVM" after
+  about 30 seconds following `ShippedDefaultsTest`. A non-daemon thread is the
+  likely cause. The build still passes.
+
+Retired from these lists on 2026-10-06 because tasks 117-122 now cover them:
+the `AuditEventHash` escaping gap and the verifier's limitation text (117), the
+payload-key leak on refusal paths (118), `InMemoryApprovalStore` parity and the
+`HazelcastApprovalStore.java:55` comment (119), the per-requester pending cap
+(120), the `REFUSED` wording and `DECISION:<code>` documentation (121), and the
+`ServerStartupTest` 404 flake (122).
 
 ### S8 and S9a — done
 
@@ -1374,6 +1688,22 @@ PR #101 on 2026-09-24; the site redeployed. See `HISTORY.md`.
 - ~~`docs/tools.md:120` says "unclassified values dropped"~~ — corrected on
   `site-polish` (2026-09-24, see `HISTORY.md`); the row now states an
   unclassified field refuses the whole response under the shipped profiles.
+
+### 0.4.0 release checklist (owner go-ahead required)
+
+Owner decision D-129(a): publish to Maven Central (library modules), GHCR and
+the MCP Registry. `data-prism-server` stays off Central (`skipPublishing`) and
+comes from source, a GitHub Release or GHCR. Nothing below has been done; each
+step is an outward action and needs the owner's go-ahead.
+
+1. Push `claude/data-prism-eu-compliance-04cf83` and open a PR to `main`.
+2. Wait for CI green, then merge.
+3. Tag `v0.4.0` on the merge commit, signed (`git tag -s v0.4.0 -m "v0.4.0"`), and push the tag. Watch `release.yml`.
+4. Create the GitHub Release for `v0.4.0`.
+5. Dispatch `publish-central`, then verify the library modules at 0.4.0 on Central (`data-prism-server` must not appear).
+6. Dispatch `publish-image` with `-f version=0.4.0`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
+7. Dispatch `publish-mcp`, then verify the registry lists 0.4.0 as latest.
+8. After Central publishes, re-verify the `docs/extending.md` consumer snippet against Central 0.4.0 (throwaway project, no local repository). If it passes, drop the "(recorded against 0.3.0)" markers (four, around lines 513, 528, 539, 701) in a follow-up commit.
 
 ### Task 91 — done, and the 0.3.1 release is complete. No task file remains under `docs/plan/tasks/`.
 

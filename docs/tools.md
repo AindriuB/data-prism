@@ -117,7 +117,7 @@ never read for its value (`ReservedArguments`).
 | `subject` | string | the scope-local pseudonym for this subject, e.g. `SUBJ-0VYFHPY9` |
 | `sources` | object, alias → status | every source asked, keyed by its scope-local alias (or its real name if the caller holds `EXPOSE_SOURCE_NAMES`); status is one of `ANSWERED`, `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `SKIPPED_OVER_LIMIT` |
 | `findings` | array of finding | see "Consistency findings" below — empty when nothing to report |
-| `entity` | object | the correlated, scrubbed entity: real values pseudonymised, sensitive values redacted or removed per their classification; under the shipped profiles, an unclassified field refuses the whole response rather than being dropped |
+| `entity` | object | the correlated, scrubbed entity: real values pseudonymised, sensitive values redacted or removed per their classification; under the shipped profiles, an unclassified field refuses the whole response rather than being dropped; under a profile that admits undeclared properties, their names are replaced by `<undeclared-N>` or dropped |
 
 ### Worked example
 
@@ -195,6 +195,15 @@ not.
 The sequence diagram below traces one call through authorisation, scope
 resolution, the orchestrator, a source adapter, scrubbing, validation and
 audit.
+
+Each call's audit record also lists its field dispositions: the path of every
+field scrubbed from every answering source and the action taken on it. A
+refusal is recorded as `REFUSED` under a fixed key, never a path. The key is
+`<source>:<refused>` when one source's scrub refused, and `merged:<refused>`
+for every other refusal. No path from the payload is ever
+recorded, because payload keys can carry data. `merged:<refused>` also marks
+refusals that are not validation failures, such as `NO_SOURCE_DATA` or an
+exhausted budget. It names paths and actions, never values.
 
 [![Sequence diagram of one get_entity_context call: the MCP client calls the tool, which authorises the caller, resolves a privacy session, then asks the orchestrator to fan out to a source adapter, scrub the record, validate it and record an audit event, before returning the response to the client.](assets/diagrams/entity-context-call.svg)](assets/diagrams/entity-context-call.svg)
 Select the diagram to open it full size.
@@ -413,6 +422,60 @@ only `GET_ENTITY_CONTEXT`:
 
 No source adapter is ever invoked for a refused call: authorisation happens
 before the orchestrator is asked for anything.
+
+## Admission codes: oversight refusals
+
+After authorisation and scope resolution, and before any source is touched,
+both tools check admission. A refused call returns `isError` with the code as
+its text, is counted as denied, and is audited as a `DENY:<code>` event carrying the same
+code. No source adapter is invoked.
+
+| Code | Meaning |
+|---|---|
+| `DATAPRISM_PAUSED` | An operator has paused every call. |
+| `TOOL_PAUSED` | An operator has paused this tool. |
+| `SCOPE_PAUSED` | An operator has paused the caller's privacy scope. |
+| `CALLER_RATE_LIMITED` | The caller has used its request allowance for the current window. |
+| `APPROVAL_REQUIRED` | The tool needs a second person's approval. The text is `APPROVAL_REQUIRED approvalId=<id>`. |
+| `APPROVAL_PENDING` | The approval is requested and not yet decided. The text is `APPROVAL_PENDING approvalId=<id>`. |
+| `TOO_MANY_PENDING` | The caller already holds the maximum number of live pending tool-call approvals (`OversightPolicy.maxPendingPerRequester`, default 5). No approval is created. A matching retry still gets `APPROVAL_PENDING`. |
+| `OVERSIGHT_UNAVAILABLE` | Admission could not be evaluated, so the call is refused rather than let through. |
+
+After a different person approves, the identical call succeeds once. "Identical"
+means the same entity type and subject, and also the same purpose, privacy
+profile and client: an approval granted for one purpose does not cover a retry
+under another. A second retry, or a call with any changed argument, purpose,
+profile or client, is refused with `APPROVAL_REQUIRED` and a new approval id,
+and the earlier approval is left unconsumed. The approval id and the
+approver's id are written to the audit record of the call that ran under it.
+Neither is an argument: a caller cannot supply them.
+
+A call that needs approval consumes one of the caller's rate-limit tokens before
+it is refused with `APPROVAL_REQUIRED` or `APPROVAL_PENDING`. That is the current
+behaviour: a caller that polls while waiting for an approval can rate-limit
+itself with `CALLER_RATE_LIMITED`. This will be revisited when oversight is
+wired into the server.
+
+## Correlating with your AI-system logs
+
+Every tool result that the audit trail records carries that call's
+`correlationId` in the result's `_meta`, under the key
+`io.github.aindriub.dataprism/correlationId`. Store it in your AI system's own
+log entry for the call. It is the key that joins that entry to the matching
+Data Prism audit record, which carries the same value, for both successful
+calls and refusals.
+
+The `correlationId` is a random identifier. It is derived from nothing in the
+request or the response and carries no data. It is never placed in
+`structuredContent` or in the text of a successful result, so the model does not
+see it. A refusal the orchestrator audits (for example `VALIDATION_FAILED`,
+`NO_SOURCE_DATA` or `SCOPE_READ_BUDGET`, recorded as `DENY:<code>`) and a failure
+it audits as `DENY:REQUEST_FAILED` carry the id of that DENY record. A call
+rejected for missing `entityType` or
+`subjectId` is not audited, so it carries no `_meta` correlation id.
+
+A refusal code that is not an upper-case token (`[A-Z][A-Z0-9_]{0,63}`) is shown to the
+client, and recorded in the audit, as `INVALID_REFUSAL_CODE`.
 
 ## Scope isolation
 

@@ -42,6 +42,7 @@ public final class PrivacyExtensionPoints {
 
     private static final Map<String, BeanContract> BEANS = Map.ofEntries(
             entry("dataPrismIdentityResolverPreflight", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationModulePreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismPropertiesValidated", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContractValidator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismClock", Classification.REPLACEABLE, Guard.NONE),
@@ -61,6 +62,11 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismAuditRecorder", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismSlf4jAuditSink", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismHashChainedAuditSink", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismAuditCheckpointSink", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismAuditRetention", Classification.REPLACEABLE, Guard.NONE),
+            // Internal scheduler, not an extension point; the enum has no "internal" value, and it is not privacy-critical.
+            entry("auditIntegrityHealthIndicator", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismAuditMaintenance", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismScopeBudget", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismClusterScopeBudget", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismSharedBudgetPreflight", Classification.REPLACEABLE, Guard.NONE),
@@ -71,6 +77,19 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismHttpTransport", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpSyncServer", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpServlet", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismPrivacyCluster", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismOversightState", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismClusterOversightState", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismApprovalStore", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismClusterApprovalStore", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismCallerRateLimiter", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismClusterCallerRateLimiter", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismOversightPolicy", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismToolAdmission", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismParameterFingerprinter", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationPolicy", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationService", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationIndexFeed", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismPassThroughIdentityResolver", Classification.REPLACEABLE, Guard.NONE));
 
     /** @throws IllegalStateException if {@code beanMethodName} has no checked-in row. */

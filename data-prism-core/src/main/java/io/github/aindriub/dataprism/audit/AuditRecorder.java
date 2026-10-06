@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.audit;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -23,7 +24,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Task 66's verifier therefore never has to tolerate a gap: a failed write
  * leaves no trace in either this recorder's state or the sink's own output.
  */
-public final class AuditRecorder {
+public final class AuditRecorder implements AutoCloseable {
 
     private static final String GENESIS = "0".repeat(64);
 
@@ -39,7 +40,18 @@ public final class AuditRecorder {
     private final String instanceId;
     private final AtomicLong sequence = new AtomicLong();
 
+    /** Null for the constructors that write no checkpoints. */
+    private final AuditCheckpointSink checkpointSink;
+
     private volatile String previousHash = GENESIS;
+
+    /**
+     * Set when a checkpoint write failed; cleared by the next successful one.
+     * Only read and written through {@link #refuseWhileCheckpointUnavailable()}
+     * and {@link #noteCheckpointFailure}, which together are the whole of the
+     * owner decision D7 (a checkpoint-write failure refuses audited calls).
+     */
+    private Throwable checkpointFailure;
 
     /**
      * {@code writerId} identifies the deployment (for example {@code
@@ -50,6 +62,22 @@ public final class AuditRecorder {
      * new writer starting at GENESIS instead of a false chain break.
      */
     public AuditRecorder(AuditSink sink, Clock clock, String writerId) {
+        this(sink, clock, writerId, null, false);
+    }
+
+    /**
+     * As above, and additionally writes a {@code BOOT} checkpoint (sequence 0,
+     * GENESIS head) to {@code checkpointSink} before returning. If that write
+     * fails the constructor throws: a writer that cannot be checkpointed does
+     * not start.
+     */
+    public AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink) {
+        this(sink, clock, writerId, Objects.requireNonNull(checkpointSink, "checkpointSink"), true);
+    }
+
+    private AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink,
+                          boolean writeBoot) {
+        this.checkpointSink = checkpointSink;
         this.sink = Objects.requireNonNull(sink, "sink");
         this.clock = Objects.requireNonNull(clock, "clock");
         Objects.requireNonNull(writerId, "writerId");
@@ -61,6 +89,59 @@ public final class AuditRecorder {
                     "writerId must not contain '" + INSTANCE_ID_SEPARATOR + "': " + writerId);
         }
         this.instanceId = writerId + INSTANCE_ID_SEPARATOR + UUID.randomUUID();
+        if (writeBoot) {
+            writeCheckpoint(AuditCheckpoint.Kind.BOOT, 0, GENESIS);
+        }
+    }
+
+    /**
+     * Writes a {@code PERIODIC} checkpoint of the current head. If an earlier
+     * checkpoint write failed, success here lifts the refusal on {@link
+     * #record(AuditEntry)}. Throws if the write fails.
+     */
+    public synchronized void checkpoint() {
+        requireCheckpointSink();
+        writeCheckpoint(AuditCheckpoint.Kind.PERIODIC, sequence.get(), previousHash);
+    }
+
+    /** Writes a {@code SHUTDOWN} checkpoint of the current head. A no-op without a checkpoint sink. */
+    @Override
+    public synchronized void close() {
+        if (checkpointSink != null) {
+            writeCheckpoint(AuditCheckpoint.Kind.SHUTDOWN, sequence.get(), previousHash);
+        }
+    }
+
+    private void requireCheckpointSink() {
+        if (checkpointSink == null) {
+            throw new IllegalStateException("this recorder was built without an AuditCheckpointSink");
+        }
+    }
+
+    private void writeCheckpoint(AuditCheckpoint.Kind kind, long seq, String head) {
+        try {
+            checkpointSink.record(new AuditCheckpoint(kind, instanceId, seq, head, clock.instant()));
+        } catch (RuntimeException e) {
+            noteCheckpointFailure(e);
+            throw e;
+        }
+        checkpointFailure = null;
+    }
+
+    // ---- Owner decision D7: a checkpoint-write failure refuses audited calls. ----
+    // Both halves of that behaviour live in the next two methods. To change the
+    // policy (for example to warn and carry on), change only these.
+
+    private void noteCheckpointFailure(RuntimeException cause) {
+        checkpointFailure = cause;
+    }
+
+    private void refuseWhileCheckpointUnavailable() {
+        if (checkpointFailure != null) {
+            throw new AuditCheckpointUnavailableException(
+                    "AUDIT_CHECKPOINT_UNAVAILABLE: the last checkpoint write failed; refusing to record until "
+                            + "checkpoint() succeeds", checkpointFailure);
+        }
     }
 
     /**
@@ -79,6 +160,13 @@ public final class AuditRecorder {
                                           String scopeId, String purpose, String caseId,
                                           String policyDecision, Set<String> sourceSystems,
                                           Set<String> rejectedArguments, String correlationId) {
+        return record(new AuditEntry(principalId, clientId, tool, entityType, subjectPseudonym,
+                parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, sourceSystems,
+                rejectedArguments, correlationId, Map.of(), "", ""));
+    }
+
+    public synchronized AuditEvent record(AuditEntry entry) {
+        refuseWhileCheckpointUnavailable();
         long seq = sequence.incrementAndGet();
         String id = UUID.randomUUID().toString();
         String prior = previousHash;
@@ -87,14 +175,29 @@ public final class AuditRecorder {
         // record's stored hash disagreeing with its own stored timestamp and the
         // chain breaking on its very first record.
         Instant timestamp = clock.instant();
-        String hash = AuditEventHash.compute(id, timestamp, instanceId, seq, principalId, clientId, tool,
-                entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
-                policyDecision, correlationId, sourceSystems, rejectedArguments, prior);
-
-        AuditEvent event = new AuditEvent(id, timestamp, principalId, clientId, tool, entityType,
-                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
-                policyDecision, sourceSystems, rejectedArguments, correlationId, instanceId, seq, prior,
-                hash);
+        // Dispositions are validated and sorted by AuditEvent's constructor; build with a
+        // placeholder hash first so the hash is computed over the normalised event.
+        int version = AuditEvent.CURRENT_VERSION;
+        AuditEvent draft;
+        try {
+            draft = new AuditEvent(id, timestamp, entry.principalId(), entry.clientId(), entry.tool(),
+                entry.entityType(), entry.subjectPseudonym(), entry.parameterFingerprint(),
+                entry.privacyProfile(), entry.scopeId(), entry.purpose(), entry.caseId(),
+                entry.policyDecision(), entry.sourceSystems(), entry.rejectedArguments(),
+                entry.correlationId(), instanceId, seq, prior, "", version, entry.fieldDispositions(),
+                entry.approvalId(), entry.approverId());
+        } catch (RuntimeException e) {
+            // An invalid disposition must not consume a sequence number.
+            sequence.decrementAndGet();
+            throw e;
+        }
+        String hash = AuditEventHash.compute(draft);
+        AuditEvent event = new AuditEvent(id, timestamp, draft.principalId(), draft.clientId(), draft.tool(),
+                draft.entityType(), draft.subjectPseudonym(), draft.parameterFingerprint(),
+                draft.privacyProfile(), draft.scopeId(), draft.purpose(), draft.caseId(),
+                draft.policyDecision(), draft.sourceSystems(), draft.rejectedArguments(),
+                draft.correlationId(), instanceId, seq, prior, hash, version, draft.fieldDispositions(),
+                draft.approvalId(), draft.approverId());
 
         try {
             sink.record(event);

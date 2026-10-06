@@ -338,7 +338,7 @@ class McpHttpEndToEndTest {
             assertThat(result.isError()).isEqualTo(Boolean.TRUE);
             assertThat(text(result)).contains("UNKNOWN_PURPOSE");
             assertThat(auditEvents).singleElement().satisfies(event -> {
-                assertThat(event.policyDecision()).isEqualTo("UNKNOWN_PURPOSE");
+                assertThat(event.policyDecision()).isEqualTo("DENY:UNKNOWN_PURPOSE");
                 assertThat(event.sourceSystems()).isEmpty();
             });
         } finally {

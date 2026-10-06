@@ -31,6 +31,9 @@ public class DataPrismProperties {
     private Metrics metrics = new Metrics();
     private Hazelcast hazelcast = new Hazelcast();
     private Identity identity = new Identity();
+    private Oversight oversight = new Oversight();
+    private Reidentification reidentification = new Reidentification();
+    private Operator operator = new Operator();
     private Map<String, Source> sources = new LinkedHashMap<>();
 
     public Transport getTransport() {
@@ -97,6 +100,30 @@ public class DataPrismProperties {
         identity = v == null ? new Identity() : v;
     }
 
+    public Oversight getOversight() {
+        return oversight;
+    }
+
+    public void setOversight(Oversight v) {
+        oversight = v == null ? new Oversight() : v;
+    }
+
+    public Reidentification getReidentification() {
+        return reidentification;
+    }
+
+    public void setReidentification(Reidentification v) {
+        reidentification = v == null ? new Reidentification() : v;
+    }
+
+    public Operator getOperator() {
+        return operator;
+    }
+
+    public void setOperator(Operator v) {
+        operator = v == null ? new Operator() : v;
+    }
+
     public Map<String, Source> getSources() {
         return sources;
     }
@@ -132,6 +159,110 @@ public class DataPrismProperties {
                     "dataprism.transport.fixture-development requires dataprism.transport.mode=stdio");
         }
         validateSources(fixture);
+        validateOversight();
+    }
+
+    /**
+     * Refuses a configured server port equal to {@code dataprism.operator.port}. {@code server.port}
+     * is Spring Boot's own property, not part of this vocabulary, so the caller supplies it.
+     *
+     * @param serverPort the effective {@code server.port}, or {@code null} when it is not known
+     */
+    void validateOperatorPort(Integer serverPort) {
+        validateOperatorPort(serverPort, null);
+    }
+
+    /**
+     * As {@link #validateOperatorPort(Integer)}, and also refuses a port equal to
+     * {@code management.server.port}: the actuator listener must not share the operator connector.
+     *
+     * @param managementPort the effective {@code management.server.port}, or {@code null} when it is
+     *                       unset or not known
+     */
+    void validateOperatorPort(Integer serverPort, Integer managementPort) {
+        if (operator.enabled && operator.port != null && serverPort != null && serverPort > 0
+                && operator.port.equals(serverPort)) {
+            refuse("OPERATOR_PORT_SHARED", "dataprism.operator.port must differ from server.port");
+        }
+        if (operator.enabled && operator.port != null && managementPort != null && managementPort > 0
+                && operator.port.equals(managementPort)) {
+            refuse("OPERATOR_PORT_SHARED", "dataprism.operator.port must differ from management.server.port");
+        }
+    }
+
+    private void validateOversight() {
+        for (String tool : oversight.approvalRequiredTools) {
+            if (!OVERSIGHT_TOOLS.contains(tool)) {
+                refuse("UNKNOWN_OVERSIGHT_TOOL",
+                        "dataprism.oversight.approval-required-tools must name get_entity_context or compare_entity_sources");
+            }
+        }
+        positive(oversight.approvalTtl, "dataprism.oversight.approval-ttl");
+        positive(oversight.callerRateLimit.window, "dataprism.oversight.caller-rate-limit.window");
+        if (oversight.callerRateLimit.requests != null && oversight.callerRateLimit.requests <= 0) {
+            refuse("INVALID_OVERSIGHT_LIMIT", "dataprism.oversight.caller-rate-limit.requests must be positive");
+        }
+        if (oversight.maxPendingPerRequester <= 0) {
+            refuse("INVALID_OVERSIGHT_LIMIT", "dataprism.oversight.max-pending-per-requester must be positive");
+        }
+        positive(reidentification.approvalTtl, "dataprism.reidentification.approval-ttl");
+        if (reidentification.maxPendingPerRequester <= 0) {
+            refuse("INVALID_OVERSIGHT_LIMIT",
+                    "dataprism.reidentification.max-pending-per-requester must be positive");
+        }
+        if (reidentification.enabled) {
+            if (!hazelcast.reidentificationEnabled) {
+                refuse("REIDENTIFICATION_INDEX_DISABLED",
+                        "dataprism.reidentification.enabled requires dataprism.hazelcast.reidentification-enabled=true");
+            }
+            if (!"embedded".equals(hazelcast.topology)) {
+                refuse("REIDENTIFICATION_REQUIRES_CLUSTER",
+                        "dataprism.reidentification.enabled requires dataprism.hazelcast.topology=embedded");
+            }
+            if (reidentification.purposes.isEmpty() || reidentification.purposes.stream().anyMatch(p -> blank(p))) {
+                refuse("EMPTY_REIDENTIFICATION_PURPOSES",
+                        "dataprism.reidentification.purposes must name at least one non-blank purpose");
+            }
+            if (reidentification.fourEyes && reidentification.roles.values().stream()
+                    .noneMatch(p -> p != null && p.contains(Reidentification.Permission.APPROVE))) {
+                refuse("NO_REIDENTIFICATION_APPROVER",
+                        "four-eyes re-identification requires a role holding APPROVE in dataprism.reidentification.roles");
+            }
+            if (!operator.enabled) {
+                refuse("REIDENTIFICATION_REQUIRES_OPERATOR_SURFACE",
+                        "dataprism.reidentification.enabled requires dataprism.operator.enabled=true");
+            }
+        }
+        if (operator.enabled && (operator.port == null || operator.port < 1 || operator.port > 65535
+                || blank(operator.requiredAudience) || blank(operator.requiredScope))) {
+            refuse("MISSING_OPERATOR_SECURITY",
+                    "dataprism.operator.enabled requires port, required-audience and required-scope");
+        }
+        if (operator.enabled && !blank(operator.requiredAudience)
+                && operator.requiredAudience.equals(security.jwt.audience)) {
+            refuse("OPERATOR_AUDIENCE_SHARED",
+                    "dataprism.operator.required-audience must differ from dataprism.security.jwt.audience");
+        }
+        if (operator.enabled && !blank(operator.address)) {
+            try {
+                java.net.InetAddress.getByName(operator.address.trim());
+            } catch (java.net.UnknownHostException | RuntimeException unresolvable) {
+                refuse("INVALID_OPERATOR_ADDRESS", "dataprism.operator.address is not a usable address");
+            }
+        }
+        if (!operator.enabled && (!oversight.approvalRequiredTools.isEmpty()
+                || oversight.callerRateLimit.requests != null)) {
+            refuse("OVERSIGHT_REQUIRES_OPERATOR_SURFACE",
+                    "approval-required tools and a caller rate limit require dataprism.operator.enabled=true");
+        }
+    }
+
+    private static final Set<String> OVERSIGHT_TOOLS = Set.of("get_entity_context", "compare_entity_sources");
+
+    private static void positive(Duration v, String property) {
+        if (v == null || v.isZero() || v.isNegative()) {
+            refuse("INVALID_OVERSIGHT_LIMIT", property + " must be positive");
+        }
     }
 
     private void protectedDeployment() {
@@ -182,8 +313,50 @@ public class DataPrismProperties {
         // at property-validation time, means a missing path is a startup refusal
         // with a stable code rather than a NullPointerException once that bean is
         // actually constructed.
-        if ("hash-chained".equals(audit.sink)) {
+        if (!blank(audit.directory) && !blank(audit.filePath)) {
+            refuse("AMBIGUOUS_AUDIT_LOCATION",
+                    "set either dataprism.audit.directory or dataprism.audit.file-path, not both");
+        }
+        if ("hash-chained".equals(audit.sink) && blank(audit.directory)) {
             required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
+        }
+        if (!blank(audit.directory)) {
+            // Whatever the sink: the retention bean is created from the directory alone, and purge
+            // reads its earlier anchors back from the checkpoint file. Without one it could never
+            // prove a chain's start, so retention cannot run at all.
+            if (blank(audit.checkpoint.filePath)) {
+                refuse("RETENTION_REQUIRES_CHECKPOINT",
+                        "dataprism.audit.directory requires dataprism.audit.checkpoint.file-path");
+            }
+        }
+        if (!blank(audit.checkpoint.filePath)) {
+            // An unparseable path is not waved through here: canonical() maps it to a path that never
+            // matches, and it is then refused as AUDIT_CHECKPOINT_FILE_UNUSABLE when the checkpoint
+            // sink tries to open it (DataPrismAutoConfiguration#dataPrismAuditCheckpointSink).
+            String checkpoint = audit.checkpoint.filePath;
+            if ((!blank(audit.directory) && (sameOrInside(checkpoint, audit.directory)))
+                    || (!blank(audit.filePath) && sameOrInside(checkpoint, audit.filePath))) {
+                refuse("AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE",
+                        "dataprism.audit.checkpoint.file-path must be separate from the audit file or directory");
+            }
+        }
+        if (audit.checkpoint.interval == null || audit.checkpoint.interval.isZero()
+                || audit.checkpoint.interval.isNegative()) {
+            refuse("INVALID_AUDIT_CHECKPOINT_INTERVAL", "dataprism.audit.checkpoint.interval must be positive");
+        }
+        if (audit.retention == null) {
+            refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention must be set");
+        }
+        if (!audit.retentionOverride) {
+            try {
+                // AuditRetention owns the six-month rule; reuse it rather than restate it.
+                new io.github.aindriub.dataprism.audit.AuditRetention(java.nio.file.Path.of("."), audit.retention,
+                        c -> { }, java.time.Clock.systemUTC());
+            } catch (IllegalArgumentException e) {
+                refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention " + audit.retention
+                        + " is below six months; EU AI Act Art. 19 allows other periods only under Union or"
+                        + " national law, in which case set dataprism.audit.retention-override=true");
+            }
         }
         required(audit.writerId, "MISSING_AUDIT_WRITER", "dataprism.audit.writer-id");
         // AuditRecorder appends "/" plus a per-boot suffix to build its instanceId, so a
@@ -286,6 +459,37 @@ public class DataPrismProperties {
             }
         } catch (IllegalArgumentException e) {
             refuse(code, "must be a URI");
+        }
+    }
+
+    /**
+     * True when {@code candidate} is {@code location} or lies beneath it, comparing normalised
+     * paths with symbolic links resolved wherever the path (or its nearest existing ancestor) exists.
+     */
+    static boolean sameOrInside(String candidate, String location) {
+        java.nio.file.Path c = canonical(candidate);
+        java.nio.file.Path l = canonical(location);
+        return c.startsWith(l);
+    }
+
+    private static java.nio.file.Path canonical(String value) {
+        java.nio.file.Path path;
+        try {
+            path = java.nio.file.Path.of(value).toAbsolutePath().normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return java.nio.file.Path.of("/invalid-path-never-matches");
+        }
+        java.nio.file.Path existing = path;
+        while (existing != null && !java.nio.file.Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return path;
+        }
+        try {
+            return existing.toRealPath().resolve(existing.relativize(path)).normalize();
+        } catch (java.io.IOException e) {
+            return path;
         }
     }
 
@@ -543,7 +747,59 @@ public class DataPrismProperties {
     }
 
     public static class Audit {
-        private String sink, writerId, credentialReference, filePath;
+        private String sink, writerId, credentialReference, filePath, directory;
+        private java.time.Period retention = java.time.Period.ofMonths(6);
+        private boolean retentionOverride;
+        private final Checkpoint checkpoint = new Checkpoint();
+
+        public String getDirectory() {
+            return directory;
+        }
+
+        public void setDirectory(String v) {
+            directory = v;
+        }
+
+        public java.time.Period getRetention() {
+            return retention;
+        }
+
+        public void setRetention(java.time.Period v) {
+            retention = v;
+        }
+
+        public boolean isRetentionOverride() {
+            return retentionOverride;
+        }
+
+        public void setRetentionOverride(boolean v) {
+            retentionOverride = v;
+        }
+
+        public Checkpoint getCheckpoint() {
+            return checkpoint;
+        }
+
+        public static class Checkpoint {
+            private String filePath;
+            private Duration interval = Duration.ofMinutes(5);
+
+            public String getFilePath() {
+                return filePath;
+            }
+
+            public void setFilePath(String v) {
+                filePath = v;
+            }
+
+            public Duration getInterval() {
+                return interval;
+            }
+
+            public void setInterval(Duration v) {
+                interval = v;
+            }
+        }
 
         public String getSink() {
             return sink;
@@ -750,6 +1006,173 @@ public class DataPrismProperties {
             public void setTrustReference(String v) {
                 trustReference = v;
             }
+        }
+    }
+
+    /** {@code dataprism.oversight.*}: which tools need human approval, and the per-caller request limit. */
+    public static class Oversight {
+        private List<String> approvalRequiredTools = new java.util.ArrayList<>();
+        private Duration approvalTtl = Duration.ofMinutes(15);
+        private final CallerRateLimit callerRateLimit = new CallerRateLimit();
+        private int maxPendingPerRequester = 5;
+
+        public List<String> getApprovalRequiredTools() {
+            return approvalRequiredTools;
+        }
+
+        public void setApprovalRequiredTools(List<String> v) {
+            approvalRequiredTools = v == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(v);
+        }
+
+        public Duration getApprovalTtl() {
+            return approvalTtl;
+        }
+
+        public void setApprovalTtl(Duration v) {
+            approvalTtl = v;
+        }
+
+        public CallerRateLimit getCallerRateLimit() {
+            return callerRateLimit;
+        }
+
+        public int getMaxPendingPerRequester() {
+            return maxPendingPerRequester;
+        }
+
+        public void setMaxPendingPerRequester(int v) {
+            maxPendingPerRequester = v;
+        }
+
+        public static class CallerRateLimit {
+            private Integer requests;
+            private Duration window = Duration.ofMinutes(1);
+
+            public Integer getRequests() {
+                return requests;
+            }
+
+            public void setRequests(Integer v) {
+                requests = v;
+            }
+
+            public Duration getWindow() {
+                return window;
+            }
+
+            public void setWindow(Duration v) {
+                window = v;
+            }
+        }
+    }
+
+    /** {@code dataprism.reidentification.*}: the controlled reverse lookup. Off by default. */
+    public static class Reidentification {
+        /** What a role may do; mirrors the library's own permission names. */
+        public enum Permission { REQUEST, APPROVE }
+
+        private boolean enabled;
+        private List<String> purposes = new java.util.ArrayList<>();
+        private Map<String, Set<Permission>> roles = new LinkedHashMap<>();
+        private boolean fourEyes = true;
+        private Duration approvalTtl = Duration.ofMinutes(15);
+        private int maxPendingPerRequester = 5;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean v) {
+            enabled = v;
+        }
+
+        public List<String> getPurposes() {
+            return purposes;
+        }
+
+        public void setPurposes(List<String> v) {
+            purposes = v == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(v);
+        }
+
+        public Map<String, Set<Permission>> getRoles() {
+            return roles;
+        }
+
+        public void setRoles(Map<String, Set<Permission>> v) {
+            roles = v == null ? new LinkedHashMap<>() : new LinkedHashMap<>(v);
+        }
+
+        public boolean isFourEyes() {
+            return fourEyes;
+        }
+
+        public void setFourEyes(boolean v) {
+            fourEyes = v;
+        }
+
+        public Duration getApprovalTtl() {
+            return approvalTtl;
+        }
+
+        public void setApprovalTtl(Duration v) {
+            approvalTtl = v;
+        }
+
+        public int getMaxPendingPerRequester() {
+            return maxPendingPerRequester;
+        }
+
+        public void setMaxPendingPerRequester(int v) {
+            maxPendingPerRequester = v;
+        }
+    }
+
+    /** {@code dataprism.operator.*}: the second, separately secured port the operator endpoints will use. */
+    public static class Operator {
+        private boolean enabled;
+        private Integer port;
+        private String requiredAudience, requiredScope;
+        /** The address the operator connector binds to; unset means the same as {@code server.address}. */
+        private String address;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean v) {
+            enabled = v;
+        }
+
+        public String getAddress() {
+            return address;
+        }
+
+        public void setAddress(String v) {
+            address = v;
+        }
+
+        public Integer getPort() {
+            return port;
+        }
+
+        public void setPort(Integer v) {
+            port = v;
+        }
+
+        public String getRequiredAudience() {
+            return requiredAudience;
+        }
+
+        public void setRequiredAudience(String v) {
+            requiredAudience = v;
+        }
+
+        public String getRequiredScope() {
+            return requiredScope;
+        }
+
+        public void setRequiredScope(String v) {
+            requiredScope = v;
         }
     }
 }

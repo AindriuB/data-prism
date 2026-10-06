@@ -153,6 +153,8 @@ class AuditChainVerifierCliTest {
         assertThat(out).doesNotContain("intact: every record");
         assertThat(out).doesNotContain("CHAIN BREAK");
         assertThat(out).contains("cannot detect truncation");
+        assertThat(out).contains("recordVersion").contains("fieldDispositions").contains("approvalId")
+                .contains("approverId");
     }
 
     @Test

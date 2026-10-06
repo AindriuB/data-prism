@@ -113,6 +113,8 @@ plugins:
           - tools.md
           - extending.md
           - audit.md
+          - reidentification.md
+          - eu-ai-act.md
           - architecture.md
         FAQ:
           - faq.md
@@ -175,6 +177,8 @@ nav:
       - tools.md
       - extending.md
       - audit.md
+      - reidentification.md
+      - eu-ai-act.md
       - architecture.md
   - FAQ: faq.md
   - Comparison: comparison.md

@@ -39,8 +39,14 @@ class ServerStartupTest {
             HttpResponse<String> unrelated = client.send(request(port, "/actuator/health").GET().build(),
                     HttpResponse.BodyHandlers.ofString());
 
-            assertThat(health.statusCode()).isEqualTo(200);
-            assertThat(health.body()).isEqualTo("{\"status\":\"UP\"}");
+            assertThat(health.statusCode())
+                    .as("GET /health on 127.0.0.1:%d answered by: status=%d body=%s headers=%s",
+                            port, health.statusCode(), health.body(), health.headers().map())
+                    .isEqualTo(200);
+            assertThat(health.body())
+                    .as("GET /health on 127.0.0.1:%d status=%d headers=%s", port, health.statusCode(),
+                            health.headers().map())
+                    .isEqualTo("{\"status\":\"UP\"}");
             assertThat(mcp.statusCode()).isEqualTo(401);
             assertThat(unrelated.statusCode()).isIn(401, 403, 404);
         }
@@ -214,7 +220,10 @@ class ServerStartupTest {
 
     private static String[] validConfiguration() {
         return new String[] {
-                "--server.port=0", "--spring.main.banner-mode=off",
+                "--server.port=0",
+                // Bind the address the test then calls, so a process already holding
+                // 127.0.0.1:<port> makes startup fail instead of answering for us (task 122).
+                "--server.address=127.0.0.1", "--spring.main.banner-mode=off",
                 "--dataprism.security.jwt.issuer=https://issuer.example",
                 "--dataprism.security.jwt.audience=mcp",
                 "--dataprism.security.jwt.jwk-set-uri=https://issuer.example/jwks",

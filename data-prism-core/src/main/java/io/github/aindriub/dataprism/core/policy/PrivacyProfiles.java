@@ -85,6 +85,12 @@ public final class PrivacyProfiles {
                         name + ".classifications." + key + ".action");
                 boolean override = Boolean.parseBoolean(
                         String.valueOf(rule.getOrDefault("override", "false")));
+                if (DataClassification.SPECIAL_CATEGORIES.contains(classification)
+                        && ActionStrictness.stricter(resolved, PrivacyAction.REDACT) != resolved) {
+                    throw new IllegalArgumentException("SPECIAL_CATEGORY_EXPOSED: profile " + name
+                            + " maps " + classification + " to " + resolved
+                            + "; special categories must be REDACT or REMOVE");
+                }
                 rules.put(classification, new PrivacyProfile.ClassificationRule(resolved, override));
             }
         }

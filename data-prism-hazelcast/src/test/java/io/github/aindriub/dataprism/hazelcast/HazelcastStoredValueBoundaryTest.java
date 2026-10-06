@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
 /**
@@ -73,6 +74,53 @@ class HazelcastStoredValueBoundaryTest {
         assertThat(List.copyOf(maps.values())).allSatisfy(map -> assertThat(map.size()).isPositive());
         assertRawValueIsAbsent(maps);
         maps.forEach((name, map) -> assertMapContainsOnlyExpectedState(name, map, generator));
+    }
+
+    @Test
+    void oversightMapsContainOnlyPrincipalsFingerprintsAndCounts() {
+        start();
+        String synthetic = "generated:" + SCOPE_ID + ":PERSON_NAME:pseudonym-7";
+        Instant now = Instant.now();
+        var approvals = new HazelcastApprovalStore(cluster);
+        approvals.create(new io.github.aindriub.dataprism.oversight.ApprovalRequest("ap-1",
+                io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind.REIDENTIFICATION, "alice", "client",
+                SCOPE_ID, "reidentify", "fp-1", "PERSON_NAME", synthetic, "audit", "CASE-42", now,
+                now.plus(1, ChronoUnit.HOURS),
+                io.github.aindriub.dataprism.oversight.ApprovalRequest.Status.PENDING, null, null));
+        var state = new HazelcastOversightState(cluster);
+        state.pauseAll();
+        state.pauseTool("search");
+        state.pauseScope(SCOPE_ID);
+        assertThat(new HazelcastCallerRateLimiter(cluster)
+                .tryAcquire("alice", 5, java.time.Duration.ofMinutes(1), now)).isTrue();
+
+        Map<String, IMap<Object, Object>> maps = allPrivacyMaps();
+        assertThat(maps.keySet()).containsExactlyInAnyOrder(PrivacyCluster.OVERSIGHT_MAP,
+                PrivacyCluster.APPROVAL_MAP, PrivacyCluster.CALLER_RATE_MAP);
+        assertThat(List.copyOf(maps.values())).allSatisfy(map -> assertThat(map.size()).isPositive());
+        assertRawValueIsAbsent(maps);
+        maps.forEach((name, map) -> {
+            assertThat(map.keySet().toString()).doesNotContain(SUBJECT_ID);
+            assertThat(map.values().toString()).doesNotContain(SUBJECT_ID);
+        });
+        maps.forEach((name, map) -> assertMapContainsOnlyExpectedState(name, map, new DeterministicGenerator()));
+
+        // The guard bites: a raw value smuggled into any of these maps is caught.
+        cluster.instance().<String, String>getMap(PrivacyCluster.APPROVAL_MAP)
+                .put(SCOPE_ID + "\0ap-2", RAW_SENSITIVE_VALUE);
+        assertThatThrownBy(() -> assertRawValueIsAbsent(allPrivacyMaps()))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, IMap<Object, Object>> allPrivacyMaps() {
+        Map<String, IMap<Object, Object>> maps = new java.util.LinkedHashMap<>();
+        for (DistributedObject object : cluster.instance().getDistributedObjects()) {
+            if (object instanceof IMap<?, ?> map) {
+                maps.put(object.getName(), (IMap<Object, Object>) map);
+            }
+        }
+        return maps;
     }
 
     private PrivacyCluster start() {
@@ -126,6 +174,21 @@ class HazelcastStoredValueBoundaryTest {
                 parts(key, 2, name);
                 assertThat(value).isInstanceOf(Integer.class);
                 Long.parseLong(value.toString());
+            });
+            case PrivacyCluster.OVERSIGHT_MAP -> map.forEach((key, value) -> {
+                assertThat(key).as("%s key", name).isInstanceOf(String.class);
+                assertThat(value).isEqualTo(Boolean.TRUE);
+            });
+            case PrivacyCluster.APPROVAL_MAP -> map.forEach((key, value) -> {
+                String[] parts = parts(key, 2, name);
+                assertThat(value).isInstanceOf(String.class);
+                var request = HazelcastApprovalStore.Codec.decode((String) value);
+                assertThat(request.approvalId()).isEqualTo(parts[1]);
+                assertThat(request.scopeId()).isEqualTo(parts[0]);
+            });
+            case PrivacyCluster.CALLER_RATE_MAP -> map.forEach((key, value) -> {
+                assertThat(key).as("%s key", name).isInstanceOf(String.class);
+                assertThat(value.toString()).matches("\\d+:\\d+");
             });
             default -> fail("unrecognised distributed map %s must be given a decomposition rule", name);
         }

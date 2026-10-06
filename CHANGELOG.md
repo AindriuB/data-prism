@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-06
+
+Human oversight, a separate operator surface, audited re-identification, and
+an audit trail with daily segments, external checkpoints and retention. These
+features support an operator's work toward the human-oversight, record-keeping
+and special-category obligations in the EU AI Act and GDPR Art. 9; they do not
+by themselves establish that a deployment meets those obligations. Several defaults and refusals change
+(see "Breaking and behaviour changes").
+
+### Breaking and behaviour changes
+
+- **Release note (task 94):** a PHI rule weaker than `REDACT` now refuses to
+  start with `SPECIAL_CATEGORY_EXPOSED`, and a Java-built profile with no PHI
+  rule resolves PHI to `REMOVE`. Seven GDPR Art. 9 special-category
+  classifications fail closed. Check any custom profile before upgrading.
+- All denials are recorded in the audit trail as `DENY:<code>`, from both the
+  orchestrator and the MCP tools. A malformed code is recorded as
+  `DENY:INVALID_REFUSAL_CODE`. Anything that filters audit records on the old
+  denial value must change.
+- Audit record version 2: the hash is computed over an unambiguous,
+  length-prefixed encoding and the record carries per-field dispositions and
+  approval identity. Version 1 records still verify.
+- A configured audit retention below 6 months refuses startup unless
+  `dataprism.audit.retention-override` is set.
+- Audited calls are refused with `AUDIT_CHECKPOINT_UNAVAILABLE` while an audit
+  checkpoint cannot be written.
+- `ContextOrchestrator.buildContext` now throws `AuditedRefusalException` (a
+  `PrivacyRefusedException`) with code `REQUEST_FAILED` for audited internal
+  failures. Starter users who map `PrivacyRefusedException` to 403 should check
+  `code()`.
+- The MCP server always enforces admission (pause, rate limit, approval).
+  Four-eyes defaults to on for re-identification
+  (`dataprism.reidentification.four-eyes=true`). Tool calls need an approval
+  only when the tool is listed in `dataprism.oversight.approval-required-tools`,
+  which is empty by default. There are at most 5 live pending approvals per
+  requester and kind, by default (`TOO_MANY_PENDING`); the oversight and
+  re-identification caps are configured separately.
+- `data-prism-server` now excludes Spring Boot's `HazelcastAutoConfiguration`.
+  This is visible only with a `hazelcast.xml` or `hazelcast.yaml` on its
+  classpath.
+- Refusal codes returned by application scrubbers, validators and resolvers are
+  validated before they reach the client; a malformed one becomes
+  `INVALID_REFUSAL_CODE`.
+- The MCP `serverInfo` version is read from the build rather than hardcoded.
+
+### Added
+
+- Human oversight: pause (cluster-wide with Hazelcast), per-caller rate limits,
+  approvals bound to the call's purpose, profile, client and capabilities, and
+  four-eyes approval, with in-memory and Hazelcast implementations.
+- The operator surface, served on `dataprism.operator.port` in the same process
+  with its own filter chain; the MCP and operator endpoints never share a port.
+  It carries audited pause, approvals and re-identification.
+- The `data-prism-reidentification` module and index: audited, purpose-bound
+  re-identification with optional four-eyes approval, wired over the
+  application's synthetic value source.
+- External audit checkpoints (BOOT, PERIODIC and SHUTDOWN) and audit retention
+  that purges expired segments behind `RETENTION_ANCHOR` checkpoints; the
+  verifier gains directory mode and `--checkpoints`, which exits 5 on tail
+  truncation or a missing boot.
+- Opt-in daily audit segments named `audit-YYYY-MM-DD.log`, written when
+  `dataprism.audit.directory` is set. `dataprism.audit.file-path` still writes
+  a single file.
+- Per-field dispositions in the audit record, and a `correlationId` returned in
+  the MCP tool result `_meta`.
+- The EU AI Act and GDPR Art. 9 support page, mapping what the project
+  supports to each provision, and a table of every `policyDecision` form in
+  `docs/audit.md`.
+
+### Changed
+
+- Undeclared payload keys render as `<undeclared>` and bracketed indices as
+  `[*]` on every refusal and warning sink; undeclared property names never
+  reach the model (`<undeclared-N>` under `REDACT_AND_WARN`, dropped under
+  `DROP_AND_WARN`) and are not scanned by validators.
+- `InMemoryApprovalStore` now refuses non-pending, duplicate and null-approver
+  approvals exactly as the Hazelcast store does.
+- Integration tests derive the artifact version from the build.
+
+### Security
+
+- Special-category (Art. 9) data fails closed: see the release note above.
+- Refusal paths no longer leak undeclared payload keys, and refusal codes from
+  application code cannot carry free text to the client.
+
+### Publication
+
+0.4.0 is published to Maven Central (the library modules; `data-prism-server`
+stays off Central and comes from source, a GitHub Release or GHCR), to GHCR,
+and to the MCP Registry.
+
 ## [0.3.1] - 2026-09-24
 
 No runtime behaviour changed on the server. This release refreshes the
@@ -325,6 +416,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.4.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.0
 [0.3.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.1
 [0.3.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.2.0

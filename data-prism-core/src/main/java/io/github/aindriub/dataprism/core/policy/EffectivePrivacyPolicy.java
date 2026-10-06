@@ -28,6 +28,8 @@ public record EffectivePrivacyPolicy(
     public enum Decided {
         /** A rule in the profile matched a classification on the field. */
         PROFILE_RULE,
+        /** A special category with no profile rule: removed by the Art. 9 default. */
+        SPECIAL_CATEGORY_DEFAULT,
         /** The profile had nothing to say; the model author's suggestion stood. */
         ANNOTATION,
         /** Neither had anything to say. */

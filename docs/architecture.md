@@ -45,7 +45,7 @@ review.
 | `mcp` | `orchestration`, `security` | Tool definitions, schemas, transport, `DataPrismObjectMapper` |
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
-| `reidentification` *(planned)* | `hazelcast`, `security` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
+| `reidentification` | `core`, `hazelcast`, `security` | The controlled reverse-lookup library: authenticated, purpose-bound, audited, optional four-eyes. No transport; its HTTP surface is served by the standalone server on a separate port, in the same process. The index it reads lives in `hazelcast`, off by default |
 | `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding, validation, privacy-pipeline wiring, MCP lifecycle and servlet registration |
 | `spring-boot-starter` | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
 | `server` | `spring-boot-autoconfigure` | Primary executable Streamable HTTP MCP server, JWT boundary, health endpoint, production integrations and privacy metrics |
@@ -167,9 +167,22 @@ the boundary is crossed; catching a violation depends on review.
    `ReservedArguments` strips the named keys before a tool call is built, and
    `EndToEndTest` asserts content-equal behaviour between a plain call and one
    carrying the four rejected argument names, plus a single audited refusal.
-5. **Re-identification is never an MCP tool.** Separate application, separate
-   port, separate authorisation scope, mandatory purpose, mandatory audit.
-   **Prose only** — the module does not exist yet (S10, deferred).
+5. **Re-identification is never an MCP tool.** Separate port, separate
+   authorisation scope, mandatory purpose, mandatory audit; the operator surface
+   is a second connector in the same process, not a separate application.
+   **Enforced** — `ArchitectureTest.noToolSideClassDependsOnReidentification`
+   fails the build if `mcp`, `orchestration` or `connectors` depend on the
+   `reidentification` module, `ArchitectureTest.onlyReidentificationCallsSubjectFor`
+   (with its method-reference check `subjectForRuleCatchesMethodReferences`)
+   fails it if any class outside that module calls `ScopeIdentityIndex.subjectFor`,
+   and the operator-port tests in `data-prism-server`'s `OperatorSurfaceTest`
+   assert that `/operator/**` is served on the operator port only
+   (`operatorPathsAreServedOnTheOperatorPortOnly`), that `/mcp` and `/health`
+   are not served there (`theMcpEndpointAndHealthAreNotServedOnTheOperatorPort`),
+   that an MCP token is refused on the operator port and the reverse
+   (`theOperatorPortRefusesAnyTokenWithoutTheOperatorAudienceAndScope`,
+   `anOperatorTokenIsNotAcceptedOnTheMcpEndpoint`), and that the tool list
+   contains no operator tool (`theOperatorSurfaceIsNotAnMcpTool`).
 6. **Hazelcast never holds raw sensitive values** — pseudonyms and subject ids
    only. The identity cache never decides a value: every path through it returns
    what the generator would have returned, including the path where the cluster
@@ -301,10 +314,42 @@ all of these is in `design-review.md` under the section named.
   have limited it to live scopes. Reference implementations, if any, go in
   optional modules.
 - **2026-09-08 — Re-identification: the reverse map is built in S7, the operator
-  surface is deferred past V1.** Rejected: deferring both, because a reverse map
+  surface is deferred past V1.** *Superseded 2026-10-06, see below; the deferral
+  is lifted.* Rejected: deferring both, because a reverse map
   added later cannot resolve any pseudonym issued before it existed, so every
   scope created in the interim would be permanently opaque. The map is cheap; the
   surface is what needs the security review, and that can wait.
+- **2026-10-06 — Re-identification operator surface is in scope for V1
+  (supersedes the 2026-09-08 deferral above).** The owner lifted the deferral so
+  the EU AI Act plan (tasks 100, 104, 105, 106) can deliver an audited,
+  purpose-bound re-identification path. The reverse map is unchanged; the
+  surface needs the security review the original entry said it would. Four-eyes
+  for re-identification defaults ON (part of D8). The tool-call approval flow
+  is not yet decided. Rejected: keeping the deferral, which would leave the EU
+  AI Act plan without an audited, purpose-bound human path to the reverse map;
+  and, for where it runs (D4), a separate JVM for the operator surface, in
+  favour of a second port in the same process. It costs a new privileged
+  surface to harden and review (its own audience, scope and plain-HTTP
+  connector, to be bound to an internal address), and the same process now
+  serves both ports, so a compromise of the process reaches both.
+- **2026-10-06 — The audit file is segmented and purged by Data Prism,
+  reversing the v0.3.0 "no rotation" choice** (`CHANGELOG.md` 0.3.0:
+  "fsync per record, no rotation"; `audit.md`, "Single file, no rotation").
+  The owner (D3, D5, D7) decided that `SegmentedFileAuditSink` writes one
+  `audit-YYYY-MM-DD.log` segment per UTC day, that `AuditRetention` deletes
+  segments past a retention of six months by default after writing a
+  `RETENTION_ANCHOR` checkpoint, and that a shorter period refuses startup
+  unless `dataprism.audit.retention-override` is set. `FileAuditSink` is
+  unchanged. Rejected: leaving rotation and retention to the operator outside
+  Data Prism, because a purge done elsewhere cannot be told apart from
+  tampering, and the EU AI Act Arts. 19 and 26(6) retention floor needs a
+  stated, checked period. What it costs: Data Prism now deletes audit evidence
+  itself, and an anchor is only as trustworthy as the custody of the checkpoint
+  file, which must differ from the audit directory's. A checkpoint that cannot
+  be written refuses every audited call until one can (D7), which trades
+  availability for evidence. A chain that fails to verify in an expiring
+  segment deletes nothing. The 2026-09-23 decision below is unchanged: the
+  chain is still unkeyed and does not resist an operator.
 - **2026-09-13 — One configuration core serves the standalone server and Spring
   Boot starter.** The server is the primary product and the starter an embedded
   option; both bind and validate the same `dataprism.*` vocabulary. Rejected:
@@ -336,3 +381,9 @@ all of these is in `design-review.md` under the section named.
   depending on an operational guarantee this library cannot itself enforce,
   left for the owner to schedule. See `docs/plan/PLAN.md` for the consequences
   and follow-ups this decision opens.
+  *Reaffirmed 2026-10-06 (owner decision D2).* The proposal to supersede this
+  decision with a keyed chain (task 107) was considered and dropped, for the
+  same two reasons: the key would live in the operator's own process, and
+  third-party verification would need the key, which also lets its holder
+  forge. Tamper evidence rests on the unkeyed hash chain plus external
+  checkpoints (task 97), with the checkpoints held under separate custody.

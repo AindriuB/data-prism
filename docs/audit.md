@@ -35,11 +35,18 @@ control to the caller.
 
 A few properties are deliberate, not accidental gaps:
 
-- **Single file, no rotation.** This release does not rotate, truncate or
-  compact this file. Rotation, retention and shipping this file anywhere are
-  operational concerns this release does not build; an operator wanting them
-  supplies them outside Data Prism, against a file whose own shape (below)
-  those tools must not break.
+- **`file-path` mode is a single file, with no rotation or retention.**
+  `FileAuditSink` itself never rotates, truncates or compacts the file it is
+  given. Daily segments and retention are available only in directory mode
+  (`dataprism.audit.directory`), described under
+  [Directory mode](#directory-mode) and in
+  [configuration](configuration.md#segmented-files-checkpoints-and-retention).
+  Checkpoints are not directory-only: `file-path` mode with
+  `dataprism.audit.checkpoint.file-path` also writes `BOOT`, `PERIODIC` and
+  `SHUTDOWN` checkpoints. With `file-path` there is no retention: shipping the
+  file anywhere, and pruning it, are operational concerns an operator supplies
+  outside Data Prism, against a file whose own shape (below) those tools must
+  not break.
 - **Append-only by the OS's own guarantee, not by anything this class
   enforces.** `FileAuditSink` opens the file with `StandardOpenOption.APPEND`,
   which is only as durable as the surrounding deployment makes it. Nothing
@@ -77,10 +84,157 @@ A few properties are deliberate, not accidental gaps:
   `subjectPseudonym`, `parameterFingerprint`, `privacyProfile`, `scopeId`,
   `purpose`, `caseId`, `policyDecision`, `correlationId`, `sourceSystems`,
   `rejectedArguments` and `previousHash` — never a raw source value, only what
-  `Slf4jAuditSink` already emitted. `AuditFilePiiScanTest`
+  `Slf4jAuditSink` already emitted.
+
+  Record version 2 adds four fields. `recordVersion` is `2` for every record
+  written now; a line with no `recordVersion` is version 1 and still verifies,
+  hashed over exactly the nineteen fields above, joined with `|` and `,` as
+  before. Because that joining does not escape its separators, some distinct
+  version 1 records can share a hash; version 1 keeps it so that committed
+  chains still verify. Version 2 hashes a length-prefixed encoding (each item
+  is written as its UTF-8 byte length, a colon and the text, so no two
+  different records produce the same input) that includes `recordVersion`,
+  `fieldDispositions`, `approvalId` and `approverId` as well as the nineteen
+  fields. Editing a version 2 record's `recordVersion` to `1` is therefore
+  reported as a break.
+  `fieldDispositions` maps a field path to the action taken on it. Paths look
+  like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
+  example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
+  `REFUSED`. Dispositions name field paths and actions and never values.
+  `approvalId` and `approverId` identify a four-eyes approval request and the
+  second principal, or are empty. `AuditFilePiiScanTest`
   (`data-prism-integration-tests`) scans this file's own output for stub
   fixture identifying values the same way `PiiLogScanTest` scans captured log
   output, closing the audit half of architecture boundary 7.
+
+## Retention
+
+`FileAuditSink` is unchanged and still never rotates. For deployments that must
+keep logs for a bounded period and then let them go, `SegmentedFileAuditSink`
+writes one file per UTC day, `directory/audit-YYYY-MM-DD.log`, the date being
+the UTC date of the event's timestamp. The `.log` suffix is deliberate: a
+record is a field-separated line, not JSON. Each segment is written with
+`FileAuditSink`'s own discipline (fsync before return; the sink poisons after
+any failed write, and does so for every day, not just the failing one). The
+record format and the per-writer hash chain are the same; a chain simply runs
+across segment files.
+
+### The six-month minimum
+
+`AuditRetention` refuses a retention period that can be shorter than six
+calendar months with `IllegalArgumentException` containing
+`AUDIT_RETENTION_BELOW_MINIMUM`. A day count is not safe merely for being
+"about six months": six calendar months span 181 to 184 days, so `P181D` to
+`P183D` are refused and `P184D` and `P6M` are accepted. `purge()` also checks
+at run time that its cutoff is no later than today minus six calendar months,
+and refuses with the same code if not. The
+reason is EU AI Act Arts. 19 and 26(6), which ask deployers to keep
+automatically generated logs for at least six months. Art. 19 also says
+"unless provided otherwise in applicable Union or national law", so other
+periods can be lawful. An explicit override
+(`allowBelowMinimum`, configured as `dataprism.audit.retention-override`)
+lets a shorter period through. Using the override is the operator's legal
+responsibility; Data Prism does not judge whether it applies. GDPR storage
+limitation points the other way: logs should not be kept longer than needed.
+
+### Purge is deletion
+
+`AuditRetention.purge()` deletes every whole segment dated strictly before
+today (UTC) minus the retention period, and never today's segment. Before it
+anchors or deletes anything it verifies the chains of the expiring segments;
+if a segment's chain does not verify, that segment and every later expired one
+are left in place and purge throws a `RetentionException` containing
+`AUDIT_RETENTION_CHAIN_UNVERIFIED`, so purge never erases evidence of
+tampering. Purge also reads the checkpoint sink's earlier retention anchors:
+each writer's first expiring record must start at `GENESIS` or follow an earlier
+anchor exactly (anchor sequence plus one, anchor hash equal to its
+`previousHash`). If not, a segment was deleted by hand or its front was cut, and
+purge refuses with the same code rather than anchor and delete the evidence. A
+checkpoint sink that cannot read its anchors back leaves only the `GENESIS`
+start acceptable, so purge fails closed. A segment's date never goes backwards within one sink: if the clock
+steps back across UTC midnight, later events stay in the later-dated segment,
+so one writer's chain is never split backwards across files. That rule is per
+sink instance: after a restart with the clock behind, a reused writer id's
+record can land in an earlier-dated file than its predecessor, and the verifier
+reports a break. That fails loud, which is the intended direction. The records
+in a deleted segment are gone; nothing here archives them. Archiving to
+external storage before purge is an operator responsibility.
+
+### Retention anchors
+
+Deleting the front of a chain would otherwise look like tampering. So, before
+deleting anything, purge writes a `RETENTION_ANCHOR` checkpoint to the
+checkpoint sink for each writer's last record in each segment about to go,
+carrying that record's sequence and hash, and the UTC date of the segment it
+covers (`segmentDate`). Checkpoint files written before this field existed
+still parse, but an anchor without a date covers nothing. If any anchor cannot be written,
+nothing is deleted and purge throws. The anchors belong in the checkpoint file,
+under different custody from the audit directory, like any other checkpoint.
+
+With `--checkpoints`, the verifier accepts a writer whose first surviving
+record has `previousHash` equal to an anchor's hash and sequence equal to the
+anchor's sequence plus one. That writer is reported intact, with a line naming
+the anchor, and the surviving records still verify end to end; the purged
+records are not verified, since they no longer exist. The same chain with no
+matching anchor is reported as it always was for a chain that does not start
+at `GENESIS`. A segment removed by hand leaves no anchor: later segments then
+report a break, and a checkpointed writer with no surviving records is
+`MISSING_WRITER` (exit 5). A writer whose every record was purged is not
+reported missing when an anchor covers its checkpointed sequence.
+
+The verifier accepts an anchored start only if all of these hold:
+
+- the anchor's `segmentDate` is at least the minimum retention before its
+  `recordedAt`. A purge only deletes segments older than the retention period,
+  so an anchor over a younger segment did not come from one. The minimum
+  defaults to `P6M`; a deployment that runs purge with the below-minimum
+  override passes its own period with `--min-retention <ISO-8601 period>`;
+- the same writer has no `BOOT`, `PERIODIC` or `SHUTDOWN` checkpoint at a lower
+  sequence recorded on a UTC date after the anchor's `segmentDate`. Such a
+  checkpoint says the writer had not yet reached the anchored sequence by that
+  date, so the date is forged;
+- the first surviving record after the anchor is dated no earlier than the
+  anchor's `segmentDate`.
+
+An anchor that matches a writer's start but fails any of these is reported as
+`RETENTION_ANCHOR_REJECTED`, naming the writer, at exit 2, and explains nothing.
+An undated, too-recent or contradicted anchor also does not suppress
+`MISSING_WRITER`.
+
+This shows that purge was recorded; it does not prove the purge was
+authorised. Whoever can append to the checkpoint file can still make a recent
+deletion look like a purge when the writer has no head checkpoint recorded after
+the forged date: they delete the segments, then append an anchor carrying an
+old date. Regular `PERIODIC` checkpoints (task 103 schedules them) narrow that
+window, because each one pins the date by which the writer had reached a
+sequence. They do not close it. Anyone with that access can also make the
+deletion of segments older than the retention window look legitimate. Keep
+checkpoint custody separate from the audit directory's, and treat an anchor as
+only as trustworthy as that custody.
+
+### policyDecision values
+
+The `policyDecision` field is not only `ALLOW` or `DENY`. Five forms are
+recognised, written by three modules; two of them are written only by releases
+before 0.4.0.
+
+| Form | Written by | Meaning | Example |
+|---|---|---|---|
+| `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
+| `DENY:<code>` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching, with the refusal code (for example an exhausted read budget, `DENY:SCOPE_READ_BUDGET`). A failure that is not a privacy refusal, such as a scrubber or validator fault, is `DENY:REQUEST_FAILED`; the client sees only "the request could not be completed". Adapter failures are recorded per source, and if every source fails the result is `DENY:NO_SOURCE_DATA`. A code that is not a plain upper-case token (`[A-Z][A-Z0-9_]{0,63}`), which an application-supplied scrubber or validator could throw, is recorded as `DENY:INVALID_REFUSAL_CODE`. A refusal is also marked `REFUSED` under one of two fixed keys, `<source>:<refused>` or `merged:<refused>`, with no code; dispositions for fields already scrubbed from earlier sources may also be present, and an internal error adds no `REFUSED` mark. The code is joined to the client's result by `correlationId` | `DENY:SCOPE_READ_BUDGET`, `DENY:REQUEST_FAILED` |
+| `DENY:<code>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran, with the refusal code: authorisation, scope, admission, or no authenticated caller. The client's result carries the bare code | `DENY:TOOL_NOT_PERMITTED`, `DENY:NO_AUTHENTICATED_CALLER`, `DENY:CALLER_RATE_LIMITED`, `DENY:APPROVAL_REQUIRED` |
+| `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
+| `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |
+| `DENY` (plain) | Releases before 0.4.0 (the orchestrator) | A refusal or internal failure, without the code. Never written by 0.4.0; still read, and still verifies, in files written by 0.3.x | `DENY` |
+| bare `<CODE>` | Releases before 0.4.0 (the MCP tools) | A tool refusal, recorded as the code alone. Never written by 0.4.0; still read, and still verifies, in files written by 0.3.x | `TOOL_NOT_PERMITTED` |
+
+From 0.4.0 every denial is `DENY:<code>`. Classify by prefix and code, not by
+an exact `DENY`. `ALLOW` or a value starting with `ALLOW:` is a success. An
+empty value is unknown; it is reserved and never written today. Anything else
+is a denial or failure. A consumer that tests only for an exact `DENY` misses
+every `DENY:<code>`, and, when it reads files written before 0.4.0, every bare
+code. Treat a value you do not recognise as a denial. The set of codes can grow
+between releases.
 
 ## The offline verifier
 
@@ -118,9 +272,10 @@ or `--help` for a shorter summary.
 |---|---|
 | 0 | Intact — every writer's chain verified: no break, no structural anomaly, no in-flight tail. |
 | 1 | Unreadable input — the file could not be opened or read, or the invocation was malformed. |
-| 2 | Break detected — an edit or deletion was found in at least one writer's chain, or a line could not be ruled out as tampering. |
+| 2 | Break detected — an edit or deletion was found in at least one writer's chain, a line could not be ruled out as tampering, or a retention anchor was refused (`RETENTION_ANCHOR_REJECTED`: too recent, undated, contradicted by a head checkpoint, or starting after the first surviving record's date). |
 | 3 | Possibly-in-flight tail — the final record has no terminating newline; not a break. Only reported when nothing scored higher: a run with both a break and an in-flight tail exits 2, and a run with both a structural anomaly and an in-flight tail exits 4 (precedence is break, then anomaly, then in-flight tail). |
 | 4 | Structural anomaly — an interrupted-write fragment, a sink-contract duplicate-sequence violation, or a writer's chain not starting at `GENESIS` immediately after another structural anomaly, which offers plausible (never certain) context for the missing head. A writer's chain not starting at `GENESIS` in any other position is a break, exit code 2, not this. Never returned together with exit code 2. |
+| 5 | Checkpoint mismatch — only with `--checkpoints`: a writer's last surviving sequence is lower than its highest checkpointed sequence (`TRUNCATED_BEFORE_CHECKPOINT`), or a writer has a checkpoint past sequence 0 and no surviving records (`MISSING_WRITER`). Each is named per writer. Returned only when no break was found, and takes precedence over 3 and 4. A record whose hash differs from the checkpointed head at the same sequence is a break, exit 2. |
 
 ### What a run actually looks like
 
@@ -223,6 +378,26 @@ chain is indistinguishable from that boot never having run.)
 Every run also prints a limitation statement, regardless of outcome; the
 section below is the full account of what that statement summarises.
 
+## Joining to your AI-system logs
+
+Every tool result that the audit trail records carries that call's
+`correlationId` in the result's `_meta`, under the key
+`io.github.aindriub.dataprism/correlationId`. The audit record for the same call
+carries the same value in its `correlationId` field, which is one of the fields
+the record hash covers, for successful calls and for refusals the orchestrator
+audits (`DENY:<code>`). To join your AI system's logs to this trail, store the
+`correlationId` from `_meta` in your own log entry for the call, then look it up
+in the audit file or directory. See
+[Correlating with your AI-system logs](tools.md#correlating-with-your-ai-system-logs)
+for what the id is derived from and which calls carry none.
+
+The id is the only join key. It is random and carries no data, and Data Prism
+never puts it in model-visible content (an MCP client may forward `_meta`).
+This supports a deployer's own record-keeping; it does not make
+the Data Prism trail a record of your AI system's inputs or outputs, which are
+yours to log. A call rejected for a missing argument is not audited and has no
+id to join. See [EU AI Act and GDPR Art. 9 support](eu-ai-act.md).
+
 ## What this does and does not prove
 
 Read this before treating an intact report, or this file's mere existence,
@@ -230,7 +405,8 @@ as more than it is.
 
 **What it proves.** For every record the verifier could see, in every
 writer's chain, replaying the chain found no edit or deletion of any of the
-nineteen hashed fields. Editing a record breaks its own stored hash the
+hashed fields (the nineteen of version 1; for version 2 also `recordVersion`,
+`fieldDispositions`, `approvalId` and `approverId`). Editing a record breaks its own stored hash the
 moment its content no longer matches what `AuditEventHash` recomputes from
 that content, so an edit is caught anywhere in the chain, including the very
 last record written — a chain does not have to have a successor record to
@@ -243,13 +419,15 @@ writer's chain as after it, not as separate breaks, at exit code 2.
 
 **What it does not prove — deliberately, not as an oversight:**
 
-- **Truncation of the most recent records is undetectable, structurally.** An
-  append-only file with its tail removed verifies perfectly end to end: there
-  is nothing left in the file to disagree with. The demonstration above is
-  not a corner case, it is the general shape of this gap. Detecting it needs
-  an external checkpoint — a periodically recorded expected head hash, held
-  somewhere the same actor who could truncate the file cannot also reach —
-  and this release does not build one. A final record with no terminating
+- **Truncation of the most recent records is undetectable from the audit
+  file alone.** An append-only file with its tail removed verifies perfectly
+  end to end: there is nothing left in the file to disagree with. The
+  demonstration above is not a corner case, it is the general shape of this
+  gap. Detecting it needs an external checkpoint — a recorded head hash held
+  somewhere the same actor who could truncate the file cannot also reach.
+  [External checkpoints](#external-checkpoints) narrow this gap when you
+  supply a checkpoint file; they do not close it, because records written
+  after a writer's last checkpoint remain undetectable if deleted. A final record with no terminating
   newline is reported as "possibly in flight" (exit code 3) precisely because
   it is *not* proof of either tampering or health: it is exactly as
   consistent with an in-progress write as with a truncation caught mid-line.
@@ -258,15 +436,16 @@ writer's chain as after it, not as separate breaks, at exit code 2.
   the surviving writers each still verify intact, and the report simply never
   mentions the boot whose every record is gone, because the verifier can only
   report on the writers it finds records for (demonstrated above alongside
-  the restart case).
+  the restart case). A checkpoint file makes such a boot visible only if it
+  recorded a checkpoint past sequence 0.
 - **This is intra-writer edit and delete detection, not a guarantee against
   a capable adversary.** `AuditEventHash` is unkeyed SHA-256 over the joined
   record body. Anyone able to write to this file directly can edit or delete
   a record and then simply recompute every hash that follows it — the
   resulting chain verifies perfectly, because nothing about an unkeyed hash
   stops whoever holds write access from recomputing it. Resisting that needs
-  a keyed MAC (a secret the adversary does not also have) or an external
-  checkpoint, and this release builds neither.
+  a keyed MAC (a secret the adversary does not also have), which this release
+  does not build, or a checkpoint file the adversary cannot also rewrite.
 - **Durable append-only-ness is an operator responsibility, not something
   this class enforces.** `FileAuditSink` opens the file with `O_APPEND`
   semantics; it does not configure WORM storage, an object-lock policy, or
@@ -277,6 +456,57 @@ writer's chain as after it, not as separate breaks, at exit code 2.
   boundary 7 covers logs (`PiiLogScanTest`) and this file
   (`AuditFilePiiScanTest`); metric labels and trace attributes are unscanned
   by any test in this release.
+
+### External checkpoints
+
+An `AuditRecorder` built with an `AuditCheckpointSink` writes checkpoints to a
+second file, separate from the audit file: a `BOOT` checkpoint at construction
+(sequence 0, `GENESIS` head; construction fails if it cannot be written),
+`PERIODIC` checkpoints whenever `checkpoint()` is called, and a `SHUTDOWN`
+checkpoint on `close()`. Each is one JSON line, fsynced, holding the writer's
+`instanceId`, the sequence reached, the head hash and a timestamp.
+`FileAuditCheckpointSink` refuses a path equal to the audit file
+(`AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE`). A server built from the Spring Boot
+starter calls `checkpoint()` on a schedule: `dataprism.audit.checkpoint.interval`
+(default `PT5M`) sets it. The schedule runs only when a checkpoint location
+(`dataprism.audit.checkpoint.file-path`) is configured; without one no PERIODIC
+checkpoint is written. An application that builds `AuditRecorder` itself must
+call `checkpoint()` on its own schedule.
+`RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
+[Retention](#retention).
+
+### Directory mode
+
+Given a directory instead of a file, the verifier reads every
+`audit-YYYY-MM-DD.log` segment in date order as one stream and replays it as
+usual. A non-final segment ending in a torn write is reported as an
+interrupted-write fragment rather than fused with the next segment's first
+record. Byte offsets in a directory report are offsets into that concatenation.
+
+If a checkpoint write fails, the recorder refuses every later `record(...)`
+with `AuditCheckpointUnavailableException`, without advancing the chain, until
+a later `checkpoint()` succeeds.
+
+```sh
+java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli \
+    /path/to/audit.log --checkpoints /path/to/checkpoints.jsonl
+```
+
+With `--checkpoints`, a writer whose last surviving sequence is below its
+highest checkpointed sequence, and a writer with a checkpoint past sequence 0
+and no surviving records, are each named and exit 5. The two walkthroughs
+above that exit 0 (a truncated tail, a deleted boot) exit 5 once the
+checkpoint file is supplied. A missing or malformed checkpoint file exits 1.
+
+What this still does not prove:
+
+- Records written after a writer's last checkpoint are undetectable if
+  deleted: nothing external says they existed.
+- A checkpoint only helps if whoever can edit the audit file cannot also edit
+  the checkpoint file. Keep them under different custody. A person who can
+  rewrite both can make them agree.
+- Neither file resists tampering by anyone who can write to it. Checkpoints
+  are unkeyed and unsigned; keyed or signed checkpoints are not built.
 
 No sentence above, or anywhere else in this file, should be read as a claim
 that the durable audit log is tamper-proof, immutable, or independently

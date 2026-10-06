@@ -259,7 +259,7 @@ class CompareEntitySourcesWorkedExampleTest {
         assertThat(account.fetchCount()).as("account-api must never be reached on a denial").isZero();
         assertThat(order.fetchCount()).as("order-api must never be reached on a denial").isZero();
         assertThat(audited).singleElement().satisfies(event -> {
-            assertThat(event.policyDecision()).isEqualTo("TOOL_NOT_PERMITTED");
+            assertThat(event.policyDecision()).isEqualTo("DENY:TOOL_NOT_PERMITTED");
             assertThat(event.tool()).isEqualTo("compare_entity_sources");
         });
     }

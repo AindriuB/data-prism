@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
+import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
@@ -19,7 +21,9 @@ import io.modelcontextprotocol.spec.McpSchema;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.io.InputStream;
 import java.time.Clock;
+import java.util.Properties;
 import java.util.Objects;
 
 /**
@@ -71,6 +75,32 @@ public final class DataPrismMcpServer {
                                       ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
                                       boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                       PrivacyMetrics metrics, AuditRecorder audit, Clock clock) {
+        return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
+                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, null);
+    }
+
+    /**
+     * As above, with admission (pauses, per-caller rate limit, human approval) checked by both
+     * tools after scope resolution and before the orchestrator.
+     *
+     * @param fingerprinter binds an approval to the call's arguments
+     */
+    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
+                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
+                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                      ToolAdmission admission, ParameterFingerprinter fingerprinter) {
+        Objects.requireNonNull(fingerprinter, "fingerprinter");
+        return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
+                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock,
+                new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter));
+    }
+
+    private static McpSyncServer build(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                                       ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
+                                       boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
+                                       PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                       Oversight oversight) {
         if (!singlePrincipalDevelopmentMode || productionDeployment) {
             throw new SecurityRefusedException("STDIO_DEVELOPMENT_ONLY",
                     "stdio is a single-principal development transport and refuses to start "
@@ -83,13 +113,13 @@ public final class DataPrismMcpServer {
         var transport = new StdioServerTransportProvider(json);
 
         return McpServer.sync(transport)
-                .serverInfo("data-prism", "0.3.1")
+                .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper,
-                        metrics, audit, clock, developmentCaller).specification(),
-                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper,
-                                metrics, audit, clock, developmentCaller).specification())
+                .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, developmentCaller, oversight).specification(),
+                        compareEntitySources(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, developmentCaller, oversight).specification())
                 .build();
     }
 
@@ -113,6 +143,33 @@ public final class DataPrismMcpServer {
                                                McpTransportContextExtractor<HttpServletRequest> contextExtractor,
                                                String endpointPath,
                                                PrivacyMetrics metrics, AuditRecorder audit, Clock clock) {
+        return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
+                metrics, audit, clock, null);
+    }
+
+    /**
+     * As above, with admission (pauses, per-caller rate limit, human approval) checked by both
+     * tools after scope resolution and before the orchestrator.
+     *
+     * @param fingerprinter binds an approval to the call's arguments
+     */
+    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
+                                               AuthorizationService authorizationService,
+                                               ScopeResolver scopeResolver,
+                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+                                               String endpointPath,
+                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                               ToolAdmission admission, ParameterFingerprinter fingerprinter) {
+        Objects.requireNonNull(fingerprinter, "fingerprinter");
+        return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
+                metrics, audit, clock, new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter));
+    }
+
+    private static HttpTransport build(ContextOrchestrator orchestrator,
+                                       AuthorizationService authorizationService, ScopeResolver scopeResolver,
+                                       McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+                                       String endpointPath, PrivacyMetrics metrics, AuditRecorder audit,
+                                       Clock clock, Oversight oversight) {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
         Objects.requireNonNull(endpointPath, "endpointPath");
 
@@ -126,17 +183,50 @@ public final class DataPrismMcpServer {
                 .build();
 
         McpSyncServer server = McpServer.sync(transport)
-                .serverInfo("data-prism", "0.3.1")
+                .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper,
-                        metrics, audit, clock).specification(),
-                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper,
-                                metrics, audit, clock).specification())
+                .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, null, oversight).specification(),
+                        compareEntitySources(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, null, oversight).specification())
                 .build();
 
         return new HttpTransport(server, transport);
     }
+
+    /** The admission and the fingerprinter that binds approvals to it; absent on the overloads that predate admission. */
+    private record Oversight(ToolAdmission admission, ParameterFingerprinter fingerprinter) {
+    }
+
+    private static GetEntityContextTool getEntityContext(ContextOrchestrator orchestrator,
+                                                         AuthorizationService authorizationService,
+                                                         ScopeResolver scopeResolver, ObjectMapper mapper,
+                                                         PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                                         AuthenticatedCaller developmentCaller,
+                                                         Oversight oversight) {
+        if (oversight == null) {
+            return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                    audit, clock, developmentCaller);
+        }
+        return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter());
+    }
+
+    private static CompareEntitySourcesTool compareEntitySources(ContextOrchestrator orchestrator,
+                                                                 AuthorizationService authorizationService,
+                                                                 ScopeResolver scopeResolver, ObjectMapper mapper,
+                                                                 PrivacyMetrics metrics, AuditRecorder audit,
+                                                                 Clock clock, AuthenticatedCaller developmentCaller,
+                                                                 Oversight oversight) {
+        if (oversight == null) {
+            return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                    audit, clock, developmentCaller);
+        }
+        return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter());
+    }
+
 
     /**
      * The two halves task 07 needs: the built server, and the transport
@@ -144,6 +234,24 @@ public final class DataPrismMcpServer {
      * has no handle back to the {@code HttpServlet} that feeds it.
      */
     public record HttpTransport(McpSyncServer server, HttpServletStreamableServerTransportProvider transportProvider) {
+    }
+
+    /** The build's {@code project.version}, from a Maven-filtered resource; {@code "unknown"} if unreadable. */
+    private static final String VERSION = readVersion();
+
+    private static String readVersion() {
+        try (InputStream in = DataPrismMcpServer.class.getResourceAsStream("data-prism-mcp-version.properties")) {
+            if (in == null) {
+                return "unknown";
+            }
+            Properties properties = new Properties();
+            properties.load(in);
+            String version = properties.getProperty("version");
+            // An unfiltered resource would carry the literal placeholder.
+            return version == null || version.isBlank() || version.startsWith("${") ? "unknown" : version.trim();
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     private static final String INSTRUCTIONS = """

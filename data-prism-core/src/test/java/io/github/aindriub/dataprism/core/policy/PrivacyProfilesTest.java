@@ -167,4 +167,48 @@ class PrivacyProfilesTest {
         assertThat(profiles.get("P").unclassified())
                 .isEqualTo(PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST);
     }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "PASS_THROUGH", "GENERALIZE", "SYNTHESIZE", "TOKENIZE", "HASH"})
+    @DisplayName("a profile mapping a special category weaker than REDACT is refused, override or not")
+    void weakSpecialCategoryRuleIsRefused(String action) {
+        for (String extra : new String[] {"", ", override: true"}) {
+            assertThatThrownBy(() -> PrivacyProfiles.fromYaml(yaml("""
+                    profiles:
+                      LAX:
+                        classifications:
+                          BIOMETRIC: { action: %s%s }
+                    """.formatted(action, extra))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("SPECIAL_CATEGORY_EXPOSED")
+                    .hasMessageContaining("LAX")
+                    .hasMessageContaining("BIOMETRIC");
+        }
+    }
+
+    @Test
+    @DisplayName("shipped profiles remove the seven new special categories and keep PHI at REDACT")
+    void shippedProfilesCoverSpecialCategories() throws Exception {
+        try (InputStream in = PrivacyProfiles.class.getResourceAsStream("/privacy-profiles-default.yaml")) {
+            var profiles = PrivacyProfiles.fromYaml(in);
+            for (String name : new String[] {"DEFAULT", "STRICT"}) {
+                var rules = profiles.get(name).classifications();
+                for (DataClassification c : DataClassification.SPECIAL_CATEGORIES) {
+                    assertThat(rules.get(c).action())
+                            .isEqualTo(c == DataClassification.PHI ? PrivacyAction.REDACT : PrivacyAction.REMOVE);
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the special categories are exactly PHI plus the seven Art. 9 additions")
+    void specialCategoryMembership() {
+        assertThat(DataClassification.SPECIAL_CATEGORIES).containsExactlyInAnyOrder(
+                DataClassification.PHI, DataClassification.BIOMETRIC, DataClassification.GENETIC,
+                DataClassification.ETHNIC_ORIGIN, DataClassification.POLITICAL_OPINION,
+                DataClassification.RELIGIOUS_BELIEF, DataClassification.TRADE_UNION,
+                DataClassification.SEX_LIFE_ORIENTATION);
+    }
 }

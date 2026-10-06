@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.Period;
 import java.util.Optional;
 
 /**
@@ -19,13 +20,15 @@ import java.util.Optional;
  *
  * <p>This class detects an edit or a deletion of a record that was already
  * written, but only insofar as the edited or deleted field is one of the
- * nineteen joined into {@link AuditEventHash}'s chained hash — see {@link
+ * nineteen original fields (version 2 also covers recordVersion, fieldDispositions, approvalId and approverId) hashed into {@link AuditEventHash}'s chain — see {@link
  * AuditChainVerifierCli}'s printed limitation for exactly which fields those
- * are. It also cannot detect truncation of a writer's most recent records: deleting
- * the tail of an append-only file leaves a chain that verifies perfectly end
- * to end. Detecting that needs an external checkpoint held outside operator
- * control, which this release does not build — see {@link
- * AuditChainVerifierCli}, which prints both limitations on every run.
+ * are. Without a checkpoint file it also cannot detect truncation of a writer's most
+ * recent records: deleting the tail of an append-only file leaves a chain that verifies
+ * perfectly end to end. Given a checkpoint file held outside the audit file's custody
+ * ({@link #verify(Path, Path)}), truncation back past a checkpoint and the deletion of a
+ * whole boot with checkpointed records are reported. Records written after a writer's last
+ * checkpoint remain undetectable if deleted. {@link AuditChainVerifierCli} prints these
+ * limitations on every run.
  *
  * <p>Deletion of a writer's EARLIEST records is not exempt from detection,
  * ever: the first record seen for each writer must itself chain from {@code
@@ -87,21 +90,132 @@ public final class AuditChainVerifier {
      */
     private static final String GENESIS = "0".repeat(64);
 
+    /**
+     * The shortest retention a {@link AuditCheckpoint.Kind#RETENTION_ANCHOR} is believed to
+     * stand for by default: EU AI Act Art. 19's six months. A purge only deletes segments older
+     * than the retention period, so an anchor over a segment younger than this, relative to when
+     * the anchor was recorded, did not come from a legitimate purge.
+     */
+    public static final Period DEFAULT_MINIMUM_RETENTION = Period.ofMonths(6);
+
     private AuditChainVerifier() {
+    }
+
+    /** Everything one replay needs beyond the bytes: the anchors, the retention floor, the start rule. */
+    private record Replay(Map<String, List<AuditCheckpoint>> anchors, List<AuditCheckpoint> checkpoints,
+                          Period minimumRetention, boolean lenientStart) {
     }
 
     /** Reads and verifies {@code path} in one pass. */
     public static VerificationReport verify(Path path) throws IOException {
-        return verify(Files.readAllBytes(path));
+        return verify(readAudit(path), List.of(), DEFAULT_MINIMUM_RETENTION, false);
+    }
+
+    /**
+     * Verifies {@code segments} (already in date order) as one concatenation, for {@link
+     * AuditRetention}'s pre-purge check. The first record of each writer is not required to chain
+     * from GENESIS, because an earlier purge may have removed its predecessors; every later link
+     * and every recomputed hash is still checked. Returns the byte offset at which each segment
+     * starts in the concatenation through {@code starts}.
+     */
+    static VerificationReport verifySegments(List<Path> segments, List<Long> starts) throws IOException {
+        byte[] content = join(segments, starts);
+        return verify(content, List.of(), DEFAULT_MINIMUM_RETENTION, true);
+    }
+
+    /**
+     * Reads {@code path}: a single file as is, or a directory as every {@code audit-YYYY-MM-DD.log}
+     * segment in date order. A non-final segment that ends without a newline (a torn write) has one
+     * added so its fragment cannot fuse with the next segment's first record; it then reads as an
+     * interrupted-write fragment. Byte offsets in a directory report are into that concatenation.
+     */
+    private static byte[] readAudit(Path path) throws IOException {
+        if (!Files.isDirectory(path)) {
+            return Files.readAllBytes(path);
+        }
+        java.util.TreeMap<java.time.LocalDate, Path> segments = new java.util.TreeMap<>();
+        try (java.util.stream.Stream<Path> files = Files.list(path)) {
+            files.filter(Files::isRegularFile).forEach(f -> {
+                java.time.LocalDate date = SegmentedFileAuditSink.segmentDate(f);
+                if (date != null) {
+                    segments.put(date, f);
+                }
+            });
+        }
+        return join(new ArrayList<>(segments.values()), null);
+    }
+
+    private static byte[] join(List<Path> segments, List<Long> starts) throws IOException {
+        java.io.ByteArrayOutputStream all = new java.io.ByteArrayOutputStream();
+        int remaining = segments.size();
+        for (Path segment : segments) {
+            if (starts != null) {
+                starts.add((long) all.size());
+            }
+            byte[] bytes = Files.readAllBytes(segment);
+            all.write(bytes);
+            remaining--;
+            if (remaining > 0 && bytes.length > 0 && bytes[bytes.length - 1] != '\n') {
+                all.write('\n');
+            }
+        }
+        return all.toByteArray();
     }
 
     /** Reads and verifies every byte {@code in} produces before EOF. */
     public static VerificationReport verify(InputStream in) throws IOException {
-        return verify(in.readAllBytes());
+        return verify(in.readAllBytes(), List.of(), DEFAULT_MINIMUM_RETENTION, false);
     }
 
-    private static VerificationReport verify(byte[] content) {
+    /**
+     * As {@link #verify(Path)}, additionally comparing every writer against the
+     * checkpoints in {@code checkpointFile} (one {@link AuditCheckpoint} JSON
+     * line each, as written by {@link FileAuditCheckpointSink}). A malformed
+     * checkpoint line fails with {@link IOException}: an unreadable checkpoint
+     * file must not silently verify as "no checkpoints".
+     */
+    public static VerificationReport verify(Path auditFile, Path checkpointFile) throws IOException {
+        return verify(auditFile, checkpointFile, DEFAULT_MINIMUM_RETENTION);
+    }
+
+    /**
+     * As {@link #verify(Path, Path)}, with the shortest retention a {@link
+     * AuditCheckpoint.Kind#RETENTION_ANCHOR} may stand for. A deployment that runs {@link
+     * AuditRetention} with the below-minimum override passes its own period here; an anchor whose
+     * segment date is not at least this long before its {@code recordedAt} is reported as {@link
+     * AnomalyType#RETENTION_ANCHOR_REJECTED} and explains nothing.
+     */
+    public static VerificationReport verify(Path auditFile, Path checkpointFile, Period minimumRetention)
+            throws IOException {
+        java.util.Objects.requireNonNull(minimumRetention, "minimumRetention");
+        byte[] content = readAudit(auditFile);
+        List<AuditCheckpoint> checkpoints = new ArrayList<>();
+        int lineNo = 0;
+        for (String line : Files.readAllLines(checkpointFile, StandardCharsets.UTF_8)) {
+            lineNo++;
+            if (line.isBlank()) {
+                continue;
+            }
+            try {
+                checkpoints.add(AuditCheckpoint.fromJsonLine(line));
+            } catch (IllegalArgumentException e) {
+                throw new IOException("checkpoint file " + checkpointFile + " line " + lineNo
+                        + " is not a valid checkpoint: " + e.getMessage(), e);
+            }
+        }
+        return verify(content, checkpoints, minimumRetention, false);
+    }
+
+    private static VerificationReport verify(byte[] content, List<AuditCheckpoint> checkpoints,
+                                             Period minimumRetention, boolean lenientStart) {
         Map<String, WriterState> writers = new LinkedHashMap<>();
+        Map<String, List<AuditCheckpoint>> retentionAnchors = new LinkedHashMap<>();
+        for (AuditCheckpoint cp : checkpoints) {
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR) {
+                retentionAnchors.computeIfAbsent(cp.instanceId(), k -> new ArrayList<>()).add(cp);
+            }
+        }
+        Replay replay = new Replay(retentionAnchors, checkpoints, minimumRetention, lenientStart);
         List<StructuralAnomaly> anomalies = new ArrayList<>();
         TailAnomaly tail = null;
 
@@ -115,7 +229,7 @@ public final class AuditChainVerifier {
             if (content[i] == '\n') {
                 String line = new String(content, start, i - start, StandardCharsets.UTF_8);
                 int anomaliesBefore = anomalies.size();
-                processLine(line, start, writers, anomalies, precedingAnomalyOffset);
+                processLine(line, start, writers, anomalies, precedingAnomalyOffset, replay);
                 precedingAnomalyOffset = anomalies.size() > anomaliesBefore ? (long) start : null;
                 start = i + 1;
             }
@@ -130,15 +244,134 @@ public final class AuditChainVerifier {
                     start);
         }
 
+        List<CheckpointFinding> findings = applyCheckpoints(writers, checkpoints, minimumRetention);
+        for (WriterState state : writers.values()) {
+            if (state.anchorRejection != null) {
+                anomalies.add(new StructuralAnomaly(AnomalyType.RETENTION_ANCHOR_REJECTED, state.anchorRejection,
+                        state.firstOffset, -1));
+            }
+        }
+
         List<WriterResult> results = new ArrayList<>();
         for (WriterState state : writers.values()) {
             results.add(state.toResult());
         }
-        return new VerificationReport(results, anomalies, Optional.ofNullable(tail));
+        return new VerificationReport(results, anomalies, Optional.ofNullable(tail), findings);
+    }
+
+    /**
+     * Compares each checkpointed writer with what survived. A hash that differs from the
+     * checkpointed head at the same sequence marks that writer broken (exit 2). A writer whose
+     * last surviving sequence is below its highest checkpointed sequence, or which has a
+     * checkpoint past sequence 0 and no surviving record, is reported as a finding (exit 5).
+     * {@link AuditCheckpoint.Kind#RETENTION_ANCHOR} is not compared as a head; it is used while
+     * replaying (a chain that starts right after an anchor is intact) and to explain a writer
+     * whose every record was purged.
+     */
+    private static List<CheckpointFinding> applyCheckpoints(Map<String, WriterState> writers,
+                                                            List<AuditCheckpoint> checkpoints,
+                                                            Period minimumRetention) {
+        Map<String, Long> highest = new LinkedHashMap<>();
+        for (AuditCheckpoint cp : checkpoints) {
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR) {
+                continue;
+            }
+            highest.merge(cp.instanceId(), cp.sequence(), Math::max);
+            WriterState writer = writers.get(cp.instanceId());
+            if (writer == null || cp.sequence() == 0) {
+                continue;
+            }
+            String actual = writer.hashBySequence.get(cp.sequence());
+            if (actual != null && !actual.equals(cp.headHash()) && !writer.checkpointMismatch) {
+                writer.checkpointMismatch = true;
+                if (!writer.broken) {
+                    writer.broken = true;
+                    writer.firstBreak = new Break(cp.sequence(), cp.instanceId(),
+                            writer.seenSequences.get(cp.sequence()),
+                            "its eventHash differs from the head hash the checkpoint file recorded for this writer "
+                                    + "at the same sequence -- the record was replaced or rewritten after the "
+                                    + "checkpoint was taken");
+                }
+            }
+        }
+        List<CheckpointFinding> findings = new ArrayList<>();
+        for (Map.Entry<String, Long> e : highest.entrySet()) {
+            WriterState writer = writers.get(e.getKey());
+            long checkpointed = e.getValue();
+            if (writer == null) {
+                if (checkpointed > 0 && !anchoredPast(checkpoints, e.getKey(), checkpointed, minimumRetention)) {
+                    findings.add(new CheckpointFinding(CheckpointFindingType.MISSING_WRITER, e.getKey(),
+                            checkpointed, -1,
+                            "MISSING_WRITER: writer " + e.getKey() + " has a checkpoint at sequence "
+                                    + checkpointed + " but no record of it survives in the audit file -- every "
+                                    + "record of this boot was deleted, or the wrong audit file was supplied."));
+                }
+                continue;
+            }
+            long last = writer.seenSequences.keySet().stream().mapToLong(Long::longValue).max().orElse(0);
+            if (last < checkpointed) {
+                findings.add(new CheckpointFinding(CheckpointFindingType.TRUNCATED_BEFORE_CHECKPOINT, e.getKey(),
+                        checkpointed, last,
+                        "TRUNCATED_BEFORE_CHECKPOINT: writer " + e.getKey() + " has a checkpoint at sequence "
+                                + checkpointed + " but its last surviving record is sequence " + last
+                                + " -- records at the tail of this writer's chain were deleted."));
+            }
+        }
+        return findings;
+    }
+
+    /**
+     * True if a believable retention anchor records that this writer's chain was purged through
+     * {@code sequence}.
+     */
+    private static boolean anchoredPast(List<AuditCheckpoint> checkpoints, String instanceId, long sequence,
+                                        Period minimumRetention) {
+        return checkpoints.stream().anyMatch(cp -> cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR
+                && cp.instanceId().equals(instanceId) && cp.sequence() >= sequence
+                && anchorIsOldEnough(cp, minimumRetention) && anchorContradiction(cp, checkpoints) == null);
+    }
+
+    /**
+     * An anchor stands for a legitimate purge only if it names the segment it covered and that
+     * segment was at least {@code minimumRetention} old when the anchor was recorded. An anchor
+     * with no segment date (written before the field existed) covers nothing.
+     */
+    private static boolean anchorIsOldEnough(AuditCheckpoint anchor, Period minimumRetention) {
+        if (anchor.segmentDate() == null) {
+            return false;
+        }
+        java.time.LocalDate recorded = anchor.recordedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        return !anchor.segmentDate().plus(minimumRetention).isAfter(recorded);
+    }
+
+    /**
+     * Why a head checkpoint of the same writer shows the anchor's date is forged, or {@code null}.
+     * An anchor for sequence n and segment date D says the writer had reached n by D. A BOOT,
+     * PERIODIC or SHUTDOWN checkpoint at a lower sequence, recorded on a UTC date after D, says it
+     * had not.
+     */
+    private static String anchorContradiction(AuditCheckpoint anchor, List<AuditCheckpoint> checkpoints) {
+        if (anchor.segmentDate() == null) {
+            return null;
+        }
+        for (AuditCheckpoint cp : checkpoints) {
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR || !cp.instanceId().equals(anchor.instanceId())
+                    || cp.sequence() >= anchor.sequence()) {
+                continue;
+            }
+            java.time.LocalDate recorded = cp.recordedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+            if (recorded.isAfter(anchor.segmentDate())) {
+                return "a " + cp.kind() + " checkpoint at sequence " + cp.sequence() + " was recorded on "
+                        + recorded + ", after the anchor's segment date " + anchor.segmentDate()
+                        + ", yet the anchor claims sequence " + anchor.sequence() + " by that date";
+            }
+        }
+        return null;
     }
 
     private static void processLine(String line, long offset, Map<String, WriterState> writers,
-                                      List<StructuralAnomaly> anomalies, Long precedingAnomalyOffset) {
+                                      List<StructuralAnomaly> anomalies, Long precedingAnomalyOffset,
+                                      Replay replay) {
         if (line.isEmpty()) {
             return;
         }
@@ -159,6 +392,7 @@ public final class AuditChainVerifier {
             return;
         }
         writer.seenSequences.put(event.sequence(), offset);
+        writer.hashBySequence.put(event.sequence(), event.eventHash());
         writer.recordCount++;
 
         if (writer.broken) {
@@ -170,7 +404,33 @@ public final class AuditChainVerifier {
         boolean firstRecordSeenForWriter = writer.firstSequence == null;
         if (firstRecordSeenForWriter) {
             writer.firstSequence = event.sequence();
+            writer.firstOffset = offset;
+            AuditCheckpoint anchor = null;
             if (!GENESIS.equals(event.previousHash())) {
+                for (AuditCheckpoint candidate : replay.anchors().getOrDefault(event.instanceId(), List.of())) {
+                    if (candidate.sequence() + 1 != event.sequence()
+                            || !candidate.headHash().equals(event.previousHash())) {
+                        continue;
+                    }
+                    String contradiction = anchorIsOldEnough(candidate, replay.minimumRetention())
+                            ? anchorContradiction(candidate, replay.checkpoints()) : null;
+                    boolean startsBeforeSegment = candidate.segmentDate() != null && event.timestamp()
+                            .atZone(java.time.ZoneOffset.UTC).toLocalDate().isBefore(candidate.segmentDate());
+                    if (anchorIsOldEnough(candidate, replay.minimumRetention()) && contradiction == null
+                            && !startsBeforeSegment) {
+                        anchor = candidate;
+                        break;
+                    }
+                    writer.anchorRejection = anchorRejectionMessage(event, candidate, replay.minimumRetention(),
+                            contradiction, startsBeforeSegment);
+                }
+            }
+            if (anchor != null) {
+                // The chain legitimately starts here: a purge recorded this writer's last purged
+                // record, and this record follows it exactly. Fall through to the ordinary checks.
+                writer.retentionAnchor = anchor;
+                writer.anchorRejection = null;
+            } else if (!GENESIS.equals(event.previousHash()) && !replay.lenientStart()) {
                 if (precedingAnomalyOffset != null) {
                     // A structural anomaly was reported for the immediately preceding line -- for
                     // example the mid-file field-count shape of an interrupted write followed by a
@@ -220,6 +480,30 @@ public final class AuditChainVerifier {
 
         writer.lastHash = event.eventHash();
         writer.headHash = event.eventHash();
+    }
+
+    private static String anchorRejectionMessage(AuditEvent event, AuditCheckpoint anchor, Period minimumRetention,
+                                                 String contradiction, boolean startsBeforeSegment) {
+        if (contradiction != null || startsBeforeSegment) {
+            return "RETENTION_ANCHOR_REJECTED: writer " + event.instanceId() + " starts at sequence "
+                    + event.sequence() + " right after a retention anchor (sequence " + anchor.sequence()
+                    + ", segment date " + anchor.segmentDate() + ", recorded " + anchor.recordedAt() + "), but "
+                    + (contradiction != null ? contradiction
+                            : "the first surviving record is dated before the anchor's segment date")
+                    + ". The anchor's date cannot be genuine, so it does not explain the missing records: the chain "
+                    + "is reported as it would be without it. Anyone able to append to the checkpoint file could "
+                    + "have written it to hide a recent deletion.";
+        }
+        return "RETENTION_ANCHOR_REJECTED: writer " + event.instanceId() + " starts at sequence "
+                + event.sequence() + " right after a retention anchor (sequence " + anchor.sequence()
+                + ", recorded " + anchor.recordedAt() + "), but the anchor "
+                + (anchor.segmentDate() == null
+                        ? "names no segment date"
+                        : "covers a segment dated " + anchor.segmentDate() + ", less than " + minimumRetention
+                                + " before it was recorded")
+                + ". A purge only deletes segments older than the retention period, so this anchor does not "
+                + "explain the missing records: the chain is reported as it would be without it. Anyone able to "
+                + "append to the checkpoint file could have written it to hide a recent deletion.";
     }
 
     /**
@@ -304,6 +588,8 @@ public final class AuditChainVerifier {
     private static final class WriterState {
         private final String instanceId;
         private final Map<Long, Long> seenSequences = new LinkedHashMap<>();
+        private final Map<Long, String> hashBySequence = new LinkedHashMap<>();
+        private boolean checkpointMismatch;
         private long recordCount;
         private long afterBreakCount;
         private String lastHash;
@@ -312,6 +598,9 @@ public final class AuditChainVerifier {
         private Break firstBreak;
         private Long firstSequence;
         private NonGenesisStart nonGenesisStart;
+        private AuditCheckpoint retentionAnchor;
+        private String anchorRejection;
+        private long firstOffset;
 
         WriterState(String instanceId) {
             this.instanceId = instanceId;
@@ -319,7 +608,8 @@ public final class AuditChainVerifier {
 
         WriterResult toResult() {
             return new WriterResult(instanceId, recordCount, headHash, broken, Optional.ofNullable(firstBreak),
-                    afterBreakCount, firstSequence, Optional.ofNullable(nonGenesisStart));
+                    afterBreakCount, firstSequence, Optional.ofNullable(nonGenesisStart),
+                    Optional.ofNullable(retentionAnchor));
         }
     }
 
@@ -330,7 +620,9 @@ public final class AuditChainVerifier {
         /** Two durable records sharing a sequence number for one writer: a sink-contract violation. */
         DUPLICATE_SEQUENCE,
         /** A parse failure that is not the known interrupted-write shape and cannot be ruled out as tampering. */
-        UNPARSEABLE_RECORD
+        UNPARSEABLE_RECORD,
+        /** A retention anchor that matches a writer's start but is too recent, or undated, to be a purge's. */
+        RETENTION_ANCHOR_REJECTED
     }
 
     /** The first edit or deletion found in one writer's chain. */
@@ -358,17 +650,52 @@ public final class AuditChainVerifier {
     /** One writer's replayed chain. {@code firstSequence} is the sequence of the first record this pass saw. */
     public record WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
                                 Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
-                                Optional<NonGenesisStart> nonGenesisStart) {
+                                Optional<NonGenesisStart> nonGenesisStart,
+                                Optional<AuditCheckpoint> retentionAnchor) {
+
+        public WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
+                            Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
+                            Optional<NonGenesisStart> nonGenesisStart) {
+            this(instanceId, sequenceCount, headHash, broken, firstBreak, afterBreakCount, firstSequence,
+                    nonGenesisStart, Optional.empty());
+        }
+    }
+
+    /** What an external checkpoint contradicts about the surviving file. */
+    public enum CheckpointFindingType {
+        /** A writer's last surviving sequence is lower than its highest checkpointed sequence. */
+        TRUNCATED_BEFORE_CHECKPOINT,
+        /** A writer has a checkpoint past sequence 0 and no surviving records. */
+        MISSING_WRITER
+    }
+
+    /**
+     * One writer contradicted by the checkpoint file. {@code survivingSequence} is -1 when no
+     * record survives.
+     */
+    public record CheckpointFinding(CheckpointFindingType type, String instanceId, long checkpointSequence,
+                                    long survivingSequence, String message) {
     }
 
     /** The full result of one verification pass over a file. */
     public record VerificationReport(List<WriterResult> writers, List<StructuralAnomaly> anomalies,
-                                      Optional<TailAnomaly> tail) {
+                                      Optional<TailAnomaly> tail, List<CheckpointFinding> checkpointFindings) {
+
+        public VerificationReport(List<WriterResult> writers, List<StructuralAnomaly> anomalies,
+                                  Optional<TailAnomaly> tail) {
+            this(writers, anomalies, tail, List.of());
+        }
+
+        /** True if the checkpoint file shows a writer's tail or whole boot missing. */
+        public boolean hasCheckpointFinding() {
+            return !checkpointFindings.isEmpty();
+        }
 
         /** True if any writer's chain has a break, or any anomaly cannot be ruled out as tampering. */
         public boolean hasBreak() {
             return writers.stream().anyMatch(WriterResult::broken)
-                    || anomalies.stream().anyMatch(a -> a.type() == AnomalyType.UNPARSEABLE_RECORD);
+                    || anomalies.stream().anyMatch(a -> a.type() == AnomalyType.UNPARSEABLE_RECORD
+                            || a.type() == AnomalyType.RETENTION_ANCHOR_REJECTED);
         }
 
         /**
@@ -378,7 +705,8 @@ public final class AuditChainVerifier {
          * is reported as a break (the more severe finding), via {@link #hasBreak()}.
          */
         public boolean hasStructuralAnomaly() {
-            return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD)
+            return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD
+                    && a.type() != AnomalyType.RETENTION_ANCHOR_REJECTED)
                     || writers.stream().anyMatch(w -> w.nonGenesisStart().isPresent());
         }
     }

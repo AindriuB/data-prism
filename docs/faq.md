@@ -113,14 +113,19 @@ and [`design-review.md`](https://github.com/AindriuB/data-prism/blob/main/docs/d
 
 No — [`SECURITY.md`](../SECURITY.md#supported-versions) states plainly that
 the project is pre-1.0, and that only the latest released version receives
-security fixes. Version 0.3.0 is that latest release, and across its
+security fixes. Version 0.4.0 is that latest release, and across its
 history the privacy engine, deterministic pseudonymisation, correlation and
 consistency findings, the JSON REST and reviewed-adapter connectors, the
-OAuth2 resource server, and an opt-in durable hash-chained audit sink with
-an offline verifier have all been built and are covered by tests — see the
+OAuth2 resource server, an opt-in durable hash-chained audit sink with
+an offline verifier, human oversight (pause, rate limits, approvals and
+four-eyes), audit evidence (daily segments, external checkpoints and
+retention), and audited re-identification on a separate operator port have
+all been built and are covered by tests — see the
 full release history in [`CHANGELOG.md`](../CHANGELOG.md). Two of the four
 originally designed MCP tools, `search_entity_data` and
 `describe_entity_model`, are not implemented — see
-["Not yet built"](tools.md#not-yet-built) in `tools.md` — and the
-re-identification operator surface and an Elasticsearch connector are
-deferred by design, not missing by accident.
+["Not yet built"](tools.md#not-yet-built) in `tools.md` — and an
+Elasticsearch connector is deferred by design, not missing by accident. The
+oversight, audit and re-identification features support an operator's
+compliance work; they do not by themselves establish that a deployment meets
+any regulation — see [the EU AI Act support page](eu-ai-act.md).

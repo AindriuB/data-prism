@@ -1,8 +1,13 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
+import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.audit.AuditRetention;
+import io.github.aindriub.dataprism.audit.FileAuditCheckpointSink;
+import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.FileAuditSink;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
@@ -39,6 +44,24 @@ import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
+import io.github.aindriub.dataprism.hazelcast.HazelcastApprovalStore;
+import io.github.aindriub.dataprism.hazelcast.HazelcastCallerRateLimiter;
+import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
+import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
+import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+import io.github.aindriub.dataprism.hazelcast.CachingSyntheticValueSource;
+import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
+import io.github.aindriub.dataprism.oversight.ApprovalStore;
+import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
+import io.github.aindriub.dataprism.oversight.InMemoryApprovalStore;
+import io.github.aindriub.dataprism.oversight.InMemoryCallerRateLimiter;
+import io.github.aindriub.dataprism.oversight.InMemoryOversightState;
+import io.github.aindriub.dataprism.oversight.OversightState;
+import io.github.aindriub.dataprism.reidentification.Permission;
+import io.github.aindriub.dataprism.reidentification.ReidentificationPolicy;
+import io.github.aindriub.dataprism.reidentification.ReidentificationService;
+import io.github.aindriub.dataprism.security.OversightPolicy;
+import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
@@ -51,6 +74,7 @@ import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTrans
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -75,6 +99,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.Arrays;
 
@@ -86,7 +111,8 @@ import java.util.Arrays;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(DataPrismProperties.class)
-@Import({DataPrismAutoConfiguration.IdentityResolverSelection.class, DataPrismAutoConfiguration.AuditSinkSelection.class})
+@Import({DataPrismAutoConfiguration.IdentityResolverSelection.class, DataPrismAutoConfiguration.AuditSinkSelection.class,
+        DataPrismAutoConfiguration.AuditIntegrityHealth.class})
 public class DataPrismAutoConfiguration {
     /**
      * Resolve this before singleton creation: an empty protected pipeline is never
@@ -210,18 +236,21 @@ public class DataPrismAutoConfiguration {
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
         AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties) {
-            Path path = Path.of(properties.getAudit().getFilePath());
+            String directory = properties.getAudit().getDirectory();
+            Path path = Path.of(directory == null || directory.isBlank()
+                    ? properties.getAudit().getFilePath() : directory);
             try {
-                return new FileAuditSink(path);
+                return directory == null || directory.isBlank() ? new FileAuditSink(path)
+                        : new SegmentedFileAuditSink(path);
             } catch (FileAuditSink.OpenFailedException e) {
                 // Logging the caught exception object here is the same sanctioned
                 // exception docs/conventions.md records for GetEntityContextTool and
                 // CompareEntitySourcesTool: the cause can name a server filesystem
                 // path, so it stays server-side only, never repeated in the
                 // DataPrismConfigurationException message thrown below.
-                LOG.error("dataprism.audit.file-path could not be opened for the hash-chained audit sink", e);
+                LOG.error("dataprism.audit.file-path or directory could not be opened for the hash-chained audit sink", e);
                 throw new DataPrismConfigurationException("AUDIT_SINK_FILE_UNUSABLE",
-                        "dataprism.audit.file-path could not be opened for the hash-chained audit sink");
+                        "dataprism.audit.file-path or directory could not be opened for the hash-chained audit sink");
             }
         }
     }
@@ -242,8 +271,11 @@ public class DataPrismAutoConfiguration {
     Object dataPrismPropertiesValidated(DataPrismProperties properties, List<DataSourceAdapter<?>> adapters,
             ObjectProvider<IdentityResolver> identities, ObjectProvider<HmacKeyReferenceResolver> keys,
             ObjectProvider<AuditSink> audit, ObjectProvider<PrivacyMetrics> metrics,
-            @Qualifier(CONFIGURED_JSON_SOURCE_NAMES_BEAN) ObjectProvider<Set<String>> configuredJsonSourceNames) {
+            @Qualifier(CONFIGURED_JSON_SOURCE_NAMES_BEAN) ObjectProvider<Set<String>> configuredJsonSourceNames,
+            Environment environment) {
         properties.validate();
+        properties.validateOperatorPort(environment.getProperty("server.port", Integer.class, 8080),
+                environment.getProperty("management.server.port", Integer.class));
         DataPrismContractValidator.validateIntegrations(properties, adapters, identities, keys, audit, metrics,
                 configuredJsonSourceNames);
         validateProfile(properties);
@@ -387,7 +419,100 @@ public class DataPrismAutoConfiguration {
     @Bean @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties) { return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()))); }
     @Bean @ConditionalOnMissingBean @ConditionalOnBean(AuditSink.class)
-    AuditRecorder dataPrismAuditRecorder(AuditSink sink, Clock clock, DataPrismProperties properties) { return new AuditRecorder(sink, clock, properties.getAudit().getWriterId()); }
+    AuditRecorder dataPrismAuditRecorder(AuditSink sink, Clock clock, DataPrismProperties properties,
+            ObjectProvider<AuditCheckpointSink> checkpoints) {
+        AuditCheckpointSink checkpoint = checkpoints.getIfAvailable();
+        return checkpoint == null ? new AuditRecorder(sink, clock, properties.getAudit().getWriterId())
+                : new AuditRecorder(sink, clock, properties.getAudit().getWriterId(), checkpoint);
+    }
+    private static final org.slf4j.Logger AUDIT_LOG = org.slf4j.LoggerFactory.getLogger(DataPrismAutoConfiguration.class);
+    /**
+     * The checkpoint file, kept apart from the audit file. A path that cannot be opened is logged
+     * server-side only; the client-visible message never repeats it.
+     */
+    @Bean @ConditionalOnMissingBean(AuditCheckpointSink.class)
+    @ConditionalOnProperty(prefix = "dataprism.audit.checkpoint", name = "file-path")
+    FileAuditCheckpointSink dataPrismAuditCheckpointSink(DataPrismProperties properties,
+            ObjectProvider<AuditSink> auditSink) {
+        // Resolving the audit sink first makes it create the audit directory. Only then can the
+        // containment check compare real paths: on a case-insensitive filesystem a not-yet-created
+        // FRESH directory and a checkpoint under fresh/ look unrelated until the directory exists.
+        auditSink.getIfAvailable();
+        DataPrismProperties.Audit audit = properties.getAudit();
+        String auditLocation = audit.getDirectory() != null && !audit.getDirectory().isBlank()
+                ? audit.getDirectory() : audit.getFilePath();
+        if (auditLocation != null && !auditLocation.isBlank()
+                && DataPrismProperties.sameOrInside(audit.getCheckpoint().getFilePath(), auditLocation)) {
+            throw new DataPrismConfigurationException(FileAuditCheckpointSink.SAME_AS_AUDIT_FILE,
+                    "dataprism.audit.checkpoint.file-path must not be the audit file");
+        }
+        try {
+            return new FileAuditCheckpointSink(Path.of(audit.getCheckpoint().getFilePath()),
+                    Path.of(auditLocation == null || auditLocation.isBlank() ? "." : auditLocation));
+        } catch (FileAuditCheckpointSink.CheckpointSinkException e) {
+            if (FileAuditCheckpointSink.SAME_AS_AUDIT_FILE.equals(e.code())) {
+                throw new DataPrismConfigurationException(FileAuditCheckpointSink.SAME_AS_AUDIT_FILE,
+                        "dataprism.audit.checkpoint.file-path must not be the audit file");
+            }
+            AUDIT_LOG.error("dataprism.audit.checkpoint.file-path could not be opened", e);
+            throw new DataPrismConfigurationException("AUDIT_CHECKPOINT_FILE_UNUSABLE",
+                    "dataprism.audit.checkpoint.file-path could not be opened");
+        }
+    }
+    /** Daily purge of expired segments; present only when {@code dataprism.audit.directory} is set. */
+    @Bean @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "dataprism.audit", name = "directory")
+    AuditRetention dataPrismAuditRetention(DataPrismProperties properties, Clock clock,
+            ObjectProvider<AuditCheckpointSink> checkpoints) {
+        DataPrismProperties.Audit audit = properties.getAudit();
+        return new AuditRetention(Path.of(audit.getDirectory()), audit.getRetention(),
+                checkpoints.getObject(), clock, audit.isRetentionOverride());
+    }
+    /**
+     * Runs the purge once now and then every 24h, and a PERIODIC checkpoint every {@code
+     * checkpoint.interval}, the first soon after boot. When it checkpoints, it is registered as
+     * depending on the recorder, so on context close it stops (and its last PERIODIC is written)
+     * before the recorder writes its SHUTDOWN checkpoint.
+     */
+    @Bean(destroyMethod = "close")
+    AuditMaintenance dataPrismAuditMaintenance(DataPrismProperties properties, ObjectProvider<AuditRecorder> recorder,
+            ObjectProvider<AuditRetention> retention, ObjectProvider<PrivacyMetrics> metrics,
+            org.springframework.beans.factory.config.ConfigurableListableBeanFactory beanFactory) {
+        String checkpointPath = properties.getAudit().getCheckpoint().getFilePath();
+        AuditRecorder checkpointing = checkpointPath == null || checkpointPath.isBlank() ? null
+                : recorder.getIfAvailable();
+        if (checkpointing != null) {
+            // by type, so an application AuditRecorder under any other name is ordered too
+            for (String name : beanFactory.getBeanNamesForType(AuditRecorder.class)) {
+                beanFactory.registerDependentBean(name, "dataPrismAuditMaintenance");
+            }
+        }
+        return new AuditMaintenance(checkpointing,
+                retention.getIfAvailable(), properties.getAudit().getCheckpoint().getInterval(),
+                metrics.getIfAvailable(PrivacyMetrics::none));
+    }
+    /** The {@code auditIntegrity} health contributor; present only when Spring Boot Actuator is. */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(org.springframework.boot.actuate.health.HealthIndicator.class)
+    static class AuditIntegrityHealth {
+        /** The bean name minus {@code HealthIndicator} is the contributor name: {@code auditIntegrity}. */
+        @Bean
+        org.springframework.boot.actuate.health.HealthIndicator auditIntegrityHealthIndicator(
+                AuditMaintenance maintenance) {
+            return () -> {
+                String code = maintenance.failureCode();
+                if (code == null) {
+                    return org.springframework.boot.actuate.health.Health.up().build();
+                }
+                org.springframework.boot.actuate.health.Health.Builder down =
+                        org.springframework.boot.actuate.health.Health.down().withDetail("code", code);
+                if (maintenance.failureSegmentDate() != null) {
+                    down.withDetail("segmentDate", maintenance.failureSegmentDate());
+                }
+                return down.build();
+            };
+        }
+    }
     /**
      * {@code single-node}, or no topology configured at all (fixture-development,
      * where {@link DataPrismProperties#validate()} never requires one): the budget
@@ -401,23 +526,169 @@ public class DataPrismAutoConfiguration {
     @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "single-node", matchIfMissing = true)
     ScopeBudget dataPrismScopeBudget() { return new InMemoryScopeBudget(); }
     /**
-     * {@code embedded}: the budget is enforced once across the cluster, not once
-     * per process. {@code @ConditionalOnClass} is what lets this method — and
-     * {@link ClusterScopeBudgetConfiguration}, which is the only other class in
-     * this package that names a {@code com.hazelcast} type — go unresolved on a
-     * {@code single-node} consumer that never put {@code data-prism-hazelcast} on
-     * its classpath. When the topology is {@code embedded} and that dependency is
-     * absent, no {@link ScopeBudget} bean is created here at all, and
-     * {@link #dataPrismSharedBudgetPreflight()} is what turns that silence into a
-     * refusal instead of a missing-bean startup failure with no stable code.
+     * {@code embedded}: the budget is enforced once across the cluster, not once per process, over
+     * the same {@link PrivacyCluster} member as the oversight state ({@link ClusterBackedState}).
+     * Declared here, not on that nested class, so its {@code @ConditionalOnBean} is evaluated after
+     * {@link #dataPrismSecretKeyProvider} is registered, exactly as before. The cluster arrives as an
+     * {@link ObjectProvider} so this signature names no optional type: a {@code single-node} consumer
+     * without {@code data-prism-hazelcast} never loads {@link ClusterBackedState}.
      */
     @Bean @ConditionalOnMissingBean
     @ConditionalOnBean({IdentityResolver.class, SecretKeyProvider.class, AuditSink.class, PrivacyMetrics.class, DataSourceAdapter.class})
     @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
     @ConditionalOnClass(HazelcastInstance.class)
-    ScopeBudget dataPrismClusterScopeBudget(DataPrismProperties properties) {
-        return ClusterScopeBudgetConfiguration.build(properties.getHazelcast());
+    ScopeBudget dataPrismClusterScopeBudget(ObjectProvider<PrivacyCluster> cluster) {
+        return ClusterBackedState.budgetOver(cluster);
     }
+
+    /**
+     * {@code embedded}: the one {@link PrivacyCluster} member, and everything built on it, so the
+     * budget (see {@link #dataPrismClusterScopeBudget}), the oversight state, the approval store and the caller rate limiter share a single
+     * member rather than each starting its own. This nested class is {@code @ConditionalOnClass}
+     * guarded so a {@code single-node} consumer that never put {@code data-prism-hazelcast} on its
+     * classpath never loads it; its beans are registered ahead of the outer class's, so the
+     * in-memory fall-backs below see them. When the topology is {@code embedded} and that
+     * dependency is absent, no {@link ScopeBudget} bean is created here at all, and
+     * {@link #dataPrismSharedBudgetPreflight} turns that silence into {@code MISSING_SHARED_BUDGET}.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(HazelcastInstance.class)
+    @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
+    static class ClusterBackedState {
+        @Bean @ConditionalOnMissingBean
+        PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties) {
+            return PrivacyCluster.embedded(new Config(), properties.getHazelcast().isReidentificationEnabled());
+        }
+
+        /** Called by {@link #dataPrismClusterScopeBudget}; this class is never loaded unless that runs. */
+        static ScopeBudget budgetOver(ObjectProvider<PrivacyCluster> cluster) {
+            return new HazelcastScopeBudget(cluster.getObject());
+        }
+
+        @Bean @ConditionalOnMissingBean
+        OversightState dataPrismClusterOversightState(PrivacyCluster cluster) {
+            return new HazelcastOversightState(cluster);
+        }
+
+        @Bean @ConditionalOnMissingBean
+        ApprovalStore dataPrismClusterApprovalStore(PrivacyCluster cluster) {
+            return new HazelcastApprovalStore(cluster);
+        }
+
+        @Bean @ConditionalOnMissingBean
+        CallerRateLimiter dataPrismClusterCallerRateLimiter(PrivacyCluster cluster) {
+            return new HazelcastCallerRateLimiter(cluster);
+        }
+    }
+
+    /**
+     * Oversight state when no cluster supplied it: per process, honestly. Declared on the outer
+     * class, so it is registered after {@link ClusterBackedState}'s and yields to it.
+     */
+    @Bean @ConditionalOnMissingBean
+    OversightState dataPrismOversightState() { return new InMemoryOversightState(); }
+    @Bean @ConditionalOnMissingBean
+    ApprovalStore dataPrismApprovalStore() { return new InMemoryApprovalStore(); }
+    @Bean @ConditionalOnMissingBean
+    CallerRateLimiter dataPrismCallerRateLimiter() { return new InMemoryCallerRateLimiter(); }
+    @Bean
+    OversightPolicy dataPrismOversightPolicy(DataPrismProperties properties) {
+        DataPrismProperties.Oversight o = properties.getOversight();
+        Integer requests = o.getCallerRateLimit().getRequests();
+        return new OversightPolicy(Set.copyOf(o.getApprovalRequiredTools()),
+                requests == null ? OptionalInt.empty() : OptionalInt.of(requests),
+                o.getCallerRateLimit().getWindow(), o.getApprovalTtl(), o.getMaxPendingPerRequester());
+    }
+    /**
+     * Always built, never optional: the MCP server is given this admission unconditionally, so a
+     * pause or an approval requirement can never be silently skipped by a missing bean.
+     */
+    @Bean
+    ToolAdmission dataPrismToolAdmission(OversightState state, ApprovalStore approvals, CallerRateLimiter limiter,
+            OversightPolicy policy, Clock clock) {
+        return new ToolAdmission(state, approvals, limiter, policy, clock);
+    }
+    @Bean @ConditionalOnMissingBean
+    ParameterFingerprinter dataPrismParameterFingerprinter(SecretKeyProvider keys) {
+        return new ParameterFingerprinter(keys);
+    }
+
+    /**
+     * The re-identification service, only when {@code dataprism.reidentification.enabled=true}.
+     * Nothing here, or anywhere in this module, registers it as an MCP tool: the only transport
+     * wiring is {@link #dataPrismHttpTransport}, which takes no re-identification type at all.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass({ReidentificationService.class, HazelcastInstance.class})
+    @ConditionalOnProperty(prefix = "dataprism.reidentification", name = "enabled", havingValue = "true")
+    static class ReidentificationWiring {
+        @Bean
+        ReidentificationPolicy dataPrismReidentificationPolicy(DataPrismProperties properties) {
+            DataPrismProperties.Reidentification r = properties.getReidentification();
+            Map<String, Set<Permission>> roles = new java.util.HashMap<>();
+            r.getRoles().forEach((role, permissions) -> roles.put(role, permissions.stream()
+                    .map(p -> Permission.valueOf(p.name())).collect(java.util.stream.Collectors.toSet())));
+            return new ReidentificationPolicy(Set.copyOf(r.getPurposes()), roles, r.isFourEyes(),
+                    r.getApprovalTtl(), r.getMaxPendingPerRequester());
+        }
+
+        /**
+         * Feeds the reverse index: every {@link SyntheticValueSource} in the context, the default or
+         * the application's own, is wrapped in {@link CachingSyntheticValueSource} over the shared
+         * {@link PrivacyCluster}, so each pseudonym handed out is entered where
+         * {@link ScopeIdentityIndex} reads it. A decorator rather than a competing bean, so the
+         * default's {@code @ConditionalOnMissingBean} still backs off for an application source. An
+         * already-caching source is left alone, and a cache failure falls back to the wrapped source.
+         * Only {@code embedded}; the cluster is resolved lazily to keep this post-processor early-safe.
+         */
+        @Bean @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
+        static BeanPostProcessor dataPrismReidentificationIndexFeed(ObjectProvider<PrivacyCluster> cluster,
+                ObjectProvider<PrivacyMetrics> metrics) {
+            return new BeanPostProcessor() {
+                @Override
+                public Object postProcessAfterInitialization(Object bean, String beanName) {
+                    if (bean instanceof SyntheticValueSource source && !(bean instanceof CachingSyntheticValueSource)) {
+                        return new CachingSyntheticValueSource(source, cluster.getObject(),
+                                metrics.getIfAvailable(PrivacyMetrics::none));
+                    }
+                    return bean;
+                }
+            };
+        }
+
+        @Bean
+        ReidentificationService dataPrismReidentificationService(PrivacyCluster cluster, ApprovalStore approvals,
+                AuditRecorder audit, ReidentificationPolicy policy, PrivacyMetrics metrics, Clock clock) {
+            return new ReidentificationService(new ScopeIdentityIndex(cluster, metrics), approvals, audit, policy,
+                    clock);
+        }
+    }
+
+    /**
+     * Fail closed on a missing module. {@link ReidentificationWiring} is
+     * {@code @ConditionalOnClass}, so with {@code dataprism.reidentification.enabled=true} and
+     * {@code data-prism-reidentification} absent from the classpath (the starter makes it
+     * optional) the wiring would be skipped and startup would succeed with no service, while the
+     * operator surface reports re-identification as switched on. Refuse instead.
+     *
+     * <p>Reads the raw {@code Environment} and checks the class by name, for the reasons given on
+     * {@link #dataPrismSharedBudgetPreflight}; this class never references the type here, because
+     * it is exactly the type that may be absent.
+     */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismReidentificationModulePreflight(Environment environment) {
+        return factory -> {
+            if ("true".equalsIgnoreCase(environment.getProperty("dataprism.reidentification.enabled"))
+                    && !org.springframework.util.ClassUtils.isPresent(
+                            "io.github.aindriub.dataprism.reidentification.ReidentificationService",
+                            factory.getBeanClassLoader())) {
+                throw new DataPrismConfigurationException("REIDENTIFICATION_MODULE_MISSING",
+                        "dataprism.reidentification.enabled=true requires data-prism-reidentification"
+                                + " on the classpath");
+            }
+        };
+    }
+
     /**
      * Resolve this before singleton creation, same reasoning as
      * {@link #dataPrismIdentityResolverPreflight()}: an {@code embedded} topology
@@ -446,9 +717,9 @@ public class DataPrismAutoConfiguration {
     ContextOrchestrator dataPrismContextOrchestrator(List<DataSourceAdapter<?>> adapters, IdentityResolver identities,
             JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, List<LlmResponseValidator> validators,
             SyntheticValueSource synthetics, ValueTokenSource tokens, SecretKeyProvider keys, AuditRecorder audit,
-            ScopeBudget budget, PrivacyMetrics metrics, Clock clock) {
+            ScopeBudget budget, PrivacyMetrics metrics, Clock clock, ParameterFingerprinter fingerprinter) {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
-                new ParameterFingerprinter(keys), audit, identities,
+                fingerprinter, audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
@@ -539,9 +810,10 @@ public class DataPrismAutoConfiguration {
     @DependsOn("dataPrismHttpTransportValidated")
     DataPrismMcpServer.HttpTransport dataPrismHttpTransport(ContextOrchestrator orchestrator, AuthorizationService authorization,
             ScopeResolver scopeResolver, McpTransportContextExtractor<HttpServletRequest> extractor,
-            PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties) {
+            PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties,
+            ToolAdmission admission, ParameterFingerprinter fingerprinter) {
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
-                properties.getTransport().getHttp().getPath(), metrics, audit, clock);
+                properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter);
     }
 
     @Bean(destroyMethod = "closeGracefully")

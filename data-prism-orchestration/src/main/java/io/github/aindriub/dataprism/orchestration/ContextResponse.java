@@ -42,6 +42,11 @@ import java.util.Map;
  * ({@link JsonIgnore}): it must never change what {@code get_entity_context}
  * emits, only let {@code compare_entity_sources} find the right node in
  * {@code entity}.
+ *
+ * <p>{@code correlationId} is the id written to this call's audit event, so a
+ * caller can join the two. It is excluded from serialisation ({@link JsonIgnore})
+ * for the same reason as {@code fieldsByNamespace}: it must never change what
+ * {@code get_entity_context} emits; the MCP layer decides how to return it.
  */
 public record ContextResponse(
         String entityType,
@@ -49,7 +54,8 @@ public record ContextResponse(
         Map<String, String> sources,
         List<ConsistencyFinding> findings,
         ObjectNode entity,
-        @JsonIgnore Map<PrivacyNamespace, List<String>> fieldsByNamespace) {
+        @JsonIgnore Map<PrivacyNamespace, List<String>> fieldsByNamespace,
+        @JsonIgnore String correlationId) {
 
     public ContextResponse {
         sources = Map.copyOf(sources);
@@ -57,6 +63,14 @@ public record ContextResponse(
         Map<PrivacyNamespace, List<String>> copy = new LinkedHashMap<>();
         fieldsByNamespace.forEach((namespace, names) -> copy.put(namespace, List.copyOf(names)));
         fieldsByNamespace = Map.copyOf(copy);
+        correlationId = correlationId == null ? "" : correlationId;
+    }
+
+    /** Pre-correlation-id shape: {@code correlationId} is {@code ""}. */
+    public ContextResponse(String entityType, String subject, Map<String, String> sources,
+                           List<ConsistencyFinding> findings, ObjectNode entity,
+                           Map<PrivacyNamespace, List<String>> fieldsByNamespace) {
+        this(entityType, subject, sources, findings, entity, fieldsByNamespace, "");
     }
 
     /**
@@ -68,19 +82,21 @@ public record ContextResponse(
      */
     public ContextResponse(String entityType, String subject, Map<String, String> sources,
                            List<ConsistencyFinding> findings, ObjectNode entity) {
-        this(entityType, subject, sources, findings, entity, Map.of());
+        this(entityType, subject, sources, findings, entity, Map.of(), "");
     }
 
     static ContextResponse of(String entityType, String subject, List<SourceOutcome> outcomes,
                               List<ConsistencyFinding> findings, ObjectNode entity,
                               Map<PrivacyNamespace, List<String>> fieldsByNamespace,
                               SourceAliasing aliasing, InvestigationContext investigationContext,
-                              io.github.aindriub.dataprism.core.PrivacyContext context) {
+                              io.github.aindriub.dataprism.core.PrivacyContext context,
+                              String correlationId) {
         Map<String, String> statuses = new LinkedHashMap<>();
         outcomes.forEach(outcome -> statuses.put(
                 aliasing.nameFor(outcome.sourceName(), investigationContext, context),
                 outcome.status().name()));
-        return new ContextResponse(entityType, subject, statuses, findings, entity, fieldsByNamespace);
+        return new ContextResponse(entityType, subject, statuses, findings, entity, fieldsByNamespace,
+                correlationId);
     }
 
     /**
