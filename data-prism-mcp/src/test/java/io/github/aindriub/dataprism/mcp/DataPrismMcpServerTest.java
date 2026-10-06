@@ -159,6 +159,32 @@ class DataPrismMcpServerTest {
                 .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
     }
 
+    @Test
+    @DisplayName("the admission overloads still list exactly the two tools")
+    void admissionOverloadsListExactlyTwoTools() {
+        io.github.aindriub.dataprism.orchestration.ParameterFingerprinter fingerprinter =
+                new io.github.aindriub.dataprism.orchestration.ParameterFingerprinter(
+                        io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider.of(
+                                "task-101-test-key-not-for-any-real-data-32b"));
+        McpSyncServer stdio = DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED,
+                io.github.aindriub.dataprism.security.ToolAdmission.none(), fingerprinter);
+        try {
+            assertThat(stdio.listTools()).extracting(McpSchema.Tool::name)
+                    .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
+        } finally {
+            stdio.closeGracefully();
+        }
+        DataPrismMcpServer.HttpTransport http = DataPrismMcpServer.streamableHttp(
+                new NeverCalledOrchestrator(), authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")),
+                scopeResolver(), request -> McpTransportContext.EMPTY, "/mcp",
+                PrivacyMetrics.none(), audit(), FIXED,
+                io.github.aindriub.dataprism.security.ToolAdmission.none(), fingerprinter);
+        assertThat(http.server().listTools()).extracting(McpSchema.Tool::name)
+                .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
+    }
+
     private static McpSyncServerExchange emptyExchange() {
         return new McpSyncServerExchange(
                 new McpAsyncServerExchange("session-1", null, null, null, McpTransportContext.EMPTY));
