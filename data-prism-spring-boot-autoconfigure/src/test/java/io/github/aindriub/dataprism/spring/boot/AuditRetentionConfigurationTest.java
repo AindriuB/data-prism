@@ -101,6 +101,96 @@ class AuditRetentionConfigurationTest {
     }
 
     @Test
+    void a_checkpoint_file_inside_the_audit_directory_is_refused(@TempDir Path dir) {
+        Path segments = dir.resolve("segments");
+        assertRefusedWith(runner().withPropertyValues("dataprism.audit.directory=" + segments,
+                "dataprism.audit.checkpoint.file-path=" + segments.resolve("cp.log")),
+                "AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE");
+        // today's segment name, which would otherwise share the segment file itself
+        assertRefusedWith(runner().withPropertyValues("dataprism.audit.directory=" + segments,
+                "dataprism.audit.checkpoint.file-path=" + segments.resolve("audit-2026-10-06.log")),
+                "AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE");
+        // reached through a dot-dot segment, and inside a not-yet-created subdirectory
+        assertRefusedWith(runner().withPropertyValues("dataprism.audit.directory=" + segments,
+                "dataprism.audit.checkpoint.file-path=" + dir.resolve("other").resolve("..").resolve("segments")
+                        .resolve("sub").resolve("cp.log")), "AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE");
+    }
+
+    @Test
+    void a_checkpoint_path_equal_to_the_audit_directory_is_refused(@TempDir Path dir) {
+        Path segments = dir.resolve("segments");
+        assertRefusedWith(runner().withPropertyValues("dataprism.audit.directory=" + segments,
+                "dataprism.audit.checkpoint.file-path=" + segments), "AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE");
+    }
+
+    @Test
+    void a_checkpoint_reaching_the_audit_location_through_a_symlink_is_refused(@TempDir Path dir) throws Exception {
+        Path segments = Files.createDirectory(dir.resolve("segments"));
+        Path link = dir.resolve("link");
+        Files.createSymbolicLink(link, segments);
+        assertRefusedWith(runner().withPropertyValues("dataprism.audit.directory=" + segments,
+                "dataprism.audit.checkpoint.file-path=" + link.resolve("cp.log")),
+                "AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE");
+        Path file = dir.resolve("audit.log");
+        Files.createFile(file);
+        Path fileLink = dir.resolve("audit-link.log");
+        Files.createSymbolicLink(fileLink, file);
+        assertRefusedWith(runner().withPropertyValues("dataprism.audit.file-path=" + file,
+                "dataprism.audit.checkpoint.file-path=" + fileLink), "AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE");
+    }
+
+    @Test
+    void a_checkpoint_beside_the_audit_directory_with_a_shared_name_prefix_is_accepted(@TempDir Path dir) {
+        runner().withPropertyValues("dataprism.audit.directory=" + dir.resolve("segments"),
+                "dataprism.audit.checkpoint.file-path=" + dir.resolve("segments-cp.log"))
+                .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void a_directory_without_a_checkpoint_file_is_refused_whatever_the_sink(@TempDir Path dir) {
+        for (String sink : new String[] {"slf4j", "approved-sink"}) {
+            assertRefusedWith(runner().withPropertyValues("dataprism.audit.sink=" + sink,
+                    "dataprism.audit.directory=" + dir.resolve("segments")), "RETENTION_REQUIRES_CHECKPOINT");
+        }
+    }
+
+    @Test
+    void a_second_purge_with_a_surviving_later_segment_reads_its_own_anchors_back(@TempDir Path dir)
+            throws Exception {
+        Path audit = dir.resolve("segments");
+        java.util.concurrent.atomic.AtomicReference<Instant> now =
+                new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2025-01-10T10:00:00Z"));
+        Clock moving = new Clock() {
+            @Override public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
+            @Override public Clock withZone(java.time.ZoneId zone) { return this; }
+            @Override public Instant instant() { return now.get(); }
+        };
+        try (SegmentedFileAuditSink seed = new SegmentedFileAuditSink(audit)) {
+            AuditRecorder recorder = new AuditRecorder(seed, moving, "seed");
+            for (String day : new String[] {"2025-01-10", "2025-02-10", "2025-03-10"}) {
+                now.set(Instant.parse(day + "T10:00:00Z"));
+                recorder.record("p", "c", "get_entity_context", "CUSTOMER", "ps", "fp", "DEFAULT", "scope",
+                        "investigation", "case-1", "ALLOW", Set.of("customer"), Set.of(), "corr");
+            }
+        }
+        try (io.github.aindriub.dataprism.audit.FileAuditCheckpointSink cp =
+                new io.github.aindriub.dataprism.audit.FileAuditCheckpointSink(dir.resolve("cp.jsonl"),
+                        dir.resolve("unrelated.log"))) {
+            // first purge deletes only January; the February segment survives to be purged later
+            now.set(Instant.parse("2025-07-20T00:00:00Z"));
+            io.github.aindriub.dataprism.audit.AuditRetention retention =
+                    new io.github.aindriub.dataprism.audit.AuditRetention(audit, java.time.Period.ofMonths(6), cp,
+                            moving);
+            assertThat(retention.purge()).hasSize(1);
+            now.set(Instant.parse("2025-08-20T00:00:00Z"));
+            assertThat(retention.purge()).hasSize(1);
+            now.set(Instant.parse("2025-09-20T00:00:00Z"));
+            assertThat(retention.purge()).hasSize(1);
+        }
+        assertThat(audit.resolve("audit-2025-03-10.log")).doesNotExist();
+    }
+
+    @Test
     void a_checkpoint_path_equal_to_the_audit_file_is_refused(@TempDir Path dir) {
         Path file = dir.resolve("audit.log");
         assertRefusedWith(runner().withPropertyValues("dataprism.audit.file-path=" + file,

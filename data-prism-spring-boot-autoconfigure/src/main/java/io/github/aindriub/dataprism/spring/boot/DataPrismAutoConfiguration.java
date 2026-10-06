@@ -436,14 +436,21 @@ public class DataPrismAutoConfiguration {
     }
     /**
      * Runs the purge once now and then every 24h, and a PERIODIC checkpoint every {@code
-     * checkpoint.interval}, the first soon after boot. Declared to depend on the recorder, so on
-     * context close it stops before the recorder writes its SHUTDOWN checkpoint.
+     * checkpoint.interval}, the first soon after boot. When it checkpoints, it is registered as
+     * depending on the recorder, so on context close it stops (and its last PERIODIC is written)
+     * before the recorder writes its SHUTDOWN checkpoint.
      */
     @Bean(destroyMethod = "close")
     AuditMaintenance dataPrismAuditMaintenance(DataPrismProperties properties, ObjectProvider<AuditRecorder> recorder,
-            ObjectProvider<AuditRetention> retention, ObjectProvider<PrivacyMetrics> metrics) {
+            ObjectProvider<AuditRetention> retention, ObjectProvider<PrivacyMetrics> metrics,
+            org.springframework.beans.factory.config.ConfigurableBeanFactory beanFactory) {
         String checkpointPath = properties.getAudit().getCheckpoint().getFilePath();
-        return new AuditMaintenance(checkpointPath == null || checkpointPath.isBlank() ? null : recorder.getIfAvailable(),
+        AuditRecorder checkpointing = checkpointPath == null || checkpointPath.isBlank() ? null
+                : recorder.getIfAvailable();
+        if (checkpointing != null) {
+            beanFactory.registerDependentBean("dataPrismAuditRecorder", "dataPrismAuditMaintenance");
+        }
+        return new AuditMaintenance(checkpointing,
                 retention.getIfAvailable(), properties.getAudit().getCheckpoint().getInterval(),
                 metrics.getIfAvailable(PrivacyMetrics::none));
     }

@@ -186,14 +186,24 @@ public class DataPrismProperties {
             refuse("AMBIGUOUS_AUDIT_LOCATION",
                     "set either dataprism.audit.directory or dataprism.audit.file-path, not both");
         }
-        if ("hash-chained".equals(audit.sink)) {
-            if (blank(audit.directory)) {
-                required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
-            } else if (blank(audit.checkpoint.filePath)) {
-                // Purge reads its earlier anchors back from the checkpoint file; without one
-                // it could never prove a chain's start, so retention cannot run at all.
+        if ("hash-chained".equals(audit.sink) && blank(audit.directory)) {
+            required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
+        }
+        if (!blank(audit.directory)) {
+            // Whatever the sink: the retention bean is created from the directory alone, and purge
+            // reads its earlier anchors back from the checkpoint file. Without one it could never
+            // prove a chain's start, so retention cannot run at all.
+            if (blank(audit.checkpoint.filePath)) {
                 refuse("RETENTION_REQUIRES_CHECKPOINT",
                         "dataprism.audit.directory requires dataprism.audit.checkpoint.file-path");
+            }
+        }
+        if (!blank(audit.checkpoint.filePath)) {
+            String checkpoint = audit.checkpoint.filePath;
+            if ((!blank(audit.directory) && (sameOrInside(checkpoint, audit.directory)))
+                    || (!blank(audit.filePath) && sameOrInside(checkpoint, audit.filePath))) {
+                refuse("AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE",
+                        "dataprism.audit.checkpoint.file-path must be separate from the audit file or directory");
             }
         }
         if (audit.checkpoint.interval == null || audit.checkpoint.interval.isZero()
@@ -315,6 +325,37 @@ public class DataPrismProperties {
             }
         } catch (IllegalArgumentException e) {
             refuse(code, "must be a URI");
+        }
+    }
+
+    /**
+     * True when {@code candidate} is {@code location} or lies beneath it, comparing normalised
+     * paths with symbolic links resolved wherever the path (or its nearest existing ancestor) exists.
+     */
+    private static boolean sameOrInside(String candidate, String location) {
+        java.nio.file.Path c = canonical(candidate);
+        java.nio.file.Path l = canonical(location);
+        return c.startsWith(l);
+    }
+
+    private static java.nio.file.Path canonical(String value) {
+        java.nio.file.Path path;
+        try {
+            path = java.nio.file.Path.of(value).toAbsolutePath().normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return java.nio.file.Path.of("/invalid-path-never-matches");
+        }
+        java.nio.file.Path existing = path;
+        while (existing != null && !java.nio.file.Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return path;
+        }
+        try {
+            return existing.toRealPath().resolve(existing.relativize(path)).normalize();
+        } catch (java.io.IOException e) {
+            return path;
         }
     }
 

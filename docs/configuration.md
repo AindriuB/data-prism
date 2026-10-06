@@ -186,15 +186,15 @@ An unrecognised `sink` value refuses startup with `UNKNOWN_AUDIT_SINK`.
 | `dataprism.audit.checkpoint.file-path` | unset | A separate file receiving `BOOT`, `PERIODIC`, `SHUTDOWN` and `RETENTION_ANCHOR` checkpoints. Required with `directory`. Put it behind different access controls from the audit files, or it protects nothing. |
 | `dataprism.audit.checkpoint.interval` | `PT5M` | How often a `PERIODIC` checkpoint is written, the first soon after boot (within ten seconds). A `SHUTDOWN` checkpoint is written when the context closes. |
 | `dataprism.audit.retention` | `P6M` | With `directory`: segments dated before today minus this period are deleted, after a `RETENTION_ANCHOR` is recorded for each writer's last record in them. Run once at startup, then every 24 hours. |
-| `dataprism.audit.retention-override` | `false` | Must be `true` to accept a `retention` shorter than six months. Inert with a compliant value. |
+| `dataprism.audit.retention-override` | `false` | Must be `true` to accept a `retention` shorter than six months. Inert with a value of six months or more. |
 
 Refusal codes, each at startup:
 
 - `AMBIGUOUS_AUDIT_LOCATION` -- `directory` and `file-path` are both set.
-- `RETENTION_REQUIRES_CHECKPOINT` -- `directory` is set without `checkpoint.file-path`.
+- `RETENTION_REQUIRES_CHECKPOINT` -- `directory` is set without `checkpoint.file-path`, whatever `sink` is.
 - `AUDIT_RETENTION_BELOW_MINIMUM` -- `retention` is under six months and `retention-override` is not `true`.
 - `INVALID_AUDIT_CHECKPOINT_INTERVAL` -- `checkpoint.interval` is zero or negative.
-- `AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE` -- the checkpoint path is the audit file.
+- `AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE` -- the checkpoint path is the audit `file-path`, or is the audit `directory` or any path inside it. Paths are compared normalised, with symbolic links resolved where they exist.
 - `AUDIT_CHECKPOINT_FILE_UNUSABLE` -- the checkpoint path cannot be opened. The path is logged server-side only, never in the message.
 
 The six-month default follows EU AI Act Art. 19, which sets a floor of six
@@ -219,6 +219,16 @@ reports `DOWN` with only `code` and, where the failure names one, `segmentDate`
 as details (no paths, no writer ids), until a later purge succeeds, when it
 returns to `UP`. Purge runs at startup and then every 24 hours, so a failure
 persists at least until the next run.
+
+`auditIntegrity` is part of the aggregate `/actuator/health`, so a tamper
+finding turns that aggregate `DOWN`. Do not point a liveness probe at the
+aggregate: an orchestrator would restart the process in a loop while the
+finding, which a restart does not clear, persists. Use Spring Boot's
+liveness and readiness health groups (`/actuator/health/liveness`,
+`/actuator/health/readiness`), or the server's own `/health`, for probes, and
+alert on `auditIntegrity` or the counter instead. The shipped server exposes
+no actuator endpoints, so there the contributor is visible only to an
+application that adds Actuator and exposes the health endpoint itself.
 
 With `file-path` (a single file), retention is not enforced in-process: it is
 an operator task.
