@@ -38,17 +38,14 @@ destination, without writing code.
 - A running `data-prism-server` distribution and the
   `data-prism-connectors-rest` jar alongside it. This walkthrough runs both
   from this repository's own `mvn package` output
-  (`data-prism-server/target/data-prism-server-0.3.1.jar` and
-  `data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.1.jar`).
+  (`data-prism-server/target/data-prism-server-0.4.0.jar` and
+  `data-prism-connectors-rest/target/data-prism-connectors-rest-0.4.0.jar`).
   `data-prism-server` is never published to Maven Central at any version
   (`data-prism-server/pom.xml` sets `skipPublishing`); its distribution
   always comes from a from-source build like this one, a GitHub Release, or
-  the GHCR image, never from Central. `data-prism-connectors-rest` is on
-  Central, but only at `0.3.0` — 0.3.1 was not published there — and its own
-  source is unchanged since that release (`git diff v0.3.0..HEAD --
-  data-prism-connectors-rest/src/main` is empty), so the jar this walkthrough
-  builds is code-identical to the `0.3.0` artifact Central serves under
-  `io.github.aindriub:data-prism-connectors-rest`.
+  the GHCR image, never from Central. `data-prism-connectors-rest`, like the
+  other library modules, is on Central at `0.4.0`, and the jar this
+  walkthrough builds is that same artifact, `io.github.aindriub:data-prism-connectors-rest`.
   "Build the jars, then start the two fixtures" below gives the exact build
   command; every path in this walkthrough is relative to the repository
   root, and every command below is run from there.
@@ -134,7 +131,7 @@ walkthrough stands in for your own — on port 8543:
 ```sh
 DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
-java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.3.1.jar \
+java -jar data-prism-quickstart-fixtures/target/data-prism-quickstart-fixtures-0.4.0.jar \
   --server.port=8543 \
   --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
@@ -157,7 +154,7 @@ any earlier command in this walkthrough, so restate `DP_WALKTHROUGH_CERT_DIR` be
 ```sh
 DP_WALKTHROUGH_CERT_DIR=$HOME/data-prism-walkthrough-certs
 
-java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.3.1.jar \
+java -jar data-prism-quickstart-issuer/target/data-prism-quickstart-issuer-0.4.0.jar \
   --server.port=8544 \
   --server.ssl.key-store="file:$DP_WALKTHROUGH_CERT_DIR/walkthrough.p12" \
   --server.ssl.key-store-password=walkthrough-demo-only \
@@ -227,7 +224,7 @@ classpath, the same mechanism any reviewed adapter extension uses (see
 the one property this mode reads:
 
 ```sh
--Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.1.jar
+-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.4.0.jar
 -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml
 ```
 
@@ -320,9 +317,9 @@ java \
   -Djavax.net.ssl.trustStore="$DP_WALKTHROUGH_CERT_DIR/walkthrough-trust.p12" \
   -Djavax.net.ssl.trustStorePassword=walkthrough-demo-only \
   -Djavax.net.ssl.trustStoreType=PKCS12 \
-  -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.1.jar \
+  -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.4.0.jar \
   -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml \
-  -jar data-prism-server/target/data-prism-server-0.3.1.jar \
+  -jar data-prism-server/target/data-prism-server-0.4.0.jar \
   --server.port=8080 \
   --dataprism.identity.resolver=pass-through \
   --dataprism.security.jwt.issuer=https://issuer.walkthrough.invalid \
@@ -506,12 +503,11 @@ test drives directly. Its own header comment gives the exact `javac`/`java`
 invocation; in short, `install` first — `package` alone leaves
 `data-prism-pseudonymisation` and `data-prism-orchestration` (imported here
 transitively) unresolved from this reactor, so `mvn dependency:build-classpath`
-fails to resolve them — no `0.3.1` artifact of either exists on Maven Central
-to fall back to. The `-am` flag
+fails to resolve them from this reactor. The `-am` flag
 installs every upstream module this one depends on, not just those two
 (`mvn -q install -DskipTests -pl data-prism-connectors-rest -am`) — note this
-installs this branch's build at `0.3.1`, alongside, not overwriting, any
-`0.3.0` artifacts already sitting in the reader's local `~/.m2` repository
+installs this branch's build at `0.4.0` into the reader's local `~/.m2`
+repository, replacing any `0.4.0` artifacts already there
 from Maven Central. Then
 compile and run this one file against `data-prism-core`'s and
 `data-prism-connectors-rest`'s `target/classes` plus
