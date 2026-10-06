@@ -117,6 +117,40 @@ class AuditRetentionConfigurationTest {
     }
 
     @Test
+    void a_case_variant_checkpoint_in_a_not_yet_created_audit_directory_is_refused(@TempDir Path dir) throws Exception {
+        Path probe = Files.createDirectory(dir.resolve("CaseProbe"));
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.exists(dir.resolve("caseprobe")),
+                "skipped: this filesystem is case-sensitive, so FRESH and fresh are different directories");
+        assertThat(probe).exists();
+        Path segments = dir.resolve("FRESH");
+        assertThat(segments).doesNotExist();
+        assertRefusedWith(runner().withPropertyValues("dataprism.audit.directory=" + segments,
+                "dataprism.audit.checkpoint.file-path=" + dir.resolve("fresh").resolve("audit-2026-10-06.log")),
+                "AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE");
+    }
+
+    @Test
+    void the_checkpoint_bean_itself_refuses_a_case_variant_of_a_directory_the_sink_has_just_created(@TempDir Path dir)
+            throws Exception {
+        Files.createDirectory(dir.resolve("CaseProbe"));
+        org.junit.jupiter.api.Assumptions.assumeTrue(Files.exists(dir.resolve("caseprobe")),
+                "skipped: this filesystem is case-sensitive, so FRESH and fresh are different directories");
+        DataPrismProperties properties = new DataPrismProperties();
+        properties.getAudit().setDirectory(dir.resolve("FRESH").toString());
+        properties.getAudit().getCheckpoint().setFilePath(
+                dir.resolve("fresh").resolve("audit-2026-10-06.log").toString());
+        // validation ran while the directory did not exist and could not tell the paths apart;
+        // the sink then creates the directory
+        Files.createDirectory(dir.resolve("FRESH"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> new DataPrismAutoConfiguration().dataPrismAuditCheckpointSink(properties,
+                        new org.springframework.beans.factory.support.StaticListableBeanFactory()
+                                .getBeanProvider(AuditSink.class)))
+                .isInstanceOfSatisfying(DataPrismConfigurationException.class,
+                        e -> assertThat(e.code()).isEqualTo("AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE"));
+    }
+
+    @Test
     void a_checkpoint_path_equal_to_the_audit_directory_is_refused(@TempDir Path dir) {
         Path segments = dir.resolve("segments");
         assertRefusedWith(runner().withPropertyValues("dataprism.audit.directory=" + segments,

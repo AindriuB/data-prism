@@ -199,6 +199,9 @@ public class DataPrismProperties {
             }
         }
         if (!blank(audit.checkpoint.filePath)) {
+            // An unparseable path is not waved through here: canonical() maps it to a path that never
+            // matches, and it is then refused as AUDIT_CHECKPOINT_FILE_UNUSABLE when the checkpoint
+            // sink tries to open it (DataPrismAutoConfiguration#dataPrismAuditCheckpointSink).
             String checkpoint = audit.checkpoint.filePath;
             if ((!blank(audit.directory) && (sameOrInside(checkpoint, audit.directory)))
                     || (!blank(audit.filePath) && sameOrInside(checkpoint, audit.filePath))) {
@@ -332,7 +335,7 @@ public class DataPrismProperties {
      * True when {@code candidate} is {@code location} or lies beneath it, comparing normalised
      * paths with symbolic links resolved wherever the path (or its nearest existing ancestor) exists.
      */
-    private static boolean sameOrInside(String candidate, String location) {
+    static boolean sameOrInside(String candidate, String location) {
         java.nio.file.Path c = canonical(candidate);
         java.nio.file.Path l = canonical(location);
         return c.startsWith(l);

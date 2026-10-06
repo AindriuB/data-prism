@@ -408,10 +408,20 @@ public class DataPrismAutoConfiguration {
      */
     @Bean @ConditionalOnMissingBean(AuditCheckpointSink.class)
     @ConditionalOnProperty(prefix = "dataprism.audit.checkpoint", name = "file-path")
-    FileAuditCheckpointSink dataPrismAuditCheckpointSink(DataPrismProperties properties) {
+    FileAuditCheckpointSink dataPrismAuditCheckpointSink(DataPrismProperties properties,
+            ObjectProvider<AuditSink> auditSink) {
+        // Resolving the audit sink first makes it create the audit directory. Only then can the
+        // containment check compare real paths: on a case-insensitive filesystem a not-yet-created
+        // FRESH directory and a checkpoint under fresh/ look unrelated until the directory exists.
+        auditSink.getIfAvailable();
         DataPrismProperties.Audit audit = properties.getAudit();
         String auditLocation = audit.getDirectory() != null && !audit.getDirectory().isBlank()
                 ? audit.getDirectory() : audit.getFilePath();
+        if (auditLocation != null && !auditLocation.isBlank()
+                && DataPrismProperties.sameOrInside(audit.getCheckpoint().getFilePath(), auditLocation)) {
+            throw new DataPrismConfigurationException(FileAuditCheckpointSink.SAME_AS_AUDIT_FILE,
+                    "dataprism.audit.checkpoint.file-path must not be the audit file");
+        }
         try {
             return new FileAuditCheckpointSink(Path.of(audit.getCheckpoint().getFilePath()),
                     Path.of(auditLocation == null || auditLocation.isBlank() ? "." : auditLocation));
@@ -443,12 +453,15 @@ public class DataPrismAutoConfiguration {
     @Bean(destroyMethod = "close")
     AuditMaintenance dataPrismAuditMaintenance(DataPrismProperties properties, ObjectProvider<AuditRecorder> recorder,
             ObjectProvider<AuditRetention> retention, ObjectProvider<PrivacyMetrics> metrics,
-            org.springframework.beans.factory.config.ConfigurableBeanFactory beanFactory) {
+            org.springframework.beans.factory.config.ConfigurableListableBeanFactory beanFactory) {
         String checkpointPath = properties.getAudit().getCheckpoint().getFilePath();
         AuditRecorder checkpointing = checkpointPath == null || checkpointPath.isBlank() ? null
                 : recorder.getIfAvailable();
         if (checkpointing != null) {
-            beanFactory.registerDependentBean("dataPrismAuditRecorder", "dataPrismAuditMaintenance");
+            // by type, so an application AuditRecorder under any other name is ordered too
+            for (String name : beanFactory.getBeanNamesForType(AuditRecorder.class)) {
+                beanFactory.registerDependentBean(name, "dataPrismAuditMaintenance");
+            }
         }
         return new AuditMaintenance(checkpointing,
                 retention.getIfAvailable(), properties.getAudit().getCheckpoint().getInterval(),
