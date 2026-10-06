@@ -5,12 +5,25 @@ import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.Set;
 
-/** Which tools need a human approval, the per-caller request limit, and how long an approval request lives. */
+/**
+ * Which tools need a human approval, the per-caller request limit, how long an approval request lives, and how many
+ * live pending approvals one requester may hold.
+ */
 public record OversightPolicy(
         Set<String> approvalRequiredTools,
         OptionalInt callerRequestLimit,
         Duration callerWindow,
-        Duration approvalTtl) {
+        Duration approvalTtl,
+        int maxPendingPerRequester) {
+
+    /** Live pending approvals one requester may hold. */
+    public static final int DEFAULT_MAX_PENDING_PER_REQUESTER = 5;
+
+    public OversightPolicy(Set<String> approvalRequiredTools, OptionalInt callerRequestLimit, Duration callerWindow,
+                           Duration approvalTtl) {
+        this(approvalRequiredTools, callerRequestLimit, callerWindow, approvalTtl,
+                DEFAULT_MAX_PENDING_PER_REQUESTER);
+    }
 
     public OversightPolicy {
         Objects.requireNonNull(approvalRequiredTools, "approvalRequiredTools");
@@ -26,6 +39,9 @@ public record OversightPolicy(
         }
         if (approvalTtl.isZero() || approvalTtl.isNegative()) {
             throw new IllegalArgumentException("approvalTtl must be positive");
+        }
+        if (maxPendingPerRequester <= 0) {
+            throw new IllegalArgumentException("maxPendingPerRequester must be positive");
         }
     }
 

@@ -32,4 +32,16 @@ class OversightPolicyTest {
                 () -> new OversightPolicy(Set.of(), OptionalInt.empty(), ok, Duration.ofSeconds(-1)));
         assertEquals(3, new OversightPolicy(Set.of(), OptionalInt.of(3), ok, ok).callerRequestLimit().getAsInt());
     }
+
+    @Test
+    void maxPendingPerRequesterDefaultsToFiveAndMustBePositive() {
+        Duration ok = Duration.ofMinutes(1);
+        assertEquals(5, OversightPolicy.none().maxPendingPerRequester());
+        assertEquals(5, new OversightPolicy(Set.of(), OptionalInt.empty(), ok, ok).maxPendingPerRequester());
+        assertEquals(2, new OversightPolicy(Set.of(), OptionalInt.empty(), ok, ok, 2).maxPendingPerRequester());
+        assertThrows(IllegalArgumentException.class,
+                () -> new OversightPolicy(Set.of(), OptionalInt.empty(), ok, ok, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> new OversightPolicy(Set.of(), OptionalInt.empty(), ok, ok, -1));
+    }
 }

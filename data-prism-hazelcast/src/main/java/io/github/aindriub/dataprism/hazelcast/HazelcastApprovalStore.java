@@ -72,6 +72,50 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         return pending;
     }
 
+    /**
+     * Counts and creates under one lock per (kind, requester), so two members cannot both admit the request that
+     * takes a requester over the cap. The requester lock is always taken before the id lock, never after.
+     */
+    @Override
+    public ApprovalRequest create(ApprovalRequest pending, int maxLivePendingPerRequester) {
+        if (maxLivePendingPerRequester <= 0) {
+            throw new IllegalArgumentException("maxLivePendingPerRequester must be positive");
+        }
+        Objects.requireNonNull(pending, "pending");
+        if (pending.status() != Status.PENDING) {
+            throw new IllegalArgumentException("a new approval must be PENDING");
+        }
+        IMap<String, String> approvals = approvals();
+        String requesterLock = requesterLockKey(pending.kind(), pending.requesterPrincipalId());
+        approvals.lock(requesterLock);
+        try {
+            long live = 0;
+            for (String raw : approvals.values()) {
+                ApprovalRequest r = Codec.decode(raw);
+                if (r.status() == Status.PENDING
+                        && r.kind() == pending.kind()
+                        && Objects.equals(r.requesterPrincipalId(), pending.requesterPrincipalId())
+                        && pending.createdAt().isBefore(r.expiresAt())) {
+                    live++;
+                }
+            }
+            if (live >= maxLivePendingPerRequester) {
+                throw new ApprovalRefusedException(Code.TOO_MANY_PENDING);
+            }
+            return create(pending);
+        } finally {
+            unlock(approvals, requesterLock);
+        }
+    }
+
+    /**
+     * Starts with NUL, so an entry key would read it as an empty scope followed by an id, and that id would contain
+     * NULs, which ids never do. A bare approval id holds no NUL at all. So it equals neither kind of key.
+     */
+    static String requesterLockKey(Kind kind, String requesterPrincipalId) {
+        return "\0requester\0" + kind.name() + "\0" + (requesterPrincipalId == null ? "~" : "=" + requesterPrincipalId);
+    }
+
     @Override
     public Optional<ApprovalRequest> find(String approvalId) {
         return locate(approvalId).map(key -> approvals().get(key)).map(Codec::decode);

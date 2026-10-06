@@ -18,6 +18,16 @@ public interface ApprovalStore {
      */
     ApprovalRequest create(ApprovalRequest pending);
 
+    /**
+     * Creates the request only if its requester holds fewer than {@code maxLivePendingPerRequester} requests of the
+     * same kind that are {@code PENDING} and unexpired at {@code pending.createdAt()}, counting and storing
+     * atomically.
+     *
+     * @throws ApprovalRefusedException {@code TOO_MANY_PENDING} when the requester is at the maximum; nothing is stored
+     * @throws IllegalArgumentException for a non-positive maximum, or as {@link #create(ApprovalRequest)}
+     */
+    ApprovalRequest create(ApprovalRequest pending, int maxLivePendingPerRequester);
+
     Optional<ApprovalRequest> find(String approvalId);
 
     Optional<ApprovalRequest> findPending(Kind kind, String requesterPrincipalId, String scopeId, String tool,
