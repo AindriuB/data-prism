@@ -27,6 +27,17 @@
       <groupId>io.github.aindriub</groupId>
       <artifactId>data-prism-spring-boot-autoconfigure</artifactId>
     </dependency>
+    <!-- The operator surface drives re-identification and the embedded cluster
+         state, so the standalone distribution carries both modules. They stay
+         optional in the starter. Neither is an MCP tool. -->
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-reidentification</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.aindriub</groupId>
+      <artifactId>data-prism-hazelcast</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>

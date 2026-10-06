@@ -169,9 +169,24 @@ public class DataPrismProperties {
      * @param serverPort the effective {@code server.port}, or {@code null} when it is not known
      */
     void validateOperatorPort(Integer serverPort) {
+        validateOperatorPort(serverPort, null);
+    }
+
+    /**
+     * As {@link #validateOperatorPort(Integer)}, and also refuses a port equal to
+     * {@code management.server.port}: the actuator listener must not share the operator connector.
+     *
+     * @param managementPort the effective {@code management.server.port}, or {@code null} when it is
+     *                       unset or not known
+     */
+    void validateOperatorPort(Integer serverPort, Integer managementPort) {
         if (operator.enabled && operator.port != null && serverPort != null && serverPort > 0
                 && operator.port.equals(serverPort)) {
             refuse("OPERATOR_PORT_SHARED", "dataprism.operator.port must differ from server.port");
+        }
+        if (operator.enabled && operator.port != null && managementPort != null && managementPort > 0
+                && operator.port.equals(managementPort)) {
+            refuse("OPERATOR_PORT_SHARED", "dataprism.operator.port must differ from management.server.port");
         }
     }
 

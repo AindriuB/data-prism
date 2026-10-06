@@ -272,7 +272,8 @@ public class DataPrismAutoConfiguration {
             @Qualifier(CONFIGURED_JSON_SOURCE_NAMES_BEAN) ObjectProvider<Set<String>> configuredJsonSourceNames,
             Environment environment) {
         properties.validate();
-        properties.validateOperatorPort(environment.getProperty("server.port", Integer.class, 8080));
+        properties.validateOperatorPort(environment.getProperty("server.port", Integer.class, 8080),
+                environment.getProperty("management.server.port", Integer.class));
         DataPrismContractValidator.validateIntegrations(properties, adapters, identities, keys, audit, metrics,
                 configuredJsonSourceNames);
         validateProfile(properties);
@@ -635,6 +636,31 @@ public class DataPrismAutoConfiguration {
             return new ReidentificationService(new ScopeIdentityIndex(cluster, metrics), approvals, audit, policy,
                     clock);
         }
+    }
+
+    /**
+     * Fail closed on a missing module. {@link ReidentificationWiring} is
+     * {@code @ConditionalOnClass}, so with {@code dataprism.reidentification.enabled=true} and
+     * {@code data-prism-reidentification} absent from the classpath (the starter makes it
+     * optional) the wiring would be skipped and startup would succeed with no service, while the
+     * operator surface reports re-identification as switched on. Refuse instead.
+     *
+     * <p>Reads the raw {@code Environment} and checks the class by name, for the reasons given on
+     * {@link #dataPrismSharedBudgetPreflight}; this class never references the type here, because
+     * it is exactly the type that may be absent.
+     */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismReidentificationModulePreflight(Environment environment) {
+        return factory -> {
+            if ("true".equalsIgnoreCase(environment.getProperty("dataprism.reidentification.enabled"))
+                    && !org.springframework.util.ClassUtils.isPresent(
+                            "io.github.aindriub.dataprism.reidentification.ReidentificationService",
+                            factory.getBeanClassLoader())) {
+                throw new DataPrismConfigurationException("REIDENTIFICATION_MODULE_MISSING",
+                        "dataprism.reidentification.enabled=true requires data-prism-reidentification"
+                                + " on the classpath");
+            }
+        };
     }
 
     /**
