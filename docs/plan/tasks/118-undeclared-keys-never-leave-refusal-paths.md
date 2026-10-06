@@ -126,3 +126,26 @@ so this task waits for it. Task 110 waits for this task. Rules:
 - Wording in `docs/tools.md`. That is task 121.
 - The correlation-id scans. That is task 114.
 - Values in paths. Values never enter a path today, and that must stay true.
+
+## Attempt 1 — failed
+
+Branch at d15539a. Reviewer: CHANGES. One defect; everything else, including the Owns deviation in ConfiguredJsonNestedCatalogueScrubbingTest, is accepted.
+
+- Defect — RefusalPaths.java:45-50 accepts a bracketed digit run as an array
+  index without checking it, so digits from a payload key escape. Example:
+  under PASS_THROUGH_UNSAFE, a payload key `email[07700900123]` sits next to a
+  declared scalar `email`. The validator reports `$.email[07700900123]` and
+  redact() returns it unchanged, so the digits reach the VALIDATION_FAILED path,
+  the MCP text and the log. The configured leak check has the same flaw. A
+  declared-set check cannot tell scalar arrays apart, because they record no
+  `/*` pointer. Fix, failing closed: never emit index digits. Collapse every
+  bracketed index to `[*]` in redacted paths. Indices carry no review value,
+  and a segment is kept only if its name is declared. Add redact() cases for a
+  bracketed-digit key after a declared name, and for a real array index, both
+  rendering `[*]`. Prove the digits are absent from the VALIDATION_FAILED
+  message and the MCP text.
+- Not in scope (now planned as task 124): raw undeclared keys written into
+  successful responses under permissive profiles (JsonTreeScrubbingEngine:190).
+- Cosmetic: use imports rather than fully qualified names in
+  DataPrismAssembly.java:80.
+- Run the full reactor `mvn verify`; report the real exit code.
