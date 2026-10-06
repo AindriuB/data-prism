@@ -101,6 +101,7 @@ class ClusterConfigurationRefusalIT {
         assertThat(output).as(output)
                 .contains("APPLICATION FAILED TO START")
                 .contains("DataPrismConfigurationException: " + code)
+                .doesNotContain("\tat ")
                 .doesNotContain("\tat io.github.aindriub.dataprism")
                 .doesNotContain("\tat org.springframework");
     }

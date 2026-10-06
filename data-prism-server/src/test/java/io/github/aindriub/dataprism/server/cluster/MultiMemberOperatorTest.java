@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.server.cluster;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.server.operator.OperatorHarness;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -170,26 +171,33 @@ class MultiMemberOperatorTest {
     }
 
     /**
-     * Pins the map backup count of 1: one member lost, the pause flag survives. Losing the owner and
-     * the backup together loses the flag and reopens a paused path; task 135 documents that.
+     * Pins the map backup count of 1: the member that owns the pause key is killed without a
+     * graceful shutdown, so no partition migrates and only the backup copy can keep the flag. Losing
+     * the owner and the backup together loses the flag and reopens a paused path; task 135
+     * documents that.
      */
     @Test
-    void aPauseSurvivesTheLossOfOneOfThreeMembers() throws Exception {
+    void aPauseSurvivesTheUngracefulLossOfItsOwnerAmongThreeMembers() throws Exception {
         try (ClusterMembers cluster = ClusterMembers.start(tempDir, 3)) {
-            OperatorHarness a = cluster.member(0);
-            OperatorHarness b = cluster.member(1);
-            OperatorHarness c = cluster.member(2);
-            try (McpSyncClient onB = client(b); McpSyncClient onC = client(c)) {
-                post(a, "/operator/pause", "{\"target\":\"ALL\"}");
-                a.close();
+            int owner = cluster.ownerOf(PrivacyCluster.OVERSIGHT_MAP, "all");
+            int first = (owner + 1) % 3;
+            int second = (owner + 2) % 3;
+            OperatorHarness survivorOne = cluster.member(first);
+            OperatorHarness survivorTwo = cluster.member(second);
+            try (McpSyncClient onOne = client(survivorOne); McpSyncClient onTwo = client(survivorTwo)) {
+                post(survivorOne, "/operator/pause", "{\"target\":\"ALL\"}");
+                assertThat(OperatorHarness.text(survivorTwo.getEntityContext(onTwo, SUBJECT)))
+                        .isEqualTo("DATAPRISM_PAUSED");
+
+                cluster.terminate(owner);
                 cluster.awaitMembers(2);
 
-                McpSchema.CallToolResult onBResult = b.getEntityContext(onB, SUBJECT);
-                assertThat(onBResult.isError()).isTrue();
-                assertThat(OperatorHarness.text(onBResult)).isEqualTo("DATAPRISM_PAUSED");
-                McpSchema.CallToolResult onCResult = c.getEntityContext(onC, SUBJECT);
-                assertThat(onCResult.isError()).isTrue();
-                assertThat(OperatorHarness.text(onCResult)).isEqualTo("DATAPRISM_PAUSED");
+                McpSchema.CallToolResult oneResult = survivorOne.getEntityContext(onOne, SUBJECT);
+                assertThat(oneResult.isError()).isTrue();
+                assertThat(OperatorHarness.text(oneResult)).isEqualTo("DATAPRISM_PAUSED");
+                McpSchema.CallToolResult twoResult = survivorTwo.getEntityContext(onTwo, SUBJECT);
+                assertThat(twoResult.isError()).isTrue();
+                assertThat(OperatorHarness.text(twoResult)).isEqualTo("DATAPRISM_PAUSED");
             }
         }
     }

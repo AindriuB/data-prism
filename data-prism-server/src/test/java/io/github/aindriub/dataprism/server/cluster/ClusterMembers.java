@@ -60,6 +60,25 @@ final class ClusterMembers implements AutoCloseable {
         return members.get(index).context.getBean(PrivacyCluster.class).instance().getCluster().getMembers().size();
     }
 
+    /** Index of the member that owns the partition of {@code key}, as seen by member 0. */
+    int ownerOf(String mapName, String key) {
+        var instance = members.get(0).context.getBean(PrivacyCluster.class).instance();
+        var owner = instance.getPartitionService().getPartition(key).getOwner();
+        for (int i = 0; i < members.size(); i++) {
+            var local = members.get(i).context.getBean(PrivacyCluster.class).instance().getCluster().getLocalMember();
+            if (local.getUuid().equals(owner.getUuid())) {
+                return i;
+            }
+        }
+        throw new AssertionError("no member owns the partition of " + mapName + "/" + key);
+    }
+
+    /** Kills a member's Hazelcast instance without a graceful shutdown, then closes its harness. */
+    void terminate(int index) {
+        members.get(index).context.getBean(PrivacyCluster.class).instance().getLifecycleService().terminate();
+        members.get(index).close();
+    }
+
     /** Waits until every still-running member sees exactly {@code expected} members. */
     void awaitMembers(int expected) throws InterruptedException {
         long deadline = System.nanoTime() + JOIN_TIMEOUT_MILLIS * 1_000_000;
@@ -116,8 +135,20 @@ final class ClusterMembers implements AutoCloseable {
 
     @Override
     public void close() {
+        RuntimeException failure = null;
         for (int i = members.size() - 1; i >= 0; i--) {
-            members.get(i).close();
+            try {
+                members.get(i).close();
+            } catch (RuntimeException | Error e) {
+                if (failure == null) {
+                    failure = e instanceof RuntimeException r ? r : new IllegalStateException(e);
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 }

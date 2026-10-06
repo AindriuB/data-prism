@@ -70,7 +70,7 @@ public final class OperatorHarness implements AutoCloseable {
     public final int operatorPort;
     public final ConfigurableApplicationContext context;
 
-    private final HttpsServer identityServer;
+    private HttpsServer identityServer;
     private final RSAKey signingKey;
     private final boolean embedded;
     private final boolean clusterMember;
@@ -145,60 +145,71 @@ public final class OperatorHarness implements AutoCloseable {
                 previousDefaultSocketFactory = HttpsURLConnection.getDefaultSSLSocketFactory();
             }
         }
-        System.setProperty("javax.net.ssl.trustStore", trustStore.toString());
-        System.setProperty("javax.net.ssl.trustStorePassword", STORE_PASSWORD);
-        System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
+        try {
+            System.setProperty("javax.net.ssl.trustStore", trustStore.toString());
+            System.setProperty("javax.net.ssl.trustStorePassword", STORE_PASSWORD);
+            System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
 
-        SSLContext tls = SSLContext.getInstance("TLS");
-        KeyStore serverKeys = KeyStore.getInstance("PKCS12");
-        try (var input = Files.newInputStream(keyStore)) {
-            serverKeys.load(input, STORE_PASSWORD.toCharArray());
-        }
-        KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        keyManagers.init(serverKeys, STORE_PASSWORD.toCharArray());
-        tls.init(keyManagers.getKeyManagers(), null, null);
-        KeyStore trusted = KeyStore.getInstance("PKCS12");
-        try (var input = Files.newInputStream(trustStore)) {
-            trusted.load(input, STORE_PASSWORD.toCharArray());
-        }
-        TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(
-                TrustManagerFactory.getDefaultAlgorithm());
-        trustManagers.init(trusted);
-        SSLContext clientTls = SSLContext.getInstance("TLS");
-        clientTls.init(null, trustManagers.getTrustManagers(), null);
-        // The JVM default context is built once, so each harness installs its own explicitly.
-        SSLContext.setDefault(clientTls);
-        HttpsURLConnection.setDefaultSSLSocketFactory(clientTls.getSocketFactory());
-        identityServer = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        identityServer.setHttpsConfigurator(new HttpsConfigurator(tls));
-        byte[] jwks = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
-        identityServer.createContext("/jwks", exchange -> {
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, jwks.length);
-            try (var out = exchange.getResponseBody()) {
-                out.write(jwks);
+            SSLContext tls = SSLContext.getInstance("TLS");
+            KeyStore serverKeys = KeyStore.getInstance("PKCS12");
+            try (var input = Files.newInputStream(keyStore)) {
+                serverKeys.load(input, STORE_PASSWORD.toCharArray());
             }
-        });
-        if (recordJson != null) {
-            byte[] record = recordJson.getBytes(StandardCharsets.UTF_8);
-            identityServer.createContext("/records/", exchange -> {
+            KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keyManagers.init(serverKeys, STORE_PASSWORD.toCharArray());
+            tls.init(keyManagers.getKeyManagers(), null, null);
+            KeyStore trusted = KeyStore.getInstance("PKCS12");
+            try (var input = Files.newInputStream(trustStore)) {
+                trusted.load(input, STORE_PASSWORD.toCharArray());
+            }
+            TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(
+                    TrustManagerFactory.getDefaultAlgorithm());
+            trustManagers.init(trusted);
+            SSLContext clientTls = SSLContext.getInstance("TLS");
+            clientTls.init(null, trustManagers.getTrustManagers(), null);
+            // The JVM default context is built once, so each harness installs its own explicitly.
+            SSLContext.setDefault(clientTls);
+            HttpsURLConnection.setDefaultSSLSocketFactory(clientTls.getSocketFactory());
+            identityServer = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            identityServer.setHttpsConfigurator(new HttpsConfigurator(tls));
+            byte[] jwks = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
+            identityServer.createContext("/jwks", exchange -> {
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, record.length);
+                exchange.sendResponseHeaders(200, jwks.length);
                 try (var out = exchange.getResponseBody()) {
-                    out.write(record);
+                    out.write(jwks);
                 }
             });
-        }
-        identityServer.start();
-        if (catalogueTemplate != null) {
-            Path catalogue = tempDir.resolve("json-sources.yaml");
-            Files.writeString(catalogue, catalogueTemplate.replace("@HOST@",
-                    "https://127.0.0.1:" + identityServer.getAddress().getPort()));
-            System.setProperty(CATALOGUE_LOCATION_PROPERTY, "file:" + catalogue.toAbsolutePath());
+            if (recordJson != null) {
+                byte[] record = recordJson.getBytes(StandardCharsets.UTF_8);
+                identityServer.createContext("/records/", exchange -> {
+                    exchange.getResponseHeaders().add("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, record.length);
+                    try (var out = exchange.getResponseBody()) {
+                        out.write(record);
+                    }
+                });
+            }
+            identityServer.start();
+            if (catalogueTemplate != null) {
+                Path catalogue = tempDir.resolve("json-sources.yaml");
+                Files.writeString(catalogue, catalogueTemplate.replace("@HOST@",
+                        "https://127.0.0.1:" + identityServer.getAddress().getPort()));
+                System.setProperty(CATALOGUE_LOCATION_PROPERTY, "file:" + catalogue.toAbsolutePath());
+            }
+            operatorPort = freePort();
+        } catch (Exception | Error failure) {
+            if (identityServer != null) {
+                identityServer.stop(0);
+            }
+            if (catalogueTemplate != null) {
+                System.clearProperty(CATALOGUE_LOCATION_PROPERTY);
+            }
+            releaseSharedState();
+            throw failure;
         }
         String jwksUri = "https://127.0.0.1:" + identityServer.getAddress().getPort() + "/jwks";
 
-        operatorPort = freePort();
         List<String> arguments = new ArrayList<>(List.of(
                 "--server.port=0", "--spring.main.banner-mode=off",
                 "--dataprism.security.jwt.issuer=" + ISSUER,
