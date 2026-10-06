@@ -51,6 +51,10 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         if (!validPort(port)) {
             throw refuse(Code.INVALID_CLUSTER_PORT, "port must be 1-65535");
         }
+        if (interfaceAddress.isPresent() && join instanceof None) {
+            throw refuse(Code.INVALID_CLUSTER_INTERFACE,
+                    "interface cannot be set for a single member, which is loopback-only");
+        }
         if (interfaceAddress.isPresent() && !validInterface(interfaceAddress.get())) {
             throw refuse(Code.INVALID_CLUSTER_INTERFACE,
                     "interface must be an IPv4 literal or a wildcard pattern such as 10.0.*.*");
@@ -94,8 +98,7 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         switch (join) {
             case TcpIp tcp -> {
                 joinConfig.getTcpIpConfig().setEnabled(true).setMembers(tcp.members());
-                interfaceAddress.ifPresent(a -> config.getNetworkConfig().getInterfaces()
-                        .setEnabled(true).addInterface(a));
+                bindToInterface(config);
             }
             case Kubernetes k -> {
                 KubernetesConfig kube = joinConfig.getKubernetesConfig().setEnabled(true)
@@ -105,8 +108,7 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
                 } else {
                     kube.setProperty("service-dns", k.serviceDns());
                 }
-                interfaceAddress.ifPresent(a -> config.getNetworkConfig().getInterfaces()
-                        .setEnabled(true).addInterface(a));
+                bindToInterface(config);
             }
             case None none -> {
                 joinConfig.getTcpIpConfig().setEnabled(true).setMembers(List.of());
@@ -115,6 +117,14 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
             }
         }
         return config;
+    }
+
+    /** With an interface, listen only there; without one Hazelcast binds every interface. */
+    private void bindToInterface(Config config) {
+        interfaceAddress.ifPresent(a -> {
+            config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface(a);
+            config.setProperty("hazelcast.socket.bind.any", "false");
+        });
     }
 
     static boolean isReserved(String name) {

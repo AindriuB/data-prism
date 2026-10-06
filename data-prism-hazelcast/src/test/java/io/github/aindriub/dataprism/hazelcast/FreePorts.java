@@ -4,7 +4,11 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 
-/** Finds loopback ports with a bind probe, retrying on a collision. Never derived from a clock. */
+/**
+ * Finds loopback ports with a bind probe. The retry covers only the probe itself, not the gap
+ * between the probe releasing a port and a member binding it, so a collision in that gap is
+ * still possible and is not retried. Never derived from a clock.
+ */
 final class FreePorts {
 
     private static final int ATTEMPTS = 3;

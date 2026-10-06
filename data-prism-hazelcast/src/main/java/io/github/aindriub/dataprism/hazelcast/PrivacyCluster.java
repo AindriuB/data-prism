@@ -39,7 +39,10 @@ import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
  * accident. A {@code Config} that enables TLS or Hazelcast security is refused,
  * because the open-source distribution has no member TLS engine and no member
  * authentication: both are Enterprise features and are not provided here. Network
- * isolation of the cluster port is therefore the deployer's responsibility.
+ * isolation of the cluster port is therefore the deployer's responsibility. The advanced
+ * network config is refused too, because it bypasses the join and TLS checks. A
+ * {@link ClusterMembership} with an interface also stops the member listening on other
+ * interfaces; without one the member binds every interface, which is Hazelcast's default.
  * {@link #using} validates a supplied instance the same way and never shuts down
  * an instance it did not start.
  */
@@ -89,12 +92,24 @@ public final class PrivacyCluster implements AutoCloseable {
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled) {
         Config config = instance.getConfig();
         checkClusterName(config);
+        checkNoAdvancedNetwork(config);
         var join = config.getNetworkConfig().getJoin();
         if (join.getAutoDetectionConfig().isEnabled() || join.getMulticastConfig().isEnabled()) {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_DISCOVERY,
                     "auto-detection and multicast must be disabled on the supplied instance");
         }
         return new PrivacyCluster(instance, reidentificationEnabled);
+    }
+
+    /**
+     * An enabled advanced network config replaces the plain one, with its own join and
+     * endpoint TLS, none of which this class hardens or inspects. Refuse it outright.
+     */
+    private static void checkNoAdvancedNetwork(Config config) {
+        if (config.getAdvancedNetworkConfig().isEnabled()) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_DISCOVERY,
+                    "the advanced network config is not supported and must be disabled");
+        }
     }
 
     private static void checkClusterName(Config config) {
@@ -115,6 +130,7 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     static Config configure(Config config) {
         checkClusterName(config);
+        checkNoAdvancedNetwork(config);
         var ssl = config.getNetworkConfig().getSSLConfig();
         if ((ssl != null && ssl.isEnabled()) || config.getSecurityConfig().isEnabled()) {
             throw new PrivacyClusterRefusal(Code.HAZELCAST_TLS_UNSUPPORTED,
