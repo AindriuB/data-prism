@@ -43,6 +43,24 @@ class ServerPackagingIT {
         return v;
     }
 
+    /** The packaged jar bundles exactly the Hazelcast the build pins, not the Spring Boot BOM's own. */
+    @Test
+    void packagedJarBundlesThePinnedHazelcastAndNoOther() throws Exception {
+        String pinned = System.getProperty("hazelcast.version");
+        if (pinned == null || pinned.isBlank() || pinned.contains("${")) {
+            throw new IllegalStateException(
+                    "System property hazelcast.version was not passed by the build; refusing to guess the version");
+        }
+        Path artifact = Path.of("target", "data-prism-server-" + VERSION + ".jar").toAbsolutePath();
+        List<String> hazelcastJars = new ArrayList<>();
+        try (JarFile jar = new JarFile(artifact.toFile())) {
+            jar.stream().map(ZipEntry::getName)
+                    .filter(n -> n.startsWith("BOOT-INF/lib/hazelcast-") && n.endsWith(".jar"))
+                    .forEach(hazelcastJars::add);
+        }
+        assertThat(hazelcastJars).containsExactly("BOOT-INF/lib/hazelcast-" + pinned + ".jar");
+    }
+
     /**
      * Literal development key material this scan looks for, each documented with the
      * build artefact that actually emits it. A marker that no build artefact in this
