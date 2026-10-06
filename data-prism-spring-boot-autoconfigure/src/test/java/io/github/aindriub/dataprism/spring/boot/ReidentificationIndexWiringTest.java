@@ -3,6 +3,8 @@ package io.github.aindriub.dataprism.spring.boot;
 import com.hazelcast.core.Hazelcast;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine;
+import io.github.aindriub.dataprism.core.Metric;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyContext;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.PseudonymisationVersion;
@@ -113,6 +115,45 @@ class ReidentificationIndexWiringTest {
             assertThat(result.getBean(SyntheticValueSource.class)).isInstanceOf(CachingSyntheticValueSource.class);
             assertThat(produce(result)).isEqualTo("supplied-value");
         });
+    }
+
+    @Test void the_wrapper_reports_to_the_applications_metrics_bean() {
+        runner("embedded", all(INDEX, ENABLED, OPERATOR)).withUserConfiguration(RecordingMetrics.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            RecordingMetrics.EVENTS.clear();
+            String first = produce(result);
+            assertThat(RecordingMetrics.EVENTS).contains(Metric.IDENTITY_CACHE_MISS);
+            assertThat(produce(result)).isEqualTo(first);
+            assertThat(RecordingMetrics.EVENTS).contains(Metric.IDENTITY_CACHE_HIT);
+        });
+    }
+
+    @Test void a_cluster_failure_is_visible_as_a_metric_and_the_value_is_unchanged() {
+        runner("embedded", all(INDEX, ENABLED, OPERATOR)).withUserConfiguration(RecordingMetrics.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            String healthy = produce(result);
+            result.getBean(PrivacyCluster.class).instance().shutdown();
+            RecordingMetrics.EVENTS.clear();
+            assertThat(produce(result)).isEqualTo(healthy);
+            assertThat(RecordingMetrics.EVENTS).contains(Metric.IDENTITY_CACHE_MISS);
+        });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class RecordingMetrics {
+        static final java.util.List<Metric> EVENTS = new java.util.concurrent.CopyOnWriteArrayList<>();
+        @Bean static org.springframework.beans.factory.config.BeanPostProcessor recordingMetrics() {
+            return new org.springframework.beans.factory.config.BeanPostProcessor() {
+                @Override public Object postProcessBeforeInitialization(Object bean, String name) {
+                    if (!(bean instanceof PrivacyMetrics)) return bean;
+                    return new PrivacyMetrics() {
+                        @Override public void increment(Metric metric) { EVENTS.add(metric); }
+                        @Override public void increment(Metric metric, String source) { EVENTS.add(metric); }
+                        @Override public void record(Metric metric, String source, java.time.Duration d) { EVENTS.add(metric); }
+                    };
+                }
+            };
+        }
     }
 
     @Configuration(proxyBeanMethods = false)

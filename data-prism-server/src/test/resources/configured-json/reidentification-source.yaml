@@ -1,0 +1,14 @@
+json-sources:
+  crm-json:
+    base-url: http://127.0.0.1:@PORT@
+    path: /records/{subject}
+    timeout: PT5S
+    model-version: crm-v1
+    subject-json-path: id
+    fields:
+      id:
+        identifier: true
+      contactEmail:
+        classifications: [PII]
+        namespace: EMAIL
+        action: SYNTHESIZE
