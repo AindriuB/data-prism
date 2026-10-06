@@ -19,6 +19,9 @@
          single-node consumer, which never touches these classes, does not take
          Hazelcast onto its classpath through this starter. -->
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-hazelcast</artifactId><optional>true</optional></dependency>
+    <!-- Optional for the same reason: the controlled reverse lookup, built only when
+         dataprism.reidentification.enabled=true and never exposed as an MCP tool. -->
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-reidentification</artifactId><optional>true</optional></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-autoconfigure</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-actuator</artifactId><optional>true</optional></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>

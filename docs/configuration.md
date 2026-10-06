@@ -75,6 +75,9 @@ for the relevant group.
 | `dataprism.audit` | `sink` is required in production, one of `approved-sink`, `slf4j`, `hash-chained`; `writer-id` is required for every sink, not only a hash-chained one; `file-path` is required only when `sink: hash-chained` | Sink credentials are **yes, by reference** | Refuse startup for an unknown sink, missing required sink reference, a hash-chained sink's file path missing or unusable, or missing/invalid writer identity; do not downgrade to no or `slf4j` auditing |
 | `dataprism.metrics` | Defaults to the framework's no-op implementation only for fixture development; production requires an approved sink/registry binding | Sink credentials are **yes, by reference** when applicable | Refuse startup in production for an unknown or absent required sink; metrics failures after startup remain fail-safe and cannot change a privacy decision |
 | `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget across every member of the cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but the budget it produces is enforced once per process, so a configured budget of 100 becomes 100 times the number of running processes — identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | Cluster/TLS credentials are **yes, by reference** when configured | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration, invalid member/TLS settings, non-positive TTL, or an enabled index without its required controls |
+| `dataprism.oversight` | All optional. `approval-required-tools` defaults to empty; `approval-ttl` `PT15M`; `caller-rate-limit.requests` unset (no limit); `caller-rate-limit.window` `PT1M`; `max-pending-per-requester` `5` | No | Refuse startup for an unknown tool name (`UNKNOWN_OVERSIGHT_TOOL`), a non-positive limit, window, TTL or cap (`INVALID_OVERSIGHT_LIMIT`), or approval-required tools or a rate limit without `dataprism.operator.enabled` (`OVERSIGHT_REQUIRES_OPERATOR_SURFACE`) |
+| `dataprism.reidentification` | `enabled` defaults to `false`; `four-eyes` defaults to `true`; `approval-ttl` `PT15M`; `max-pending-per-requester` `5`; `purposes` and `roles` are required once enabled | No | Refuse startup for the refusals listed under [`dataprism.reidentification`](#dataprismreidentification) |
+| `dataprism.operator` | `enabled` defaults to `false`; `port`, `required-audience` and `required-scope` are required once enabled | No | Refuse startup for an enabled surface missing any of them (`MISSING_OPERATOR_SECURITY`) or sharing `server.port` (`OPERATOR_PORT_SHARED`) |
 | `dataprism.sources` | One named source entry per configured Java-first REST adapter; each entry declares a server-controlled HTTPS base URL and positive timeout | mTLS key, trust material, and service credentials are **yes, by reference** | Refuse startup for duplicate names, an unapproved/non-HTTPS URL (local fixture exception only), user-info/query/fragment in a base URL, invalid timeout, unresolved mTLS reference, or a configured source without its explicit adapter bean |
 
 `dataprism.sources.<name>` is intentionally limited to transport parameters
@@ -251,6 +254,74 @@ to.
 
 [![Fail-closed field decisions: a classified field is pseudonymised, redacted or removed according to its classification; an unclassified field refuses the whole response (FAIL_REQUEST); and a response where something looks like a sensitive identifier shape is also refused.](assets/diagrams/fail-closed-decisions.svg)](assets/diagrams/fail-closed-decisions.svg)
 Select the diagram to open it full size.
+
+## Oversight, re-identification and the operator surface
+
+Three groups, all off or empty by default. Together they turn the oversight and
+re-identification libraries into deployed behaviour; the HTTP endpoints that
+operate them, on a second port, are a separate task and are not described here.
+
+### `dataprism.oversight`
+
+| Property | Default | Meaning |
+|---|---|---|
+| `approval-required-tools` | empty | Tools whose calls need a human approval first. Only `get_entity_context` and `compare_entity_sources` are valid |
+| `approval-ttl` | `PT15M` | How long an approval request stays usable |
+| `caller-rate-limit.requests` | unset | Requests one caller may make per window; unset means no limit |
+| `caller-rate-limit.window` | `PT1M` | The rate-limit window |
+| `max-pending-per-requester` | `5` | Live pending approvals one requester may hold. A further request is refused with `TOO_MANY_PENDING` and audited as a denial |
+
+The MCP server is always built with an admission check, whatever these
+properties say: a paused tool, scope or deployment is refused even when
+nothing here is configured. Approval-required calls count against the caller
+rate limit, as a call that is refused with `APPROVAL_REQUIRED` or
+`APPROVAL_PENDING` has still been made; set a limit with that in mind.
+
+With `dataprism.hazelcast.topology=embedded` the pause state, the approval
+store and the rate limiter are shared across every member of the cluster.
+Otherwise they are per process.
+
+| Code | Condition |
+|---|---|
+| `UNKNOWN_OVERSIGHT_TOOL` | An approval-required tool name that is neither `get_entity_context` nor `compare_entity_sources` |
+| `INVALID_OVERSIGHT_LIMIT` | A non-positive `requests`, `window`, `approval-ttl` or `max-pending-per-requester`, here or under `dataprism.reidentification` |
+| `OVERSIGHT_REQUIRES_OPERATOR_SURFACE` | Approval-required tools or a rate limit configured without `dataprism.operator.enabled=true` |
+
+### `dataprism.reidentification`
+
+| Property | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Builds the `ReidentificationService` bean. It is never an MCP tool: the tool list is the same with it on or off |
+| `purposes` | none | The re-identification-only purposes a request may name |
+| `roles` | none | Map of role name to a list of `REQUEST` and/or `APPROVE` |
+| `four-eyes` | `true` | A second, distinct principal must approve before anything resolves |
+| `approval-ttl` | `PT15M` | How long a pending or approved request stays usable |
+| `max-pending-per-requester` | `5` | Live pending requests one requester may hold; the cap is enforced in the approval store |
+
+| Code | Condition |
+|---|---|
+| `REIDENTIFICATION_INDEX_DISABLED` | Enabled with `dataprism.hazelcast.reidentification-enabled=false` |
+| `REIDENTIFICATION_REQUIRES_CLUSTER` | Enabled with a topology other than `embedded`: the index lives in the cluster |
+| `EMPTY_REIDENTIFICATION_PURPOSES` | Enabled with no non-blank purpose |
+| `NO_REIDENTIFICATION_APPROVER` | Enabled with `four-eyes=true` and no role holding `APPROVE` |
+| `REIDENTIFICATION_REQUIRES_OPERATOR_SURFACE` | Enabled without `dataprism.operator.enabled=true` |
+
+`MISSING_REIDENTIFICATION_CONTROLS` and `dataprism.hazelcast.reidentification-controls-reference`
+keep their existing meaning and are checked first.
+
+### `dataprism.operator`
+
+| Property | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Turns the operator surface on |
+| `port` | none | The operator port; must differ from `server.port` (default `8080`) |
+| `required-audience` | none | The JWT audience an operator token must carry |
+| `required-scope` | none | The scope an operator token must carry |
+
+| Code | Condition |
+|---|---|
+| `MISSING_OPERATOR_SECURITY` | Enabled without a valid `port`, `required-audience` or `required-scope` |
+| `OPERATOR_PORT_SHARED` | `port` equal to `server.port` |
 
 ## Java-first now; generic JSON as a separately reviewed extension
 

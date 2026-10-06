@@ -76,6 +76,18 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismHttpTransport", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpSyncServer", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpServlet", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismPrivacyCluster", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismOversightState", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismClusterOversightState", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismApprovalStore", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismClusterApprovalStore", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismCallerRateLimiter", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismClusterCallerRateLimiter", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismOversightPolicy", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismToolAdmission", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismParameterFingerprinter", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationPolicy", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismReidentificationService", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismPassThroughIdentityResolver", Classification.REPLACEABLE, Guard.NONE));
 
     /** @throws IllegalStateException if {@code beanMethodName} has no checked-in row. */
