@@ -124,7 +124,7 @@ dataprism:
   metrics:
     sink: micrometer
   hazelcast:
-    topology: embedded
+    topology: single-node   # see multiple-instances.md for embedded and its cluster settings
     reidentification-enabled: false
   sources:
     customer:

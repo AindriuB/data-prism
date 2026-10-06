@@ -38,7 +38,7 @@ review.
 | `processor` | `annotations` | `LlmExposedModelProcessor`, the annotation processor that fails the build on a field of an `@LlmExposedModel` carrying neither `@SensitiveData` nor `@NonSensitive(reason=...)` (§B2) |
 | `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, `InvestigationContext`, `SourceTree`, every SPI interface the other modules implement, and the audit contract (`AuditEvent`, `AuditSink`, per-writer hash chain) |
 | `pseudonymisation` | `core` | HMAC generator, per-namespace synthetic generators, `PseudonymRenderer`, key and algorithm versioning |
-| `hazelcast` | `core` | Embedded member, identity cache, re-identification index, shared read budget, scope purge, `FailSafeMetrics` |
+| `hazelcast` | `core` | Embedded member, identity cache, re-identification index, read budget (shared only across joined members), scope purge, `FailSafeMetrics` |
 | `validation` | `core` | `SensitiveDataScanner`, `LlmResponseValidator`, scope-aware pseudonym allowlist |
 | `security` | `core` | `AuthenticatedCaller`, `AuthorizationService`, `PurposeValidator`, `ScopeResolver`, `PrivacySession`, `SecurityPolicy`, `ReservedArguments`, `ToolInvocation` |
 | `orchestration` | `core` + the above | `ContextOrchestrator`, parallel fan-out, circuit breaker, request and cost limits, correlation and consistency findings |

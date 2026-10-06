@@ -96,8 +96,9 @@ joins what you named.
 
 ### Refusals
 
-Each refusal stops startup before a member starts. The code is on the
-configuration failure.
+Each refusal stops startup before a member starts, with one exception: for
+`PrivacyCluster.using(instance)` the instance is already running, and a refusal
+leaves it running. The code is on the configuration failure.
 
 | Code | Condition |
 |---|---|
@@ -112,7 +113,7 @@ configuration failure.
 | `CLUSTER_PORT_SHARED` | `member.port` equals `server.port`, `management.server.port` or an enabled `dataprism.operator.port` |
 | `CLUSTER_SETTINGS_IGNORED` | Cluster settings with `single-node`, or with an application-supplied `PrivacyCluster` |
 | `HAZELCAST_TLS_UNSUPPORTED` | `tls-key-reference` or `tls-trust-reference` set, or a supplied Hazelcast `Config` that enables TLS or Hazelcast security |
-| `UNSAFE_HAZELCAST_DISCOVERY` | A supplied instance or `Config` with auto-detection, multicast or the advanced network config enabled |
+| `UNSAFE_HAZELCAST_DISCOVERY` | An enabled advanced network config, in a supplied `Config` or instance. Auto-detection or multicast enabled on a supplied instance passed to `using()`. A supplied `Config` given to `PrivacyCluster.embedded(Config)` has auto-detection and multicast forced off, not refused |
 
 The two bold rows are the cross-mode refusals: a setting for one join mode
 never silently does nothing under another.
@@ -198,7 +199,8 @@ Losing the owner and the backup of an entry together loses that entry:
 - **Budgets** and **caller-rate windows** reset when their holders leave.
 - **Approvals** pending on the lost members are gone and must be requested again.
 - The **re-identification index** cannot be recomputed. It is a store, and its
-  durability is the cluster's durability.
+  durability is the cluster's durability. It is also LRU-evicted at 100,000
+  entries per member, and an evicted entry is lost for good.
 - Identity entries are recomputed, with no change to any answer.
 
 This page makes no claim beyond that. Scaling to zero loses everything held only
