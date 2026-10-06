@@ -182,8 +182,50 @@ public class DataPrismProperties {
         // at property-validation time, means a missing path is a startup refusal
         // with a stable code rather than a NullPointerException once that bean is
         // actually constructed.
-        if ("hash-chained".equals(audit.sink)) {
+        if (!blank(audit.directory) && !blank(audit.filePath)) {
+            refuse("AMBIGUOUS_AUDIT_LOCATION",
+                    "set either dataprism.audit.directory or dataprism.audit.file-path, not both");
+        }
+        if ("hash-chained".equals(audit.sink) && blank(audit.directory)) {
             required(audit.filePath, "MISSING_AUDIT_FILE_PATH", "dataprism.audit.file-path");
+        }
+        if (!blank(audit.directory)) {
+            // Whatever the sink: the retention bean is created from the directory alone, and purge
+            // reads its earlier anchors back from the checkpoint file. Without one it could never
+            // prove a chain's start, so retention cannot run at all.
+            if (blank(audit.checkpoint.filePath)) {
+                refuse("RETENTION_REQUIRES_CHECKPOINT",
+                        "dataprism.audit.directory requires dataprism.audit.checkpoint.file-path");
+            }
+        }
+        if (!blank(audit.checkpoint.filePath)) {
+            // An unparseable path is not waved through here: canonical() maps it to a path that never
+            // matches, and it is then refused as AUDIT_CHECKPOINT_FILE_UNUSABLE when the checkpoint
+            // sink tries to open it (DataPrismAutoConfiguration#dataPrismAuditCheckpointSink).
+            String checkpoint = audit.checkpoint.filePath;
+            if ((!blank(audit.directory) && (sameOrInside(checkpoint, audit.directory)))
+                    || (!blank(audit.filePath) && sameOrInside(checkpoint, audit.filePath))) {
+                refuse("AUDIT_CHECKPOINT_SAME_AS_AUDIT_FILE",
+                        "dataprism.audit.checkpoint.file-path must be separate from the audit file or directory");
+            }
+        }
+        if (audit.checkpoint.interval == null || audit.checkpoint.interval.isZero()
+                || audit.checkpoint.interval.isNegative()) {
+            refuse("INVALID_AUDIT_CHECKPOINT_INTERVAL", "dataprism.audit.checkpoint.interval must be positive");
+        }
+        if (audit.retention == null) {
+            refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention must be set");
+        }
+        if (!audit.retentionOverride) {
+            try {
+                // AuditRetention owns the six-month rule; reuse it rather than restate it.
+                new io.github.aindriub.dataprism.audit.AuditRetention(java.nio.file.Path.of("."), audit.retention,
+                        c -> { }, java.time.Clock.systemUTC());
+            } catch (IllegalArgumentException e) {
+                refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention " + audit.retention
+                        + " is below six months; EU AI Act Art. 19 allows other periods only under Union or"
+                        + " national law, in which case set dataprism.audit.retention-override=true");
+            }
         }
         required(audit.writerId, "MISSING_AUDIT_WRITER", "dataprism.audit.writer-id");
         // AuditRecorder appends "/" plus a per-boot suffix to build its instanceId, so a
@@ -286,6 +328,37 @@ public class DataPrismProperties {
             }
         } catch (IllegalArgumentException e) {
             refuse(code, "must be a URI");
+        }
+    }
+
+    /**
+     * True when {@code candidate} is {@code location} or lies beneath it, comparing normalised
+     * paths with symbolic links resolved wherever the path (or its nearest existing ancestor) exists.
+     */
+    static boolean sameOrInside(String candidate, String location) {
+        java.nio.file.Path c = canonical(candidate);
+        java.nio.file.Path l = canonical(location);
+        return c.startsWith(l);
+    }
+
+    private static java.nio.file.Path canonical(String value) {
+        java.nio.file.Path path;
+        try {
+            path = java.nio.file.Path.of(value).toAbsolutePath().normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return java.nio.file.Path.of("/invalid-path-never-matches");
+        }
+        java.nio.file.Path existing = path;
+        while (existing != null && !java.nio.file.Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return path;
+        }
+        try {
+            return existing.toRealPath().resolve(existing.relativize(path)).normalize();
+        } catch (java.io.IOException e) {
+            return path;
         }
     }
 
@@ -543,7 +616,59 @@ public class DataPrismProperties {
     }
 
     public static class Audit {
-        private String sink, writerId, credentialReference, filePath;
+        private String sink, writerId, credentialReference, filePath, directory;
+        private java.time.Period retention = java.time.Period.ofMonths(6);
+        private boolean retentionOverride;
+        private final Checkpoint checkpoint = new Checkpoint();
+
+        public String getDirectory() {
+            return directory;
+        }
+
+        public void setDirectory(String v) {
+            directory = v;
+        }
+
+        public java.time.Period getRetention() {
+            return retention;
+        }
+
+        public void setRetention(java.time.Period v) {
+            retention = v;
+        }
+
+        public boolean isRetentionOverride() {
+            return retentionOverride;
+        }
+
+        public void setRetentionOverride(boolean v) {
+            retentionOverride = v;
+        }
+
+        public Checkpoint getCheckpoint() {
+            return checkpoint;
+        }
+
+        public static class Checkpoint {
+            private String filePath;
+            private Duration interval = Duration.ofMinutes(5);
+
+            public String getFilePath() {
+                return filePath;
+            }
+
+            public void setFilePath(String v) {
+                filePath = v;
+            }
+
+            public Duration getInterval() {
+                return interval;
+            }
+
+            public void setInterval(Duration v) {
+                interval = v;
+            }
+        }
 
         public String getSink() {
             return sink;

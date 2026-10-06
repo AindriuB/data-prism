@@ -67,3 +67,53 @@ corrects the first and documents the second from the code as merged.
 - The `AuditChainVerifierCli` limitation text and the hashed-field list. That
   is task 117.
 - The admission-codes table in `docs/tools.md` (tasks 101 and 120).
+
+## Attempt 1 — failed
+
+Branch `task/121-docs-refused-keys-and-policy-decision-forms` (91e364a). Tester: PASS (mkdocs --strict). Reviewer: CHANGES.
+
+- docs/audit.md:208, `DENY` row, two false statements:
+  - "refused after fetching": SCOPE_READ_BUDGET is thrown before any fetch
+    (DefaultContextOrchestrator.java:171) and is still recorded as DENY. The
+    same catch also records DENY for any RuntimeException (adapter or
+    scrubber failure), which is an error, not a privacy refusal. Say DENY
+    covers refusals before or after fetching, and internal failures.
+  - "the reason is in the field dispositions": dispositions only ever hold
+    `<source>:<refused>` / `merged:<refused>` = REFUSED; no refusal code is
+    recorded. Say plainly that the orchestrator's DENY record does not carry
+    the refusal code. (The client-facing code is in the MCP result, joined by
+    correlationId.)
+- docs/tools.md:202: drop "after fetching" from "for every other refusal
+  after fetching", which contradicts the budget example in the same paragraph.
+- docs/audit.md:213-217: align the classification rule with task 112's planned
+  event.outcome: ALLOW or ALLOW:* = success; empty = unknown (reserved, never
+  written today); anything else = failure/denial.
+- Run mkdocs --strict; report the exit code.
+
+## Attempt 2 — failed
+
+Branch at 1653d61. Reviewer: CHANGES (3/4 met).
+
+- docs/audit.md:209: "dispositions hold only `REFUSED` under `<source>:<refused>`
+  or `merged:<refused>`" is false. Scrub actions for sources already processed
+  are put into the same map before the refusal
+  (DefaultContextOrchestrator.java:315-316), and the whole map is audited on
+  DENY (:222). Reword: the refusal itself is marked only as `REFUSED` under
+  one of the two fixed keys, with no code; dispositions for fields already
+  scrubbed may also be present.
+- Same row: limit "The client-facing code is in the MCP result" to refusals.
+  For an internal error the MCP text is just "the request could not be
+  completed" (ToolCalls.java:121-123), and no code is shown to the client.
+- Run mkdocs --strict; report the exit code.
+
+## Attempt 3 — failed
+
+Reviewer: CHANGES. One example is wrong; it came from the attempt-1 review.
+
+- docs/audit.md:209: "an internal error such as an adapter or scrubber failure".
+  Adapter failures never reach the orchestrator's catch. SourceFanOut.java:147-152
+  turns them into a per-source FAILED outcome, so the call is ALLOW if
+  another source answers, or the NO_SOURCE_DATA refusal if none does.
+  Use "a scrubber or validator failure" as the example. Add one clause: adapter
+  failures are recorded per source, and if every source fails the result is
+  NO_SOURCE_DATA. Run mkdocs --strict.

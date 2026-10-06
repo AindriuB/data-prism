@@ -81,8 +81,15 @@ A few properties are deliberate, not accidental gaps:
 
   Record version 2 adds four fields. `recordVersion` is `2` for every record
   written now; a line with no `recordVersion` is version 1 and still verifies,
-  hashed over exactly the nineteen fields above. For version 2 the hash also
-  folds in `fieldDispositions`, `approvalId` and `approverId`.
+  hashed over exactly the nineteen fields above, joined with `|` and `,` as
+  before. Because that joining does not escape its separators, some distinct
+  version 1 records can share a hash; version 1 keeps it so that committed
+  chains still verify. Version 2 hashes a length-prefixed encoding (each item
+  is written as its UTF-8 byte length, a colon and the text, so no two
+  different records produce the same input) that includes `recordVersion`,
+  `fieldDispositions`, `approvalId` and `approverId` as well as the nineteen
+  fields. Editing a version 2 record's `recordVersion` to `1` is therefore
+  reported as a break.
   `fieldDispositions` maps a field path to the action taken on it. Paths look
   like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
   example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
@@ -197,6 +204,26 @@ sequence. They do not close it. Anyone with that access can also make the
 deletion of segments older than the retention window look legitimate. Keep
 checkpoint custody separate from the audit directory's, and treat an anchor as
 only as trustworthy as that custody.
+
+### policyDecision values
+
+The `policyDecision` field is not only `ALLOW` or `DENY`. Five forms are
+written today, by three modules.
+
+| Form | Written by | Meaning | Example |
+|---|---|---|---|
+| `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
+| `DENY` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching (for example an exhausted read budget), or failed with an internal error such as a scrubber or validator failure. Adapter failures are recorded per source, and if every source fails the result is `NO_SOURCE_DATA`. The record does not carry the refusal code. A refusal itself is marked only as `REFUSED` under one of two fixed keys, `<source>:<refused>` or `merged:<refused>`, with no code; dispositions for fields already scrubbed from earlier sources may also be present, and an internal error adds no `REFUSED` mark. For a refusal, the client-facing code is in the MCP result, joined by `correlationId`; for an internal error the client sees only "the request could not be completed", with no code | `DENY` |
+| bare `<CODE>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran. The value is the refusal code: authorisation, scope, admission, or no authenticated caller | `TOOL_NOT_PERMITTED`, `NO_AUTHENTICATED_CALLER`, `CALLER_RATE_LIMITED`, `APPROVAL_REQUIRED` |
+| `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
+| `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |
+
+Classify by prefix and code, not by an exact `DENY`. `ALLOW` or a value
+starting with `ALLOW:` is a success. An empty value is unknown; it is
+reserved and never written today. Anything else is a denial or failure. A
+consumer that tests only for `DENY` misses every bare code and every
+`DENY:<code>`. Treat a value you do not recognise as a denial. The set of
+codes can grow between releases.
 
 ## The offline verifier
 
@@ -347,7 +374,8 @@ as more than it is.
 
 **What it proves.** For every record the verifier could see, in every
 writer's chain, replaying the chain found no edit or deletion of any of the
-nineteen hashed fields. Editing a record breaks its own stored hash the
+hashed fields (the nineteen of version 1; for version 2 also `recordVersion`,
+`fieldDispositions`, `approvalId` and `approverId`). Editing a record breaks its own stored hash the
 moment its content no longer matches what `AuditEventHash` recomputes from
 that content, so an edit is caught anywhere in the chain, including the very
 last record written — a chain does not have to have a successor record to

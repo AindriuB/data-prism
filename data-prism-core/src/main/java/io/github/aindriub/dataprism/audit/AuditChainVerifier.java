@@ -20,7 +20,7 @@ import java.util.Optional;
  *
  * <p>This class detects an edit or a deletion of a record that was already
  * written, but only insofar as the edited or deleted field is one of the
- * nineteen (version 2 adds three: dispositions, approvalId, approverId) joined into {@link AuditEventHash}'s chained hash — see {@link
+ * nineteen original fields (version 2 also covers recordVersion, fieldDispositions, approvalId and approverId) hashed into {@link AuditEventHash}'s chain — see {@link
  * AuditChainVerifierCli}'s printed limitation for exactly which fields those
  * are. Without a checkpoint file it also cannot detect truncation of a writer's most
  * recent records: deleting the tail of an append-only file leaves a chain that verifies

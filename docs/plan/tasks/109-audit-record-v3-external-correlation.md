@@ -1,7 +1,8 @@
 # 109 — Record the external correlation id in audit record version 3
 
 **Repo:** `.`
-**Depends on:** 102, 108, 117
+**Depends on:** 102, 108, 117, 123
+*(123 added 2026-10-06: task 123 edits the DENY filter in `AuditFieldDispositionTest`, which this task also edits.)*
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/** *(except `Slf4jAuditSink.java`, which must stay unchanged; task 112 changes it)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/**

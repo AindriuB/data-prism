@@ -108,3 +108,12 @@ When extending ApprovalStoreContractTest, also add negative consumeApproved
 cases that change one binding field at a time (fingerprint, scope, tool,
 principal, kind) and assert no match on both stores. That pins exact binding
 matching.
+
+## Owns extension (main session, 2026-10-06)
+
+`data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/ToolAdmissionEnforcementTest.java`
+is added, for the test policy helper or store setup only. Task 118 owns
+`data-prism-mcp/**` but has not changed this file. The test opens more than 5
+pending approvals for one principal on a shared store, so it trips the new
+cap. Fix the test setup (a fresh store per iteration, or an explicit higher cap
+in its policy helper), not the assertions.

@@ -141,3 +141,11 @@ everything) until this task. Required here:
   and an approval-required tool are refused.
 Also decide whether approval-required calls should stop consuming a rate-limit
 token (task 98 behaviour).
+
+## Note from task 103's review
+
+- 103 added an optional `spring-boot-actuator` dependency to the autoconfigure
+  pom.xml, which this task owns. Keep it.
+- Every new @Bean needs a row in PrivacyExtensionPoints.java, because
+  AutoConfiguredBeanClassificationTest sweeps them. That file is added to this
+  task's Owns.

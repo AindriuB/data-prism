@@ -650,6 +650,69 @@ class PiiLogScanTest {
     }
 
     /**
+     * Task 118: a property name in the source payload can itself be personal
+     * data, so it must not reach the captured log or any tool result, whether
+     * the profile refuses the response or lets the key through to the leak check.
+     */
+    @Test
+    @DisplayName("an undeclared payload key reaches neither the log nor a tool result, refusing or pass-through")
+    void undeclaredKeyNeverReachesLogOrToolResults() {
+        Clock clock = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), java.time.ZoneOffset.UTC);
+        Map<io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour, String> expectedCode =
+                Map.of(io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST,
+                        "UNKNOWN_FIELD",
+                        io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour
+                                .PASS_THROUGH_UNSAFE, "VALIDATION_FAILED");
+
+        expectedCode.forEach((behaviour, code) -> {
+            List<String> results = new ArrayList<>();
+            String captured = captureLogOutput(() ->
+                    results.addAll(UndeclaredKeyFixture.run(behaviour, new Slf4jAuditSink(), clock)));
+
+            assertThat(captured).as(behaviour + ": the run must reach the audit logger").contains("event=");
+            assertThat(results).as(behaviour.name()).hasSize(2).allSatisfy(result ->
+                    assertThat(result).contains(code).doesNotContain(UndeclaredKeyFixture.TOKEN));
+            assertThat(captured).as(behaviour + ": captured log").doesNotContain(UndeclaredKeyFixture.TOKEN);
+        });
+    }
+
+    @Test
+    @DisplayName("the undeclared-key scan is not vacuous: the key pushed through the same logger is caught")
+    void undeclaredKeyScannerIsNotVacuous() {
+        String captured = captureLogOutput(() -> LoggerFactory.getLogger("dataprism.audit")
+                .info("simulated leak, for this test only: key={}", UndeclaredKeyFixture.KEY));
+
+        assertThat(captured).contains(UndeclaredKeyFixture.TOKEN);
+    }
+
+    @Test
+    @DisplayName("the unclassified-field WARN names a declared field, and renders an undeclared property as a placeholder")
+    void unclassifiedWarningsNeverNameAnUndeclaredKey() {
+        for (var behaviour : List.of(
+                io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN,
+                io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.DROP_AND_WARN,
+                io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE)) {
+            var engine = new io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine(
+                    UndeclaredKeyFixture.mixedResolver(),
+                    new io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver(
+                            UndeclaredKeyFixture.profiles(behaviour)),
+                    (subject, namespace, ctx) -> "synthetic");
+            var context = new io.github.aindriub.dataprism.core.PrivacyContext("C",
+                    PrivacyScopeType.CASE, "DEFAULT", "test", Instant.parse("2030-01-01T00:00:00Z"),
+                    io.github.aindriub.dataprism.core.PseudonymisationVersion.HMAC_SHA256_V1);
+
+            String captured = captureLogOutput(() -> engine.scrub(new UndeclaredKeyFixture.Mixed(
+                    "1", "a note", Map.of(UndeclaredKeyFixture.KEY, "v")), context));
+
+            assertThat(captured).as(behaviour + " declared-but-unannotated field is still named")
+                    .contains("unclassified field unreviewedNote");
+            assertThat(captured).as(behaviour + " undeclared property is a placeholder")
+                    .contains("unclassified field <undeclared>")
+                    .doesNotContain(UndeclaredKeyFixture.TOKEN);
+        }
+    }
+
+    /**
      * Three {@code get_entity_context} calls through the real pipeline —
      * {@code DataPrismAssembly}, {@code GetEntityContextTool}, a real
      * {@code AuditRecorder} over {@link Slf4jAuditSink} — covering both fixture
