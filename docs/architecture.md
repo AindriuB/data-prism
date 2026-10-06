@@ -45,7 +45,7 @@ review.
 | `mcp` | `orchestration`, `security` | Tool definitions, schemas, transport, `DataPrismObjectMapper` |
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
-| `reidentification` *(planned)* | `hazelcast`, `security` | The controlled reverse-lookup surface. Separate application, separate port. The index it reads already exists in `hazelcast`, off by default |
+| `reidentification` | `core`, `hazelcast`, `security` | The controlled reverse-lookup library: authenticated, purpose-bound, audited, optional four-eyes. No transport; the HTTP surface on a separate port is a separate application. The index it reads lives in `hazelcast`, off by default |
 | `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding, validation, privacy-pipeline wiring, MCP lifecycle and servlet registration |
 | `spring-boot-starter` | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
 | `server` | `spring-boot-autoconfigure` | Primary executable Streamable HTTP MCP server, JWT boundary, health endpoint, production integrations and privacy metrics |
