@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-06 | 124 | Undeclared property names become `<undeclared-N>` (REDACT_AND_WARN) or are dropped (DROP_AND_WARN) before reaching the model; names are not scanned by validators. | `## 2026-10-06 — Task 124: undeclared property names never reach the model` |
 | 2026-10-06 | 120 | Per-requester cap (default 5) on live pending approvals, per kind, enforced in both stores; over-cap refused `TOO_MANY_PENDING` and audited. | `## 2026-10-06 — Task 120: live pending approvals capped per requester` |
 | 2026-10-06 | 125 | Integration tests read the project version from a build-set system property. The earlier "build passed after the bump" was masked by stale 0.3.1 jars. | `## 2026-10-06 — Task 125: integration tests derive the artifact version from the build` |
 | 2026-10-06 | 121 | Docs: REFUSED key wording corrected; table of every `policyDecision` form in `docs/audit.md`. | `## 2026-10-06 — Task 121: REFUSED wording corrected and every `policyDecision` form documented` |

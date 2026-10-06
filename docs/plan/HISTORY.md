@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 124: undeclared property names never reach the model
+
+Undeclared property names are now replaced by numbered placeholders (`<undeclared-N>`, numbered alphabetically by raw key) under REDACT_AND_WARN, or dropped under DROP_AND_WARN, so payload keys no longer reach the model. PASS_THROUGH_UNSAFE still passes names through, and no validator scans names (0.4.x follow-up).
+
+Release note: Undeclared property names are now replaced by numbered placeholders (`<undeclared-N>`, numbered alphabetically by raw key) under REDACT_AND_WARN, or dropped under DROP_AND_WARN, so payload keys no longer reach the model. PASS_THROUGH_UNSAFE still passes names through, and no validator scans names (0.4.x follow-up).
+
+**Cost:** The first attempt failed review and a second was needed. The red tests were written first, and the mutation check at 34dbdc3 showed the raw key `zzResultKeyWv4@example.com` reaching the tool result, so the scan test is not vacuous on the result. The model can still infer the count of undeclared keys per object and their relative alphabetical order; the owner accepted this. Two weaknesses remain: `UndeclaredNameToolResultScanTest` plants no `AuditEvent`, so it does not prove the audit path, and the orchestrator's shallow merge collapses `<undeclared-1>` from two sources into one key, which understates the count.
+
 ## 2026-10-06 — Task 120: live pending approvals capped per requester
 
 Each requester may now hold at most 5 live pending approvals (default), counted separately for tool-call and re-identification approvals. The cap is enforced atomically inside the approval store, in both `InMemoryApprovalStore` and `HazelcastApprovalStore`, and a request over the cap is refused with `TOO_MANY_PENDING` (HTTP 429), audited, and creates no approval.
