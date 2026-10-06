@@ -131,3 +131,17 @@ keeps working with a one-line change; see owner decision **D-0.4.1-B**.
   audit. Task 113 (0.5.0) owns this file next.
 - Making `ToolAdmission` or `OversightPolicy` PRIVACY_CRITICAL (PLAN follow-up
   item 2).
+
+## Added from task 131 review (2026-10-06)
+
+- **Stacked on 131.** Branch from `task/131-hazelcast-clustering`, not from
+  `claude/release-0.4.1`; 131 and 132 merge together. 131's `toConfig()` is final.
+- `join.mode: none` together with `member.interface` must refuse at property
+  validation with `INVALID_CLUSTER_INTERFACE`, matching 131's `None.withInterface`
+  refusal. Never call `withInterface` on `None`.
+- An enabled advanced network config is refused by 131 (`UNSAFE_HAZELCAST_DISCOVERY`).
+  Nothing in 132 may enable it.
+- With `tcp-ip` or `kubernetes` and no `member.interface`, the member binds every
+  interface. 135's docs must say so; 132's property javadoc must too.
+- Version note: the project is at 0.4.0, which is published on Central. Always build
+  with `-am` and never `-rf`.
