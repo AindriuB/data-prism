@@ -134,3 +134,21 @@ Required for attempt 2:
    an application-supplied source that already caches over a *different*
    PrivacyCluster is left unwrapped, so its entries are never found and every
    request returns NOT_FOUND.
+
+## Attempt 2 — failed
+
+Reviewer: CHANGES. All acceptance criteria and attempt-1 items 1 and 3 are met;
+item 2 (metrics) is acceptable for 0.4.0 as-is. Required for attempt 3, small:
+1. **Docs overstate the metrics.** docs/reidentification.md, the bullet "Cache and
+   reverse-index write failures are reported through the application's
+   `PrivacyMetrics` bean…" is false. A reverse-map write failure shows only as one
+   IDENTITY_CACHE_MISS, which is indistinguishable from a healthy miss, plus a WARN log
+   ("identity cache unavailable"). Reword it to say exactly that.
+2. **OperatorHarness system-property leak.** Wrap `.run()` in a try/catch that clears the
+   catalogue system property and stops `identityServer` on failure, then rethrows.
+3. **Test name overclaims.** Rename `ReidentificationIndexWiringTest.a_cluster_failure_is_visible_as_a_metric...`
+   so that it does not claim a failure is visible; it records a MISS.
+
+Follow-up for the record, not this task: emit a dedicated failure metric in the
+CachingSyntheticValueSource catch block (data-prism-hazelcast), and wire
+`failures()` into health.
