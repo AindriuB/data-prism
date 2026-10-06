@@ -110,3 +110,26 @@ say exactly what 0.4.1 does. Add one page on running several instances:
   which is task 116.
 - Editing anything under `docker/`. If a snippet section is missing, report
   it to task 133's owner; do not add it here.
+
+## Attempt 1 — failed
+
+Tester: PASS (mkdocs strict, check_site, snippet markers). Reviewer: CHANGES (head 2225acb).
+Everything else is accurate. RBAC in prose is accepted, so do not touch docker/. The mkdocs.yml plugin-list
+line and the extra eu-ai-act paragraph are accepted.
+**Owns widened:** docs/configuration.md, the example YAML at about :126-128; docs/architecture.md:41, the module-map row.
+Required for attempt 2:
+1. multiple-instances.md:115, the `UNSAFE_HAZELCAST_DISCOVERY` row. For a supplied `Config`,
+   `PrivacyCluster.embedded(Config)` silently **forces** auto-detection and multicast off;
+   only an enabled advanced network config is refused. Auto-detection and multicast are
+   refused only for a supplied instance via `using()`. Make the row say exactly this.
+2. multiple-instances.md:99: "Each refusal stops startup before a member starts" is false for
+   `PrivacyCluster.using(instance)`, where the instance is already running and is left running.
+   Qualify it.
+3. multiple-instances.md, failure section: `dataprism.reidentification` is LRU-evicted at
+   100,000 entries per member. An evicted entry is lost for good, so say so.
+4. configuration.md example (about :126-128): `topology: embedded` with no
+   `cluster-name` or `join.mode` now refuses with `MISSING_CLUSTER_NAME`. Make it a valid embedded
+   example, or switch it to single-node with a pointer to multiple-instances.md.
+5. architecture.md:41: qualify "shared read budget": it is shared only across joined members.
+6. If the page names "Hazelcast 5.7.0" (:14, :168), keep it. Task 137 pins it before 0.4.1 ships.
+README.md:28 belongs to task 136.
