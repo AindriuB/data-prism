@@ -95,6 +95,7 @@
         <configuration>
           <systemPropertyVariables>
             <project.version>${project.version}</project.version>
+            <hazelcast.version>${hazelcast.version}</hazelcast.version>
           </systemPropertyVariables>
         </configuration>
         <executions>
