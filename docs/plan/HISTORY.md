@@ -17,6 +17,64 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 101: MCP tools enforce admission and return correlationId
+
+Both MCP tools now call `ToolAdmission` after scope resolution and before the
+orchestrator, so a paused, rate-limited or approval-gated call is refused and
+audited with its code and never reaches a source. An approval is bound by an
+HMAC over entity type, subject, sources, purpose, privacy profile, client id and
+the sorted capability set; case id is bound through the scope. Every tool result,
+success or audited refusal, carries `_meta["io.github.aindriub.dataprism/correlationId"]`.
+Orchestrator refusals now surface as `AuditedRefusalException`, a
+`PrivacyRefusedException` subclass with code `REQUEST_FAILED` that carries the
+audit event's correlation id. Merged by hand onto the planning branch, not `main`.
+
+**Cost:** Four attempts. Attempt 1 bound approvals to entity type and subject
+only, so an approval granted under one purpose, profile or client could be used
+under another; the same class of defect as task 100. Attempt 2 added those three
+but missed capabilities, which come from token roles and change the output
+(`EXPOSE_SOURCE_NAMES` returns real source names). Attempt 3 was a false javadoc
+about case id, which `ScopeResolver` does fold into the scope. Orchestrator
+refusals had no correlation id because `DefaultContextOrchestrator` wrote the
+DENY event and then threw an exception that carried none; fixing that needed the
+Owns list extended to the orchestrator and a new exception type, and it is a
+`CHANGELOG.md` line because starters that map `PrivacyRefusedException` to 403
+should now check `code()`. The first full-reactor run failed with
+`ClassNotFoundException` in `data-prism-server`, most likely another Maven build
+clobbering classes in the shared tree; the rerun passed, and so did the merged
+branch. Do not run two reactor builds against one local repository. Production
+wiring still uses the `none()` admission overload; task 104 changes that.
+
+## 2026-10-06 — Task 102: segmented audit sink and retention purge with anchors
+
+A new `SegmentedFileAuditSink` writes one hash-chained file per UTC day, named
+`audit-YYYY-MM-DD.log`, and `AuditRetention` purges whole expired segments after
+writing a `RETENTION_ANCHOR` checkpoint for each writer's last record in them.
+The verifier has a directory mode, accepts a chain that starts right after an
+anchor, and reports `RETENTION_ANCHOR_REJECTED` for an anchor that does not
+check out. A retention below six months refuses with `AUDIT_RETENTION_BELOW_MINIMUM`
+unless the explicit override is passed (D5). `FileAuditSink` is unchanged. Merged
+by hand onto the planning branch, not `main`.
+
+**Cost:** Four attempts, each closing a way to launder or erase a deletion. The
+first anchor carried only sequence and hash, so deleting the last days' segments
+and appending an anchor made the verifier report intact; anchors now carry the
+purged segment's date. A forged date (`2020-01-01`) defeated that, so the
+verifier rejects an anchor when the same writer has a BOOT, PERIODIC or SHUTDOWN
+checkpoint at an earlier sequence recorded after the anchor's date, and requires
+the first surviving record to be dated no earlier than the anchor. That is not
+complete: whoever can append to the checkpoint file can still disguise a recent
+deletion if the writer has no later head checkpoint, which is why custody must be
+separate and why task 103 schedules periodic checkpoints. A day-based period such as `P181D` passed the six-month floor although a six-month
+window can span 184 days; the constructor now refuses any period that can be
+shorter, and `purge()` re-checks the cutoff at run time. A clock step-back could put
+a reused writer's record in an earlier-dated file, so the segment date is
+monotonic per sink instance; across a restart the verifier reports a break, which
+fails loud. The purge itself erased evidence of a hand-deleted segment, because
+it verified leniently from the start; each writer's first expiring record must now
+start at genesis or follow an earlier anchor exactly. Segment files were first
+`.jsonl`, renamed `.log` by owner decision because the content is not JSON.
+
 ## 2026-10-06 — Task 100: `data-prism-reidentification` module
 
 A new module, `data-prism-reidentification`, resolves a synthetic subject id back

@@ -28,14 +28,18 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### EU AI Act plan (tasks 92-106) — in flight, wave 1 landed
+### EU AI Act plan — in flight, waves 1 to 3 landed
 
-Fifteen tasks that make the audit, oversight and re-identification surfaces
-support an EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The
-work is on the planning branch `claude/data-prism-eu-compliance-04cf83`, not
-`main`. Task files are in `docs/plan/tasks/`; each carries its own contract.
-Waves follow from the dependencies, so a task starts only when everything in
-its "Depends on" has merged.
+Tasks that make the audit, oversight and re-identification surfaces support an
+EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The work is on
+the planning branch `claude/data-prism-eu-compliance-04cf83`, not `main`. Task
+files are in `docs/plan/tasks/`; each carries its own contract. A task starts
+only when everything in its "Depends on" has merged.
+
+On 2026-10-06 the owner split the work into two releases. 0.4.0 is EU AI Act
+support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
+
+#### Release 0.4.0 — EU AI Act support (tasks 92-106, follow-ups 117-122)
 
 | Wave | Task | What | Depends on | State |
 |---|---|---|---|---|
@@ -48,84 +52,117 @@ its "Depends on" has merged.
 | 2 | 98 | Tool admission in security: pause, approval gate, per-caller rate limit | 95 | done 2026-10-06 |
 | 2 | 99 | Hazelcast-backed oversight state, failing closed | 95 | done 2026-10-06 |
 | 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | done 2026-10-06 |
-| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | next; D8 answered |
-| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | next; D3, D5 answered (override property) |
-| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | D3, D5 answered |
-| 5 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103 | |
-| 6 | 105 | Operator surface on a separate port: pause, approvals, re-identification | 104 | D4 open |
-| 7 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
+| 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | done 2026-10-06 |
+| 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | done 2026-10-06 |
+| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | next |
+| 4 | 117 | Hash audit record v2 over an unambiguous, length-prefixed encoding | 102 | next |
+| 4 | 118 | Undeclared payload keys render as `<undeclared>` on every refusal and warning sink | 101 | next |
+| 4 | 119 | `InMemoryApprovalStore` matches `HazelcastApprovalStore` under one contract test | none | in flight |
+| 4 | 121 | Correct REFUSED wording; document every `policyDecision` form | 101 | next |
+| 4 | 122 | Find and remove the cause of `ServerStartupTest`'s intermittent `/health` 404 | none | in flight |
+| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | waits on 119 |
+| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | |
+| 7 | 105 | Operator surface on a second port in the same process | 104 | |
+| 8 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
 
 Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
-file deleted. The 2026-09-23 decision against keying the chain stands, and
-tamper evidence rests on the unkeyed chain plus external checkpoints (task 97)
-under separate custody. Nothing depends on 107 any more.
+file deleted. Tamper evidence rests on the unkeyed chain plus external
+checkpoints (task 97) under separate custody.
 
-Next wave: 101 and 102, which are independent and can run in parallel (101
-needs 96 and 98; 102 needs 97; all merged). 103 follows 102. 104 waits on 101
-and 103 (99 and 100 merged). 105 waits on 104 and on D4. 106 waits on 94 and
-105. Tasks 102 and 103 carry notes that a retention below six months refuses
+Next wave for 0.4.0: 103, 117, 118 and 121 can start now (each needs only 101
+or 102, both merged). 119 and 122 are in flight in their own worktrees. 120
+starts when 119 merges. 104 needs 103 and 120; 105 needs 104; 106 needs 105.
+Tasks 102 and 103 carry notes that a retention below six months refuses
 startup unless `dataprism.audit.retention-override` is set.
 
-Owner decisions. D1, D2, D3, D5 and D8 are answered; D7 is implemented and
-awaits confirmation; D4 and D6 are open.
+0.4.0 release note, to add to `CHANGELOG.md` when the release is cut: a profile
+with a PHI rule weaker than `REDACT` now refuses to start with
+`SPECIAL_CATEGORY_EXPOSED`, and a Java-built profile with no PHI rule resolves
+PHI to `REMOVE`. It is recorded in `HISTORY.md` under task 94 (grep
+`Release note (94)`), and `CHANGELOG.md` does not carry it yet. Task 101 added
+the `AuditedRefusalException` line there and nothing else has.
+
+#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116)
+
+Lets an organisation's own correlation id flow from its MCP client through the
+audit record and on to its REST sources, and writes audit events as JSON that
+Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
+(102), hash encoding (117) and configuration wiring (103, 104).
+
+| Wave | Task | What | Depends on |
+|---|---|---|---|
+| 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
+| 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
+| 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
+| 3 | 110 | MCP tools and orchestrator carry the id to audit and sources | 101, 108, 109, 118 |
+| 3 | 112 | JSON audit projection with ECS field mapping and routing hints | 109, 118 |
+| 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112 |
+| 4 | 114 | PII scans cover the correlation id and the JSON projection | 110, 112 |
+| 5 | 115 | Client correlation-header snippets and log-shipping recipes as examples | 113 |
+| 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
+
+108 has no dependency and could start at any time, but nothing in 0.5.0 ships
+before 0.4.0. Open owner decisions for 0.5.0: C1, C3, C4, C5, C6 and C7.
+Only C3 and C5 are cited in task files (task 112); the full question list was
+in the planner's return and is not recorded in a file. C2 is resolved by task
+117.
+
+#### Owner decisions
+
+D1, D2, D3, D4, D5, D7 and D8 are answered; D6 is open and informational.
 
 - D1: answered 2026-10-06. The 2026-09-08 deferral of the re-identification
-  operator surface is lifted; 100, 104, 105 and 106 are no longer blocked on it.
-  Recorded in `docs/architecture.md#decisions-worth-knowing`.
+  operator surface is lifted. Recorded in
+  `docs/architecture.md#decisions-worth-knowing`.
 - D2: answered 2026-10-06. Task 107 dropped; the 2026-09-23 decision rejecting
-  a keyed chain is reaffirmed in `docs/architecture.md`. The key would live in
-  the operator's process, and third-party verification would need a key that
-  also lets its holder forge.
-- D3: answered 2026-10-06. A new segmented audit sink writes daily files, writes
-  a `RETENTION_ANCHOR` checkpoint, then deletes segments past retention. The
-  single-file `FileAuditSink` is unchanged. Unblocks 102 and 103.
-- D4: open. Operator surface as a second connector in the same process, or a
-  separate JVM. Shapes 105.
-- D5: answered 2026-10-06. A configured retention below six months fails
-  startup unless an explicit override property is set (Art. 19 allows other
-  periods under Union or national law). Tasks 102 and 103 were amended to
-  require the override, a test and documentation that the override is the
-  operator's legal responsibility.
+  a keyed chain is reaffirmed. The key would live in the operator's process,
+  and third-party verification would need a key that also lets its holder
+  forge.
+- D3: answered 2026-10-06. A segmented audit sink writes daily files, writes a
+  `RETENTION_ANCHOR` checkpoint, then deletes segments past retention. The
+  single-file `FileAuditSink` is unchanged. Native segment files are named
+  `audit-YYYY-MM-DD.log`.
+- D4: answered 2026-10-06. The operator surface is a second port in the same
+  process, not a separate JVM. Shapes 105.
+- D5: answered 2026-10-06. A retention below six months fails startup unless
+  `dataprism.audit.retention-override` is set (Art. 19 allows other periods
+  under Union or national law); using it is the operator's legal
+  responsibility.
 - D6: open, informational. No Art. 10(5) bias-detection profile has been filed.
   Affects what 106 may claim.
-- D7: implemented as planned in 97, pending owner confirmation. A
-  checkpoint-write failure refuses all audited calls.
-- D8: answered 2026-10-06. Four-eyes for re-identification defaults ON. The
-  tool-call approval flow is approved as planned: a configured high-impact call
-  is refused with `APPROVAL_REQUIRED` and an `approvalId`, a different person
-  approves it on the operator port, and the identical call with the same
-  argument fingerprint then succeeds once. Unblocks 101.
+- D7: confirmed 2026-10-06. A checkpoint-write failure refuses all audited
+  calls until a checkpoint can be written again. Implemented in 97.
+- D8: answered 2026-10-06. Four-eyes for re-identification defaults ON. A
+  configured high-impact tool call is refused with `APPROVAL_REQUIRED` and an
+  `approvalId`; a different person approves it on the operator port; the
+  identical call with the same argument fingerprint then succeeds once.
 
-Open follow-up: `AuditEventHash` joins `sourceSystems`
-and `dispositions` without escaping `,` or `=`, so two distinct records can
-produce the same hash. It needs an unambiguous encoding. It was never dependent on the dropped task 107. The chain's tamper
-detection rests on it.
+Pending-approval cap (planner's choice, accepted by the owner, task 120):
+default 5 live pending approvals per requester, counted separately for
+tool-call and re-identification approvals. The operator surface has no rate
+limit. `TOO_MANY_PENDING` maps to HTTP 429.
+
+Follow-ups from the task 102 review, not yet tasks:
+
+- Document in `docs/audit.md` that a custom `AuditCheckpointSink` without a
+  `retentionAnchors()` implementation refuses every purge after the first.
+- Add a comment at `AuditRetention.java` near line 224 explaining why skipping
+  unparseable lines is safe: `verifySegments` runs first and refuses a segment
+  it cannot parse.
 
 Follow-ups from the task 100 review, not yet tasks:
 
-- `ServerStartupTest.minimalReviewedExtensionStartsAndExposesOnlySafeUnauthenticatedHealth`
-  returned 404 instead of 200 once on a full reactor run and did not reproduce
-  on the rerun. Investigate.
 - The core `ApprovalStore` needs an explicit revoke or expire path for APPROVED
   requests. `ReidentificationService` rolls back an unaudited approve by
   consuming it, which looks the same as a real collect.
 - Move `SubjectForMethodReferenceFixture` into a nested class of
   `ArchitectureTest`; it sits outside task 100's Owns list.
-- Document the `DECISION:<code>` `policyDecision` suffix form in
-  `docs/audit.md`, so consumers stop testing for an exact `DENY`.
 - `findPending` on `InMemoryApprovalStore` and `HazelcastApprovalStore` is no
   longer used by re-identification. Check whether `ToolAdmission` still needs
-  it; remove it if not.
-- Per-requester cap on live pending re-identification approvals (an audited
-  refusal such as `TOO_MANY_PENDING`) or a rate limit on the operator surface.
-  Task 100 dropped dedup of identical requests, so one requester can flood
-  approvers. Noted on tasks 104 and 105.
+  it; remove it if not. Tasks 119 and 120 touch both stores, so decide there.
 
 Follow-ups from the task 96 review, not yet tasks:
 
-- `docs/tools.md:201` says `REFUSED` is recorded "for the path that caused a
-  refusal", but the key is now a fixed `<source>:<refused>` or
-  `merged:<refused>` placeholder. Fix the wording.
 - Non-scrub refusals (budget exhaustion, `NO_SOURCE_DATA`) also get
   `merged:<refused>`, which wrongly suggests a validation failure.
 
@@ -142,21 +179,22 @@ Follow-ups from the task 97 review, not yet tasks:
 
 Follow-ups from the wave 1 reviews, not yet tasks:
 
-- `AuditChainVerifierCli` may still print limitation text that lists only the
-  version-1 hashed fields. Check it against version 2 and correct it.
 - Rename `HazelcastOversightTest`'s `sameIdCreatedConcurrently...NeverCrossApproves`
   or assert approve and consume after the race; the name claims more than the
   test checks.
 - Add a direct test for `reject()` on an ambiguous id.
-- Fix the `HazelcastApprovalStore.java:55` comment, which says the bare-id lock
-  key "is never an entry key". That holds only while ids contain no NUL.
-- `InMemoryApprovalStore` (core) lacks the PENDING-only, duplicate-id and
-  null-approver checks that the Hazelcast store (99) has. Bring it in line.
 - Add a test pinning that undeclared object or array values are never descended
   into when recording dispositions.
 - `data-prism-integration-tests` surefire reports "kill self fork JVM" after
   about 30 seconds following `ShippedDefaultsTest`. A non-daemon thread is the
   likely cause. The build still passes.
+
+Retired from these lists on 2026-10-06 because tasks 117-122 now cover them:
+the `AuditEventHash` escaping gap and the verifier's limitation text (117), the
+payload-key leak on refusal paths (118), `InMemoryApprovalStore` parity and the
+`HazelcastApprovalStore.java:55` comment (119), the per-requester pending cap
+(120), the `REFUSED` wording and `DECISION:<code>` documentation (121), and the
+`ServerStartupTest` 404 flake (122).
 
 ### S8 and S9a — done
 
