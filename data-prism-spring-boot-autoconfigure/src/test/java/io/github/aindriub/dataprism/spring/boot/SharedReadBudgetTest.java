@@ -43,8 +43,8 @@ class SharedReadBudgetTest {
 
     @AfterEach
     void shutDownEveryClusterMemberThisTestStarted() {
-        // ClusterScopeBudgetConfiguration builds a PrivacyCluster from a plain
-        // new Config(), which this test never gets a handle to directly — the
+        // The auto-configuration builds a PrivacyCluster from the dataprism.hazelcast
+        // cluster settings, which this test never gets a handle to directly — the
         // bean is a ScopeBudget, not a PrivacyCluster. Hazelcast.shutdownAll()
         // is the only way to stop the embedded member(s) a test below started,
         // rather than leaking them into every later test in this JVM.
@@ -183,6 +183,9 @@ class SharedReadBudgetTest {
                         "dataprism.sources.customer.base-url=https://customer.example",
                         "dataprism.sources.customer.timeout=2s",
                         "dataprism.hazelcast.topology=" + topology);
+        if ("embedded".equals(topology)) {
+            runner = runner.withPropertyValues(ClusterConfigurationTest.singleMember());
+        }
         return extra.length == 0 ? runner : runner.withPropertyValues(extra);
     }
 

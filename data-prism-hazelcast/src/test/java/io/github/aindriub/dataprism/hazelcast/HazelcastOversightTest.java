@@ -60,7 +60,7 @@ class HazelcastOversightTest {
     /** Two members of one loopback-only cluster. */
     private void pair() {
         String name = "dataprism-oversight-pair-" + System.nanoTime();
-        int port = 25000 + (int) (System.nanoTime() % 2000) * 2;
+        int port = FreePorts.consecutive(2);
         a = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false);
         b = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false);
         assertThat(a.instance().getCluster().getMembers()).hasSize(2);
