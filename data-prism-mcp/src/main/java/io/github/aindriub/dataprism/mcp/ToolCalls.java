@@ -87,8 +87,9 @@ final class ToolCalls {
      *   <li>{@code capabilities}: bound here, sorted. They change the output
      *       (for example real source names under {@code EXPOSE_SOURCE_NAMES}),
      *       so a changed set is a different call.</li>
-     *   <li>{@code caseId}: not bound. The orchestrator only copies it into
-     *       the audit event; it does not alter what is returned.</li>
+     *   <li>{@code caseId}: bound by {@code ToolAdmission} through scopeId
+     *       {@code case:<caseId>}; it also keys the binding HMAC and
+     *       pseudonymisation.</li>
      * </ul>
      * From the privacy context: purpose and redaction profile are bound; the
      * scope is bound by {@code ToolAdmission}. Length-prefixed, so no
