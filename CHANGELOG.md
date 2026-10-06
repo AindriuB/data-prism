@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.1] - 2026-10-06
+## [0.4.1] - 2026-10-07
 
 Real, explicit clustering. In 0.4.0, `topology: embedded` started a bare
 Hazelcast member that was never configured to join anything, so separate
