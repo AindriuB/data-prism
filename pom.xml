@@ -91,6 +91,13 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- Declared before the Spring Boot BOM import so it wins: the imported BOM
+           manages hazelcast at its own hazelcast.version (5.5.0 in Boot 3.5.x). -->
+      <dependency>
+        <groupId>com.hazelcast</groupId>
+        <artifactId>hazelcast</artifactId>
+        <version>${hazelcast.version}</version>
+      </dependency>
       <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
