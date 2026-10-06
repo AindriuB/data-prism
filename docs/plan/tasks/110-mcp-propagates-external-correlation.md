@@ -1,7 +1,8 @@
 # 110 — MCP tools and orchestrator carry the external correlation id to audit and sources
 
 **Repo:** `.`
-**Depends on:** 101, 108, 109, 118, 123
+**Depends on:** 101, 108, 109, 118, 123, 128
+*(128 added 2026-10-06: task 128 edits `data-prism-mcp/**` and `DefaultContextOrchestrator`'s deny decision, both owned here.)*
 *(118 added 2026-10-06: task 118 edits `data-prism-mcp/**` and `DefaultContextOrchestrator` after 101, so this task starts from its result.)*
 *(123 added 2026-10-06: task 123 changes the DENY `policyDecision` in `DefaultContextOrchestrator` and its expected value in `OrchestratorRefusalCorrelationTest`, both owned here.)*
 **Owns:**

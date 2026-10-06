@@ -1,7 +1,8 @@
 # 113 — Wire inbound correlation headers and audit JSON output into configuration
 
 **Repo:** `.`
-**Depends on:** 103, 104, 110, 112
+**Depends on:** 103, 104, 110, 112, 127
+*(127 added 2026-10-06: task 127 edits `DataPrismAutoConfiguration`, owned here.)*
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java

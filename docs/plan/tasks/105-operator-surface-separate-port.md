@@ -122,3 +122,53 @@ status and the body, and that the refusal was audited once (by
 - OPERATOR_PORT_SHARED (DataPrismAutoConfiguration ~:275) compares only with
   `server.port`. When the operator connector is bound here, also refuse an
   operator port equal to `management.server.port`.
+
+## Owner decisions (2026-10-06, after attempt 1)
+
+- The approver view shows the pseudonym. The re-identification approval list
+  and detail include the synthetic value and its namespace, alongside
+  requester, purpose, case and expiry. They never include the subject id.
+  Test it, and update docs/reidentification.md.
+- Exposing the operator port in Docker Compose, server.json and the image is
+  a 0.4.x follow-up, not this task. The surface stays off by default.
+
+## Attempt 1 — failed
+
+Branch at e1ca78a. Tester: PASS (clean verify exit 0; operator tests stable over 3 runs). Reviewer: CHANGES.
+Port separation, auth split, four-eyes, subject-id handling and audit
+ordering are all confirmed sound.
+
+Owns (main session): these are accepted as in scope, as the 104-review note
+intended: DataPrismAutoConfiguration.java, DataPrismProperties.java,
+PrivacyExtensionPoints.java and OperatorSurfacePreflightTest.java in
+data-prism-spring-boot-autoconfigure. data-prism-server/src/main/** (e.g.
+DataPrismServerApplication) is also in scope.
+
+Required:
+1. Defect: requests rejected by Spring Security's StrictHttpFirewall on the
+   operator port (e.g. `/operator//state`, `/operator;x=1/state`) fall through to
+   Boot's BasicErrorController, which returns
+   {timestamp,status,error,path} and echoes the path. Every error on the
+   operator port must return `{"code":...}` only, with no path echo. Use a
+   RequestRejectedHandler and/or an operator-port error handler. Add tests
+   for `//`, `;`-params, a trailing dot and X-Forwarded-Port/Host on both ports.
+2. Approver view (owner decision): the re-identification approval list and
+   detail show the synthetic value AND the namespace, never the subject id.
+   (The reviewer recommended namespace only; the owner chose to show the
+   pseudonym too.) Test it, and document it.
+3. Refuse at startup when `dataprism.operator.required-audience` equals
+   `dataprism.security.jwt.audience` (stable code, e.g.
+   OPERATOR_AUDIENCE_SHARED). Test it.
+4. When a pause or reject has taken effect but the audit write fails, return
+   a distinct code (e.g. 503 `APPLIED_AUDIT_UNAVAILABLE`) so the operator
+   isn't told it failed when it worked. Document it.
+5. Add a `dataprism.operator.address` property so the operator connector
+   can bind loopback/internal-only, independently of `server.address`.
+   Default: the same as server.address. Fix docs/reidentification.md
+   accordingly, and fix "anything else on either port is a 404" (on the MCP
+   port, unknown paths get 401/403 from the MCP chain).
+6. Exclude Boot's HazelcastAutoConfiguration in the server application, so a
+   stray hazelcast.xml/yaml cannot start an extra member.
+7. Enforce the 16 KiB operator body limit for chunked requests too (bounded
+   read), not only via Content-Length.
+- Run `mvn clean verify` over the full reactor and mkdocs --strict; report real exit codes.
