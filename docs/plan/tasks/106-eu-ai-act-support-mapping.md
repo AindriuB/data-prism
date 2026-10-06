@@ -4,10 +4,10 @@
 **Depends on:** 94, 105
 **Owns:**
 - docs/eu-ai-act.md *(new)*
-- mkdocs.yml *(one nav entry only)*
-- docs/architecture.md *(boundary 5, and new dated decision entries only)*
-- docs/audit.md *(a new "Joining to your AI-system logs" section only)*
-- docs/configuration.md *(the operator settings and refusal-code list near line 80 only; added after task 105)*
+- mkdocs.yml *(the nav entry and its llms-txt mirror only)*
+- docs/architecture.md *(boundary 5, new dated decision entries, and the `reidentification` module-table row only)*
+- docs/audit.md *(a new "Joining to your AI-system logs" section; the "Single file, no rotation" bullet; the External checkpoints configuration sentence only)*
+- docs/configuration.md *(the operator settings row near line 80, the operator endpoints sentence near line 258, and the operator property/code tables near line 320 only; added after task 105)*
 - docs/reidentification.md *(the Errors list at lines 89-94 only; added after task 105)*
 
 ## Goal
@@ -84,3 +84,27 @@ above was extended with `docs/configuration.md` and `docs/reidentification.md`
   `REIDENTIFICATION_MODULE_MISSING`.
 - The Errors list at `docs/reidentification.md:89-94` must name
   `UNAUTHENTICATED` (401) and `FORBIDDEN` (403).
+
+## Attempt 1 — failed
+
+Tester: PASS (`mkdocs build --strict`, `check_site.py`, docs-only diff).
+Reviewer: CHANGES. All other material claims were checked against the code and
+hold, and the article references are correct. The S10 entry extension,
+configuration.md:320-328 and the two mkdocs.yml lines are accepted.
+
+Owns widened for attempt 2 (accepted after the fact, or added now):
+- docs/architecture.md:48, the `reidentification` module-table row ("the same process"). Keep this edit.
+- docs/configuration.md:320-328, the operator property and code tables.
+- docs/audit.md, the "Single file, no rotation" bullet (around lines 38-42) and the External checkpoints "this release adds no configuration" sentence (around line 443).
+- docs/configuration.md:258-260, the "operator endpoints … are not described here" sentence.
+
+Required for attempt 2:
+1. **Overstated claim (blocker).** docs/eu-ai-act.md:133-135 says unclassified fields always refuse (FAIL_REQUEST) and special-category values never reach the model. That holds only for the default and the bundled DEFAULT and STRICT profiles. A deployer profile can set `unclassified` to REDACT_AND_WARN, DROP_AND_WARN or the UNSAFE pass-through (PrivacyProfile.java:46-90). Qualify both sentences. In the responsibility paragraph, name choosing a weaker `unclassified` handling, especially UNSAFE, as the deployer's decision.
+2. **Stale text that is false for 0.4.0.** Fix it so it agrees with eu-ai-act.md and the new architecture entry:
+   - audit.md "Single file, no rotation" / "Rotation, retention … this release does not build": describe daily segments, retention and checkpoints, and link to configuration#segmented-files-checkpoints-and-retention. Keep anything that is still true of FileAuditSink.
+   - audit.md:443: `dataprism.audit.checkpoint.interval` (PT5M) exists. Say so.
+   - configuration.md:258-260: the operator endpoints exist. Link to reidentification.md's HTTP section.
+3. Name AUDIT_CHECKPOINT_UNAVAILABLE (D7: audited calls are refused while a checkpoint cannot be written) in the "Failing closed" paragraph (eu-ai-act.md:106-108) or in the Art. 12 section, as an availability trade the deployer must plan for.
+4. docs/audit.md:385: "the model never sees it" → "Data Prism never puts it in model-visible content" (an MCP client may forward `_meta`).
+
+Leave reidentification.md:152-153 (Docker Compose "not yet done") alone. It is still true and is a known 0.4.x item.
