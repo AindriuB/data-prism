@@ -1,11 +1,16 @@
 package io.github.aindriub.dataprism.audit;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -19,7 +24,8 @@ import java.util.Objects;
  */
 public record AuditCheckpoint(Kind kind, String instanceId, long sequence, String headHash, Instant recordedAt) {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    // Streaming API only: ArchitectureTest allows exactly one ObjectMapper in the build.
+    private static final JsonFactory JSON = new JsonFactory();
 
     public enum Kind { BOOT, PERIODIC, SHUTDOWN, RETENTION_ANCHOR }
 
@@ -41,45 +47,61 @@ public record AuditCheckpoint(Kind kind, String instanceId, long sequence, Strin
 
     /** One JSON object on one line, with no trailing newline. */
     public String toJsonLine() {
-        ObjectNode node = MAPPER.createObjectNode();
-        node.put("kind", kind.name());
-        node.put("instanceId", instanceId);
-        node.put("sequence", sequence);
-        node.put("headHash", headHash);
-        node.put("recordedAt", recordedAt.toString());
-        try {
-            return MAPPER.writeValueAsString(node);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException(e);
+        StringWriter out = new StringWriter();
+        try (JsonGenerator g = JSON.createGenerator(out)) {
+            g.writeStartObject();
+            g.writeStringField("kind", kind.name());
+            g.writeStringField("instanceId", instanceId);
+            g.writeNumberField("sequence", sequence);
+            g.writeStringField("headHash", headHash);
+            g.writeStringField("recordedAt", recordedAt.toString());
+            g.writeEndObject();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
+        return out.toString();
     }
 
     /** Inverse of {@link #toJsonLine()}; throws {@link IllegalArgumentException} on anything malformed. */
     public static AuditCheckpoint fromJsonLine(String line) {
-        try {
-            JsonNode node = MAPPER.readTree(line);
-            if (node == null || !node.isObject()) {
+        Map<String, String> fields = new HashMap<>();
+        try (JsonParser p = JSON.createParser(line)) {
+            if (p.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalArgumentException("checkpoint line is not a JSON object");
             }
-            return new AuditCheckpoint(
-                    Kind.valueOf(text(node, "kind")),
-                    text(node, "instanceId"),
-                    node.path("sequence").asLong(-1),
-                    text(node, "headHash"),
-                    Instant.parse(text(node, "recordedAt")));
-        } catch (JsonProcessingException | RuntimeException e) {
-            if (e instanceof IllegalArgumentException iae) {
-                throw iae;
+            while (p.nextToken() == JsonToken.FIELD_NAME) {
+                String name = p.currentName();
+                JsonToken value = p.nextToken();
+                if (value != JsonToken.VALUE_STRING && value != JsonToken.VALUE_NUMBER_INT) {
+                    throw new IllegalArgumentException("checkpoint field has an unsupported type: " + name);
+                }
+                if (fields.put(name, p.getText()) != null) {
+                    throw new IllegalArgumentException("checkpoint field repeated: " + name);
+                }
             }
+            if (p.currentToken() != JsonToken.END_OBJECT || p.nextToken() != null) {
+                throw new IllegalArgumentException("checkpoint line is not a single JSON object");
+            }
+            return new AuditCheckpoint(
+                    Kind.valueOf(required(fields, "kind")),
+                    required(fields, "instanceId"),
+                    Long.parseLong(required(fields, "sequence")),
+                    required(fields, "headHash"),
+                    Instant.parse(required(fields, "recordedAt")));
+        } catch (IOException e) {
+            throw new IllegalArgumentException("checkpoint line could not be parsed: " + e.getMessage(), e);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (RuntimeException e) {
             throw new IllegalArgumentException("checkpoint line could not be parsed: " + e.getClass().getSimpleName(), e);
         }
     }
 
-    private static String text(JsonNode node, String field) {
-        JsonNode value = node.get(field);
-        if (value == null || !value.isTextual()) {
-            throw new IllegalArgumentException("checkpoint field missing or not text: " + field);
+    private static String required(Map<String, String> fields, String name) {
+        String value = fields.get(name);
+        if (value == null) {
+            throw new IllegalArgumentException("checkpoint field missing: " + name);
         }
-        return value.asText();
+        return value;
     }
 }
