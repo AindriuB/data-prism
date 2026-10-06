@@ -148,12 +148,18 @@ instance. The danger is exposure and an overstated guarantee.
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
-| 1 | 131 | `PrivacyCluster` membership explicit; auto-detection, multicast and phone-home off; refuse `dev`, TLS config and unsafe `using()` | none |
-| 1 | 133 | Multi-instance Compose and Kubernetes examples; `EXPOSE 5701`; `server.json` cluster and operator variables | none |
-| 2 | 132 | `dataprism.hazelcast.cluster-name`, `join.*`, `member.*`; startup refusals; TLS references refuse | 131 |
+| 1 | 131 | **Done.** `PrivacyCluster` membership explicit; auto-detection, multicast and phone-home off; refuse `dev`, TLS config and unsafe `using()` | none |
+| 1 | 133 | **Done.** Multi-instance Compose and Kubernetes examples; `EXPOSE 5701`; `server.json` cluster and operator variables | none |
+| 2 | 132 | **Done.** `dataprism.hazelcast.cluster-name`, `join.*`, `member.*`; startup refusals; TLS references refuse | 131 |
 | 3 | 134 | Multi-member server test: pause, approvals, budget, rate limit, re-identification, member loss, refusals | 132 |
 | 3 | 135 | Correct configuration, eu-ai-act, architecture and reidentification docs; new `multiple-instances.md` | 132, 133 |
 | 4 | 136 | Cut 0.4.1 (task 129 pattern) | 131-135 |
+
+Notes added when 131-133 merged (2026-10-06); wave 3 is next, tasks 134 and 135:
+- 135 must document that without `member.interface` a tcp-ip or kubernetes member binds every interface.
+- 135 must document the two cross-mode refusals 132 added: `members` with a non-tcp-ip mode, and `kubernetes.*` with a non-kubernetes mode.
+- 135 should warn against `docker run -P` with `EXPOSE 5701`, which publishes the cluster port.
+- The live Compose 2-member run is an acceptance item of 136; 133 was verified statically only.
 
 Sequencing with 0.5.0, recorded in the task files with Owns unchanged:
 - 113 now depends on 132 and 135, because they touch the same files

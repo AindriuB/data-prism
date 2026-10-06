@@ -20,6 +20,9 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-06 | 133 | Multi-instance Compose and Kubernetes examples, `EXPOSE 5701`, `server.json` cluster variables; live run deferred to 136. | `## 2026-10-06 — Task 133: multi-instance Compose and Kubernetes examples` |
+| 2026-10-06 | 132 | `dataprism.hazelcast` cluster properties, startup refusals, TLS references refuse, application cluster beans validated. | `## 2026-10-06 — Task 132: cluster properties and startup refusals` |
+| 2026-10-06 | 131 | Explicit `ClusterMembership`; auto-detection, multicast, phone-home off; unsafe configs refuse; `bind.any=false` with an interface. | `## 2026-10-06 — Task 131: explicit PrivacyCluster membership` |
 | 2026-10-06 | 129 | 0.4.0 release candidate: versions, dated CHANGELOG section, `serverInfo` read from the build; nothing published. | `## 2026-10-06 — Task 129: 0.4.0 release candidate cut` |
 | 2026-10-06 | 127 | Re-identification index wired over the application `SyntheticValueSource`; wiring and configured-JSON end-to-end tests. | `## 2026-10-06 — Task 127: re-identification index wired over the application value source` |
 | 2026-10-06 | 106 | EU AI Act and GDPR Art. 9 support mapping page, architecture decisions (S10 deferral lifted, rotation reversed), stale audit/configuration/reidentification text corrected. | `## 2026-10-06 — Task 106: EU AI Act support mapping` |

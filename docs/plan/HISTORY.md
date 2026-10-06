@@ -17,6 +17,24 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 133: multi-instance Compose and Kubernetes examples
+
+`docker/multi-instance/` now holds a two-member Compose example (`compose.yaml`, `compose.build.yaml`) and a Kubernetes manifest (DNS mode first, API mode commented with its own ServiceAccount and Role). The image exposes 5701, and `server.json` lists the cluster and operator variables. The Compose cluster network has a fixed subnet and `DATAPRISM_HAZELCAST_MEMBER_INTERFACE` pins Hazelcast to it, so the SECURITY comment's isolation claim holds.
+
+**Cost:** Three attempts, all on the isolation claim. The first said the cluster network was isolated while both servers also sat on the `default` network and Hazelcast listened on every interface; the fix needed `member.interface` from 132 and `bind.any=false` from 131, so 133's claim is only true with both merged. `!override` needs Compose 2.24.4 or later (not 2.24.0), the subnet `172.28.57.0/24` can collide with a Docker or VPN network and every place it appears is listed, and a Linux host can usually route to container addresses even on internal networks. The Kubernetes NetworkPolicy also closes 8080 once it selects the pods, so the manifest says the deployer must add an ingress rule. The live Compose 2-member run was never done; it is an acceptance item of 136. Verified only by `compose config`, a YAML parse, `json.tool`, snippet markers and mkdocs.
+
+## 2026-10-06 — Task 132: cluster properties and startup refusals
+
+`dataprism.hazelcast.cluster-name`, `join.*` and `member.*` bind through `ClusterMembership`. An embedded topology with no cluster name or join mode refuses startup (D-0.4.1-B, a Breaking changelog entry; `join.mode: none` is the explicit single member). The `tls-*-reference` properties refuse with `HAZELCAST_TLS_UNSUPPORTED`, and application `PrivacyCluster` beans are validated, with settings beside one refused as `CLUSTER_SETTINGS_IGNORED`. Two cross-mode refusals exist: `members` with a non-tcp-ip mode, and `kubernetes.*` with a non-kubernetes mode. `ClusterScopeBudgetConfiguration` is deleted.
+
+**Cost:** Attempt 1 decided "the framework's own cluster bean" by the bean name `dataPrismPrivacyCluster`, so an application bean under that name was wrongly refused or had its settings ignored; ownership now comes from the bean definition's factory origin (`ClusterBackedState`). Do not key on bean names. `join()` once fell back to `None` on an unrecognised mode, which is fail-open and now throws. The example-environment test passed even before the binding existed, so it now asserts the built `Config`. The cluster name is passed stripped, the same value that was validated. The full reactor was red between 131 and 132 by design, so the two merge together.
+
+## 2026-10-06 — Task 131: explicit PrivacyCluster membership
+
+`PrivacyCluster` takes an explicit, validated `ClusterMembership` (none, tcp-ip, kubernetes) and builds the Hazelcast `Config` from it. Auto-detection, multicast and phone-home are always off. It refuses the `dev` cluster name, TLS configuration, an enabled advanced network config, and an unsafe `using()` instance, before any member starts, with `PrivacyClusterRefusal`.
+
+**Cost:** Attempt 1 hardened only `getNetworkConfig().getJoin()`; an enabled advanced network config keeps its own auto-detecting join and skips the TLS check, so `embedded(Config)` and `using()` now refuse it. With an interface given, `toConfig()` sets `hazelcast.socket.bind.any=false`; without one Hazelcast binds every interface, which 135 must document. `withInterface` on `None` refuses rather than being ignored. OSS 5.7.0 has no member TLS or authentication (D-0.4.1-A option B: refuse, never claim encryption). `FreePorts` retries only the probe, not the gap between probe and bind. The tester ran only the hazelcast module (84 tests).
+
 ## 2026-10-06 — Task 129: 0.4.0 release candidate cut
 
 The branch is now the 0.4.0 release candidate: all 20 poms, `server.json`, the Dockerfile `ARG`, the `publish-image.yml` default and the docs' version literals say 0.4.0, and `CHANGELOG.md` has a dated `[0.4.0]` section carrying the behaviour changes (PHI release note from 94, `DENY:<code>`, audit v2, daily segments, retention floor, checkpoint refusal). `DataPrismMcpServer` reports its version from a Maven-filtered resource and falls back to `unknown`; a test compares it with `project.version`. Nothing is pushed, tagged or published; owner decision D-129(a) is Central (library modules), GHCR and MCP Registry.
