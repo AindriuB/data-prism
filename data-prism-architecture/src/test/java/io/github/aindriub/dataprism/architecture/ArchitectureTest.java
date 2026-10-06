@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.architecture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
@@ -9,6 +10,7 @@ import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
+import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
 import io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport;
 import org.junit.jupiter.api.BeforeAll;
@@ -329,5 +331,45 @@ class ArchitectureTest {
     @Test
     void onlyTheExampleDependsOnSpringSecurity() {
         ONLY_THE_EXAMPLE_DEPENDS_ON_SPRING_SECURITY.check(CLASSES);
+    }
+
+    /**
+     * Re-identification is never an MCP tool (docs/design-review.md section
+     * B1). Nothing on the tool, orchestration or connector side may depend on
+     * the module that undoes a pseudonym.
+     */
+    private static final ArchRule NO_TOOL_SIDE_DEPENDS_ON_REIDENTIFICATION = noClasses()
+            .that().resideInAnyPackage("..mcp..", "..orchestration..", "..connectors..")
+            .should().dependOnClassesThat().resideInAPackage("..reidentification..")
+            .allowEmptyShould(true);
+
+    @Test
+    void noToolSideClassDependsOnReidentification() {
+        NO_TOOL_SIDE_DEPENDS_ON_REIDENTIFICATION.check(CLASSES);
+    }
+
+    /** The reverse lookup has exactly one caller: the audited re-identification service. */
+    private static final ArchRule ONLY_REIDENTIFICATION_CALLS_SUBJECT_FOR = noClasses()
+            .that().resideOutsideOfPackage("..reidentification..")
+            .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
+                    "is ScopeIdentityIndex.subjectFor (call or method reference)") {
+                @Override
+                public boolean test(JavaAccess<?> access) {
+                    return access.getTarget().getOwner().isEquivalentTo(ScopeIdentityIndex.class)
+                            && access.getTarget().getName().equals("subjectFor");
+                }
+            })
+            .allowEmptyShould(true);
+
+    @Test
+    void onlyReidentificationCallsSubjectFor() {
+        ONLY_REIDENTIFICATION_CALLS_SUBJECT_FOR.check(CLASSES);
+    }
+
+    @Test
+    void subjectForRuleCatchesMethodReferences() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(SubjectForMethodReferenceFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> ONLY_REIDENTIFICATION_CALLS_SUBJECT_FOR.check(fixture))
+                .isInstanceOf(AssertionError.class);
     }
 }

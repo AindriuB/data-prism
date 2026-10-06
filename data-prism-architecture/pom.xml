@@ -38,6 +38,7 @@
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-mcp</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-connectors-rest</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-hazelcast</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-reidentification</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-spring-boot-autoconfigure</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-spring-boot-starter</artifactId><scope>test</scope></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-server</artifactId><scope>test</scope></dependency>

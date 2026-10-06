@@ -113,6 +113,7 @@ plugins:
           - tools.md
           - extending.md
           - audit.md
+          - reidentification.md
           - architecture.md
         FAQ:
           - faq.md
@@ -175,6 +176,7 @@ nav:
       - tools.md
       - extending.md
       - audit.md
+      - reidentification.md
       - architecture.md
   - FAQ: faq.md
   - Comparison: comparison.md
