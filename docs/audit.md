@@ -106,8 +106,13 @@ across segment files.
 
 ### The six-month minimum
 
-`AuditRetention` refuses a retention period shorter than six months with
-`IllegalArgumentException` containing `AUDIT_RETENTION_BELOW_MINIMUM`. The
+`AuditRetention` refuses a retention period that can be shorter than six
+calendar months with `IllegalArgumentException` containing
+`AUDIT_RETENTION_BELOW_MINIMUM`. A day count is not safe merely for being
+"about six months": six calendar months span 181 to 184 days, so `P181D` to
+`P183D` are refused and `P184D` and `P6M` are accepted. `purge()` also checks
+at run time that its cutoff is no later than today minus six calendar months,
+and refuses with the same code if not. The
 reason is EU AI Act Arts. 19 and 26(6), which ask deployers to keep
 automatically generated logs for at least six months. Art. 19 also says
 "unless provided otherwise in applicable Union or national law", so other
@@ -120,7 +125,14 @@ limitation points the other way: logs should not be kept longer than needed.
 ### Purge is deletion
 
 `AuditRetention.purge()` deletes every whole segment dated strictly before
-today (UTC) minus the retention period, and never today's segment. The records
+today (UTC) minus the retention period, and never today's segment. Before it
+anchors or deletes anything it verifies the chains of the expiring segments;
+if a segment's chain does not verify, that segment and every later expired one
+are left in place and purge throws a `RetentionException` containing
+`AUDIT_RETENTION_CHAIN_UNVERIFIED`, so purge never erases evidence of
+tampering. A segment's date never goes backwards within one sink: if the clock
+steps back across UTC midnight, later events stay in the later-dated segment,
+so one writer's chain is never split backwards across files. The records
 in a deleted segment are gone; nothing here archives them. Archiving to
 external storage before purge is an operator responsibility.
 
@@ -129,7 +141,9 @@ external storage before purge is an operator responsibility.
 Deleting the front of a chain would otherwise look like tampering. So, before
 deleting anything, purge writes a `RETENTION_ANCHOR` checkpoint to the
 checkpoint sink for each writer's last record in each segment about to go,
-carrying that record's sequence and hash. If any anchor cannot be written,
+carrying that record's sequence and hash, and the UTC date of the segment it
+covers (`segmentDate`). Checkpoint files written before this field existed
+still parse, but an anchor without a date covers nothing. If any anchor cannot be written,
 nothing is deleted and purge throws. The anchors belong in the checkpoint file,
 under different custody from the audit directory, like any other checkpoint.
 
@@ -144,9 +158,23 @@ report a break, and a checkpointed writer with no surviving records is
 `MISSING_WRITER` (exit 5). A writer whose every record was purged is not
 reported missing when an anchor covers its checkpointed sequence.
 
+The verifier accepts an anchored start only if the anchor's `segmentDate` is at
+least the minimum retention before the anchor's `recordedAt`: a purge only
+deletes segments older than the retention period, so an anchor over a younger
+segment did not come from one. The minimum defaults to `P6M`; a deployment that
+runs purge with the below-minimum override passes its own period with
+`--min-retention <ISO-8601 period>`. An anchor that matches a writer's start
+but fails this test is reported as `RETENTION_ANCHOR_REJECTED`, naming the
+writer, at exit 2, and explains nothing; an undated anchor, or one that is too
+recent, also does not suppress `MISSING_WRITER`.
+
 This shows that purge was recorded; it does not prove the purge was
-authorised, and an anchor is only as trustworthy as the custody of the
-checkpoint file.
+authorised. Whoever can append to the checkpoint file can make the deletion of
+any segment older than the retention window look legitimate: they can delete
+such a segment and append an anchor for it. The check above only stops anchors
+from hiding deletions inside the window. Keep checkpoint custody separate from
+the audit directory's, and treat an anchor as only as trustworthy as that
+custody.
 
 ## The offline verifier
 

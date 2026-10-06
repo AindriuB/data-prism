@@ -110,9 +110,12 @@ class AuditRetentionTest {
     void purgeDeletesOnlySegmentsStrictlyBeforeTheCutoffAndAnchorsEachWritersLastRecord() throws IOException {
         // today 2026-09-10, retention 6 months -> cutoff 2026-03-10; segments before it go.
         Path dir = tempDir.resolve("seg");
-        List<AuditEvent> a = write(dir, "writer-a", "2026-03-08T01:00:00Z", "2026-03-08T02:00:00Z",
-                "2026-03-09T01:00:00Z", "2026-03-10T01:00:00Z");
-        List<AuditEvent> b = write(dir, "writer-b", "2026-03-08T03:00:00Z", "2026-03-11T01:00:00Z");
+        // Written in time order: the sink's segment date never goes backwards, so one shared
+        // sink would put a late-arriving earlier-dated event in the later segment.
+        List<AuditEvent> a = new ArrayList<>(write(dir, "writer-a", "2026-03-08T01:00:00Z", "2026-03-08T02:00:00Z"));
+        List<AuditEvent> b = new ArrayList<>(write(dir, "writer-b", "2026-03-08T03:00:00Z"));
+        a.addAll(write(dir, "writer-a", "2026-03-09T01:00:00Z", "2026-03-10T01:00:00Z"));
+        b.addAll(write(dir, "writer-b", "2026-03-11T01:00:00Z"));
         write(dir, "writer-a", "2026-09-10T01:00:00Z");
 
         List<Path> deleted = new AuditRetention(dir, Period.ofMonths(6), anchorSink, NOW).purge();

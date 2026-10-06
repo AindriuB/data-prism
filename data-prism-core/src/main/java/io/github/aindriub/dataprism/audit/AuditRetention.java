@@ -34,13 +34,17 @@ public final class AuditRetention {
     public static final String BELOW_MINIMUM = "AUDIT_RETENTION_BELOW_MINIMUM";
     public static final String ANCHOR_FAILED = "AUDIT_RETENTION_ANCHOR_FAILED";
 
-    private static final LocalDate MINIMUM_PROBE_START = LocalDate.of(2025, 1, 1);
-    private static final LocalDate MINIMUM_PROBE_END = LocalDate.of(2025, 7, 1);
+    public static final String CHAIN_UNVERIFIED = "AUDIT_RETENTION_CHAIN_UNVERIFIED";
+
+    /** Four years, so every leap-year and month-length alignment is probed. */
+    private static final LocalDate PROBE_START = LocalDate.of(2024, 1, 1);
+    private static final int PROBE_DAYS = 1461;
 
     private final Path directory;
     private final Period retention;
     private final AuditCheckpointSink anchors;
     private final Clock clock;
+    private final boolean allowBelowMinimum;
 
     public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock) {
         this(directory, retention, anchors, clock, false);
@@ -52,7 +56,8 @@ public final class AuditRetention {
         this.retention = Objects.requireNonNull(retention, "retention");
         this.anchors = Objects.requireNonNull(anchors, "anchors");
         this.clock = Objects.requireNonNull(clock, "clock");
-        if (!allowBelowMinimum && MINIMUM_PROBE_START.plus(retention).isBefore(MINIMUM_PROBE_END)) {
+        this.allowBelowMinimum = allowBelowMinimum;
+        if (!allowBelowMinimum && canBeShorterThanSixMonths(retention)) {
             throw new IllegalArgumentException(BELOW_MINIMUM + ": retention " + retention
                     + " is shorter than six months. EU AI Act Art. 19 requires at least six months unless "
                     + "other Union or national law provides otherwise; pass the explicit retention override "
@@ -61,15 +66,49 @@ public final class AuditRetention {
     }
 
     /**
+     * True if, from some start date, {@code retention} reaches less far than six calendar months
+     * in either direction. A day count is not safe by being "about six months": six calendar
+     * months span 181 to 184 days, so P181D to P183D fall short from some dates.
+     */
+    private static boolean canBeShorterThanSixMonths(Period retention) {
+        for (int i = 0; i < PROBE_DAYS; i++) {
+            LocalDate d = PROBE_START.plusDays(i);
+            if (d.plus(retention).isBefore(d.plusMonths(6)) || d.minus(retention).isAfter(d.minusMonths(6))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The first date that is no longer expired: segments dated strictly before it go. Refuses a
+     * cutoff later than {@code today} minus six calendar months unless {@code allowBelowMinimum}.
+     */
+    static LocalDate cutoff(LocalDate today, Period retention, boolean allowBelowMinimum) {
+        LocalDate cutoff = today.minus(retention);
+        if (!allowBelowMinimum && cutoff.isAfter(today.minusMonths(6))) {
+            throw new RetentionException(BELOW_MINIMUM + ": retention " + retention + " on " + today
+                    + " would delete segments newer than six calendar months; nothing was deleted", null);
+        }
+        return cutoff;
+    }
+
+    /**
      * Deletes every segment dated strictly before today (UTC, by the clock) minus the retention
      * period, never today's, and returns the deleted files in date order.
      *
-     * @throws RetentionException if an anchor cannot be recorded (nothing is deleted) or a
-     *                            file cannot be deleted (anchors already written stay valid)
+     * <p>Before anchoring, the expiring segments' chains are verified, and a segment whose chain
+     * does not verify is not purged, nor is any later one: purge must never erase evidence of
+     * tampering. Earlier verified segments are still purged, then {@link RetentionException}
+     * ({@code AUDIT_RETENTION_CHAIN_UNVERIFIED}) is thrown naming the first refused segment.
+     *
+     * @throws RetentionException if an anchor cannot be recorded (nothing is deleted), a chain
+     *                            does not verify, or a file cannot be deleted (anchors already
+     *                            written stay valid)
      */
     public List<Path> purge() {
         LocalDate today = clock.instant().atZone(ZoneOffset.UTC).toLocalDate();
-        LocalDate cutoff = today.minus(retention);
+        LocalDate cutoff = cutoff(today, retention, allowBelowMinimum);
 
         Map<LocalDate, Path> expired = new java.util.TreeMap<>();
         try (Stream<Path> files = Files.list(directory)) {
@@ -83,9 +122,35 @@ public final class AuditRetention {
             throw new RetentionException(ANCHOR_FAILED + ": could not list " + directory, e);
         }
 
+        List<LocalDate> dates = new ArrayList<>(expired.keySet());
+        List<Path> segments = new ArrayList<>(expired.values());
+        int verified = segments.size();
+        String unverified = null;
+        if (!segments.isEmpty()) {
+            List<Long> starts = new ArrayList<>();
+            AuditChainVerifier.VerificationReport report;
+            try {
+                report = AuditChainVerifier.verifySegments(segments, starts);
+            } catch (IOException e) {
+                throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
+            }
+            long bad = firstBadOffset(report);
+            if (bad >= 0) {
+                verified = 0;
+                for (int i = 0; i < starts.size(); i++) {
+                    if (starts.get(i) <= bad) {
+                        verified = i;
+                    }
+                }
+                unverified = CHAIN_UNVERIFIED + ": the chain in " + segments.get(verified).getFileName()
+                        + " does not verify, so it and every later expired segment were not purged; "
+                        + "investigate it before purging, because purge would erase the evidence";
+            }
+        }
+
         List<AuditCheckpoint> toAnchor = new ArrayList<>();
-        for (Path segment : expired.values()) {
-            toAnchor.addAll(anchorsFor(segment));
+        for (int i = 0; i < verified; i++) {
+            toAnchor.addAll(anchorsFor(segments.get(i), dates.get(i)));
         }
         for (AuditCheckpoint anchor : toAnchor) {
             try {
@@ -97,7 +162,7 @@ public final class AuditRetention {
         }
 
         List<Path> deleted = new ArrayList<>();
-        for (Path segment : expired.values()) {
+        for (Path segment : segments.subList(0, verified)) {
             try {
                 Files.delete(segment);
             } catch (IOException e) {
@@ -105,10 +170,29 @@ public final class AuditRetention {
             }
             deleted.add(segment);
         }
+        if (unverified != null) {
+            throw new RetentionException(unverified, null);
+        }
         return deleted;
     }
 
-    private List<AuditCheckpoint> anchorsFor(Path segment) {
+    /** The lowest byte offset at which the report shows tampering, or -1 if it shows none. */
+    private static long firstBadOffset(AuditChainVerifier.VerificationReport report) {
+        long bad = Long.MAX_VALUE;
+        for (AuditChainVerifier.WriterResult w : report.writers()) {
+            if (w.broken()) {
+                bad = Math.min(bad, w.firstBreak().map(AuditChainVerifier.Break::byteOffset).orElse(0L));
+            }
+        }
+        for (AuditChainVerifier.StructuralAnomaly a : report.anomalies()) {
+            if (a.type() == AuditChainVerifier.AnomalyType.UNPARSEABLE_RECORD) {
+                bad = Math.min(bad, a.primaryOffset());
+            }
+        }
+        return bad == Long.MAX_VALUE ? -1 : bad;
+    }
+
+    private List<AuditCheckpoint> anchorsFor(Path segment, LocalDate segmentDate) {
         Map<String, AuditEvent> lastPerWriter = new LinkedHashMap<>();
         List<String> lines;
         try {
@@ -132,7 +216,7 @@ public final class AuditRetention {
         List<AuditCheckpoint> result = new ArrayList<>();
         for (AuditEvent last : lastPerWriter.values()) {
             result.add(new AuditCheckpoint(AuditCheckpoint.Kind.RETENTION_ANCHOR, last.instanceId(),
-                    last.sequence(), last.eventHash(), clock.instant()));
+                    last.sequence(), last.eventHash(), clock.instant(), segmentDate));
         }
         return result;
     }

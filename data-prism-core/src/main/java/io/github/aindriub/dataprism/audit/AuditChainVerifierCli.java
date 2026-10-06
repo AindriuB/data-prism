@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.audit;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.time.Period;
 
 import io.github.aindriub.dataprism.audit.AuditChainVerifier.AnomalyType;
 import io.github.aindriub.dataprism.audit.AuditChainVerifier.Break;
@@ -81,10 +82,19 @@ public final class AuditChainVerifierCli {
         }
         Path path = null;
         Path checkpoints = null;
+        Period minimumRetention = AuditChainVerifier.DEFAULT_MINIMUM_RETENTION;
+        boolean minimumGiven = false;
         boolean malformed = false;
         for (int i = 0; i < args.length; i++) {
             if ("--checkpoints".equals(args[i]) && checkpoints == null && i + 1 < args.length) {
                 checkpoints = Path.of(args[++i]);
+            } else if ("--min-retention".equals(args[i]) && !minimumGiven && i + 1 < args.length) {
+                minimumGiven = true;
+                try {
+                    minimumRetention = Period.parse(args[++i]);
+                } catch (java.time.format.DateTimeParseException e) {
+                    malformed = true;
+                }
             } else if (path == null && !args[i].startsWith("--")) {
                 path = Path.of(args[i]);
             } else {
@@ -92,8 +102,8 @@ public final class AuditChainVerifierCli {
             }
         }
         if (malformed || path == null) {
-            err.println("Usage: AuditChainVerifierCli <audit-log-file> [--checkpoints <checkpoint-file>]  "
-                    + "(or --help for exit codes)");
+            err.println("Usage: AuditChainVerifierCli <audit-log-file> [--checkpoints <checkpoint-file>] "
+                    + "[--min-retention <ISO-8601 period>]  (or --help for exit codes)");
             out.println(LIMITATION);
             return EXIT_UNREADABLE_INPUT;
         }
@@ -102,7 +112,7 @@ public final class AuditChainVerifierCli {
         try {
             report = checkpoints == null
                     ? AuditChainVerifier.verify(path)
-                    : AuditChainVerifier.verify(path, checkpoints);
+                    : AuditChainVerifier.verify(path, checkpoints, minimumRetention);
         } catch (IOException e) {
             err.println("UNREADABLE INPUT: could not read " + path + ": " + e.getMessage());
             out.println(LIMITATION);
@@ -183,12 +193,17 @@ public final class AuditChainVerifierCli {
             case INTERRUPTED_WRITE_FRAGMENT -> "INTERRUPTED WRITE, not tampering";
             case DUPLICATE_SEQUENCE -> "SINK-CONTRACT VIOLATION, not tampering";
             case UNPARSEABLE_RECORD -> "UNPARSEABLE RECORD, possible tampering";
+            case RETENTION_ANCHOR_REJECTED -> "RETENTION ANCHOR REJECTED, possible tampering";
         };
     }
 
     private static void printHelp(PrintStream out) {
         out.println("Usage: java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli "
-                + "<audit-log-file> [--checkpoints <checkpoint-file>]");
+                + "<audit-log-file> [--checkpoints <checkpoint-file>] [--min-retention <ISO-8601 period>]");
+        out.println();
+        out.println("--min-retention is the shortest retention a retention anchor may stand for (default "
+                + AuditChainVerifier.DEFAULT_MINIMUM_RETENTION + "); pass your own period if you run the purge with");
+        out.println("the below-minimum override. An anchor over a segment younger than this is rejected.");
         out.println();
         out.println("<audit-log-file> may also be a directory of audit-YYYY-MM-DD.jsonl segments written by");
         out.println("SegmentedFileAuditSink, read in date order.");

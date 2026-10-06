@@ -17,6 +17,9 @@ import java.util.regex.Pattern;
  * that is what lets {@link AuditRetention} delete a whole expired day without
  * rewriting any file that survives.
  *
+ * <p>The segment date never goes backwards within one sink: if the clock steps back
+ * across UTC midnight, later events stay in the current (later-dated) segment.
+ *
  * <p>Each segment is written by a {@link FileAuditSink}, so the fsync-before-
  * return and poisoning discipline is that class's, unchanged. On top of it,
  * this sink poisons as a whole: once any segment's write has failed, every
@@ -82,6 +85,12 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         }
         try {
             LocalDate date = event.timestamp().atZone(ZoneOffset.UTC).toLocalDate();
+            if (currentDate != null && date.isBefore(currentDate)) {
+                // The clock stepped back across midnight. The segment date never goes backwards:
+                // a writer's consecutive records must not land in an earlier file than their
+                // predecessor, or a directory read in date order would see a false break.
+                date = currentDate;
+            }
             if (current == null || !date.equals(currentDate)) {
                 switchTo(date);
             }
