@@ -6,6 +6,7 @@ import java.nio.file.Path;
 
 import io.github.aindriub.dataprism.audit.AuditChainVerifier.AnomalyType;
 import io.github.aindriub.dataprism.audit.AuditChainVerifier.Break;
+import io.github.aindriub.dataprism.audit.AuditChainVerifier.CheckpointFinding;
 import io.github.aindriub.dataprism.audit.AuditChainVerifier.StructuralAnomaly;
 import io.github.aindriub.dataprism.audit.AuditChainVerifier.VerificationReport;
 import io.github.aindriub.dataprism.audit.AuditChainVerifier.WriterResult;
@@ -37,6 +38,11 @@ public final class AuditChainVerifierCli {
     public static final int EXIT_POSSIBLY_IN_FLIGHT = 3;
     /** No break, but a known non-tampering structural anomaly was found. Never returned with a break. */
     public static final int EXIT_STRUCTURAL_ANOMALY = 4;
+    /**
+     * Given {@code --checkpoints}: a writer's tail was deleted back past a checkpoint, or a
+     * checkpointed writer has no surviving records. Only returned when no break was found.
+     */
+    public static final int EXIT_CHECKPOINT_MISMATCH = 5;
 
     private static final String LIMITATION =
             "LIMITATION: this verifier detects an edit or a deletion of a record already written, replayed "
@@ -44,15 +50,18 @@ public final class AuditChainVerifierCli {
                     + "chained hash: eventId, timestamp, instanceId, sequence, principalId, clientId, tool, "
                     + "entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, "
                     + "caseId, policyDecision, correlationId, sourceSystems, rejectedArguments and previousHash. "
-                    + "It also cannot detect truncation of a writer's most recent records: deleting the tail "
-                    + "of an append-only file leaves a chain that verifies perfectly end to end. Detecting "
-                    + "that needs an external checkpoint held outside operator control, which this release "
-                    + "does not build. This check also "
+                    + "On its own it cannot detect truncation of a writer's most recent records: deleting "
+                    + "the tail of an append-only file leaves a chain that verifies perfectly end to end. "
+                    + "Given --checkpoints it detects truncation back past a checkpoint and a deleted boot "
+                    + "that had checkpointed records, but records written after a writer's last checkpoint "
+                    + "remain undetectable if deleted, and a checkpoint only helps if whoever can edit the "
+                    + "audit file cannot also edit the checkpoint file. Neither file resists tampering by anyone who can write to it. This "
+                    + "check also "
                     + "cannot resist an adversary who can write to this file directly: AuditEventHash is "
                     + "unkeyed SHA-256 over the joined record body, so anyone able to delete or alter a record "
                     + "can simply recompute every hash after it and the resulting chain verifies perfectly; "
-                    + "resisting that needs a keyed MAC or an external checkpoint, neither of which this "
-                    + "release builds. Read nothing above as a guarantee that this file is whole, that every "
+                    + "resisting that needs a keyed MAC, which this release does not build, or a checkpoint "
+                    + "file the adversary cannot also rewrite. Read nothing above as a guarantee that this file is whole, that every "
                     + "field of every record is unaltered, or that it can never be altered without this check "
                     + "noticing -- only that no edit or deletion of a hashed field was found within the records "
                     + "this check could see, by someone who did not also recompute the chain that follows it.";
@@ -70,16 +79,30 @@ public final class AuditChainVerifierCli {
             printHelp(out);
             return EXIT_INTACT;
         }
-        if (args.length != 1) {
-            err.println("Usage: AuditChainVerifierCli <audit-log-file>  (or --help for exit codes)");
+        Path path = null;
+        Path checkpoints = null;
+        boolean malformed = false;
+        for (int i = 0; i < args.length; i++) {
+            if ("--checkpoints".equals(args[i]) && checkpoints == null && i + 1 < args.length) {
+                checkpoints = Path.of(args[++i]);
+            } else if (path == null && !args[i].startsWith("--")) {
+                path = Path.of(args[i]);
+            } else {
+                malformed = true;
+            }
+        }
+        if (malformed || path == null) {
+            err.println("Usage: AuditChainVerifierCli <audit-log-file> [--checkpoints <checkpoint-file>]  "
+                    + "(or --help for exit codes)");
             out.println(LIMITATION);
             return EXIT_UNREADABLE_INPUT;
         }
 
-        Path path = Path.of(args[0]);
         VerificationReport report;
         try {
-            report = AuditChainVerifier.verify(path);
+            report = checkpoints == null
+                    ? AuditChainVerifier.verify(path)
+                    : AuditChainVerifier.verify(path, checkpoints);
         } catch (IOException e) {
             err.println("UNREADABLE INPUT: could not read " + path + ": " + e.getMessage());
             out.println(LIMITATION);
@@ -92,6 +115,9 @@ public final class AuditChainVerifierCli {
         if (report.hasBreak()) {
             return EXIT_BREAK_DETECTED;
         }
+        if (report.hasCheckpointFinding()) {
+            return EXIT_CHECKPOINT_MISMATCH;
+        }
         if (report.hasStructuralAnomaly()) {
             return EXIT_STRUCTURAL_ANOMALY;
         }
@@ -102,7 +128,8 @@ public final class AuditChainVerifierCli {
     }
 
     private static void printReport(PrintStream out, VerificationReport report) {
-        if (report.writers().isEmpty() && report.anomalies().isEmpty() && report.tail().isEmpty()) {
+        if (report.writers().isEmpty() && report.anomalies().isEmpty() && report.tail().isEmpty()
+                && report.checkpointFindings().isEmpty()) {
             out.println("No records found.");
             return;
         }
@@ -134,6 +161,12 @@ public final class AuditChainVerifierCli {
             out.println(header(anomaly.type()) + ": " + anomaly.message());
         }
 
+        for (CheckpointFinding finding : report.checkpointFindings()) {
+            out.println();
+            out.println(finding.message() + " This is evidence of deletion, judged against a checkpoint file "
+                    + "that is itself only as trustworthy as its custody.");
+        }
+
         report.tail().ifPresent(tail -> {
             out.println();
             out.println("POSSIBLY IN FLIGHT (not a break): " + tail.message());
@@ -150,7 +183,7 @@ public final class AuditChainVerifierCli {
 
     private static void printHelp(PrintStream out) {
         out.println("Usage: java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli "
-                + "<audit-log-file>");
+                + "<audit-log-file> [--checkpoints <checkpoint-file>]");
         out.println();
         out.println("Replays each writer's hash chain in a file written by FileAuditSink and reports either");
         out.println("an intact chain or the first edit or deletion detected, per writer.");
@@ -169,6 +202,11 @@ public final class AuditChainVerifierCli {
                 + "starting at GENESIS (every writer's own first record is GENESIS, including after an "
                 + "ordinary restart, so this means deletion of that writer's earliest records cannot be "
                 + "ruled out); never returned together with exit code " + EXIT_BREAK_DETECTED);
+        out.println("  " + EXIT_CHECKPOINT_MISMATCH + "  checkpoint mismatch -- only with --checkpoints: a "
+                + "writer's tail was deleted back past a checkpoint, or a checkpointed writer has no surviving "
+                + "records; returned only when no break (exit code " + EXIT_BREAK_DETECTED + ") was found, "
+                + "and takes precedence over exit codes " + EXIT_STRUCTURAL_ANOMALY + " and "
+                + EXIT_POSSIBLY_IN_FLIGHT);
         out.println();
         out.println(LIMITATION);
     }

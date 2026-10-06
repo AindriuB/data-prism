@@ -21,11 +21,13 @@ import java.util.Optional;
  * written, but only insofar as the edited or deleted field is one of the
  * nineteen (version 2 adds three: dispositions, approvalId, approverId) joined into {@link AuditEventHash}'s chained hash — see {@link
  * AuditChainVerifierCli}'s printed limitation for exactly which fields those
- * are. It also cannot detect truncation of a writer's most recent records: deleting
- * the tail of an append-only file leaves a chain that verifies perfectly end
- * to end. Detecting that needs an external checkpoint held outside operator
- * control, which this release does not build — see {@link
- * AuditChainVerifierCli}, which prints both limitations on every run.
+ * are. Without a checkpoint file it also cannot detect truncation of a writer's most
+ * recent records: deleting the tail of an append-only file leaves a chain that verifies
+ * perfectly end to end. Given a checkpoint file held outside the audit file's custody
+ * ({@link #verify(Path, Path)}), truncation back past a checkpoint and the deletion of a
+ * whole boot with checkpointed records are reported. Records written after a writer's last
+ * checkpoint remain undetectable if deleted. {@link AuditChainVerifierCli} prints these
+ * limitations on every run.
  *
  * <p>Deletion of a writer's EARLIEST records is not exempt from detection,
  * ever: the first record seen for each writer must itself chain from {@code
@@ -100,7 +102,37 @@ public final class AuditChainVerifier {
         return verify(in.readAllBytes());
     }
 
+    /**
+     * As {@link #verify(Path)}, additionally comparing every writer against the
+     * checkpoints in {@code checkpointFile} (one {@link AuditCheckpoint} JSON
+     * line each, as written by {@link FileAuditCheckpointSink}). A malformed
+     * checkpoint line fails with {@link IOException}: an unreadable checkpoint
+     * file must not silently verify as "no checkpoints".
+     */
+    public static VerificationReport verify(Path auditFile, Path checkpointFile) throws IOException {
+        byte[] content = Files.readAllBytes(auditFile);
+        List<AuditCheckpoint> checkpoints = new ArrayList<>();
+        int lineNo = 0;
+        for (String line : Files.readAllLines(checkpointFile, StandardCharsets.UTF_8)) {
+            lineNo++;
+            if (line.isBlank()) {
+                continue;
+            }
+            try {
+                checkpoints.add(AuditCheckpoint.fromJsonLine(line));
+            } catch (IllegalArgumentException e) {
+                throw new IOException("checkpoint file " + checkpointFile + " line " + lineNo
+                        + " is not a valid checkpoint: " + e.getMessage(), e);
+            }
+        }
+        return verify(content, checkpoints);
+    }
+
     private static VerificationReport verify(byte[] content) {
+        return verify(content, List.of());
+    }
+
+    private static VerificationReport verify(byte[] content, List<AuditCheckpoint> checkpoints) {
         Map<String, WriterState> writers = new LinkedHashMap<>();
         List<StructuralAnomaly> anomalies = new ArrayList<>();
         TailAnomaly tail = null;
@@ -130,11 +162,71 @@ public final class AuditChainVerifier {
                     start);
         }
 
+        List<CheckpointFinding> findings = applyCheckpoints(writers, checkpoints);
+
         List<WriterResult> results = new ArrayList<>();
         for (WriterState state : writers.values()) {
             results.add(state.toResult());
         }
-        return new VerificationReport(results, anomalies, Optional.ofNullable(tail));
+        return new VerificationReport(results, anomalies, Optional.ofNullable(tail), findings);
+    }
+
+    /**
+     * Compares each checkpointed writer with what survived. A hash that differs from the
+     * checkpointed head at the same sequence marks that writer broken (exit 2). A writer whose
+     * last surviving sequence is below its highest checkpointed sequence, or which has a
+     * checkpoint past sequence 0 and no surviving record, is reported as a finding (exit 5).
+     * {@link AuditCheckpoint.Kind#RETENTION_ANCHOR} is not interpreted here.
+     */
+    private static List<CheckpointFinding> applyCheckpoints(Map<String, WriterState> writers,
+                                                            List<AuditCheckpoint> checkpoints) {
+        Map<String, Long> highest = new LinkedHashMap<>();
+        for (AuditCheckpoint cp : checkpoints) {
+            if (cp.kind() == AuditCheckpoint.Kind.RETENTION_ANCHOR) {
+                continue;
+            }
+            highest.merge(cp.instanceId(), cp.sequence(), Math::max);
+            WriterState writer = writers.get(cp.instanceId());
+            if (writer == null || cp.sequence() == 0) {
+                continue;
+            }
+            String actual = writer.hashBySequence.get(cp.sequence());
+            if (actual != null && !actual.equals(cp.headHash()) && !writer.checkpointMismatch) {
+                writer.checkpointMismatch = true;
+                if (!writer.broken) {
+                    writer.broken = true;
+                    writer.firstBreak = new Break(cp.sequence(), cp.instanceId(),
+                            writer.seenSequences.get(cp.sequence()),
+                            "its eventHash differs from the head hash the checkpoint file recorded for this writer "
+                                    + "at the same sequence -- the record was replaced or rewritten after the "
+                                    + "checkpoint was taken");
+                }
+            }
+        }
+        List<CheckpointFinding> findings = new ArrayList<>();
+        for (Map.Entry<String, Long> e : highest.entrySet()) {
+            WriterState writer = writers.get(e.getKey());
+            long checkpointed = e.getValue();
+            if (writer == null) {
+                if (checkpointed > 0) {
+                    findings.add(new CheckpointFinding(CheckpointFindingType.MISSING_WRITER, e.getKey(),
+                            checkpointed, -1,
+                            "MISSING_WRITER: writer " + e.getKey() + " has a checkpoint at sequence "
+                                    + checkpointed + " but no record of it survives in the audit file -- every "
+                                    + "record of this boot was deleted, or the wrong audit file was supplied."));
+                }
+                continue;
+            }
+            long last = writer.seenSequences.keySet().stream().mapToLong(Long::longValue).max().orElse(0);
+            if (last < checkpointed) {
+                findings.add(new CheckpointFinding(CheckpointFindingType.TRUNCATED_BEFORE_CHECKPOINT, e.getKey(),
+                        checkpointed, last,
+                        "TRUNCATED_BEFORE_CHECKPOINT: writer " + e.getKey() + " has a checkpoint at sequence "
+                                + checkpointed + " but its last surviving record is sequence " + last
+                                + " -- records at the tail of this writer's chain were deleted."));
+            }
+        }
+        return findings;
     }
 
     private static void processLine(String line, long offset, Map<String, WriterState> writers,
@@ -159,6 +251,7 @@ public final class AuditChainVerifier {
             return;
         }
         writer.seenSequences.put(event.sequence(), offset);
+        writer.hashBySequence.put(event.sequence(), event.eventHash());
         writer.recordCount++;
 
         if (writer.broken) {
@@ -304,6 +397,8 @@ public final class AuditChainVerifier {
     private static final class WriterState {
         private final String instanceId;
         private final Map<Long, Long> seenSequences = new LinkedHashMap<>();
+        private final Map<Long, String> hashBySequence = new LinkedHashMap<>();
+        private boolean checkpointMismatch;
         private long recordCount;
         private long afterBreakCount;
         private String lastHash;
@@ -361,9 +456,35 @@ public final class AuditChainVerifier {
                                 Optional<NonGenesisStart> nonGenesisStart) {
     }
 
+    /** What an external checkpoint contradicts about the surviving file. */
+    public enum CheckpointFindingType {
+        /** A writer's last surviving sequence is lower than its highest checkpointed sequence. */
+        TRUNCATED_BEFORE_CHECKPOINT,
+        /** A writer has a checkpoint past sequence 0 and no surviving records. */
+        MISSING_WRITER
+    }
+
+    /**
+     * One writer contradicted by the checkpoint file. {@code survivingSequence} is -1 when no
+     * record survives.
+     */
+    public record CheckpointFinding(CheckpointFindingType type, String instanceId, long checkpointSequence,
+                                    long survivingSequence, String message) {
+    }
+
     /** The full result of one verification pass over a file. */
     public record VerificationReport(List<WriterResult> writers, List<StructuralAnomaly> anomalies,
-                                      Optional<TailAnomaly> tail) {
+                                      Optional<TailAnomaly> tail, List<CheckpointFinding> checkpointFindings) {
+
+        public VerificationReport(List<WriterResult> writers, List<StructuralAnomaly> anomalies,
+                                  Optional<TailAnomaly> tail) {
+            this(writers, anomalies, tail, List.of());
+        }
+
+        /** True if the checkpoint file shows a writer's tail or whole boot missing. */
+        public boolean hasCheckpointFinding() {
+            return !checkpointFindings.isEmpty();
+        }
 
         /** True if any writer's chain has a break, or any anomaly cannot be ruled out as tampering. */
         public boolean hasBreak() {
