@@ -22,9 +22,11 @@
 #   - `cluster` is `internal: true` and holds only server-a and server-b.
 #     Join members are fixed addresses on it.
 # Whether another Docker network can still route to that cluster address
-# depends on the engine. Linux Docker's iptables isolation blocks it. Docker
-# Desktop and OrbStack were observed to allow it: a container on `default`
-# only reached 172.28.57.11:5701 and .12:5701 by routing across bridges.
+# depends on the engine. OrbStack was observed to route across Docker
+# networks: a container on `default` only reached 172.28.57.11:5701 and
+# .12:5701 by routing across bridges. Docker Desktop may behave the same (not
+# tested). Linux Docker's network isolation is expected to block it (not tested
+# here).
 # This file does not encrypt or authenticate anything, and does not protect
 # against a process with access to the Docker daemon or to either server
 # container, or against processes on the host. Never attach another service

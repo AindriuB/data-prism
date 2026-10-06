@@ -46,10 +46,11 @@ do not authenticate each other: open-source Hazelcast has neither.
   the deployer's responsibility, and `member.interface` should pin the member to
   that network. Without it, a `tcp-ip` or `kubernetes` member binds every
   interface.
-- The server and starter now ship Hazelcast 5.7.0. 0.4.0 shipped 5.5.0, because
-  Spring Boot's dependency management overrode the declared version; the root
-  pom now pins 5.7.0 ahead of the Boot BOM. 0.4.0's multi-member behaviour was
-  only ever exercised on 5.5.0.
+- The server ships, and the starter declares, Hazelcast 5.7.0. 0.4.0 shipped
+  5.5.0, because Spring Boot's dependency management overrode the declared
+  version; the root pom now pins 5.7.0 ahead of the Boot BOM. A starter consumer
+  must pin it too (next section). 0.4.0's multi-member behaviour was only ever
+  exercised on 5.5.0.
 
 ### Added
 
@@ -81,21 +82,29 @@ do not authenticate each other: open-source Hazelcast has neither.
 ### Publication
 
 0.4.1 publishes the library modules to Maven Central (not `data-prism-server`),
-the quickstart images to GHCR, and the server entry to the MCP Registry, as
-0.4.0 did.
+the quickstart images and the server image (`ghcr.io/aindriub/data-prism-server`)
+to GHCR, and the server entry to the MCP Registry.
 
 ### Known limitations
 
+- Anyone who can reach the member port can **read and write** cluster state.
+  They can read subject ids, **forge an APPROVED approval and bypass four-eyes**,
+  **lift a pause by deleting its flag**, and **reset read budgets and rate
+  limits**. Member traffic is neither authenticated nor encrypted on open-source
+  Hazelcast, so isolating the member port is the deployer's job.
 - The Docker Compose example's `cluster` network is not a security boundary. The
-  members bind and advertise only their cluster address, but on Docker Desktop
-  and OrbStack a container on another network was observed to reach port 5701 on
-  that address. Linux Docker's iptables isolation blocks it. Isolate 5701 with a
-  host firewall, a `NetworkPolicy` or a private network in production.
+  members bind and advertise only their cluster address, but OrbStack was
+  observed to route across Docker networks, so a container on another network
+  reached port 5701 on that address. Docker Desktop may behave the same (not
+  tested). Linux Docker's network isolation is expected to block it (not tested
+  here). Isolate 5701 with a host firewall, a `NetworkPolicy` or a private
+  network in production.
 
 ### Upgrading starter consumers to Hazelcast 5.7.0
 
-Our `dependencyManagement` is not inherited by your build, so a starter
-consumer gets Hazelcast 5.7.0 only by saying so:
+The starter declares Hazelcast 5.7.0, but Spring Boot's dependency management in
+your build overrides that declaration, so a starter consumer gets 5.7.0 only by
+saying so:
 
 - With `spring-boot-starter-parent`: set `<hazelcast.version>5.7.0</hazelcast.version>`
   in your `<properties>`.

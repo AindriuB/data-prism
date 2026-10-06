@@ -13,8 +13,10 @@ to join the instances, and what Data Prism does not do for you.
     Hazelcast member traffic is **not** encrypted and **not** authenticated in
     the open-source distribution Data Prism uses (Hazelcast 5.7.0). Member TLS
     and member authentication are Enterprise features. Data Prism refuses to
-    start with TLS settings it cannot honour. Isolating the member port is the
-    deployer's job, covered in [Network isolation](#network-isolation-is-your-responsibility).
+    start with TLS settings it cannot honour. Anyone who can reach the member
+    port can read and write cluster state, including forging an approval,
+    lifting a pause and resetting read budgets and rate limits. Isolating the
+    member port is the deployer's job, covered in [Network isolation](#network-isolation-is-your-responsibility).
 
 ## When you need it
 
@@ -141,10 +143,11 @@ for one server on loopback and does not publish 5701. It needs Docker Compose
 
 !!! warning "A Compose network is not a security boundary"
     Whether a container on another Docker network can route to the `cluster`
-    addresses depends on the engine. Linux Docker's iptables isolation blocks
-    it. Docker Desktop and OrbStack were observed to allow it: a container on
-    the `default` network only could not use the members' `default` addresses
-    but did reach the `cluster` addresses on port 5701. Treat the example as a
+    addresses depends on the engine. OrbStack was observed to route across
+    Docker networks: a container on the `default` network only could not use
+    the members' `default` addresses but did reach the `cluster` addresses on
+    port 5701. Docker Desktop may behave the same (not tested). Linux Docker's
+    network isolation is expected to block it (not tested here). Treat the example as a
     local proving setup. In production, isolate 5701 with a host firewall, a
     `NetworkPolicy` or a private network.
 
@@ -181,8 +184,10 @@ RoleBinding are in the commented block at the end of
 Member traffic is plaintext and unauthenticated in OSS Hazelcast 5.7.0. The
 cluster name is a label, not a secret: it does not stop a process that can reach
 the port from joining. A process that joins can read every map, including raw
-subject ids in the keys, and can write to them, for example to clear a pause
-flag.
+subject ids in the keys, and can write to them. That means anyone who can reach
+the member port can **read and write** cluster state: read subject ids, **forge
+an APPROVED approval and bypass four-eyes**, **lift a pause by deleting its
+flag**, and **reset read budgets and rate limits**.
 
 Data Prism supports a deployment that provides isolation from outside. It does
 not provide it:
@@ -205,10 +210,10 @@ included, until you add an allow rule for your ingress.
 
 ## Using the starter
 
-An application that embeds the starter gets Hazelcast 5.7.0 only if its own build
-says so, because Data Prism's `dependencyManagement` is not inherited. Without
-it, Spring Boot's dependency management can select an older Hazelcast (0.4.0
-shipped 5.5.0).
+The starter declares Hazelcast 5.7.0, but Spring Boot's dependency management in
+your own build overrides that declaration. An application that embeds the starter
+gets 5.7.0 only if its build says so; without that, it can get an older Hazelcast
+(0.4.0 shipped 5.5.0).
 
 - With `spring-boot-starter-parent`, set the property:
 
