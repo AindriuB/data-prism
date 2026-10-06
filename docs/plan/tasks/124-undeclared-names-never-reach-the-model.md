@@ -151,3 +151,20 @@ every setting except the one spelled `UNSAFE`.
 - Placeholders are numbered alphabetically by raw key (deterministic), as proposed.
 - Scanning property names in the leak validators is a 0.4.x follow-up, not this task.
   Document the gap under PASS_THROUGH_UNSAFE.
+
+## Attempt 1 — failed
+
+Branch at bb0537a. Reviewer: CHANGES. The code is correct; one test does not prove what it claims.
+
+- UndeclaredPropertyNameTest.java:100-128, `assignmentIsOrderIndependent`,
+  compares name sets with containsExactlyInAnyOrderElementsOf, so numbering by
+  insertion order would also pass it. Assert the exact output order for both
+  insertion orders (e.g. for reversed input:
+  `status, child, <undeclared-2>, <undeclared-1>, <undeclared-3>`), and delete
+  the unused pass-through block. Show the new assertion fails against an
+  insertion-order variant (temporarily, or by reasoning in the close-out).
+- UndeclaredNameToolResultScanTest.java:122-135: the display name claims a
+  planted audit event is caught, but none is planted. Plant one, or rename it.
+- In the close-out, state what the model can still infer: the number of
+  undeclared keys per object, and their relative raw-key order (owner accepted).
+- Run `mvn clean verify` over the full reactor; report the real exit code.
