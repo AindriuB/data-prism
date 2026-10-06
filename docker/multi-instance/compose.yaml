@@ -1,0 +1,73 @@
+# Two data-prism servers sharing one embedded Hazelcast cluster (task 133).
+# Local proving only; kubernetes.yaml in this directory is the production
+# shape. Every value labelled "fixture-only" is the quickstart's, not yours.
+#
+# Run from the repository root, building the images locally:
+#   docker compose -f docker/multi-instance/compose.yaml \
+#     -f docker/multi-instance/compose.build.yaml up --build
+# or, with published images:
+#   docker compose -f docker/multi-instance/compose.yaml up
+#
+# SECURITY: Hazelcast member traffic on port 5701 is UNENCRYPTED and
+# UNAUTHENTICATED. data-prism refuses TLS settings for it (D-0.4.1-A), so
+# the network is the only control. The `cluster` network below is
+# `internal: true`: no host route, no other project can join. Never publish
+# 5701, and never put a member on a network anything untrusted can reach.
+
+name: data-prism-multi-instance
+
+volumes:
+  # Same Docker-managed volume the quickstart uses; extends does not carry it.
+  certs: {}
+
+networks:
+  # Private member network. internal: true means no outbound or inbound
+  # route outside Compose.
+  cluster:
+    internal: true
+
+services:
+  # The quickstart's support services, reused by `extends` rather than copied.
+  # Their images, certificates and depends_on come from ../../compose.yaml.
+  cert-init:
+    extends: {file: ../../compose.yaml, service: cert-init}
+  issuer:
+    extends: {file: ../../compose.yaml, service: issuer}
+  fixtures:
+    extends: {file: ../../compose.yaml, service: fixtures}
+
+  # --8<-- [start:cluster-env]
+  server-a:
+    extends:
+      file: ../../compose.yaml
+      service: server
+    environment:
+      # Relaxed binding drops hyphens: dataprism.hazelcast.cluster-name is
+      # DATAPRISM_HAZELCAST_CLUSTERNAME. A wrong name is silently unbound.
+      DATAPRISM_HAZELCAST_TOPOLOGY: embedded
+      DATAPRISM_HAZELCAST_CLUSTERNAME: prism-example   # never "dev"
+      DATAPRISM_HAZELCAST_JOIN_MODE: tcp-ip
+      # Every member lists every member, itself included, by service name.
+      DATAPRISM_HAZELCAST_JOIN_MEMBERS: server-a:5701,server-b:5701
+      DATAPRISM_HAZELCAST_MEMBER_PORT: 5701
+      DATAPRISM_AUDIT_WRITER_ID: server-a
+    # --8<-- [end:cluster-env]
+    networks: [default, cluster]
+    ports: !override
+      # Only server-a's MCP port reaches the host, on loopback only.
+      # 5701 is deliberately not published.
+      - "127.0.0.1:8080:8080"
+
+  server-b:
+    extends:
+      file: ../../compose.yaml
+      service: server
+    environment:
+      DATAPRISM_HAZELCAST_TOPOLOGY: embedded
+      DATAPRISM_HAZELCAST_CLUSTERNAME: prism-example
+      DATAPRISM_HAZELCAST_JOIN_MODE: tcp-ip
+      DATAPRISM_HAZELCAST_JOIN_MEMBERS: server-a:5701,server-b:5701
+      DATAPRISM_HAZELCAST_MEMBER_PORT: 5701
+      DATAPRISM_AUDIT_WRITER_ID: server-b
+    networks: [default, cluster]
+    ports: !reset []

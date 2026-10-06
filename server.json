@@ -153,8 +153,48 @@
         },
         {
           "name": "DATAPRISM_HAZELCAST_TOPOLOGY",
-          "description": "Cluster read-budget topology: embedded (shared across the cluster) or single-node (enforced per process); required, never defaulted",
+          "description": "Cluster read-budget topology: embedded (shared across members that have joined one cluster; set cluster name and join mode) or single-node (enforced per process); required, never defaulted",
           "isRequired": true
+        },
+        {
+          "name": "DATAPRISM_HAZELCAST_CLUSTERNAME",
+          "description": "Hazelcast cluster name; required when DATAPRISM_HAZELCAST_TOPOLOGY=embedded, never dev, refused if set with single-node",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_HAZELCAST_JOIN_MODE",
+          "description": "How cluster members find each other: tcp-ip, kubernetes or none; required when DATAPRISM_HAZELCAST_TOPOLOGY=embedded (none is an explicit single member bound to 127.0.0.1), refused if set with single-node",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_HAZELCAST_JOIN_MEMBERS",
+          "description": "Comma-separated member addresses (host or host:port); required when DATAPRISM_HAZELCAST_JOIN_MODE=tcp-ip, otherwise unused",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_HAZELCAST_MEMBER_PORT",
+          "description": "Hazelcast member port, default 5701, never auto-incremented; must differ from the server, management and operator ports. Member traffic is unencrypted, so keep it on a private network. Optional",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_OPERATOR_ENABLED",
+          "description": "Enables the operator surface; optional, off by default",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_OPERATOR_PORT",
+          "description": "Port of the operator listener; required when DATAPRISM_OPERATOR_ENABLED=true, must differ from the server and member ports, and has no fixed default (publish it explicitly)",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_OPERATOR_REQUIREDAUDIENCE",
+          "description": "JWT audience an operator token must carry; required when DATAPRISM_OPERATOR_ENABLED=true",
+          "isRequired": false
+        },
+        {
+          "name": "DATAPRISM_OPERATOR_REQUIREDSCOPE",
+          "description": "JWT scope an operator token must carry; required when DATAPRISM_OPERATOR_ENABLED=true",
+          "isRequired": false
         },
         {
           "name": "DATAPRISM_SOURCES_CUSTOMER_BASE_URL",
