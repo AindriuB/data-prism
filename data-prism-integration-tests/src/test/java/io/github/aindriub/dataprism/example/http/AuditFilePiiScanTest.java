@@ -437,6 +437,57 @@ class AuditFilePiiScanTest {
     }
 
     /**
+     * Task 118: a property name in the source payload can itself be personal
+     * data, so no field of any audit event may repeat it, whether the profile
+     * refuses the response or lets the key through to the leak check.
+     */
+    @Test
+    @DisplayName("an undeclared payload key reaches no audit file field, refusing or pass-through")
+    void undeclaredKeyNeverReachesAuditFile(@TempDir Path tempDir) throws IOException {
+        for (var behaviour : List.of(
+                io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST,
+                io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE)) {
+            Path auditFile = tempDir.resolve(behaviour + ".log");
+            List<String> results;
+            try (FileAuditSink sink = new FileAuditSink(auditFile)) {
+                results = UndeclaredKeyFixture.run(behaviour, sink, FIXED_CLOCK);
+            }
+
+            List<String> lines = Files.readAllLines(auditFile, StandardCharsets.UTF_8);
+            assertThat(lines).as(behaviour + ": the run must have written audit records").isNotEmpty();
+            assertThat(lines.stream().map(AuditRecordFormat::parse).map(AuditEvent::policyDecision))
+                    .as(behaviour.name()).contains("DENY");
+            List<String> leaked = new ArrayList<>();
+            for (String line : lines) {
+                leaked.addAll(leaksIn(AuditRecordFormat.parse(line), List.of(UndeclaredKeyFixture.TOKEN)));
+            }
+            assertThat(leaked).as(behaviour + ": audit file fields").isEmpty();
+            assertThat(String.join("\n", lines)).as(behaviour + ": raw audit file")
+                    .doesNotContain(UndeclaredKeyFixture.TOKEN);
+            assertThat(results).as(behaviour + ": tool results").hasSize(2)
+                    .allSatisfy(result -> assertThat(result).doesNotContain(UndeclaredKeyFixture.TOKEN));
+        }
+    }
+
+    @Test
+    @DisplayName("the undeclared-key audit scan is not vacuous: the key written into a field is caught")
+    void undeclaredKeyScannerIsNotVacuous(@TempDir Path tempDir) throws IOException {
+        Path auditFile = tempDir.resolve("audit.log");
+        try (FileAuditSink sink = new FileAuditSink(auditFile)) {
+            new AuditRecorder(sink, FIXED_CLOCK, "undeclared-key-not-vacuous").record(
+                    "principal", "client", "tool", "CUSTOMER", UndeclaredKeyFixture.KEY, "fingerprint",
+                    "profile", "scope", "purpose", "case", "DENY", Set.of(), Set.of(), "correlation-1");
+        }
+
+        List<String> leaked = new ArrayList<>();
+        for (String line : Files.readAllLines(auditFile, StandardCharsets.UTF_8)) {
+            leaked.addAll(leaksIn(AuditRecordFormat.parse(line), List.of(UndeclaredKeyFixture.TOKEN)));
+        }
+
+        assertThat(leaked).containsExactly(UndeclaredKeyFixture.TOKEN);
+    }
+
+    /**
      * The same full-pipeline run {@code PiiLogScanTest.runFullIntegrationRun}
      * drives, retargeted at a {@link FileAuditSink} writing to {@code auditFile}
      * instead of {@code Slf4jAuditSink} writing to stderr — both the

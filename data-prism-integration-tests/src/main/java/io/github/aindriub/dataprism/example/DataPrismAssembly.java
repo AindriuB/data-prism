@@ -71,11 +71,18 @@ public final class DataPrismAssembly {
 
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
                              String profile, String localeTag) {
+        this(adapters, clock, sink, profile, localeTag, defaultProfiles());
+    }
+
+    /** As above, with the named profiles supplied rather than loaded from the shipped defaults. */
+    public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
+                             String profile, String localeTag,
+                             java.util.Map<String, io.github.aindriub.dataprism.core.policy.PrivacyProfile> profiles) {
         SecretKeyProvider keys = StaticSecretKeyProvider.of(DEV_KEY);
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve(localeTag);
         SyntheticValueSource synthetics = new HmacSyntheticGenerator(keys, vocabulary);
-        PrivacyPolicyResolver policies = new ProfilePrivacyPolicyResolver(defaultProfiles());
+        PrivacyPolicyResolver policies = new ProfilePrivacyPolicyResolver(profiles);
         ValueTokenSource tokens = new HmacValueTokenSource(keys);
         ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics, tokens);
         LlmResponseValidator validator = new RawValueLeakValidator();
