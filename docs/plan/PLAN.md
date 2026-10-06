@@ -151,15 +151,22 @@ instance. The danger is exposure and an overstated guarantee.
 | 1 | 131 | **Done.** `PrivacyCluster` membership explicit; auto-detection, multicast and phone-home off; refuse `dev`, TLS config and unsafe `using()` | none |
 | 1 | 133 | **Done.** Multi-instance Compose and Kubernetes examples; `EXPOSE 5701`; `server.json` cluster and operator variables | none |
 | 2 | 132 | **Done.** `dataprism.hazelcast.cluster-name`, `join.*`, `member.*`; startup refusals; TLS references refuse | 131 |
-| 3 | 134 | Multi-member server test: pause, approvals, budget, rate limit, re-identification, member loss, refusals | 132 |
-| 3 | 135 | Correct configuration, eu-ai-act, architecture and reidentification docs; new `multiple-instances.md` | 132, 133 |
-| 4 | 136 | Cut 0.4.1 (task 129 pattern) | 131-135 |
+| 3 | 134 | **Done.** Multi-member server test: pause, approvals, budget, rate limit, re-identification, member loss, refusals | 132 |
+| 3 | 135 | **Done.** Correct configuration, eu-ai-act, architecture and reidentification docs; new `multiple-instances.md` | 132, 133 |
+| 3 | 137 | **Done.** Pin Hazelcast 5.7.0 over the Spring Boot BOM (0.4.0 shipped 5.5.0) | none |
+| 4 | 136 | **Next.** Cut 0.4.1 (task 129 pattern) | 131-135, 137 |
 
-Notes added when 131-133 merged (2026-10-06); wave 3 is next, tasks 134 and 135:
+Waves 1 to 3 are merged (2026-10-06); 136 is next. Notes from 131-133, which 135 has now documented:
 - 135 must document that without `member.interface` a tcp-ip or kubernetes member binds every interface.
 - 135 must document the two cross-mode refusals 132 added: `members` with a non-tcp-ip mode, and `kubernetes.*` with a non-kubernetes mode.
 - 135 should warn against `docker run -P` with `EXPOSE 5701`, which publishes the cluster port.
 - The live Compose 2-member run is an acceptance item of 136; 133 was verified statically only.
+
+0.4.x follow-ups found in 134, 135 and 137, not yet tasks:
+- The packaged server with `topology=embedded` and no source adapter refuses with a misleading `MISSING_SHARED_BUDGET` before cluster validation runs. It fails closed, but the message points at the wrong fix.
+- Add `k8s-rbac` snippet markers in `docker/multi-instance/kubernetes.yaml`, so the docs can embed the RBAC block instead of describing it in prose.
+- The read budget is hard-coded at `RequestLimits.DEFAULT` (100). Consider making it configurable.
+- The `hazelcast-spring` artifact is not pinned. Harmless while nothing uses it.
 
 Sequencing with 0.5.0, recorded in the task files with Owns unchanged:
 - 113 now depends on 132 and 135, because they touch the same files

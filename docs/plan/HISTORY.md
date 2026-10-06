@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Tasks 134, 135 and 137: multi-member test, multiple-instances docs, Hazelcast 5.7.0 pin
+
+The server and starter now ship Hazelcast 5.7.0: the root pom pins it ahead of the Spring Boot BOM import, and `ServerPackagingIT` asserts the packaged jar holds only `hazelcast-5.7.0.jar`. `MultiMemberOperatorTest` runs real server members in one JVM and shows pause, approvals, shared read budget, rate limit and re-identification shared across them, refusals surviving the ungraceful loss of the member that owns the pause key, and `ClusterConfigurationRefusalIT` pins the startup refusals. `docs/multiple-instances.md` is new, and the configuration, eu-ai-act, architecture and reidentification docs now say what clustering does and does not share.
+
+**Cost:** 137 was needed because 0.4.0 shipped 5.5.0 through Spring Boot's dependency management, so 134's tests first ran on 5.5.0 and the merged build was their first run on 5.7.0 (6 tests, 20 s, green; `mvn clean verify` and the release profile both pass). 134 took three attempts. Graceful `close()` migrates partitions, so the first member-loss test passed even with backup-count 0; it now finds the owner of the pause key, re-checks it just before `terminate()`, waits for `isClusterSafe()` on every member, and uses 180 s client timeouts because CI runners have 2 to 4 vCPUs. Do not stop members gracefully to test loss. 135 failed once on inaccurate refusal wording: a supplied `Config` has auto-detection and multicast forced off, and only `using(instance)` refuses them, leaving the running instance alive. RBAC is described in prose because `kubernetes.yaml` has no snippet markers yet.
+
 ## 2026-10-06 — Task 133: multi-instance Compose and Kubernetes examples
 
 `docker/multi-instance/` now holds a two-member Compose example (`compose.yaml`, `compose.build.yaml`) and a Kubernetes manifest (DNS mode first, API mode commented with its own ServiceAccount and Role). The image exposes 5701, and `server.json` lists the cluster and operator variables. The Compose cluster network has a fixed subnet and `DATAPRISM_HAZELCAST_MEMBER_INTERFACE` pins Hazelcast to it, so the SECURITY comment's isolation claim holds.
