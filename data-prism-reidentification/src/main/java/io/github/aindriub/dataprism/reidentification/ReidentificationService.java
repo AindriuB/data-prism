@@ -109,6 +109,7 @@ public final class ReidentificationService {
         try {
             record(pending, "ALLOW:APPROVED", pending.approvalId(), caller.principalId());
         } catch (RuntimeException auditDown) {
+            revoke(pending);
             return new ReidentificationOutcome.Refused("AUDIT_UNAVAILABLE");
         }
         return new ReidentificationOutcome.Approved();
@@ -128,6 +129,9 @@ public final class ReidentificationService {
         if (!approval.requesterPrincipalId().equals(caller.principalId())) {
             return refuseApproval(caller, approval, approvalId, "NOT_REQUESTER", false);
         }
+        if (!policy.grants(caller.roles(), Permission.REQUEST)) {
+            return refuseApproval(caller, approval, approvalId, "REIDENTIFICATION_NOT_PERMITTED", false);
+        }
         Instant now = clock.instant();
         if (!now.isBefore(approval.expiresAt())) {
             return refuseApproval(caller, approval, approvalId, "APPROVAL_EXPIRED", false);
@@ -135,11 +139,15 @@ public final class ReidentificationService {
         if (approval.status() != Status.APPROVED) {
             return refuseApproval(caller, approval, approvalId, "APPROVAL_NOT_APPROVED", false);
         }
+        if (!approval.bindingFingerprint().equals(fingerprint(approval.scopeId(), approval.namespace(),
+                approval.syntheticValue(), approval.purpose(), approval.caseId(), approval.approvalId()))) {
+            return refuseApproval(caller, approval, approvalId, "APPROVAL_NOT_APPROVED", false);
+        }
         try {
             Optional<ApprovalRequest> consumed = approvals.consumeApproved(Kind.REIDENTIFICATION,
                     approval.requesterPrincipalId(), approval.scopeId(), approval.tool(),
                     approval.bindingFingerprint(), now);
-            if (consumed.isEmpty()) {
+            if (consumed.isEmpty() || !consumed.get().approvalId().equals(approvalId)) {
                 return refuseApproval(caller, approval, approvalId, "APPROVAL_NOT_APPROVED", false);
             }
             ReidentificationRequest original = new ReidentificationRequest(approval.scopeId(),
@@ -155,17 +163,23 @@ public final class ReidentificationService {
     private ReidentificationOutcome open(AuthenticatedCaller caller, ReidentificationRequest request,
                                          String purpose, String caseId) {
         Instant now = clock.instant();
-        String fingerprint = fingerprint(request);
-        String approvalId = approvals.findPending(Kind.REIDENTIFICATION, caller.principalId(), request.scopeId(),
-                        TOOL, fingerprint, now)
-                .map(ApprovalRequest::approvalId)
-                .orElseGet(() -> approvals.create(new ApprovalRequest(UUID.randomUUID().toString(),
-                        Kind.REIDENTIFICATION, caller.principalId(), caller.clientId(), request.scopeId(), TOOL,
-                        fingerprint, request.namespace().name(), request.syntheticValue(), purpose, caseId, now,
-                        now.plus(policy.approvalTtl()), Status.PENDING, null, null)).approvalId());
+        // The binding includes the approval's own id, so exactly one approval can ever match it and
+        // consuming by binding is consuming by id.
+        String approvalId = UUID.randomUUID().toString();
+        String fingerprint = fingerprint(request.scopeId(), request.namespace().name(), request.syntheticValue(),
+                purpose, caseId, approvalId);
+        ApprovalRequest created = approvals.create(new ApprovalRequest(approvalId,
+                Kind.REIDENTIFICATION, caller.principalId(), caller.clientId(), request.scopeId(), TOOL,
+                fingerprint, request.namespace().name(), request.syntheticValue(), purpose, caseId, now,
+                now.plus(policy.approvalTtl()), Status.PENDING, null, null));
         try {
-            audit.record(entry(caller, request, purpose, caseId, "ALLOW:REQUESTED", approvalId, ""));
+            audit.record(entry(caller, request, purpose, caseId, "ALLOW:REQUESTED", approvalId, "", fingerprint));
         } catch (RuntimeException auditDown) {
+            try {
+                approvals.reject(created.approvalId(), caller.principalId(), clock.instant());
+            } catch (RuntimeException undoFailed) {
+                // fail closed: an unaudited pending approval still needs an approver, and its audit trail is absent
+            }
             return new ReidentificationOutcome.Refused("AUDIT_UNAVAILABLE");
         }
         return new ReidentificationOutcome.PendingApproval(approvalId);
@@ -224,17 +238,39 @@ public final class ReidentificationService {
 
     private AuditEntry entry(AuthenticatedCaller caller, ReidentificationRequest request, String purpose,
                              String caseId, String decision, String approvalId, String approverId) {
+        return entry(caller, request, purpose, caseId, decision, approvalId, approverId,
+                fingerprint(request.scopeId(), request.namespace().name(), request.syntheticValue(), purpose,
+                        caseId, approvalId));
+    }
+
+    private AuditEntry entry(AuthenticatedCaller caller, ReidentificationRequest request, String purpose,
+                             String caseId, String decision, String approvalId, String approverId,
+                             String fingerprint) {
         return new AuditEntry(caller.principalId(), caller.clientId(), TOOL, request.namespace().name(),
-                request.syntheticValue(), fingerprint(request), "", request.scopeId(), purpose, caseId, decision,
+                request.syntheticValue(), fingerprint, "", request.scopeId(), purpose, caseId, decision,
                 Set.of(), Set.of(), UUID.randomUUID().toString(), Map.of(), approvalId, approverId);
     }
 
-    private static String fingerprint(ReidentificationRequest request) {
+    /** Undoes an approval whose audit write failed, so nothing unaudited stays usable. */
+    private void revoke(ApprovalRequest approval) {
         try {
-            String binding = request.scopeId() + '\n' + request.namespace().name() + '\n'
-                    + request.syntheticValue();
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(binding.getBytes(StandardCharsets.UTF_8)));
+            approvals.consumeApproved(Kind.REIDENTIFICATION, approval.requesterPrincipalId(), approval.scopeId(),
+                    approval.tool(), approval.bindingFingerprint(), clock.instant());
+        } catch (RuntimeException undoFailed) {
+            // nothing more can be done; the caller is told the step was refused
+        }
+    }
+
+    private static String fingerprint(String scopeId, String namespace, String synthetic, String purpose,
+                                      String caseId, String approvalId) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (String part : new String[] {scopeId, namespace, synthetic, purpose, caseId, approvalId}) {
+                byte[] bytes = part.getBytes(StandardCharsets.UTF_8);
+                digest.update((bytes.length + ":").getBytes(StandardCharsets.UTF_8));
+                digest.update(bytes);
+            }
+            return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }

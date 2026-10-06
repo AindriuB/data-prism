@@ -40,6 +40,8 @@ class ReidentificationServiceTest {
     private int lookups;
     private Optional<String> found = Optional.of(SUBJECT);
 
+    private final InMemoryApprovalStore store = new InMemoryApprovalStore();
+
     private final AuditRecorder recorder = new AuditRecorder(e -> {
         if (auditDown) {
             throw new IllegalStateException("sink down");
@@ -53,12 +55,12 @@ class ReidentificationServiceTest {
             "viewer", Set.of());
 
     private ReidentificationService service(boolean fourEyes) {
-        ReidentificationPolicy policy = new ReidentificationPolicy(Set.of("fraud-investigation"), ROLES,
+        ReidentificationPolicy policy = new ReidentificationPolicy(Set.of("fraud-investigation", "audit-review"), ROLES,
                 fourEyes, Duration.ofMinutes(10));
         return new ReidentificationService((scope, ns, synth) -> {
             lookups++;
             return found;
-        }, new InMemoryApprovalStore(), recorder, policy, clock);
+        }, store, recorder, policy, clock);
     }
 
     private static AuthenticatedCaller caller(String principal, String role) {
@@ -192,5 +194,80 @@ class ReidentificationServiceTest {
         for (AuditEvent e : events) {
             assertThat(e.toString()).doesNotContain(SUBJECT);
         }
+    }
+
+    private static ReidentificationRequest req(String purpose, String caseId) {
+        return new ReidentificationRequest("scope-1", PrivacyNamespace.PERSON_NAME, SYNTH, purpose, caseId);
+    }
+
+    @Test
+    void collectConsumesExactlyTheNamedApproval() {
+        ReidentificationService s = service(true);
+        AuthenticatedCaller alice = caller("alice", "supervisor");
+        String a = ((PendingApproval) s.request(alice, req("fraud-investigation", "C1"))).approvalId();
+        s.approve(caller("bob", "supervisor"), a);
+        String b = ((PendingApproval) s.request(alice, req("fraud-investigation", "C2"))).approvalId();
+        assertThat(b).isNotEqualTo(a);
+        s.approve(caller("carol", "supervisor"), b);
+
+        assertThat(s.collect(alice, b)).isEqualTo(new Resolved(SUBJECT));
+        AuditEvent resolvedB = events.get(events.size() - 1);
+        assertThat(resolvedB.approvalId()).isEqualTo(b);
+        assertThat(resolvedB.approverId()).isEqualTo("carol");
+        assertThat(resolvedB.caseId()).isEqualTo("C2");
+
+        assertThat(s.collect(alice, b)).isInstanceOf(Refused.class);
+        assertThat(lookups).isEqualTo(1);
+
+        assertThat(s.collect(alice, a)).isEqualTo(new Resolved(SUBJECT));
+        AuditEvent resolvedA = events.get(events.size() - 1);
+        assertThat(resolvedA.approvalId()).isEqualTo(a);
+        assertThat(resolvedA.approverId()).isEqualTo("bob");
+        assertThat(resolvedA.caseId()).isEqualTo("C1");
+        assertThat(lookups).isEqualTo(2);
+    }
+
+    @Test
+    void differentPurposeOrCaseNeverReusesAnApproval() {
+        ReidentificationService s = service(true);
+        AuthenticatedCaller alice = caller("alice", "supervisor");
+        String a = ((PendingApproval) s.request(alice, req("fraud-investigation", "C1"))).approvalId();
+        String otherPurpose = ((PendingApproval) s.request(alice, req("audit-review", "C1"))).approvalId();
+        String otherCase = ((PendingApproval) s.request(alice, req("fraud-investigation", "C2"))).approvalId();
+        assertThat(Set.of(a, otherPurpose, otherCase)).hasSize(3);
+        AuditEvent last = events.get(events.size() - 1);
+        assertThat(last.caseId()).isEqualTo("C2");
+        assertThat(last.approvalId()).isEqualTo(otherCase);
+    }
+
+    @Test
+    void approveAuditFailureLeavesNothingUsable() {
+        ReidentificationService s = service(true);
+        AuthenticatedCaller alice = caller("alice", "supervisor");
+        String id = ((PendingApproval) s.request(alice, req("fraud-investigation"))).approvalId();
+        auditDown = true;
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("AUDIT_UNAVAILABLE"));
+        auditDown = false;
+        assertThat(s.collect(alice, id)).isInstanceOf(Refused.class);
+        assertThat(lookups).isZero();
+    }
+
+    @Test
+    void requestAuditFailureLeavesNoPendingApproval() {
+        ReidentificationService s = service(true);
+        auditDown = true;
+        assertThat(s.request(caller("alice", "supervisor"), req("fraud-investigation")))
+                .isEqualTo(new Refused("AUDIT_UNAVAILABLE"));
+        assertThat(store.pending(now.get())).isEmpty();
+    }
+
+    @Test
+    void collectRechecksRequestPermission() {
+        ReidentificationService s = service(true);
+        String id = ((PendingApproval) s.request(caller("alice", "supervisor"), req("fraud-investigation")))
+                .approvalId();
+        s.approve(caller("bob", "supervisor"), id);
+        assertDenied(s.collect(caller("alice", "viewer"), id), "REIDENTIFICATION_NOT_PERMITTED");
+        assertThat(lookups).isZero();
     }
 }
