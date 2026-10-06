@@ -642,12 +642,14 @@ public class DataPrismAutoConfiguration {
          * Only {@code embedded}; the cluster is resolved lazily to keep this post-processor early-safe.
          */
         @Bean @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
-        static BeanPostProcessor dataPrismReidentificationIndexFeed(ObjectProvider<PrivacyCluster> cluster) {
+        static BeanPostProcessor dataPrismReidentificationIndexFeed(ObjectProvider<PrivacyCluster> cluster,
+                ObjectProvider<PrivacyMetrics> metrics) {
             return new BeanPostProcessor() {
                 @Override
                 public Object postProcessAfterInitialization(Object bean, String beanName) {
                     if (bean instanceof SyntheticValueSource source && !(bean instanceof CachingSyntheticValueSource)) {
-                        return new CachingSyntheticValueSource(source, cluster.getObject());
+                        return new CachingSyntheticValueSource(source, cluster.getObject(),
+                                metrics.getIfAvailable(PrivacyMetrics::none));
                     }
                     return bean;
                 }
