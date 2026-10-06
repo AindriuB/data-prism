@@ -17,6 +17,36 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-06 — Task 125: integration tests derive the artifact version from the build
+
+The server and quickstart integration tests now read the project version from a `project.version` system property that the failsafe configuration sets from `${project.version}`, and fail with a clear message if it is missing. No test source carries a literal version any more, so the next version bump cannot break them the same way.
+
+**Cost:** The earlier claim that the build passed after the 0.4.0-SNAPSHOT bump (be8d769) was masked by stale 0.3.1 jars left in `target/`. A clean worktree failed. The merged head was verified with `mvn clean verify`, exit 0; always build from clean after a version bump. `requireVersion()` is duplicated in four ITs, left as a follow-up. `DataPrismMcpServer.serverInfo` still hardcodes `"0.3.1"`, and so do the Dockerfile `ARG VERSION` and the `publish-image.yml` default; the last two are release-time inputs.
+
+## 2026-10-06 — Task 121: REFUSED wording corrected and every `policyDecision` form documented
+
+`docs/tools.md` no longer says `REFUSED` is recorded for the path that caused a refusal; the key is a fixed placeholder. `docs/audit.md` has a `### policyDecision values` subsection with a table of every form (`ALLOW`, `DENY`, bare `<CODE>`, `ALLOW:<STAGE>`, `DENY:<code>`), the module that writes each, and the rule that a value is a denial unless it is `ALLOW` or starts with `ALLOW:`.
+
+**Cost:** Docs only. The review sent it back twice on the `DENY` row: it first omitted that scrub dispositions and internal-error client text differ, then used a wrong internal-error example. Task 123 will change the orchestrator to `DENY:<code>` and must update this subsection.
+
+## 2026-10-06 — Task 117: audit hash version 2 over an unambiguous, length-prefixed encoding
+
+A version-2 audit record's hash body is now the concatenation of `<UTF-8 byte length>:<value>` for every field, with `~` for null and counted, sorted sets and dispositions, so no two distinct v2 records share a hash. Version 1 hashing is unchanged and the committed v1 chain still verifies. `hash-vectors.txt` pins one v1 and one v2 vector, the verifier's limitation text names the v2 fields, and `docs/audit.md` says v1 keeps the old joining.
+
+**Cost:** Written red-first: the collision pairs (`a,b` against `a`,`b`, `|` in principal and client, null against `~`) fail on the old encoding. v2 had not been released, which is the only reason its hash could change. Follow-up: `AuditEventHashTest` has no non-ASCII pair, so byte length against char length is not pinned. Task 109 appends version 3 to this encoding.
+
+## 2026-10-06 — Task 118: undeclared payload keys never leave on refusal and warning paths
+
+A payload key that is not declared now renders as `<undeclared>` in refusal paths, `VALIDATION_FAILED` messages, MCP tool text, and warning logs. `RefusalPaths` collapses every bracketed array index to `[*]`, so digits from a key such as `email[07700900123]` cannot escape. Covered by failing-first tests in core, orchestration, MCP, the configured REST connector and the integration PII scans.
+
+**Cost:** The first attempt accepted a bracketed digit run as an array index without checking it, so a key next to a declared scalar leaked; the fix is to never emit index digits. A declared-set check cannot tell scalar arrays apart because they record no `/*` pointer. Accepted Owns deviation: two assertions in `data-prism-connectors-rest` `ConfiguredJsonNestedCatalogueScrubbingTest`. Not done: raw undeclared keys in successful responses under permissive profiles (task 124), and `$.email[*]` for `email[0770...]` can mislead triage.
+
+## 2026-10-06 — Task 103: audit directory, checkpoint and retention wired into configuration
+
+`dataprism.audit.directory`, the checkpoint file and retention are now configurable. The auto-configuration builds the segmented sink, a periodic and shutdown checkpoint writer, and an `AuditMaintenance` purge. A purge integrity failure logs ERROR, increments one of four metrics, and sets the `auditIntegrity` health to DOWN while serving continues and nothing is deleted. Retention under six months refuses startup unless `dataprism.audit.retention-override` is set.
+
+**Cost:** Failed review twice. First: a checkpoint inside the audit directory was accepted and could share today's segment; `directory` with a non-segmented sink failed with a raw `NoSuchBeanDefinitionException`; the liveness effect of `auditIntegrity` was undocumented. Second: on a case-insensitive filesystem a fresh deploy with a case-variant checkpoint path passed validation because the directory did not exist yet, so the check is repeated after the sink creates it, on real paths. Four metric names were accepted over one tagged metric. Accepted Owns extensions: `PrivacyExtensionPoints`, `AuditMaintenance`, the autoconfigure pom (optional `spring-boot-actuator`), core `Metric.java` and `PrivacyMetricsTest`, and `AuditIntegrityHealthTest`. Do not use the actuator health in probes; use the liveness group or the server's `/health`, or a tamper finding causes restart loops. Follow-ups: containment messages differ between validation and the bean re-check, and two `AuditSink` beans raise `NoUniqueBeanDefinitionException`.
+
 ## 2026-10-06 — Task 122: `ServerStartupTest` binds 127.0.0.1 to stop the `/health` 404 flake
 
 `ServerStartupTest` now starts its server with `--server.address=127.0.0.1`

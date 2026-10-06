@@ -28,7 +28,7 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### EU AI Act plan — in flight, waves 1 to 3 landed
+### EU AI Act plan — in flight, waves 1 to 4 mostly landed
 
 Tasks that make the audit, oversight and re-identification surfaces support an
 EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The work is on
@@ -39,7 +39,7 @@ only when everything in its "Depends on" has merged.
 On 2026-10-06 the owner split the work into two releases. 0.4.0 is EU AI Act
 support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 
-#### Release 0.4.0 — EU AI Act support (tasks 92-106, follow-ups 117-122)
+#### Release 0.4.0 — EU AI Act support (tasks 92-106, follow-ups 117-125)
 
 | Wave | Task | What | Depends on | State |
 |---|---|---|---|---|
@@ -54,14 +54,17 @@ support. 0.5.0 is correlation ids and log-stack output, built on top of 0.4.0.
 | 2 | 100 | `data-prism-reidentification` module: audited, purpose-bound, optional four-eyes | 92, 95 | done 2026-10-06 |
 | 3 | 101 | MCP tools enforce admission, return `correlationId` | 96, 98 | done 2026-10-06 |
 | 3 | 102 | Audit segmented by day, expired segments purged with retention anchors | 97 | done 2026-10-06 |
-| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | next |
-| 4 | 117 | Hash audit record v2 over an unambiguous, length-prefixed encoding | 102 | next |
-| 4 | 118 | Undeclared payload keys render as `<undeclared>` on every refusal and warning sink | 101 | next |
+| 4 | 103 | Wire checkpoints, segments and retention into configuration | 102 | done 2026-10-06 |
+| 4 | 117 | Hash audit record v2 over an unambiguous, length-prefixed encoding | 102 | done 2026-10-06 |
+| 4 | 118 | Undeclared payload keys render as `<undeclared>` on every refusal and warning sink | 101 | done 2026-10-06 |
 | 4 | 119 | `InMemoryApprovalStore` matches `HazelcastApprovalStore` under one contract test | none | done 2026-10-06 |
-| 4 | 121 | Correct REFUSED wording; document every `policyDecision` form | 101 | next |
+| 4 | 121 | Correct REFUSED wording; document every `policyDecision` form | 101 | done 2026-10-06 |
 | 4 | 122 | Find and remove the cause of `ServerStartupTest`'s intermittent `/health` 404 | none | done 2026-10-06 (cause unproven) |
-| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | next |
-| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | |
+| 4 | 125 | Integration tests derive the artifact version from the build | none | done 2026-10-06 |
+| 5 | 120 | Cap live pending approvals per requester (`TOO_MANY_PENDING`) | 101, 119 | next (final build after merging the new head) |
+| 5 | 123 | Orchestrator records the refusal code as `DENY:<code>` | 118, 121 | next |
+| 5 | 124 | Undeclared property names never reach the model (`<undeclared-N>`) | 118 | next |
+| 6 | 104 | Wire oversight, re-identification and operator-surface configuration | 99, 100, 101, 103, 120 | after 120 |
 | 7 | 105 | Operator surface on a second port in the same process | 104 | |
 | 8 | 106 | EU AI Act support mapping and architecture records | 94, 105 | D6 |
 
@@ -69,10 +72,11 @@ Task 107 (keyed audit chain) was dropped on 2026-10-06 under D2 and its task
 file deleted. Tamper evidence rests on the unkeyed chain plus external
 checkpoints (task 97) under separate custody.
 
-Next wave for 0.4.0: 103, 117, 118 and 121 can start now (each needs only 101
-or 102, both merged). 103, 117, 118 and 121 are in flight in their own
-worktrees. 119 and 122 are merged, so 120 can start now. 104 needs 103 and 120; 105 needs 104; 106 needs 105.
-Tasks 102 and 103 carry notes that a retention below six months refuses
+Next wave for 0.4.0, in order: 120 (and a final build after merging the new
+head), 123, 124, then 104 (needs 120), then 105, then 106. Tasks 103, 117, 118,
+121 and 125 merged on 2026-10-06; a clean `mvn clean verify` of the merged head
+exited 0.
+Tasks 102 and 103 carried notes that a retention below six months refuses
 startup unless `dataprism.audit.retention-override` is set.
 
 0.4.0 release note, to add to `CHANGELOG.md` when the release is cut: a profile
@@ -163,6 +167,35 @@ Pending-approval cap (planner's choice, accepted by the owner, task 120):
 default 5 live pending approvals per requester, counted separately for
 tool-call and re-identification approvals. The operator surface has no rate
 limit. `TOO_MANY_PENDING` maps to HTTP 429.
+
+Owner decisions of 2026-10-06 taken during tasks 103, 118, 123 and 124:
+
+- A purge integrity failure (task 103) gives an ERROR log, metrics, and the
+  `auditIntegrity` health status DOWN, while serving continues. Four separate
+  metric names (`dataprism.audit.retention.unverified`, `.anchor_failed`,
+  `.delete_failed`, `.failed`) are accepted in place of one tagged metric.
+- Task 123 unifies every denial as `DENY:<code>`, including the MCP tools' bare
+  codes. A malformed code is recorded as `DENY:INVALID_REFUSAL_CODE`.
+- Task 124 numbers the placeholders `<undeclared-N>` alphabetically by name.
+- Scanning property names in the leak validators is a 0.4.x follow-up.
+
+Follow-ups from the wave 4 reviews (tasks 103, 117, 118, 121, 125), not yet tasks:
+
+- `AuditEventHashTest`: add a non-ASCII pair, so that the length prefix is
+  pinned to byte length and not char length.
+- Docs: the shape guard still renders real loop-counter indices (safe), which
+  is inconsistent with `[*]` elsewhere.
+- `RefusalPaths`: `email[07700900123]` next to a declared `email` is reported as
+  `$.email[*]`, which can mislead triage.
+- Task 103: the containment refusal messages for the same code differ between
+  validation and the bean re-check. Also note that two `AuditSink` beans raise
+  `NoUniqueBeanDefinitionException`.
+- Task 125: `requireVersion()` is duplicated in four integration tests; consider
+  a shared helper.
+- `DataPrismMcpServer.serverInfo` still hardcodes `"0.3.1"`. Derive it from the
+  build. `data-prism-mcp` is free now that 118 has merged.
+- Release time: the Dockerfile `ARG VERSION=0.3.1` and the `publish-image.yml`
+  default.
 
 Follow-ups from the task 102 review, not yet tasks:
 
