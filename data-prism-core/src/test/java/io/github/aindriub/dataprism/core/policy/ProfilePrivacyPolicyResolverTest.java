@@ -167,4 +167,31 @@ class ProfilePrivacyPolicyResolverTest {
         assertThat(ActionStrictness.stricter(PrivacyAction.PASS_THROUGH, PrivacyAction.GENERALIZE))
                 .isEqualTo(PrivacyAction.GENERALIZE);
     }
+
+    @Test
+    @DisplayName("a special category never resolves weaker than REDACT")
+    void specialCategoryFloor() {
+        var fail = PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST;
+
+        // Annotation suggesting PASS_THROUGH, profile silent on the category.
+        assertThat(resolver(profile(fail, Map.of())).resolve(
+                sensitive(PrivacyAction.PASS_THROUGH, DataClassification.BIOMETRIC),
+                context("DEFAULT")).action()).isEqualTo(PrivacyAction.REMOVE);
+        assertThat(resolver(profile(fail, Map.of())).resolve(
+                sensitive(PrivacyAction.PASS_THROUGH, DataClassification.BIOMETRIC),
+                context("DEFAULT")).source())
+                .isEqualTo(EffectivePrivacyPolicy.Decided.SPECIAL_CATEGORY_DEFAULT);
+
+        // PII is SYNTHESIZE; the special category must not ride along with it.
+        var mixed = resolver(profile(fail, Map.of(
+                DataClassification.PII, PrivacyProfile.ClassificationRule.of(PrivacyAction.SYNTHESIZE))));
+        assertThat(mixed.resolve(sensitive(null, DataClassification.PII, DataClassification.BIOMETRIC),
+                context("DEFAULT")).action()).isEqualTo(PrivacyAction.REMOVE);
+
+        // Java-built profile with a weak rule and override still floors at REDACT.
+        var weak = resolver(profile(fail, Map.of(DataClassification.GENETIC,
+                new PrivacyProfile.ClassificationRule(PrivacyAction.SYNTHESIZE, true))));
+        assertThat(weak.resolve(sensitive(PrivacyAction.PASS_THROUGH, DataClassification.GENETIC),
+                context("DEFAULT")).action()).isEqualTo(PrivacyAction.REDACT);
+    }
 }

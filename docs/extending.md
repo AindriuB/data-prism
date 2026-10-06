@@ -317,6 +317,13 @@ public record CustomerModel(
   author believes should happen — a suggestion policy may tighten but never
   loosen
   (`data-prism-annotations/src/main/java/io/github/aindriub/dataprism/annotations/SensitiveData.java:9-38`).
+  The GDPR Art. 9 special categories are `PHI`, `BIOMETRIC`, `GENETIC`,
+  `ETHNIC_ORIGIN`, `POLITICAL_OPINION`, `RELIGIOUS_BELIEF`, `TRADE_UNION` and
+  `SEX_LIFE_ORIENTATION`. No profile can expose them: a profile that maps one
+  weaker than `REDACT` fails at startup with `SPECIAL_CATEGORY_EXPOSED`, and a
+  field carrying one is removed when the profile has no rule for it. This
+  supports data minimisation under GDPR Art. 9; it is one control among
+  those a deployment needs.
 - `@NonSensitive` asserts a field is safe to emit unchanged and requires a
   `reason()` — that string is the review artefact; "not sensitive" is
   explicitly called out as not a reason

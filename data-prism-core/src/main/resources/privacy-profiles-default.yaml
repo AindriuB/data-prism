@@ -63,6 +63,16 @@ profiles:
       CREDENTIAL: { action: REMOVE }
       SECURITY: { action: REMOVE }
 
+      # GDPR Art. 9 special categories. Removed, never redacted or pseudonymised,
+      # and no profile may map them weaker than REDACT (SPECIAL_CATEGORY_EXPOSED).
+      BIOMETRIC: { action: REMOVE }
+      GENETIC: { action: REMOVE }
+      ETHNIC_ORIGIN: { action: REMOVE }
+      POLITICAL_OPINION: { action: REMOVE }
+      RELIGIOUS_BELIEF: { action: REMOVE }
+      TRADE_UNION: { action: REMOVE }
+      SEX_LIFE_ORIENTATION: { action: REMOVE }
+
   # For contexts where linkability itself is too much disclosure — a broad
   # search, or a model outside the organisation's control.
   STRICT:
@@ -79,3 +89,13 @@ profiles:
       GOVERNMENT_IDENTIFIER: { action: REMOVE }
       CREDENTIAL: { action: REMOVE }
       SECURITY: { action: REMOVE }
+
+      # GDPR Art. 9 special categories. Removed, never redacted or pseudonymised,
+      # and no profile may map them weaker than REDACT (SPECIAL_CATEGORY_EXPOSED).
+      BIOMETRIC: { action: REMOVE }
+      GENETIC: { action: REMOVE }
+      ETHNIC_ORIGIN: { action: REMOVE }
+      POLITICAL_OPINION: { action: REMOVE }
+      RELIGIOUS_BELIEF: { action: REMOVE }
+      TRADE_UNION: { action: REMOVE }
+      SEX_LIFE_ORIENTATION: { action: REMOVE }
