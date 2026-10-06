@@ -48,7 +48,7 @@ import java.util.UUID;
  * session. A caller that sends one anyway is never read for its value — only
  * its name is noted, so the attempt is ignored and audited rather than ignored
  * silently. Reserved names come from {@code data-prism-security}'s
- * {@link ReservedArguments}.
+ * {@link io.github.aindriub.dataprism.security.ReservedArguments}.
  *
  * <p>Who is calling comes from {@link McpSyncServerExchange#transportContext()}
  * rather than a constant supplier: the streamable HTTP transport's

@@ -21,7 +21,9 @@ import io.modelcontextprotocol.spec.McpSchema;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.io.InputStream;
 import java.time.Clock;
+import java.util.Properties;
 import java.util.Objects;
 
 /**
@@ -111,7 +113,7 @@ public final class DataPrismMcpServer {
         var transport = new StdioServerTransportProvider(json);
 
         return McpServer.sync(transport)
-                .serverInfo("data-prism", "0.3.1")
+                .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
@@ -181,7 +183,7 @@ public final class DataPrismMcpServer {
                 .build();
 
         McpSyncServer server = McpServer.sync(transport)
-                .serverInfo("data-prism", "0.3.1")
+                .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
@@ -232,6 +234,24 @@ public final class DataPrismMcpServer {
      * has no handle back to the {@code HttpServlet} that feeds it.
      */
     public record HttpTransport(McpSyncServer server, HttpServletStreamableServerTransportProvider transportProvider) {
+    }
+
+    /** The build's {@code project.version}, from a Maven-filtered resource; {@code "unknown"} if unreadable. */
+    private static final String VERSION = readVersion();
+
+    private static String readVersion() {
+        try (InputStream in = DataPrismMcpServer.class.getResourceAsStream("data-prism-mcp-version.properties")) {
+            if (in == null) {
+                return "unknown";
+            }
+            Properties properties = new Properties();
+            properties.load(in);
+            String version = properties.getProperty("version");
+            // An unfiltered resource would carry the literal placeholder.
+            return version == null || version.isBlank() || version.startsWith("${") ? "unknown" : version.trim();
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     private static final String INSTRUCTIONS = """

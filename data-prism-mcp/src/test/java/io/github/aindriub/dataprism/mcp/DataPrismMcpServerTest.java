@@ -160,6 +160,26 @@ class DataPrismMcpServerTest {
     }
 
     @Test
+    @DisplayName("both factories report the build's project.version as serverInfo, not a hardcoded literal")
+    void serverInfoReportsTheBuildVersion() {
+        String expected = System.getProperty("dataprism.expected-version");
+        assertThat(expected).isNotBlank();
+        McpSyncServer stdio = DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED);
+        try {
+            assertThat(stdio.getServerInfo().version()).isEqualTo(expected);
+        } finally {
+            stdio.closeGracefully();
+        }
+        DataPrismMcpServer.HttpTransport http = DataPrismMcpServer.streamableHttp(
+                new NeverCalledOrchestrator(), authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")),
+                scopeResolver(), request -> McpTransportContext.EMPTY, "/mcp",
+                PrivacyMetrics.none(), audit(), FIXED);
+        assertThat(http.server().getServerInfo().version()).isEqualTo(expected);
+    }
+
+    @Test
     @DisplayName("the admission overloads still list exactly the two tools")
     void admissionOverloadsListExactlyTwoTools() {
         io.github.aindriub.dataprism.orchestration.ParameterFingerprinter fingerprinter =

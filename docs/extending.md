@@ -467,7 +467,7 @@ depending on Data Prism:
 ```xml
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <data-prism.version>0.3.0</data-prism.version>
+    <data-prism.version>0.4.0</data-prism.version>
     <spring-boot.version>3.5.16</spring-boot.version>
   </properties>
 
@@ -510,7 +510,7 @@ depending on Data Prism:
 ```
 
 `spring-boot.version` (`3.5.16`) is the exact Spring Boot version the 0.3.0
-server distribution was built against — importing its
+server distribution was built against (recorded against 0.3.0) — importing its
 `spring-boot-dependencies` BOM is what lets `spring-web` and
 `spring-boot-autoconfigure` above go unversioned safely, resolving to the
 same versions already on the running server's classpath, which is the whole
@@ -525,7 +525,7 @@ dependencies at lines 60-94 — those exist only so the Maven reactor builds
 the packaged artifacts this module's own smoke test starts as
 subprocesses; a consumer's extension pom has no reason to carry them.)
 
-This was verified, not assumed: a throwaway project's pom was assembled by
+This was verified, not assumed (recorded against 0.3.0): a throwaway project's pom was assembled by
 pasting the `<properties>`/`<dependencyManagement>`/`<dependencies>` block
 above and the `<plugin>` block below unmodified into a pom whose only other
 content is the top-level fields already assumed (`groupId`, `artifactId`,
@@ -536,7 +536,7 @@ data-prism artifacts in it, resolving `data-prism-core`,
 `data-prism-annotations` and `data-prism-processor` `0.3.0` from Maven
 Central and `spring-web` `6.2.19`/`spring-boot-autoconfigure` `3.5.16` from
 the imported BOM — the same Spring Boot version the 0.3.0 server
-distribution itself was built against. The build produced a jar; nothing in
+distribution itself was built against (recorded against 0.3.0). The build produced a jar; nothing in
 this paragraph is aspirational.
 
 The annotation processor is configured separately, and only here — with an
@@ -643,7 +643,7 @@ the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.3.1.jar \
+  java -jar data-prism-server/target/data-prism-server-0.4.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 
