@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditRetention;
+import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.audit.FileAuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
 import io.github.aindriub.dataprism.audit.AuditSink;
@@ -999,10 +1000,18 @@ public class DataPrismAutoConfiguration {
             ScopeResolver scopeResolver, McpTransportContextExtractor<HttpServletRequest> extractor,
             PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties,
             ToolAdmission admission, ParameterFingerprinter fingerprinter, CorrelationMdc correlationMdc) {
+        AuditedEntityTypes entityTypes = AuditedEntityTypes.of(properties.getAudit().getEntityTypes());
+        if (entityTypes.isShapeMode()) {
+            // Not a WARN: leaving the list unset is a supported mode, but the shape cannot tell ACC123 from CUSTOMER.
+            AUDIT_LOG.info("dataprism.audit.entity-types is not set: the audit record's entityType is kept only when "
+                    + "it matches [A-Z][A-Z0-9_]{0,63} and is otherwise recorded as {}. Set "
+                    + "dataprism.audit.entity-types to the exact entity types in use.",
+                    AuditedEntityTypes.UNREGISTERED);
+        }
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
                 properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter,
                 properties.getCorrelation().getInbound().isRequired() ? CorrelationRequirement.REQUIRED
-                        : CorrelationRequirement.OPTIONAL, correlationMdc);
+                        : CorrelationRequirement.OPTIONAL, correlationMdc, entityTypes);
     }
 
     @Bean(destroyMethod = "closeGracefully")
