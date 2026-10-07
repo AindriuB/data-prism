@@ -9,7 +9,10 @@ import io.github.aindriub.dataprism.audit.FileAuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.FileAuditSink;
+import io.github.aindriub.dataprism.audit.JsonAuditRetention;
+import io.github.aindriub.dataprism.audit.SegmentedJsonAuditSink;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
+import io.github.aindriub.dataprism.audit.TeeAuditSink;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
@@ -31,6 +34,7 @@ import io.github.aindriub.dataprism.core.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
+import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
@@ -187,8 +191,11 @@ public class DataPrismAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "slf4j")
-        AuditSink dataPrismSlf4jAuditSink() {
-            return new Slf4jAuditSink();
+        AuditSink dataPrismSlf4jAuditSink(DataPrismProperties properties) {
+            DataPrismProperties.Audit.Output output = properties.getAudit().getOutput();
+            // Nothing configured keeps the message-only form; any output setting adds the mapped pairs.
+            return output.isDefault() ? new Slf4jAuditSink()
+                    : new Slf4jAuditSink(output.mapping(), output.getRouting().toRouting());
         }
 
         /**
@@ -239,7 +246,17 @@ public class DataPrismAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
-        AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties) {
+        AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties,
+                ObjectProvider<JsonProjectionSinks> projection) {
+            JsonProjectionSinks pair = projection.getIfAvailable();
+            if (pair != null) {
+                return pair.tee();
+            }
+            return openPrimary(properties);
+        }
+
+        /** The authoritative sink. The cause can name a filesystem path, so it is logged and never repeated. */
+        private static AuditSink openPrimary(DataPrismProperties properties) {
             String directory = properties.getAudit().getDirectory();
             Path path = Path.of(directory == null || directory.isBlank()
                     ? properties.getAudit().getFilePath() : directory);
@@ -256,6 +273,101 @@ public class DataPrismAutoConfiguration {
                 throw new DataPrismConfigurationException("AUDIT_SINK_FILE_UNUSABLE",
                         "dataprism.audit.file-path or directory could not be opened for the hash-chained audit sink");
             }
+        }
+
+        /**
+         * The native segments and their {@code .ndjson} projection, tee'd. A separate bean, not an
+         * {@code AuditSink}, so that closing both sinks is the context's job and the one
+         * {@code AuditSink} bean stays the {@link TeeAuditSink}.
+         */
+        @Bean(destroyMethod = "close")
+        @ConditionalOnMissingBean(AuditSink.class)
+        @ConditionalOnProperty(prefix = "dataprism.audit.output", name = "json-directory")
+        JsonProjectionSinks dataPrismJsonProjectionSinks(DataPrismProperties properties) {
+            AuditSink primary = openPrimary(properties);
+            DataPrismProperties.Audit.Output output = properties.getAudit().getOutput();
+            SegmentedJsonAuditSink json;
+            try {
+                json = new SegmentedJsonAuditSink(Path.of(output.getJsonDirectory()), output.mapping(),
+                        output.getRouting().toRouting());
+            } catch (FileAuditSink.OpenFailedException e) {
+                closeQuietly(primary);
+                LOG.error("dataprism.audit.output.json-directory could not be opened", e);
+                throw new DataPrismConfigurationException("AUDIT_JSON_DIRECTORY_UNUSABLE",
+                        "dataprism.audit.output.json-directory could not be opened for writing");
+            } catch (RuntimeException e) {
+                closeQuietly(primary);
+                throw e;
+            }
+            return new JsonProjectionSinks(primary, json);
+        }
+
+        private static void closeQuietly(AuditSink sink) {
+            if (sink instanceof java.io.Closeable closeable) {
+                try {
+                    closeable.close();
+                } catch (java.io.IOException | RuntimeException ignored) {
+                    // the startup refusal is the failure that matters
+                }
+            }
+        }
+    }
+
+    /** The native sink and its JSON projection, with the tee that writes both and the close of both. */
+    static final class JsonProjectionSinks implements AutoCloseable {
+        private final AuditSink primary;
+        private final SegmentedJsonAuditSink json;
+        private final TeeAuditSink tee;
+
+        JsonProjectionSinks(AuditSink primary, SegmentedJsonAuditSink json) {
+            this.primary = primary;
+            this.json = json;
+            this.tee = new TeeAuditSink(primary, json);
+        }
+
+        TeeAuditSink tee() {
+            return tee;
+        }
+
+        @Override
+        public void close() throws java.io.IOException {
+            try {
+                json.close();
+            } finally {
+                if (primary instanceof java.io.Closeable closeable) {
+                    closeable.close();
+                }
+            }
+        }
+    }
+
+    /** Purges expired {@code .ndjson} segments once now and then daily, as {@link AuditMaintenance} does for the native ones. */
+    static final class JsonRetentionSchedule implements AutoCloseable {
+        private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(JsonRetentionSchedule.class);
+        private final java.util.concurrent.ScheduledExecutorService scheduler;
+
+        JsonRetentionSchedule(JsonAuditRetention retention) {
+            scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "dataprism-audit-json-retention");
+                t.setDaemon(true);
+                return t;
+            });
+            purge(retention);
+            scheduler.scheduleWithFixedDelay(() -> purge(retention), 24, 24, java.util.concurrent.TimeUnit.HOURS);
+        }
+
+        private static void purge(JsonAuditRetention retention) {
+            try {
+                retention.purge();
+            } catch (RuntimeException e) {
+                LOG.error("JSON audit projection purge did not complete; the native audit is unaffected", e);
+            }
+        }
+
+        @Override
+        public void close() throws InterruptedException {
+            scheduler.shutdown();
+            scheduler.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
         }
     }
     /**
@@ -535,6 +647,14 @@ public class DataPrismAutoConfiguration {
         return new AuditMaintenance(checkpointing,
                 retention.getIfAvailable(), properties.getAudit().getCheckpoint().getInterval(),
                 metrics.getIfAvailable(PrivacyMetrics::none));
+    }
+    /** Daily purge of the JSON projection, with the native audit's {@code retention} and override. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnBean(JsonProjectionSinks.class)
+    JsonRetentionSchedule dataPrismJsonAuditRetention(DataPrismProperties properties, Clock clock) {
+        DataPrismProperties.Audit audit = properties.getAudit();
+        return new JsonRetentionSchedule(new JsonAuditRetention(Path.of(audit.getOutput().getJsonDirectory()),
+                audit.getRetention(), clock, audit.isRetentionOverride()));
     }
     /** The {@code auditIntegrity} health contributor; present only when Spring Boot Actuator is. */
     @Configuration(proxyBeanMethods = false)
@@ -894,7 +1014,9 @@ public class DataPrismAutoConfiguration {
             PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties,
             ToolAdmission admission, ParameterFingerprinter fingerprinter) {
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
-                properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter);
+                properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter,
+                properties.getCorrelation().getInbound().isRequired() ? CorrelationRequirement.REQUIRED
+                        : CorrelationRequirement.OPTIONAL);
     }
 
     @Bean(destroyMethod = "closeGracefully")
