@@ -47,8 +47,11 @@ record yet; tasks 110, 111 and 113 do.
       `CorrelationIdPolicy.traceparent()` exist. `opaque` throws
       `IllegalArgumentException` containing `INVALID_CORRELATION_PATTERN` for a
       regex that does not compile. The message does not echo the regex.
-- [ ] `CorrelationIdPolicy.DEFAULT_OPAQUE_PATTERN` is
-      `[A-Za-z0-9._:-]{1,128}`.
+- [ ] `CorrelationIdPolicy.DEFAULT_OPAQUE_PATTERN` is the strict default
+      (owner decision C4, 2026-10-07). It accepts only a UUID (canonical form),
+      hex of 16–128 characters, or a W3C traceparent. The broad pattern
+      `[A-Za-z0-9._:-]{1,128}` is available only when the operator sets it
+      explicitly. A test asserts that `jane.doe` is rejected under the default.
 - [ ] A fixed ceiling applies before any operator pattern runs: a candidate
       longer than 256 characters, or with any character outside
       `[A-Za-z0-9._:/+=-]`, is rejected whatever the configured pattern
