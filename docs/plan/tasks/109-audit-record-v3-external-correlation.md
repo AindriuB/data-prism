@@ -128,3 +128,15 @@ Required for attempt 4:
 Follow-up, not 109: an unterminated last line is reported as "POSSIBLY IN FLIGHT (not a break)", exit 3. A forged final record
 with its newline stripped reads as benign. That is pre-existing. Reword it as "unverified, tampering not ruled out", and/or cover the
 tail with `--checkpoints`.
+
+## Attempt 4 — needs one more item (2026-10-07)
+
+Attempt 4 is done (one `isBreak()` predicate, so retention stops at every break). The implementer found that a v3 line with an appended
+field (26 fields) is still classified INTERRUPTED_WRITE_FRAGMENT, which is benign, rather than FIELD_COUNT_MISMATCH. A torn write
+truncates a line; it cannot add separators. So any line that has **more** fields than its declared version allows, or more than the
+maximum (25), and whose declared version is parseable, is a FIELD_COUNT_MISMATCH break. Only a line with **fewer** fields, consistent
+with truncation, may be classified as an interrupted write.
+Required for attempt 5:
+1. Classify every over-count line (v1 > 20, v2 > 24, v3 > 25, any line > 25) as FIELD_COUNT_MISMATCH, a break.
+2. Tests: append 1 and 2 fields to v3 and to v2 lines (mid-file and on a newline-terminated last line). Assert FIELD_COUNT_MISMATCH and exit 2.
+   Keep a test that a genuinely truncated line (fewer fields) is still reported as an interrupted write.
