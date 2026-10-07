@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — 0.5.0 wave 2: tasks 109, 142, 146
+
+Task 109 writes audit record version 3 with the external correlation id inside the hash, the id itself hashed. The verifier treats a field-count/version mismatch, and any over-count line, as a FIELD_COUNT_MISMATCH break. One `AnomalyType.isBreak()` predicate drives `hasBreak`, `hasStructuralAnomaly` and `AuditRetention.firstBadOffset`, and VERSION_REGRESSION is flagged. Task 142 adds five Spring Boot 4 guards (Jackson 2 converters, actuator JSON, the `spring.web.error.path` error mapping), each shown red by an uncommitted mutation. Task 146 proves the suite on JDK 25 and 21 in Linux containers (1080 tests each) and loads Mockito as a javaagent in data-prism-mcp. The merged head passed `mvn clean verify`, the release profile, `mkdocs build --strict` and `check_site.py`.
+
+**Cost:** 109 took five attempts. The reviewers found, in order: unhashed field injection, where any version parsed 25 fields; a tampered line filed as a benign interrupted write; retention purging past VERSION_REGRESSION, which this task introduced; and over-count v3 lines treated as benign. Fix the classification in one predicate rather than per caller. 142's actuator guard runs on a test-only management port; production stays `access.default: none`, guarded by `ServerStartupTest`. Count correction from 146's tester: the wave-1 figure of "2170 tests" was double-counted (surefire and failsafe summed). The real suite is about 1080-1120 tests (1116 in 109's last reactor run). No "2170" survives in `PLAN.md` or `HISTORY.md` on this branch, so there was nothing to edit. Do not sum per-module lines; record surefire and failsafe separately. On the merged head the first `mvn clean verify` hit one `ConnectException` in `ReidentificationEndToEndTest` and passed on an unchanged rerun.
+
 ## 2026-10-07 — 0.5.0 wave 1: tasks 108, 141, 143, 145
 
 Task 108 adds a validated external correlation id (`ExternalCorrelationId`, `CorrelationIdPolicy`, `InboundCorrelation`) and carries it on `DataRequest`. Task 141 moves the reactor to Spring Boot 4.1.1 on a single Jackson 2 classpath (jackson-databind 2.21.5, no tools.jackson, nimbus-jose-jwt 10.10, Hazelcast 5.7.0 in the jar). Task 143 builds and runs every Docker image on Java 25 LTS with a container smoke script in `docker/smoke/`, and task 145 makes Dependabot allow Java 25 images and block 26 and later. The full reactor and the release profile are green on the merged head.

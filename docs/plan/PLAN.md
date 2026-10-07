@@ -309,9 +309,9 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 141 | **Done** (2026-10-07). Migrate the reactor to Spring Boot 4.1.1 on a single Jackson 2 classpath | none (130 is done) |
 | Done | 143 | **Done** (2026-10-07). Build and run every Docker image on Java 25 LTS, with a container smoke test | none |
 | Done | 145 | **Done** (2026-10-07). Make Dependabot allow Java 25 images and really block 26 and later | none |
-| 2 | 109 | Record the external correlation id in audit record version 3 | 102, 108, 117, 123 |
-| 2 | 142 | Pin what Spring Boot 4 moved: Jackson 2 converters, actuator JSON, the operator error path | 141 |
-| 2 | 146 | Make the test suite clean and proven on JDK 25, including on Linux | 141 |
+| Done | 109 | **Done** (2026-10-07, attempt 5). Record the external correlation id in audit record version 3 | 102, 108, 117, 123 |
+| Done | 142 | **Done** (2026-10-07). Pin what Spring Boot 4 moved: Jackson 2 converters, actuator JSON, the operator error path | 141 |
+| Done | 146 | **Done** (2026-10-07). Make the test suite clean and proven on JDK 25, including on Linux | 141 |
 | 3 | 110 | MCP tools and orchestrator carry the external correlation id to audit and sources | 101, 108, 109, 118, 123, 128 |
 | 3 | 111 | Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
 | 3 | 112 | Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
@@ -319,10 +319,11 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
 | 4 | 114 | Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
 | 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
+| 5 | 148 | Put the validated external correlation id into the SLF4J MDC under an operator-configured key | 110, 111, 113, 114 |
 | 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
-| 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135 |
+| 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
 
-Next wave: 109, 142 and 146.
+Next wave: wave 3, tasks 110, 111, 112 and 144.
 
 Release-cut verification items from wave 1:
 
@@ -364,11 +365,33 @@ Follow-ups from 130, not yet tasks:
 - **D-140-C:** Record the Hazelcast `sun.misc.Unsafe` warning on JDK 25; never silence it with `--sun-misc-unsafe-memory-access=allow`.
 - **D-140-D:** Load Mockito as a `-javaagent` in data-prism-mcp only.
 
+**Decision D-148-A (2026-10-07):** correlated logging through the SLF4J MDC.
+
+- Data Prism supports MDC-based correlated logging. `dataprism.correlation.mdc-key` is unset by default, which means off.
+- It puts only the validated `ExternalCorrelationId.value()` into the MDC.
+- It is opened at the MCP tool handler, because the SDK runs sync tools off the servlet thread, and inside each `SourceFanOut` task from that task's own `DataRequest`. It never relies on ThreadLocal inheritance.
+- It is always cleared in `finally`, restoring any previous value. A rejected or absent id sets nothing.
+- Codes: `INVALID_CORRELATION_MDC_KEY`, `CORRELATION_MDC_KEY_RESERVED`, `CORRELATION_MDC_KEY_WITHOUT_HEADER`.
+- Whatever the inbound pattern admits appears in every log line on those threads, so the pattern should admit generated ids only.
+- No Micrometer or OTel propagation (C6 stays deferred), and no MDC on Hazelcast or other background threads.
+- The optional global `dataprism.correlation.outbound.header` is an amendment to 111 (consumption) and 113 (binding, validation, docs). A per-source correlation-header overrides it.
+- 115's Owns excludes `examples/log-shipping/mdc/**`, which is task 148's. 116 now depends on 148.
+
+Follow-ups from wave 2, not yet tasks:
+
+- (a) Audit verifier wording. An unterminated last line ("POSSIBLY IN FLIGHT, not a break", exit 3), and the truncation-equivalent residuals (21-23 fields with field 20 = "2"/"3", and more than 25 fields with an unparseable field 20, both reported as "INTERRUPTED WRITE, not tampering"), should read "unverified, tampering not ruled out". Consider covering a writer's tail with `--checkpoints`.
+- (b) `AuditRecordFormat:113` relies on an NPE for a null field-20 token. It fails closed, but make it a deliberate check.
+- (c) The CLI help and runbook should say that an interrupted write joined to a restarted writer can surface as exit 2, which is a safe false positive.
+- (d) Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
+- (e) Record surefire and failsafe counts separately in future JDK runs.
+- (f) `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one.
+
 **Release-cut items for 0.5.0:**
 
 - Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
 - Close or ignore #114, since 141 supersedes its Spring Boot bump.
 - Update the `docs/extending.md` `data-prism.version` snippet at the cut.
+- Add a CHANGELOG entry for `dataprism.correlation.mdc-key` and `dataprism.correlation.outbound.header` (D-148-A).
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
 grouped into one PR per ecosystem per week (`.github/dependabot.yml`).
@@ -509,8 +532,9 @@ Follow-ups from the task 100 review, not yet tasks:
 
 Follow-ups from the task 105 review (0.4.x), not yet tasks:
 
-- Add a behavioural test that an MCP-port MVC error still reaches Boot's
-  `/error`. Today it is checked only structurally, through `ControllerAdviceBean`.
+- ~~Add a behavioural test that an MCP-port MVC error still reaches Boot's
+  `/error`~~ — closed 2026-10-07: task 142's `Boot4ErrorPathTest` guards the
+  `spring.web.error.path` operator error mapping.
 - `data-prism-architecture` tests log the SLF4J multiple-providers warning
   (logback-classic plus slf4j-simple). Remove one from that module's test
   classpath.
