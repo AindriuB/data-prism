@@ -320,17 +320,18 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 113 | **Done** (2026-10-07). Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
 | Done | 114 | **Done** (2026-10-07). Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
 | Done | 147 | **Done** (2026-10-07). Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
-| 5 | 148 | Put the validated external correlation id into the SLF4J MDC under an operator-configured key | 110, 111, 113, 114 |
-| 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
+| Done | 148 | **Done** (2026-10-07). Put the validated external correlation id into the SLF4J MDC under an operator-configured key | 110, 111, 113, 114 |
+| Done | 115 | **Done** (2026-10-07, attempt 2). Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
 | 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
+| 6 | 150 | **BLOCKED on owner decision D-150-A.** Audit `entityType` only when it is a registered entity type, otherwise a sentinel | 148 |
 
-**The plan is PAUSED pending the owner (decision 2026-10-07).** The owner lifted the pause for task 149 and then for wave 4; both are merged, and wave 4 (113, 114, 147) is done. The next step is wave 5, tasks 148 and 115. Both are unblocked (148 needs 110, 111, 113 and 114, and 115 needs 113, all merged) and they own disjoint paths by D-148-A. It still waits for the owner's go-ahead. Wave 6 (116) needs 115 and 148, so it is not yet unblocked. Do not fan out, plan or merge anything on the strength of this file alone.
+**The plan is PAUSED pending the owner (decision 2026-10-07).** The owner lifted the pause for task 149 and then for waves 4 and 5; all are merged, and wave 5 (148, 115) is done. Wave 6 is 116 and 150. Task 116 is unblocked: its dependencies 106, 113, 114, 115, 135 and 148 are all merged. Task 150 depends on 148, which is merged, but it is BLOCKED on the open owner decision D-150-A. Both still wait for the owner's go-ahead. Do not fan out, plan or merge anything on the strength of this file alone.
 
 **Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
 
 #### Open owner questions
 
-- On the tool DENY paths, the caller's raw `entityType` argument is written into audit records (`GetEntityContextTool.java:206` to `:307`/`:339`; `CompareEntitySourcesTool.java:368`/`:400`). It is caller-controlled free text and could carry personal data into the audit log and the shipped JSON projection. It predates 0.5.0 and is not the correlation id; the task 113 reviewer confirmed no argument reaches `externalCorrelationId`. Proposed fix: audit `entityType` only if it is a registered entity type, otherwise a fixed sentinel. Pending the owner's decision on whether to plan it for 0.5.0.
+- On the tool DENY paths, the caller's raw `entityType` argument is written into audit records (`GetEntityContextTool.java:206` to `:307`/`:339`; `CompareEntitySourcesTool.java:368`/`:400`). It is caller-controlled free text and could carry personal data into the audit log and the shipped JSON projection. It predates 0.5.0 and is not the correlation id. Planned as task 150, which waits on **D-150-A**, an owner decision in three parts: (a) a new `dataprism.audit.entity-types` property as the registry, (b) the sentinel `<unregistered>`, and (c) an empty default, so after an upgrade every entity type is audited as `<unregistered>` until the operator configures the list. Part (c) needs a CHANGELOG line. Details in `docs/plan/tasks/150-audit-only-registered-entity-types.md`.
 - 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
 - Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
@@ -346,7 +347,7 @@ Follow-ups from wave 1, not yet tasks:
 - The smoke teardown should remove images explicitly rather than rely on `--rmi local` semantics.
 - Hazelcast fixed-port tests flake when worktrees build in parallel.
 
-139 was an umbrella and is split into 141, 142 and 147 (all three now done; the 139 file stays under `docs/plan/tasks/` because its text does not say it retires on completion). 140 is split into 143,
+139 was an umbrella and is split into 141, 142 and 147 (all three done). Its file was retired to `docs/plan/tasks/retired/` on 2026-10-07 with the owner's approval. 140 is split into 143,
 144, 145 and 146 and has no file of its own.
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
@@ -426,10 +427,18 @@ Follow-ups from wave 4 (tasks 113, 114, 147), not yet tasks:
 - (v) In `CorrelationConfigurationTest.a_rejected_value_is_logged_as_a_code_and_the_text_never_appears`, split the chained `noneSatisfy` into two separate `noneMatch` checks (message and args).
 - (w) In `AuditOutputConfigurationTest`, add nested json-directory cases (under and over `directory`) for `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT`.
 - (x) Task 114's commit body records no mutation for `PiiLogScanTest`'s key-value scan. The `AuditFilePiiScanTest` javadoc for `extraArguments` is inaccurate, and there is a stray `{ }` block at about line 673.
-- (y) For task 148: the log-line parser's `\b` key markers misparse when slf4j-simple prints key-value pairs before the message (a false hit from a UUID). Capture pairs from a real mapped sink rather than parsing lines.
+- (y) For task 148 (merged; 148 captured pairs from a real sink): the log-line parser's `\b` key markers misparse when slf4j-simple prints key-value pairs before the message (a false hit from a UUID). Capture pairs from a real mapped sink rather than parsing lines.
 - Task 113 added three refusal codes beyond its contract: `INVALID_CORRELATION_FORMAT`, `INVALID_AUDIT_FIELD_PRESET` and `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT` (which also covers a json directory inside or containing `directory`). Task 116 should document them.
 
 - Owner-visible point for 116: the `Slf4jAuditSink` mapped constructor attaches the routing constants as key-value pairs. That is the implementer's reading of the spec.
+
+Follow-ups from wave 5 (tasks 115, 148), not yet tasks:
+
+- (z) `CorrelationMdcToolTest.rejectedPutsNothing` asserts on text that can never be present. Feed a real rejected header through `InboundCorrelation.resolve(...)`.
+- (aa) `concurrentCallsDoNotCross` checks only the marker events. Also check the audit-event lines.
+- (ab) The 5f5f5df7 commit body calls a positive control "the mutation". Wording only; recorded in HISTORY, the commit is not rewritten.
+- (ac) There is no stdio MDC overload, so library users of stdio always run with MDC off. Document this in 116 or later.
+- (ad) For 116: the Python client snippets in `examples/` need Python 3.10 or later. Say so in the doc.
 
 **Release-cut items for 0.5.0:**
 

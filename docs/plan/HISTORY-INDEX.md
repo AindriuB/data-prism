@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-07 | 115, 148 | Correlation client snippets and log-shipping recipes; validated id into the SLF4J MDC | `## 2026-10-07 — 0.5.0 wave 5: correlation examples and MDC logging` |
 | 2026-10-07 | 113, 114, 147 | 0.5.0 wave 4: correlation headers and JSON projection wired to configuration, PII scans extended, 0.5.0 platform documented. | `## 2026-10-07 — 0.5.0 wave 4: correlation wired into configuration, PII scans extended, platform documented` |
 | 2026-10-07 | 149 | Test ports claimed by OS file lock, probes run sequentially; macOS 1223/0/0/0 and one Linux container run; end-to-end flake causes unproven. | `## 2026-10-07 — Task 149: test-suite port races removed` |
 | 2026-10-07 | none | Baseline on a2c6bdf7 after wave 3 (20/20 modules, about 1,220 tests, class-version gate and actionlint clean); owner paused all work. | `## 2026-10-07 — Baseline after 0.5.0 wave 3, and the owner's pause` |

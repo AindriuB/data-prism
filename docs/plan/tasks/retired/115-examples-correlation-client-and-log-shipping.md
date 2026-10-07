@@ -69,3 +69,12 @@ index. Local durable write plus shipping is the supported path.
 - `docs/` pages and `mkdocs.yml`. That is task 116.
 - Editing `examples/agent-config/**`.
 - A direct Elasticsearch output from Data Prism.
+
+## Attempt 1 — failed
+
+Reviewer: CHANGES. Names, ids, scope and wording were all checked against the merged code and are clean.
+- `examples/log-shipping/logstash.conf:6`: the `file` input with `codec => "json_lines"` emits nothing, because the file input already splits and strips newlines. Use `codec => "json"`.
+- `examples/correlation-header/client_opaque.py:32-38` and `client_traceparent.py:36-42`: the httpx event hook likely reads the contextvar copied when the transport was entered, because requests are sent from a background task. Changing the id between calls on one session would then still send the first id, which contradicts the README's "per-request hook". Verify against mcp==2.3.0 by setting two ids in turn on one session and capturing the headers. If confirmed, set the header from the calling task, for example per-call headers or one session per unit of work, or document the per-connection limit plainly. The TS AsyncLocalStorage variant is fine.
+- Label as untested or illustrative: `application-ecs.yaml:5-8` (Boot's ECS formatter rendering key-value pairs, and dotted-key nesting) and `filebeat.yml:31-38` (the drop_event on log.logger).
+- README: state that the id is per unit of work. `initialize` and `tools/call` share it.
+- `curl-example.sh`: send the `MCP-Protocol-Version` header on requests after initialize.

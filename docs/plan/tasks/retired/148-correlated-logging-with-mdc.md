@@ -188,3 +188,10 @@ unset means nothing changes.
   (task 116 links this recipe) and the rest of `examples/log-shipping/**`
   (task 115).
 - `CHANGELOG.md`. Its entry is a release-cut item.
+
+## Amendment, 2026-10-07: Owns widened
+
+The new `dataPrismCorrelationMdc` @Bean needs a classification row, because AutoConfiguredBeanClassificationTest requires one for every bean method. Owns therefore adds:
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(one new entry for `dataPrismCorrelationMdc` only)*
+
+Classification: REPLACEABLE, Guard.NONE, as proposed. The bean only copies the already-validated id into the logging MDC; it is not a privacy control. The reviewer must confirm this. If a replacement could leak un-validated or other data into logs in a way the default cannot, it must be PRIVACY_CRITICAL with a guard.
