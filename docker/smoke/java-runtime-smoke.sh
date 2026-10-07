@@ -51,7 +51,9 @@ docker build -q -f "${ROOT}/docker/server/Dockerfile" -t "$SERVER_IMAGE" "$ROOT"
 
 echo "== java -version"
 for image in "$DIST_IMAGE" "$SERVER_IMAGE"; do
-  version="$(docker run --rm --entrypoint java "$image" -version 2>&1 | head -n1)"
+  # No pipe to head: head closing early would SIGPIPE docker run (exit 141 under pipefail).
+  out="$(docker run --rm --entrypoint java "$image" -version 2>&1)"
+  version="${out%%$'\n'*}"
   echo "${image}: ${version}"
   case "$version" in
     *'"25.'*) ;;
@@ -67,8 +69,9 @@ set -e
 if [ "$status" -eq 0 ]; then
   echo "FAIL: distribution image started with no configuration" >&2; exit 1
 fi
-code="$(printf '%s\n' "$output" \
-  | grep -oE 'DataPrismConfigurationException: MISSING_[A-Z_]+' | head -n1 || true)"
+codes="$(printf '%s\n' "$output" \
+  | grep -oE 'DataPrismConfigurationException: MISSING_[A-Z_]+' || true)"
+code="${codes%%$'\n'*}"
 if [ -z "$code" ]; then
   echo "FAIL: exit ${status} but no named dataprism refusal" >&2; exit 1
 fi
@@ -97,7 +100,8 @@ done
 count="$(wc -l < "$WARNINGS" | tr -d ' ')"
 
 echo "== summary"
-echo "java: $(docker run --rm --entrypoint java "$SERVER_IMAGE" -version 2>&1 | head -n1)"
+server_java="$(docker run --rm --entrypoint java "$SERVER_IMAGE" -version 2>&1)"
+echo "java: ${server_java%%$'\n'*}"
 echo "project: ${PROJECT}"
 echo "server-a: ${a} log lines with Members {size:2"
 echo "server-b: ${b} log lines with Members {size:2"
