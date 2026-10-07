@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — Task 136: cut 0.4.1
+
+The tree is at 0.4.1 with a CHANGELOG that lists the breaking `embedded` refusal, the Hazelcast 5.7.0 pin, publication targets and known limitations. The live Compose run formed a 2-member cluster, and the isolation claim was weakened to match what it showed. Merged `mvn clean verify` and `mvn -Prelease -Dgpg.skip=true clean verify` pass, `data-prism-server-0.4.1.jar` holds only `hazelcast-5.7.0.jar`, and mkdocs strict, `check_site`, `check_changelog`, `check_snippet_markers` and `docker compose config -q` pass.
+
+**Cost:** Three attempts. Attempt 1 ran the live Compose stack on OrbStack: the cluster formed (`Members {size:2`), but a container on the default network only reached `172.28.57.11:5701` and `.12:5701` by routing across bridges, so 133's "cannot reach it" was false (D-0.4.1-E). Compose networks are not a security boundary; do not claim isolation from them. The claim now names only what was observed, since Docker Desktop and Linux Docker were not tested. Attempt 2 failed on two CHANGELOG wording defects and one flake: `OperatorSurfaceTest` asserted `doesNotContain("777")` on JSON that also holds a random approval UUID. Attempt 3 fixed the assertion (20 of 20 stable), added the read and write known limitations, and passed the reviewer on its third round. The lychee link check was not run locally.
+
 ## 2026-10-06 — Tasks 134, 135 and 137: multi-member test, multiple-instances docs, Hazelcast 5.7.0 pin
 
 The server and starter now ship Hazelcast 5.7.0: the root pom pins it ahead of the Spring Boot BOM import, and `ServerPackagingIT` asserts the packaged jar holds only `hazelcast-5.7.0.jar`. `MultiMemberOperatorTest` runs real server members in one JVM and shows pause, approvals, shared read budget, rate limit and re-identification shared across them, refusals surviving the ungraceful loss of the member that owns the pause key, and `ClusterConfigurationRefusalIT` pins the startup refusals. `docs/multiple-instances.md` is new, and the configuration, eu-ai-act, architecture and reidentification docs now say what clustering does and does not share.
