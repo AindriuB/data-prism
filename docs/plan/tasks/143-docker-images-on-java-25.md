@@ -88,3 +88,18 @@ hidden.
 - JVM flags in any `ENTRYPOINT`, including the Unsafe flag (D-140-C).
 - `maven.compiler.release`, which stays `21`.
 - README and documentation wording. That is task 147.
+
+## Attempt 1 — failed
+
+Reviewer: CHANGES (head de2c8b79). The FROM lines, image builds, the script's checks, the README and scope are all correct.
+Required for attempt 2:
+1. **The cleanup can delete a stack this script didn't create.** docker/smoke/java-runtime-smoke.sh reuses the fixed project
+   name `data-prism-multi-instance`, and its cleanup runs `down --volumes`, so it would replace and delete a user's
+   running multi-instance stack and its volumes. Use a unique project name (e.g. `-p data-prism-smoke-$$`)
+   in every compose invocation. Make sure cleanup touches only that project.
+2. Add `--rmi local` to the cleanup `down`, so that each run does not leave five images behind.
+3. README: state the limits. It covers the local architecture only (amd64 is covered by CI's publish-image legs), and it proves
+   the runtime starts and the cluster forms, not that privacy behaviour is correct under JDK 25 (that is the
+   test suite on 25, task 146).
+4. Summary: print the actual member counts seen, not a fixed "yes".
+Re-run the script once after the change and record the result. Leave no containers, volumes or images.
