@@ -70,7 +70,7 @@
 
     <spring-boot.version>3.5.16</spring-boot.version>
     <mcp.version>2.0.1</mcp.version>
-    <archunit.version>1.5.0</archunit.version>
+    <archunit.version>1.5.1</archunit.version>
     <hazelcast.version>5.7.0</hazelcast.version>
 
     <!-- Maven 3.8.6 still defaults to compiler 3.1, which predates the `release`
@@ -83,7 +83,7 @@
     <!-- Used only inside the `release` profile below: sources/javadoc jars,
          signing and the Central Portal publishing plugin. Never resolved by
          a plain `mvn verify`. -->
-    <source-plugin.version>3.3.1</source-plugin.version>
+    <source-plugin.version>3.4.0</source-plugin.version>
     <javadoc-plugin.version>3.12.0</javadoc-plugin.version>
     <gpg-plugin.version>3.2.8</gpg-plugin.version>
     <central-publishing-plugin.version>0.11.0</central-publishing-plugin.version>

@@ -9,6 +9,10 @@ updates:
     groups:
       maven:
         patterns: ["*"]
+    ignore:
+      # Spring Boot 4 is a migration, not a bump: task 139.
+      - dependency-name: "org.springframework.boot:*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -29,3 +33,10 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      # The images stay on Java 21 (decision D-130-B). The tags are 21 and
+      # 3.9-eclipse-temurin-21, so a Java bump arrives as a major.
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "maven"
+        update-types: ["version-update:semver-major"]
