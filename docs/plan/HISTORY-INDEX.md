@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-07 | 151 | 0.5.0 cut done locally: version 0.5.0, dated changelog, cut-time docs fixes; release checks deferred to CI. | `## 2026-10-07 — 0.5.0 cut done locally: version 0.5.0, changelog, cut-time docs fixes` |
 | 2026-10-07 | 116, 150 | 0.5.0 wave 6: audit v3 and log-shipping docs; entityType audited only when registered or upper-case-shaped, else `<unregistered>` (D-150-A). | `## 2026-10-07 — 0.5.0 wave 6: audit and log-shipping docs, entityType audited only when registered or shaped` |
 | 2026-10-07 | 115, 148 | Correlation client snippets and log-shipping recipes; validated id into the SLF4J MDC | `## 2026-10-07 — 0.5.0 wave 5: correlation examples and MDC logging` |
 | 2026-10-07 | 113, 114, 147 | 0.5.0 wave 4: correlation headers and JSON projection wired to configuration, PII scans extended, 0.5.0 platform documented. | `## 2026-10-07 — 0.5.0 wave 4: correlation wired into configuration, PII scans extended, platform documented` |

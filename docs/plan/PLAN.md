@@ -443,40 +443,36 @@ Follow-ups from wave 6 (tasks 116, 150), not yet tasks:
 - (ag) The mutation proof for the stdio drop in 150 did not record the name of the failing test.
 - (ah) The `OperatorAudit`, `OversightOperatorController` and `ReidentificationService` `entityType` fields were out of scope for 150. Raise a recon if they are a concern.
 
+Follow-ups from the 0.5.0 cut (task 151), not yet tasks:
+
+- (ai) `docs/audit.md:77` (81 characters, old text) and the short orphan line at :584 are cosmetic.
+- (aj) Process: the AI tooling's auto-mode classifier denied the `-Prelease` build, mkdocs and a `bash -c` script locally during the cut. Release checks now rely on CI.
+
 ### 0.5.0 release-cut checklist (owner go-ahead required)
 
-All items are open unless marked done. Nothing has been pushed. Every outward action needs the owner's go-ahead.
+Task 151 did the local cut on 2026-10-07 (merge 98b42144). Nothing has been pushed. Every outward action needs the owner's go-ahead.
 
-Version and changelog:
+Done by task 151:
 
-- Bump the reactor version from 0.4.1 to 0.5.0.
-- Write the CHANGELOG entry. Breaking: Spring Boot 4.1 required by the starter and autoconfigure (D-139-B), Boot 3 users stay on 0.4.x. Added lines for:
-  - `dataprism.correlation.mdc-key` (D-148-A);
-  - `dataprism.correlation.outbound.header` (D-148-A);
-  - `dataprism.audit.entity-types` (D-150-A);
-  - the audit-content change: "entityType audited verbatim only when registered or upper-case-identifier-shaped; otherwise `<unregistered>`".
+- Version bump 0.4.1 to 0.5.0 and the CHANGELOG `[0.5.0] - 2026-10-07` section.
+- `docs/extending.md` snippet and the "verified" paragraph. The post-publish rebuild of the extension pom is still open, below.
+- `README.md:203`, the `docs/audit.md` stale record-version text and hashed-field list, and the (ae) rewraps.
+- The 0.4.1 step 9 re-verify: the consumer snippet passed against Central on 2026-10-07.
+- Class-version check: the owner ran `check-class-version.sh 65` over the 19 `data-prism-*-0.5.0.jar` files on 2026-10-08. All passed at major 65.
 
-Docs to fix at the cut:
+Still open, owner-gated:
 
-- `docs/extending.md`: update the `data-prism.version` snippet, and run a full package build of the extension pom against Spring Boot 4.1.1. The snippet itself was re-resolved against Boot 4.1.1 (spring-web 7.0.9, data-prism 0.4.1 from Central) in task 147.
-- `docs/extending.md:560-571`: amend the "verified (recorded against 0.3.0)" paragraph to say the 0.5.0 snippet was re-resolved against Boot 4.1.1 and that the full package build was repeated at the cut.
-- `README.md:203`: the enforcer rule is at `pom.xml:282-284`, not the line it cites.
-- `docs/audit.md` (~:82-98): the stale "nineteen fields" and "recordVersion 2" text. The hashed-field list (~:565) lacks `externalCorrelationId`.
-- Re-verify the 0.4.1 checklist step 9 consumer snippet (`docs/extending.md`) against Central, in a throwaway project with no local repository.
-
-Evidence to collect:
-
-- CI PR run green on JDK 21 and 25, plus `container-smoke` (task 144 acceptance). Owner-gated on a push; it has not run.
-- Linux CI evidence for 149 (D-149-B): the Linux legs of the JDK 21/25 matrix pass without a rerun. One local Linux container run (1223 tests, 0 failures, 2 skips) is extra evidence only.
-- Run the amd64 Docker smoke (`docker/smoke/java-runtime-smoke.sh`) on CI or a Linux host; only arm64 has run.
+- Push and open the PR.
+- CI PR run green on JDK 21 and 25, plus `container-smoke` (task 144 acceptance).
+- Linux CI evidence for 149 (D-149-B): the Linux legs pass without a rerun.
+- The amd64 Docker smoke (`docker/smoke/java-runtime-smoke.sh`) on CI or a Linux host; only arm64 has run.
 - Dependabot ignore-condition proof (task 145): post `@dependabot show maven ignore conditions` and `@dependabot show eclipse-temurin ignore conditions` on a docker PR, or confirm the next docker group run proposes no 26 tags.
-
-Housekeeping:
-
-- Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
-- Close or ignore Dependabot PR #114, since 141 supersedes its Spring Boot bump.
-
-After the cut, the 0.4.1 steps 1 to 8 pattern applies: PR to `main`, CI green, annotated tag `v0.5.0`, `release.yml`, `publish-central`, `publish-image`, `publish-mcp`.
+- Close Dependabot PR #116 (143 and 145 supersede it) and #114 (141 supersedes its Spring Boot bump).
+- The `-Prelease` build and gate, run by `release.yml` on the tag and by publish-central's stage job. It was denied locally.
+- The docs checks (`mkdocs --strict`, `check_site`, `check_snippet_markers`, `check_changelog`), run by the pages workflow or by the owner. Denied locally.
+- Annotated tag `v0.5.0`. If it is tagged after 2026-10-07, re-date the CHANGELOG first (D-151-C).
+- `publish-central`, `publish-image` and `publish-mcp`, following the 0.4.1 steps 1 to 8 pattern.
+- After publication, rebuild the `docs/extending.md` extension pom with `mvn package` against Central 0.5.0 (D-151-A fallback).
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
 grouped into one PR per ecosystem per week (`.github/dependabot.yml`).
