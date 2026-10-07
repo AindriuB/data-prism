@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!-- The same result with the Elastic encoder (co.elastic.logging:logback-ecs-encoder),
+       for an application that does not use Spring Boot's structured logging. The encoder
+       writes MDC entries as top-level fields. -->
+  <appender name="ECS_JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="co.elastic.logging.logback.EcsEncoder">
+      <serviceName>data-prism</serviceName>
+    </encoder>
+  </appender>
+  <root level="INFO">
+    <appender-ref ref="ECS_JSON"/>
+  </root>
+</configuration>

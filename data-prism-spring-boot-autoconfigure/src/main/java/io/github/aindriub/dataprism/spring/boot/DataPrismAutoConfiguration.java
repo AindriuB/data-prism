@@ -16,6 +16,7 @@ import io.github.aindriub.dataprism.audit.TeeAuditSink;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
@@ -891,14 +892,22 @@ public class DataPrismAutoConfiguration {
             }
         };
     }
+    /** Off unless {@code dataprism.correlation.mdc-key} is set; validated by {@link DataPrismProperties#validate()}. */
+    @Bean @ConditionalOnMissingBean
+    CorrelationMdc dataPrismCorrelationMdc(DataPrismProperties properties) {
+        String key = properties.getCorrelation().getMdcKey();
+        return key == null ? CorrelationMdc.off() : CorrelationMdc.of(key);
+    }
+
     @Bean @ConditionalOnMissingBean
     ContextOrchestrator dataPrismContextOrchestrator(List<DataSourceAdapter<?>> adapters, IdentityResolver identities,
             JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, List<LlmResponseValidator> validators,
             SyntheticValueSource synthetics, ValueTokenSource tokens, SecretKeyProvider keys, AuditRecorder audit,
-            ScopeBudget budget, PrivacyMetrics metrics, Clock clock, ParameterFingerprinter fingerprinter) {
+            ScopeBudget budget, PrivacyMetrics metrics, Clock clock, ParameterFingerprinter fingerprinter,
+            CorrelationMdc correlationMdc) {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 fingerprinter, audit, identities,
-                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics), budget, RequestLimits.DEFAULT,
+                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics, correlationMdc), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
     /**
@@ -989,11 +998,11 @@ public class DataPrismAutoConfiguration {
     DataPrismMcpServer.HttpTransport dataPrismHttpTransport(ContextOrchestrator orchestrator, AuthorizationService authorization,
             ScopeResolver scopeResolver, McpTransportContextExtractor<HttpServletRequest> extractor,
             PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties,
-            ToolAdmission admission, ParameterFingerprinter fingerprinter) {
+            ToolAdmission admission, ParameterFingerprinter fingerprinter, CorrelationMdc correlationMdc) {
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
                 properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter,
                 properties.getCorrelation().getInbound().isRequired() ? CorrelationRequirement.REQUIRED
-                        : CorrelationRequirement.OPTIONAL);
+                        : CorrelationRequirement.OPTIONAL, correlationMdc);
     }
 
     @Bean(destroyMethod = "closeGracefully")

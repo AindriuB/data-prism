@@ -15,5 +15,11 @@
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-core</artifactId></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-pseudonymisation</artifactId></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-validation</artifactId></dependency>
+    <!-- Test only: SourceFanOutMdcTest reads each log event's MDC map through a ListAppender. -->
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

@@ -318,6 +318,7 @@ adds no claim about the audit trail's legal standing.
 | `dataprism.correlation.inbound.pattern` | the strict default | A regular expression the whole value must match, with `format: opaque`. The default accepts only a UUID, 16 to 128 hex characters containing at least one letter a to f, or a W3C `traceparent`. |
 | `dataprism.correlation.inbound.required` | `false` | If `true`, a call without a valid id is refused and audited before any source is called: `EXTERNAL_CORRELATION_ID_REQUIRED` when the header is absent, `EXTERNAL_CORRELATION_ID_INVALID` when it is present but rejected. |
 | `dataprism.correlation.outbound.header` | unset | The header name that sends the id to a source. A per-source `correlation-header` overrides it. Setting it sends the id to every configured source. |
+| `dataprism.correlation.mdc-key` | unset (off) | The SLF4J MDC key under which the validated id is put for the duration of a tool call. Needs `inbound.header`. Must match `[A-Za-z][A-Za-z0-9_.-]{0,63}` and must not be a reserved name. Unset means MDC is never touched. |
 
 A value is accepted only if it passes a fixed ceiling (at most 256 characters,
 each in `[A-Za-z0-9._:/+=-]`) and then the pattern. A repeated header is
@@ -340,6 +341,35 @@ Refusal codes, each at startup:
 - `CORRELATION_PATTERN_NOT_APPLICABLE` -- `inbound.pattern` is set with `format: traceparent`.
 - `CORRELATION_REQUIRED_WITHOUT_HEADER` -- `inbound.required` is `true` without `inbound.header`.
 - `CORRELATION_REQUIRES_HTTP_TRANSPORT` -- `inbound.required` is `true` and the transport is not HTTP.
+
+#### `mdc-key`: correlated logging
+
+Organisations commonly put a transaction id into the SLF4J MDC, propagate it
+between services in a header, and filter on it in Kibana. With `mdc-key` set,
+Data Prism supports that: its own log lines on a tool call's threads,
+including the parallel source-fetch threads and library logs on those threads,
+carry the call's validated external id under that key. A recipe is in
+`examples/log-shipping/mdc/README.md`.
+
+Only the validated id is ever placed in the MDC. A rejected or absent id
+places nothing, and nothing is removed from a key the call did not set: when
+the call ends the key returns to the value it had before, or is removed if it
+had none. Whatever the inbound pattern admits appears in every log line on
+those threads, the `slf4j` audit sink's lines included, so the pattern should
+admit generated ids only.
+
+The reserved names, compared case-insensitively, are `traceId`, `spanId`,
+`trace_id`, `span_id`, `trace_flags`, `trace.id`, `span.id`, `transaction.id`
+and `message`, and any name starting `ecs.`, `log.`, `process.`, `service.`,
+`error.` or `event.`. They are the keys that tracing integrations and Spring
+Boot's ECS structured logging already write. `transaction_id` and
+`x_correlation_id` are accepted.
+
+MDC codes, each at startup:
+
+- `INVALID_CORRELATION_MDC_KEY` -- `mdc-key` does not match `[A-Za-z][A-Za-z0-9_.-]{0,63}` (blank, a leading digit, a space, `@timestamp` and 65 characters are all refused).
+- `CORRELATION_MDC_KEY_RESERVED` -- `mdc-key` is one of the reserved names or starts with a reserved prefix.
+- `CORRELATION_MDC_KEY_WITHOUT_HEADER` -- `mdc-key` is set while `inbound.header` is unset.
 
 ### `dataprism.hazelcast`
 

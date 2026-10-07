@@ -20,7 +20,16 @@ import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.SecretKeyProvider;
 import io.github.aindriub.dataprism.core.SyntheticValueSource;
+import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.RequestLimits;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
+import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
+import io.github.aindriub.dataprism.orchestration.SourceFanOut;
+import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
@@ -76,10 +85,26 @@ public final class DataPrismAssembly {
         this(adapters, clock, sink, profile, localeTag, defaultProfiles());
     }
 
+    /** The default profile and locale, with {@code mdc} opened on each source's fetch thread. */
+    public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
+                             CorrelationMdc mdc) {
+        this(adapters, clock, sink, "DEFAULT", "en", defaultProfiles(), mdc);
+    }
+
     /** As above, with the named profiles supplied rather than loaded from the shipped defaults. */
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
                              String profile, String localeTag,
                              Map<String, PrivacyProfile> profiles) {
+        this(adapters, clock, sink, profile, localeTag, profiles, CorrelationMdc.off());
+    }
+
+    /**
+     * As above, with {@code mdc} opened on each source's fetch thread, so a test can install a recording
+     * {@code MDCAdapter} through {@link CorrelationMdc#of(String, org.slf4j.spi.MDCAdapter)}.
+     */
+    public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink,
+                             String profile, String localeTag,
+                             Map<String, PrivacyProfile> profiles, CorrelationMdc mdc) {
         SecretKeyProvider keys = StaticSecretKeyProvider.of(DEV_KEY);
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve(localeTag);
@@ -89,10 +114,13 @@ public final class DataPrismAssembly {
         ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics, tokens);
         LlmResponseValidator validator = new RawValueLeakValidator();
 
-        this.orchestrator = new DefaultContextOrchestrator(adapters, scrubber, resolver, validator,
-                synthetics, new ParameterFingerprinter(keys),
-                new AuditRecorder(sink, clock, "example-1"),
-                new SourceAliasing(tokens));
+        // The standard pipeline, spelled out so the fan-out can carry the MDC.
+        this.orchestrator = new DefaultContextOrchestrator(adapters, scrubber, resolver,
+                List.of(validator, new SensitivePatternValidator()), synthetics, new ParameterFingerprinter(keys),
+                new AuditRecorder(sink, clock, "example-1"), new PassThroughIdentityResolver(),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none(), mdc),
+                new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
+                new SourceAliasing(tokens), PrivacyMetrics.none());
 
         this.pseudonymisationVersion =
                 PseudonymisationVersion.HMAC_SHA256_V1.withVocabulary(vocabulary.id());

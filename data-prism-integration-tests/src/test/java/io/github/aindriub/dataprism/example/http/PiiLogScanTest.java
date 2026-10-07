@@ -24,7 +24,13 @@ import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
+import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
+import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
+import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
+import io.github.aindriub.dataprism.security.ToolAdmission;
+import org.slf4j.spi.MDCAdapter;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -53,7 +59,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -978,6 +986,68 @@ class PiiLogScanTest {
         assertThat(findLeakedInFields(pairs, BANNED_VALUES)).contains("ACC-1");
     }
 
+    /** Records every value put under any key, with whether it came from a virtual (fan-out) thread. */
+    private static final class RecordingMdcAdapter implements MDCAdapter {
+        record Put(boolean virtualThread, String key, String value) {
+        }
+
+        final List<Put> puts = new CopyOnWriteArrayList<>();
+        private final ThreadLocal<Map<String, String>> local = ThreadLocal.withInitial(HashMap::new);
+
+        @Override public void put(String key, String val) {
+            puts.add(new Put(Thread.currentThread().isVirtual(), key, val));
+            local.get().put(key, val);
+        }
+        @Override public String get(String key) { return local.get().get(key); }
+        @Override public void remove(String key) { local.get().remove(key); }
+        @Override public void clear() { local.get().clear(); }
+        @Override public Map<String, String> getCopyOfContextMap() { return new HashMap<>(local.get()); }
+        @Override public void setContextMap(Map<String, String> map) { local.set(new HashMap<>(map)); }
+        @Override public void pushByKey(String key, String value) { }
+        @Override public String popByKey(String key) { return null; }
+        @Override public java.util.Deque<String> getCopyOfDequeByKey(String key) { return null; }
+        @Override public void clearDequeByKey(String key) { }
+    }
+
+    private static List<String[]> mdcFields(RecordingMdcAdapter adapter) {
+        List<String[]> fields = new ArrayList<>();
+        adapter.puts.forEach(put -> fields.add(new String[] {put.key(), put.value()}));
+        return fields;
+    }
+
+    @Test
+    @DisplayName("a full run with mdc-key transaction_id puts only the id, on the fan-out threads too, and it leaks nothing")
+    void fullIntegrationRunWithMdcLeaksNoPii() {
+        RecordingMdcAdapter adapter = new RecordingMdcAdapter();
+        InboundCorrelation inbound = inboundCorrelation(SYNTHETIC_CLID);
+        captureLogOutput(() -> runFullIntegrationRun(new Slf4jAuditSink(), inbound,
+                CorrelationMdc.of("transaction_id", adapter)));
+
+        assertThat(adapter.puts).as("puts recorded").isNotEmpty();
+        assertThat(adapter.puts).anySatisfy(put -> {
+            assertThat(put.virtualThread()).isTrue();
+            assertThat(put.key()).isEqualTo("transaction_id");
+            assertThat(put.value()).isEqualTo(SYNTHETIC_CLID);
+        });
+        assertThat(adapter.puts).allSatisfy(put -> {
+            assertThat(put.key()).isEqualTo("transaction_id");
+            assertThat(put.value()).isEqualTo(SYNTHETIC_CLID);
+        });
+        assertThat(findLeakedInFields(mdcFields(adapter), BANNED_VALUES)).as("values put into the MDC").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the MDC scan is not vacuous: a fixture value admitted by a permissive pattern is caught in the put values")
+    void mdcScanIsNotVacuous() {
+        RecordingMdcAdapter adapter = new RecordingMdcAdapter();
+        InboundCorrelation inbound = inboundCorrelation("ACC-1");
+        captureLogOutput(() -> runFullIntegrationRun(new Slf4jAuditSink(), inbound,
+                CorrelationMdc.of("transaction_id", adapter)));
+
+        assertThat(adapter.puts).extracting(RecordingMdcAdapter.Put::value).contains("ACC-1");
+        assertThat(findLeakedInFields(mdcFields(adapter), BANNED_VALUES)).contains("ACC-1");
+    }
+
     /**
      * Three {@code get_entity_context} calls through the real pipeline —
      * {@code DataPrismAssembly}, {@code GetEntityContextTool}, a real
@@ -1002,13 +1072,17 @@ class PiiLogScanTest {
     }
 
     private static void runFullIntegrationRun(AuditSink sink, InboundCorrelation inbound) {
+        runFullIntegrationRun(sink, inbound, CorrelationMdc.off());
+    }
+
+    private static void runFullIntegrationRun(AuditSink sink, InboundCorrelation inbound, CorrelationMdc mdc) {
         Clock clock = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), java.time.ZoneOffset.UTC);
         String purpose = "demonstration";
         String role = "investigator";
 
         // The pipeline's own audit events come from the assembly's recorder, so the sink goes there.
         DataPrismAssembly assembly = new DataPrismAssembly(List.of(new StubCustomerAdapter(),
-                new StubAccountAdapter(), new StubOrderAdapter()), Clock.systemUTC(), sink);
+                new StubAccountAdapter(), new StubOrderAdapter()), Clock.systemUTC(), sink, mdc);
         AuditRecorder toolAudit = new AuditRecorder(new Slf4jAuditSink(), clock, "pii-scan-mcp");
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
@@ -1016,11 +1090,14 @@ class PiiLogScanTest {
                 new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                 new PurposeValidator(Set.of(purpose)));
+        ParameterFingerprinter fingerprinter =
+                new ParameterFingerprinter(StaticSecretKeyProvider.of("pii-scan-test-key-not-for-any-real-data-32b"));
         GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock);
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock, null,
+                ToolAdmission.none(), fingerprinter, CorrelationRequirement.OPTIONAL, mdc);
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
                 authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
-                toolAudit, clock);
+                toolAudit, clock, null, ToolAdmission.none(), fingerprinter, CorrelationRequirement.OPTIONAL, mdc);
 
         AuthenticatedCaller caller = new AuthenticatedCaller(
                 "pii-scan-principal", "pii-scan-client", Set.of(role), purpose, "CASE-PII-SCAN-1", null);
