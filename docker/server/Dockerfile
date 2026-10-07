@@ -6,7 +6,7 @@
 # -Dloader.path at the bottom of this file — the same mechanism
 # ServerPackagingIT.executableLoadsAReviewedAdapterExtensionFromLoaderPath
 # proves in data-prism-server's own test suite.
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /workspace
 COPY . .
 # data-prism-processor is named explicitly: data-prism-quickstart-extension
@@ -32,7 +32,7 @@ RUN find data-prism-server/target -maxdepth 1 -name '*.jar' ! -name '*.original'
     && find data-prism-quickstart-extension/target -maxdepth 1 -name '*.jar' ! -name '*.original' \
       -exec cp {} /workspace/data-prism-quickstart-extension.jar \;
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 # Fixture-only: this image bundles a pre-loaded adapter extension and a demo
 # configuration for the Compose quickstart, never a real backend, and is not
 # for production use — see docker/distribution/Dockerfile for the image an
