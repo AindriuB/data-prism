@@ -154,6 +154,7 @@ instance. The danger is exposure and an overstated guarantee.
 | 3 | 134 | **Done.** Multi-member server test: pause, approvals, budget, rate limit, re-identification, member loss, refusals | 132 |
 | 3 | 135 | **Done.** Correct configuration, eu-ai-act, architecture and reidentification docs; new `multiple-instances.md` | 132, 133 |
 | 3 | 137 | **Done.** Pin Hazelcast 5.7.0 over the Spring Boot BOM (0.4.0 shipped 5.5.0) | none |
+| 3 | 138 | **Done.** `join.mode: none` refuses incoming joins (PR #113 P2 finding); merged 2026-10-07 | 132 |
 | 4 | 136 | **Done.** Cut 0.4.1 (task 129 pattern); merged 2026-10-07 | 131-135, 137 |
 
 All waves are merged (136 on 2026-10-07). **0.4.1 is release-candidate ready** on `claude/release-0.4.1`; publication waits on the owner (see "0.4.1 release checklist" below). Notes from 131-133, which 135 has now documented:

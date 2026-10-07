@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-07 | 138 | `join.mode: none` starts standalone under a random internal cluster name and refuses incoming joins; client write risk documented. | `## 2026-10-07 — Task 138: join.mode none refuses incoming joins` |
 | 2026-10-07 | 136 | Cut 0.4.1: versions, CHANGELOG, live Compose run, Hazelcast 5.7.0 packaging check; isolation claim weakened. | `## 2026-10-07 — Task 136: cut 0.4.1` |
 | 2026-10-06 | 134, 135, 137 | Multi-member server test, `multiple-instances.md` docs, Hazelcast 5.7.0 pinned over the Boot BOM. | `## 2026-10-06 — Tasks 134, 135 and 137: multi-member test, multiple-instances docs, Hazelcast 5.7.0 pin` |
 | 2026-10-06 | 133 | Multi-instance Compose and Kubernetes examples, `EXPOSE 5701`, `server.json` cluster variables; live run deferred to 136. | `## 2026-10-06 — Task 133: multi-instance Compose and Kubernetes examples` |

@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — Task 138: join.mode none refuses incoming joins
+
+A `join.mode: none` member now starts standalone with every joiner disabled and runs under the internal cluster name `<cluster-name>-solo-<UUID>`, so it refuses incoming joins from both members and clients. The documentation now says that a plain Hazelcast client configured with the cluster name can read and write maps on a `tcp-ip` or `kubernetes` member, while a `none` member refuses it. Merged `mvn clean verify`, the release-profile build, mkdocs strict, `check_site`, `check_changelog` and `check_snippet_markers` pass.
+
+**Cost:** A P2 review finding on PR #113: on 5.7.0 the old `none` (TCP-IP joiner, empty list, loopback) still accepted a second member with the same cluster name, and the red test reproduced it. Disabling outgoing discovery is not enough; the refusal comes from the unmatchable name. Probing 5.7.0 directly showed a client using the configured name is refused by a `none` member but accepted by a plain `tcp-ip` member, which then let it write to the oversight map, so the cluster name is a label and not a barrier. The tester ran the red test failing before the fix and 5 of 5 stable runs. A follow-up commit restored exact cluster-name assertions that the first fix had loosened.
+
 ## 2026-10-07 — Task 136: cut 0.4.1
 
 The tree is at 0.4.1 with a CHANGELOG that lists the breaking `embedded` refusal, the Hazelcast 5.7.0 pin, publication targets and known limitations. The live Compose run formed a 2-member cluster, and the isolation claim was weakened to match what it showed. Merged `mvn clean verify` and `mvn -Prelease -Dgpg.skip=true clean verify` pass, `data-prism-server-0.4.1.jar` holds only `hazelcast-5.7.0.jar`, and mkdocs strict, `check_site`, `check_changelog`, `check_snippet_markers` and `docker compose config -q` pass.
