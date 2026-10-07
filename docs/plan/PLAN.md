@@ -28,7 +28,7 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### EU AI Act plan — in flight, waves 1 to 4 landed
+### EU AI Act plan — every planned task landed, 0.5.0 awaits the release cut
 
 Tasks that make the audit, oversight and re-identification surfaces support an
 EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The work is on
@@ -322,23 +322,19 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 147 | **Done** (2026-10-07). Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
 | Done | 148 | **Done** (2026-10-07). Put the validated external correlation id into the SLF4J MDC under an operator-configured key | 110, 111, 113, 114 |
 | Done | 115 | **Done** (2026-10-07, attempt 2). Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
-| 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
-| 6 | 150 | **BLOCKED on owner decision D-150-A.** Audit `entityType` only when it is a registered entity type, otherwise a sentinel | 148 |
+| Done | 116 | **Done** (2026-10-07, attempt 2). Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
+| Done | 150 | **Done** (2026-10-07, attempt 2, D-150-A decided). Audit `entityType` verbatim only when registered or upper-case-identifier-shaped, otherwise `<unregistered>` | 148 |
 
-**The plan is PAUSED pending the owner (decision 2026-10-07).** The owner lifted the pause for task 149 and then for waves 4 and 5; all are merged, and wave 5 (148, 115) is done. Wave 6 is 116 and 150. Task 116 is unblocked: its dependencies 106, 113, 114, 115, 135 and 148 are all merged. Task 150 depends on 148, which is merged, but it is BLOCKED on the open owner decision D-150-A. Both still wait for the owner's go-ahead. Do not fan out, plan or merge anything on the strength of this file alone.
+**Every planned 0.5.0 task is done (waves 1 to 6).** The next step is the 0.5.0 release cut, which needs the owner's go-ahead. The pause stays in force: do not push, tag, publish or open a PR on the strength of this file alone. The consolidated checklist is below, under "0.5.0 release-cut checklist".
 
 **Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
 
 #### Open owner questions
 
-- On the tool DENY paths, the caller's raw `entityType` argument is written into audit records (`GetEntityContextTool.java:206` to `:307`/`:339`; `CompareEntitySourcesTool.java:368`/`:400`). It is caller-controlled free text and could carry personal data into the audit log and the shipped JSON projection. It predates 0.5.0 and is not the correlation id. Planned as task 150, which waits on **D-150-A**, an owner decision in three parts: (a) a new `dataprism.audit.entity-types` property as the registry, (b) the sentinel `<unregistered>`, and (c) an empty default, so after an upgrade every entity type is audited as `<unregistered>` until the operator configures the list. Part (c) needs a CHANGELOG line. Details in `docs/plan/tasks/150-audit-only-registered-entity-types.md`.
 - 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
 - Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
-Release-cut verification items from wave 1:
-
-- Post `@dependabot show maven ignore conditions` and `@dependabot show eclipse-temurin ignore conditions` on a docker PR, or confirm the next docker group run proposes no 26 tags (task 145's proof).
-- Run the amd64 Docker smoke (`docker/smoke/java-runtime-smoke.sh`) on CI or a Linux host; only arm64 has run.
+Release-cut items are consolidated in "0.5.0 release-cut checklist" below.
 
 Follow-ups from wave 1, not yet tasks:
 
@@ -437,19 +433,50 @@ Follow-ups from wave 5 (tasks 115, 148), not yet tasks:
 - (z) `CorrelationMdcToolTest.rejectedPutsNothing` asserts on text that can never be present. Feed a real rejected header through `InboundCorrelation.resolve(...)`.
 - (aa) `concurrentCallsDoNotCross` checks only the marker events. Also check the audit-event lines.
 - (ab) The 5f5f5df7 commit body calls a positive control "the mutation". Wording only; recorded in HISTORY, the commit is not rewritten.
-- (ac) There is no stdio MDC overload, so library users of stdio always run with MDC off. Document this in 116 or later.
-- (ad) For 116: the Python client snippets in `examples/` need Python 3.10 or later. Say so in the doc.
+- (ac) There is no stdio MDC overload, so library users of stdio always run with MDC off. Documented in `docs/log-shipping.md` by task 116 (done).
+- (ad) The Python client snippets need Python 3.10 or later. Said in `docs/log-shipping.md` by task 116 (done).
 
-**Release-cut items for 0.5.0:**
+Follow-ups from wave 6 (tasks 116, 150), not yet tasks:
 
-- CI PR run green on JDK 21/25 + container-smoke (task 144 acceptance). Both matrix legs and `container-smoke` must pass on a pushed PR; this is owner-gated on a push and has not run.
-- Linux CI evidence for 149 stability (D-149-B): after the next push, check that the Linux legs of the JDK 21/25 matrix pass without a rerun. One local Linux container run (1223 tests, 0 failures, 2 skips) is extra evidence, but the CI run on push is still owed.
+- (ae) `docs/audit.md:87` now holds two sentences where task 150's Owns said one. Rewrap the 150 doc lines and the 116 fix lines, and remove the double blank line in `audit.md` around :506.
+- (af) `docs/audit.md` field-count wording: a line of more than 25 fields whose field 20 is non-numeric is an interrupted write, not `FIELD_COUNT_MISMATCH`. A rare edge.
+- (ag) The mutation proof for the stdio drop in 150 did not record the name of the failing test.
+- (ah) The `OperatorAudit`, `OversightOperatorController` and `ReidentificationService` `entityType` fields were out of scope for 150. Raise a recon if they are a concern.
+
+### 0.5.0 release-cut checklist (owner go-ahead required)
+
+All items are open unless marked done. Nothing has been pushed. Every outward action needs the owner's go-ahead.
+
+Version and changelog:
+
+- Bump the reactor version from 0.4.1 to 0.5.0.
+- Write the CHANGELOG entry. Breaking: Spring Boot 4.1 required by the starter and autoconfigure (D-139-B), Boot 3 users stay on 0.4.x. Added lines for:
+  - `dataprism.correlation.mdc-key` (D-148-A);
+  - `dataprism.correlation.outbound.header` (D-148-A);
+  - `dataprism.audit.entity-types` (D-150-A);
+  - the audit-content change: "entityType audited verbatim only when registered or upper-case-identifier-shaped; otherwise `<unregistered>`".
+
+Docs to fix at the cut:
+
+- `docs/extending.md`: update the `data-prism.version` snippet, and run a full package build of the extension pom against Spring Boot 4.1.1. The snippet itself was re-resolved against Boot 4.1.1 (spring-web 7.0.9, data-prism 0.4.1 from Central) in task 147.
+- `docs/extending.md:560-571`: amend the "verified (recorded against 0.3.0)" paragraph to say the 0.5.0 snippet was re-resolved against Boot 4.1.1 and that the full package build was repeated at the cut.
+- `README.md:203`: the enforcer rule is at `pom.xml:282-284`, not the line it cites.
+- `docs/audit.md` (~:82-98): the stale "nineteen fields" and "recordVersion 2" text. The hashed-field list (~:565) lacks `externalCorrelationId`.
+- Re-verify the 0.4.1 checklist step 9 consumer snippet (`docs/extending.md`) against Central, in a throwaway project with no local repository.
+
+Evidence to collect:
+
+- CI PR run green on JDK 21 and 25, plus `container-smoke` (task 144 acceptance). Owner-gated on a push; it has not run.
+- Linux CI evidence for 149 (D-149-B): the Linux legs of the JDK 21/25 matrix pass without a rerun. One local Linux container run (1223 tests, 0 failures, 2 skips) is extra evidence only.
+- Run the amd64 Docker smoke (`docker/smoke/java-runtime-smoke.sh`) on CI or a Linux host; only arm64 has run.
+- Dependabot ignore-condition proof (task 145): post `@dependabot show maven ignore conditions` and `@dependabot show eclipse-temurin ignore conditions` on a docker PR, or confirm the next docker group run proposes no 26 tags.
+
+Housekeeping:
+
 - Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
-- Close or ignore #114, since 141 supersedes its Spring Boot bump.
-- Update the `docs/extending.md` `data-prism.version` snippet at the cut.
-- Amend `docs/extending.md:560-571`, the "verified (recorded against 0.3.0)" paragraph, to say the 0.5.0 snippet was re-resolved against Spring Boot 4.1.1 (spring-web 7.0.9, data-prism 0.4.1 from Central) and that the full package build is repeated at the cut.
-- Fix the stale `pom.xml` line reference at `README.md:203`: the enforcer rule is at `pom.xml:282-284`.
-- Add a CHANGELOG entry for `dataprism.correlation.mdc-key` and `dataprism.correlation.outbound.header` (D-148-A).
+- Close or ignore Dependabot PR #114, since 141 supersedes its Spring Boot bump.
+
+After the cut, the 0.4.1 steps 1 to 8 pattern applies: PR to `main`, CI green, annotated tag `v0.5.0`, `release.yml`, `publish-central`, `publish-image`, `publish-mcp`.
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
 grouped into one PR per ecosystem per week (`.github/dependabot.yml`).
