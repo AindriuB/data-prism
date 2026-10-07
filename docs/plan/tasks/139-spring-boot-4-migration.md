@@ -1,7 +1,7 @@
 # 139 — Migrate to Spring Boot 4
 
 **Repo:** `.`
-**Release:** unassigned (0.5.0 or later; owner decides)
+**Release:** 0.5.0
 **Depends on:** 130
 **Status:** placeholder. It needs a `/plan` pass to split into tasks before any work starts.
 

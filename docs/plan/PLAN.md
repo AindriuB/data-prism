@@ -266,7 +266,7 @@ The owner dropped this for now. It is recorded so it is not re-researched. The a
 Follow-ups from 136:
 
 - The lychee link check was not run locally; CI is the first run. Check its result before tagging.
-- 130 is now unblocked (it waited on 136).
+- 130 is now unblocked (it waited on 136). It has since landed.
 
 ### 0.4.1 release checklist (owner go-ahead required)
 
@@ -276,15 +276,26 @@ and needs the owner's go-ahead. Nothing has been pushed.
 
 1. Push `claude/release-0.4.1` and open a PR to `main`.
 2. Wait for CI green (including the lychee link check, not run locally), then merge.
-3. Close the old Dependabot PRs. The grouping config ships in this branch, so after the merge Dependabot regenerates grouped PRs and the old ungrouped ones are stale.
+3. Done: Dependabot superseded the old PRs with grouped PRs. Dependabot PRs are not closed by hand.
 4. Push an annotated tag `v0.4.1` on the merge commit, matching `v0.4.0`. It is not signed.
 5. Watch the `release.yml` run for `v0.4.1`; create the GitHub Release if the workflow has not.
 6. Dispatch `publish-central`, then verify the library modules at 0.4.1 on Central (`data-prism-server` must not appear).
 7. Dispatch `publish-image` with `-f version=0.4.1`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
 8. Dispatch `publish-mcp`, then verify the registry lists 0.4.1 as latest.
-9. Re-verify the `docs/extending.md` consumer snippet against Central 0.4.1 (throwaway project, no local repository), and drop any remaining "(recorded against ...)" markers if it passes.
+9. Re-verify the `docs/extending.md` consumer snippet against Central 0.4.1 (throwaway project, no local repository), and drop any remaining "(recorded against ...)" markers if it passes. Still open.
 
-#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116)
+**0.4.1 release complete (2026-10-07).** Steps 1 to 8 are done and verified:
+
+- The GitHub Release exists.
+- Maven Central has the 13 library modules at 0.4.1. `data-prism-server` is absent, as intended, and the parent pom pins Hazelcast 5.7.0.
+- GHCR has 5 images at 0.4.1, each for amd64 and arm64.
+- The MCP Registry lists 0.4.1 as latest.
+
+Only step 9 remains.
+
+#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116, 130, 139, 140)
+
+Scope per the owner, 2026-10-07: 108-116, 130, 139 and 140.
 
 Lets an organisation's own correlation id flow from its MCP client through the
 audit record and on to its REST sources, and writes audit events as JSON that
@@ -293,7 +304,9 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
-| 1 | 130 | Clear the dependency backlog (`docs/plan/tasks/130-clear-dependency-backlog.md`). Runs only after the 0.4.1 cut (136). Owns no files shared with 108-116 | 136 |
+| 1 | 130 | **Done** (2026-10-07). Cleared the dependency backlog; see HISTORY | 136 |
+| 1 | 139 | Spring Boot 4 migration. Placeholder: needs a `/plan` pass before any work (`docs/plan/tasks/139-spring-boot-4-migration.md`) | 130 |
+| 1 | 140 | Java 25 for runtime and build images, CI matrix on JDK 21 and 25. Planned; task file to follow | 130 |
 | 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
 | 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
 | 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
@@ -305,8 +318,18 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
-before 0.4.0. Task 130 starts only after the 0.4.1 cut (task 136), and it owns no files shared with tasks 108-116, so it
-can run alongside any of them.
+before 0.4.0. Task 130 owned no files shared with tasks 108-116.
+
+**Decisions from task 130 (2026-10-07):**
+
+- **D-130-A:** Spring Boot 4 is not part of 130. It is its own migration, task 139.
+- **D-130-B (historical, superseded 2026-10-07 by the Java 25 decision below):** the Docker images stay on Java 21.
+- **Java 25 (2026-10-07):** the owner approved runtime and build images on Java 25 LTS, not 26, with a CI matrix on JDK 21 and 25. Bytecode stays `--release 21`, the README states the Java 21 consumer minimum, and Dependabot allows 25 but not 26. Language level 25 is not adopted. Risks: Hazelcast's Unsafe warnings, Mockito agent warnings, a JDK TLS message-text test, and Maven image tags. Work is task 140.
+
+Follow-ups from 130, not yet tasks:
+
+- (a) `data-prism-server` bundles nimbus-jose-jwt 9.37.4 through the Spring Boot BOM, while the quickstart issuer pins 10.10. The issuer pom comment is stale. Decide alongside 139.
+- (b) Check that the dependabot docker `maven` semver-major ignore really stops `-temurin-26` tags on the next docker group PR.
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
 grouped into one PR per ecosystem per week (`.github/dependabot.yml`).

@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — Task 130: clear the dependency backlog
+
+The grouped Dependabot backlog is cleared. Maven moves to nimbus-jose-jwt 10.10, archunit 1.5.1 and maven-source-plugin 3.4.0. The workflows move to checkout v7, setup-java v6, upload-artifact v7, download-artifact v8 and docker/login-action v4. Pillow is 12.3.0, and the images it renders are pixel-identical. Dependabot now ignores Spring Boot majors (split out as task 139) and Java-image majors.
+
+**Cost:** The publish workflows cannot be exercised from a branch, so the action bumps in them are untested until the next release. Steps to watch then: publish-central (checkout, setup-java with GPG, upload-artifact); publish-image (checkout, setup-java, login-action, 5 upload-artifacts, download-artifact v8 with digest checks); publish-mcp (checkout). The Spring Boot 4 bump (#114) was dropped from 130 as a migration, not a version bump, and the Java 21 image pin (D-130-B) was superseded the same day by the Java 25 decision.
+
 ## 2026-10-07 — Task 138: join.mode none refuses incoming joins
 
 A `join.mode: none` member now starts standalone with every joiner disabled and runs under the internal cluster name `<cluster-name>-solo-<UUID>`, so it refuses incoming joins from both members and clients. The documentation now says that a plain Hazelcast client configured with the cluster name can read and write maps on a `tcp-ip` or `kubernetes` member, while a `none` member refuses it. Merged `mvn clean verify`, the release-profile build, mkdocs strict, `check_site`, `check_changelog` and `check_snippet_markers` pass.
