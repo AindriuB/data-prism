@@ -75,7 +75,7 @@ class ExternalCorrelationToolTest {
     private static final StaticSecretKeyProvider KEYS =
             StaticSecretKeyProvider.of("task-110-test-key-not-for-any-real-data-32b");
     private static final CorrelationIdPolicy POLICY =
-            CorrelationIdPolicy.opaque(CorrelationIdPolicy.DEFAULT_OPAQUE_PATTERN);
+            CorrelationIdPolicy.opaque("ext-[a-z0-9-]{1,40}");
     private static final String META_KEY = "io.github.aindriub.dataprism/correlationId";
     private static final String[] TOOLS = {GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME};
     private static final Map<String, Object> ARGS = Map.of("entityType", "THING", "subjectId", "1");
@@ -259,7 +259,7 @@ class ExternalCorrelationToolTest {
     void optionalRejectedProceedsWithoutId() {
         for (int tool = 0; tool < 2; tool++) {
             reset();
-            McpSchema.CallToolResult result = call(tool, recording.getClass() == null ? null : real(audit, new Thing("1", "raw")),
+            McpSchema.CallToolResult result = call(tool, real(audit, new Thing("1", "raw")),
                     CorrelationRequirement.OPTIONAL, ToolAdmission.none(), CALLER, InboundCorrelation.rejected(), ARGS);
 
             assertThat(result.isError()).as(TOOLS[tool]).isNotEqualTo(Boolean.TRUE);
@@ -396,7 +396,7 @@ class ExternalCorrelationToolTest {
             assertThat(required.listTools()).isEqualTo(optional.listTools());
             for (McpSchema.Tool tool : required.listTools()) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> properties = (Map<String, Object>) tool.inputSchema().properties();
+                Map<String, Object> properties = (Map<String, Object>) tool.inputSchema().get("properties");
                 assertThat(properties).doesNotContainKeys("correlationId", "externalCorrelationId", "traceparent");
             }
         } finally {

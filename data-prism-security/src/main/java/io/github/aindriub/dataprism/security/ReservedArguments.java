@@ -17,7 +17,8 @@ import java.util.Set;
 public final class ReservedArguments {
 
     public static final Set<String> NAMES = Set.of(
-            "principalId", "scopeId", "scopeType", "purpose", "caseId", "profile", "capabilities");
+            "principalId", "scopeId", "scopeType", "purpose", "caseId", "profile", "capabilities",
+            "correlationId", "externalCorrelationId", "traceparent");
 
     private ReservedArguments() {
     }

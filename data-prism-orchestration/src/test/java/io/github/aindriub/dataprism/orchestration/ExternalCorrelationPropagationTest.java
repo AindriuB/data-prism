@@ -52,7 +52,7 @@ class ExternalCorrelationPropagationTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
     private static final StaticSecretKeyProvider KEYS =
             StaticSecretKeyProvider.of("task-110-test-key-not-for-any-real-data-32b");
-    private static final CorrelationIdPolicy POLICY = CorrelationIdPolicy.opaque(CorrelationIdPolicy.DEFAULT_OPAQUE_PATTERN);
+    private static final CorrelationIdPolicy POLICY = CorrelationIdPolicy.opaque("ext-[a-z0-9-]{1,40}");
 
     private record Thing(String id, String value) {
     }
