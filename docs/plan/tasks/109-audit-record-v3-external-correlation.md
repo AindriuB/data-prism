@@ -82,3 +82,19 @@ release 0.4.0.)
   format is documented by task 116. Until then, the Javadoc on
   `AuditRecordFormat` and `AuditEventHash` states the v3 layout and encoding.
 - A keyed chain. Task 107 was dropped (D2).
+
+## Attempt 1 — failed (2026-10-07)
+
+Reviewer: CHANGES (head 4f56f120). Everything else is met: vectors byte-identical, downgrade breaks the hash, VERSION_REGRESSION.
+Required for attempt 2:
+1. **Unhashed field injection (blocker).** AuditRecordFormat.java:97,132 parses 25 fields for any
+   recordVersion. Appending `\u001fforged-id` to a real v2 line gives externalCorrelationId "forged-id" while the
+   chain still verifies, because the hash ignores the field below v3. Field count must match the version exactly:
+   v1 → 20, v2 → 24, v3 → 25. Anything else is refused at parse, as a structural anomaly or break, consistent with
+   how the verifier reports malformed lines. Add a test that a v2 line with an appended field is reported, not accepted.
+2. Reject a non-empty externalCorrelationId when recordVersion < 3 in the AuditEvent constructor, rather than
+   silently dropping it at serialize. Add a test.
+3. Add a test that sends the same edge inputs (256 and 257 chars, each allowed symbol, one character just outside the class)
+   through CorrelationIdPolicy's ceiling and the AuditEvent constructor, and asserts identical outcomes. If the ceiling
+   is package-private, test it through CorrelationIdPolicy's public validate with a permissive pattern.
+4. Add an explicit test that a v3 record downgraded to v2 (field deleted, recordVersion edited to 2) is reported as a break.
