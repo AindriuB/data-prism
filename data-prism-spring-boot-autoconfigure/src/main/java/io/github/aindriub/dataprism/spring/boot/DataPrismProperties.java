@@ -170,6 +170,7 @@ public class DataPrismProperties {
         }
         validateCorrelation();
         validateAuditOutput();
+        validateAuditEntityTypes();
         validateSources(fixture);
         validateOversight();
     }
@@ -238,6 +239,16 @@ public class DataPrismProperties {
         if (blank(correlation.inbound.header)) {
             refuse("CORRELATION_MDC_KEY_WITHOUT_HEADER",
                     "dataprism.correlation.mdc-key needs dataprism.correlation.inbound.header");
+        }
+    }
+
+    /** Refuses a bad name without repeating it: the value could itself be personal data. */
+    private void validateAuditEntityTypes() {
+        try {
+            io.github.aindriub.dataprism.audit.AuditedEntityTypes.of(audit.entityTypes);
+        } catch (IllegalArgumentException e) {
+            refuse("INVALID_AUDIT_ENTITY_TYPE", "every dataprism.audit.entity-types entry must match "
+                    + io.github.aindriub.dataprism.audit.AuditedEntityTypes.REGISTERED_NAME.pattern());
         }
     }
 
@@ -947,6 +958,20 @@ public class DataPrismProperties {
         private boolean retentionOverride;
         private final Checkpoint checkpoint = new Checkpoint();
         private final Output output = new Output();
+        private List<String> entityTypes = new java.util.ArrayList<>();
+
+        /**
+         * The entity types an audit record's {@code entityType} may hold verbatim. Empty (the default)
+         * means the shape fallback {@code [A-Z][A-Z0-9_]{0,63}}; anything else is audited as
+         * {@code <unregistered>}.
+         */
+        public List<String> getEntityTypes() {
+            return entityTypes;
+        }
+
+        public void setEntityTypes(List<String> v) {
+            entityTypes = v == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(v);
+        }
 
         public Output getOutput() {
             return output;

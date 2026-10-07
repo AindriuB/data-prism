@@ -377,7 +377,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 .map(outcome -> outcome.sourceName() + ":" + outcome.status())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         audit.record(new AuditEntry(investigationContext.principalId(), investigationContext.clientId(),
-                request.toolName(), request.entityType(), subjectToken, fingerprint,
+                request.toolName(), request.auditedEntityType(), subjectToken, fingerprint,
                 context.redactionProfile(), context.scopeId(), context.purpose(),
                 investigationContext.caseId(), decision, names, request.rejectedArguments(),
                 correlationId, dispositions, request.approvalId(), request.approverId(),
