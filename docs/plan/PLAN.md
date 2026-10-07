@@ -323,7 +323,17 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
 | 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
 
-Wave 3 is complete (110, 111, 112, 144). Next wave is 4 (113, 114, 147), all runnable now. The owner has asked to hold 113 and 114 until told, so only 147 may start unprompted.
+**The whole plan is PAUSED pending the owner (decision 2026-10-07).** Nothing starts until the owner says so, including wave 4 (113, 114, 147). Do not fan out, plan or merge anything on the strength of this file alone.
+
+Wave 3 is complete (110, 111, 112, 144). Wave 4 (113, 114, 147) is runnable once the owner lifts the pause.
+
+**Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
+
+#### Open owner questions
+
+- Add a test-stability task to 0.5.0? Follow-up (f) below names the flaky tests seen so far.
+- Where does the 1.0 roadmap live: in this file or on a shareable page?
+- Delete the local branches already merged into main: `docs/dedupe-claude-md-rules`, `record/19-20-close-wave`, `simplify/waves-1-2`?
 
 Release-cut verification items from wave 1:
 

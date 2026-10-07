@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-07 | none | Baseline on a2c6bdf7 after wave 3 (20/20 modules, about 1,220 tests, class-version gate and actionlint clean); owner paused all work. | `## 2026-10-07 — Baseline after 0.5.0 wave 3, and the owner's pause` |
 | 2026-10-07 | 144 | 0.5.0 wave 3 part 2: CI matrix on JDK 21 and 25, release on 25, class-version-65 gate on released jars that fails closed. | `## 2026-10-07 — 0.5.0 wave 3, part 2: task 144` |
 | 2026-10-07 | 110, 111, 112 | 0.5.0 wave 3 part 1: MCP tools carry the external correlation id, REST sources send it as a header, audit events project to ECS JSON. | `## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112` |
 | 2026-10-07 | 109, 142, 146 | 0.5.0 wave 2: audit record v3 with hashed external correlation id and FIELD_COUNT_MISMATCH breaks, five Spring Boot 4 guards, suite proven on JDK 25 and 21 on Linux. | `## 2026-10-07 — 0.5.0 wave 2: tasks 109, 142, 146` |

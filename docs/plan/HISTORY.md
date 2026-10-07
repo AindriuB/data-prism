@@ -17,6 +17,11 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — Baseline after 0.5.0 wave 3, and the owner's pause
+On merged head a2c6bdf7 the full `-Prelease -Dgpg.skip=true clean verify` passes across 20 of 20 modules with about 1,220 tests and no failures, `check-class-version.sh 65` exits 0 over the 19 jars, and actionlint is clean. The owner paused all work after wave 3; wave 4 (113, 114, 147) does not start until told.
+
+**Cost:** The reactor is still at 0.4.1, so the baseline says nothing about the 0.5.0 version bump, which is a release-cut item. No flake recurred on this run, which does not clear follow-up (f). Task worktrees and branches were removed and the owner deleted the leftover build logs under the old `.worktrees/` directories.
+
 ## 2026-10-07 — 0.5.0 wave 3, part 2: task 144
 
 CI now builds on a JDK 21 and 25 matrix, and the release and Central publishing workflows build on 25. A new `.github/scripts/check-class-version.sh` gates released jars on class-file major version 65 (Java 21), so consumers on 21 can load them. The tester ran the full `-Prelease` reactor (about 1138 tests) and the gate over 19 jars: 65 passes, 69 fails.
