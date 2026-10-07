@@ -267,7 +267,9 @@ phone-home are always off.
 - `join.mode: tcp-ip` takes `join.members`, a list of `host` or `host:port`.
 - `join.mode: kubernetes` takes `join.kubernetes.namespace` and exactly one of
   `service-name` (API mode) or `service-dns` (DNS mode).
-- `join.mode: none` is an explicit single member, bound to `127.0.0.1`.
+- `join.mode: none` is an explicit single member, bound to `127.0.0.1`, that
+  neither discovers nor accepts other members. Its internal cluster name adds a
+  random per-member suffix, which appears in logs.
 - `members` with a mode other than `tcp-ip` is refused (`INVALID_CLUSTER_MEMBERS`),
   and `kubernetes.*` with a mode other than `kubernetes` is refused
   (`INVALID_KUBERNETES_JOIN`).

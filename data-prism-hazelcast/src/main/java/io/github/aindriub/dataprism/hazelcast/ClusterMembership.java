@@ -7,6 +7,7 @@ import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -35,7 +36,7 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
     public record Kubernetes(String namespace, String serviceName, String serviceDns) implements Join {
     }
 
-    /** A single member that never accepts others. */
+    /** A single member that neither discovers nor accepts other members. */
     public record None() implements Join {
     }
 
@@ -111,7 +112,11 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
                 bindToInterface(config);
             }
             case None none -> {
-                joinConfig.getTcpIpConfig().setEnabled(true).setMembers(List.of());
+                // Every joiner stays disabled, so the member starts standalone and discovers no one.
+                // Hazelcast still answers a join request that carries a matching cluster name, so
+                // the effective name also carries an unguessable per-member suffix. It is internal
+                // and appears in logs.
+                config.setClusterName(clusterName + "-solo-" + UUID.randomUUID());
                 config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
                 config.setProperty("hazelcast.socket.bind.any", "false");
             }
