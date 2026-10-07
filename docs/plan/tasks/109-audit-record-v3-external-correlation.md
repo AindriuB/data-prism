@@ -114,3 +114,17 @@ Required for attempt 3 (AuditChainVerifier.java and AuditChainVerifierCli.java a
    - AuditRecordV3Test:192 (the appended field, including on the LAST line of a file) asserts FIELD_COUNT_MISMATCH and exit 2.
    - :265 (the downgrade) asserts `hasBreak()` and exit 2.
    - :208 rewrites field index 20 directly rather than using String.replace.
+
+## Attempt 3 — failed (2026-10-07)
+
+Reviewer: CHANGES. FIELD_COUNT_MISMATCH is correct everywhere.
+Required for attempt 4:
+1. **The purge can delete evidence of a downgrade (blocker, introduced by this task).** `AuditRetention.firstBadOffset`
+   (:247) ignores VERSION_REGRESSION, so an expired segment holding a downgrade (which the verifier reports as a break, exit 2)
+   can be purged. Make firstBadOffset stop at **every anomaly type that `hasBreak()` counts**, derived from the same
+   predicate so the two cannot drift. That includes VERSION_REGRESSION and the pre-existing RETENTION_ANCHOR_REJECTED.
+2. Retention tests: a purge stops at, and keeps, a segment containing FIELD_COUNT_MISMATCH, and likewise VERSION_REGRESSION.
+3. AuditRecordV3Test:201 asserts `isInstanceOf(FieldCountMismatchException.class)`.
+Follow-up, not 109: an unterminated last line is reported as "POSSIBLY IN FLIGHT (not a break)", exit 3. A forged final record
+with its newline stripped reads as benign. That is pre-existing. Reword it as "unverified, tampering not ruled out", and/or cover the
+tail with `--checkpoints`.
