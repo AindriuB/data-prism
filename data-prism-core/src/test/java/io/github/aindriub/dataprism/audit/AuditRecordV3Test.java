@@ -279,4 +279,49 @@ class AuditRecordV3Test {
         assertThat(AuditEventHash.compute(AuditRecordFormat.parse(downgraded)))
                 .isNotEqualTo(events.get(1).eventHash());
     }
+
+    @Test
+    void anyOverCountLineIsAFieldCountMismatchBreak() throws IOException {
+        for (int version : new int[] {2, 3}) {
+            for (int extra : new int[] {1, 2}) {
+                for (int target : new int[] {1, 2}) { // 2 is the newline-terminated LAST line
+                    String[] ls = lines(chain(version, version, version)).split("\n");
+                    ls[target] = ls[target] + "\u001fx".repeat(extra);
+                    Path file = tempDir.resolve("over" + version + extra + target + ".log");
+                    Files.writeString(file, String.join("\n", ls) + "\n");
+                    AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(file);
+                    assertThat(report.anomalies()).as("v%d +%d line %d", version, extra, target)
+                            .extracting(a -> a.type().name()).containsExactly("FIELD_COUNT_MISMATCH");
+                    assertThat(report.hasBreak()).isTrue();
+                    assertThat(cli(file, new ByteArrayOutputStream()))
+                            .isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+                }
+            }
+        }
+    }
+
+    @Test
+    void aV1LineWithAppendedFieldsIsAFieldCountMismatchBreak() throws IOException {
+        String v1 = AuditRecordFormat.serialize(event(2, "")).split("\u001f", -1).length == 24
+                ? String.join("\u001f", java.util.Arrays.copyOf(
+                        AuditRecordFormat.serialize(event(2, "")).split("\u001f", -1), 20))
+                : "";
+        for (int extra : new int[] {1, 2, 5}) {
+            Path file = tempDir.resolve("v1over" + extra + ".log");
+            Files.writeString(file, v1 + "\u001fx".repeat(extra) + "\n");
+            assertThat(AuditChainVerifier.verify(file).anomalies()).extracting(a -> a.type().name())
+                    .as("v1 +%d", extra).containsExactly("FIELD_COUNT_MISMATCH");
+        }
+    }
+
+    @Test
+    void aGenuinelyTruncatedLineIsStillAnInterruptedWrite() throws IOException {
+        String[] ls = lines(chain(3, 3, 3)).split("\n");
+        String[] parts = ls[1].split("\u001f", -1);
+        ls[1] = String.join("\u001f", java.util.Arrays.copyOf(parts, 10));
+        Path file = tempDir.resolve("torn.log");
+        Files.writeString(file, String.join("\n", ls) + "\n");
+        assertThat(AuditChainVerifier.verify(file).anomalies()).extracting(a -> a.type().name())
+                .containsExactly("INTERRUPTED_WRITE_FRAGMENT");
+    }
 }
