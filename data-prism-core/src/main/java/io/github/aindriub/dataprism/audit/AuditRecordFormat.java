@@ -15,6 +15,10 @@ import java.util.Set;
  * PII scan read only what this class writes, so a field silently dropped here
  * is a field neither of them can ever see.
  *
+ * <p>A line has 20 fields (version 1), 24 (version 2) or 25 (version 3). Version 3 appends
+ * {@code externalCorrelationId} as the last field, after {@code approverId}; {@code parse}
+ * decides the version by field count.
+ *
  * <p>Fields are separated by an ASCII Unit Separator (0x1F); set members are
  * separated by an ASCII Record Separator (0x1E). Both control characters, and
  * the backslash and newline that could otherwise be mistaken for them, are
@@ -77,7 +81,12 @@ public final class AuditRecordFormat {
         appendField(line, Integer.toString(event.recordVersion()));
         appendRawField(line, encodeDispositions(event.fieldDispositions()), true);
         appendField(line, event.approvalId());
-        appendRawField(line, encodeField(event.approverId()), false);
+        if (event.recordVersion() < 3) {
+            appendRawField(line, encodeField(event.approverId()), false);
+            return line.toString();
+        }
+        appendField(line, event.approverId());
+        appendRawField(line, encodeField(event.externalCorrelationId()), false);
         return line.toString();
     }
 
@@ -85,9 +94,9 @@ public final class AuditRecordFormat {
     public static AuditEvent parse(String line) {
         // A line without recordVersion has exactly 20 fields and is version 1.
         String[] raw = splitRaw(line, FIELD_SEP, -1);
-        if (raw.length != 20 && raw.length != 24) {
+        if (raw.length != 20 && raw.length != 24 && raw.length != 25) {
             throw new IllegalArgumentException(
-                    "malformed audit record: expected 20 or 24 fields, found " + raw.length);
+                    "malformed audit record: expected 20, 24 or 25 fields, found " + raw.length);
         }
 
         String eventId = decode(raw[0]);
@@ -120,11 +129,12 @@ public final class AuditRecordFormat {
         Map<String, String> dispositions = decodeDispositions(raw[21]);
         String approvalId = decode(raw[22]);
         String approverId = decode(raw[23]);
+        String externalCorrelationId = raw.length == 25 ? decode(raw[24]) : "";
 
         return new AuditEvent(eventId, timestamp, principalId, clientId, tool, entityType, subjectPseudonym,
                 parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, sourceSystems,
                 rejectedArguments, correlationId, instanceId, sequence, previousHash, eventHash, recordVersion,
-                dispositions, approvalId, approverId);
+                dispositions, approvalId, approverId, externalCorrelationId);
     }
 
     /** Each entry is {@code path=ACTION}; the action never contains '=', so the last one splits it. */

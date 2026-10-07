@@ -122,7 +122,7 @@ class AuditEventHashTest {
     }
 
     @Test
-    void versionTwoRecordEditedToVersionOneIsABreak() throws IOException {
+    void currentVersionRecordEditedToVersionOneIsABreak() throws IOException {
         Path path = tempDir.resolve("audit.log");
         try (FileAuditSink sink = new FileAuditSink(path)) {
             AuditRecorder recorder = new AuditRecorder(sink, FIXED, "w");
@@ -135,12 +135,12 @@ class AuditEventHashTest {
         assertThat(AuditChainVerifierCli.run(new String[] {path.toString()}, sink, sink))
                 .isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
         String content = Files.readString(path, StandardCharsets.UTF_8);
-        // recordVersion is the 21st unit-separator-delimited field of a version 2 line.
+        // recordVersion is the 21st unit-separator-delimited field of a version 3 line.
         StringBuilder edited = new StringBuilder();
         for (String line : content.split("\n")) {
             String[] fields = line.split("\u001f", -1);
-            assertThat(fields).hasSize(24);
-            assertThat(fields[20]).isEqualTo("2");
+            assertThat(fields).hasSize(25);
+            assertThat(fields[20]).isEqualTo("3");
             fields[20] = "1";
             edited.append(String.join("\u001f", fields)).append('\n');
         }

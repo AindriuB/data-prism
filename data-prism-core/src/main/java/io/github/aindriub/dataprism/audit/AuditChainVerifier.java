@@ -391,6 +391,16 @@ public final class AuditChainVerifier {
             writer.recordCount++;
             return;
         }
+        if (writer.highestVersion > event.recordVersion()) {
+            anomalies.add(new StructuralAnomaly(AnomalyType.VERSION_REGRESSION,
+                    "VERSION_REGRESSION: writer " + event.instanceId() + " wrote a recordVersion "
+                            + event.recordVersion() + " record at sequence " + event.sequence() + " (byte offset "
+                            + offset + ") after a recordVersion " + writer.highestVersion + " record. A writer's "
+                            + "version only ever increases, so this is a downgrade: investigate it as a possible "
+                            + "forgery that avoids a field the newer version hashes.",
+                    offset, -1));
+        }
+        writer.highestVersion = Math.max(writer.highestVersion, event.recordVersion());
         writer.seenSequences.put(event.sequence(), offset);
         writer.hashBySequence.put(event.sequence(), event.eventHash());
         writer.recordCount++;
@@ -601,6 +611,7 @@ public final class AuditChainVerifier {
         private AuditCheckpoint retentionAnchor;
         private String anchorRejection;
         private long firstOffset;
+        private int highestVersion;
 
         WriterState(String instanceId) {
             this.instanceId = instanceId;
@@ -622,7 +633,9 @@ public final class AuditChainVerifier {
         /** A parse failure that is not the known interrupted-write shape and cannot be ruled out as tampering. */
         UNPARSEABLE_RECORD,
         /** A retention anchor that matches a writer's start but is too recent, or undated, to be a purge's. */
-        RETENTION_ANCHOR_REJECTED
+        RETENTION_ANCHOR_REJECTED,
+        /** A writer's {@code recordVersion} decreased within its chain: a downgrade, never a normal upgrade. */
+        VERSION_REGRESSION
     }
 
     /** The first edit or deletion found in one writer's chain. */
@@ -695,7 +708,8 @@ public final class AuditChainVerifier {
         public boolean hasBreak() {
             return writers.stream().anyMatch(WriterResult::broken)
                     || anomalies.stream().anyMatch(a -> a.type() == AnomalyType.UNPARSEABLE_RECORD
-                            || a.type() == AnomalyType.RETENTION_ANCHOR_REJECTED);
+                            || a.type() == AnomalyType.RETENTION_ANCHOR_REJECTED
+                            || a.type() == AnomalyType.VERSION_REGRESSION);
         }
 
         /**
@@ -706,7 +720,8 @@ public final class AuditChainVerifier {
          */
         public boolean hasStructuralAnomaly() {
             return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD
-                    && a.type() != AnomalyType.RETENTION_ANCHOR_REJECTED)
+                    && a.type() != AnomalyType.RETENTION_ANCHOR_REJECTED
+                    && a.type() != AnomalyType.VERSION_REGRESSION)
                     || writers.stream().anyMatch(w -> w.nonGenesisStart().isPresent());
         }
     }
