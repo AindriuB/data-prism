@@ -1,0 +1,28 @@
+# Elastic Agent standalone policy fragment: a custom-logs (filestream) input over
+# the JSON projection. In Fleet, the equivalent is the Custom Logs integration
+# with the same path, the ndjson parser under "Parsers", and the dataset name
+# below. The path is a placeholder.
+outputs:
+  default:
+    type: elasticsearch
+    hosts: ["https://elasticsearch.example.invalid:9200"]
+    api_key: "${ES_API_KEY}"
+
+inputs:
+  - id: data-prism-audit-json
+    type: filestream
+    use_output: default
+    data_stream:
+      namespace: default
+    streams:
+      - id: data-prism-audit-json-stream
+        data_stream:
+          dataset: dataprism.audit
+          type: logs
+        paths:
+          - /var/lib/data-prism/audit-json/audit-*.ndjson
+        parsers:
+          - ndjson:
+              target: ""
+              overwrite_keys: true
+              add_error_key: true
