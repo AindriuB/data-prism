@@ -29,8 +29,10 @@ index. Local durable write plus shipping is the supported path.
   current SDK release before writing it.
 - `examples/agent-config/remote-http/` is the existing style for client
   config examples.
-- Spring Boot 3.5 `logging.structured.format.file=ecs` and task 112's note on
-  key-value support.
+- Spring Boot 4.1 `logging.structured.format.file=ecs` (the reactor is on Boot
+  4.1.1 after task 141, which this task follows through 113) and task 112's
+  note on key-value support. *(Amended 2026-10-07 by the 0.5.0 plan; this
+  previously said Boot 3.5. Depends and Owns are unchanged.)*
 
 ## Acceptance
 

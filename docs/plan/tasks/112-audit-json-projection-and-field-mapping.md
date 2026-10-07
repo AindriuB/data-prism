@@ -40,10 +40,12 @@ the record, apart from operator-configured routing constants.
 - `Slf4jAuditSink` — the `dataprism.audit` logger message format.
   `PiiLogScanTest` parses that message field-aware, with shape exemptions
   for hex, timestamp and seq fields.
-- Spring Boot 3.5 structured logging (`logging.structured.format.*=ecs`) and
-  logstash-logback-encoder both render SLF4J 2 key-value pairs. Confirm Boot's
-  ECS formatter includes key-value pairs at 3.5.16 before relying on it in
-  docs (task 116).
+- Spring Boot structured logging (`logging.structured.format.*=ecs`) and
+  logstash-logback-encoder both render SLF4J 2 key-value pairs. Confirm that
+  Boot's ECS formatter includes key-value pairs at the Boot version on `main`
+  (4.1.1 once task 141 lands) before relying on it in docs (task 116).
+  *(Amended 2026-10-07 by the 0.5.0 plan; this previously said 3.5.16.
+  Depends and Owns are unchanged.)*
 - Elastic data-stream naming: dataset `[a-z0-9_.]`, namespace `[a-z0-9_]`,
   both 1–100 characters; type `logs`.
 

@@ -1,7 +1,8 @@
 # 113 — Wire inbound correlation headers and audit JSON output into configuration
 
 **Repo:** `.`
-**Depends on:** 103, 104, 110, 112, 127
+**Depends on:** 103, 104, 110, 112, 127, 141
+*(141 added 2026-10-07 by the 0.5.0 plan: 141 edits the `AuditIntegrityHealth` nested class of `DataPrismAutoConfiguration` and moves the reactor to Spring Boot 4.1.1. Write the `ApplicationContextRunner` tests against Boot 4. Owns is unchanged.)*
 *(127 added 2026-10-06: task 127 edits `DataPrismAutoConfiguration`, owned here.)*
 *(132 and 135 added 2026-10-06 by the 0.4.1 plan: 132 edits the `Hazelcast` section of `DataPrismProperties` and `ClusterBackedState` in `DataPrismAutoConfiguration`; 135 edits the `dataprism.hazelcast` row and section of `docs/configuration.md`. Rebase on the 0.4.1 cut (136) before starting. Owns is unchanged.)*
 **Owns:**

@@ -1,7 +1,8 @@
 # 111 — Send the external correlation id to configured REST sources through an interceptor
 
 **Repo:** `.`
-**Depends on:** 108
+**Depends on:** 108, 141, 146
+*(141 and 146 added 2026-10-07 by the 0.5.0 plan. 141 moves the reactor to Spring Framework 7, so this task is written against it once. 146 may edit `MutualTlsRestClientsHttpsTest.java`, which this task's test glob also covers. Owns is unchanged.)*
 **Owns:**
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/** *(except `ConfiguredJsonScrubbingEngine.java` and `ConfiguredJsonNestedLeafShapeGuard.java`, which task 118 owns and this task leaves unchanged)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/** *(except `ConfiguredJsonUndeclaredKeyRefusalTest.java`, task 118)*
@@ -26,9 +27,12 @@ ThreadLocal, because the fan-out runs on parallel virtual threads.
   The first two are outside `Owns`. Install the interceptor on the adapter's
   own copy with `client.mutate().requestInterceptor(...)`, so that no caller
   changes.
-- Spring Framework 6.2 (Boot 3.5.16): `RestClient.RequestHeadersSpec.attribute`
-  and `HttpRequest.getAttributes()`. Confirm both exist at this version. If
-  either is missing, stop and report; do not fall back to a ThreadLocal.
+- Spring Framework 7.0.9 (Boot 4.1.1, after task 141):
+  `RestClient.RequestHeadersSpec.attribute` and `HttpRequest.getAttributes()`.
+  The 0.5.0 plan checked both with `javap` against `spring-web-7.0.9.jar` on
+  2026-10-07, and both exist. If either is missing on `main` when you start,
+  stop and report; do not fall back to a ThreadLocal. *(Amended 2026-10-07;
+  this line previously named Framework 6.2.)*
 - `RestSources.java` and `ConfiguredJsonSources.java` hand-parse YAML and
   fail at startup, naming the line. A new key follows the same discipline.
 - Task 108: `SourceCallContext`, `ExternalCorrelationId.value()`,
