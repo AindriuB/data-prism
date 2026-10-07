@@ -20,7 +20,7 @@
     jar's own classes and resources to the running server's classpath, never
     its dependencies, so everything below other than data-prism-core and
     data-prism-annotations is scoped "provided" — it must already be on
-    data-prism-server's own classpath, and spring-boot-starter-web and
+    data-prism-server's own classpath, and spring-boot-starter-webmvc and
     spring-boot-starter-oauth2-resource-server (data-prism-server's own
     dependencies) put it there.
   </description>

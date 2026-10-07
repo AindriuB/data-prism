@@ -11,7 +11,7 @@ import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
+import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.net.URI;
@@ -49,6 +49,50 @@ class ServerStartupTest {
                     .isEqualTo("{\"status\":\"UP\"}");
             assertThat(mcp.statusCode()).isEqualTo(401);
             assertThat(unrelated.statusCode()).isIn(401, 403, 404);
+        }
+    }
+
+    /**
+     * Fail closed (task 141): the shipped configuration turns every actuator endpoint off with
+     * {@code management.endpoints.access.default=none}. Neither the HTTP surface nor the endpoint beans
+     * exist, so dropping or renaming that property fails here instead of silently exposing them.
+     */
+    @Test
+    void actuatorEndpointsStayOffOnTheShippedConfiguration() throws Exception {
+        try (ConfigurableApplicationContext context = start(true, validConfiguration())) {
+            int port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
+            HttpClient client = HttpClient.newHttpClient();
+
+            for (String path : new String[] {"/actuator/health", "/actuator/info"}) {
+                HttpResponse<String> response = client.send(request(port, path).GET().build(),
+                        HttpResponse.BodyHandlers.ofString());
+                assertThat(response.statusCode()).as(path).isNotEqualTo(200);
+            }
+            for (String endpoint : new String[] {
+                    "org.springframework.boot.health.actuate.endpoint.HealthEndpoint",
+                    "org.springframework.boot.actuate.info.InfoEndpoint"}) {
+                Class<?> type = loadable(endpoint);
+                assertThat(context.getBeanNamesForType(type)).as(endpoint).isEmpty();
+            }
+            assertThat(context.getEnvironment().getProperty("management.endpoints.access.default"))
+                    .isEqualTo("none");
+            assertThat(context.getEnvironment().getProperty("management.endpoints.enabled-by-default")).isNull();
+        }
+    }
+
+    /** Boot's own Hazelcast auto-configuration is excluded, so a single-node server holds no HazelcastInstance. */
+    @Test
+    void singleNodeServerHoldsNoHazelcastInstanceBean() {
+        try (ConfigurableApplicationContext context = start(true, validConfiguration())) {
+            assertThat(context.getBeansOfType(com.hazelcast.core.HazelcastInstance.class)).isEmpty();
+        }
+    }
+
+    private static Class<?> loadable(String name) {
+        try {
+            return Class.forName(name);
+        } catch (ClassNotFoundException e) {
+            throw new AssertionError(name + " is not on the classpath; the actuator guard would assert nothing", e);
         }
     }
 

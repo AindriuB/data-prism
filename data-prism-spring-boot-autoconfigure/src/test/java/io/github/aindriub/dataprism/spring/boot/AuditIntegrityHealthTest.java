@@ -12,8 +12,8 @@ import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.boot.actuate.health.HealthIndicator;
-import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.health.contributor.HealthIndicator;
+import org.springframework.boot.health.contributor.Status;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -89,6 +89,25 @@ class AuditIntegrityHealthTest {
                     context.getBean(AuditMaintenance.class).purge();
                     assertThat(health.health().getStatus()).isEqualTo(Status.UP);
                     assertThat(health.health().getDetails()).isEmpty();
+                });
+    }
+
+    @Test
+    void without_spring_boot_health_on_the_classpath_there_is_no_health_indicator_bean(@TempDir Path dir) {
+        new WebApplicationContextRunner()
+                .withClassLoader(new org.springframework.boot.test.context.FilteredClassLoader(
+                        "org.springframework.boot.health"))
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(Integrations.class)
+                .withAllowBeanDefinitionOverriding(true)
+                .withBean(Clock.class, () -> Clock.fixed(NOW, ZoneOffset.UTC))
+                .withPropertyValues(AuditRetentionConfigurationTest.valid())
+                .withPropertyValues("dataprism.audit.sink=hash-chained",
+                        "dataprism.audit.directory=" + dir.resolve("segments"),
+                        "dataprism.audit.checkpoint.file-path=" + dir.resolve("cp.jsonl"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean("auditIntegrityHealthIndicator");
                 });
     }
 

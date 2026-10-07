@@ -5,8 +5,8 @@ import org.apache.catalina.connector.Connector;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.web.embedded.tomcat.TomcatWebServer;
-import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
+import org.springframework.boot.tomcat.TomcatWebServer;
+import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -45,7 +45,7 @@ class OperatorAddressTest {
 
     @Test
     void bootsOwnHazelcastAutoConfigurationIsExcluded() {
-        assertThat(DataPrismServerApplication.class.getAnnotation(SpringBootApplication.class).exclude())
-                .extracting(Class::getSimpleName).contains("HazelcastAutoConfiguration");
+        assertThat(DataPrismServerApplication.class.getAnnotation(SpringBootApplication.class).excludeName())
+                .contains("org.springframework.boot.hazelcast.autoconfigure.HazelcastAutoConfiguration");
     }
 }
