@@ -25,7 +25,7 @@ you run exposes personal data to a model, you don't need this.
 Maven submodules (19 Maven projects in the reactor counting the root
 `pom`-packaged aggregator itself) and a passing test suite. The privacy
 engine, correlation and consistency findings, parallel mTLS connectors,
-embedded Hazelcast identity cache and read budget, an OAuth2 resource server
+an embedded Hazelcast identity cache and read budget (shared only across members that have joined one cluster; see [multiple instances](docs/multiple-instances.md)), an OAuth2 resource server
 with session-derived `PrivacyContext`, audit and metrics are all real and
 exercised end to end. The standalone server is the primary deployment
 surface; the Spring Boot starter is the embedded option. A one-command local
@@ -102,7 +102,7 @@ docker compose up
 ```
 
 pulls the published `ghcr.io/aindriub/data-prism-quickstart-<name>` images
-(pin one with `QUICKSTART_IMAGE_TAG=0.4.0`; run
+(pin one with `QUICKSTART_IMAGE_TAG=0.4.1`; run
 `docker compose -f compose.yaml -f compose.build.yaml up --build` instead to
 build every image from source) and brings up the standalone server, a
 synthetic fixture API and a local HTTPS JWT issuer, proving an
@@ -232,7 +232,7 @@ then load reviewed extension jars without rebuilding the server:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.4.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.4.1.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 

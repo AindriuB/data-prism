@@ -15,4 +15,4 @@ services:
   server-a:
     build: {context: ../.., dockerfile: docker/server/Dockerfile}
   server-b:
-    image: ghcr.io/aindriub/data-prism-quickstart-server:${QUICKSTART_IMAGE_TAG:-latest}
+    build: {context: ../.., dockerfile: docker/server/Dockerfile}

@@ -13,19 +13,25 @@
 #
 # SECURITY: Hazelcast member traffic on port 5701 is UNENCRYPTED and
 # UNAUTHENTICATED. data-prism refuses TLS settings for it (D-0.4.1-A), so
-# the network is the only control. What this file isolates, exactly:
+# the network is the only control, and a Compose network is NOT a security
+# boundary. What this file does, exactly:
 #   - 5701 is not published to the host.
-#   - Each member binds only its address on the `cluster` network
-#     (DATAPRISM_HAZELCAST_MEMBER_INTERFACE), so it does not listen on the
-#     `default` network. issuer and fixtures, which sit on `default` only,
-#     cannot reach it.
-#   - `cluster` is `internal: true` (no outbound route) and holds only
-#     server-a and server-b. Join members are fixed addresses on it.
-# What it does not do: it does not encrypt or authenticate anything, and it
-# does not protect against a process with access to the Docker daemon or to
-# either server container, or against processes on the Linux host, which can
-# usually route to container addresses on bridge networks, internal ones
-# included. Never attach another service to `cluster`.
+#   - Each member binds and advertises only its address on the `cluster`
+#     network (DATAPRISM_HAZELCAST_MEMBER_INTERFACE), and does not listen on
+#     the `default` network.
+#   - `cluster` is `internal: true` and holds only server-a and server-b.
+#     Join members are fixed addresses on it.
+# Whether another Docker network can still route to that cluster address
+# depends on the engine. OrbStack was observed to route across Docker
+# networks: a container on `default` only reached 172.28.57.11:5701 and
+# .12:5701 by routing across bridges. Docker Desktop may behave the same (not
+# tested). Linux Docker's network isolation is expected to block it (not tested
+# here).
+# This file does not encrypt or authenticate anything, and does not protect
+# against a process with access to the Docker daemon or to either server
+# container, or against processes on the host. Never attach another service
+# to `cluster`. In production, isolate 5701 with a host firewall, a
+# Kubernetes NetworkPolicy or a private network (see kubernetes.yaml).
 
 name: data-prism-multi-instance
 
@@ -34,8 +40,8 @@ volumes:
   certs: {}
 
 networks:
-  # Private member network. internal: true means no outbound or inbound
-  # route outside Compose.
+  # Member network. internal: true removes the outbound route; it does not
+  # guarantee that other Docker networks cannot route to it (see SECURITY).
   cluster:
     internal: true
     ipam:
