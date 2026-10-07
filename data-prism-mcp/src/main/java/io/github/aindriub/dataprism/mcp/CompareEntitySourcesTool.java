@@ -167,6 +167,15 @@ public final class CompareEntitySourcesTool {
                 admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, AuditedEntityTypes.shape(), mdc);
     }
 
+    /** As the development-caller overload with a {@link CorrelationRequirement}, and the {@link AuditedEntityTypes} that decides what the audit record's {@code entityType} holds. */
+    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, CorrelationRequirement correlationRequirement,
+            AuditedEntityTypes entityTypes) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                ToolAdmission.none(), null, correlationRequirement, entityTypes, CorrelationMdc.off());
+    }
+
     /**
      * As the {@code mdc} overload, with the {@link AuditedEntityTypes} that decides what the audit
      * record's {@code entityType} holds. Every other overload applies {@link AuditedEntityTypes#shape()}.

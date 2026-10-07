@@ -353,7 +353,7 @@ public final class DataPrismMcpServer {
             AuditedEntityTypes entityTypes) {
         if (oversight == null) {
             return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                    audit, clock, developmentCaller, correlationRequirement);
+                    audit, clock, developmentCaller, correlationRequirement, entityTypes);
         }
         return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
                 audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter(),
@@ -370,7 +370,7 @@ public final class DataPrismMcpServer {
             AuditedEntityTypes entityTypes) {
         if (oversight == null) {
             return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                    audit, clock, developmentCaller, correlationRequirement);
+                    audit, clock, developmentCaller, correlationRequirement, entityTypes);
         }
         return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
                 audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter(),

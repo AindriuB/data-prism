@@ -326,8 +326,13 @@ class UnregisteredEntityTypeAuditTest {
                     assertAudited(out, "CUSTOMER", null);
                     assertThat(out.ndjsonLines.get(0)).contains("CUSTOMER");
                     var report = AuditChainVerifier.verify(out.nativeFile());
+                    // The conditions under which AuditChainVerifierCli exits with EXIT_INTACT.
                     assertThat(report.hasBreak()).isFalse();
+                    assertThat(report.hasCheckpointFinding()).isFalse();
+                    assertThat(report.hasStructuralAnomaly()).isFalse();
                     assertThat(report.anomalies()).isEmpty();
+                    assertThat(report.tail()).isEmpty();
+                    assertThat(report.writers()).isNotEmpty();
                 }));
             }
         }
@@ -372,5 +377,60 @@ class UnregisteredEntityTypeAuditTest {
         Outcome out = run(fresh(root), 0, Path_.ALLOW, AuditedEntityTypes.of(List.of()), PLANTED);
 
         assertAudited(out, AuditedEntityTypes.UNREGISTERED, PLANTED);
+    }
+
+    /**
+     * The stdio factory overload that takes a registry must hand it to both tools. It is driven over a real
+     * stdio transport, the only way to call a server this factory builds.
+     */
+    @Test
+    void theStdioFactoryOverloadDeliversTheRegistryToTheTools() throws Exception {
+        java.util.concurrent.CopyOnWriteArrayList<AuditEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.concurrent.CountDownLatch both = new java.util.concurrent.CountDownLatch(2);
+        AuditRecorder audit = new AuditRecorder(e -> {
+            events.add(e);
+            both.countDown();
+        }, FIXED, "test-150-stdio");
+        SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
+                Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
+                new PurposeValidator(Set.of("demonstration")));
+        String init = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
+                + "\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"synthetic-client\",\"version\":\"1\"}}}\n"
+                + "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n";
+        java.io.PipedOutputStream feed = new java.io.PipedOutputStream();
+        java.io.InputStream originalIn = System.in;
+        java.io.PrintStream originalOut = System.out;
+        io.modelcontextprotocol.server.McpSyncServer server = null;
+        try {
+            System.setIn(new java.io.PipedInputStream(feed));
+            System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+            server = DataPrismMcpServer.stdio(orchestrator(audit, new Thing("1", "raw")), authz, scopes, CALLER,
+                    true, false, PrivacyMetrics.none(), audit, FIXED, CorrelationRequirement.OPTIONAL,
+                    AuditedEntityTypes.of(List.of("CUSTOMER")));
+            feed.write(init.getBytes(StandardCharsets.UTF_8));
+            for (String tool : TOOLS) {
+                feed.write(("{\"jsonrpc\":\"2.0\",\"id\":\"" + tool + "\",\"method\":\"tools/call\",\"params\":{"
+                        + "\"name\":\"" + tool + "\",\"arguments\":{\"entityType\":\"ORDER\",\"subjectId\":\"x\"}}}\n")
+                        .getBytes(StandardCharsets.UTF_8));
+            }
+            feed.flush();
+            assertThat(both.await(20, java.util.concurrent.TimeUnit.SECONDS)).as("both calls audited").isTrue();
+        } finally {
+            System.setIn(originalIn);
+            System.setOut(originalOut);
+            if (server != null) {
+                server.closeGracefully();
+            }
+            feed.close();
+        }
+
+        // ORDER passes the shape but is not on the list, so the registry (not the shape fallback) decided.
+        assertThat(events).hasSize(2).allSatisfy(e -> {
+            assertThat(e.policyDecision()).isEqualTo("ALLOW");
+            assertThat(e.entityType()).isEqualTo(AuditedEntityTypes.UNREGISTERED);
+        });
     }
 }
