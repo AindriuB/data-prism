@@ -14,7 +14,15 @@ Run it from anywhere, needing only Docker with Compose v2 (2.24.4 or later):
 
     bash docker/smoke/java-runtime-smoke.sh
 
-The stack and the two temporary images are removed on exit, including on failure.
+The stack runs under a unique compose project name (`data-prism-smoke-<pid>`),
+so teardown never touches a `data-prism-multi-instance` stack you have running.
+The stack, its volumes, its locally built images and the two temporary images
+are removed on exit, including on failure.
+
+Limits: it covers only the architecture of the machine it runs on (amd64 is
+covered by the publish-image CI legs). It proves the runtime starts and the
+cluster forms, not that privacy behaviour is correct under JDK 25; that is the
+test suite on 25 (task 146).
 
 Hazelcast triggers a `sun.misc.Unsafe` warning on JDK 24 and later (JEP 471 and
 498). It is expected, behaviour is unchanged, and it is recorded on purpose

@@ -9,13 +9,16 @@ WARNINGS="${OUT_DIR}/unsafe-warnings.txt"
 TIMEOUT=180
 DIST_IMAGE="data-prism-smoke-distribution:local"
 SERVER_IMAGE="data-prism-smoke-server:local"
-COMPOSE=(docker compose -f "${ROOT}/docker/multi-instance/compose.yaml"
+# Unique project name: -p overrides the fixed name in compose.yaml, so teardown
+# can only ever touch the stack this run created.
+PROJECT="data-prism-smoke-$$"
+COMPOSE=(docker compose -p "$PROJECT" -f "${ROOT}/docker/multi-instance/compose.yaml"
          -f "${ROOT}/docker/multi-instance/compose.build.yaml")
 
 cleanup() {
   status=$?
   echo "== tearing down"
-  "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+  "${COMPOSE[@]}" down --volumes --remove-orphans --rmi local >/dev/null 2>&1 || true
   docker image rm -f "$DIST_IMAGE" "$SERVER_IMAGE" >/dev/null 2>&1 || true
   exit "$status"
 }
@@ -76,8 +79,9 @@ count="$(wc -l < "$WARNINGS" | tr -d ' ')"
 
 echo "== summary"
 echo "java: $(docker run --rm --entrypoint java "$SERVER_IMAGE" -version 2>&1 | head -n1)"
-echo "server-a saw Members {size:2: yes"
-echo "server-b saw Members {size:2: yes"
+echo "project: ${PROJECT}"
+echo "server-a: ${a} log lines with Members {size:2"
+echo "server-b: ${b} log lines with Members {size:2"
 echo "sun.misc.Unsafe warning lines: ${count} (recorded in ${WARNINGS})"
 if [ "$count" -eq 0 ]; then
   echo "A count of 0 is allowed: the warning is recorded when present, never suppressed."
