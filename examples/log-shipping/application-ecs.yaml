@@ -1,0 +1,28 @@
+# Spring Boot structured logging for the slf4j audit sink. Activate with
+#   --spring.profiles.active=ecs
+# or include this file in the deployment's configuration.
+#
+# The slf4j sink writes one event on the logger "dataprism.audit". With a
+# field-preset, routing or field-names configured, the mapped values are added
+# to the event as key-value pairs, which Boot's ECS formatter writes as JSON
+# fields.
+logging:
+  structured:
+    format:
+      file: ecs
+  file:
+    name: /var/log/data-prism/application.log
+  level:
+    dataprism.audit: INFO
+
+dataprism:
+  audit:
+    sink: slf4j
+    writer-id: writer-a
+    output:
+      field-preset: ecs
+      routing:
+        event-dataset: dataprism.audit
+        data-stream-type: logs
+        data-stream-dataset: dataprism.audit
+        data-stream-namespace: default

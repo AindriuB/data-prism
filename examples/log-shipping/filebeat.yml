@@ -1,0 +1,38 @@
+# Filebeat tailing the JSON projection written by
+#   dataprism.audit.output.json-directory=/var/lib/data-prism/audit-json
+# The input reads only audit-*.ndjson in that directory. It must never be
+# pointed at the native audit directory: those segments are the verifiable
+# record and are read by the offline verifier, not shipped line by line.
+filebeat.inputs:
+  - type: filestream
+    id: data-prism-audit-json
+    paths:
+      - /var/lib/data-prism/audit-json/audit-*.ndjson
+    parsers:
+      - ndjson:
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+
+setup.template.name: "dataprism-audit"
+setup.template.pattern: "dataprism-audit-*"
+setup.ilm.enabled: false
+
+output.elasticsearch:
+  hosts: ["https://elasticsearch.example.invalid:9200"]
+  api_key: "${ES_API_KEY}"
+  # Route on event.dataset (written by routing.event-dataset). Anything else
+  # falls to the default index.
+  indices:
+    - index: "dataprism-audit-%{+yyyy.MM.dd}"
+      when.equals:
+        event.dataset: "dataprism.audit"
+
+# With the slf4j sink instead (see application-ecs.yaml) the audit events sit in
+# the ordinary application log. Add a second filestream input over that file
+# with the ndjson parser, and keep only the audit logger:
+#
+#   processors:
+#     - drop_event:
+#         when.not.equals:
+#           log.logger: "dataprism.audit"
