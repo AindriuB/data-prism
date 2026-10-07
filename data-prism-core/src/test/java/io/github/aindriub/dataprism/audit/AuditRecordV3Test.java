@@ -85,11 +85,10 @@ class AuditRecordV3Test {
     }
 
     @Test
-    void externalIdChangesTheV3HashAndIsIgnoredBelowV3() {
+    void externalIdChangesTheV3Hash() {
         assertThat(AuditEventHash.compute(event(3, "a"))).isNotEqualTo(AuditEventHash.compute(event(3, "b")));
         assertThat(AuditEventHash.compute(event(3, "")))
                 .isNotEqualTo(AuditEventHash.compute(event(2, "")));
-        assertThat(AuditEventHash.compute(event(2, "a"))).isEqualTo(AuditEventHash.compute(event(2, "")));
     }
 
     @Test

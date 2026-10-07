@@ -86,6 +86,10 @@ public record AuditEvent(
         approvalId = approvalId == null ? "" : approvalId;
         approverId = approverId == null ? "" : approverId;
         externalCorrelationId = externalCorrelationId == null ? "" : externalCorrelationId;
+        if (recordVersion < 3 && !externalCorrelationId.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "externalCorrelationId requires recordVersion 3 or later: earlier versions do not hash it");
+        }
         if (!withinExternalIdCeiling(externalCorrelationId)) {
             throw new IllegalArgumentException(
                     "externalCorrelationId exceeds the ceiling: at most 256 characters from [A-Za-z0-9._:/+=-]");

@@ -145,7 +145,8 @@ class AuditEventHashTest {
             edited.append(String.join("\u001f", fields)).append('\n');
         }
         Files.writeString(path, edited.toString(), StandardCharsets.UTF_8);
+        // A 25-field line claiming version 1 no longer parses: refused as structural, not accepted.
         assertThat(AuditChainVerifierCli.run(new String[] {path.toString()}, sink, sink))
-                .isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+                .isIn(AuditChainVerifierCli.EXIT_BREAK_DETECTED, AuditChainVerifierCli.EXIT_STRUCTURAL_ANOMALY);
     }
 }

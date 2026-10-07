@@ -17,7 +17,8 @@ import java.util.Set;
  *
  * <p>A line has 20 fields (version 1), 24 (version 2) or 25 (version 3). Version 3 appends
  * {@code externalCorrelationId} as the last field, after {@code approverId}; {@code parse}
- * decides the version by field count.
+ * decides the version by field count, and the declared {@code recordVersion} must agree with it exactly
+ * (version 1 has no such field and so is 20 fields; 2 is 24; 3 is 25); any mismatch is refused.
  *
  * <p>Fields are separated by an ASCII Unit Separator (0x1F); set members are
  * separated by an ASCII Record Separator (0x1E). Both control characters, and
@@ -129,6 +130,18 @@ public final class AuditRecordFormat {
         Map<String, String> dispositions = decodeDispositions(raw[21]);
         String approvalId = decode(raw[22]);
         String approverId = decode(raw[23]);
+        // The field count must match the declared version exactly. A field the hash does not cover
+        // (anything beyond 24 on a version 2 line, say) must never be accepted, or it could be injected.
+        int expectedFields = switch (recordVersion) {
+            case 2 -> 24;
+            case 3 -> 25;
+            default -> -1;
+        };
+        if (raw.length != expectedFields) {
+            throw new IllegalArgumentException("malformed audit record: recordVersion " + recordVersion
+                    + " requires exactly " + (expectedFields < 0 ? "an unsupported number of" : expectedFields)
+                    + " fields, found " + raw.length);
+        }
         String externalCorrelationId = raw.length == 25 ? decode(raw[24]) : "";
 
         return new AuditEvent(eventId, timestamp, principalId, clientId, tool, entityType, subjectPseudonym,
