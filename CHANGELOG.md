@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- The starter and auto-configuration now require Spring Boot 4.1 (4.1.1,
+  Spring Framework 7.0.9). Spring Boot 3 users stay on 0.4.x. The library jars
+  still run on Java 21 or newer.
+
+### Changed
+
+- The published images run Java 25. Library bytecode is still Java 21
+  (`--release 21`, class major 65).
+
 ## [0.4.1] - 2026-10-07
 
 Real, explicit clustering. In 0.4.0, `topology: embedded` started a bare
