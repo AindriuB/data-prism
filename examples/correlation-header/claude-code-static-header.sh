@@ -11,7 +11,7 @@ set -euo pipefail
 
 : "${DATAPRISM_MCP_TOKEN:?set DATAPRISM_MCP_TOKEN}"
 url="${DATAPRISM_MCP_URL:-https://data-prism.example.invalid/mcp}"
-id="${CORRELATION_ID:-$(uuidgen | tr 'A-Z' 'a-z')}"
+id="${CORRELATION_ID:-$(uuidgen | tr '[:upper:]' '[:lower:]')}"
 
 claude mcp add --scope local --transport http data-prism "$url" \
   --header "Authorization: Bearer ${DATAPRISM_MCP_TOKEN}" \

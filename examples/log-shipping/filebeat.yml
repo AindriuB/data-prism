@@ -28,6 +28,9 @@ output.elasticsearch:
       when.equals:
         event.dataset: "dataprism.audit"
 
+# ILLUSTRATIVE, NOT TESTED: the drop_event on log.logger below was not run
+# against a real application log.
+#
 # With the slf4j sink instead (see application-ecs.yaml) the audit events sit in
 # the ordinary application log. Add a second filestream input over that file
 # with the ndjson parser, and keep only the audit logger:

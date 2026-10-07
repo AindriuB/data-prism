@@ -32,6 +32,14 @@ the application's own context.
 All hosts are `data-prism.example.invalid`. Set `DATAPRISM_MCP_URL` and
 `DATAPRISM_MCP_TOKEN` at run time; no credential is stored here.
 
+The id is per unit of work: `initialize`, the initialized notification and every
+`tools/call` of that unit carry the same id. Set the id (the contextvar or
+`AsyncLocalStorage` store) before connecting. In the Python SDK 2.3.0 the hook
+sees the id of the task that makes each call, so several units of work can share
+one session, each with its own id. The `MCP-Protocol-Version` header that
+`curl-example.sh` sends after `initialize` should be the version the server
+negotiated.
+
 ## Checking the snippets
 
 The snippets were written against `mcp` 2.3.0 for Python (`requirements.txt`)
@@ -44,7 +52,8 @@ npm install
 npx tsc --noEmit
 ```
 
-`py_compile` checks syntax only. `tsc` checks types against the pinned SDK.
+The Python snippets need Python 3.10 or later (`mcp` 2.3.0 requires it and does
+not install on 3.9); they were checked with 3.12. `py_compile` checks syntax only. `tsc` checks types against the pinned SDK.
 
 ## Notes
 

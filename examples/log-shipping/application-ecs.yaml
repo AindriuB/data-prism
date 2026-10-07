@@ -2,6 +2,10 @@
 #   --spring.profiles.active=ecs
 # or include this file in the deployment's configuration.
 #
+# ILLUSTRATIVE, NOT TESTED: how Boot's ECS formatter renders key-value pairs
+# (including whether dotted keys such as event.dataset nest) was not run against
+# a real application. Check one line of the log before relying on it.
+#
 # The slf4j sink writes one event on the logger "dataprism.audit". With a
 # field-preset, routing or field-names configured, the mapped values are added
 # to the event as key-value pairs, which Boot's ECS formatter writes as JSON
