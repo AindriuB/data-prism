@@ -33,7 +33,11 @@ class PrivacyClusterMembershipTest {
             assertThat(c.getNetworkConfig().getJoin().getMulticastConfig().isEnabled()).isFalse();
             assertThat(c.getProperty("hazelcast.phone.home.enabled")).isEqualTo("false");
             assertThat(c.getNetworkConfig().isPortAutoIncrement()).isFalse();
-            assertThat(c.getClusterName()).startsWith("c1");
+            if (c.getClusterName().startsWith("c1-solo-")) {
+                assertThat(c.getClusterName()).startsWith("c1-solo-");
+            } else {
+                assertThat(c.getClusterName()).isEqualTo("c1");
+            }
             assertThat(c.getNetworkConfig().getPort()).isEqualTo(6001);
         }
     }

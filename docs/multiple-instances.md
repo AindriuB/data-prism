@@ -88,7 +88,7 @@ would have no effect. Relaxed binding drops hyphens in environment variables:
 `join.mode: none` is the explicit single-member choice: the member binds
 `127.0.0.1` only and neither discovers nor accepts other members. It refuses
 `member.interface`. Internally the member runs under your `cluster-name` plus a
-random per-process suffix, so no other process can match it. That suffix is
+random per-start suffix, so no other process can match it. That suffix is
 internal and appears in logs.
 
 Without `member.interface`, a `tcp-ip` or `kubernetes` member binds **every**
