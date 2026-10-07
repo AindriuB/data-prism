@@ -331,9 +331,9 @@ Wave 3 is complete (110, 111, 112, 144). Wave 4 (113, 114, 147) is runnable once
 
 #### Open owner questions
 
-- Add a test-stability task to 0.5.0? Follow-up (f) below names the flaky tests seen so far.
-- Where does the 1.0 roadmap live: in this file or on a shareable page?
-- Delete the local branches already merged into main: `docs/dedupe-claude-md-rules`, `record/19-20-close-wave`, `simplify/waves-1-2`?
+- Test-stability task for 0.5.0: approved for 0.5.0; task being planned. Follow-up (f) below names the flaky tests seen so far.
+- 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
+- Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
 Release-cut verification items from wave 1:
 
