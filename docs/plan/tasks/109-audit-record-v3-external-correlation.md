@@ -98,3 +98,19 @@ Required for attempt 2:
    through CorrelationIdPolicy's ceiling and the AuditEvent constructor, and asserts identical outcomes. If the ceiling
    is package-private, test it through CorrelationIdPolicy's public validate with a permissive pattern.
 4. Add an explicit test that a v3 record downgraded to v2 (field deleted, recordVersion edited to 2) is reported as a break.
+
+## Attempt 2 — failed (2026-10-07)
+
+Reviewer: CHANGES. All 4 attempt-1 items are done. It is not fail-open (never accepted, never exit 0), but a field-count/version
+mismatch now raises a plain IllegalArgumentException. `classifyParseFailure` files that as INTERRUPTED_WRITE_FRAGMENT,
+so the CLI says "INTERRUPTED WRITE, not tampering" and exits 4. A v3 log relabelled v1 used to exit 2. A torn
+write cannot produce these shapes, so a mismatch is a tampering signature.
+Required for attempt 3 (AuditChainVerifier.java and AuditChainVerifierCli.java are in Owns via `audit/**`):
+1. Report a field-count/version mismatch as its own anomaly, `FIELD_COUNT_MISMATCH`, treated as a **break** (exit 2)
+   everywhere, never as an interrupted write. Throw a distinct exception type from parse, or otherwise carry the
+   classification. Add a CLI header line for it that says tampering is possible.
+2. Restore `AuditEventHashTest.currentVersionRecordEditedToVersionOneIsABreak` to assert exactly EXIT_BREAK_DETECTED.
+3. Make the tests exact:
+   - AuditRecordV3Test:192 (the appended field, including on the LAST line of a file) asserts FIELD_COUNT_MISMATCH and exit 2.
+   - :265 (the downgrade) asserts `hasBreak()` and exit 2.
+   - :208 rewrites field index 20 directly rather than using String.replace.
