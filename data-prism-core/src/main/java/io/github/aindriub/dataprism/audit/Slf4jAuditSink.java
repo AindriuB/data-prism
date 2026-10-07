@@ -14,6 +14,17 @@ public final class Slf4jAuditSink implements AuditSink {
 
     private static final Logger AUDIT = LoggerFactory.getLogger("dataprism.audit");
 
+    public Slf4jAuditSink() {
+    }
+
+    public Slf4jAuditSink(AuditFieldMapping mapping, AuditRouting routing) {
+        throw new UnsupportedOperationException();
+    }
+
+    Slf4jAuditSink(AuditFieldMapping mapping, AuditRouting routing, Logger logger) {
+        throw new UnsupportedOperationException();
+    }
+
     @Override
     public void record(AuditEvent e) {
         AUDIT.info("event={} seq={}/{} ts={} principal={} client={} tool={} entityType={} subject={} "
