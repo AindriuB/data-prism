@@ -74,6 +74,41 @@ class PrivacyClusterMembershipTest {
     }
 
     @Test
+    void noneMemberRefusesAnIncomingJoinFromTheSameConfiguredClusterName() throws Exception {
+        int nonePort = FreePorts.consecutive(1);
+        int otherPort = FreePorts.consecutive(1);
+        HazelcastInstance solo = Hazelcast.newHazelcastInstance(
+                ClusterMembership.none("solo-join").withPort(nonePort).toConfig());
+        HazelcastInstance other = null;
+        try {
+            other = Hazelcast.newHazelcastInstance(
+                    ClusterMembership.tcpIp("solo-join", List.of("127.0.0.1:" + nonePort))
+                            .withPort(otherPort).withInterface("127.0.0.1").toConfig());
+            long deadline = System.nanoTime() + java.time.Duration.ofSeconds(15).toNanos();
+            while (System.nanoTime() < deadline) {
+                assertThat(solo.getCluster().getMembers()).hasSize(1);
+                assertThat(other.getCluster().getMembers()).hasSize(1);
+                Thread.sleep(500);
+            }
+        } finally {
+            if (other != null) {
+                other.shutdown();
+            }
+            solo.shutdown();
+        }
+    }
+
+    @Test
+    void noneUsesADistinctInternalClusterNamePerMember() {
+        ClusterMembership m = ClusterMembership.none("c1");
+        String a = m.toConfig().getClusterName();
+        String b = m.toConfig().getClusterName();
+        assertThat(a).isNotEqualTo("c1").startsWith("c1-solo-");
+        assertThat(b).isNotEqualTo(a);
+        assertThat(m.clusterName()).isEqualTo("c1");
+    }
+
+    @Test
     void interfaceIsAppliedWhenGiven() {
         Config c = ClusterMembership.tcpIp("c1", List.of("10.1.2.3")).withInterface("10.0.*.*").toConfig();
         assertThat(c.getNetworkConfig().getInterfaces().getInterfaces()).containsExactly("10.0.*.*");
