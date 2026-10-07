@@ -50,13 +50,21 @@ the Data Prism properties, `filebeat.yml`, `elastic-agent-policy.yml` and
 `dataprism.field_dispositions` as `flattened` or disabled; see
 [Structured JSON output](audit.md#structured-json-output).
 
+Two failure behaviours to plan for. A failed projection write (a full or
+unwritable `json-directory`) makes every later tool call refuse with
+`AUDIT_PROJECTION_FAILED` until the process restarts; this is fail-closed by
+design, so a disk problem on the projection directory stops service. A failed
+purge of expired `.ndjson` segments is only logged, unlike the native purge.
+
 ## Path 2: the slf4j sink
 
 With `sink: slf4j`, each event is a log line on the `dataprism.audit` logger and
 goes wherever the application's logging goes. A configured preset, field names
-or routing attaches the mapped values as key-value pairs, which Spring Boot's
-structured logging (`logging.structured.format.file: ecs`) writes as JSON
-fields. The example is `application-ecs.yaml` in the same directory. Durability
+or routing attaches the mapped values as key-value pairs, which the logging
+layer may write as JSON fields; the example uses Spring Boot's structured
+logging (`logging.structured.format.file: ecs`). How that layer renders dotted
+key-value names has not been verified here, so check it in your own logging
+configuration before relying on a mapping. The example is `application-ecs.yaml` in the same directory. Durability
 is the appender's, and there is no chain.
 
 ## Correlated logging with MDC

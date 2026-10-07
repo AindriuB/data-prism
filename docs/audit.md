@@ -422,8 +422,11 @@ A chain may mix versions. A writer that was upgraded part way through has
 version 2 records followed by version 3 records, and the offline verifier
 replays each record under the version it declares. The line's field count has
 to agree with the declared version exactly (20 for version 1, 24 for version
-2, 25 for version 3); a mismatch is reported as `FIELD_COUNT_MISMATCH`, a
-break. A writer's version only increases. A record whose version is lower than
+2, 25 for version 3). `FIELD_COUNT_MISMATCH`, a break (exit code 2), covers a
+line with too many fields and a full-length line that carries the wrong
+version. A shorter line that could be a torn write, for example 22 fields
+declaring version 3, is not a break: it is reported as an interrupted write
+(exit code 4). A writer's version only increases. A record whose version is lower than
 one the same writer already wrote is reported as `VERSION_REGRESSION`, also a
 break (exit code 2), because a downgrade is the way to forge a record that
 avoids a field the newer version hashes. Retention does not purge past it.
@@ -443,8 +446,10 @@ organisation's other systems. This is separate from Data Prism's own
 - **Validated.** The value must pass a fixed ceiling (at most 256 characters,
   each in `[A-Za-z0-9._:/+=-]`) and then the configured pattern or, for
   `format: traceparent`, the W3C `traceparent` form, whose trace id is
-  recorded. The pattern limits an id's shape, not its meaning, so choose one
-  that admits generated ids only.
+  recorded. The strict default pattern admits a canonical UUID, 16 to 128 hex
+  characters containing at least one letter a to f, or a W3C `traceparent`,
+  all within the 256-character ceiling above. The pattern limits an id's shape,
+  not its meaning, so choose one that admits generated ids only.
 - **Dropped if invalid.** A rejected value is dropped and the call proceeds as
   if no id had been sent. A WARN line with the code
   `EXTERNAL_CORRELATION_ID_DROPPED` is logged and the rejected text is never
@@ -457,7 +462,8 @@ organisation's other systems. This is separate from Data Prism's own
   it is detected like an edit to any other hashed field.
 - **Sent only where configured.** The id goes to a source only through
   `dataprism.correlation.outbound.header` or a source's own
-  `correlation-header`. Setting the global outbound header sends it to every
+  `correlation-header`. A source's `correlation-header` overrides the global
+  header for that source. Setting the global outbound header sends it to every
   configured source; a source with neither receives no id. It reaches a
   source's request headers and nowhere in model-visible content.
 - **Logs.** With `dataprism.correlation.mdc-key` set, the validated id is also
@@ -489,7 +495,15 @@ the routing constants an operator sets. The properties are under
 **Presets.** `canonical` writes each field under its own name. `ecs` writes
 the names below. The mapping is total: every field is written exactly once. An
 operator can override one field's path with
-`dataprism.audit.output.field-names.<field>`; a dot in a path nests.
+`dataprism.audit.output.field-names.<field>`; a dot in a path nests. For
+example, to write the external correlation id as `transaction_id` instead of
+`trace.id`:
+
+```properties
+dataprism.audit.output.field-preset=ecs
+dataprism.audit.output.field-names.externalCorrelationId=transaction_id
+```
+
 
 | Canonical field | ECS path |
 |---|---|
@@ -534,6 +548,15 @@ startup with `AUDIT_FIELD_MAPPING_CONFLICT`.
 carries the same `eventHash`. It is not chained and nothing verifies it. Verify
 the native segments. Do not tail them, and point a shipper at the projection
 only. See [Log shipping](log-shipping.md).
+
+**A failed projection write stops service.** If writing the `.ndjson` line
+fails (a full or unwritable `json-directory`), the native event is already on
+disk, and every later audited tool call is refused with
+`AUDIT_PROJECTION_FAILED` until the process restarts. This is fail-closed by
+design: the alternative is reusing a sequence number. Monitor the free space
+and permissions of `json-directory`. A failure to purge expired `.ndjson`
+segments is different: it is only logged, and does not stop the native purge or
+any call.
 
 **Sinks.** With `sink: slf4j`, a configured preset, `field-names` or routing
 makes `Slf4jAuditSink` attach the mapped values to each log event as key-value
