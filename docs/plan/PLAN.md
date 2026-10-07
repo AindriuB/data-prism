@@ -28,7 +28,7 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### EU AI Act plan — in flight, waves 1 to 4 mostly landed
+### EU AI Act plan — in flight, waves 1 to 4 landed
 
 Tasks that make the audit, oversight and re-identification surfaces support an
 EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The work is on
@@ -317,23 +317,20 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 112 | **Done** (2026-10-07). Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
 | Done | 144 | **Done** (2026-10-07, attempt 2). Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
 | Done | 149 | **Done** (2026-10-07, attempt 2). Remove the port races behind the known test flakes, without weakening any test (test sources only) | none |
-| 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
-| 4 | 114 | Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
-| 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
+| Done | 113 | **Done** (2026-10-07). Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
+| Done | 114 | **Done** (2026-10-07). Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
+| Done | 147 | **Done** (2026-10-07). Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
 | 5 | 148 | Put the validated external correlation id into the SLF4J MDC under an operator-configured key | 110, 111, 113, 114 |
 | 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
 | 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
 
-**The plan is PAUSED pending the owner (decision 2026-10-07).** The owner lifted the pause for task 149 only, and 149 is merged. The next step is wave 4 (113, 114, 147), which still waits for the owner's go-ahead. Do not fan out, plan or merge anything else on the strength of this file alone.
-
-Wave 3 is complete (110, 111, 112, 144), and so is 149. Wave 4 (113, 114, 147) is runnable once the owner gives the go-ahead.
-
-Task 149 (test-suite stability) merged on 2026-10-07 with its proof run alone, as planned. Wave 4 has no such exclusivity need.
+**The plan is PAUSED pending the owner (decision 2026-10-07).** The owner lifted the pause for task 149 and then for wave 4; both are merged, and wave 4 (113, 114, 147) is done. The next step is wave 5, tasks 148 and 115. Both are unblocked (148 needs 110, 111, 113 and 114, and 115 needs 113, all merged) and they own disjoint paths by D-148-A. It still waits for the owner's go-ahead. Wave 6 (116) needs 115 and 148, so it is not yet unblocked. Do not fan out, plan or merge anything on the strength of this file alone.
 
 **Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
 
 #### Open owner questions
 
+- On the tool DENY paths, the caller's raw `entityType` argument is written into audit records (`GetEntityContextTool.java:206` to `:307`/`:339`; `CompareEntitySourcesTool.java:368`/`:400`). It is caller-controlled free text and could carry personal data into the audit log and the shipped JSON projection. It predates 0.5.0 and is not the correlation id; the task 113 reviewer confirmed no argument reaches `externalCorrelationId`. Proposed fix: audit `entityType` only if it is a registered entity type, otherwise a fixed sentinel. Pending the owner's decision on whether to plan it for 0.5.0.
 - 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
 - Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
@@ -349,7 +346,7 @@ Follow-ups from wave 1, not yet tasks:
 - The smoke teardown should remove images explicitly rather than rely on `--rmi local` semantics.
 - Hazelcast fixed-port tests flake when worktrees build in parallel.
 
-139 was an umbrella and is split into 141, 142 and 147. 140 is split into 143,
+139 was an umbrella and is split into 141, 142 and 147 (all three now done; the 139 file stays under `docs/plan/tasks/` because its text does not say it retires on completion). 140 is split into 143,
 144, 145 and 146 and has no file of its own.
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
@@ -421,6 +418,17 @@ Follow-ups from task 149, not yet tasks:
 - (q) In `OperatorHarness`, a re-pick of a claimed port uses up one of the 3 attempts allowed by D-149-C.
 - (r) The dfc9160c commit body cites stale line numbers for the `ServerSocket` hits. The current ones are `FreePorts` 53/56, `ClusterConfigurationTest` 76/79 and `OperatorHarness` 458/463. Recorded in HISTORY; the commits are not rewritten.
 
+Follow-ups from wave 4 (tasks 113, 114, 147), not yet tasks:
+
+- (s) The JSON projection purge failure only logs. It should record a failure code surfaced by `auditIntegrity` health, as the native purge does. It should not fail closed, since the projection is not authoritative.
+- (t) Move the projection into its own classified bean, with `TeeAuditSink` made `Closeable` in core, instead of `registerDisposableBean` inside `dataPrismHashChainedAuditSink`. This needs `PrivacyExtensionPoints` and core in Owns.
+- (u) Add an integration-tests case: a Spring context with the real `DefaultContextOrchestrator`, carrying the correlation id onto the ALLOW event. Task 113's test uses a stub orchestrator.
+- (v) In `CorrelationConfigurationTest.a_rejected_value_is_logged_as_a_code_and_the_text_never_appears`, split the chained `noneSatisfy` into two separate `noneMatch` checks (message and args).
+- (w) In `AuditOutputConfigurationTest`, add nested json-directory cases (under and over `directory`) for `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT`.
+- (x) Task 114's commit body records no mutation for `PiiLogScanTest`'s key-value scan. The `AuditFilePiiScanTest` javadoc for `extraArguments` is inaccurate, and there is a stray `{ }` block at about line 673.
+- (y) For task 148: the log-line parser's `\b` key markers misparse when slf4j-simple prints key-value pairs before the message (a false hit from a UUID). Capture pairs from a real mapped sink rather than parsing lines.
+- Task 113 added three refusal codes beyond its contract: `INVALID_CORRELATION_FORMAT`, `INVALID_AUDIT_FIELD_PRESET` and `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT` (which also covers a json directory inside or containing `directory`). Task 116 should document them.
+
 - Owner-visible point for 116: the `Slf4jAuditSink` mapped constructor attaches the routing constants as key-value pairs. That is the implementer's reading of the spec.
 
 **Release-cut items for 0.5.0:**
@@ -430,6 +438,8 @@ Follow-ups from task 149, not yet tasks:
 - Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
 - Close or ignore #114, since 141 supersedes its Spring Boot bump.
 - Update the `docs/extending.md` `data-prism.version` snippet at the cut.
+- Amend `docs/extending.md:560-571`, the "verified (recorded against 0.3.0)" paragraph, to say the 0.5.0 snippet was re-resolved against Spring Boot 4.1.1 (spring-web 7.0.9, data-prism 0.4.1 from Central) and that the full package build is repeated at the cut.
+- Fix the stale `pom.xml` line reference at `README.md:203`: the enforcer rule is at `pom.xml:282-284`.
 - Add a CHANGELOG entry for `dataprism.correlation.mdc-key` and `dataprism.correlation.outbound.header` (D-148-A).
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
