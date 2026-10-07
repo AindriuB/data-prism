@@ -196,6 +196,7 @@ public final class AuditChainVerifierCli {
             case UNPARSEABLE_RECORD -> "UNPARSEABLE RECORD, possible tampering";
             case RETENTION_ANCHOR_REJECTED -> "RETENTION ANCHOR REJECTED, possible tampering";
             case VERSION_REGRESSION -> "VERSION_REGRESSION, possible tampering";
+            case FIELD_COUNT_MISMATCH -> "FIELD_COUNT_MISMATCH, tampering is possible";
         };
     }
 

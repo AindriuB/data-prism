@@ -546,6 +546,14 @@ public final class AuditChainVerifier {
      * rather than only in production.
      */
     private static StructuralAnomaly classifyParseFailure(long offset, RuntimeException cause) {
+        if (cause instanceof FieldCountMismatchException) {
+            return new StructuralAnomaly(AnomalyType.FIELD_COUNT_MISMATCH,
+                    "FIELD_COUNT_MISMATCH: the line at byte offset " + offset + " declares a recordVersion "
+                            + "that does not match its field count (" + cause.getMessage() + "). A torn write "
+                            + "cannot produce this shape, so it is a tampering signature: a field was added, "
+                            + "removed or relabelled. Investigate this line directly.",
+                    offset, -1);
+        }
         if (cause.getClass() == IllegalArgumentException.class) {
             return new StructuralAnomaly(AnomalyType.INTERRUPTED_WRITE_FRAGMENT,
                     "the line at byte offset " + offset + " does not parse as one record (field count "
@@ -635,7 +643,9 @@ public final class AuditChainVerifier {
         /** A retention anchor that matches a writer's start but is too recent, or undated, to be a purge's. */
         RETENTION_ANCHOR_REJECTED,
         /** A writer's {@code recordVersion} decreased within its chain: a downgrade, never a normal upgrade. */
-        VERSION_REGRESSION
+        VERSION_REGRESSION,
+        /** A line whose field count contradicts its declared {@code recordVersion}: tampering, never a torn write. */
+        FIELD_COUNT_MISMATCH
     }
 
     /** The first edit or deletion found in one writer's chain. */
@@ -709,7 +719,8 @@ public final class AuditChainVerifier {
             return writers.stream().anyMatch(WriterResult::broken)
                     || anomalies.stream().anyMatch(a -> a.type() == AnomalyType.UNPARSEABLE_RECORD
                             || a.type() == AnomalyType.RETENTION_ANCHOR_REJECTED
-                            || a.type() == AnomalyType.VERSION_REGRESSION);
+                            || a.type() == AnomalyType.VERSION_REGRESSION
+                            || a.type() == AnomalyType.FIELD_COUNT_MISMATCH);
         }
 
         /**
@@ -721,7 +732,8 @@ public final class AuditChainVerifier {
         public boolean hasStructuralAnomaly() {
             return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD
                     && a.type() != AnomalyType.RETENTION_ANCHOR_REJECTED
-                    && a.type() != AnomalyType.VERSION_REGRESSION)
+                    && a.type() != AnomalyType.VERSION_REGRESSION
+                    && a.type() != AnomalyType.FIELD_COUNT_MISMATCH)
                     || writers.stream().anyMatch(w -> w.nonGenesisStart().isPresent());
         }
     }

@@ -138,7 +138,7 @@ public final class AuditRecordFormat {
             default -> -1;
         };
         if (raw.length != expectedFields) {
-            throw new IllegalArgumentException("malformed audit record: recordVersion " + recordVersion
+            throw new FieldCountMismatchException("malformed audit record: recordVersion " + recordVersion
                     + " requires exactly " + (expectedFields < 0 ? "an unsupported number of" : expectedFields)
                     + " fields, found " + raw.length);
         }
