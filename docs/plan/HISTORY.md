@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — 0.5.0 wave 3, part 2: task 144
+
+CI now builds on a JDK 21 and 25 matrix, and the release and Central publishing workflows build on 25. A new `.github/scripts/check-class-version.sh` gates released jars on class-file major version 65 (Java 21), so consumers on 21 can load them. The tester ran the full `-Prelease` reactor (about 1138 tests) and the gate over 19 jars: 65 passes, 69 fails.
+
+**Cost:** Attempt 1 failed review because the gate failed open on corrupt or truncated jars and on a missing `unzip`. Attempt 2 fails closed on a garbage jar, a truncated jar, a class without CAFEBABE and no `unzip` on PATH (exit 2), and passes a classless architecture jar. The acceptance item that a pushed PR runs green on both matrix legs plus container-smoke is owner-gated on a push and is recorded as a release-cut item, not done. A full-reactor run flaked once on `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` and passed on rerun. Residual script defects (m) and the ungated `publish` build (n) are in `PLAN.md`. The tester's first fail-closed command was permission-denied for containing `rm -rf`, so the cases were rerun separately. Merged by hand with `--no-ff` into the session branch, not with `wt-merge.sh`.
+
 ## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112
 
 Task 110 carries the validated external correlation id from the MCP tools through the orchestrator to the audit record and the sources, and a tool configured with an admission now requires a fingerprinter. Task 111 sends the id to configured REST sources as a header through an interceptor, with a per-source header overriding an optional global one, and refuses a blank global header with INVALID_CORRELATION_HEADER. Task 112 adds a structured JSON audit projection with ECS field mapping and routing hints; an externalCorrelationId maps to transaction_id. Each task's tester passed the full reactor (about 1160 to 1180 tests).

@@ -315,7 +315,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 110 | **Done** (2026-10-07, attempt 2). MCP tools and orchestrator carry the external correlation id to audit and sources | 101, 108, 109, 118, 123, 128 |
 | Done | 111 | **Done** (2026-10-07, attempt 2). Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
 | Done | 112 | **Done** (2026-10-07). Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
-| 3 | 144 | **In progress** (attempt 1 failed; see its task file). Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
+| Done | 144 | **Done** (2026-10-07, attempt 2). Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
 | 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
 | 4 | 114 | Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
 | 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
@@ -323,7 +323,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
 | 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
 
-Next wave: 144 is still in progress. 113 and 114 are runnable now, since 110 and 112 have merged. 147 waits for 144.
+Wave 3 is complete (110, 111, 112, 144). Next wave is 4 (113, 114, 147), all runnable now. The owner has asked to hold 113 and 114 until told, so only 147 may start unprompted.
 
 Release-cut verification items from wave 1:
 
@@ -384,7 +384,7 @@ Follow-ups from wave 2, not yet tasks:
 - (c) The CLI help and runbook should say that an interrupted write joined to a restarted writer can surface as exit 2, which is a safe false positive.
 - (d) Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
 - (e) Record surefire and failsafe counts separately in future JDK runs.
-- (f) `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun.
+- (f) `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun. A third, in task 144's run: `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` failed once in the full reactor, then passed on a module rerun and on a full rerun.
 
 Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
 
@@ -394,10 +394,13 @@ Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
 - (j) `OutboundCorrelationHeader` should also forbid hop-by-hop and framing names: Connection, Upgrade, TE, Keep-Alive, Content-Type, Expect.
 - (k) In `ExternalCorrelationToolTest`, `nullFingerprinterWithAdmissionIsRefused` should also cover `CompareEntitySourcesTool`'s 10-arg constructor and the `DataPrismMcpServer` factories, and assert the "fingerprinter" message. `toolsListUnchanged` should add a streamableHttp case.
 - (l) Task 110 defines `DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY = "externalCorrelation"`. Task 113 needs it.
+- (m) `.github/scripts/check-class-version.sh`: the exit status of the `find` in `< <(...)` is not propagated. A class file of 4 to 6 bytes aborts the run under `set -e` without naming the jar. The nomagic case also prints a cosmetic "no classes to check" after its error. All of these still fail closed.
+- (n) `publish-central.yml`: the `publish` job deploys a fresh `clean deploy` build that is not itself gated on class version. It is covered only through `needs: stage`.
 - Owner-visible point for 116: the `Slf4jAuditSink` mapped constructor attaches the routing constants as key-value pairs. That is the implementer's reading of the spec.
 
 **Release-cut items for 0.5.0:**
 
+- CI PR run green on JDK 21/25 + container-smoke (task 144 acceptance). Both matrix legs and `container-smoke` must pass on a pushed PR; this is owner-gated on a push and has not run.
 - Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
 - Close or ignore #114, since 141 supersedes its Spring Boot bump.
 - Update the `docs/extending.md` `data-prism.version` snippet at the cut.
