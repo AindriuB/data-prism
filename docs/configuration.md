@@ -73,6 +73,7 @@ for the relevant group.
 | `dataprism.privacy` | `profile` is required; `locale` defaults to the locale-neutral vocabulary; no `dataprism.*` property loads a custom profile file; the server and starter load the bundled `privacy-profiles-default.yaml`, whose profiles `DEFAULT` and `STRICT` both set `unclassified: FAIL_REQUEST`, refusing the whole response for a field nobody classified; a production scope lifetime is required; `descriptor-file` is optional and, when unset, no descriptor file is ever read and classification comes from annotations alone | No | Refuse startup for an unknown profile, an application `PrivacyPolicyResolver` bean that would replace the framework's profile-backed resolver, unsupported locale, or non-positive scope lifetime. A configured `descriptor-file` also refuses startup — never falling back to the annotation-only resolver — if the path does not exist, does not name a readable file, has no `models` section, or declares `undeclaredFields: NON_SENSITIVE` for a type; each failure names the property, never a line of the file's contents |
 | `dataprism.privacy.hmac-key` | `key-id` and one provider reference/environment-variable name are required; the selected key is pinned for each scope | **Yes, by reference** | Refuse startup if a literal key is configured, the reference is blank/unresolvable, the key is too weak, or `key-id` cannot be resolved; never fall back to a generated key |
 | `dataprism.audit` | `sink` is required in production, one of `approved-sink`, `slf4j`, `hash-chained`; `writer-id` is required for every sink, not only a hash-chained one; `file-path` is required only when `sink: hash-chained` | Sink credentials are **yes, by reference** | Refuse startup for an unknown sink, missing required sink reference, a hash-chained sink's file path missing or unusable, or missing/invalid writer identity; do not downgrade to no or `slf4j` auditing |
+| `dataprism.correlation` | All optional. `inbound.header` is unset, which disables the feature; `inbound.format` `opaque`; `inbound.pattern` the strict default; `inbound.required` `false`; `outbound.header` unset. See [`dataprism.correlation`](#dataprismcorrelation) | No | Refuse startup for the refusals listed under [`dataprism.correlation`](#dataprismcorrelation) |
 | `dataprism.metrics` | Defaults to the framework's no-op implementation only for fixture development; production requires an approved sink/registry binding | Sink credentials are **yes, by reference** when applicable | Refuse startup in production for an unknown or absent required sink; metrics failures after startup remain fail-safe and cannot change a privacy decision |
 | `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget, pause state, approvals and rate limits across members that have joined one cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but its state is per process, so a configured budget of 100 becomes 100 times the number of running processes. With `embedded`, `cluster-name` (never `dev`), `join.mode` (`tcp-ip`, `kubernetes` or `none`), `join.members`, `join.kubernetes.namespace`, `join.kubernetes.service-name` or `service-dns`, `member.port` (default 5701) and `member.interface` are the cluster properties; see [`dataprism.hazelcast`](#dataprismhazelcast). Identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | No | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration (`UNSAFE_HAZELCAST_PERSISTENCE`), TLS references (`HAZELCAST_TLS_UNSUPPORTED`: member TLS is not available in the open-source distribution), a missing or reserved cluster name (`MISSING_CLUSTER_NAME`, `RESERVED_CLUSTER_NAME`), a missing or unsupported join mode (`MISSING_CLUSTER_JOIN`, `UNSUPPORTED_CLUSTER_JOIN`), invalid members, Kubernetes join, port or interface (`INVALID_CLUSTER_MEMBERS`, `INVALID_KUBERNETES_JOIN`, `INVALID_CLUSTER_PORT`, `INVALID_CLUSTER_INTERFACE`), a member port shared with another listener (`CLUSTER_PORT_SHARED`), cluster settings that would be ignored (`CLUSTER_SETTINGS_IGNORED`), a non-positive TTL (`INVALID_HAZELCAST_TTL`), or an enabled index without its required controls (`MISSING_REIDENTIFICATION_CONTROLS`) |
 | `dataprism.oversight` | All optional. `approval-required-tools` defaults to empty; `approval-ttl` `PT15M`; `caller-rate-limit.requests` unset (no limit); `caller-rate-limit.window` `PT1M`; `max-pending-per-requester` `5` | No | Refuse startup for an unknown tool name (`UNKNOWN_OVERSIGHT_TOOL`), a non-positive limit, window, TTL or cap (`INVALID_OVERSIGHT_LIMIT`), or approval-required tools or a rate limit without `dataprism.operator.enabled` (`OVERSIGHT_REQUIRES_OPERATOR_SURFACE`) |
@@ -236,6 +237,53 @@ application that adds Actuator and exposes the health endpoint itself.
 With `file-path` (a single file), retention is not enforced in-process: it is
 an operator task.
 
+#### Output: field names, routing and a JSON projection
+
+`dataprism.audit.output.*` shapes the JSON rendering of an audit event. It
+supports a deployer who ships audit events to a log platform that expects
+particular field names; it does not change what is audited, it adds no value
+that is not in the event, and it never touches the hash-chained `.log`
+segments, which stay authoritative.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.audit.output.field-preset` | `canonical` | `canonical` renders each field under its own name. `ecs` renders Elastic Common Schema names (`@timestamp`, `event.id`, `event.action`, `user.id`, `trace.id`), the remaining fields under `dataprism.*`, and a derived `event.outcome`. |
+| `dataprism.audit.output.field-names.<field>` | none | Overrides the output path of one canonical field, for example `field-names.tool=custom.action`. A dot nests. A path matches `[A-Za-z_@][A-Za-z0-9_@]*(\.[A-Za-z0-9_@]+)*`. |
+| `dataprism.audit.output.routing.event-dataset` | unset | A constant written as `event.dataset`: 1 to 100 characters of `[a-z0-9_.]`. |
+| `dataprism.audit.output.routing.data-stream-type` | unset | A constant written as `data_stream.type`: `logs`. |
+| `dataprism.audit.output.routing.data-stream-dataset` | unset | A constant written as `data_stream.dataset`: `[a-z0-9_.]`, 1 to 100 characters. |
+| `dataprism.audit.output.routing.data-stream-namespace` | unset | A constant written as `data_stream.namespace`: `[a-z0-9_]`, 1 to 100 characters. |
+| `dataprism.audit.output.json-directory` | unset | Also write each event, rendered with the mapping and routing above, to `audit-YYYY-MM-DD.ndjson` segments in this directory. Needs `sink: hash-chained` with `directory`. |
+
+With `sink: slf4j`, a configured `field-preset`, `field-names` or `routing`
+adds the mapped values to each log event as key-value pairs. With none of them
+set, the message is unchanged and carries no key-value pairs. With
+`approved-sink`, these properties have no effect, because the deployment's own
+sink renders its own events.
+
+With `json-directory`, the `AuditSink` bean writes the native segment first and
+then the `.ndjson` line, with the same `eventHash` in both. If the projection
+write fails, the native event is already on disk, so the sink then refuses
+every later audited call with `AUDIT_PROJECTION_FAILED` until the process
+restarts, rather than write a second event under a sequence number already
+used. The `.ndjson` segments are not chained and are verified by nothing; verify
+the native directory with the offline verifier. Expired `.ndjson` segments are
+deleted on the same schedule as the native ones, once at startup and then every
+24 hours, with the same `retention` and `retention-override`. Today's segment is
+never deleted. A failed projection purge is logged and does not stop the native
+purge.
+
+Refusal codes, each at startup:
+
+- `INVALID_AUDIT_FIELD_PRESET` -- `field-preset` is neither `canonical` nor `ecs`.
+- `UNKNOWN_AUDIT_FIELD` -- a `field-names` key is not an audit field.
+- `INVALID_AUDIT_FIELD_PATH` -- an output path does not match the pattern above.
+- `AUDIT_FIELD_MAPPING_CONFLICT` -- two output paths are equal, or one is a prefix segment of another, including a routing path and the derived `event.outcome`.
+- `INVALID_AUDIT_ROUTING_VALUE` -- a `routing` value does not follow its naming rule.
+- `AUDIT_JSON_REQUIRES_SEGMENTED_SINK` -- `json-directory` is set without `sink: hash-chained` and `directory`.
+- `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT` -- `json-directory` is the audit `directory`, or inside it, or contains it.
+- `AUDIT_JSON_DIRECTORY_UNUSABLE` -- `json-directory` cannot be opened for writing. The path is logged server-side only, never in the message.
+
 `writer-id` is required for **every** sink, not only `hash-chained` — a
 missing one refuses startup with `MISSING_AUDIT_WRITER` regardless of which
 sink is configured. It need not be unique per boot: each boot mints its own
@@ -254,6 +302,44 @@ to.
 
 [![Fail-closed field decisions: a classified field is pseudonymised, redacted or removed according to its classification; an unclassified field refuses the whole response (FAIL_REQUEST); and a response where something looks like a sensitive identifier shape is also refused.](assets/diagrams/fail-closed-decisions.svg)](assets/diagrams/fail-closed-decisions.svg)
 Select the diagram to open it full size.
+
+### `dataprism.correlation`
+
+A caller's own correlation id, such as the id a gateway puts on every request,
+can be recorded on the audit event as `externalCorrelationId` and passed to
+sources, so that an event in one system can be matched to a request in another.
+This supports that matching. It does not establish who the caller is, and it
+adds no claim about the audit trail's legal standing.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.correlation.inbound.header` | unset | The HTTP request header carrying the id. Unset disables the feature. Must be an RFC 9110 token, and not `Authorization`, `Cookie` or `Proxy-Authorization`. |
+| `dataprism.correlation.inbound.format` | `opaque` | `opaque` accepts a value matching `pattern`. `traceparent` accepts a W3C `traceparent` value and records its trace id. |
+| `dataprism.correlation.inbound.pattern` | the strict default | A regular expression the whole value must match, with `format: opaque`. The default accepts only a UUID, 16 to 128 hex characters containing at least one letter a to f, or a W3C `traceparent`. |
+| `dataprism.correlation.inbound.required` | `false` | If `true`, a call without a valid id is refused and audited before any source is called: `EXTERNAL_CORRELATION_ID_REQUIRED` when the header is absent, `EXTERNAL_CORRELATION_ID_INVALID` when it is present but rejected. |
+| `dataprism.correlation.outbound.header` | unset | The header name that sends the id to a source. A per-source `correlation-header` overrides it. Setting it sends the id to every configured source. |
+
+A value is accepted only if it passes a fixed ceiling (at most 256 characters,
+each in `[A-Za-z0-9._:/+=-]`) and then the pattern. A repeated header is
+rejected. A rejected value is dropped, so the call proceeds as if no id had
+been sent unless `required` is `true`. It is logged at WARN as the code
+`EXTERNAL_CORRELATION_ID_DROPPED`, and the rejected text is never logged.
+
+The pattern limits an id's shape and cannot limit its meaning. A pattern broad
+enough to admit a name-like token such as `jane.doe` lets personal data be
+supplied as an id, and the id is then written to the audit trail and sent to
+sources. A deployer should choose a pattern that admits only generated
+identifiers. The strict default is that choice; widening it is the deployer's
+decision.
+
+Refusal codes, each at startup:
+
+- `INVALID_CORRELATION_HEADER` -- `inbound.header` or `outbound.header` is not an RFC 9110 token, or is `Authorization`, `Cookie` or `Proxy-Authorization`.
+- `INVALID_CORRELATION_FORMAT` -- `inbound.format` is neither `opaque` nor `traceparent`.
+- `INVALID_CORRELATION_PATTERN` -- `inbound.pattern` does not compile.
+- `CORRELATION_PATTERN_NOT_APPLICABLE` -- `inbound.pattern` is set with `format: traceparent`.
+- `CORRELATION_REQUIRED_WITHOUT_HEADER` -- `inbound.required` is `true` without `inbound.header`.
+- `CORRELATION_REQUIRES_HTTP_TRANSPORT` -- `inbound.required` is `true` and the transport is not HTTP.
 
 ### `dataprism.hazelcast`
 
