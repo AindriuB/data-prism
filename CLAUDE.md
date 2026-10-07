@@ -5,8 +5,8 @@
 
 A privacy layer between MCP/LLM clients and enterprise APIs. It gives one entity
 the same synthetic identity everywhere inside a privacy scope, while making the
-underlying source-data inconsistencies *more* visible, never less. Java 21,
-Spring Boot 3, Maven multi-module. The core carries no business domain.
+underlying source-data inconsistencies *more* visible, never less. Java 21 bytecode (Java 25 images),
+Spring Boot 4, Maven multi-module. The core carries no business domain.
 
 ## Read on demand, not up front
 

@@ -95,11 +95,11 @@ consumer building their own extension would find it:
 > jar's own classes and resources to the running server's classpath, never
 > its dependencies, so everything below other than `data-prism-core` and
 > `data-prism-annotations` is scoped "provided" — it must already be on
-> `data-prism-server`'s own classpath, and `spring-boot-starter-web` and
+> `data-prism-server`'s own classpath, and `spring-boot-starter-webmvc` and
 > `spring-boot-starter-oauth2-resource-server` (`data-prism-server`'s own
 > dependencies) put it there.
 
-— `data-prism-quickstart-extension/pom.xml:18-26`
+— `data-prism-quickstart-extension/pom.xml:19-25`
 
 > `LOADER_PATH`: a directory, read by Spring Boot's `PropertiesLauncher`
 > exactly as
@@ -500,7 +500,7 @@ depending on Data Prism:
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <data-prism.version>0.4.1</data-prism.version>
-    <spring-boot.version>3.5.16</spring-boot.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
   <dependencyManagement>
@@ -541,8 +541,9 @@ depending on Data Prism:
   </dependencies>
 ```
 
-`spring-boot.version` (`3.5.16`) is the exact Spring Boot version the 0.3.0
-server distribution was built against (recorded against 0.3.0) — importing its
+`spring-boot.version` (`4.1.1`, which brings `spring-web` `7.0.9` and
+`spring-boot-autoconfigure` `4.1.1`) is the exact Spring Boot version the
+server distribution is built against — importing its
 `spring-boot-dependencies` BOM is what lets `spring-web` and
 `spring-boot-autoconfigure` above go unversioned safely, resolving to the
 same versions already on the running server's classpath, which is the whole

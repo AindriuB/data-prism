@@ -281,6 +281,19 @@ all of these is in `design-review.md` under the section named.
   system to operate and a hop on every lookup. Accepted consequence: without
   isolation, anyone who can reach the member port can read raw subject ids from
   map keys.
+- **2026-10-07 — Jackson 2 stays on Spring Boot 4 (D-139-A); Boot 3 users stay
+  on 0.4.x (D-139-B).** Boot 4 defaults to Jackson 3, but the scrubbing engine
+  is a Jackson module registered on one `ObjectMapper` and a second Jackson
+  major on the classpath would split it, so the classpath is deliberately
+  Jackson 2 and the enforcer still bans `tools.jackson.core:*`. Boot marks its
+  Jackson 2 support deprecated for removal, so this is a debt to repay, not a
+  permanent position. Rejected: moving to Jackson 3 now, which rewrites the
+  engine for no privacy gain, and carrying both Boot lines, which doubles the
+  support surface; Boot 3 consumers stay on 0.4.x.
+- **2026-10-07 — Images run Java 25; library bytecode stays Java 21.** The build
+  uses `--release 21` and a gate checks class major 65, so the jars run on Java
+  21 or newer while the published images run Java 25. Rejected: Java 25
+  bytecode, which would strand consumers on 21.
 - **2026-09-09 — Metrics are guarded at construction, not at each call site**
   (`FailSafeMetrics`). A wrapper applied once when the metrics implementation
   is built, so every emit site added later is guarded by construction rather
