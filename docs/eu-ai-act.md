@@ -83,7 +83,10 @@ supplies controls those people can use on the tool calls that pass through it.
 **Pause.** An operator can pause every call, one tool, or one privacy scope. A
 paused call is refused with `DATAPRISM_PAUSED`, `TOOL_PAUSED` or `SCOPE_PAUSED`
 before any source is touched, and is audited as `DENY:<code>`. See
-[admission codes](tools.md#admission-codes-oversight-refusals).
+[admission codes](tools.md#admission-codes-oversight-refusals). A pause is
+shared across instances only with `topology: embedded` and a join mode; with
+`single-node` it applies to the instance where it was made. See
+[Running multiple instances](multiple-instances.md).
 
 **Approvals.** Tools named in `dataprism.oversight.approval-required-tools` are
 refused with `APPROVAL_REQUIRED` and an `approvalId` until a different person
@@ -91,11 +94,15 @@ approves on the operator port. The identical call then succeeds once. An approva
 is bound to the entity, subject, purpose, privacy profile and client of the call,
 and the approval id and approver are written to the audit record. A requester
 cannot approve their own call (`SELF_APPROVAL`), and the number of live pending
-approvals per requester is capped (`TOO_MANY_PENDING`).
+approvals per requester is capped (`TOO_MANY_PENDING`). Approvals are shared
+across instances only with `embedded` and a join mode; otherwise an approval is
+usable only on the instance where it was made.
 
 **Per-caller limits.** `dataprism.oversight.caller-rate-limit` bounds how many
 calls one caller may make per window (`CALLER_RATE_LIMITED`). An
-approval-required call still uses a token while it waits.
+approval-required call still uses a token while it waits. The count is shared
+across instances only with `embedded` and a join mode; otherwise each instance
+counts separately.
 
 **Re-identification.** The path from a pseudonym back to a subject id is never
 an MCP tool. It lives in `data-prism-reidentification`, is reached only on the
@@ -109,6 +116,11 @@ and not let through. The same holds while an audit checkpoint cannot be written:
 audited calls are refused with `AUDIT_CHECKPOINT_UNAVAILABLE` until the next
 checkpoint succeeds. That is an availability trade the deployer must plan for,
 for example by monitoring the checkpoint file's storage.
+
+With a shared cluster, losing the owner and backup of a pause flag together
+reopens the paused path, and cluster member traffic is not encrypted, so the
+deployer must isolate it. Both are described in
+[Running multiple instances](multiple-instances.md#failure-behaviour).
 
 **What remains the deployer's responsibility.** Deciding who the oversight people
 are, training them, and giving them the authority to pause and to decline. Deciding

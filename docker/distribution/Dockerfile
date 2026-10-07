@@ -68,13 +68,18 @@ ENV LOADER_PATH=/app/adapters
 # path below (matching docker/server/Dockerfile's own convention) precisely
 # so nothing past this COPY step, ENTRYPOINT included, ever needs to know
 # this ARG's value.
-ARG VERSION=0.4.0
+ARG VERSION=0.4.1
 COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server.jar
 RUN chown dataprism:dataprism /app/data-prism-server.jar
 
 USER dataprism
 
 EXPOSE 8080
+# 5701 is the Hazelcast member port: for private networks only, never published
+# to a host. Member traffic is unencrypted and unauthenticated.
+EXPOSE 5701
+# The operator port is set by dataprism.operator.port and has no fixed default,
+# so it is not EXPOSEd; publish it explicitly.
 
 # --server.port=8080 is a command-line argument, which Spring Boot ranks
 # above a mounted /app/config/application.yaml's own server.port — an

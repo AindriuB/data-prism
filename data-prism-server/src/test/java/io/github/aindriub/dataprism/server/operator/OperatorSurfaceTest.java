@@ -206,7 +206,7 @@ class OperatorSurfaceTest {
     @Test
     void approvingYourOwnToolCallIsRefusedWithSelfApproval() throws Exception {
         try (McpSyncClient client = app.mcpClient(app.mcpToken("analyst-self", "CASE-SELF"))) {
-            String refusal = OperatorHarness.text(app.getEntityContext(client, "777"));
+            String refusal = OperatorHarness.text(app.getEntityContext(client, "subject-zzqx"));
             assertThat(refusal).startsWith("APPROVAL_REQUIRED approvalId=");
             String approvalId = refusal.substring(refusal.indexOf('=') + 1).trim();
             // The same principal that made the MCP call, now holding an operator token.
@@ -226,7 +226,7 @@ class OperatorSurfaceTest {
 
             JsonNode listed = body(app.operator("GET", "/operator/approvals", sameOperator, null));
             assertThat(listed.path("approvals").toString()).contains(approvalId).contains("analyst-self");
-            assertThat(listed.toString()).doesNotContain("777");
+            assertThat(listed.toString()).doesNotContain("zzqx");
 
             assertThat(app.operator("POST", "/operator/approvals/" + approvalId + "/reject",
                     app.operatorToken("operator-second"), null).statusCode()).isEqualTo(200);

@@ -1,7 +1,8 @@
 # 116 — Document audit record v3, the JSON projection and log shipping
 
 **Repo:** `.`
-**Depends on:** 106, 113, 114, 115
+**Depends on:** 106, 113, 114, 115, 135
+*(135 added 2026-10-06 by the 0.4.1 plan: 135 adds one `mkdocs.yml` nav entry, `multiple-instances.md`, under "Reference". Owns is unchanged.)*
 **Owns:**
 - docs/audit.md *(new sections "Record version 3", "External correlation id" and "Structured JSON output" only)*
 - docs/log-shipping.md *(new)*

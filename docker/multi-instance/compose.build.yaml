@@ -1,0 +1,18 @@
+# From-source override for compose.yaml in this directory: builds every image
+# from the working tree instead of pulling it. Contexts are relative to this
+# directory, which is where Compose resolves them from.
+#
+#   docker compose -f docker/multi-instance/compose.yaml \
+#     -f docker/multi-instance/compose.build.yaml up --build
+
+services:
+  cert-init:
+    build: {context: ../.., dockerfile: docker/certs-init/Dockerfile}
+  issuer:
+    build: {context: ../.., dockerfile: docker/issuer/Dockerfile}
+  fixtures:
+    build: {context: ../.., dockerfile: docker/fixtures/Dockerfile}
+  server-a:
+    build: {context: ../.., dockerfile: docker/server/Dockerfile}
+  server-b:
+    build: {context: ../.., dockerfile: docker/server/Dockerfile}

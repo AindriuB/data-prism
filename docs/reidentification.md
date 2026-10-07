@@ -65,7 +65,8 @@ The starter feeds the re-identification index automatically. With
 `dataprism.reidentification.enabled=true`, `dataprism.hazelcast.reidentification-enabled=true` and
 `dataprism.hazelcast.topology=embedded`, every `SyntheticValueSource` in the context, the default
 generator or one the application supplies, is wrapped in `CachingSyntheticValueSource` over the
-shared cluster member. Each pseudonym handed out is then entered in the reverse map that
+cluster member, shared only across members that have joined one cluster (see
+[Running multiple instances](multiple-instances.md)). Each pseudonym handed out is then entered in the reverse map that
 `ScopeIdentityIndex` reads. A source that is already a `CachingSyntheticValueSource` is not wrapped
 twice. With re-identification disabled, or with `single-node` topology, nothing is wrapped and nothing
 is written to the reverse map.
@@ -175,5 +176,5 @@ TLS in front of it, and keep the port off any network an MCP client can reach. R
 16 KiB are refused with 413 `PAYLOAD_TOO_LARGE`, whether or not the request declares a length: a
 chunked body is read only up to the limit.
 
-The surface is off by default. Publishing the operator port in Docker Compose, `server.json` and the
-image is not yet done.
+The surface is off by default. `server.json` and the image now declare the operator variables and
+port. Using the operator surface end to end in the Compose quickstart is not yet done.

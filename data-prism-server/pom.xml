@@ -6,7 +6,7 @@
   <parent>
     <groupId>io.github.aindriub</groupId>
     <artifactId>data-prism</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.1</version>
   </parent>
   <artifactId>data-prism-server</artifactId>
   <name>Data Prism :: Standalone server</name>
@@ -95,6 +95,7 @@
         <configuration>
           <systemPropertyVariables>
             <project.version>${project.version}</project.version>
+            <hazelcast.version>${hazelcast.version}</hazelcast.version>
           </systemPropertyVariables>
         </configuration>
         <executions>

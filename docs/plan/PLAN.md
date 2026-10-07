@@ -131,6 +131,159 @@ Follow-ups from task 127, for 0.4.x, not yet tasks:
 Accepted current behaviour: an approval-required call still consumes a
 rate-limit token. This is documented.
 
+#### Release 0.4.1 — real, safe, honestly documented clustering (tasks 131-136)
+
+Planned 2026-10-06 on `claude/release-0.4.1`. These facts were found against
+v0.4.0:
+- `topology=embedded` starts a bare Hazelcast 5.7.0 `Config`, with cluster name
+  `dev`, auto-detection on, no join list and no TLS. Separate instances
+  therefore never cluster.
+- On Kubernetes, auto-detection may join an unrelated `dev` cluster without
+  authentication.
+- `tls-*-reference` is read by nothing.
+- The docs claim cluster-wide sharing.
+
+Each effect fails closed: budget, pause, approvals and rate limits are per
+instance. The danger is exposure and an overstated guarantee.
+
+| Wave | Task | What | Depends on |
+|---|---|---|---|
+| 1 | 131 | **Done.** `PrivacyCluster` membership explicit; auto-detection, multicast and phone-home off; refuse `dev`, TLS config and unsafe `using()` | none |
+| 1 | 133 | **Done.** Multi-instance Compose and Kubernetes examples; `EXPOSE 5701`; `server.json` cluster and operator variables | none |
+| 2 | 132 | **Done.** `dataprism.hazelcast.cluster-name`, `join.*`, `member.*`; startup refusals; TLS references refuse | 131 |
+| 3 | 134 | **Done.** Multi-member server test: pause, approvals, budget, rate limit, re-identification, member loss, refusals | 132 |
+| 3 | 135 | **Done.** Correct configuration, eu-ai-act, architecture and reidentification docs; new `multiple-instances.md` | 132, 133 |
+| 3 | 137 | **Done.** Pin Hazelcast 5.7.0 over the Spring Boot BOM (0.4.0 shipped 5.5.0) | none |
+| 3 | 138 | **Done.** `join.mode: none` refuses incoming joins (PR #113 P2 finding); merged 2026-10-07 | 132 |
+| 4 | 136 | **Done.** Cut 0.4.1 (task 129 pattern); merged 2026-10-07 | 131-135, 137 |
+
+All waves are merged (136 on 2026-10-07). **0.4.1 is release-candidate ready** on `claude/release-0.4.1`; publication waits on the owner (see "0.4.1 release checklist" below). Notes from 131-133, which 135 has now documented:
+- 135 must document that without `member.interface` a tcp-ip or kubernetes member binds every interface.
+- 135 must document the two cross-mode refusals 132 added: `members` with a non-tcp-ip mode, and `kubernetes.*` with a non-kubernetes mode.
+- 135 should warn against `docker run -P` with `EXPOSE 5701`, which publishes the cluster port.
+- The live Compose 2-member run was done in 136: the cluster formed, isolation did not hold (D-0.4.1-E).
+
+0.4.x follow-ups found in 134, 135 and 137, not yet tasks:
+- The packaged server with `topology=embedded` and no source adapter refuses with a misleading `MISSING_SHARED_BUDGET` before cluster validation runs. It fails closed, but the message points at the wrong fix.
+- Add `k8s-rbac` snippet markers in `docker/multi-instance/kubernetes.yaml`, so the docs can embed the RBAC block instead of describing it in prose.
+- The read budget is hard-coded at `RequestLimits.DEFAULT` (100). Consider making it configurable.
+- The `hazelcast-spring` artifact is not pinned. Harmless while nothing uses it.
+
+Sequencing with 0.5.0, recorded in the task files with Owns unchanged:
+- 113 now depends on 132 and 135, because they touch the same files
+  (`DataPrismProperties`, `DataPrismAutoConfiguration` and `configuration.md`).
+- 116 depends on 135 (`mkdocs.yml`).
+- 130 depends on 136 (poms and `docker/distribution/Dockerfile`).
+
+Planner's choice: the 0.4.x item "expose the operator port in Docker Compose,
+`server.json` and the image" is folded into 133 for `server.json` and the image
+only. Operator use end to end in the Compose quickstart needs the issuer to
+mint operator-audience tokens, so it stays a follow-up.
+
+Owner decisions, open:
+
+- **D-0.4.1-A — member security.** Verified against the jar: OSS 5.7.0 has no
+  member TLS engine (`BasicSSLContextFactory` is absent) and no member
+  authentication (`SecurityConfig` is Enterprise). Kubernetes discovery is OSS
+  core. The options:
+  - **(A1)** Hazelcast Enterprise for TLS and member authentication. This
+    costs a commercial licence, a non-OSS dependency, licence-key handling and
+    a dual build or classpath. It contradicts "Hazelcast stays OSS".
+  - **(A2)** A home-grown encryption layer, such as a custom
+    `SSLEngineFactory` or socket interceptor. The interceptor is Enterprise,
+    and a custom engine is unsupported, security-critical code to own.
+    Rejected.
+  - **(B)** Keep the `tls-*-reference` property names, but make setting either
+    one refuse startup with `HAZELCAST_TLS_UNSUPPORTED`. Do not delete them,
+    because Boot would then ignore them silently. Document network isolation
+    (a private network, `NetworkPolicy`, or an mTLS mesh) as the deployer's
+    responsibility, and never claim encryption.
+
+  **Recommended: B.** Tasks 132 and 135 are written for B.
+- **D-0.4.1-B — is the new refusal a breaking change for a patch?** `embedded`
+  without `cluster-name` and `join.mode` now refuses startup. The options:
+  - **(a)** Ship it in 0.4.1 as a Breaking changelog entry, with a one-line
+    migration (`join.mode: none` is an explicit single member bound to
+    loopback). 0.4.0 `embedded` never clustered, so no working multi-instance
+    deployment breaks; only a config edit is forced. Fail closed, as the repo
+    rule requires.
+  - **(b)** Make it 0.5.0. That renumbers the queued 0.5.0 work and leaves
+    0.4.0 users on an auto-detecting `dev` member for longer.
+  - **(c)** Ship in 0.4.1 but default to `none` with a WARN when `join` is
+    unset. This keeps 0.4.0 configs starting. However, a deployer who runs N
+    replicas expecting a shared budget is silently N times over budget, which
+    breaks the fail-closed rule.
+
+  **Recommended: (a).** 0.x semver permits it, the old behaviour was a
+  defect, and if 0.4.0 has not been published yet the cost is near zero.
+  Tasks 132 and 136 are written for (a). Under (c), 132 drops
+  `MISSING_CLUSTER_JOIN` in favour of a WARN, and 136 moves the entry from
+  Breaking to Changed.
+- **D-0.4.1-C — application `PrivacyCluster` beans.** Keep them allowed, but
+  validate them: `using()` refuses auto-detection or multicast
+  (`UNSAFE_HAZELCAST_DISCOVERY`) and a `dev` name, and `embedded(Config)`
+  forces both off. Setting the properties alongside such a bean refuses with
+  `CLUSTER_SETTINGS_IGNORED`. **Recommended: as described.** The alternative,
+  forbidding custom beans, breaks hosts that manage their own instance.
+- **D-0.4.1-D — Kubernetes join mode.** Support both DNS mode (`service-dns`,
+  a headless service, no RBAC) and API mode (`service-name`, which needs get
+  and list on endpoints and pods). **Recommended: both, with DNS shown first in
+  the examples**, because it grants the pod no Kubernetes API rights.
+
+Known residual risk, documented by 135 and pinned by 134: the maps have backup
+count 1, so losing an entry's owner and its backup together loses it. For a
+pause flag, that reopens a paused path.
+
+Owner decisions, closed 2026-10-07:
+
+- **D-0.4.1-E (2026-10-07):** the Compose isolation claim is weakened, because
+  Compose networks are not a security boundary. The live run on OrbStack formed
+  a 2-member cluster, but a container on the default network only reached the
+  cluster-network addresses by routing across bridges. The docs now say the
+  members bind and advertise only their cluster-network address, that OrbStack
+  was observed to route across networks, and that isolating 5701 is the
+  deployer's job (firewall, NetworkPolicy or private network).
+- **D-0.4.1-F (2026-10-07):** publication goes to Central (library modules;
+  `data-prism-server` stays off Central), GHCR and the MCP Registry, as 0.4.0 did.
+
+#### Deferred option, no tasks (2026-10-07): secure Hazelcast clustering and cross-DC
+
+The owner dropped this for now. It is recorded so it is not re-researched. The architect found:
+
+- OSS Hazelcast cannot authenticate members, and has no member TLS engine.
+  Anyone who can reach the member port can read and write cluster state.
+- Recommended if revived: application-layer sealing, meaning AES-GCM on values,
+  HMAC'd keys, signed approvals, and a fail-closed signed pause document with a
+  lease. Optionally add an Enterprise mutual-TLS profile.
+- Budget and rate-limit deletion can only be bounded, not prevented.
+- Cross-DC needs `CUSTOM` or `ZONE_AWARE` partition groups, sync versus async
+  backups chosen per map, custom merge policies (pause wins; consumed approvals
+  stay consumed), and a supported RTT ceiling.
+- Open questions: whether to require Enterprise, the cutover from unsealed
+  data, split-brain handling, and a Java serialization filter.
+- The current 0.4.x write risks are documented as known limitations in 0.4.1.
+
+Follow-ups from 136:
+
+- The lychee link check was not run locally; CI is the first run. Check its result before tagging.
+- 130 is now unblocked (it waited on 136).
+
+### 0.4.1 release checklist (owner go-ahead required)
+
+Per D-0.4.1-F: publish to Maven Central (library modules; `data-prism-server`
+stays off Central), GHCR and the MCP Registry. Each step is an outward action
+and needs the owner's go-ahead. Nothing has been pushed.
+
+1. Push `claude/release-0.4.1` and open a PR to `main`.
+2. Wait for CI green (including the lychee link check, not run locally), then merge.
+3. Close the old Dependabot PRs. The grouping config ships in this branch, so after the merge Dependabot regenerates grouped PRs and the old ungrouped ones are stale.
+4. Push an annotated tag `v0.4.1` on the merge commit, matching `v0.4.0`. It is not signed.
+5. Watch the `release.yml` run for `v0.4.1`; create the GitHub Release if the workflow has not.
+6. Dispatch `publish-central`, then verify the library modules at 0.4.1 on Central (`data-prism-server` must not appear).
+7. Dispatch `publish-image` with `-f version=0.4.1`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
+8. Dispatch `publish-mcp`, then verify the registry lists 0.4.1 as latest.
+9. Re-verify the `docs/extending.md` consumer snippet against Central 0.4.1 (throwaway project, no local repository), and drop any remaining "(recorded against ...)" markers if it passes.
+
 #### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116)
 
 Lets an organisation's own correlation id flow from its MCP client through the
@@ -140,6 +293,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
+| 1 | 130 | Clear the dependency backlog (`docs/plan/tasks/130-clear-dependency-backlog.md`). Runs only after the 0.4.1 cut (136). Owns no files shared with 108-116 | 136 |
 | 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
 | 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
 | 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
@@ -151,7 +305,13 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
-before 0.4.0. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
+before 0.4.0. Task 130 starts only after the 0.4.1 cut (task 136), and it owns no files shared with tasks 108-116, so it
+can run alongside any of them.
+
+**Owner decision, 2026-10-06:** Dependabot stays on, with version updates
+grouped into one PR per ecosystem per week (`.github/dependabot.yml`).
+GitHub-hosted runner minutes are free on this public repo, so the concern was
+noise and queueing, not cost. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
 full text follows, recorded here because no other file holds it.
 
 - **C1** — Record the external correlation id inside the hash, as
@@ -1693,13 +1853,13 @@ PR #101 on 2026-09-24; the site redeployed. See `HISTORY.md`.
 
 Owner decision D-129(a): publish to Maven Central (library modules), GHCR and
 the MCP Registry. `data-prism-server` stays off Central (`skipPublishing`) and
-comes from source, a GitHub Release or GHCR. Nothing below has been done; each
+comes from source, a GitHub Release or GHCR. Each remaining
 step is an outward action and needs the owner's go-ahead.
 
-1. Push `claude/data-prism-eu-compliance-04cf83` and open a PR to `main`.
-2. Wait for CI green, then merge.
-3. Tag `v0.4.0` on the merge commit, signed (`git tag -s v0.4.0 -m "v0.4.0"`), and push the tag. Watch `release.yml`.
-4. Create the GitHub Release for `v0.4.0`.
+1. Done: pushed `claude/data-prism-eu-compliance-04cf83` and opened PR #112 to `main`.
+2. Done: CI green, merged as `1e79904`.
+3. Done: annotated tag `v0.4.0` pushed on the merge commit, matching `v0.3.1`. It is not signed.
+4. In progress: the `release.yml` run for `v0.4.0`. When it finishes, create the GitHub Release for `v0.4.0` if the workflow has not.
 5. Dispatch `publish-central`, then verify the library modules at 0.4.0 on Central (`data-prism-server` must not appear).
 6. Dispatch `publish-image` with `-f version=0.4.0`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
 7. Dispatch `publish-mcp`, then verify the registry lists 0.4.0 as latest.

@@ -1,0 +1,180 @@
+# Two or more data-prism instances sharing one embedded Hazelcast cluster on
+# Kubernetes (task 133). A starting point, not a finished deployment: it
+# omits the required JWT, source and audit configuration, which
+# docs/configuration.md describes. Add it through your own ConfigMap/Secret.
+#
+# SECURITY: member traffic on 5701 is UNENCRYPTED and UNAUTHENTICATED, and
+# data-prism refuses TLS settings for it (D-0.4.1-A). The NetworkPolicy below
+# is therefore part of the deployment, not an option: it must be enforced by
+# your CNI (a policy on a CNI that ignores policies protects nothing).
+#
+# Validate with: kubectl apply --dry-run=client -f docker/multi-instance/kubernetes.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-prism
+---
+# --8<-- [start:k8s-service]
+# Headless service: its DNS name resolves to the member pod addresses.
+# Members are discovered through this name (join.kubernetes.service-dns), which
+# needs no Kubernetes API access and so no RBAC.
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-prism-cluster
+  namespace: data-prism
+spec:
+  clusterIP: None
+  # Members must find each other before they are Ready.
+  publishNotReadyAddresses: true
+  selector:
+    app: data-prism
+  ports:
+    - name: hz-member
+      port: 5701
+      targetPort: 5701
+---
+# --8<-- [end:k8s-service]
+# The MCP-facing service. Deliberately does not expose 5701.
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-prism
+  namespace: data-prism
+spec:
+  selector:
+    app: data-prism
+  ports:
+    - name: mcp
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-prism
+  namespace: data-prism
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: data-prism
+  template:
+    metadata:
+      labels:
+        app: data-prism
+    spec:
+      # DNS join mode needs no Kubernetes API access, so no token is mounted.
+      # Set this to true (or remove it) only for the API mode alternative at
+      # the end of this file, and use its dedicated ServiceAccount.
+      automountServiceAccountToken: false
+      # serviceAccountName: data-prism-discovery   # API mode only
+      containers:
+        - name: data-prism
+          # Pin a released tag; never "latest" in production.
+          image: ghcr.io/aindriub/data-prism-server:0.4.1
+          ports:
+            - name: mcp
+              containerPort: 8080
+            - name: hz-member
+              containerPort: 5701
+          # --8<-- [start:k8s-join]
+          env:
+            - name: DATAPRISM_HAZELCAST_TOPOLOGY
+              value: embedded
+            - name: DATAPRISM_HAZELCAST_CLUSTERNAME
+              value: prism-example # never "dev"; unique per environment
+            - name: DATAPRISM_HAZELCAST_JOIN_MODE
+              value: kubernetes
+            - name: DATAPRISM_HAZELCAST_MEMBER_PORT
+              value: "5701"
+            - name: DATAPRISM_HAZELCAST_JOIN_KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # DNS mode: no RBAC needed. Exactly one of SERVICEDNS / SERVICENAME.
+            - name: DATAPRISM_HAZELCAST_JOIN_KUBERNETES_SERVICEDNS
+              value: data-prism-cluster.data-prism.svc.cluster.local
+            # API mode, as an alternative to SERVICEDNS (replace it, never set
+            # both). Needs the Role in the comment block at the end of this file:
+            # - name: DATAPRISM_HAZELCAST_JOIN_KUBERNETES_SERVICENAME
+            #   value: data-prism-cluster
+            # --8<-- [end:k8s-join]
+            # A reference to a Secret, never a value. The Secret itself is yours
+            # to create; "data-prism-hmac" is a placeholder name.
+            - name: DATAPRISM_PRIVACY_HMAC_KEY_ENVIRONMENT_VARIABLE
+              value: DATAPRISM_HMAC_KEY_MATERIAL
+            - name: DATAPRISM_HMAC_KEY_MATERIAL
+              valueFrom:
+                secretKeyRef:
+                  name: data-prism-hmac
+                  key: hmac-key
+---
+# --8<-- [start:k8s-networkpolicy]
+# Admits member traffic on 5701 only from pods carrying the same app label.
+# Once this policy selects the pods, every other ingress is denied, port 8080
+# included. 8080 therefore stays CLOSED until you add an allow rule for your
+# ingress, for example this extra entry under `ingress:` (placeholder labels):
+#   - from:
+#       - namespaceSelector:
+#           matchLabels:
+#             kubernetes.io/metadata.name: ingress-system
+#     ports:
+#       - protocol: TCP
+#         port: 8080
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-prism-cluster-members
+  namespace: data-prism
+spec:
+  podSelector:
+    matchLabels:
+      app: data-prism
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: data-prism
+      ports:
+        - protocol: TCP
+          port: 5701
+# --8<-- [end:k8s-networkpolicy]
+#
+# Alternative: join with service-name (Kubernetes API mode). Use it instead
+# of SERVICEDNS above. It needs get and list on endpoints and pods. Also set
+# serviceAccountName: data-prism-discovery in the pod spec and flip
+# automountServiceAccountToken to true, or the pods have no token to call the
+# API with:
+#
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: data-prism-discovery
+#   namespace: data-prism
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: Role
+# metadata:
+#   name: data-prism-hazelcast-discovery
+#   namespace: data-prism
+# rules:
+#   - apiGroups: [""]
+#     resources: ["endpoints", "pods"]
+#     verbs: ["get", "list"]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata:
+#   name: data-prism-hazelcast-discovery
+#   namespace: data-prism
+# subjects:
+#   - kind: ServiceAccount
+#     name: data-prism-discovery
+#     namespace: data-prism
+# roleRef:
+#   kind: Role
+#   name: data-prism-hazelcast-discovery
+#   apiGroup: rbac.authorization.k8s.io

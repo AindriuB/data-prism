@@ -55,7 +55,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * and a fixture source. Nothing is mocked: tokens are signed, decoded and audience-checked by the
  * production decoder.
  */
-final class OperatorHarness implements AutoCloseable {
+public final class OperatorHarness implements AutoCloseable {
 
     static final String ISSUER = "https://issuer.example";
     static final String MCP_AUDIENCE = "data-prism-mcp";
@@ -63,24 +63,43 @@ final class OperatorHarness implements AutoCloseable {
     static final String OPERATOR_SCOPE = "dataprism.operate";
     private static final String STORE_PASSWORD = "task-105-test-only";
 
-    final List<AuditEvent> audit = new CopyOnWriteArrayList<>();
+    public final List<AuditEvent> audit = new CopyOnWriteArrayList<>();
     /** While true the audit sink refuses every event, to exercise the audit-unavailable paths. */
     volatile boolean failAudit;
-    final int mcpPort;
-    final int operatorPort;
-    final ConfigurableApplicationContext context;
+    public final int mcpPort;
+    public final int operatorPort;
+    public final ConfigurableApplicationContext context;
 
-    private final HttpsServer identityServer;
+    private HttpsServer identityServer;
     private final RSAKey signingKey;
-    private final String previousTrustStore;
-    private final String previousTrustStorePassword;
-    private final String previousTrustStoreType;
     private final boolean embedded;
-    private final SSLContext previousDefaultSslContext;
-    private final SSLSocketFactory previousDefaultSocketFactory;
+    private final boolean clusterMember;
+    private boolean closed;
+
+    // JVM-wide state is saved by the first live harness and restored by the last, so several
+    // harnesses (cluster members) can run in one JVM and close in any order.
+    private static final Object SHARED = new Object();
+    private static int live;
+    private static String previousTrustStore;
+    private static String previousTrustStorePassword;
+    private static String previousTrustStoreType;
+    private static SSLContext previousDefaultSslContext;
+    private static SSLSocketFactory previousDefaultSocketFactory;
 
     static OperatorHarness start(Path tempDir, boolean embedded, String... extraArguments) throws Exception {
-        return new OperatorHarness(tempDir, embedded, null, null, extraArguments);
+        return new OperatorHarness(tempDir, embedded, null, null, null, extraArguments);
+    }
+
+    /**
+     * One member of an embedded cluster. {@code clusterArguments} replace the default cluster name,
+     * join mode and member port (they are not appended, because a repeated command-line option is
+     * comma-joined). Members started from the same {@code tempDir} share one identity-server
+     * certificate, so the JVM-wide default trust works for every member; each member still has its
+     * own signing key, so a token is only valid on the member that minted it.
+     */
+    public static OperatorHarness startMember(Path tempDir, List<String> clusterArguments,
+                                              String... extraArguments) throws Exception {
+        return new OperatorHarness(tempDir, true, null, null, clusterArguments, extraArguments);
     }
 
     /**
@@ -93,86 +112,104 @@ final class OperatorHarness implements AutoCloseable {
      */
     static OperatorHarness startWithJsonSource(Path tempDir, String catalogueTemplate, String recordJson,
                                                String... extraArguments) throws Exception {
-        return new OperatorHarness(tempDir, true, catalogueTemplate, recordJson, extraArguments);
+        return new OperatorHarness(tempDir, true, catalogueTemplate, recordJson, null, extraArguments);
     }
 
     private static final String CATALOGUE_LOCATION_PROPERTY = "dataprism.json-sources.config-location";
     private final boolean catalogueLocationSet;
 
     private OperatorHarness(Path tempDir, boolean embedded, String catalogueTemplate, String recordJson,
-                            String... extraArguments) throws Exception {
+                            List<String> clusterArguments, String... extraArguments) throws Exception {
         this.embedded = embedded;
+        this.clusterMember = clusterArguments != null;
         this.catalogueLocationSet = catalogueTemplate != null;
         signingKey = new RSAKeyGenerator(2048).keyID("task-105-key").algorithm(JWSAlgorithm.RS256).generate();
         Path keyStore = tempDir.resolve("identity-server.p12");
         Path trustStore = tempDir.resolve("identity-trust.p12");
         Path certificate = tempDir.resolve("identity-server.cer");
-        keytool("-genkeypair", "-alias", "identity", "-keyalg", "RSA", "-keysize", "2048", "-validity", "2",
-                "-keystore", keyStore.toString(), "-storetype", "PKCS12", "-storepass", STORE_PASSWORD,
-                "-keypass", STORE_PASSWORD, "-dname", "CN=127.0.0.1", "-ext", "san=ip:127.0.0.1");
-        keytool("-exportcert", "-alias", "identity", "-keystore", keyStore.toString(), "-storetype", "PKCS12",
-                "-storepass", STORE_PASSWORD, "-file", certificate.toString());
-        keytool("-importcert", "-alias", "identity", "-file", certificate.toString(), "-keystore",
-                trustStore.toString(), "-storetype", "PKCS12", "-storepass", STORE_PASSWORD, "-noprompt");
-        previousTrustStore = System.getProperty("javax.net.ssl.trustStore");
-        previousTrustStorePassword = System.getProperty("javax.net.ssl.trustStorePassword");
-        previousTrustStoreType = System.getProperty("javax.net.ssl.trustStoreType");
-        System.setProperty("javax.net.ssl.trustStore", trustStore.toString());
-        System.setProperty("javax.net.ssl.trustStorePassword", STORE_PASSWORD);
-        System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
-
-        SSLContext tls = SSLContext.getInstance("TLS");
-        KeyStore serverKeys = KeyStore.getInstance("PKCS12");
-        try (var input = Files.newInputStream(keyStore)) {
-            serverKeys.load(input, STORE_PASSWORD.toCharArray());
+        if (!Files.exists(trustStore)) {
+            keytool("-genkeypair", "-alias", "identity", "-keyalg", "RSA", "-keysize", "2048", "-validity", "2",
+                    "-keystore", keyStore.toString(), "-storetype", "PKCS12", "-storepass", STORE_PASSWORD,
+                    "-keypass", STORE_PASSWORD, "-dname", "CN=127.0.0.1", "-ext", "san=ip:127.0.0.1");
+            keytool("-exportcert", "-alias", "identity", "-keystore", keyStore.toString(), "-storetype", "PKCS12",
+                    "-storepass", STORE_PASSWORD, "-file", certificate.toString());
+            keytool("-importcert", "-alias", "identity", "-file", certificate.toString(), "-keystore",
+                    trustStore.toString(), "-storetype", "PKCS12", "-storepass", STORE_PASSWORD, "-noprompt");
         }
-        KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        keyManagers.init(serverKeys, STORE_PASSWORD.toCharArray());
-        tls.init(keyManagers.getKeyManagers(), null, null);
-        KeyStore trusted = KeyStore.getInstance("PKCS12");
-        try (var input = Files.newInputStream(trustStore)) {
-            trusted.load(input, STORE_PASSWORD.toCharArray());
-        }
-        TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(
-                TrustManagerFactory.getDefaultAlgorithm());
-        trustManagers.init(trusted);
-        SSLContext clientTls = SSLContext.getInstance("TLS");
-        clientTls.init(null, trustManagers.getTrustManagers(), null);
-        // The JVM default context is built once, so each harness installs its own explicitly.
-        previousDefaultSslContext = SSLContext.getDefault();
-        previousDefaultSocketFactory = HttpsURLConnection.getDefaultSSLSocketFactory();
-        SSLContext.setDefault(clientTls);
-        HttpsURLConnection.setDefaultSSLSocketFactory(clientTls.getSocketFactory());
-        identityServer = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        identityServer.setHttpsConfigurator(new HttpsConfigurator(tls));
-        byte[] jwks = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
-        identityServer.createContext("/jwks", exchange -> {
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, jwks.length);
-            try (var out = exchange.getResponseBody()) {
-                out.write(jwks);
+        synchronized (SHARED) {
+            if (live++ == 0) {
+                previousTrustStore = System.getProperty("javax.net.ssl.trustStore");
+                previousTrustStorePassword = System.getProperty("javax.net.ssl.trustStorePassword");
+                previousTrustStoreType = System.getProperty("javax.net.ssl.trustStoreType");
+                previousDefaultSslContext = SSLContext.getDefault();
+                previousDefaultSocketFactory = HttpsURLConnection.getDefaultSSLSocketFactory();
             }
-        });
-        if (recordJson != null) {
-            byte[] record = recordJson.getBytes(StandardCharsets.UTF_8);
-            identityServer.createContext("/records/", exchange -> {
+        }
+        try {
+            System.setProperty("javax.net.ssl.trustStore", trustStore.toString());
+            System.setProperty("javax.net.ssl.trustStorePassword", STORE_PASSWORD);
+            System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
+
+            SSLContext tls = SSLContext.getInstance("TLS");
+            KeyStore serverKeys = KeyStore.getInstance("PKCS12");
+            try (var input = Files.newInputStream(keyStore)) {
+                serverKeys.load(input, STORE_PASSWORD.toCharArray());
+            }
+            KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keyManagers.init(serverKeys, STORE_PASSWORD.toCharArray());
+            tls.init(keyManagers.getKeyManagers(), null, null);
+            KeyStore trusted = KeyStore.getInstance("PKCS12");
+            try (var input = Files.newInputStream(trustStore)) {
+                trusted.load(input, STORE_PASSWORD.toCharArray());
+            }
+            TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(
+                    TrustManagerFactory.getDefaultAlgorithm());
+            trustManagers.init(trusted);
+            SSLContext clientTls = SSLContext.getInstance("TLS");
+            clientTls.init(null, trustManagers.getTrustManagers(), null);
+            // The JVM default context is built once, so each harness installs its own explicitly.
+            SSLContext.setDefault(clientTls);
+            HttpsURLConnection.setDefaultSSLSocketFactory(clientTls.getSocketFactory());
+            identityServer = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            identityServer.setHttpsConfigurator(new HttpsConfigurator(tls));
+            byte[] jwks = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
+            identityServer.createContext("/jwks", exchange -> {
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, record.length);
+                exchange.sendResponseHeaders(200, jwks.length);
                 try (var out = exchange.getResponseBody()) {
-                    out.write(record);
+                    out.write(jwks);
                 }
             });
-        }
-        identityServer.start();
-        if (catalogueTemplate != null) {
-            Path catalogue = tempDir.resolve("json-sources.yaml");
-            Files.writeString(catalogue, catalogueTemplate.replace("@HOST@",
-                    "https://127.0.0.1:" + identityServer.getAddress().getPort()));
-            System.setProperty(CATALOGUE_LOCATION_PROPERTY, "file:" + catalogue.toAbsolutePath());
+            if (recordJson != null) {
+                byte[] record = recordJson.getBytes(StandardCharsets.UTF_8);
+                identityServer.createContext("/records/", exchange -> {
+                    exchange.getResponseHeaders().add("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, record.length);
+                    try (var out = exchange.getResponseBody()) {
+                        out.write(record);
+                    }
+                });
+            }
+            identityServer.start();
+            if (catalogueTemplate != null) {
+                Path catalogue = tempDir.resolve("json-sources.yaml");
+                Files.writeString(catalogue, catalogueTemplate.replace("@HOST@",
+                        "https://127.0.0.1:" + identityServer.getAddress().getPort()));
+                System.setProperty(CATALOGUE_LOCATION_PROPERTY, "file:" + catalogue.toAbsolutePath());
+            }
+            operatorPort = freePort();
+        } catch (Exception | Error failure) {
+            if (identityServer != null) {
+                identityServer.stop(0);
+            }
+            if (catalogueTemplate != null) {
+                System.clearProperty(CATALOGUE_LOCATION_PROPERTY);
+            }
+            releaseSharedState();
+            throw failure;
         }
         String jwksUri = "https://127.0.0.1:" + identityServer.getAddress().getPort() + "/jwks";
 
-        operatorPort = freePort();
         List<String> arguments = new ArrayList<>(List.of(
                 "--server.port=0", "--spring.main.banner-mode=off",
                 "--dataprism.security.jwt.issuer=" + ISSUER,
@@ -196,6 +233,14 @@ final class OperatorHarness implements AutoCloseable {
                 "--dataprism.operator.required-audience=" + OPERATOR_AUDIENCE,
                 "--dataprism.operator.required-scope=" + OPERATOR_SCOPE));
         if (embedded) {
+            if (clusterMember) {
+                arguments.addAll(clusterArguments);
+            } else {
+                arguments.addAll(List.of(
+                        "--dataprism.hazelcast.cluster-name=operator-harness-" + System.nanoTime(),
+                        "--dataprism.hazelcast.join.mode=none",
+                        "--dataprism.hazelcast.member.port=" + freePort()));
+            }
             arguments.addAll(List.of(
                     "--dataprism.hazelcast.reidentification-enabled=true",
                     "--dataprism.hazelcast.reidentification-controls-reference=REVIEWED_CONTROLS",
@@ -226,6 +271,7 @@ final class OperatorHarness implements AutoCloseable {
         } catch (RuntimeException | Error failure) {
             System.clearProperty(CATALOGUE_LOCATION_PROPERTY);
             identityServer.stop(0);
+            releaseSharedState();
             throw failure;
         }
         mcpPort = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
@@ -244,12 +290,12 @@ final class OperatorHarness implements AutoCloseable {
     // ---- tokens --------------------------------------------------------------------------------
 
     /** A token for the MCP endpoint: MCP audience, no operator scope. */
-    String mcpToken(String principal, String caseId) throws Exception {
+    public String mcpToken(String principal, String caseId) throws Exception {
         return token(principal, "mcp-client", MCP_AUDIENCE, null, List.of("investigator"), caseId);
     }
 
     /** A token for the operator port. */
-    String operatorToken(String principal, String... roles) throws Exception {
+    public String operatorToken(String principal, String... roles) throws Exception {
         return token(principal, "operator-console", OPERATOR_AUDIENCE, OPERATOR_SCOPE, List.of(roles), "CASE-OPS");
     }
 
@@ -272,7 +318,7 @@ final class OperatorHarness implements AutoCloseable {
 
     // ---- requests ------------------------------------------------------------------------------
 
-    HttpResponse<String> operator(String method, String path, String token, String body) throws Exception {
+    public HttpResponse<String> operator(String method, String path, String token, String body) throws Exception {
         return send(operatorPort, method, path, token, body);
     }
 
@@ -308,22 +354,31 @@ final class OperatorHarness implements AutoCloseable {
         return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    McpSyncClient mcpClient(String token) {
+    public McpSyncClient mcpClient(String token) {
+        return mcpClient(token, null);
+    }
+
+    /** As {@link #mcpClient(String)}, with the given initialization and request timeouts when non-null. */
+    public McpSyncClient mcpClient(String token, java.time.Duration timeout) {
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
                 .builder("http://127.0.0.1:" + mcpPort).endpoint("/mcp")
                 .requestBuilder(HttpRequest.newBuilder().header("Authorization", "Bearer " + token)).build();
-        McpSyncClient client = McpClient.sync(transport)
-                .clientInfo(new McpSchema.Implementation("operator-test", "1.0.0")).build();
+        McpClient.SyncSpec spec = McpClient.sync(transport)
+                .clientInfo(new McpSchema.Implementation("operator-test", "1.0.0"));
+        if (timeout != null) {
+            spec = spec.initializationTimeout(timeout).requestTimeout(timeout);
+        }
+        McpSyncClient client = spec.build();
         client.initialize();
         return client;
     }
 
-    McpSchema.CallToolResult getEntityContext(McpSyncClient client, String subjectId) {
+    public McpSchema.CallToolResult getEntityContext(McpSyncClient client, String subjectId) {
         return client.callTool(new McpSchema.CallToolRequest("get_entity_context",
                 Map.of("entityType", "CUSTOMER", "subjectId", subjectId)));
     }
 
-    static String text(McpSchema.CallToolResult result) {
+    public static String text(McpSchema.CallToolResult result) {
         return ((McpSchema.TextContent) result.content().get(0)).text();
     }
 
@@ -335,19 +390,34 @@ final class OperatorHarness implements AutoCloseable {
 
     @Override
     public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
         context.close();
         identityServer.stop(0);
         if (catalogueLocationSet) {
             System.clearProperty(CATALOGUE_LOCATION_PROPERTY);
         }
-        if (embedded) {
+        if (embedded && !clusterMember) {
+            // A cluster member's own context close already shut its instance; shutdownAll would
+            // take the other members down with it.
             Hazelcast.shutdownAll();
         }
-        SSLContext.setDefault(previousDefaultSslContext);
-        HttpsURLConnection.setDefaultSSLSocketFactory(previousDefaultSocketFactory);
-        restore("javax.net.ssl.trustStore", previousTrustStore);
-        restore("javax.net.ssl.trustStorePassword", previousTrustStorePassword);
-        restore("javax.net.ssl.trustStoreType", previousTrustStoreType);
+        releaseSharedState();
+    }
+
+    private static void releaseSharedState() {
+        synchronized (SHARED) {
+            if (--live > 0) {
+                return;
+            }
+            SSLContext.setDefault(previousDefaultSslContext);
+            HttpsURLConnection.setDefaultSSLSocketFactory(previousDefaultSocketFactory);
+            restore("javax.net.ssl.trustStore", previousTrustStore);
+            restore("javax.net.ssl.trustStorePassword", previousTrustStorePassword);
+            restore("javax.net.ssl.trustStoreType", previousTrustStoreType);
+        }
     }
 
     private static int freePort() throws Exception {

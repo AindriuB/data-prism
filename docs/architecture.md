@@ -38,7 +38,7 @@ review.
 | `processor` | `annotations` | `LlmExposedModelProcessor`, the annotation processor that fails the build on a field of an `@LlmExposedModel` carrying neither `@SensitiveData` nor `@NonSensitive(reason=...)` (§B2) |
 | `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, `InvestigationContext`, `SourceTree`, every SPI interface the other modules implement, and the audit contract (`AuditEvent`, `AuditSink`, per-writer hash chain) |
 | `pseudonymisation` | `core` | HMAC generator, per-namespace synthetic generators, `PseudonymRenderer`, key and algorithm versioning |
-| `hazelcast` | `core` | Embedded member, identity cache, re-identification index, shared read budget, scope purge, `FailSafeMetrics` |
+| `hazelcast` | `core` | Embedded member, identity cache, re-identification index, read budget (shared only across joined members), scope purge, `FailSafeMetrics` |
 | `validation` | `core` | `SensitiveDataScanner`, `LlmResponseValidator`, scope-aware pseudonym allowlist |
 | `security` | `core` | `AuthenticatedCaller`, `AuthorizationService`, `PurposeValidator`, `ScopeResolver`, `PrivacySession`, `SecurityPolicy`, `ReservedArguments`, `ToolInvocation` |
 | `orchestration` | `core` + the above | `ContextOrchestrator`, parallel fan-out, circuit breaker, request and cost limits, correlation and consistency findings |
@@ -123,9 +123,13 @@ expression, or anything outside the one object (or one level of nested
 object) the response already is. See `configuration.md` and
 `docs/extending.md`.
 
-**Sideways.** An embedded Hazelcast member holding the identity cache, the shared
-read budget and — only where a deployment enables it — the re-identification
-index. Never raw source records, never business caching. The identity cache is an
+**Sideways.** An embedded Hazelcast member holding the identity cache, the read
+budget, the pause, approval and rate-limit state and — only where a deployment
+enables it — the re-identification index. That state is shared across members
+that have joined one cluster through an explicit join mode, and is per process
+otherwise. Never raw source records, never business caching. Member traffic is
+not encrypted or authenticated, so isolating it is the deployer's job; see
+`multiple-instances.md`. The identity cache is an
 optimisation and losing it changes no answer; the read budget and the
 re-identification index are not, and are treated differently for that reason.
 
@@ -184,7 +188,8 @@ the boundary is crossed; catching a violation depends on review.
    `anOperatorTokenIsNotAcceptedOnTheMcpEndpoint`), and that the tool list
    contains no operator tool (`theOperatorSurfaceIsNotAnMcpTool`).
 6. **Hazelcast never holds raw sensitive values** — pseudonyms and subject ids
-   only. The identity cache never decides a value: every path through it returns
+   only. Subject ids appear in the keys of three maps, and member traffic is
+   unencrypted, so the member port must stay on an isolated network. The identity cache never decides a value: every path through it returns
    what the generator would have returned, including the path where the cluster
    is gone. **Enforced** — `HazelcastStoredValueBoundaryTest` drives identity
    caching with re-identification and a read budget, inventories every live map,
@@ -261,6 +266,21 @@ all of these is in `design-review.md` under the section named.
   cache — nothing can recompute a subject id from a pseudonym — so its durability
   is the cluster's durability, and an embedded cluster scaled to zero loses it.
   That index is therefore off unless a deployment enables it deliberately.
+- **2026-10-06 — Cluster membership is explicit; member transport security is
+  the deployer's.** v0.4.0 started a bare member with the cluster name `dev` and
+  auto-detection on, so separate instances never clustered and, on Kubernetes,
+  could have joined an unrelated cluster. D-0.4.1-A: membership is explicit
+  (`cluster-name`, `join.mode`), auto-detection, multicast and phone-home are
+  off, the name `dev` is refused, and TLS settings are refused
+  (`HAZELCAST_TLS_UNSUPPORTED`) because member TLS and member authentication are
+  Hazelcast Enterprise features. D-0.4.1-B: network isolation of the member port
+  is the deployer's job, documented in `multiple-instances.md`. Rejected:
+  leaving auto-detection on, which costs an unauthenticated join to whatever
+  answers; accepting TLS properties that nothing reads, which costs a false
+  sense of protection; and a separate Hazelcast cluster, which costs an extra
+  system to operate and a hop on every lookup. Accepted consequence: without
+  isolation, anyone who can reach the member port can read raw subject ids from
+  map keys.
 - **2026-09-09 — Metrics are guarded at construction, not at each call site**
   (`FailSafeMetrics`). A wrapper applied once when the metrics implementation
   is built, so every emit site added later is guarded by construction rather
