@@ -2,9 +2,10 @@
 
 **Repo:** `.`
 **Depends on:** 113
+*(Owns amended 2026-10-07 by D-148-A: `examples/log-shipping/mdc/**` is carved out for task 148, which runs in the same wave. Do not create files under `mdc/`. The `examples/log-shipping/README.md` this task writes may link `mdc/` by name.)*
 **Owns:**
 - examples/correlation-header/** *(new)*
-- examples/log-shipping/** *(new)*
+- examples/log-shipping/** *(new; except `mdc/**`, which task 148 owns)*
 
 ## Goal
 

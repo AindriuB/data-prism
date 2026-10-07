@@ -3,6 +3,7 @@
 **Repo:** `.`
 **Depends on:** 108, 141, 146
 *(141 and 146 added 2026-10-07 by the 0.5.0 plan. 141 moves the reactor to Spring Framework 7, so this task is written against it once. 146 may edit `MutualTlsRestClientsHttpsTest.java`, which this task's test glob also covers. Owns is unchanged.)*
+*(Followed by 148, added 2026-10-07 by D-148-A: 148 passes an optional `CorrelationMdc` bean to the `SourceFanOut` that `ConfiguredJsonSourcesAutoConfiguration` builds. See also the D-148-A amendment at the end of this file. Owns is unchanged.)*
 **Owns:**
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/** *(except `ConfiguredJsonScrubbingEngine.java` and `ConfiguredJsonNestedLeafShapeGuard.java`, which task 118 owns and this task leaves unchanged)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/** *(except `ConfiguredJsonUndeclaredKeyRefusalTest.java`, task 118)*
@@ -73,8 +74,31 @@ ThreadLocal, because the fan-out runs on parallel virtual threads.
 ## Out of scope
 
 - Inbound header reading. That is task 113.
-- A global default header for all sources. Each source opts in, because
+- *(Superseded 2026-10-07 by D-148-A; see the amendment at the end.)* A global default header for all sources. Each source opts in, because
   every source that receives the id is one more party that can join it.
 - Micrometer or OpenTelemetry instrumentation of `RestClient`.
 - `dataprism.sources.<name>` properties in `DataPrismProperties`, which
   tasks 103 and 104 own.
+
+## Amendment D-148-A (2026-10-07): global outbound header default
+
+The owner decided (D-148-A) to support an optional global default. This
+amendment supersedes the "A global default header for all sources" bullet
+under Out of scope. Owns is unchanged: everything below is in
+`connectors/rest/**`.
+
+- [ ] `ConfiguredJsonSourcesInitializer` reads
+      `dataprism.correlation.outbound.header` through `Binder`, as it already
+      does for `fixture-development`. It applies the same rules as the
+      per-source `correlation-header`: an RFC 9110 token, and none of
+      `Authorization`, `Proxy-Authorization`, `Cookie`, `Host`,
+      `Content-Length`, `Transfer-Encoding` or `Forwarded`. Any other value
+      fails startup with `INVALID_CORRELATION_HEADER`.
+- [ ] A source with its own `correlation-header` uses that header. A source
+      without one uses the global value. With neither, nothing is sent. One
+      test per case.
+- [ ] `RestSources.fromYaml` gains an overload that takes the default. The
+      existing signature behaves as before, with no default.
+- [ ] The paragraph this task adds to `docs/protect-your-own-api.md` states
+      that the global default sends the id to every configured source. Each
+      such source is one more party that can join it.

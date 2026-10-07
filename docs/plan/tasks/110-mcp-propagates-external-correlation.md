@@ -5,6 +5,7 @@
 *(128 added 2026-10-06: task 128 edits `data-prism-mcp/**` and `DefaultContextOrchestrator`'s deny decision, both owned here.)*
 *(118 added 2026-10-06: task 118 edits `data-prism-mcp/**` and `DefaultContextOrchestrator` after 101, so this task starts from its result.)*
 *(123 added 2026-10-06: task 123 changes the DENY `policyDecision` in `DefaultContextOrchestrator` and its expected value in `OrchestratorRefusalCorrelationTest`, both owned here.)*
+*(Followed by 148, added 2026-10-07 by D-148-A: 148 edits both tools' `handle` and adds `DataPrismMcpServer` overloads after this task merges. Keep the `InboundCorrelation` read as the first step of `handle` so 148 can open its MDC scope there. Owns is unchanged.)*
 **Owns:**
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/**
 - data-prism-mcp/src/test/java/io/github/aindriub/dataprism/mcp/**

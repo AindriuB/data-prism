@@ -2,6 +2,7 @@
 
 **Repo:** `.`
 **Depends on:** 110, 112
+*(Followed by 148, added 2026-10-07 by D-148-A: MDC coverage of the PII log scan is 148's, not this task's. This module logs through `slf4j-simple`, whose `NOPMDCAdapter` discards MDC, so 148 scans through a recording `MDCAdapter`. 148 inserts cases into `PiiLogScanTest` and adds `DataPrismAssembly` overloads after this task merges. Owns and Acceptance are unchanged.)*
 **Owns:**
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/AuditFilePiiScanTest.java
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java

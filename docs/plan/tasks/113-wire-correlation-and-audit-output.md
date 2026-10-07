@@ -5,6 +5,7 @@
 *(141 added 2026-10-07 by the 0.5.0 plan: 141 edits the `AuditIntegrityHealth` nested class of `DataPrismAutoConfiguration` and moves the reactor to Spring Boot 4.1.1. Write the `ApplicationContextRunner` tests against Boot 4. Owns is unchanged.)*
 *(127 added 2026-10-06: task 127 edits `DataPrismAutoConfiguration`, owned here.)*
 *(132 and 135 added 2026-10-06 by the 0.4.1 plan: 132 edits the `Hazelcast` section of `DataPrismProperties` and `ClusterBackedState` in `DataPrismAutoConfiguration`; 135 edits the `dataprism.hazelcast` row and section of `docs/configuration.md`. Rebase on the 0.4.1 cut (136) before starting. Owns is unchanged.)*
+*(Followed by 148, added 2026-10-07 by D-148-A: 148 adds `mdc-key` to the `correlation` section of `DataPrismProperties`, a `CorrelationMdc` bean to `DataPrismAutoConfiguration`, and a `mdc-key` row inside the `dataprism.correlation` section of `docs/configuration.md`. See also the D-148-A amendment at the end of this file. Owns is unchanged.)*
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java
@@ -119,3 +120,17 @@ The default inbound correlation-id pattern is the strict default, not
 or a W3C traceparent. The broader pattern is available only by explicit
 configuration, because it admits name-like tokens such as `jane.doe` and so
 lets personal data be smuggled in as an id. The Owns list is unchanged.
+
+## Amendment D-148-A (2026-10-07): global outbound header default
+
+Owns is unchanged. Everything below is inside `DataPrismProperties` and the
+`dataprism.correlation` section of `docs/configuration.md`.
+
+- [ ] `dataprism.correlation.outbound.header` is bound and unset by default.
+      Task 111's amendment consumes it. It is validated here with task 111's
+      header-name rules, and an invalid value refuses with
+      `INVALID_CORRELATION_HEADER`. One `ApplicationContextRunner` test.
+- [ ] `docs/configuration.md` documents it. A per-source `correlation-header`
+      overrides it. Setting it sends the id to every configured source.
+- [ ] Leave room in the `correlation` section for task 148's `mdc-key`. Do
+      not add it here.
