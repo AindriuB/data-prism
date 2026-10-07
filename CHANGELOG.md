@@ -49,7 +49,7 @@ do not authenticate each other: open-source Hazelcast has neither.
 - The server ships, and the starter declares, Hazelcast 5.7.0. 0.4.0 shipped
   5.5.0, because Spring Boot's dependency management overrode the declared
   version; the root pom now pins 5.7.0 ahead of the Boot BOM. A starter consumer
-  must pin it too (next section). 0.4.0's multi-member behaviour was only ever
+  must pin it too (see "Upgrading starter consumers to Hazelcast 5.7.0" below). 0.4.0's multi-member behaviour was only ever
   exercised on 5.5.0.
 
 ### Added
