@@ -129,6 +129,15 @@ class OutboundCorrelationHeaderConfigTest {
                     "dataprism.correlation.outbound.header", "Authorization")));
             assertThatThrownBy(() -> ConfiguredJsonSourcesInitializer.loadConfig(bad))
                     .hasMessageContaining("INVALID_CORRELATION_HEADER");
+
+            for (String blank : new String[] {"", "   "}) {
+                StandardEnvironment blankEnv = new StandardEnvironment();
+                blankEnv.getPropertySources().addFirst(new MapPropertySource("t", Map.of(
+                        "dataprism.json-sources.config-location", file.toUri().toString(),
+                        "dataprism.correlation.outbound.header", blank)));
+                assertThatThrownBy(() -> ConfiguredJsonSourcesInitializer.loadConfig(blankEnv))
+                        .hasMessageContaining("INVALID_CORRELATION_HEADER");
+            }
         } finally {
             Files.deleteIfExists(file);
         }

@@ -71,9 +71,6 @@ public final class ConfiguredJsonSourcesInitializer
                 .orElse(false);
         try (InputStream in = new DefaultResourceLoader().getResource(location).getInputStream()) {
             String outboundHeader = bindString(environment, OUTBOUND_HEADER_PROPERTY);
-            if (outboundHeader != null && outboundHeader.isBlank()) {
-                outboundHeader = null;
-            }
             return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment, outboundHeader);
         } catch (IOException e) {
             throw new IllegalStateException(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY

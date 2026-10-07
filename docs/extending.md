@@ -232,7 +232,10 @@ disclosure to a third party.
 The built-in REST and configured JSON sources do this for you, without any
 adapter code. A source that sets `correlation-header` in its YAML has the id
 set on that header by an interceptor that reads it from the request, so it is
-correct under parallel fan-out. A source without the key sends nothing.
+correct under parallel fan-out. A source without the key sends nothing, unless
+`dataprism.correlation.outbound.header` is set: that global default then
+applies to every source without its own key, and each such source is one more
+party that can join the id.
 
 ## Implement `IdentityResolver`
 
