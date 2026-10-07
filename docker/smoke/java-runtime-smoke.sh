@@ -7,21 +7,40 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${ROOT}/docker/smoke/target"
 WARNINGS="${OUT_DIR}/unsafe-warnings.txt"
 TIMEOUT=180
-DIST_IMAGE="data-prism-smoke-distribution:local"
-SERVER_IMAGE="data-prism-smoke-server:local"
+SMOKE_PREFIX="data-prism-smoke/"
+export SMOKE_RUN_ID="$$-$(date +%s)"
+DIST_IMAGE="${SMOKE_PREFIX}distribution:${SMOKE_RUN_ID}"
+SERVER_IMAGE="${SMOKE_PREFIX}server:${SMOKE_RUN_ID}"
 # Unique project name: -p overrides the fixed name in compose.yaml, so teardown
 # can only ever touch the stack this run created.
 PROJECT="data-prism-smoke-$$"
 COMPOSE=(docker compose -p "$PROJECT" -f "${ROOT}/docker/multi-instance/compose.yaml"
-         -f "${ROOT}/docker/multi-instance/compose.build.yaml")
+         -f "${ROOT}/docker/multi-instance/compose.build.yaml"
+         -f "${ROOT}/docker/smoke/compose.smoke.yaml")
 
 cleanup() {
   status=$?
   echo "== tearing down"
+  # Only reached once the guard below passed, so every image here is smoke-named.
   "${COMPOSE[@]}" down --volumes --remove-orphans --rmi local >/dev/null 2>&1 || true
   docker image rm -f "$DIST_IMAGE" "$SERVER_IMAGE" >/dev/null 2>&1 || true
   exit "$status"
 }
+
+# Fail closed: refuse to build or tear down unless every image name the stack
+# resolves to carries the smoke prefix. Teardown is armed only after this passes,
+# so an unexpected name can never be removed.
+echo "== checking image names"
+images="$("${COMPOSE[@]}" config --images)"
+if [ -z "$images" ]; then
+  echo "FAIL: compose resolved no image names" >&2; exit 1
+fi
+while IFS= read -r name; do
+  case "$name" in
+    "${SMOKE_PREFIX}"*) ;;
+    *) echo "FAIL: image '${name}' is not under ${SMOKE_PREFIX}; refusing to build" >&2; exit 1 ;;
+  esac
+done <<< "$images"
 trap cleanup EXIT
 
 mkdir -p "$OUT_DIR"
