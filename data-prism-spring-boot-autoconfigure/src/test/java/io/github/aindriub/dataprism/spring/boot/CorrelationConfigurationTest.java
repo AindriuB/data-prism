@@ -7,7 +7,24 @@ import ch.qos.logback.core.read.ListAppender;
 import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
+import io.github.aindriub.dataprism.audit.AuditEntry;
+import io.github.aindriub.dataprism.audit.AuditEvent;
+import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
+import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.IdentityResolver;
+import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
+import io.github.aindriub.dataprism.orchestration.ContextRequest;
+import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.mock.web.MockHttpServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +38,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -245,7 +265,130 @@ class CorrelationConfigurationTest {
         assertThat(correlation.isPresent()).isTrue();
     }
 
-    // referenced so an unused-import cleanup does not drop the servlet type used by the extractor under test
-    @SuppressWarnings("unused")
-    private static final Class<?> REQUEST_TYPE = HttpServletRequest.class;
+    // --- the Spring-built server, driven through its own servlet --------------------------------
+
+    private static final List<AuditEvent> AUDITED = new CopyOnWriteArrayList<>();
+    private static final List<ContextRequest> INVOKED = new CopyOnWriteArrayList<>();
+
+    /** The application's side: adapters, keys, a recording audit sink and a stub orchestrator, and the real extractor. */
+    @Configuration(proxyBeanMethods = false)
+    static class ServedIntegrations {
+        @Bean DataSourceAdapter<String> customerAdapter() { return new AuditRetentionConfigurationTest.Integrations().customerAdapter(); }
+        @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }
+        @Bean HmacKeyReferenceResolver keys() { return new AuditRetentionConfigurationTest.Integrations().keys(); }
+        @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
+        @Bean AuditSink recordingAuditSink() { return AUDITED::add; }
+        /** Stands in for the orchestrator's one ALLOW record, so the id the tool hands it is what gets audited. */
+        @Bean ContextOrchestrator stubOrchestrator(AuditRecorder recorder) {
+            return (request, privacyContext, investigationContext) -> {
+                INVOKED.add(request);
+                recorder.record(new AuditEntry(investigationContext.principalId(), investigationContext.clientId(),
+                        request.toolName(), request.entityType(), "SUBJ-STUB", "fingerprint", "DEFAULT",
+                        privacyContext.scopeId(), privacyContext.purpose(), investigationContext.caseId(), "ALLOW",
+                        Set.of("customer"), Set.of(), "stub-correlation", Map.of(), null, null,
+                        request.externalCorrelationId().map(ExternalCorrelationId::value).orElse("")));
+                return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(), List.of(),
+                        DataPrismObjectMapper.create().createObjectNode(), Map.of(), "stub-correlation");
+            };
+        }
+        @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor(DataPrismProperties properties) {
+            return new JwtCallerContextExtractor(properties);
+        }
+    }
+
+    private static WebApplicationContextRunner served() {
+        AUDITED.clear();
+        INVOKED.clear();
+        return new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(ServedIntegrations.class)
+                .withPropertyValues(AuditRetentionConfigurationTest.valid())
+                .withPropertyValues("dataprism.audit.sink=approved-sink",
+                        "dataprism.correlation.inbound.header=X-Correlation-ID",
+                        "dataprism.correlation.inbound.pattern=[a-z]+-[a-z]+-[0-9]{4}",
+                        "dataprism.correlation.inbound.required=true");
+    }
+
+    private static final String CALL = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{"
+            + "\"name\":\"get_entity_context\",\"arguments\":{\"entityType\":\"CUSTOMER\",\"subjectId\":\"1\"}}}";
+
+    private static MockHttpServletRequest post(String body, String sessionId) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
+        request.setAsyncSupported(true);
+        request.setContentType("application/json");
+        request.addHeader("Accept", "application/json, text/event-stream");
+        request.setContent(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        if (sessionId != null) {
+            request.addHeader("Mcp-Session-Id", sessionId);
+            request.addHeader("MCP-Protocol-Version", "2025-06-18");
+        }
+        return request;
+    }
+
+    /** Opens a session on the Spring-built transport, then makes one tool call carrying the given header values. */
+    private static String callThroughTheServlet(jakarta.servlet.http.HttpServlet servlet, String... headerValues)
+            throws Exception {
+        MockHttpServletResponse init = new MockHttpServletResponse();
+        servlet.service(post("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
+                + "\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"synthetic-client\",\"version\":\"1\"}}}", null), init);
+        String session = init.getHeader("Mcp-Session-Id");
+        assertThat(session).as("the initialize response: " + init.getContentAsString()).isNotNull();
+        servlet.service(post("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}", session),
+                new MockHttpServletResponse());
+
+        authenticate();
+        MockHttpServletRequest call = post(CALL, session);
+        for (String value : headerValues) {
+            call.addHeader("X-Correlation-ID", value);
+        }
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        servlet.service(call, response);
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(20))
+                .until(() -> response.getContentAsString().contains("\"id\":2"));
+        return response.getContentAsString();
+    }
+
+    @Test
+    void a_spring_built_server_with_required_refuses_a_call_without_the_header() {
+        served().run(context -> {
+            assertThat(context).hasNotFailed();
+            String body = callThroughTheServlet(context.getBean(DataPrismMcpServer.HttpTransport.class)
+                    .transportProvider());
+
+            assertThat(body).contains("EXTERNAL_CORRELATION_ID_REQUIRED");
+            assertThat(INVOKED).isEmpty();
+            assertThat(AUDITED).singleElement().satisfies(e -> {
+                assertThat(e.policyDecision()).isEqualTo("DENY:EXTERNAL_CORRELATION_ID_REQUIRED");
+                assertThat(e.externalCorrelationId()).isEmpty();
+            });
+        });
+    }
+
+    @Test
+    void a_spring_built_server_records_the_header_value_on_the_allow_event() {
+        served().run(context -> {
+            assertThat(context).hasNotFailed();
+            String body = callThroughTheServlet(context.getBean(DataPrismMcpServer.HttpTransport.class)
+                    .transportProvider(), "synthetic-clid-0001");
+
+            assertThat(body).doesNotContain("EXTERNAL_CORRELATION_ID_REQUIRED");
+            assertThat(INVOKED).hasSize(1);
+            assertThat(AUDITED).singleElement().satisfies(e -> {
+                assertThat(e.policyDecision()).isEqualTo("ALLOW");
+                assertThat(e.externalCorrelationId()).isEqualTo("synthetic-clid-0001");
+            });
+        });
+    }
+
+    @Test
+    void a_spring_built_server_refuses_a_value_the_pattern_rejects() {
+        served().run(context -> {
+            String body = callThroughTheServlet(context.getBean(DataPrismMcpServer.HttpTransport.class)
+                    .transportProvider(), REJECTED_TEXT);
+
+            assertThat(body).contains("EXTERNAL_CORRELATION_ID_INVALID").doesNotContain(REJECTED_TEXT);
+            assertThat(INVOKED).isEmpty();
+        });
+    }
 }
