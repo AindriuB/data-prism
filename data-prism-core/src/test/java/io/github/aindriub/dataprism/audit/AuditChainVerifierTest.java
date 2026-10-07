@@ -545,7 +545,15 @@ class AuditChainVerifierTest {
         }
 
         // The chain continues legitimately after the duplicate, chaining from the real first record.
-        AuditEvent third = eventWithComputedHash("event-3", instanceId, first.sequence() + 1, first.eventHash());
+        AuditEvent thirdDraft = new AuditEvent("event-3", FIXED.instant(), "investigator-1", "client-1",
+                "get_entity_context", "CUSTOMER", "pseudo-1", "fp-1", "DEFAULT", "scope-1", "investigation",
+                "CASE-1", "ALLOW", Set.of("customer-api:ANSWERED"), Set.of(), "corr-1", instanceId,
+                first.sequence() + 1, first.eventHash(), "", first.recordVersion(), java.util.Map.of(), "", "");
+        AuditEvent third = new AuditEvent("event-3", FIXED.instant(), "investigator-1", "client-1",
+                "get_entity_context", "CUSTOMER", "pseudo-1", "fp-1", "DEFAULT", "scope-1", "investigation",
+                "CASE-1", "ALLOW", Set.of("customer-api:ANSWERED"), Set.of(), "corr-1", instanceId,
+                first.sequence() + 1, first.eventHash(), AuditEventHash.compute(thirdDraft),
+                first.recordVersion(), java.util.Map.of(), "", "");
         try (FileAuditSink sink = new FileAuditSink(path)) {
             sink.record(third);
         }

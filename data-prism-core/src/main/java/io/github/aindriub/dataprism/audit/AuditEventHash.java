@@ -46,6 +46,12 @@ import java.util.Set;
  * Because every item is length-prefixed, no two different records produce the same
  * input. A later version extends this layout by appending further {@code enc} items
  * after {@code approverId}, and must leave every item above untouched.
+ *
+ * <h2>Version 3 body</h2>
+ * <p>The version 2 encoding with the version item written as {@code 3}, followed by one more
+ * item, {@code enc(externalCorrelationId)}, after {@code approverId}. An empty value is
+ * written as {@code 0:}. Version 3 defines no encoding of its own. Versions 1 and 2 are
+ * unchanged, and {@code externalCorrelationId} is not part of their hash.
  */
 public final class AuditEventHash {
 
@@ -65,15 +71,10 @@ public final class AuditEventHash {
                                   String previousHash) {
         return compute(eventId, timestamp, instanceId, sequence, principalId, clientId, tool, entityType,
                 subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision,
-                correlationId, sourceSystems, rejectedArguments, previousHash, 1, Map.of(), "", "");
+                correlationId, sourceSystems, rejectedArguments, previousHash, 1, Map.of(), "", "", "");
     }
 
-    /**
-     * As the nineteen-field overload for {@code recordVersion} 1. For
-     * {@code recordVersion >= 2} the hash is over the length-prefixed encoding in the
-     * class documentation, which includes {@code recordVersion}, the dispositions,
-     * {@code approvalId} and {@code approverId}.
-     */
+    /** As the long overload with an empty {@code externalCorrelationId}, for versions 1 and 2. */
     public static String compute(String eventId, Instant timestamp, String instanceId, long sequence,
                                   String principalId, String clientId, String tool, String entityType,
                                   String subjectPseudonym, String parameterFingerprint, String privacyProfile,
@@ -81,11 +82,31 @@ public final class AuditEventHash {
                                   String correlationId, Set<String> sourceSystems, Set<String> rejectedArguments,
                                   String previousHash, int recordVersion, Map<String, String> fieldDispositions,
                                   String approvalId, String approverId) {
+        return compute(eventId, timestamp, instanceId, sequence, principalId, clientId, tool, entityType,
+                subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision,
+                correlationId, sourceSystems, rejectedArguments, previousHash, recordVersion, fieldDispositions,
+                approvalId, approverId, "");
+    }
+
+    /**
+     * As the nineteen-field overload for {@code recordVersion} 1. For
+     * {@code recordVersion >= 2} the hash is over the length-prefixed encoding in the
+     * class documentation, which includes {@code recordVersion}, the dispositions,
+     * {@code approvalId} and {@code approverId}; for {@code recordVersion >= 3} it also
+     * includes {@code externalCorrelationId}, which is ignored for earlier versions.
+     */
+    public static String compute(String eventId, Instant timestamp, String instanceId, long sequence,
+                                  String principalId, String clientId, String tool, String entityType,
+                                  String subjectPseudonym, String parameterFingerprint, String privacyProfile,
+                                  String scopeId, String purpose, String caseId, String policyDecision,
+                                  String correlationId, Set<String> sourceSystems, Set<String> rejectedArguments,
+                                  String previousHash, int recordVersion, Map<String, String> fieldDispositions,
+                                  String approvalId, String approverId, String externalCorrelationId) {
         if (recordVersion >= 2) {
             return sha256(lengthPrefixedBody(eventId, timestamp, instanceId, sequence, principalId, clientId, tool,
                     entityType, subjectPseudonym, parameterFingerprint, privacyProfile, scopeId, purpose, caseId,
                     policyDecision, correlationId, sourceSystems, rejectedArguments, previousHash, recordVersion,
-                    fieldDispositions, approvalId, approverId));
+                    fieldDispositions, approvalId, approverId, externalCorrelationId));
         }
         // Sorted so the hash does not depend on the iteration order of whatever
         // Set implementation the caller happened to pass in.
@@ -109,7 +130,7 @@ public final class AuditEventHash {
                                              Set<String> sourceSystems, Set<String> rejectedArguments,
                                              String previousHash, int recordVersion,
                                              Map<String, String> fieldDispositions, String approvalId,
-                                             String approverId) {
+                                             String approverId, String externalCorrelationId) {
         StringBuilder b = new StringBuilder();
         enc(b, Integer.toString(recordVersion));
         for (String scalar : new String[] {eventId, timestamp == null ? null : timestamp.toString(), instanceId,
@@ -127,6 +148,9 @@ public final class AuditEventHash {
         });
         enc(b, approvalId);
         enc(b, approverId);
+        if (recordVersion >= 3) {
+            enc(b, externalCorrelationId);
+        }
         return b.toString();
     }
 
@@ -151,7 +175,7 @@ public final class AuditEventHash {
                 event.parameterFingerprint(), event.privacyProfile(), event.scopeId(), event.purpose(),
                 event.caseId(), event.policyDecision(), event.correlationId(), event.sourceSystems(),
                 event.rejectedArguments(), event.previousHash(), event.recordVersion(), event.fieldDispositions(),
-                event.approvalId(), event.approverId());
+                event.approvalId(), event.approverId(), event.externalCorrelationId());
     }
 
     private static String sha256(String value) {

@@ -61,10 +61,10 @@ class AuditRecordVersionTest {
     }
 
     @Test
-    void recorderWritesVersionTwoAndItRoundTrips() {
+    void recorderWritesTheCurrentVersionAndItRoundTrips() {
         AuditRecorder recorder = new AuditRecorder(event -> { }, FIXED, "w");
         AuditEvent event = recorder.record(entry(Map.of("crm:/contacts/*/email", "REDACT")));
-        assertThat(event.recordVersion()).isEqualTo(2);
+        assertThat(event.recordVersion()).isEqualTo(AuditEvent.CURRENT_VERSION);
         assertThat(AuditRecordFormat.parse(AuditRecordFormat.serialize(event))).isEqualTo(event);
     }
 

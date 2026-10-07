@@ -244,7 +244,7 @@ public final class AuditRetention {
             }
         }
         for (AuditChainVerifier.StructuralAnomaly a : report.anomalies()) {
-            if (a.type() == AuditChainVerifier.AnomalyType.UNPARSEABLE_RECORD) {
+            if (a.type().isBreak()) {
                 bad = Math.min(bad, a.primaryOffset());
             }
         }

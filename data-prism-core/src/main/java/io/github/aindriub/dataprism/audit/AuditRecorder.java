@@ -185,7 +185,7 @@ public final class AuditRecorder implements AutoCloseable {
                 entry.privacyProfile(), entry.scopeId(), entry.purpose(), entry.caseId(),
                 entry.policyDecision(), entry.sourceSystems(), entry.rejectedArguments(),
                 entry.correlationId(), instanceId, seq, prior, "", version, entry.fieldDispositions(),
-                entry.approvalId(), entry.approverId());
+                entry.approvalId(), entry.approverId(), entry.externalCorrelationId());
         } catch (RuntimeException e) {
             // An invalid disposition must not consume a sequence number.
             sequence.decrementAndGet();
@@ -197,7 +197,7 @@ public final class AuditRecorder implements AutoCloseable {
                 draft.privacyProfile(), draft.scopeId(), draft.purpose(), draft.caseId(),
                 draft.policyDecision(), draft.sourceSystems(), draft.rejectedArguments(),
                 draft.correlationId(), instanceId, seq, prior, hash, version, draft.fieldDispositions(),
-                draft.approvalId(), draft.approverId());
+                draft.approvalId(), draft.approverId(), draft.externalCorrelationId());
 
         try {
             sink.record(event);
