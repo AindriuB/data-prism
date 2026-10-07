@@ -106,7 +106,8 @@ One correlated, privacy-safe view of one entity.
 
 Nothing else is accepted. Argument names that would identify the caller,
 scope or purpose (`principalId`, `scopeId`, `scopeType`, `purpose`, `caseId`,
-`profile`, `capabilities`) are reserved: sending one is ignored and audited,
+`profile`, `capabilities`, and the correlation names `correlationId`,
+`externalCorrelationId`, `traceparent`) are reserved: sending one is ignored and audited,
 never read for its value (`ReservedArguments`).
 
 **Response**
@@ -476,6 +477,34 @@ rejected for missing `entityType` or
 
 A refusal code that is not an upper-case token (`[A-Z][A-Z0-9_]{0,63}`) is shown to the
 client, and recorded in the audit, as `INVALID_REFUSAL_CODE`.
+
+## Passing your correlation id
+
+A caller can give a call its own correlation id, so that Data Prism's audit
+record can be joined to the caller's own logs. The id is read only from the
+configured HTTP header, by the transport's context extractor, and handed to the
+tools as an `InboundCorrelation` under
+`DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY`. It is never read from
+tool arguments: `correlationId`, `externalCorrelationId` and `traceparent` are
+reserved argument names, so sending one is ignored and listed in the audit
+record's `rejectedArguments`, and the audited `externalCorrelationId` is only
+ever the header's value or empty.
+
+A valid id is written as `externalCorrelationId` into the audit event of the
+call, ALLOW or DENY, and is available to source adapters on
+`DataRequest.context()`. It is never placed in `structuredContent` or in the
+result text, and is not returned in `_meta`.
+
+By default the id is optional: a call with none, or with a header that fails
+validation, proceeds and is audited with an empty `externalCorrelationId`. A
+server built with `CorrelationRequirement.REQUIRED` instead refuses, audits
+the refusal as `DENY:<code>` and calls no source. The check runs after authentication and before authorisation, so
+an unauthenticated caller still gets `NO_AUTHENTICATED_CALLER`:
+
+| Code | When |
+|---|---|
+| `EXTERNAL_CORRELATION_ID_REQUIRED` | the call carried no id |
+| `EXTERNAL_CORRELATION_ID_INVALID` | the header was present but rejected: repeated, or failing validation |
 
 ## Scope isolation
 

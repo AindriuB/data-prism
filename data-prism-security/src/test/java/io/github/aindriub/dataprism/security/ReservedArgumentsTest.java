@@ -17,6 +17,14 @@ class ReservedArgumentsTest {
     }
 
     @Test
+    @DisplayName("NAMES reserves the correlation names a caller must never be able to set")
+    void namesReservesCorrelationNames() {
+        assertThat(ReservedArguments.NAMES).contains("correlationId", "externalCorrelationId", "traceparent");
+        assertThat(ReservedArguments.rejected(Set.of("traceparent", "correlationId", "externalCorrelationId")))
+                .containsExactlyInAnyOrder("traceparent", "correlationId", "externalCorrelationId");
+    }
+
+    @Test
     @DisplayName("rejected returns only the reserved names present in the call's arguments")
     void rejectedReturnsIntersection() {
         Set<String> rejected = ReservedArguments.rejected(Set.of("entityId", "caseId", "note", "purpose"));
