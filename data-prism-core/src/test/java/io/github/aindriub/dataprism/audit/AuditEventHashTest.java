@@ -73,13 +73,13 @@ class AuditEventHashTest {
                 v.get("policyDecision"), v.get("correlationId"), set(v.get("sourceSystems")),
                 set(v.get("rejectedArguments")), v.get("previousHash"), version,
                 dispositions(v.getOrDefault("fieldDispositions", "")), v.getOrDefault("approvalId", ""),
-                v.getOrDefault("approverId", ""));
+                v.getOrDefault("approverId", ""), v.getOrDefault("externalCorrelationId", ""));
     }
 
     @Test
     void pinnedVectorsRecomputeForEveryVersion() throws IOException {
         Map<String, Map<String, String>> all = vectors();
-        assertThat(all).containsKeys("v1", "v2");
+        assertThat(all).containsKeys("v1", "v2", "v3");
         all.forEach((name, v) -> assertThat(hashOf(Integer.parseInt(name.substring(1)), v))
                 .as(name).isEqualTo(v.get("expected")));
     }
