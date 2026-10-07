@@ -219,6 +219,26 @@ public class DataPrismProperties {
                         "dataprism.correlation.inbound.required needs the HTTP transport");
             }
         }
+        validateCorrelationMdcKey();
+    }
+
+    private void validateCorrelationMdcKey() {
+        String key = correlation.mdcKey;
+        if (key == null) {
+            return;
+        }
+        if (!io.github.aindriub.dataprism.core.correlation.CorrelationMdc.KEY_PATTERN.matcher(key).matches()) {
+            refuse("INVALID_CORRELATION_MDC_KEY",
+                    "dataprism.correlation.mdc-key must match [A-Za-z][A-Za-z0-9_.-]{0,63}");
+        }
+        if (io.github.aindriub.dataprism.core.correlation.CorrelationMdc.isReserved(key)) {
+            refuse("CORRELATION_MDC_KEY_RESERVED",
+                    "dataprism.correlation.mdc-key is a name that tracing or structured logging already writes");
+        }
+        if (blank(correlation.inbound.header)) {
+            refuse("CORRELATION_MDC_KEY_WITHOUT_HEADER",
+                    "dataprism.correlation.mdc-key needs dataprism.correlation.inbound.header");
+        }
     }
 
     private void validateAuditOutput() {
@@ -1197,7 +1217,20 @@ public class DataPrismProperties {
                 header = v;
             }
         }
-        // task 148 adds mdc-key here
+
+        private String mdcKey;
+
+        /**
+         * The SLF4J MDC key the validated external correlation id is put under for the duration of a
+         * tool call. Unset (the default) means MDC is never touched.
+         */
+        public String getMdcKey() {
+            return mdcKey;
+        }
+
+        public void setMdcKey(String v) {
+            mdcKey = v;
+        }
     }
 
     public static class Metrics {

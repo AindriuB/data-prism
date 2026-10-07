@@ -15,12 +15,14 @@ import io.github.aindriub.dataprism.core.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -129,7 +131,7 @@ public class ConfiguredJsonSourcesAutoConfiguration {
             List<DataSourceAdapter<?>> adapters, IdentityResolver identities, FieldMetadataResolver metadata,
             List<LlmResponseValidator> validators, SyntheticValueSource synthetics, ValueTokenSource tokens,
             SecretKeyProvider keys, AuditRecorder audit, ScopeBudget budget, PrivacyMetrics metrics, Clock clock,
-            PrivacyPolicyResolver policy) {
+            PrivacyPolicyResolver policy, ObjectProvider<CorrelationMdc> correlationMdc) {
         ConfiguredJsonSourcesConfig config = ConfiguredJsonSourcesInitializer.loadConfig(environment);
 
         JsonTreeScrubbingEngine javaFirst = new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens);
@@ -138,7 +140,8 @@ public class ConfiguredJsonSourcesAutoConfiguration {
 
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 new ParameterFingerprinter(keys), audit, identities,
-                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics), budget, RequestLimits.DEFAULT,
+                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics,
+                        correlationMdc.getIfAvailable(CorrelationMdc::off)), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
 }
