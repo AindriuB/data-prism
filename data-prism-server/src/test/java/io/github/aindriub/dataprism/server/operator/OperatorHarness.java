@@ -43,7 +43,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.channels.FileChannel;
-import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -440,6 +439,7 @@ public final class OperatorHarness implements AutoCloseable {
     // or in a concurrent one. At most three attempts, each on a failed probe or claim only.
     private static final Path PORT_CLAIMS = Path.of(System.getProperty("java.io.tmpdir"), "dataprism-test-ports");
     private static final List<FileChannel> CLAIMED = new ArrayList<>();
+    private static final java.util.Set<Integer> CLAIMED_PORTS = new java.util.HashSet<>();
     private static final Random PORT_CHOICE = new Random();
 
     /** A port the caller may bind on 127.0.0.1 and nothing else in any concurrent build will be given. */
@@ -448,22 +448,33 @@ public final class OperatorHarness implements AutoCloseable {
         IOException last = null;
         for (int attempt = 0; attempt < 3; attempt++) {
             int port = 20000 + PORT_CHOICE.nextInt(12000);
-            try (ServerSocket loopback = new ServerSocket(port, 1, InetAddress.getLoopbackAddress());
-                 ServerSocket wildcard = new ServerSocket(port, 1)) {
-                FileChannel channel = FileChannel.open(PORT_CLAIMS.resolve("port-" + port),
-                        StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                try {
-                    if (channel.tryLock() != null) {
-                        CLAIMED.add(channel);
-                        return port;
-                    }
-                } catch (OverlappingFileLockException claimedHere) {
-                    // held by this JVM already
-                }
-                channel.close();
+            if (CLAIMED_PORTS.contains(port)) {
+                // Never open a second channel on a file this JVM holds: closing it would drop our own lock.
+                continue;
+            }
+            // One after the other: Linux refuses a wildcard bind while a loopback one is open. A foreign
+            // loopback listener fails the first probe; a foreign wildcard one (which on macOS the
+            // loopback probe cannot see) fails the second.
+            try (ServerSocket loopback = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+                // free on loopback
             } catch (IOException e) {
                 last = e;
+                continue;
             }
+            try (ServerSocket wildcard = new ServerSocket(port, 1)) {
+                // free on every address
+            } catch (IOException e) {
+                last = e;
+                continue;
+            }
+            FileChannel channel = FileChannel.open(PORT_CLAIMS.resolve("port-" + port),
+                    StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            if (channel.tryLock() != null) {
+                CLAIMED.add(channel);
+                CLAIMED_PORTS.add(port);
+                return port;
+            }
+            channel.close(); // another build holds it; this JVM holds no lock on this file
         }
         throw new IllegalStateException("no free loopback port after 3 attempts", last);
     }
