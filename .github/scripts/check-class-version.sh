@@ -18,6 +18,11 @@ fi
 expected="$1"
 shift
 
+if ! command -v unzip >/dev/null 2>&1; then
+  echo "::error::unzip not found on PATH" >&2
+  exit 2
+fi
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -30,7 +35,15 @@ for jar in "$@"; do
   fi
   dir="$tmp/$(basename "$jar").x"
   mkdir -p "$dir"
-  unzip -q -o "$jar" '*.class' -d "$dir" 2>/dev/null || true
+  # unzip exit 11 means no entry matched *.class: the only legitimate empty
+  # case. Any other non-zero exit (corrupt or truncated jar) fails closed.
+  rc=0
+  unzip -q -o "$jar" '*.class' -d "$dir" >/dev/null 2>"$tmp/unzip.err" || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 11 ]; then
+    echo "::error::$jar: unzip failed (exit $rc): $(head -c 300 "$tmp/unzip.err" | tr '\n' ' ')" >&2
+    status=1
+    continue
+  fi
 
   if [ -d "$dir/BOOT-INF/classes" ]; then
     root="$dir/BOOT-INF/classes"
@@ -45,6 +58,12 @@ for jar in "$@"; do
       META-INF/versions/*) continue ;;
       BOOT-INF/lib/*) continue ;;
     esac
+    magic="$(od -An -tx1 -N4 "$cls" | tr -d ' \n')"
+    if [ "$magic" != "cafebabe" ]; then
+      echo "::error::$jar: $rel is missing the CAFEBABE magic" >&2
+      status=1
+      continue
+    fi
     # bytes 6-7 (0-based) are the big-endian major version
     major="$(od -An -tu1 -j6 -N2 "$cls" | awk 'NF >= 2 {print $1 * 256 + $2; exit}')"
     checked=$((checked + 1))
