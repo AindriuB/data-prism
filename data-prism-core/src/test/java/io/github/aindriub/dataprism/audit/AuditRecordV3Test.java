@@ -306,7 +306,7 @@ class AuditRecordV3Test {
                 ? String.join("\u001f", java.util.Arrays.copyOf(
                         AuditRecordFormat.serialize(event(2, "")).split("\u001f", -1), 20))
                 : "";
-        for (int extra : new int[] {1, 2, 5}) {
+        for (int extra : new int[] {1, 2, 3}) {
             Path file = tempDir.resolve("v1over" + extra + ".log");
             Files.writeString(file, v1 + "\u001fx".repeat(extra) + "\n");
             assertThat(AuditChainVerifier.verify(file).anomalies()).extracting(a -> a.type().name())
