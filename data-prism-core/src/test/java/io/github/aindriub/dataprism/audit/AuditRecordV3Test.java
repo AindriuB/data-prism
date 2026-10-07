@@ -199,7 +199,7 @@ class AuditRecordV3Test {
             String[] ls = lines(events).split("\n");
             ls[target] = ls[target] + "\u001fforged-id";
             assertThatThrownBy(() -> AuditRecordFormat.parse(ls[target]))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FieldCountMismatchException.class);
             Path file = tempDir.resolve("audit" + target + ".log");
             Files.writeString(file, String.join("\n", ls) + "\n");
             AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(file);

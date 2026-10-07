@@ -635,17 +635,32 @@ public final class AuditChainVerifier {
     /** What kind of non-tampering structural anomaly a line represents. */
     public enum AnomalyType {
         /** A field-count mismatch: a torn write's fragment concatenated with a restarted writer's first record. */
-        INTERRUPTED_WRITE_FRAGMENT,
+        INTERRUPTED_WRITE_FRAGMENT(false),
         /** Two durable records sharing a sequence number for one writer: a sink-contract violation. */
-        DUPLICATE_SEQUENCE,
+        DUPLICATE_SEQUENCE(false),
         /** A parse failure that is not the known interrupted-write shape and cannot be ruled out as tampering. */
-        UNPARSEABLE_RECORD,
+        UNPARSEABLE_RECORD(true),
         /** A retention anchor that matches a writer's start but is too recent, or undated, to be a purge's. */
-        RETENTION_ANCHOR_REJECTED,
+        RETENTION_ANCHOR_REJECTED(true),
         /** A writer's {@code recordVersion} decreased within its chain: a downgrade, never a normal upgrade. */
-        VERSION_REGRESSION,
+        VERSION_REGRESSION(true),
         /** A line whose field count contradicts its declared {@code recordVersion}: tampering, never a torn write. */
-        FIELD_COUNT_MISMATCH
+        FIELD_COUNT_MISMATCH(true);
+
+        private final boolean counted;
+
+        AnomalyType(boolean counted) {
+            this.counted = counted;
+        }
+
+        /**
+         * True if this anomaly is counted as a break: it cannot be ruled out as tampering. The single
+         * predicate behind {@link VerificationReport#hasBreak()}, {@link VerificationReport#hasStructuralAnomaly()}
+         * and retention's purge boundary, so a new type must choose here and nowhere else.
+         */
+        public boolean isBreak() {
+            return counted;
+        }
     }
 
     /** The first edit or deletion found in one writer's chain. */
@@ -717,10 +732,7 @@ public final class AuditChainVerifier {
         /** True if any writer's chain has a break, or any anomaly cannot be ruled out as tampering. */
         public boolean hasBreak() {
             return writers.stream().anyMatch(WriterResult::broken)
-                    || anomalies.stream().anyMatch(a -> a.type() == AnomalyType.UNPARSEABLE_RECORD
-                            || a.type() == AnomalyType.RETENTION_ANCHOR_REJECTED
-                            || a.type() == AnomalyType.VERSION_REGRESSION
-                            || a.type() == AnomalyType.FIELD_COUNT_MISMATCH);
+                    || anomalies.stream().anyMatch(a -> a.type().isBreak());
         }
 
         /**
@@ -730,10 +742,7 @@ public final class AuditChainVerifier {
          * is reported as a break (the more severe finding), via {@link #hasBreak()}.
          */
         public boolean hasStructuralAnomaly() {
-            return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD
-                    && a.type() != AnomalyType.RETENTION_ANCHOR_REJECTED
-                    && a.type() != AnomalyType.VERSION_REGRESSION
-                    && a.type() != AnomalyType.FIELD_COUNT_MISMATCH)
+            return anomalies.stream().anyMatch(a -> !a.type().isBreak())
                     || writers.stream().anyMatch(w -> w.nonGenesisStart().isPresent());
         }
     }

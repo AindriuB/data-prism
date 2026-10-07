@@ -92,4 +92,14 @@ class AuditRetentionBreakParityTest {
 
         assertThat(names(dir)).containsExactly(seg("2026-03-02"), seg("2026-03-03"));
     }
+
+    @Test
+    void everyAnomalyTypeIsExactlyOneOfBreakOrStructuralInTheReport() {
+        for (AuditChainVerifier.AnomalyType type : AuditChainVerifier.AnomalyType.values()) {
+            AuditChainVerifier.VerificationReport report = new AuditChainVerifier.VerificationReport(List.of(),
+                    List.of(new AuditChainVerifier.StructuralAnomaly(type, "m", 0, -1)), java.util.Optional.empty());
+            assertThat(report.hasBreak()).as(type.name()).isEqualTo(type.isBreak());
+            assertThat(report.hasStructuralAnomaly()).as(type.name()).isEqualTo(!type.isBreak());
+        }
+    }
 }
