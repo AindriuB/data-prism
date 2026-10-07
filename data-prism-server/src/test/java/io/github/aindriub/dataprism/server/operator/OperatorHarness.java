@@ -33,6 +33,8 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
+import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -40,14 +42,17 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.KeyStore;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -250,6 +255,14 @@ public final class OperatorHarness implements AutoCloseable {
                     "--dataprism.reidentification.roles.approver[0]=APPROVE"));
         }
         arguments.addAll(List.of(extraArguments));
+        // Clients call 127.0.0.1, so listen there: on macOS another process's 127.0.0.1 listener
+        // shadows a wildcard one on the same port. A caller's own value replaces the default,
+        // because a repeated option is comma-joined.
+        for (String option : List.of("--server.address=", "--dataprism.operator.address=")) {
+            if (arguments.stream().noneMatch(a -> a.startsWith(option))) {
+                arguments.add(option + "127.0.0.1");
+            }
+        }
         try {
             context = new SpringApplicationBuilder(DataPrismServerApplication.class)
                 .web(WebApplicationType.SERVLET)
@@ -420,10 +433,50 @@ public final class OperatorHarness implements AutoCloseable {
         }
     }
 
-    private static int freePort() throws Exception {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
+    // Ports below the OS ephemeral range (no outgoing connection or port-0 bind takes one), probed on
+    // loopback and wildcard, then claimed with a FileLock that every test JVM on this machine honours
+    // and that is held until this JVM exits. A port is therefore never handed out twice, in this build
+    // or in a concurrent one. At most three attempts, each on a failed probe or claim only.
+    private static final Path PORT_CLAIMS = Path.of(System.getProperty("java.io.tmpdir"), "dataprism-test-ports");
+    private static final List<FileChannel> CLAIMED = new ArrayList<>();
+    private static final java.util.Set<Integer> CLAIMED_PORTS = new java.util.HashSet<>();
+    private static final Random PORT_CHOICE = new Random();
+
+    /** A port the caller may bind on 127.0.0.1 and nothing else in any concurrent build will be given. */
+    public static synchronized int freePort() throws Exception {
+        Files.createDirectories(PORT_CLAIMS);
+        IOException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            int port = 20000 + PORT_CHOICE.nextInt(12000);
+            if (CLAIMED_PORTS.contains(port)) {
+                // Never open a second channel on a file this JVM holds: closing it would drop our own lock.
+                continue;
+            }
+            // One after the other: Linux refuses a wildcard bind while a loopback one is open. A foreign
+            // loopback listener fails the first probe; a foreign wildcard one (which on macOS the
+            // loopback probe cannot see) fails the second.
+            try (ServerSocket loopback = new ServerSocket(port, 1, InetAddress.getLoopbackAddress())) {
+                // free on loopback
+            } catch (IOException e) {
+                last = e;
+                continue;
+            }
+            try (ServerSocket wildcard = new ServerSocket(port, 1)) {
+                // free on every address
+            } catch (IOException e) {
+                last = e;
+                continue;
+            }
+            FileChannel channel = FileChannel.open(PORT_CLAIMS.resolve("port-" + port),
+                    StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            if (channel.tryLock() != null) {
+                CLAIMED.add(channel);
+                CLAIMED_PORTS.add(port);
+                return port;
+            }
+            channel.close(); // another build holds it; this JVM holds no lock on this file
         }
+        throw new IllegalStateException("no free loopback port after 3 attempts", last);
     }
 
     private static void restore(String name, String value) {

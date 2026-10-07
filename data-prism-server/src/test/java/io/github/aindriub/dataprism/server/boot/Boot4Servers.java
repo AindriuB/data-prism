@@ -2,7 +2,6 @@ package io.github.aindriub.dataprism.server.boot;
 
 import io.github.aindriub.dataprism.server.operator.OperatorHarness;
 
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -40,8 +39,6 @@ final class Boot4Servers {
     }
 
     static int freePort() throws Exception {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        }
+        return OperatorHarness.freePort();
     }
 }
