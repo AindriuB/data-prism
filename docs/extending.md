@@ -499,7 +499,7 @@ depending on Data Prism:
 ```xml
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <data-prism.version>0.4.1</data-prism.version>
+    <data-prism.version>0.5.0</data-prism.version>
     <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
@@ -676,7 +676,7 @@ the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.4.1.jar \
+  java -jar data-prism-server/target/data-prism-server-0.5.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 

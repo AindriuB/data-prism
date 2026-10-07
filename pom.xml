@@ -7,7 +7,7 @@
 
   <groupId>io.github.aindriub</groupId>
   <artifactId>data-prism</artifactId>
-  <version>0.4.1</version>
+  <version>0.5.0</version>
   <packaging>pom</packaging>
 
   <name>Data Prism</name>
