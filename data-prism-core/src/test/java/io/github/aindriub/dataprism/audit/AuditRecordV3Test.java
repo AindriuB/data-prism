@@ -189,4 +189,84 @@ class AuditRecordV3Test {
         assertThat(report.writers().get(0).firstBreak().orElseThrow().sequence()).isEqualTo(2);
         assertThat(cli(file, new ByteArrayOutputStream())).isNotZero();
     }
+
+    @Test
+    void aV2LineWithAnAppendedFieldIsReportedNotAccepted() throws IOException {
+        List<AuditEvent> events = chain(2, 2);
+        String[] ls = lines(events).split("\n");
+        ls[1] = ls[1] + "\u001fforged-id";
+        assertThatThrownBy(() -> AuditRecordFormat.parse(ls[1])).isInstanceOf(IllegalArgumentException.class);
+        Path file = tempDir.resolve("audit.log");
+        Files.writeString(file, String.join("\n", ls) + "\n");
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(file);
+        assertThat(report.anomalies()).isNotEmpty();
+        assertThat(cli(file, new ByteArrayOutputStream())).isNotZero();
+    }
+
+    @Test
+    void fieldCountMustMatchTheDeclaredVersionExactly() {
+        String v3 = AuditRecordFormat.serialize(event(3, "a"));
+        String v2 = AuditRecordFormat.serialize(event(2, ""));
+        // v3 line (25 fields) relabelled as v2 or v1, and a v2 line (24 fields) relabelled as v3.
+        assertThatThrownBy(() -> AuditRecordFormat.parse(v3.replace("\u001f3\u001f", "\u001f2\u001f")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AuditRecordFormat.parse(v3.replace("\u001f3\u001f", "\u001f1\u001f")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AuditRecordFormat.parse(v2.replace("\u001f2\u001f", "\u001f3\u001f")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AuditRecordFormat.parse(v2.replace("\u001f2\u001f", "\u001f1\u001f")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void nonEmptyExternalIdIsRejectedBelowVersionThree() {
+        assertThatThrownBy(() -> event(2, "ext-1")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> event(1, "ext-1")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(event(2, "").externalCorrelationId()).isEmpty();
+        assertThat(event(2, null).externalCorrelationId()).isEmpty();
+    }
+
+    @Test
+    void auditEventAndCorrelationIdPolicyAgreeOnTheCeiling() {
+        io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy permissive =
+                io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy.opaque(".*");
+        List<String> candidates = new ArrayList<>(List.of("x".repeat(256), "x".repeat(257), "x".repeat(255),
+                "a b", "a|b", "a\u001fb", "caf\u00e9", "a\\b", "a,b", "a~b", "a@b", "a#b", "a%b", "a\nb"));
+        for (char c : "._:/+=-".toCharArray()) {
+            candidates.add("a" + c + "b");
+        }
+        for (char c : "ABZaz09".toCharArray()) {
+            candidates.add("q" + c);
+        }
+        for (String candidate : candidates) {
+            boolean policy = permissive.validate(candidate).isPresent();
+            boolean constructed;
+            try {
+                event(3, candidate);
+                constructed = true;
+            } catch (IllegalArgumentException e) {
+                constructed = false;
+            }
+            assertThat(constructed).as("candidate of length %d: %s", candidate.length(), candidate)
+                    .isEqualTo(policy);
+        }
+    }
+
+    @Test
+    void aV3RecordDowngradedToV2IsReportedAsABreak() throws IOException {
+        List<AuditEvent> events = chain(3, 3, 3);
+        String[] ls = lines(events).split("\n");
+        String[] fields = ls[1].split("\u001f", -1);
+        fields[20] = "2";
+        ls[1] = String.join("\u001f", java.util.Arrays.copyOf(fields, 24));
+        Path file = tempDir.resolve("audit.log");
+        Files.writeString(file, String.join("\n", ls) + "\n");
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(file);
+        assertThat(report.hasBreak() || !report.anomalies().isEmpty()).isTrue();
+        assertThat(cli(file, new ByteArrayOutputStream())).isNotZero();
+        String downgraded = ls[1];
+        assertThat(AuditRecordFormat.parse(downgraded).recordVersion()).isEqualTo(2);
+        assertThat(AuditEventHash.compute(AuditRecordFormat.parse(downgraded)))
+                .isNotEqualTo(events.get(1).eventHash());
+    }
 }
