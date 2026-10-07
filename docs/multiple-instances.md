@@ -88,8 +88,9 @@ would have no effect. Relaxed binding drops hyphens in environment variables:
 `join.mode: none` is the explicit single-member choice: the member binds
 `127.0.0.1` only and neither discovers nor accepts other members. It refuses
 `member.interface`. Internally the member runs under your `cluster-name` plus a
-random per-start suffix, so no other process can match it. That suffix is
-internal and appears in logs.
+a new random suffix each time the member starts, so no other process can match
+it. That suffix is internal and appears in logs. A `none` member refuses both
+members and clients.
 
 Without `member.interface`, a `tcp-ip` or `kubernetes` member binds **every**
 network interface of the host, which is Hazelcast's default. Set the interface
@@ -190,7 +191,10 @@ the port from joining. A process that joins can read every map, including raw
 subject ids in the keys, and can write to them. That means anyone who can reach
 the member port can **read and write** cluster state: read subject ids, **forge
 an APPROVED approval and bypass four-eyes**, **lift a pause by deleting its
-flag**, and **reset read budgets and rate limits**.
+flag**, and **reset read budgets and rate limits**. This includes a plain
+Hazelcast *client* configured with the cluster name: it can connect to a
+`tcp-ip` or `kubernetes` member's port and read or write maps. A `none` member
+refuses both members and clients.
 
 Data Prism supports a deployment that provides isolation from outside. It does
 not provide it:

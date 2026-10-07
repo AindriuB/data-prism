@@ -91,7 +91,10 @@ to GHCR, and the server entry to the MCP Registry.
   They can read subject ids, **forge an APPROVED approval and bypass four-eyes**,
   **lift a pause by deleting its flag**, and **reset read budgets and rate
   limits**. Member traffic is neither authenticated nor encrypted on open-source
-  Hazelcast, so isolating the member port is the deployer's job.
+  Hazelcast, so isolating the member port is the deployer's job. This includes a
+  plain Hazelcast *client* configured with the cluster name: it can connect to a
+  `tcp-ip` or `kubernetes` member's port and read or write maps. A `none` member
+  refuses both members and clients.
 - The Docker Compose example's `cluster` network is not a security boundary. The
   members bind and advertise only their cluster address, but OrbStack was
   observed to route across Docker networks, so a container on another network
