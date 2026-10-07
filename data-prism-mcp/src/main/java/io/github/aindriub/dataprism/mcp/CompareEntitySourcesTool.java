@@ -39,7 +39,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -115,7 +114,7 @@ public final class CompareEntitySourcesTool {
                                     ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
                                     AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, CorrelationRequirement.OPTIONAL);
+                ToolAdmission.none(), null, CorrelationRequirement.OPTIONAL, true);
     }
 
     /**
@@ -128,7 +127,7 @@ public final class CompareEntitySourcesTool {
                                     AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller,
                                     ToolAdmission admission, ParameterFingerprinter fingerprinter) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), CorrelationRequirement.OPTIONAL);
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), CorrelationRequirement.OPTIONAL, true);
     }
 
     /** As the development-caller overload, with a {@link CorrelationRequirement} on the transport context's external id. */
@@ -136,17 +135,27 @@ public final class CompareEntitySourcesTool {
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
             Clock clock, AuthenticatedCaller developmentCaller, CorrelationRequirement correlationRequirement) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, correlationRequirement);
+                ToolAdmission.none(), null, correlationRequirement, true);
     }
 
     /**
-     * The canonical constructor, with a {@link CorrelationRequirement} on the transport context's external id.
-     * {@code fingerprinter} is {@code null} only on the overloads that predate admission, which pass {@link ToolAdmission#none()}.
+     * As the admission overload, with a {@link CorrelationRequirement} on the transport context's external id.
+     * A real admission needs a fingerprinter, or every approval would bind to the same empty fingerprint.
      */
     public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
             Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
             ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, true);
+    }
+
+    /** {@code fingerprinter} is {@code null} only on the overloads that predate admission, which pass {@link ToolAdmission#none()}. */
+    private CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
+            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
+            boolean canonical) {
         this.orchestrator = Objects.requireNonNull(orchestrator, "orchestrator");
         this.authorizationService = Objects.requireNonNull(authorizationService, "authorizationService");
         this.scopeResolver = Objects.requireNonNull(scopeResolver, "scopeResolver");

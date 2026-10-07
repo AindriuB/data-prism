@@ -498,7 +498,8 @@ result text, and is not returned in `_meta`.
 By default the id is optional: a call with none, or with a header that fails
 validation, proceeds and is audited with an empty `externalCorrelationId`. A
 server built with `CorrelationRequirement.REQUIRED` instead refuses, audits
-the refusal as `DENY:<code>` and calls no source:
+the refusal as `DENY:<code>` and calls no source. The check runs after authentication and before authorisation, so
+an unauthenticated caller still gets `NO_AUTHENTICATED_CALLER`:
 
 | Code | When |
 |---|---|

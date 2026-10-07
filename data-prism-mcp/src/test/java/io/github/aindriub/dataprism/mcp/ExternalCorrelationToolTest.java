@@ -404,4 +404,28 @@ class ExternalCorrelationToolTest {
             required.closeGracefully();
         }
     }
+
+    @Test
+    @DisplayName("a real admission with a null fingerprinter is refused at construction, on every public overload")
+    void nullFingerprinterWithAdmissionIsRefused() {
+        SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"), Map.of());
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
+                new PurposeValidator(Set.of("demonstration")));
+        ToolAdmission real = new ToolAdmission(new InMemoryOversightState(), new InMemoryApprovalStore(),
+                new InMemoryCallerRateLimiter(),
+                new OversightPolicy(Set.of(TOOLS), OptionalInt.empty(), Duration.ofMinutes(1), Duration.ofHours(1)),
+                FIXED);
+        ObjectMapper mapper = DataPrismObjectMapper.create();
+        for (CorrelationRequirement requirement : CorrelationRequirement.values()) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> new GetEntityContextTool(recording, authz, scopes,
+                    mapper, metrics, audit, FIXED, null, real, null, requirement))
+                    .isInstanceOf(NullPointerException.class);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> new CompareEntitySourcesTool(recording, authz,
+                    scopes, mapper, metrics, audit, FIXED, null, real, null, requirement))
+                    .isInstanceOf(NullPointerException.class);
+        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new GetEntityContextTool(recording, authz, scopes,
+                mapper, metrics, audit, FIXED, null, real, null)).isInstanceOf(NullPointerException.class);
+    }
 }
