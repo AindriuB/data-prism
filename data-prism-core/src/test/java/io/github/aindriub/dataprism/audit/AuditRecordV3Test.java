@@ -179,7 +179,10 @@ class AuditRecordV3Test {
     void editingTheExternalIdInOneLineBreaksTheChainAtThatLine() throws IOException {
         List<AuditEvent> events = chain(3, 3, 3);
         String[] ls = lines(events).split("\n");
-        ls[1] = ls[1].replace("ext-1", "ext-X");
+        String[] parts = ls[1].split("\u001f", -1);
+        assertThat(parts).hasSize(25);
+        parts[24] = "ext-X";
+        ls[1] = String.join("\u001f", parts);
         assertThat(ls[1]).isNotEqualTo(AuditRecordFormat.serialize(events.get(1)));
         Path file = tempDir.resolve("audit.log");
         Files.writeString(file, String.join("\n", ls) + "\n");
@@ -190,16 +193,24 @@ class AuditRecordV3Test {
     }
 
     @Test
-    void aV2LineWithAnAppendedFieldIsReportedNotAccepted() throws IOException {
-        List<AuditEvent> events = chain(2, 2);
-        String[] ls = lines(events).split("\n");
-        ls[1] = ls[1] + "\u001fforged-id";
-        assertThatThrownBy(() -> AuditRecordFormat.parse(ls[1])).isInstanceOf(IllegalArgumentException.class);
-        Path file = tempDir.resolve("audit.log");
-        Files.writeString(file, String.join("\n", ls) + "\n");
-        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(file);
-        assertThat(report.anomalies()).isNotEmpty();
-        assertThat(cli(file, new ByteArrayOutputStream())).isNotZero();
+    void aV2LineWithAnAppendedFieldIsAFieldCountMismatchBreak() throws IOException {
+        List<AuditEvent> events = chain(2, 2, 2);
+        for (int target : new int[] {1, 2}) { // 2 is the LAST line of the file
+            String[] ls = lines(events).split("\n");
+            ls[target] = ls[target] + "\u001fforged-id";
+            assertThatThrownBy(() -> AuditRecordFormat.parse(ls[target]))
+                    .isInstanceOf(IllegalArgumentException.class);
+            Path file = tempDir.resolve("audit" + target + ".log");
+            Files.writeString(file, String.join("\n", ls) + "\n");
+            AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(file);
+            assertThat(report.anomalies()).extracting(a -> a.type().name()).containsExactly("FIELD_COUNT_MISMATCH");
+            assertThat(report.hasBreak()).isTrue();
+            assertThat(report.hasStructuralAnomaly()).isFalse();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            assertThat(cli(file, out)).isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+            assertThat(out.toString(StandardCharsets.UTF_8)).contains("FIELD_COUNT_MISMATCH")
+                    .contains("tampering is possible").doesNotContain("not tampering");
+        }
     }
 
     @Test
@@ -261,8 +272,8 @@ class AuditRecordV3Test {
         Path file = tempDir.resolve("audit.log");
         Files.writeString(file, String.join("\n", ls) + "\n");
         AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(file);
-        assertThat(report.hasBreak() || !report.anomalies().isEmpty()).isTrue();
-        assertThat(cli(file, new ByteArrayOutputStream())).isNotZero();
+        assertThat(report.hasBreak()).isTrue();
+        assertThat(cli(file, new ByteArrayOutputStream())).isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
         String downgraded = ls[1];
         assertThat(AuditRecordFormat.parse(downgraded).recordVersion()).isEqualTo(2);
         assertThat(AuditEventHash.compute(AuditRecordFormat.parse(downgraded)))
