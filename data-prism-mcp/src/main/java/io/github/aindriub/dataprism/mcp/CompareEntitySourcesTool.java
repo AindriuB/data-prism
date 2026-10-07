@@ -11,6 +11,7 @@ import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.RefusalCodes;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
@@ -97,6 +98,7 @@ public final class CompareEntitySourcesTool {
     private final ToolAdmission admission;
     private final ParameterFingerprinter fingerprinter;
     private final CorrelationRequirement correlationRequirement;
+    private final CorrelationMdc mdc;
 
     public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                     ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
@@ -114,7 +116,7 @@ public final class CompareEntitySourcesTool {
                                     ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
                                     AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, CorrelationRequirement.OPTIONAL, true);
+                ToolAdmission.none(), null, CorrelationRequirement.OPTIONAL, CorrelationMdc.off(), true);
     }
 
     /**
@@ -127,7 +129,7 @@ public final class CompareEntitySourcesTool {
                                     AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller,
                                     ToolAdmission admission, ParameterFingerprinter fingerprinter) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), CorrelationRequirement.OPTIONAL, true);
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), CorrelationRequirement.OPTIONAL, CorrelationMdc.off(), true);
     }
 
     /** As the development-caller overload, with a {@link CorrelationRequirement} on the transport context's external id. */
@@ -135,7 +137,7 @@ public final class CompareEntitySourcesTool {
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
             Clock clock, AuthenticatedCaller developmentCaller, CorrelationRequirement correlationRequirement) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, correlationRequirement, true);
+                ToolAdmission.none(), null, correlationRequirement, CorrelationMdc.off(), true);
     }
 
     /**
@@ -147,7 +149,20 @@ public final class CompareEntitySourcesTool {
             Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
             ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, true);
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, CorrelationMdc.off(), true);
+    }
+
+    /**
+     * As the admission overload, opening {@code mdc} around the whole call so every log line on the
+     * handler thread, denials included, carries the validated external id.
+     */
+    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
+            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
+            CorrelationMdc mdc) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, mdc, true);
     }
 
     /** {@code fingerprinter} is {@code null} only on the overloads that predate admission, which pass {@link ToolAdmission#none()}. */
@@ -155,7 +170,7 @@ public final class CompareEntitySourcesTool {
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
             Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
             ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
-            boolean canonical) {
+            CorrelationMdc mdc, boolean canonical) {
         this.orchestrator = Objects.requireNonNull(orchestrator, "orchestrator");
         this.authorizationService = Objects.requireNonNull(authorizationService, "authorizationService");
         this.scopeResolver = Objects.requireNonNull(scopeResolver, "scopeResolver");
@@ -167,6 +182,7 @@ public final class CompareEntitySourcesTool {
         this.admission = Objects.requireNonNull(admission, "admission");
         this.fingerprinter = fingerprinter;
         this.correlationRequirement = Objects.requireNonNull(correlationRequirement, "correlationRequirement");
+        this.mdc = Objects.requireNonNull(mdc, "mdc");
     }
 
     public McpServerFeatures.SyncToolSpecification specification() {
@@ -199,8 +215,16 @@ public final class CompareEntitySourcesTool {
 
     private McpSchema.CallToolResult handle(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
         // First, so nothing below can run before the id is known. Read from the transport
-        // context only: no tool argument is ever a source for it.
+        // context only: no tool argument is ever a source for it. The MDC scope covers every
+        // return and throw path below, denials included, and is restored on this reused thread.
         InboundCorrelation inbound = ToolCalls.inboundCorrelation(exchange);
+        try (CorrelationMdc.Scope ignored = mdc.open(inbound)) {
+            return handle(exchange, request, inbound);
+        }
+    }
+
+    private McpSchema.CallToolResult handle(McpSyncServerExchange exchange, McpSchema.CallToolRequest request,
+                                            InboundCorrelation inbound) {
         String externalId = inbound.id().map(ExternalCorrelationId::value).orElse("");
         Map<String, Object> arguments = request.arguments();
         String entityType = text(arguments, "entityType");

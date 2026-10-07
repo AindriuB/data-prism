@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.mcp;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -102,7 +103,7 @@ public final class DataPrismMcpServer {
                                       CorrelationRequirement correlationRequirement) {
         return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
                 singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, null,
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"));
+                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off());
     }
 
     /**
@@ -132,14 +133,15 @@ public final class DataPrismMcpServer {
         return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
                 singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock,
                 new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter),
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"));
+                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off());
     }
 
     private static McpSyncServer build(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                        ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
                                        boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                        PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                       Oversight oversight, CorrelationRequirement correlationRequirement) {
+                                       Oversight oversight, CorrelationRequirement correlationRequirement,
+                                       CorrelationMdc mdc) {
         if (!singlePrincipalDevelopmentMode || productionDeployment) {
             throw new SecurityRefusedException("STDIO_DEVELOPMENT_ONLY",
                     "stdio is a single-principal development transport and refuses to start "
@@ -156,9 +158,9 @@ public final class DataPrismMcpServer {
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, developmentCaller, oversight, correlationRequirement).specification(),
+                                audit, clock, developmentCaller, oversight, correlationRequirement, mdc).specification(),
                         compareEntitySources(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, developmentCaller, oversight, correlationRequirement).specification())
+                                audit, clock, developmentCaller, oversight, correlationRequirement, mdc).specification())
                 .build();
     }
 
@@ -195,7 +197,8 @@ public final class DataPrismMcpServer {
                                                PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                                                CorrelationRequirement correlationRequirement) {
         return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, null, Objects.requireNonNull(correlationRequirement, "correlationRequirement"));
+                metrics, audit, clock, null, Objects.requireNonNull(correlationRequirement, "correlationRequirement"),
+                CorrelationMdc.off());
     }
 
     /**
@@ -227,7 +230,27 @@ public final class DataPrismMcpServer {
         Objects.requireNonNull(fingerprinter, "fingerprinter");
         return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
                 metrics, audit, clock, new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter),
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"));
+                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off());
+    }
+
+    /**
+     * As the admission overload, with {@code mdc} opened around every tool call so the validated external
+     * id is on each log line the call writes. Every other overload delegates with {@link CorrelationMdc#off()}.
+     */
+    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
+                                               AuthorizationService authorizationService,
+                                               ScopeResolver scopeResolver,
+                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+                                               String endpointPath,
+                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                               ToolAdmission admission, ParameterFingerprinter fingerprinter,
+                                               CorrelationRequirement correlationRequirement,
+                                               CorrelationMdc mdc) {
+        Objects.requireNonNull(fingerprinter, "fingerprinter");
+        return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
+                metrics, audit, clock, new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter),
+                Objects.requireNonNull(correlationRequirement, "correlationRequirement"),
+                Objects.requireNonNull(mdc, "mdc"));
     }
 
     private static HttpTransport build(ContextOrchestrator orchestrator,
@@ -235,7 +258,7 @@ public final class DataPrismMcpServer {
                                        McpTransportContextExtractor<HttpServletRequest> contextExtractor,
                                        String endpointPath, PrivacyMetrics metrics, AuditRecorder audit,
                                        Clock clock, Oversight oversight,
-                                       CorrelationRequirement correlationRequirement) {
+                                       CorrelationRequirement correlationRequirement, CorrelationMdc mdc) {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
         Objects.requireNonNull(endpointPath, "endpointPath");
 
@@ -253,9 +276,9 @@ public final class DataPrismMcpServer {
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                 .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, null, oversight, correlationRequirement).specification(),
+                                audit, clock, null, oversight, correlationRequirement, mdc).specification(),
                         compareEntitySources(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, null, oversight, correlationRequirement).specification())
+                                audit, clock, null, oversight, correlationRequirement, mdc).specification())
                 .build();
 
         return new HttpTransport(server, transport);
@@ -271,14 +294,14 @@ public final class DataPrismMcpServer {
                                                          PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
                                                          AuthenticatedCaller developmentCaller,
                                                          Oversight oversight,
-            CorrelationRequirement correlationRequirement) {
+            CorrelationRequirement correlationRequirement, CorrelationMdc mdc) {
         if (oversight == null) {
             return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
                     audit, clock, developmentCaller, correlationRequirement);
         }
         return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
                 audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter(),
-                correlationRequirement);
+                correlationRequirement, mdc);
     }
 
     private static CompareEntitySourcesTool compareEntitySources(ContextOrchestrator orchestrator,
@@ -287,14 +310,14 @@ public final class DataPrismMcpServer {
                                                                  PrivacyMetrics metrics, AuditRecorder audit,
                                                                  Clock clock, AuthenticatedCaller developmentCaller,
                                                                  Oversight oversight,
-            CorrelationRequirement correlationRequirement) {
+            CorrelationRequirement correlationRequirement, CorrelationMdc mdc) {
         if (oversight == null) {
             return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
                     audit, clock, developmentCaller, correlationRequirement);
         }
         return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
                 audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter(),
-                correlationRequirement);
+                correlationRequirement, mdc);
     }
 
 
