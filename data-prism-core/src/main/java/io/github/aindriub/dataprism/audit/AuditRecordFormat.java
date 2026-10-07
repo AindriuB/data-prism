@@ -91,10 +91,40 @@ public final class AuditRecordFormat {
         return line.toString();
     }
 
+    /**
+     * A torn write truncates a line; it cannot add separators. A line with more fields than its
+     * declared version allows (or more than 25 at all) is therefore tampering, never an interrupted
+     * write. Lines of 21 to 23 fields are over-count only when they cannot be a truncated version 2
+     * or 3 line: field 20 is neither empty nor a supported version.
+     */
+    private static boolean isOverCount(String[] raw) {
+        if (raw.length <= 20) {
+            return false;
+        }
+        String declared = decode(raw[20]);
+        Integer version = null;
+        try {
+            version = Integer.valueOf(declared);
+        } catch (NumberFormatException e) {
+            // not a parseable version
+        }
+        if (raw.length > 25) {
+            return version != null;
+        }
+        if (raw.length < 24) {
+            return !declared.isEmpty() && version == null || version != null && version != 2 && version != 3;
+        }
+        return false;
+    }
+
     /** Parses a line previously produced by {@link #serialize(AuditEvent)}. */
     public static AuditEvent parse(String line) {
         // A line without recordVersion has exactly 20 fields and is version 1.
         String[] raw = splitRaw(line, FIELD_SEP, -1);
+        if (isOverCount(raw)) {
+            throw new FieldCountMismatchException(
+                    "malformed audit record: more fields than any record version allows, found " + raw.length);
+        }
         if (raw.length != 20 && raw.length != 24 && raw.length != 25) {
             throw new IllegalArgumentException(
                     "malformed audit record: expected 20, 24 or 25 fields, found " + raw.length);
