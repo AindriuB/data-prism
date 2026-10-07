@@ -13,10 +13,19 @@ import java.util.regex.PatternSyntaxException;
  */
 public final class CorrelationIdPolicy {
 
-    /** Strict default: a UUID, 16-128 hex characters, or a W3C traceparent. */
+    /**
+     * Strict default: a canonical UUID, 16-128 hex characters containing at
+     * least one a-f letter, or a W3C traceparent.
+     *
+     * <p>The letter rule refuses an all-digit string, which is the form of a
+     * card number or a long account or national-id number. The UUID branch is
+     * unaffected, so an all-digit UUID is still accepted: its fixed 8-4-4-4-12
+     * shape is not a typical PAN or account form. This is a syntactic
+     * constraint; it does not prove the value is free of personal data.
+     */
     public static final String DEFAULT_OPAQUE_PATTERN =
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-                    + "|[0-9a-fA-F]{16,128}"
+                    + "|(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{16,128}"
                     + "|00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}";
 
     private static final int MAX_LENGTH = 256;

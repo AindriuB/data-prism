@@ -49,7 +49,9 @@ record yet; tasks 110, 111 and 113 do.
       regex that does not compile. The message does not echo the regex.
 - [ ] `CorrelationIdPolicy.DEFAULT_OPAQUE_PATTERN` is the strict default
       (owner decision C4, 2026-10-07). It accepts only a UUID (canonical form),
-      hex of 16–128 characters, or a W3C traceparent. The broad pattern
+      hex of 16–128 characters containing at least one a–f letter (so an
+      all-digit card or account number is refused; an all-digit UUID is still
+      accepted), or a W3C traceparent. The broad pattern
       `[A-Za-z0-9._:-]{1,128}` is available only when the operator sets it
       explicitly. A test asserts that `jane.doe` is rejected under the default.
 - [ ] A fixed ceiling applies before any operator pattern runs: a candidate

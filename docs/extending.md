@@ -222,7 +222,8 @@ public Object fetch(DataRequest request) {
 ```
 
 The value has already been validated against the operator's policy, so it is
-safe to put in a header. Do not log it next to source data: it is what joins an
+syntactically constrained (validation does not prove it is free of personal
+data). Do not log it next to source data: it is what joins an
 audit record to the caller's own systems, and logging it beside the payload
 rebuilds that join in a place the privacy engine does not control. Do not send
 it to a source unless that source's owner expects it; an unexpected header is a
