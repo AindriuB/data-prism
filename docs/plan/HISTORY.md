@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — Task 149: test-suite port races removed
+
+Test ports are now claimed through an OS file lock under `java.io.tmpdir/dataprism-test-ports` instead of probing a free port and releasing it, so two JVMs, or two tests in one JVM, no longer pick the same port. The loopback and wildcard probes run one after the other, and a port already claimed by this JVM is re-picked before any channel is opened. Only `src/test` changed. The tester passed the full reactor on macOS at 1223 tests, 0 failures, 0 errors, 0 skipped, and the reviewer approved after re-running its probe program in a Linux container and on macOS.
+
+**Cost:** Attempt 1 (2c0d297f) failed review twice over. It held the loopback and wildcard probes at the same time, which Linux refuses on the second bind, so every claim would have failed on ubuntu CI. A re-pick of a claimed port also closed a second FileChannel, which released this JVM's own POSIX lock. Attempt 2 (dfc9160c) probes sequentially and checks the claimed set first. Proof: attempt 1 ran 5 sequential and 3 concurrent-pair full builds on macOS, all 1223/0/0/0. Attempt 2 ran one Linux container build at 1223/0/0/2 (the 2 skips are `AuditRetentionConfigurationTest` skipping as root, an environment effect), plus one macOS sequential run and one pair, all 1223/0/0/0. Acceptance item 11 is only partly met: the two end-to-end flakes and `ReidentificationConfigurationTest` are "cause unproven; mechanisms reproduced", so they are not fixed and follow-up (f) stays open. The dfc9160c commit body cites stale line numbers; the current `ServerSocket` hits are `FreePorts` 53/56, `ClusterConfigurationTest` 76/79 and `OperatorHarness` 458/463. The commits were not rewritten. The CI Linux run on push is still owed. Follow-ups o to r are in `PLAN.md`. Merged by hand with `--no-ff` into the session branch, not with `wt-merge.sh`.
+
 ## 2026-10-07 — Baseline after 0.5.0 wave 3, and the owner's pause
 On merged head a2c6bdf7 the full `-Prelease -Dgpg.skip=true clean verify` passes across 20 of 20 modules with about 1,220 tests and no failures, `check-class-version.sh 65` exits 0 over the 19 jars, and actionlint is clean. The owner paused all work after wave 3; wave 4 (113, 114, 147) does not start until told.
 

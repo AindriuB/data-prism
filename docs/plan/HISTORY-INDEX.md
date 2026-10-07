@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-07 | 149 | Test ports claimed by OS file lock, probes run sequentially; macOS 1223/0/0/0 and one Linux container run; end-to-end flake causes unproven. | `## 2026-10-07 — Task 149: test-suite port races removed` |
 | 2026-10-07 | none | Baseline on a2c6bdf7 after wave 3 (20/20 modules, about 1,220 tests, class-version gate and actionlint clean); owner paused all work. | `## 2026-10-07 — Baseline after 0.5.0 wave 3, and the owner's pause` |
 | 2026-10-07 | 144 | 0.5.0 wave 3 part 2: CI matrix on JDK 21 and 25, release on 25, class-version-65 gate on released jars that fails closed. | `## 2026-10-07 — 0.5.0 wave 3, part 2: task 144` |
 | 2026-10-07 | 110, 111, 112 | 0.5.0 wave 3 part 1: MCP tools carry the external correlation id, REST sources send it as a header, audit events project to ECS JSON. | `## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112` |

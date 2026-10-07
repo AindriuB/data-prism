@@ -316,7 +316,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 111 | **Done** (2026-10-07, attempt 2). Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
 | Done | 112 | **Done** (2026-10-07). Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
 | Done | 144 | **Done** (2026-10-07, attempt 2). Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
-| 4 (alone, first) | 149 | Remove the port races behind the known test flakes, without weakening any test (test sources only) | none |
+| Done | 149 | **Done** (2026-10-07, attempt 2). Remove the port races behind the known test flakes, without weakening any test (test sources only) | none |
 | 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
 | 4 | 114 | Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
 | 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
@@ -324,17 +324,16 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
 | 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
 
-**The whole plan is PAUSED pending the owner (decision 2026-10-07).** Nothing starts until the owner says so, including wave 4 (113, 114, 147). Do not fan out, plan or merge anything on the strength of this file alone.
+**The plan is PAUSED pending the owner (decision 2026-10-07).** The owner lifted the pause for task 149 only, and 149 is merged. The next step is wave 4 (113, 114, 147), which still waits for the owner's go-ahead. Do not fan out, plan or merge anything else on the strength of this file alone.
 
-Wave 3 is complete (110, 111, 112, 144). Wave 4 (113, 114, 147) is runnable once the owner lifts the pause.
+Wave 3 is complete (110, 111, 112, 144), and so is 149. Wave 4 (113, 114, 147) is runnable once the owner gives the go-ahead.
 
-Task 149 (test-suite stability, approved for 0.5.0 on 2026-10-07) has no dependencies and test-only Owns, disjoint from every open task. Its proof runs five sequential full builds and three concurrent pairs, so it needs every other wave idle (`docs/conventions.md`, exclusive resources). Recommended: run it alone, before wave 4, once the pause is lifted.
+Task 149 (test-suite stability) merged on 2026-10-07 with its proof run alone, as planned. Wave 4 has no such exclusivity need.
 
 **Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
 
 #### Open owner questions
 
-- Test-stability task for 0.5.0: planned as task 149, decisions D-149-A..C recorded. Follow-up (f) below names the flaky tests seen so far.
 - 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
 - Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
@@ -403,7 +402,7 @@ Follow-ups from wave 2, not yet tasks:
 - (c) The CLI help and runbook should say that an interrupted write joined to a restarted writer can surface as exit 2, which is a safe false positive.
 - (d) Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
 - (e) Record surefire and failsafe counts separately in future JDK runs.
-- (f) Now task 149. `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun. A third, in task 144's run: `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` failed once in the full reactor, then passed on a module rerun and on a full rerun.
+- (f) Task 149 merged: the port races are addressed (ports are now claimed with an OS file lock, probes run one after the other). The three end-to-end symptoms below are **cause unproven; mechanisms reproduced**, not fixed, so watch CI and the next full runs and treat a recurrence as new information. Original observations: `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun. A third, in task 144's run: `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` failed once in the full reactor, then passed on a module rerun and on a full rerun.
 
 Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
 
@@ -415,12 +414,19 @@ Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
 - (l) Task 110 defines `DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY = "externalCorrelation"`. Task 113 needs it.
 - (m) `.github/scripts/check-class-version.sh`: the exit status of the `find` in `< <(...)` is not propagated. A class file of 4 to 6 bytes aborts the run under `set -e` without naming the jar. The nomagic case also prints a cosmetic "no classes to check" after its error. All of these still fail closed.
 - (n) `publish-central.yml`: the `publish` job deploys a fresh `clean deploy` build that is not itself gated on class version. It is covered only through `needs: stage`.
+Follow-ups from task 149, not yet tasks:
+
+- (o) The lock files in `java.io.tmpdir/dataprism-test-ports` are never deleted. They are zero-byte and harmless, and the lock is the claim, not the file.
+- (p) `QuickstartSmokeIT.freePort()` still uses `ServerSocket(0)`.
+- (q) In `OperatorHarness`, a re-pick of a claimed port uses up one of the 3 attempts allowed by D-149-C.
+- (r) The dfc9160c commit body cites stale line numbers for the `ServerSocket` hits. The current ones are `FreePorts` 53/56, `ClusterConfigurationTest` 76/79 and `OperatorHarness` 458/463. Recorded in HISTORY; the commits are not rewritten.
+
 - Owner-visible point for 116: the `Slf4jAuditSink` mapped constructor attaches the routing constants as key-value pairs. That is the implementer's reading of the spec.
 
 **Release-cut items for 0.5.0:**
 
 - CI PR run green on JDK 21/25 + container-smoke (task 144 acceptance). Both matrix legs and `container-smoke` must pass on a pushed PR; this is owner-gated on a push and has not run.
-- Linux CI evidence for 149 stability (D-149-B): after the next push, check that the Linux legs of the JDK 21/25 matrix pass without a rerun.
+- Linux CI evidence for 149 stability (D-149-B): after the next push, check that the Linux legs of the JDK 21/25 matrix pass without a rerun. One local Linux container run (1223 tests, 0 failures, 2 skips) is extra evidence, but the CI run on push is still owed.
 - Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
 - Close or ignore #114, since 141 supersedes its Spring Boot bump.
 - Update the `docs/extending.md` `data-prism.version` snippet at the cut.
