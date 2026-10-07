@@ -316,6 +316,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 111 | **Done** (2026-10-07, attempt 2). Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
 | Done | 112 | **Done** (2026-10-07). Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
 | Done | 144 | **Done** (2026-10-07, attempt 2). Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
+| 4 (alone, first) | 149 | Remove the port races behind the known test flakes, without weakening any test (test sources only) | none |
 | 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
 | 4 | 114 | Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
 | 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
@@ -327,11 +328,13 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 Wave 3 is complete (110, 111, 112, 144). Wave 4 (113, 114, 147) is runnable once the owner lifts the pause.
 
+Task 149 (test-suite stability, approved for 0.5.0 on 2026-10-07) has no dependencies and test-only Owns, disjoint from every open task. Its proof runs five sequential full builds and three concurrent pairs, so it needs every other wave idle (`docs/conventions.md`, exclusive resources). Recommended: run it alone, before wave 4, once the pause is lifted.
+
 **Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
 
 #### Open owner questions
 
-- Test-stability task for 0.5.0: approved for 0.5.0; task being planned. Follow-up (f) below names the flaky tests seen so far.
+- Test-stability task for 0.5.0: planned as task 149, decisions D-149-A..C recorded. Follow-up (f) below names the flaky tests seen so far.
 - 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
 - Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
@@ -375,6 +378,12 @@ Follow-ups from 130, not yet tasks:
 - **D-140-C:** Record the Hazelcast `sun.misc.Unsafe` warning on JDK 25; never silence it with `--sun-misc-unsafe-memory-access=allow`.
 - **D-140-D:** Load Mockito as a `-javaagent` in data-prism-mcp only.
 
+**Decisions on task 149, test-suite stability (2026-10-07):**
+
+- **D-149-A:** If the only clean fix is in production code (`src/main`, POMs), the implementer stops and files a follow-up task. Owns is not widened.
+- **D-149-B:** Proof on macOS alone is enough for acceptance. CI's Linux matrix runs on the next push give the Linux evidence, tracked as a release-cut item.
+- **D-149-C:** Bounded port re-allocation is allowed: at most 3 attempts, only on a bind failure of the chosen port, never wrapped around an assertion. It is a port-selection retry, not a test rerun.
+
 **Decision D-148-A (2026-10-07):** correlated logging through the SLF4J MDC.
 
 - Data Prism supports MDC-based correlated logging. `dataprism.correlation.mdc-key` is unset by default, which means off.
@@ -394,7 +403,7 @@ Follow-ups from wave 2, not yet tasks:
 - (c) The CLI help and runbook should say that an interrupted write joined to a restarted writer can surface as exit 2, which is a safe false positive.
 - (d) Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
 - (e) Record surefire and failsafe counts separately in future JDK runs.
-- (f) `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun. A third, in task 144's run: `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` failed once in the full reactor, then passed on a module rerun and on a full rerun.
+- (f) Now task 149. `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun. A third, in task 144's run: `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` failed once in the full reactor, then passed on a module rerun and on a full rerun.
 
 Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
 
@@ -411,6 +420,7 @@ Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
 **Release-cut items for 0.5.0:**
 
 - CI PR run green on JDK 21/25 + container-smoke (task 144 acceptance). Both matrix legs and `container-smoke` must pass on a pushed PR; this is owner-gated on a push and has not run.
+- Linux CI evidence for 149 stability (D-149-B): after the next push, check that the Linux legs of the JDK 21/25 matrix pass without a rerun.
 - Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
 - Close or ignore #114, since 141 supersedes its Spring Boot bump.
 - Update the `docs/extending.md` `data-prism.version` snippet at the cut.
