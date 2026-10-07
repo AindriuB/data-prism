@@ -38,6 +38,9 @@ public final class ConfiguredJsonSourcesInitializer
     /** Mirrors {@code dataprism.transport.fixture-development}; see {@link ConfiguredJsonSources#fromYaml(InputStream, boolean)}. */
     private static final String FIXTURE_DEVELOPMENT_PROPERTY = "dataprism.transport.fixture-development";
 
+    /** The optional global default for the outbound correlation header; a source's own key wins. */
+    private static final String OUTBOUND_HEADER_PROPERTY = "dataprism.correlation.outbound.header";
+
     @Override
     public void initialize(ConfigurableApplicationContext context) {
         Environment environment = context.getEnvironment();
@@ -67,7 +70,11 @@ public final class ConfiguredJsonSourcesInitializer
                 .bind(FIXTURE_DEVELOPMENT_PROPERTY, Boolean.class)
                 .orElse(false);
         try (InputStream in = new DefaultResourceLoader().getResource(location).getInputStream()) {
-            return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment);
+            String outboundHeader = bindString(environment, OUTBOUND_HEADER_PROPERTY);
+            if (outboundHeader != null && outboundHeader.isBlank()) {
+                outboundHeader = null;
+            }
+            return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment, outboundHeader);
         } catch (IOException e) {
             throw new IllegalStateException(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY
                     + " '" + location + "' could not be read", e);

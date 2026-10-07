@@ -91,14 +91,14 @@ class OutboundCorrelationHttpTest {
     @Test
     @DisplayName("a source with correlation-header receives the id")
     void sendsId() {
-        adapter(HEADER).fetch(request("1", opaque("req-abc-123")));
-        assertThat(headerByPath.get("/customers/1")).containsExactly("req-abc-123");
+        adapter(HEADER).fetch(request("1", opaque("abcdef0123456789abcd")));
+        assertThat(headerByPath.get("/customers/1")).containsExactly("abcdef0123456789abcd");
     }
 
     @Test
     @DisplayName("a source without the key receives no such header")
     void noHeaderWhenNotConfigured() {
-        adapter(null).fetch(request("2", opaque("req-abc-123")));
+        adapter(null).fetch(request("2", opaque("abcdef0123456789abcd")));
         assertThat(headerByPath.get("/customers/2")).isEmpty();
     }
 
@@ -128,7 +128,7 @@ class OutboundCorrelationHttpTest {
     @Test
     @DisplayName("the id is never added to the URL or query string")
     void idNotInUrl() {
-        adapter(HEADER).fetch(request("6", opaque("req-abc-123")));
+        adapter(HEADER).fetch(request("6", opaque("abcdef0123456789abcd")));
         assertThat(headerByPath).containsKey("/customers/6");
         assertThat(rawQueryByPath.get("/customers/6")).isEqualTo("null");
     }
@@ -140,8 +140,8 @@ class OutboundCorrelationHttpTest {
         RestClient preset = RestClient.builder().defaultHeader(HEADER, "stale").build();
         new RestDataSourceAdapter<>(
                 new RestSource("customer-api", base, "/customers/{subject}", Duration.ofSeconds(5), false, HEADER),
-                preset, String.class).fetch(request("7", opaque("fresh-id")));
-        assertThat(headerByPath.get("/customers/7")).containsExactly("fresh-id");
+                preset, String.class).fetch(request("7", opaque("fedcba9876543210fedc")));
+        assertThat(headerByPath.get("/customers/7")).containsExactly("fedcba9876543210fedc");
     }
 
     @Test
@@ -151,13 +151,13 @@ class OutboundCorrelationHttpTest {
         RestDataSourceAdapter<String> adapter = adapter(HEADER);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             CompletableFuture<String> a = CompletableFuture.supplyAsync(
-                    () -> adapter.fetch(request("a", opaque("id-for-a"))), executor);
+                    () -> adapter.fetch(request("a", opaque("aaaaaaaaaaaaaaaaaaaa"))), executor);
             CompletableFuture<String> b = CompletableFuture.supplyAsync(
-                    () -> adapter.fetch(request("b", opaque("id-for-b"))), executor);
+                    () -> adapter.fetch(request("b", opaque("bbbbbbbbbbbbbbbbbbbb"))), executor);
             CompletableFuture.allOf(a, b).get(10, TimeUnit.SECONDS);
         }
         assertThat(bothArrived.getCount()).isZero();
-        assertThat(headerByPath.get("/customers/a")).containsExactly("id-for-a");
-        assertThat(headerByPath.get("/customers/b")).containsExactly("id-for-b");
+        assertThat(headerByPath.get("/customers/a")).containsExactly("aaaaaaaaaaaaaaaaaaaa");
+        assertThat(headerByPath.get("/customers/b")).containsExactly("bbbbbbbbbbbbbbbbbbbb");
     }
 }

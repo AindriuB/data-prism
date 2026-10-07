@@ -229,6 +229,11 @@ rebuilds that join in a place the privacy engine does not control. Do not send
 it to a source unless that source's owner expects it; an unexpected header is a
 disclosure to a third party.
 
+The built-in REST and configured JSON sources do this for you, without any
+adapter code. A source that sets `correlation-header` in its YAML has the id
+set on that header by an interceptor that reads it from the request, so it is
+correct under parallel fan-out. A source without the key sends nothing.
+
 ## Implement `IdentityResolver`
 
 `IdentityResolver` is how a subject's per-source keys relate to one canonical
