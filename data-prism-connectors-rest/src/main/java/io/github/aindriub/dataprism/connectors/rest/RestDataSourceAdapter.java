@@ -38,7 +38,14 @@ public final class RestDataSourceAdapter<T> implements DataSourceAdapter<T> {
 
     public RestDataSourceAdapter(RestSource source, RestClient client, Class<T> responseType) {
         this.source = Objects.requireNonNull(source, "source");
-        this.client = Objects.requireNonNull(client, "client");
+        Objects.requireNonNull(client, "client");
+        // The adapter's own copy, so no caller changes: the interceptor is installed
+        // here only when this source names a header.
+        this.client = source.correlationHeader() == null
+                ? client
+                : client.mutate()
+                        .requestInterceptor(new OutboundCorrelationInterceptor(source.correlationHeader()))
+                        .build();
         this.responseType = Objects.requireNonNull(responseType, "responseType");
         this.uris = new DefaultUriBuilderFactory(source.baseUrl().toString());
     }
@@ -69,9 +76,13 @@ public final class RestDataSourceAdapter<T> implements DataSourceAdapter<T> {
     public T fetch(DataRequest request) {
         Objects.requireNonNull(request, "request");
         try {
-            return client.get()
-                    .uri(uriFor(request.subjectId()))
-                    .retrieve()
+            RestClient.RequestHeadersSpec<?> call = client.get().uri(uriFor(request.subjectId()));
+            if (source.correlationHeader() != null) {
+                // A per-request attribute, not ambient state: fetches run concurrently.
+                request.context().externalCorrelationId()
+                        .ifPresent(id -> call.attribute(OutboundCorrelationInterceptor.ATTRIBUTE, id));
+            }
+            return call.retrieve()
                     .body(responseType);
         } catch (HttpClientErrorException.NotFound absent) {
             // Names the source and never the subject: a subject id in a log line

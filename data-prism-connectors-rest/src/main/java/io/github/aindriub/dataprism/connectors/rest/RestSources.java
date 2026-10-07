@@ -42,9 +42,22 @@ public final class RestSources {
 
     @SuppressWarnings("unchecked")
     public static RestSourcesConfig fromYaml(InputStream in) {
+        return fromYaml(in, null);
+    }
+
+    /**
+     * @param defaultCorrelationHeader the global {@code dataprism.correlation.outbound.header},
+     *                                 used by every source without its own
+     *                                 {@code correlation-header}; null for none
+     */
+    @SuppressWarnings("unchecked")
+    public static RestSourcesConfig fromYaml(InputStream in, String defaultCorrelationHeader) {
+        OutboundCorrelationHeader.validate(defaultCorrelationHeader, "the global outbound header default", 0);
+        byte[] bytes;
         Map<String, Object> root;
         try {
-            root = YAML.readValue(in, Map.class);
+            bytes = in.readAllBytes();
+            root = YAML.readValue(bytes, Map.class);
         } catch (IOException e) {
             throw new UncheckedIOException("source configuration could not be read", e);
         }
@@ -63,20 +76,23 @@ public final class RestSources {
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
                 throw new IllegalArgumentException("source " + name + " is not a mapping");
             }
-            out.put(name, source(name, (Map<String, Object>) body, requireHttps));
+            out.put(name, source(name, (Map<String, Object>) body, requireHttps,
+                    defaultCorrelationHeader, bytes));
         }
         return new RestSourcesConfig(Map.copyOf(out), tls);
     }
 
-    private static RestSource source(String name, Map<String, Object> body, boolean requireHttps) {
+    private static RestSource source(String name, Map<String, Object> body, boolean requireHttps,
+                                     String defaultCorrelationHeader, byte[] yaml) {
         String baseUrl = required(body, "base-url", "source " + name);
         String path = required(body, "path", "source " + name);
         Object timeout = body.get("timeout");
 
+        String header = correlationHeader(name, body, defaultCorrelationHeader, "sources", yaml);
         try {
             return new RestSource(name, new URI(baseUrl), path,
                     timeout == null ? Duration.ofSeconds(3) : Duration.parse(String.valueOf(timeout)),
-                    requireHttps);
+                    requireHttps, header);
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException(
                     "source " + name + " has an unparseable base-url", e);
@@ -84,6 +100,18 @@ public final class RestSources {
             throw new IllegalArgumentException("source " + name
                     + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
         }
+    }
+
+    /** Package-private: {@link ConfiguredJsonSources} parses the same per-source key. */
+    static String correlationHeader(String name, Map<String, Object> body, String defaultHeader,
+                                    String rootKey, byte[] yaml) {
+        if (!body.containsKey(OutboundCorrelationHeader.KEY)) {
+            return defaultHeader;
+        }
+        Object raw = body.get(OutboundCorrelationHeader.KEY);
+        String where = "source " + name;
+        return OutboundCorrelationHeader.validate(raw == null ? "" : String.valueOf(raw), where,
+                OutboundCorrelationHeader.lineOf(yaml, rootKey, name));
     }
 
     /** Package-private: {@link ConfiguredJsonSources} parses the same {@code tls:} shape. */

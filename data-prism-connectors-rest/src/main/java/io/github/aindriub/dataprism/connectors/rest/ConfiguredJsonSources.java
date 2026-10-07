@@ -54,7 +54,7 @@ public final class ConfiguredJsonSources {
 
     private static final Set<String> SOURCE_KEYS =
             Set.of("base-url", "path", "timeout", "model-version", "subject-json-path", "fields",
-                    "nested-catalogues");
+                    "nested-catalogues", OutboundCorrelationHeader.KEY);
     private static final Set<String> IDENTIFIER_FIELD_KEYS = Set.of("identifier");
     private static final Set<String> NON_SENSITIVE_FIELD_KEYS = Set.of("nonSensitive");
     private static final Set<String> SENSITIVE_FIELD_KEYS =
@@ -97,9 +97,23 @@ public final class ConfiguredJsonSources {
      */
     @SuppressWarnings("unchecked")
     public static ConfiguredJsonSourcesConfig fromYaml(InputStream in, boolean fixtureDevelopment) {
+        return fromYaml(in, fixtureDevelopment, null);
+    }
+
+    /**
+     * @param defaultCorrelationHeader the global {@code dataprism.correlation.outbound.header},
+     *                                 used by every source without its own
+     *                                 {@code correlation-header}; null for none
+     */
+    @SuppressWarnings("unchecked")
+    public static ConfiguredJsonSourcesConfig fromYaml(InputStream in, boolean fixtureDevelopment,
+                                                       String defaultCorrelationHeader) {
+        OutboundCorrelationHeader.validate(defaultCorrelationHeader, "the global outbound header default", 0);
+        byte[] bytes;
         Map<String, Object> root;
         try {
-            root = YAML.readValue(in, Map.class);
+            bytes = in.readAllBytes();
+            root = YAML.readValue(bytes, Map.class);
         } catch (IOException e) {
             throw new UncheckedIOException("configured JSON source configuration could not be read", e);
         }
@@ -121,14 +135,16 @@ public final class ConfiguredJsonSources {
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
                 throw new IllegalArgumentException("json source " + name + " is not a mapping");
             }
-            out.put(name, source(name, (Map<String, Object>) body, fixtureDevelopment, tls != null));
+            out.put(name, source(name, (Map<String, Object>) body, fixtureDevelopment, tls != null,
+                    defaultCorrelationHeader, bytes));
         }
         return new ConfiguredJsonSourcesConfig(Map.copyOf(out), tls);
     }
 
     @SuppressWarnings("unchecked")
     private static ConfiguredJsonSource source(String name, Map<String, Object> body,
-                                               boolean fixtureDevelopment, boolean tlsConfigured) {
+                                               boolean fixtureDevelopment, boolean tlsConfigured,
+                                               String defaultCorrelationHeader, byte[] yaml) {
         rejectUnknownKeys(body.keySet(), SOURCE_KEYS, "json source " + name);
 
         String baseUrl = RestSources.required(body, "base-url", "json source " + name);
@@ -164,10 +180,12 @@ public final class ConfiguredJsonSources {
         boolean permitPlaintextLoopback = fixtureDevelopment && !tlsConfigured && isLoopback(baseUri.getHost());
         boolean requireHttps = !permitPlaintextLoopback;
 
+        String correlationHeader = RestSources.correlationHeader(
+                name, body, defaultCorrelationHeader, "json-sources", yaml);
         RestSource transport;
         try {
             transport = new RestSource(name, baseUri, path,
-                    Duration.parse(String.valueOf(timeoutRaw)), requireHttps);
+                    Duration.parse(String.valueOf(timeoutRaw)), requireHttps, correlationHeader);
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException(
                     "json source " + name + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);

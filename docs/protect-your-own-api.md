@@ -218,6 +218,18 @@ or a `classifications`/`namespace`/`action` triple. A property present in a
 response but absent here is refused before it reaches the scrubbing engine —
 demonstrated below, not just asserted.
 
+A source can name an optional `correlation-header`, for example
+`X-Correlation-ID`. When the caller supplied a valid correlation id, Data Prism
+sends it to that source on that header, and sends nothing otherwise. The name
+must be an RFC 9110 token and cannot be `Authorization`, `Proxy-Authorization`,
+`Cookie`, `Host`, `Content-Length`, `Transfer-Encoding` or `Forwarded`; any
+other value fails startup with `INVALID_CORRELATION_HEADER`. Setting
+`dataprism.correlation.outbound.header` supplies a global default that sends
+the id to every configured source that has no `correlation-header` of its own.
+Each such source is one more party that can join the id to the caller's own
+systems, so prefer the per-source key and use the global default only when
+every source's owner expects the header.
+
 ## Load the connector — no Java, no `META-INF`
 
 `-Dloader.path` adds the connector jar's own classes to the running server's

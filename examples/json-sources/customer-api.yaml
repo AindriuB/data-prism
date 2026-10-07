@@ -34,6 +34,7 @@ json-sources:
     base-url: https://127.0.0.1:8543
     path: /customers/{subject}
     timeout: PT5S
+    # correlation-header: X-Correlation-ID   # opt in to sending the caller's correlation id
 
     # An explicit, non-blank tag you commit to, reviewed alongside the
     # `fields:` catalogue below. It is a deployment-time contract, not a
