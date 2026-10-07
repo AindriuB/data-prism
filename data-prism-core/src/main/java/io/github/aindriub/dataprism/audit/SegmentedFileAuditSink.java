@@ -40,18 +40,34 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
 
     private final Path directory;
     private final ChannelOpener opener;
+    private final String suffix;
+    private final java.util.function.Function<AuditEvent, String> renderer;
     private FileAuditSink current;
     private LocalDate currentDate;
     private volatile RuntimeException poisonedBy;
 
     public SegmentedFileAuditSink(Path directory) {
-        this(directory, segment -> FileChannel.open(segment, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
-                StandardOpenOption.APPEND));
+        this(directory, APPEND_OPENER);
     }
 
+    /** Opens a segment create-and-append. */
+    static final ChannelOpener APPEND_OPENER = segment -> FileChannel.open(segment, StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE, StandardOpenOption.APPEND);
+
     SegmentedFileAuditSink(Path directory, ChannelOpener opener) {
+        this(directory, opener, SUFFIX, AuditRecordFormat::serialize);
+    }
+
+    /**
+     * Segments named {@code audit-YYYY-MM-DD<suffix>}, each line produced by {@code renderer}. Used by
+     * {@link SegmentedJsonAuditSink}; the date, fsync and poisoning behaviour are this class's.
+     */
+    SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
+                           java.util.function.Function<AuditEvent, String> renderer) {
         this.directory = directory;
         this.opener = opener;
+        this.suffix = suffix;
+        this.renderer = renderer;
         try {
             Files.createDirectories(directory);
         } catch (IOException e) {
@@ -94,7 +110,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
             if (current == null || !date.equals(currentDate)) {
                 switchTo(date);
             }
-            current.record(event);
+            current.recordLine(renderer.apply(event));
         } catch (RuntimeException e) {
             poisonedBy = e;
             throw e;
@@ -111,7 +127,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                 current = null;
             }
         }
-        Path segment = directory.resolve(segmentName(date));
+        Path segment = directory.resolve(PREFIX + date + suffix);
         try {
             current = new FileAuditSink(segment, opener.open(segment));
         } catch (IOException e) {

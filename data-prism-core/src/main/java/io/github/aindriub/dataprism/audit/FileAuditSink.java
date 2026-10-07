@@ -74,10 +74,15 @@ public final class FileAuditSink implements AuditSink, Closeable {
 
     @Override
     public synchronized void record(AuditEvent event) {
+        recordLine(AuditRecordFormat.serialize(event));
+    }
+
+    /** Appends {@code line} and a newline, with this class's fsync and poisoning discipline. */
+    synchronized void recordLine(String content) {
         if (poisonedBy != null) {
             throw new PoisonedException("AUDIT_SINK_POISONED", path, poisonedBy);
         }
-        String line = AuditRecordFormat.serialize(event) + "\n";
+        String line = content + "\n";
         ByteBuffer buffer = ByteBuffer.wrap(line.getBytes(StandardCharsets.UTF_8));
         try {
             while (buffer.hasRemaining()) {

@@ -70,7 +70,7 @@ public final class AuditRetention {
      * in either direction. A day count is not safe by being "about six months": six calendar
      * months span 181 to 184 days, so P181D to P183D fall short from some dates.
      */
-    private static boolean canBeShorterThanSixMonths(Period retention) {
+    static boolean canBeShorterThanSixMonths(Period retention) {
         for (int i = 0; i < PROBE_DAYS; i++) {
             LocalDate d = PROBE_START.plusDays(i);
             if (d.plus(retention).isBefore(d.plusMonths(6)) || d.minus(retention).isAfter(d.minusMonths(6))) {
