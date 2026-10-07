@@ -48,6 +48,22 @@ class CorrelationIdPolicyTest {
     }
 
     @Test
+    @DisplayName("the default refuses all-digit strings such as card and account numbers")
+    void defaultRefusesDigitOnly() {
+        assertThat(defaults().validate("4111111111111111")).isEmpty();
+        assertThat(defaults().validate("1234567890123456789")).isEmpty();
+        assertThat(defaults().validate("123456789012345678901234")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the default accepts hex containing a letter and an all-digit UUID")
+    void defaultAcceptsLetterHexAndDigitUuid() {
+        assertThat(defaults().validate("411111111111111a")).isPresent();
+        assertThat(defaults().validate("4111111111111111".replace('1', 'F').substring(0, 16))).isPresent();
+        assertThat(defaults().validate("12345678-1234-1234-1234-123456789012")).isPresent();
+    }
+
+    @Test
     @DisplayName("the broad pattern is available when set explicitly")
     void broadExplicit() {
         assertThat(CorrelationIdPolicy.opaque("[A-Za-z0-9._:-]{1,128}").validate("jane.doe")).isPresent();
