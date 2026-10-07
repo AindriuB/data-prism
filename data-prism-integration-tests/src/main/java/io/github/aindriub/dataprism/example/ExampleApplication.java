@@ -1,10 +1,12 @@
 package io.github.aindriub.dataprism.example;
 
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.Capability;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
@@ -14,6 +16,7 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.modelcontextprotocol.server.McpSyncServer;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -85,7 +88,8 @@ public final class ExampleApplication {
 
         return DataPrismMcpServer.stdio(assembly.orchestrator(), authorizationService,
                 scopeResolver, developmentCaller, true, isProductionProfile(activeProfiles),
-                PrivacyMetrics.none(), toolAudit, assembly.clock());
+                PrivacyMetrics.none(), toolAudit, assembly.clock(), CorrelationRequirement.OPTIONAL,
+                AuditedEntityTypes.of(List.of("CUSTOMER")));
     }
 
     /**

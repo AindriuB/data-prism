@@ -109,6 +109,22 @@ public final class DataPrismMcpServer {
     }
 
     /**
+     * As the {@link CorrelationRequirement} overload, with the {@link AuditedEntityTypes} that decides what the
+     * audit record's {@code entityType} holds. Every other overload applies {@link AuditedEntityTypes#shape()}.
+     */
+    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
+                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
+                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                                      CorrelationRequirement correlationRequirement,
+                                      AuditedEntityTypes entityTypes) {
+        return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
+                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, null,
+                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off(),
+                Objects.requireNonNull(entityTypes, "entityTypes"));
+    }
+
+    /**
      * As above, with admission (pauses, per-caller rate limit, human approval) checked by both
      * tools after scope resolution and before the orchestrator.
      *
