@@ -205,6 +205,30 @@ consistency finding — instead of tripping this source's circuit breaker
 (`data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceOutcome.java:19-23`,
 `QuickstartCustomerAdapter.java:12-21`).
 
+## Using the caller's correlation id in an adapter
+
+When the caller sent a correlation id and it passed validation, it arrives on
+the request, not in `parameters`:
+
+```java
+@Override
+public Object fetch(DataRequest request) {
+    var spec = client.get().uri("/customers/{id}", request.subjectId());
+    var withId = request.context().externalCorrelationId()
+            .map(id -> spec.header("X-Correlation-Id", id.value()))
+            .orElse(spec);
+    return withId.retrieve().body(Customer.class);
+}
+```
+
+The value has already been validated against the operator's policy, so it is
+syntactically constrained (validation does not prove it is free of personal
+data). Do not log it next to source data: it is what joins an
+audit record to the caller's own systems, and logging it beside the payload
+rebuilds that join in a place the privacy engine does not control. Do not send
+it to a source unless that source's owner expects it; an unexpected header is a
+disclosure to a third party.
+
 ## Implement `IdentityResolver`
 
 `IdentityResolver` is how a subject's per-source keys relate to one canonical
