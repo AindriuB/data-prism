@@ -312,10 +312,10 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 109 | **Done** (2026-10-07, attempt 5). Record the external correlation id in audit record version 3 | 102, 108, 117, 123 |
 | Done | 142 | **Done** (2026-10-07). Pin what Spring Boot 4 moved: Jackson 2 converters, actuator JSON, the operator error path | 141 |
 | Done | 146 | **Done** (2026-10-07). Make the test suite clean and proven on JDK 25, including on Linux | 141 |
-| 3 | 110 | MCP tools and orchestrator carry the external correlation id to audit and sources | 101, 108, 109, 118, 123, 128 |
-| 3 | 111 | Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
-| 3 | 112 | Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
-| 3 | 144 | Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
+| Done | 110 | **Done** (2026-10-07, attempt 2). MCP tools and orchestrator carry the external correlation id to audit and sources | 101, 108, 109, 118, 123, 128 |
+| Done | 111 | **Done** (2026-10-07, attempt 2). Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
+| Done | 112 | **Done** (2026-10-07). Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
+| 3 | 144 | **In progress** (attempt 1 failed; see its task file). Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
 | 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
 | 4 | 114 | Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
 | 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
@@ -323,7 +323,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
 | 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
 
-Next wave: wave 3, tasks 110, 111, 112 and 144.
+Next wave: 144 is still in progress. 113 and 114 are runnable now, since 110 and 112 have merged. 147 waits for 144.
 
 Release-cut verification items from wave 1:
 
@@ -384,7 +384,17 @@ Follow-ups from wave 2, not yet tasks:
 - (c) The CLI help and runbook should say that an interrupted write joined to a restarted writer can surface as exit 2, which is a safe false positive.
 - (d) Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
 - (e) Record surefire and failsafe counts separately in future JDK runs.
-- (f) `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one.
+- (f) `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun.
+
+Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
+
+- (g) `TeeAuditSink` catches only `RuntimeException`. An `Error` from the projection after the primary write leaves the tee unpoisoned, so a sequence number could be reused. Catch `Throwable`, poison, and rethrow.
+- (h) For task 116: `fieldDispositions` keys can contain dots, which Elasticsearch expands into nested objects. Document this and recommend a flattened or disabled mapping for `dataprism.field_dispositions`. Also check how Boot's ECS formatter renders dotted key-value names.
+- (i) `PiiLogScanTest`'s full-run projection scan covers only the assembly recorder. The tool-level `toolAudit` recorder's events are not scanned as JSON or key-value pairs.
+- (j) `OutboundCorrelationHeader` should also forbid hop-by-hop and framing names: Connection, Upgrade, TE, Keep-Alive, Content-Type, Expect.
+- (k) In `ExternalCorrelationToolTest`, `nullFingerprinterWithAdmissionIsRefused` should also cover `CompareEntitySourcesTool`'s 10-arg constructor and the `DataPrismMcpServer` factories, and assert the "fingerprinter" message. `toolsListUnchanged` should add a streamableHttp case.
+- (l) Task 110 defines `DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY = "externalCorrelation"`. Task 113 needs it.
+- Owner-visible point for 116: the `Slf4jAuditSink` mapped constructor attaches the routing constants as key-value pairs. That is the implementer's reading of the spec.
 
 **Release-cut items for 0.5.0:**
 

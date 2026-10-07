@@ -102,3 +102,10 @@ under Out of scope. Owns is unchanged: everything below is in
 - [ ] The paragraph this task adds to `docs/protect-your-own-api.md` states
       that the global default sends the id to every configured source. Each
       such source is one more party that can join it.
+
+## Attempt 1 — failed
+
+Reviewer: CHANGES (code sound; all D-148-A items met).
+- `docs/extending.md:235` says "A source without the key sends nothing". False when `dataprism.correlation.outbound.header` is set: such a source sends the id under the global header. Rewrite to state the global default applies, and that each such source is one more party that can join the id.
+- `ConfiguredJsonSourcesInitializer.java:74-76`: a blank global value is silently treated as unset. The amendment says any other value fails startup, and a blank per-source key is already rejected. Refuse a blank global value with INVALID_CORRELATION_HEADER (fail closed), and add a test.
+- Follow-up, not this task: also forbid hop-by-hop and framing names (`Connection`, `Upgrade`, `TE`, `Keep-Alive`, `Content-Type`, `Expect`).

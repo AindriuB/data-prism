@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112
+
+Task 110 carries the validated external correlation id from the MCP tools through the orchestrator to the audit record and the sources, and a tool configured with an admission now requires a fingerprinter. Task 111 sends the id to configured REST sources as a header through an interceptor, with a per-source header overriding an optional global one, and refuses a blank global header with INVALID_CORRELATION_HEADER. Task 112 adds a structured JSON audit projection with ECS field mapping and routing hints; an externalCorrelationId maps to transaction_id. Each task's tester passed the full reactor (about 1160 to 1180 tests).
+
+**Cost:** 110 and 111 each took two attempts. 110 failed review because the public canonical constructor accepted a null fingerprinter alongside a real admission, which defeats four-eyes approval binding; the constructor is private again and the public overloads use requireNonNull. 111 failed because `extending.md` said a source without a key sends nothing even with a global header, and because a blank global header was silently treated as unset. `mkdocs build --strict` was not run for 111, since mkdocs is not installed in that worktree, so its docs change is unbuilt. The 110 and 111 worktrees were merged by hand with `--no-ff` into the session branch, not with `wt-merge.sh`, which merges into main. A second flake, `ConfiguredJsonReidentificationEndToEndTest` ("Runtime Client failed to initialize"), passed on rerun. Follow-ups g to l are in `PLAN.md`.
+
 ## 2026-10-07 — 0.5.0 wave 2: tasks 109, 142, 146
 
 Task 109 writes audit record version 3 with the external correlation id inside the hash, the id itself hashed. The verifier treats a field-count/version mismatch, and any over-count line, as a FIELD_COUNT_MISMATCH break. One `AnomalyType.isBreak()` predicate drives `hasBreak`, `hasStructuralAnomaly` and `AuditRetention.firstBadOffset`, and VERSION_REGRESSION is flagged. Task 142 adds five Spring Boot 4 guards (Jackson 2 converters, actuator JSON, the `spring.web.error.path` error mapping), each shown red by an uncommitted mutation. Task 146 proves the suite on JDK 25 and 21 in Linux containers (1080 tests each) and loads Mockito as a javaagent in data-prism-mcp. The merged head passed `mvn clean verify`, the release profile, `mkdocs build --strict` and `check_site.py`.

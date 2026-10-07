@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-07 | 110, 111, 112 | 0.5.0 wave 3 part 1: MCP tools carry the external correlation id, REST sources send it as a header, audit events project to ECS JSON. | `## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112` |
 | 2026-10-07 | 109, 142, 146 | 0.5.0 wave 2: audit record v3 with hashed external correlation id and FIELD_COUNT_MISMATCH breaks, five Spring Boot 4 guards, suite proven on JDK 25 and 21 on Linux. | `## 2026-10-07 — 0.5.0 wave 2: tasks 109, 142, 146` |
 | 2026-10-07 | 108, 141, 143, 145 | 0.5.0 wave 1: external correlation id core, Spring Boot 4.1.1 on Jackson 2, Docker images and smoke on Java 25, Dependabot blocks 26+. | `## 2026-10-07 — 0.5.0 wave 1: tasks 108, 141, 143, 145` |
 | 2026-10-07 | 130 | Cleared the dependency backlog: nimbus-jose-jwt, archunit, source plugin, five GitHub Actions, Pillow; Dependabot ignore rules. | `## 2026-10-07 — Task 130: clear the dependency backlog` |

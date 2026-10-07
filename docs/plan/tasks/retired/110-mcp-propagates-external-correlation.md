@@ -90,3 +90,10 @@ and audited, and no source is called.
   from `DataRequest`.
 - Returning the external id in `_meta`. The client already has it.
 - Any change to `ToolAdmission` or the approval binding.
+
+## Attempt 1 — failed
+
+Reviewer: CHANGES.
+- `GetEntityContextTool.java:456` and `CompareEntitySourcesTool.java:61`: the canonical constructor went from private to public and still accepts a null `fingerprinter` with any `ToolAdmission`. `ToolCalls.admit` (ToolCalls.java:76) then binds every call to fingerprint "", so an approval granted for subject A is consumed by a call for subject B. This defeats four-eyes approval binding. Fix: keep the canonical constructor private and add a public overload, or `requireNonNull(fingerprinter)` unless the admission is `none()`. Add a test that the null-fingerprinter plus real-admission combination is refused.
+- Remove the unused `java.util.Optional` import in both tools.
+- Optional: a `streamableHttp` case in `toolsListUnchanged`, and a docs/tools.md sentence that the REQUIRED check precedes authorisation.

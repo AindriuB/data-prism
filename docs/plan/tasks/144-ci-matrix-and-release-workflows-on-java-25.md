@@ -78,3 +78,11 @@ Java 21 consumers cannot load.
 - Changing `maven.compiler.release` or adopting Java 25 language features.
   The owner has not approved that.
 - `pages.yml` and `publish-mcp.yml`, which use no JDK.
+
+## Attempt 1 — failed
+
+Tester: PASS (full `-Prelease` reactor, ~1138 tests, actionlint and shellcheck clean, script exits 0 with 65 and 1 with 69).
+Reviewer: CHANGES.
+- `.github/scripts/check-class-version.sh:33` fails open: `unzip ... 2>/dev/null || true` swallows every unzip failure, so a corrupt or truncated jar (or a missing `unzip`) extracts nothing, hits the `checked -eq 0` branch and exits 0. Reproduced with a garbage jar and with a truncated jar containing a major-69 class. Fix: treat unzip exit 11 (no matching `*.class`) as the only legitimate empty case, fail on any other non-zero exit, and fail if `unzip` is not on PATH.
+- Also verify the CAFEBABE magic before reading bytes 6-7, failing the jar if it is absent.
+- Add a self-test or commit-body record of: corrupt jar → exit 1, truncated jar → exit 1, classless jar (e.g. data-prism-architecture) → exit 0.
