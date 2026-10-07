@@ -65,9 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`--release 21`, class major 65).
 - Audit record version 3. Records are written as `recordVersion` 3 with 25
   fields, and `externalCorrelationId` is inside the hash. Version 1 and
-  version 2 records still verify. The offline verifier reports a record whose field
-  count does not match its version as `FIELD_COUNT_MISMATCH`, a break (exit
-  code 2).
+  version 2 records still verify. The offline verifier reports a line with too many
+  fields, or a full-length line that declares the wrong version, as
+  `FIELD_COUNT_MISMATCH`, a break (exit code 2). A shorter line that could be a
+  torn write is reported as an interrupted write (exit code 4), not a break.
 - The audited `entityType`. `entityType` is audited verbatim only when it is a
   registered entity type or an upper-case-identifier-shaped token; otherwise it
   is recorded as `<unregistered>`. With no list configured, an upper-case token

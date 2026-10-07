@@ -558,19 +558,22 @@ dependencies at lines 60-94 — those exist only so the Maven reactor builds
 the packaged artifacts this module's own smoke test starts as
 subprocesses; a consumer's extension pom has no reason to carry them.)
 
-This was verified, not assumed (recorded against 0.3.0): a throwaway project's pom was assembled by
-pasting the `<properties>`/`<dependencyManagement>`/`<dependencies>` block
-above and the `<plugin>` block below unmodified into a pom whose only other
-content is the top-level fields already assumed (`groupId`, `artifactId`,
-`version`, `packaging`) — nothing added, nothing implied. Alongside a
-minimal `DataSourceAdapter` and an `@LlmExposedModel` record, it was built
-with `mvn package` against a clean local repository with no other
-data-prism artifacts in it, resolving `data-prism-core`,
-`data-prism-annotations` and `data-prism-processor` `0.3.0` from Maven
-Central and `spring-web` `6.2.19`/`spring-boot-autoconfigure` `3.5.16` from
-the imported BOM — the same Spring Boot version the 0.3.0 server
-distribution itself was built against (recorded against 0.3.0). The build produced a jar; nothing in
-this paragraph is aspirational.
+What has been checked, and what has not (recorded 2026-10-07). The two XML
+blocks in this section were extracted programmatically and pasted unmodified
+into a pom whose only other content is `modelVersion`, `groupId`,
+`artifactId`, `version` and `packaging`. Alongside a minimal
+`DataSourceAdapter` and an `@LlmExposedModel` record, that pom was built with
+`mvn package` against Maven Central, with an empty local repository, in its
+`0.4.1` form. It resolved `data-prism-core`, `data-prism-annotations` and
+`data-prism-processor` `0.4.1`, `spring-web` `7.0.9` and
+`spring-boot-autoconfigure` `4.1.1` (Spring Boot `4.1.1`), and the build
+produced a jar. The `0.5.0` form of the snippet differs only in
+`data-prism.version`; its Spring dependencies were re-resolved against Spring
+Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1 migration. A
+full `mvn package` of the `0.5.0` form against the published `0.5.0` artifacts
+has not been run, because they were not on Maven Central when this was
+written. It is repeated after publication, and this paragraph is amended if
+the result differs. Nothing here has been shown for any other version.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above. If your
