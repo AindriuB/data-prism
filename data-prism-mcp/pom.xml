@@ -11,6 +11,11 @@
   <artifactId>data-prism-mcp</artifactId>
   <name>Data Prism :: MCP</name>
   <description>The MCP tool surface. Sees orchestration only, never a connector.</description>
+  <properties>
+    <!-- Defined empty so surefire's late-bound @{argLine} resolves when no
+         other plugin (e.g. a coverage agent) sets it. -->
+    <argLine></argLine>
+  </properties>
   <dependencies>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-orchestration</artifactId></dependency>
     <dependency><groupId>io.github.aindriub</groupId><artifactId>data-prism-security</artifactId></dependency>
@@ -48,10 +53,25 @@
       </resource>
     </resources>
     <plugins>
+      <!-- Sets ${org.mockito:mockito-core:jar} to the resolved jar path, so
+           Mockito is loaded as a declared agent rather than self-attaching
+           (JEP 451). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+        <executions>
+          <execution>
+            <id>mockito-agent-path</id>
+            <goals><goal>properties</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
+          <argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
           <systemPropertyVariables>
             <dataprism.expected-version>${project.version}</dataprism.expected-version>
           </systemPropertyVariables>
