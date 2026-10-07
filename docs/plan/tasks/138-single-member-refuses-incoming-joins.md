@@ -10,6 +10,7 @@
 - docs/multiple-instances.md *(sentences describing `join.mode: none` only)*
 - docs/configuration.md *(sentences describing `join.mode: none` only)*
 - CHANGELOG.md *(the [0.4.1] bullets that describe `join.mode: none` only)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterConfigurationTest.java *(`the_cluster_name_is_passed_stripped_as_validated` only; added 2026-10-07 after the implementer's PARTIAL return)*
 
 ## Goal
 
