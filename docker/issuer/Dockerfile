@@ -7,7 +7,7 @@
 # data-prism-quickstart-issuer's own application.yaml) — it is never a
 # general-purpose identity provider, and nothing about it is meant to run
 # outside `docker compose up` for this quickstart.
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /workspace
 COPY . .
 RUN mvn -B -q -pl data-prism-quickstart-issuer -am package -DskipTests
@@ -25,7 +25,7 @@ RUN mvn -B -q -pl data-prism-quickstart-issuer -am package -DskipTests
 RUN find data-prism-quickstart-issuer/target -maxdepth 1 -name '*.jar' ! -name '*.original' \
       -exec cp {} /workspace/app.jar \;
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 # The GHCR package page is the one place a user can encounter this image
 # without ever reading this Dockerfile or the repository it lives in — so
