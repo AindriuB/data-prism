@@ -16,12 +16,15 @@ import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.Capability;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy;
+import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.example.CustomerDto;
 import io.github.aindriub.dataprism.example.DataPrismAssembly;
 import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
+import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -922,6 +925,59 @@ class PiiLogScanTest {
         assertThat(findLeaked(String.join("\n", jsonLines), BANNED_VALUES)).as("whole-token safety net").isEmpty();
     }
 
+    private static final String SYNTHETIC_CLID = "synthetic-clid-0001";
+
+    private static InboundCorrelation inboundCorrelation(String value) {
+        return InboundCorrelation.resolve(List.of(value), CorrelationIdPolicy.opaque("[A-Za-z0-9._:-]{1,128}"));
+    }
+
+    @Test
+    @DisplayName("a full run carrying a correlation id logs it as extCorrelation, and the line and its key-value pairs leak nothing")
+    void fullIntegrationRunWithCorrelationIdLeaksNoPii() {
+        AuditFieldMapping mapping = AuditFieldMapping.ecs();
+        List<AuditEvent> events = new ArrayList<>();
+        InboundCorrelation inbound = inboundCorrelation(SYNTHETIC_CLID);
+        assertThat(inbound.isPresent()).isTrue();
+        // The plain sink, so the line parser sees only the message; its key-value pairs are
+        // rendered from the collected events, as fullIntegrationRunProjectionsLeakNoPii does.
+        String captured = captureLogOutput(() -> runFullIntegrationRun(
+                new TeeAuditSink(new Slf4jAuditSink(), events::add), inbound));
+
+        String stripped = withoutTimestamps(captured);
+        assertThat(stripped.lines().filter(line -> line.contains("extCorrelation=" + SYNTHETIC_CLID)).count())
+                .as("at least one audit line carries the id, or this scan proves nothing").isGreaterThan(0);
+        assertThat(events).as("the run reached the sink").isNotEmpty()
+                .allSatisfy(event -> assertThat(event.externalCorrelationId()).isEqualTo(SYNTHETIC_CLID));
+
+        List<String[]> pairs = new ArrayList<>();
+        for (AuditEvent event : events) {
+            pairs.addAll(keyValueFields(AuditJsonRenderer.keyValues(event, mapping, PROJECTION_ROUTING), mapping));
+        }
+        assertThat(pairs).as("key-value pairs scanned").hasSizeGreaterThan(events.size() * 10);
+        assertThat(pairs).anySatisfy(pair -> assertThat(pair).containsExactly("externalCorrelationId", SYNTHETIC_CLID));
+
+        assertThat(findLeakedAcrossLines(stripped, BANNED_VALUES)).as("log lines").isEmpty();
+        assertThat(findLeakedInFields(pairs, BANNED_VALUES)).as("key-value pairs").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the correlation-id log scan is not vacuous: a fixture value admitted as the id is caught in the line and its pairs")
+    void correlationIdLogScanIsNotVacuous() {
+        AuditFieldMapping mapping = AuditFieldMapping.ecs();
+        List<AuditEvent> events = new ArrayList<>();
+        InboundCorrelation inbound = inboundCorrelation("ACC-1");
+        String captured = captureLogOutput(() -> runFullIntegrationRun(
+                new TeeAuditSink(new Slf4jAuditSink(), events::add), inbound));
+
+        assertThat(withoutTimestamps(captured)).contains("extCorrelation=ACC-1");
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), BANNED_VALUES)).contains("ACC-1");
+        List<String[]> pairs = new ArrayList<>();
+        for (AuditEvent event : events) {
+            pairs.addAll(keyValueFields(AuditJsonRenderer.keyValues(event, mapping, PROJECTION_ROUTING), mapping));
+        }
+        assertThat(findLeakedInFields(pairs, BANNED_VALUES)).contains("ACC-1");
+    }
+
     /**
      * Three {@code get_entity_context} calls through the real pipeline —
      * {@code DataPrismAssembly}, {@code GetEntityContextTool}, a real
@@ -942,6 +998,10 @@ class PiiLogScanTest {
     }
 
     private static void runFullIntegrationRun(AuditSink sink) {
+        runFullIntegrationRun(sink, InboundCorrelation.absent());
+    }
+
+    private static void runFullIntegrationRun(AuditSink sink, InboundCorrelation inbound) {
         Clock clock = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), java.time.ZoneOffset.UTC);
         String purpose = "demonstration";
         String role = "investigator";
@@ -966,7 +1026,8 @@ class PiiLogScanTest {
                 "pii-scan-principal", "pii-scan-client", Set.of(role), purpose, "CASE-PII-SCAN-1", null);
         McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(
                 "pii-scan-session", null, null, null,
-                McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller))));
+                McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller,
+                        DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY, inbound))));
 
         for (String subjectId : List.of("123", "456")) {
             tool.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(
