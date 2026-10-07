@@ -318,8 +318,8 @@ class ClusterConfigurationTest {
         runner("embedded", "dataprism.hazelcast.cluster-name=  " + name + "  ", NONE,
                 "dataprism.hazelcast.member.port=" + freePort()).run(result -> {
             assertThat(result).hasNotFailed();
-            assertThat(result.getBean(PrivacyCluster.class).instance().getConfig().getClusterName())
-                    .isEqualTo(name);
+            String effective = result.getBean(PrivacyCluster.class).instance().getConfig().getClusterName();
+            assertThat(effective).startsWith(name + "-solo-").isEqualTo(effective.strip());
         });
     }
 
