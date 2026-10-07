@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.RequestLimits;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -52,12 +53,23 @@ public final class SourceFanOut {
     private final SourceCircuitBreaker breaker;
     private final Clock clock;
     private final PrivacyMetrics metrics;
+    private final CorrelationMdc mdc;
 
     public SourceFanOut(SourceCircuitBreaker breaker, Clock clock) {
         this(breaker, clock, PrivacyMetrics.none());
     }
 
     public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, PrivacyMetrics metrics) {
+        this(breaker, clock, metrics, CorrelationMdc.off());
+    }
+
+    /**
+     * @param mdc opened on each source's own thread from that source's request, so the
+     *            call's validated external id is on every log line the fetch writes;
+     *            {@link CorrelationMdc#off()} puts nothing anywhere
+     */
+    public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, PrivacyMetrics metrics, CorrelationMdc mdc) {
+        this.mdc = Objects.requireNonNull(mdc, "mdc");
         this.breaker = Objects.requireNonNull(breaker, "breaker");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
@@ -106,11 +118,15 @@ public final class SourceFanOut {
             for (DataSourceAdapter<?> adapter : callable) {
                 DataRequest request = requests.get(adapter.sourceName());
                 futures.put(adapter.sourceName(), executor.submit(() -> {
-                    bulkhead.acquire();
-                    try {
-                        return adapter.fetch(request);
-                    } finally {
-                        bulkhead.release();
+                    // Opened from this task's own request, never copied from the
+                    // submitting thread: virtual threads do not inherit MDC.
+                    try (CorrelationMdc.Scope ignored = mdc.open(request.context().externalCorrelationId())) {
+                        bulkhead.acquire();
+                        try {
+                            return adapter.fetch(request);
+                        } finally {
+                            bulkhead.release();
+                        }
                     }
                 }));
             }
