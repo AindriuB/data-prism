@@ -98,3 +98,11 @@ record yet; tasks 110, 111 and 113 do.
 - Micrometer Tracing or OpenTelemetry. Owner decision; not planned.
 - `ReservedArguments`. Task 110 adds the reserved names, because it owns
   `docs/tools.md` where they are listed.
+
+## Owner decision C4 (2026-10-07)
+
+The default inbound correlation-id pattern is the strict default, not
+`[A-Za-z0-9._:-]{1,128}`. It accepts only a UUID, hex of 16 to 128 characters,
+or a W3C traceparent. The broader pattern is available only by explicit
+configuration, because it admits name-like tokens such as `jane.doe` and so
+lets personal data be smuggled in as an id. The Owns list is unchanged.

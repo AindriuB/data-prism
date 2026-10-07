@@ -111,3 +111,11 @@ Every misconfiguration refuses startup with a stable code.
 - REST outbound headers. That is task 111, configured in source YAML.
 - Example client snippets and shipping recipes. That is task 115.
 - `docs/audit.md`. That is task 116.
+
+## Owner decision C4 (2026-10-07)
+
+The default inbound correlation-id pattern is the strict default, not
+`[A-Za-z0-9._:-]{1,128}`. It accepts only a UUID, hex of 16 to 128 characters,
+or a W3C traceparent. The broader pattern is available only by explicit
+configuration, because it admits name-like tokens such as `jane.doe` and so
+lets personal data be smuggled in as an id. The Owns list is unchanged.

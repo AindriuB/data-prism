@@ -293,9 +293,9 @@ and needs the owner's go-ahead. Nothing has been pushed.
 
 Only step 9 remains.
 
-#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116, 130, 139, 140)
+#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116, 130, 141-147)
 
-Scope per the owner, 2026-10-07: 108-116, 130, 139 and 140.
+Scope per the owner, 2026-10-07: 108-116, 130 and 141-147 (139 and 140 split into them).
 
 Lets an organisation's own correlation id flow from its MCP client through the
 audit record and on to its REST sources, and writes audit events as JSON that
@@ -304,18 +304,26 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
-| 1 | 130 | **Done** (2026-10-07). Cleared the dependency backlog; see HISTORY | 136 |
-| 1 | 139 | Spring Boot 4 migration. Placeholder: needs a `/plan` pass before any work (`docs/plan/tasks/139-spring-boot-4-migration.md`) | 130 |
-| 1 | 140 | Java 25 for runtime and build images, CI matrix on JDK 21 and 25. Planned; task file to follow | 130 |
-| 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
-| 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
-| 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
-| 3 | 110 | MCP tools and orchestrator carry the id to audit and sources | 101, 108, 109, 118 |
-| 3 | 112 | JSON audit projection with ECS field mapping and routing hints | 109, 118 |
-| 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112 |
-| 4 | 114 | PII scans cover the correlation id and the JSON projection | 110, 112 |
-| 5 | 115 | Client correlation-header snippets and log-shipping recipes as examples | 113 |
-| 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
+| Done | 130 | **Done** (2026-10-07). Cleared the dependency backlog; see HISTORY | 136 |
+| 1 | 108 | Add a validated external correlation id and carry it on `DataRequest` | none |
+| 1 | 141 | Migrate the reactor to Spring Boot 4.1.1 on a single Jackson 2 classpath | none (130 is done) |
+| 1 | 143 | Build and run every Docker image on Java 25 LTS, with a container smoke test | none |
+| 1 | 145 | Make Dependabot allow Java 25 images and really block 26 and later | none |
+| 2 | 109 | Record the external correlation id in audit record version 3 | 102, 108, 117, 123 |
+| 2 | 142 | Pin what Spring Boot 4 moved: Jackson 2 converters, actuator JSON, the operator error path | 141 |
+| 2 | 146 | Make the test suite clean and proven on JDK 25, including on Linux | 141 |
+| 3 | 110 | MCP tools and orchestrator carry the external correlation id to audit and sources | 101, 108, 109, 118, 123, 128 |
+| 3 | 111 | Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
+| 3 | 112 | Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
+| 3 | 144 | Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
+| 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
+| 4 | 114 | Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
+| 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
+| 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
+| 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135 |
+
+139 was an umbrella and is split into 141, 142 and 147. 140 is split into 143,
+144, 145 and 146 and has no file of its own.
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
 before 0.4.0. Task 130 owned no files shared with tasks 108-116.
@@ -328,36 +336,55 @@ before 0.4.0. Task 130 owned no files shared with tasks 108-116.
 
 Follow-ups from 130, not yet tasks:
 
-- (a) `data-prism-server` bundles nimbus-jose-jwt 9.37.4 through the Spring Boot BOM, while the quickstart issuer pins 10.10. The issuer pom comment is stale. Decide alongside 139.
-- (b) Check that the dependabot docker `maven` semver-major ignore really stops `-temurin-26` tags on the next docker group PR.
+- (a) Closed by D-139-C, in task 141. (`data-prism-server` bundled nimbus-jose-jwt 9.37.4 through the Spring Boot BOM while the quickstart issuer pinned 10.10.)
+- (b) Answered. The task 130 docker `maven` semver-major ignore does not block `-temurin-26`, because Dependabot reads `3.9-eclipse-temurin-21` as 3.9.21, so `-26` is a patch update. Task 145 fixes it.
+
+**Owner decisions on the platform, 2026-10-07** (all decided):
+
+- **D-139-A:** Stay on Jackson 2 for 0.5.0 and keep the Jackson 3 enforcer ban.
+- **D-139-B:** 0.5.0's starter and autoconfigure require Spring Boot 4.1. Boot 3 users stay on 0.4.x. CHANGELOG Breaking.
+- **D-139-C:** Manage nimbus-jose-jwt once in the root pom at 10.10, and remove the quickstart-issuer pin and its stale comment.
+- **D-139-D:** Target Spring Boot 4.1.1, not 4.2 milestones. 4.1 OSS support runs to 2027-07-31.
+- **D-140-A:** Floating `eclipse-temurin:25-jre` and `maven:3.9-eclipse-temurin-25` tags.
+- **D-140-B:** Dependabot ignores eclipse-temurin 26 and later and maven 3.9.26 and later, plus Maven 4 (semver-major). Moving to the next LTS, 29, is an owner decision.
+- **D-140-C:** Record the Hazelcast `sun.misc.Unsafe` warning on JDK 25; never silence it with `--sun-misc-unsafe-memory-access=allow`.
+- **D-140-D:** Load Mockito as a `-javaagent` in data-prism-mcp only.
+
+**Release-cut items for 0.5.0:**
+
+- Close Dependabot PR #116 without merging, since 143 and 145 supersede it.
+- Close or ignore #114, since 141 supersedes its Spring Boot bump.
+- Update the `docs/extending.md` `data-prism.version` snippet at the cut.
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
 grouped into one PR per ecosystem per week (`.github/dependabot.yml`).
 GitHub-hosted runner minutes are free on this public repo, so the concern was
-noise and queueing, not cost. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
+noise and queueing, not cost. C1 to C7 are all decided (2026-10-07). The
 full text follows, recorded here because no other file holds it.
 
 - **C1** — Record the external correlation id inside the hash, as
-  `recordVersion` 3. Recommended: yes. The alternative, a field outside the
+  `recordVersion` 3. **Confirmed 2026-10-07.** The alternative, a field outside the
   hash, could be edited without breaking the chain.
 - **C2** — Resolved: task 117 fixes the v2 encoding before release, and v3
   appends to it.
 - **C3** — Keep the hash-chained native `.log` segments authoritative and write
   a separate JSON projection through a tee. Recommended. The alternative is JSON
   as the chained format, which means the verifier must know the mapping. Cost:
-  a second copy on disk, purged on the same retention.
-- **C4** — The default inbound correlation-id pattern `[A-Za-z0-9._:-]{1,128}`
-  also admits name-like tokens such as `jane.doe`. Keep it, or default to
-  stricter UUID/hex only. Open.
+  a second copy on disk, purged on the same retention. **Confirmed 2026-10-07:** the hash-chained `.log` stays authoritative and JSON is a separate projection.
+- **C4** — The broad pattern `[A-Za-z0-9._:-]{1,128}` admits name-like tokens
+  such as `jane.doe`. **Decided 2026-10-07: strict default.** The default
+  inbound pattern accepts only a UUID, hex of 16-128 characters, or a W3C
+  traceparent. The broader pattern is available only by explicit
+  configuration. This protects against personal data being smuggled in as an id.
 - **C5** — ECS `event.outcome` is derived from `policyDecision` (`ALLOW` or
   `ALLOW:*` is success, empty is unknown, anything else is failure), and
   operator-set routing constants (dataset, namespace) are added to each output
-  line. Is this acceptable as reshaping? The raw decision is kept as well. Open.
+  line. Is this acceptable as reshaping? The raw decision is kept as well. **Decided 2026-10-07:** acceptable. `event.outcome` is derived from `policyDecision`, operator routing constants are allowed, and the raw decision is kept.
 - **C6** — Defer OpenTelemetry and Micrometer Tracing. Traceparent mode covers
   W3C propagation without a tracing dependency, and Micrometer's ThreadLocal
-  context propagation conflicts with the parallel fan-out. Recommended: defer.
+  context propagation conflicts with the parallel fan-out. **Confirmed 2026-10-07:** defer.
 - **C7** — No direct Elasticsearch sink; ship from local files with Filebeat or
-  Elastic Agent. Recommended: confirm.
+  Elastic Agent. **Confirmed 2026-10-07.**
 
 Task 112 cites C3 and C5.
 
@@ -1976,6 +2003,11 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+**Risk, unscheduled (2026-10-07):** Spring Boot 4.1 supports Jackson 2 but has
+deprecated it for removal since 4.0.0.
+
+- Jackson 3 port (scrubbing module, mcp-json-jackson3, flip the enforcer ban) before a Boot release removes Jackson 2 support. D-139-A keeps 0.5.0 on Jackson 2.
 
 Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
 64 or 68, all merged; several are load-bearing for the wave-2 tasks named.
