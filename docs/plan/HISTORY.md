@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-07 — 0.5.0 wave 1: tasks 108, 141, 143, 145
+
+Task 108 adds a validated external correlation id (`ExternalCorrelationId`, `CorrelationIdPolicy`, `InboundCorrelation`) and carries it on `DataRequest`. Task 141 moves the reactor to Spring Boot 4.1.1 on a single Jackson 2 classpath (jackson-databind 2.21.5, no tools.jackson, nimbus-jose-jwt 10.10, Hazelcast 5.7.0 in the jar). Task 143 builds and runs every Docker image on Java 25 LTS with a container smoke script in `docker/smoke/`, and task 145 makes Dependabot allow Java 25 images and block 26 and later. The full reactor and the release profile are green on the merged head.
+
+**Cost:** 143 deleted the owner's local `ghcr.io/aindriub/data-prism-quickstart-*:latest` images in attempt 2, because the smoke reused the compose project and image names and teardown used `--rmi local`; attempt 3 uses unique image names and project, and an arm64 smoke passed on Java 25.0.4.1 with a 2-member cluster and 6 Unsafe warnings recorded. Do not tear down smoke runs with `--rmi local` semantics. 108 gained the owner's C4 amendment (the default hex branch needs an a-f letter; digit-only values are refused). 141's static reviewer could not run Maven, so its approval rested on the tester's runs. 145's live Dependabot proof of tag parsing is deferred to the release cut.
+
 ## 2026-10-07 — Task 130: clear the dependency backlog
 
 The grouped Dependabot backlog is cleared. Maven moves to nimbus-jose-jwt 10.10, archunit 1.5.1 and maven-source-plugin 3.4.0. The workflows move to checkout v7, setup-java v6, upload-artifact v7, download-artifact v8 and docker/login-action v4. Pillow is 12.3.0, and the images it renders are pixel-identical. Dependabot now ignores Spring Boot majors (split out as task 139) and Java-image majors.

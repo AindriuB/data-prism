@@ -305,10 +305,10 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Wave | Task | What | Depends on |
 |---|---|---|---|
 | Done | 130 | **Done** (2026-10-07). Cleared the dependency backlog; see HISTORY | 136 |
-| 1 | 108 | Add a validated external correlation id and carry it on `DataRequest` | none |
-| 1 | 141 | Migrate the reactor to Spring Boot 4.1.1 on a single Jackson 2 classpath | none (130 is done) |
-| 1 | 143 | Build and run every Docker image on Java 25 LTS, with a container smoke test | none |
-| 1 | 145 | Make Dependabot allow Java 25 images and really block 26 and later | none |
+| Done | 108 | **Done** (2026-10-07). Add a validated external correlation id and carry it on `DataRequest` | none |
+| Done | 141 | **Done** (2026-10-07). Migrate the reactor to Spring Boot 4.1.1 on a single Jackson 2 classpath | none (130 is done) |
+| Done | 143 | **Done** (2026-10-07). Build and run every Docker image on Java 25 LTS, with a container smoke test | none |
+| Done | 145 | **Done** (2026-10-07). Make Dependabot allow Java 25 images and really block 26 and later | none |
 | 2 | 109 | Record the external correlation id in audit record version 3 | 102, 108, 117, 123 |
 | 2 | 142 | Pin what Spring Boot 4 moved: Jackson 2 converters, actuator JSON, the operator error path | 141 |
 | 2 | 146 | Make the test suite clean and proven on JDK 25, including on Linux | 141 |
@@ -321,6 +321,20 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | 4 | 147 | Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
 | 5 | 115 | Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
 | 6 | 116 | Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135 |
+
+Next wave: 109, 142 and 146.
+
+Release-cut verification items from wave 1:
+
+- Post `@dependabot show maven ignore conditions` and `@dependabot show eclipse-temurin ignore conditions` on a docker PR, or confirm the next docker group run proposes no 26 tags (task 145's proof).
+- Run the amd64 Docker smoke (`docker/smoke/java-runtime-smoke.sh`) on CI or a Linux host; only arm64 has run.
+
+Follow-ups from wave 1, not yet tasks:
+
+- Remove the unused `ServerProperties` import in `OperatorErrorController`.
+- `ServerStartupTest` should assert 401/404 rather than "not 200".
+- The smoke teardown should remove images explicitly rather than rely on `--rmi local` semantics.
+- Hazelcast fixed-port tests flake when worktrees build in parallel.
 
 139 was an umbrella and is split into 141, 142 and 147. 140 is split into 143,
 144, 145 and 146 and has no file of its own.

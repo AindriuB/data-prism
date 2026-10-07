@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-07 | 108, 141, 143, 145 | 0.5.0 wave 1: external correlation id core, Spring Boot 4.1.1 on Jackson 2, Docker images and smoke on Java 25, Dependabot blocks 26+. | `## 2026-10-07 — 0.5.0 wave 1: tasks 108, 141, 143, 145` |
 | 2026-10-07 | 130 | Cleared the dependency backlog: nimbus-jose-jwt, archunit, source plugin, five GitHub Actions, Pillow; Dependabot ignore rules. | `## 2026-10-07 — Task 130: clear the dependency backlog` |
 | 2026-10-07 | 138 | `join.mode: none` starts standalone under a random internal cluster name and refuses incoming joins; client write risk documented. | `## 2026-10-07 — Task 138: join.mode none refuses incoming joins` |
 | 2026-10-07 | 136 | Cut 0.4.1: versions, CHANGELOG, live Compose run, Hazelcast 5.7.0 packaging check; isolation claim weakened. | `## 2026-10-07 — Task 136: cut 0.4.1` |
