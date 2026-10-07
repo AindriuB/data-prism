@@ -946,8 +946,10 @@ class PiiLogScanTest {
         String purpose = "demonstration";
         String role = "investigator";
 
-        DataPrismAssembly assembly = DataPrismAssembly.standard();
-        AuditRecorder toolAudit = new AuditRecorder(sink, clock, "pii-scan-mcp");
+        // The pipeline's own audit events come from the assembly's recorder, so the sink goes there.
+        DataPrismAssembly assembly = new DataPrismAssembly(List.of(new StubCustomerAdapter(),
+                new StubAccountAdapter(), new StubOrderAdapter()), Clock.systemUTC(), sink);
+        AuditRecorder toolAudit = new AuditRecorder(new Slf4jAuditSink(), clock, "pii-scan-mcp");
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
         AuthorizationService authorizationService =
