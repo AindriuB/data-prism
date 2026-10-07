@@ -538,19 +538,19 @@ public class DataPrismAutoConfiguration {
     }
     /** The {@code auditIntegrity} health contributor; present only when Spring Boot Actuator is. */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(org.springframework.boot.actuate.health.HealthIndicator.class)
+    @ConditionalOnClass(org.springframework.boot.health.contributor.HealthIndicator.class)
     static class AuditIntegrityHealth {
         /** The bean name minus {@code HealthIndicator} is the contributor name: {@code auditIntegrity}. */
         @Bean
-        org.springframework.boot.actuate.health.HealthIndicator auditIntegrityHealthIndicator(
+        org.springframework.boot.health.contributor.HealthIndicator auditIntegrityHealthIndicator(
                 AuditMaintenance maintenance) {
             return () -> {
                 String code = maintenance.failureCode();
                 if (code == null) {
-                    return org.springframework.boot.actuate.health.Health.up().build();
+                    return org.springframework.boot.health.contributor.Health.up().build();
                 }
-                org.springframework.boot.actuate.health.Health.Builder down =
-                        org.springframework.boot.actuate.health.Health.down().withDetail("code", code);
+                org.springframework.boot.health.contributor.Health.Builder down =
+                        org.springframework.boot.health.contributor.Health.down().withDetail("code", code);
                 if (maintenance.failureSegmentDate() != null) {
                     down.withDetail("segmentDate", maintenance.failureSegmentDate());
                 }

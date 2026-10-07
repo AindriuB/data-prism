@@ -453,7 +453,7 @@ class OperatorSurfaceTest {
         assertThat(advice.isApplicableToBeanType(OversightOperatorController.class)).isTrue();
         assertThat(advice.isApplicableToBeanType(ReidentificationOperatorController.class)).isTrue();
         assertThat(advice.isApplicableToBeanType(
-                org.springframework.boot.autoconfigure.web.servlet.error.BasicErrorController.class)).isFalse();
+                org.springframework.boot.webmvc.autoconfigure.error.BasicErrorController.class)).isFalse();
         assertThat(advice.isApplicableToBeanType(Object.class)).isFalse();
     }
 

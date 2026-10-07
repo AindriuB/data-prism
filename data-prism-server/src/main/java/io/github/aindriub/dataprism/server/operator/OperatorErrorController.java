@@ -3,10 +3,10 @@ package io.github.aindriub.dataprism.server.operator;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.web.ServerProperties;
-import org.springframework.boot.autoconfigure.web.servlet.error.BasicErrorController;
-import org.springframework.boot.web.servlet.error.ErrorAttributes;
-import org.springframework.boot.web.servlet.error.ErrorController;
+import org.springframework.boot.web.server.autoconfigure.ServerProperties;
+import org.springframework.boot.webmvc.autoconfigure.error.BasicErrorController;
+import org.springframework.boot.webmvc.error.ErrorAttributes;
+import org.springframework.boot.webmvc.error.ErrorController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -25,17 +25,17 @@ import java.util.Map;
  * Requests on the MCP port are handed to Boot's own controller, unchanged.
  */
 @Controller
-@RequestMapping("${server.error.path:${error.path:/error}}")
+@RequestMapping("${spring.web.error.path:${error.path:/error}}")
 @ConditionalOnProperty(prefix = "dataprism.operator", name = "enabled", havingValue = "true")
 final class OperatorErrorController implements ErrorController {
 
     private final BasicErrorController boot;
     private final int operatorPort;
 
-    OperatorErrorController(ErrorAttributes errorAttributes, ServerProperties server,
+    OperatorErrorController(ErrorAttributes errorAttributes, org.springframework.boot.autoconfigure.web.WebProperties web,
                             io.github.aindriub.dataprism.spring.boot.DataPrismProperties properties,
-                            List<org.springframework.boot.autoconfigure.web.servlet.error.ErrorViewResolver> views) {
-        this.boot = new BasicErrorController(errorAttributes, server.getError(), views);
+                            List<org.springframework.boot.webmvc.autoconfigure.error.ErrorViewResolver> views) {
+        this.boot = new BasicErrorController(errorAttributes, web.getError(), views);
         Integer port = properties.getOperator().getPort();
         this.operatorPort = port == null ? -1 : port;
     }

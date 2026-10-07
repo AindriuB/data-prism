@@ -45,6 +45,7 @@ class MultiMemberOperatorTest {
         try (ClusterMembers cluster = ClusterMembers.start(tempDir, 2)) {
             OperatorHarness a = cluster.member(0);
             OperatorHarness b = cluster.member(1);
+            assertThat(a.context.getBeansOfType(com.hazelcast.core.HazelcastInstance.class)).isEmpty();
             try (McpSyncClient onA = client(a); McpSyncClient onB = client(b)) {
                 assertThat(a.getEntityContext(onA, SUBJECT).isError()).isNotEqualTo(Boolean.TRUE);
 
