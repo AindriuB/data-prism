@@ -84,7 +84,7 @@ A few properties are deliberate, not accidental gaps:
   `subjectPseudonym`, `parameterFingerprint`, `privacyProfile`, `scopeId`,
   `purpose`, `caseId`, `policyDecision`, `correlationId`, `sourceSystems`,
   `rejectedArguments` and `previousHash` — never a raw source value, only what
-  `Slf4jAuditSink` already emitted.
+  `Slf4jAuditSink` already emitted. `entityType` holds the requested type only when it is a configured entity type, or an upper-case identifier when none is configured; otherwise it holds `<unregistered>` (see [`dataprism.audit`](configuration.md#dataprismaudit)).
 
   Record version 2 adds four fields. `recordVersion` is `2` for every record
   written now; a line with no `recordVersion` is version 1 and still verifies,
