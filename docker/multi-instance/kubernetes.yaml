@@ -72,7 +72,7 @@ spec:
       containers:
         - name: data-prism
           # Pin a released tag; never "latest" in production.
-          image: ghcr.io/aindriub/data-prism-server:0.4.1
+          image: ghcr.io/aindriub/data-prism-server:0.5.0
           ports:
             - name: mcp
               containerPort: 8080

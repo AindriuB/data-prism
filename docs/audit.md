@@ -84,19 +84,26 @@ A few properties are deliberate, not accidental gaps:
   `subjectPseudonym`, `parameterFingerprint`, `privacyProfile`, `scopeId`,
   `purpose`, `caseId`, `policyDecision`, `correlationId`, `sourceSystems`,
   `rejectedArguments` and `previousHash` — never a raw source value, only what
-  `Slf4jAuditSink` already emitted. `entityType` holds the requested type only when it is a configured entity type, or an upper-case identifier when none is configured; otherwise it holds `<unregistered>` (see [`dataprism.audit`](configuration.md#dataprismaudit)). With no list, an upper-case token such as `MURPHY` or `ACC123` still passes the shape, so set `dataprism.audit.entity-types`.
+  `Slf4jAuditSink` already emitted. `entityType` holds the requested type
+  only when it is a configured entity type, or an upper-case identifier when
+  none is configured; otherwise it holds `<unregistered>` (see
+  [`dataprism.audit`](configuration.md#dataprismaudit)). With no list, an
+  upper-case token such as `MURPHY` or `ACC123` still passes the shape, so set
+  `dataprism.audit.entity-types`.
 
-  Record version 2 adds four fields. `recordVersion` is `2` for every record
-  written now; a line with no `recordVersion` is version 1 and still verifies,
-  hashed over exactly the nineteen fields above, joined with `|` and `,` as
-  before. Because that joining does not escape its separators, some distinct
-  version 1 records can share a hash; version 1 keeps it so that committed
-  chains still verify. Version 2 hashes a length-prefixed encoding (each item
-  is written as its UTF-8 byte length, a colon and the text, so no two
-  different records produce the same input) that includes `recordVersion`,
-  `fieldDispositions`, `approvalId` and `approverId` as well as the nineteen
-  fields. Editing a version 2 record's `recordVersion` to `1` is therefore
-  reported as a break.
+  Records are written as `recordVersion` 3. Version 1 hashes the nineteen
+  fields above, version 2 adds four, and version 3 adds
+  `externalCorrelationId` (25 fields; see [Record version
+  3](#record-version-3)). Version 1, 2 and 3 records all still verify. A line
+  with no `recordVersion` is version 1 and still verifies, hashed over exactly
+  the nineteen fields above, joined with `|` and `,` as before. Because that
+  joining does not escape its separators, some distinct version 1 records can
+  share a hash; version 1 keeps it so that committed chains still verify.
+  Version 2 hashes a length-prefixed encoding (each item is written as its
+  UTF-8 byte length, a colon and the text, so no two different records produce
+  the same input) that includes `recordVersion`, `fieldDispositions`,
+  `approvalId` and `approverId` as well as the nineteen fields. Editing a
+  version 2 record's `recordVersion` to `1` is therefore reported as a break.
   `fieldDispositions` maps a field path to the action taken on it. Paths look
   like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
   example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
@@ -426,8 +433,9 @@ to agree with the declared version exactly (20 for version 1, 24 for version
 line with too many fields and a full-length line that carries the wrong
 version. A shorter line that could be a torn write, for example 22 fields
 declaring version 3, is not a break: it is reported as an interrupted write
-(exit code 4). A writer's version only increases. A record whose version is lower than
-one the same writer already wrote is reported as `VERSION_REGRESSION`, also a
+(exit code 4). A writer's version only increases. A record whose version is
+lower than one the same writer already wrote is reported as
+`VERSION_REGRESSION`, also a
 break (exit code 2), because a downgrade is the way to forge a record that
 avoids a field the newer version hashes. Retention does not purge past it.
 
@@ -504,7 +512,6 @@ dataprism.audit.output.field-preset=ecs
 dataprism.audit.output.field-names.externalCorrelationId=transaction_id
 ```
 
-
 | Canonical field | ECS path |
 |---|---|
 | `eventId` | `event.id` |
@@ -566,14 +573,15 @@ as well. With none of them set, the message carries no key-value pairs.
 **Dotted keys in `fieldDispositions`.** The keys of `fieldDispositions` are
 field paths such as `crm:/contacts/*/email`, and they can contain dots.
 Elasticsearch expands a dotted name into nested objects, which splits such a key
-into an object path and can conflict with another key that is a prefix of it. For
-`dataprism.field_dispositions` in an Elastic index, use a mapping that does not
-expand the keys: map the field as `flattened`, or as an object with
+into an object path and can conflict with another key that is a prefix of it.
+For `dataprism.field_dispositions` in an Elastic index, use a mapping that does
+not expand the keys: map the field as `flattened`, or as an object with
 `enabled: false` so it is kept in the source and not indexed. Check how your
 logging layer renders dotted key-value names before relying on a mapping.
 
-**Refusal codes at startup** specific to this output: `INVALID_AUDIT_FIELD_PRESET`
-(`field-preset` is neither `canonical` nor `ecs`) and
+**Refusal codes at startup** specific to this output:
+`INVALID_AUDIT_FIELD_PRESET` (`field-preset` is neither `canonical` nor
+`ecs`) and
 `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT` (`json-directory` is the audit `directory`,
 inside it, or contains it). The full list is in
 [configuration](configuration.md#output-field-names-routing-and-a-json-projection).
@@ -586,7 +594,8 @@ as more than it is.
 **What it proves.** For every record the verifier could see, in every
 writer's chain, replaying the chain found no edit or deletion of any of the
 hashed fields (the nineteen of version 1; for version 2 also `recordVersion`,
-`fieldDispositions`, `approvalId` and `approverId`). Editing a record breaks its own stored hash the
+`fieldDispositions`, `approvalId` and `approverId`; for version 3 also
+`externalCorrelationId`). Editing a record breaks its own stored hash the
 moment its content no longer matches what `AuditEventHash` recomputes from
 that content, so an edit is caught anywhere in the chain, including the very
 last record written — a chain does not have to have a successor record to

@@ -7,16 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-07
+
 ### Breaking
 
 - The starter and auto-configuration now require Spring Boot 4.1 (4.1.1,
   Spring Framework 7.0.9). Spring Boot 3 users stay on 0.4.x. The library jars
   still run on Java 21 or newer.
 
+### Added
+
+- Inbound correlation id. A validated external correlation id can arrive on
+  MCP tool calls through a configured HTTP header
+  (`dataprism.correlation.inbound.*`). The strict default pattern accepts only a
+  UUID, 16 to 128 hex characters containing at least one letter a to f, or a
+  W3C `traceparent`. Digit-only values, such as card numbers, are refused. A
+  broader pattern is available only by explicit configuration. It is off
+  unless a header is set.
+- Outbound correlation header. REST sources send the id as a header. It is off
+  unless configured, and a call without an id sends nothing.
+- `dataprism.correlation.outbound.header`, an optional global outbound header.
+  A per-source `correlation-header` overrides it.
+- `dataprism.correlation.mdc-key`, unset by default. When set, it puts only the
+  validated id into the SLF4J MDC on the tool handler thread and on each
+  fan-out task, and clears it afterwards. Warning: whatever the inbound pattern
+  admits then appears in every log line written on those threads, so keep the
+  pattern to generated ids.
+- A JSON/ECS audit projection, written through a tee, with
+  `dataprism.audit.output.*` configuration (field preset, field names, routing
+  constants and an optional NDJSON `json-directory`). The hash-chained `.log`
+  stays authoritative and the JSON is a separate projection. ECS
+  `event.outcome` is derived from `policyDecision`, and the raw decision is
+  kept beside it.
+- `dataprism.audit.entity-types`, an optional list of the entity types that may
+  appear verbatim in an audit record.
+- New startup refusal codes, each failing closed:
+  `INVALID_CORRELATION_FORMAT`, `INVALID_CORRELATION_PATTERN`,
+  `CORRELATION_PATTERN_NOT_APPLICABLE`, `INVALID_CORRELATION_HEADER`,
+  `CORRELATION_REQUIRED_WITHOUT_HEADER`, `CORRELATION_REQUIRES_HTTP_TRANSPORT`,
+  `INVALID_CORRELATION_MDC_KEY`, `CORRELATION_MDC_KEY_RESERVED`,
+  `CORRELATION_MDC_KEY_WITHOUT_HEADER`, `INVALID_AUDIT_FIELD_PRESET`,
+  `INVALID_AUDIT_FIELD_PATH`, `UNKNOWN_AUDIT_FIELD`,
+  `AUDIT_FIELD_MAPPING_CONFLICT`, `INVALID_AUDIT_ROUTING_VALUE`,
+  `AUDIT_JSON_REQUIRES_SEGMENTED_SINK`, `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT`,
+  `AUDIT_JSON_DIRECTORY_UNUSABLE` and `INVALID_AUDIT_ENTITY_TYPE`.
+- New runtime codes, which are not startup refusals: a call refused and audited
+  before any source is called with `EXTERNAL_CORRELATION_ID_REQUIRED` or
+  `EXTERNAL_CORRELATION_ID_INVALID` when `inbound.required` is true;
+  `EXTERNAL_CORRELATION_ID_DROPPED` logged at WARN when an invalid inbound id is
+  dropped and the call proceeds without one;
+  and `AUDIT_PROJECTION_FAILED`, which fails later audited calls closed after a
+  JSON projection write fails, until the process restarts. The verifier reports
+  `FIELD_COUNT_MISMATCH` and `INTERRUPTED_WRITE_FRAGMENT` as anomalies, not as
+  startup refusals.
+
 ### Changed
 
 - The published images run Java 25. Library bytecode is still Java 21
   (`--release 21`, class major 65).
+- Audit record version 3. Records are written as `recordVersion` 3 with 25
+  fields, and `externalCorrelationId` is inside the hash. Version 1 and
+  version 2 records still verify. The offline verifier reports a line with too many
+  fields, or a full-length line that declares the wrong version, as
+  `FIELD_COUNT_MISMATCH`, a break (exit code 2). A shorter line that could be a
+  torn write is reported as an interrupted write (exit code 4), not a break.
+- The audited `entityType`. `entityType` is audited verbatim only when it is a
+  registered entity type or an upper-case-identifier-shaped token; otherwise it
+  is recorded as `<unregistered>`. With no list configured, an upper-case token
+  still passes, so set `dataprism.audit.entity-types`.
+- Build and tests. Test ports are claimed by an OS file lock and probes run
+  sequentially, to stop port-race flakes. Dependabot version updates are
+  grouped into one pull request per ecosystem per week, and Java image majors
+  and non-LTS Java 26 and later are ignored.
 
 ## [0.4.1] - 2026-10-07
 
@@ -539,6 +601,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.5.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.5.0
 [0.4.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.1
 [0.4.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.0
 [0.3.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.3.1

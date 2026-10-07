@@ -209,10 +209,11 @@ exhausted budget. It names paths and actions, never values.
 The `entityType` the audit record holds is not always the one you sent. It is
 the requested value only when it is one of the configured
 `dataprism.audit.entity-types`, or, when none are configured, an upper-case
-identifier matching `[A-Z][A-Z0-9_]{0,63}`. Otherwise it is `<unregistered>`. The response
-still echoes the `entityType` of the request, and refusal codes and results are
-the same either way. With no list configured, an upper-case token such as `MURPHY` or
-`ACC123` still passes the shape and is recorded, so set `dataprism.audit.entity-types`
+identifier matching `[A-Z][A-Z0-9_]{0,63}`. Otherwise it is `<unregistered>`.
+The response still echoes the `entityType` of the request, and refusal codes
+and results are the same either way. With no list configured, an upper-case
+token such as `MURPHY` or `ACC123` still passes the shape and is recorded, so
+set `dataprism.audit.entity-types`
 (see [`dataprism.audit`](configuration.md#dataprismaudit)).
 
 [![Sequence diagram of one get_entity_context call: the MCP client calls the tool, which authorises the caller, resolves a privacy session, then asks the orchestrator to fan out to a source adapter, scrub the record, validate it and record an audit event, before returning the response to the client.](assets/diagrams/entity-context-call.svg)](assets/diagrams/entity-context-call.svg)
