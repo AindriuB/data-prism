@@ -45,7 +45,7 @@ jobs:
       # longer needs a human in the loop to reach Central.
       - uses: actions/setup-java@v6
         with:
-          java-version: "21"
+          java-version: "25"
           distribution: temurin
           cache: maven
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -76,6 +76,22 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B --no-transfer-progress -Prelease clean verify
 
+      # A JDK 25 toolchain that lost --release 21 would ship bytecode Java 21
+      # consumers cannot load. Fail before anything is uploaded or released.
+      - name: Check released classes are Java 21 bytecode (major 65)
+        run: |
+          shopt -s nullglob
+          jars=()
+          for j in data-prism-*/target/data-prism-*.jar; do
+            case "$j" in *-sources.jar|*-javadoc.jar) continue ;; esac
+            jars+=("$j")
+          done
+          if [ "${#jars[@]}" -eq 0 ]; then
+            echo "::error::no jars found to check"
+            exit 1
+          fi
+          .github/scripts/check-class-version.sh 65 "${jars[@]}"
+
       - name: List staged artifacts and signatures
         run: find . -path '*/target/*' -name '*.asc' | sort
 
@@ -100,7 +116,7 @@ jobs:
 
       - uses: actions/setup-java@v6
         with:
-          java-version: "21"
+          java-version: "25"
           distribution: temurin
           cache: maven
           server-id: central

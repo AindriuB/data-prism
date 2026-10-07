@@ -13,16 +13,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Same JDK the build workflow verifies against, so a release never ships
-      # something the build check hasn't already proven compiles and passes.
+      # A JDK the build workflow's matrix verifies against, so a release never
+      # ships something the build check hasn't already proven compiles and
+      # passes. Bytecode is still --release 21; the class-version check below
+      # enforces it.
       - uses: actions/setup-java@v6
         with:
-          java-version: "21"
+          java-version: "25"
           distribution: temurin
           cache: maven
 
       - name: Build and test
         run: mvn -B --no-transfer-progress verify
+
+      # A JDK 25 toolchain that lost --release 21 would ship bytecode Java 21
+      # consumers cannot load. Fail before anything is uploaded or released.
+      - name: Check released classes are Java 21 bytecode (major 65)
+        run: |
+          shopt -s nullglob
+          jars=()
+          for j in data-prism-*/target/data-prism-*.jar; do
+            case "$j" in *-sources.jar|*-javadoc.jar) continue ;; esac
+            jars+=("$j")
+          done
+          if [ "${#jars[@]}" -eq 0 ]; then
+            echo "::error::no jars found to check"
+            exit 1
+          fi
+          .github/scripts/check-class-version.sh 65 "${jars[@]}"
 
       # This workflow only turns a pushed tag into a GitHub Release. It does
       # not publish to Maven Central (task 36) and does not build an image
