@@ -20,8 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Inbound correlation id. A validated external correlation id can arrive on
   MCP tool calls through a configured HTTP header
   (`dataprism.correlation.inbound.*`). The strict default pattern accepts only a
-  UUID, 16 to 128 hex characters, or a W3C `traceparent`. A broader pattern is
-  available only by explicit configuration. It is off unless a header is set.
+  UUID, 16 to 128 hex characters containing at least one letter a to f, or a
+  W3C `traceparent`. Digit-only values, such as card numbers, are refused. A
+  broader pattern is available only by explicit configuration. It is off
+  unless a header is set.
 - Outbound correlation header. REST sources send the id as a header. It is off
   unless configured, and a call without an id sends nothing.
 - `dataprism.correlation.outbound.header`, an optional global outbound header.

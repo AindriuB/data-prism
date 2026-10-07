@@ -92,18 +92,18 @@ A few properties are deliberate, not accidental gaps:
   `dataprism.audit.entity-types`.
 
   Records are written as `recordVersion` 3. Version 1 hashes the nineteen
-  fields above, version 2 adds four, and version 3 adds `externalCorrelationId`
-  (25 fields; see [Record version 3](#record-version-3)). Version 1, 2 and 3
-  records all still verify. A line with no `recordVersion` is version 1 and
-  still verifies, hashed over exactly the nineteen fields above, joined with
-  `|` and `,` as before. Because that joining does not escape its separators, some distinct
-  version 1 records can share a hash; version 1 keeps it so that committed
-  chains still verify. Version 2 hashes a length-prefixed encoding (each item
-  is written as its UTF-8 byte length, a colon and the text, so no two
-  different records produce the same input) that includes `recordVersion`,
-  `fieldDispositions`, `approvalId` and `approverId` as well as the nineteen
-  fields. Editing a version 2 record's `recordVersion` to `1` is therefore
-  reported as a break.
+  fields above, version 2 adds four, and version 3 adds
+  `externalCorrelationId` (25 fields; see [Record version
+  3](#record-version-3)). Version 1, 2 and 3 records all still verify. A line
+  with no `recordVersion` is version 1 and still verifies, hashed over exactly
+  the nineteen fields above, joined with `|` and `,` as before. Because that
+  joining does not escape its separators, some distinct version 1 records can
+  share a hash; version 1 keeps it so that committed chains still verify.
+  Version 2 hashes a length-prefixed encoding (each item is written as its
+  UTF-8 byte length, a colon and the text, so no two different records produce
+  the same input) that includes `recordVersion`, `fieldDispositions`,
+  `approvalId` and `approverId` as well as the nineteen fields. Editing a
+  version 2 record's `recordVersion` to `1` is therefore reported as a break.
   `fieldDispositions` maps a field path to the action taken on it. Paths look
   like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
   example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
@@ -580,7 +580,8 @@ not expand the keys: map the field as `flattened`, or as an object with
 logging layer renders dotted key-value names before relying on a mapping.
 
 **Refusal codes at startup** specific to this output:
-`INVALID_AUDIT_FIELD_PRESET` (`field-preset` is neither `canonical` nor `ecs`) and
+`INVALID_AUDIT_FIELD_PRESET` (`field-preset` is neither `canonical` nor
+`ecs`) and
 `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT` (`json-directory` is the audit `directory`,
 inside it, or contains it). The full list is in
 [configuration](configuration.md#output-field-names-routing-and-a-json-projection).

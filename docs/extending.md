@@ -568,8 +568,10 @@ into a pom whose only other content is `modelVersion`, `groupId`,
 `data-prism-processor` `0.4.1`, `spring-web` `7.0.9` and
 `spring-boot-autoconfigure` `4.1.1` (Spring Boot `4.1.1`), and the build
 produced a jar. The `0.5.0` form of the snippet differs only in
-`data-prism.version`; its Spring dependencies were re-resolved against Spring
-Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1 migration. A
+`data-prism.version`. The snippet's Spring dependencies were re-resolved
+against Spring Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1
+migration, at `data-prism.version` `0.4.1`; those Spring versions come from the
+imported BOM and do not depend on `data-prism.version`. A
 full `mvn package` of the `0.5.0` form against the published `0.5.0` artifacts
 has not been run, because they were not on Maven Central when this was
 written. It is repeated after publication, and this paragraph is amended if
