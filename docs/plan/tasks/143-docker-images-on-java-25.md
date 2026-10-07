@@ -103,3 +103,17 @@ Required for attempt 2:
    test suite on 25, task 146).
 4. Summary: print the actual member counts seen, not a fixed "yes".
 Re-run the script once after the change and record the result. Leave no containers, volumes or images.
+
+## Attempt 2 — failed (2026-10-07)
+
+The script's `up --build` plus `down --rmi local` overwrote and then **deleted the user's local
+`ghcr.io/aindriub/data-prism-quickstart-{certs-init,fixtures,issuer,server}:latest` images**, because
+compose.build.yaml tags the built images with the published names. The script must never touch images it did not create.
+Required for attempt 3 (stay inside Owns: `docker/smoke/**`):
+1. Add a smoke-only compose override under `docker/smoke/` that sets every built service's `image:` to a
+   unique local name, e.g. `data-prism-smoke/<service>:<run-id>`, and use it in every compose call. `--rmi local`
+   then removes only those images.
+2. Fail closed: before `up`, check that every image name the run will build matches the smoke prefix, and abort otherwise.
+3. Re-run once. Show that `ghcr.io/aindriub/*` tags present before the run are still present after it (pull one
+   first if none exist, e.g. `docker pull ghcr.io/aindriub/data-prism-quickstart-fixtures:0.4.1`), and that nothing
+   with the smoke prefix remains.

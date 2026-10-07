@@ -109,3 +109,17 @@ The default inbound correlation-id pattern is the strict default, not
 or a W3C traceparent. The broader pattern is available only by explicit
 configuration, because it admits name-like tokens such as `jane.doe` and so
 lets personal data be smuggled in as an id. The Owns list is unchanged.
+
+## Attempt 1 — approved, with one owner amendment (2026-10-07)
+
+Reviewer: APPROVE. **Owner amendment to C4:** the hex branch of the strict default must contain at least
+one a–f letter, e.g. `(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{16,128}`. A digit-only string (a card number, or a long
+account or national-id number) must be refused under the default. UUID and traceparent branches are unchanged.
+Required for attempt 2:
+1. Change the hex branch, and update its javadoc.
+2. Tests: `4111111111111111` and a 19-digit and a 24-digit all-digit string are refused under the default. A 16-hex
+   value containing a letter is accepted. A canonical UUID made entirely of digits and dashes is still accepted, because the UUID branch is
+   unaffected. State that choice in the javadoc: a UUID's fixed 8-4-4-4-12 shape is not a typical PAN or account form.
+3. docs/extending.md: "so it is safe to put in a header" becomes "it is syntactically constrained"
+   (validation does not prove the value is free of personal data).
+4. Update the acceptance line for the default above to include the letter rule.
