@@ -33,7 +33,7 @@ class PrivacyClusterMembershipTest {
             assertThat(c.getNetworkConfig().getJoin().getMulticastConfig().isEnabled()).isFalse();
             assertThat(c.getProperty("hazelcast.phone.home.enabled")).isEqualTo("false");
             assertThat(c.getNetworkConfig().isPortAutoIncrement()).isFalse();
-            assertThat(c.getClusterName()).isEqualTo("c1");
+            assertThat(c.getClusterName()).startsWith("c1");
             assertThat(c.getNetworkConfig().getPort()).isEqualTo(6001);
         }
     }
@@ -65,8 +65,9 @@ class PrivacyClusterMembershipTest {
     void noneIsASingleLoopbackOnlyMember() {
         Config c = ClusterMembership.none("c1").toConfig();
         var net = c.getNetworkConfig();
-        assertThat(net.getJoin().getTcpIpConfig().isEnabled()).isTrue();
-        assertThat(net.getJoin().getTcpIpConfig().getMembers()).isEmpty();
+        assertThat(net.getJoin().getTcpIpConfig().isEnabled()).isFalse();
+        assertThat(net.getJoin().getMulticastConfig().isEnabled()).isFalse();
+        assertThat(net.getJoin().getAutoDetectionConfig().isEnabled()).isFalse();
         assertThat(net.getJoin().getKubernetesConfig().isEnabled()).isFalse();
         assertThat(net.getInterfaces().isEnabled()).isTrue();
         assertThat(net.getInterfaces().getInterfaces()).containsExactly("127.0.0.1");

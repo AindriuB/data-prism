@@ -24,7 +24,7 @@ do not authenticate each other: open-source Hazelcast has neither.
   `MISSING_CLUSTER_JOIN`), and the cluster name must not be `dev`
   (`RESERVED_CLUSTER_NAME`). The migration for a single member is one line:
   `dataprism.hazelcast.join.mode: none` (plus a `cluster-name`), an explicit
-  single member bound to loopback. A multi-instance deployment chooses `tcp-ip`
+  single member bound to loopback that neither discovers nor accepts other members. A multi-instance deployment chooses `tcp-ip`
   or `kubernetes` instead. 0.4.0 `embedded` members never clustered, so no
   working multi-instance deployment breaks; only the configuration needs
   editing.
