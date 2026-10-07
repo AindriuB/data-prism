@@ -119,7 +119,8 @@ import java.util.Arrays;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(DataPrismProperties.class)
-@Import({DataPrismAutoConfiguration.IdentityResolverSelection.class, DataPrismAutoConfiguration.AuditSinkSelection.class,
+@Import({DataPrismAutoConfiguration.IdentityResolverSelection.class, DataPrismAutoConfiguration.JsonProjectionSelection.class,
+        DataPrismAutoConfiguration.AuditSinkSelection.class,
         DataPrismAutoConfiguration.AuditIntegrityHealth.class})
 public class DataPrismAutoConfiguration {
     /**
@@ -256,7 +257,7 @@ public class DataPrismAutoConfiguration {
         }
 
         /** The authoritative sink. The cause can name a filesystem path, so it is logged and never repeated. */
-        private static AuditSink openPrimary(DataPrismProperties properties) {
+        static AuditSink openPrimary(DataPrismProperties properties) {
             String directory = properties.getAudit().getDirectory();
             Path path = Path.of(directory == null || directory.isBlank()
                     ? properties.getAudit().getFilePath() : directory);
@@ -275,6 +276,27 @@ public class DataPrismAutoConfiguration {
             }
         }
 
+        static void closeQuietly(AuditSink sink) {
+            if (sink instanceof java.io.Closeable closeable) {
+                try {
+                    closeable.close();
+                } catch (java.io.IOException | RuntimeException ignored) {
+                    // the startup refusal is the failure that matters
+                }
+            }
+        }
+    }
+
+    /**
+     * Builds the JSON projection of a segmented audit sink. Its own class, imported ahead of {@link
+     * AuditSinkSelection}, for the bean-definition ordering {@link IdentityResolverSelection}
+     * explains: this {@code @ConditionalOnMissingBean(AuditSink)} must see the application's sink
+     * and not the one {@code AuditSinkSelection} registers.
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class JsonProjectionSelection {
+        private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(JsonProjectionSelection.class);
+
         /**
          * The native segments and their {@code .ndjson} projection, tee'd. A separate bean, not an
          * {@code AuditSink}, so that closing both sinks is the context's job and the one
@@ -284,32 +306,22 @@ public class DataPrismAutoConfiguration {
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit.output", name = "json-directory")
         JsonProjectionSinks dataPrismJsonProjectionSinks(DataPrismProperties properties) {
-            AuditSink primary = openPrimary(properties);
+            AuditSink primary = AuditSinkSelection.openPrimary(properties);
             DataPrismProperties.Audit.Output output = properties.getAudit().getOutput();
             SegmentedJsonAuditSink json;
             try {
                 json = new SegmentedJsonAuditSink(Path.of(output.getJsonDirectory()), output.mapping(),
                         output.getRouting().toRouting());
             } catch (FileAuditSink.OpenFailedException e) {
-                closeQuietly(primary);
+                AuditSinkSelection.closeQuietly(primary);
                 LOG.error("dataprism.audit.output.json-directory could not be opened", e);
                 throw new DataPrismConfigurationException("AUDIT_JSON_DIRECTORY_UNUSABLE",
                         "dataprism.audit.output.json-directory could not be opened for writing");
             } catch (RuntimeException e) {
-                closeQuietly(primary);
+                AuditSinkSelection.closeQuietly(primary);
                 throw e;
             }
             return new JsonProjectionSinks(primary, json);
-        }
-
-        private static void closeQuietly(AuditSink sink) {
-            if (sink instanceof java.io.Closeable closeable) {
-                try {
-                    closeable.close();
-                } catch (java.io.IOException | RuntimeException ignored) {
-                    // the startup refusal is the failure that matters
-                }
-            }
         }
     }
 
