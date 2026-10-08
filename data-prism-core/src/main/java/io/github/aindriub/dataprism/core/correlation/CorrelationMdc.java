@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  *
  * <p>Only {@link ExternalCorrelationId#value()} is ever placed in the MDC: an
  * absent id and a rejected one place nothing, and the rejected text is never
- * held by this class at all. {@link #close()} on a scope restores the key's
+ * held by this class at all. {@link Scope#close()} on a scope restores the key's
  * previous value, or removes the key if there was none, so a pooled or reused
  * thread never carries a finished call's id into the next task.
  *
