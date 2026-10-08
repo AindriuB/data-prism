@@ -195,8 +195,8 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
     }
 
     @Test
-    @DisplayName("a location that may carry credentials is never shown, whatever characters the password holds")
-    void describeNeverShowsCredentials() {
+    @DisplayName("no part of a secret in a location survives describe(), whatever characters it holds or where it sits")
+    void describeNeverShowsSecrets() {
         String[][] cases = {
                 {"https://svc:s3#cr3t@host/a.yaml", "s3#cr3t"},
                 {"https://svc:s3/cr3t@host/a.yaml", "s3/cr3t"},
@@ -207,31 +207,45 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
                 {"https://svc:s3%40cr3t@host/a.yaml", "s3%40cr3t"},
                 {"https://svc:s3cr3t@[::1]:8443/a.yaml", "s3cr3t"},
                 {"file://user@host/path/a.yaml", "user"},
-                {"https://svc:s3cr3t@host/a.yaml?token=t0k3n#frag", "s3cr3t"},
+                {"https://svc:pw@host/a.yaml?sig=AbC/9xSECRETsigPart", "9xSECRETsigPart"},
+                {"https://host/a.yaml?sig=AbC/9xSECRETsigPart", "9xSECRETsigPart"},
+                {"https://host/a.yaml#frag/secret", "frag/secret"},
+                {"https://host/a.yaml?token=a/b@c/xyz", "a/b@c/xyz"},
+                {"https://hooks.example/T000/B000/XXXXsecret", "XXXXsecret"},
+                {"https://host/a;key=matrixSECRET/b.yaml", "matrixSECRET"},
+                {"/etc/dataprism/a.yaml?token=plainSECRET", "plainSECRET"},
+                {"classpath:/cfg/a.yaml#plainSECRET", "plainSECRET"},
         };
         for (String[] c : cases) {
             String shown = ConfiguredJsonSourcesInitializer.describe(c[0]);
-            assertThat(shown).startsWith(ConfiguredJsonSourcesInitializer.LOCATION_WITH_CREDENTIALS);
             for (int len = 3; len <= c[1].length(); len++) {
                 for (int from = 0; from + len <= c[1].length(); from++) {
                     assertThat(shown).as(c[0] + " leaks " + c[1].substring(from, from + len))
                             .doesNotContain(c[1].substring(from, from + len));
                 }
             }
-            assertThat(shown).doesNotContain("t0k3n");
         }
-        assertThat(ConfiguredJsonSourcesInitializer.describe("https://svc:s3cr3t@host/dir/a.yaml"))
-                .isEqualTo("<location with credentials, not shown> ending in a.yaml");
     }
 
     @Test
-    @DisplayName("a location without @ is shown, cut at the first ? or #, and cut to 64 characters")
-    void describeShowsPlainLocations() {
+    @DisplayName("describe() gives exact, safe output: a placeholder for @, scheme://host[:port] for other schemes, the path for files")
+    void describeExactOutputs() {
+        String none = "<location not shown>";
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://svc:pw@host/a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("svc:s3cr3t@host/a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("file://user@host/path")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://cfg.example.invalid/a.yaml?t=1#f"))
+                .isEqualTo("https://cfg.example.invalid");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://hooks.example:8443/T000/B000/XXXXsecret"))
+                .isEqualTo("https://hooks.example:8443");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://[::1]:8443/a.yaml")).isEqualTo("https://[::1]:8443");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https:///a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://exa mple/a.yaml")).isEqualTo(none);
         assertThat(ConfiguredJsonSourcesInitializer.describe("file:/etc/dataprism/a.yaml")).isEqualTo("file:/etc/dataprism/a.yaml");
         assertThat(ConfiguredJsonSourcesInitializer.describe("/etc/dataprism/a.yaml")).isEqualTo("/etc/dataprism/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("C:\\cfg\\a.yaml")).isEqualTo("C:\\cfg\\a.yaml");
         assertThat(ConfiguredJsonSourcesInitializer.describe("classpath:/cfg/a.yaml")).isEqualTo("classpath:/cfg/a.yaml");
-        assertThat(ConfiguredJsonSourcesInitializer.describe("https://cfg.example.invalid/a.yaml?t=1#f"))
-                .isEqualTo("https://cfg.example.invalid/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("/etc/a.yaml?t=1#f")).isEqualTo("/etc/a.yaml");
         assertThat(ConfiguredJsonSourcesInitializer.describe("/" + "d".repeat(100))).hasSize(64);
     }
 
@@ -243,8 +257,7 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
                     "dataprism.json-sources.config-location", "http://svc:s3#cr3t@127.0.0.1:1/a.yaml")));
             assertThatThrownBy(() -> new ConfiguredJsonSourcesInitializer().initialize(context))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("dataprism.json-sources.config-location '<location with credentials, not shown>"
-                            + " ending in a.yaml' could not be read")
+                    .hasMessage("dataprism.json-sources.config-location '<location not shown>' could not be read")
                     .hasNoCause();
         }
     }

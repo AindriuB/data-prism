@@ -269,8 +269,9 @@ class StrictYamlTest {
     @DisplayName("an anchor on a key is UNSUPPORTED_CONFIG_YAML")
     void keyAnchorRefused() {
         assertThatThrownBy(() -> read("&a key: v\nb: x\n")).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: test doc uses an anchor");
-        assertThatThrownBy(() -> read("x:\n  &a k: v\n")).hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+                .hasMessage("UNSUPPORTED_CONFIG_YAML: test doc uses an anchor; only plain YAML is accepted");
+        assertThatThrownBy(() -> read("x:\n  &a k: v\n"))
+                .hasMessage("UNSUPPORTED_CONFIG_YAML: test doc uses an anchor at x; only plain YAML is accepted");
     }
 
     @Test

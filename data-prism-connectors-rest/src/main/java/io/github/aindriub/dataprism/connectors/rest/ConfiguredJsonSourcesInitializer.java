@@ -81,23 +81,43 @@ public final class ConfiguredJsonSourcesInitializer
     }
 
     /**
-     * A config location safe to name in a message. Fails closed: a location containing {@code @}
-     * anywhere may carry credentials in a form no parser can be trusted to split (an unencoded
-     * {@code #}, {@code ?}, {@code /} or {@code @} in a password), so it is never shown; only a
-     * placeholder and the last path segment, and that only if the segment is free of {@code @ : ? #}.
-     * A location without {@code @} is cut at the first {@code ?} or {@code #} and shown, cut to 64 characters.
+     * A config location safe to name in a message, safe by construction:
+     * <ul>
+     *   <li>anything containing {@code @} is never shown (credentials can hide in a form no parser
+     *       can be trusted to split);</li>
+     *   <li>a {@code classpath:} or {@code file:} location, or a plain path, is cut at the first
+     *       {@code ?} or {@code #} and cut to 64 characters;</li>
+     *   <li>any other scheme is reduced to {@code scheme://host[:port]}, never a path (it can embed
+     *       a token), user-info, query or fragment.</li>
+     * </ul>
      */
     static String describe(String location) {
         if (location.indexOf('@') >= 0) {
-            String tail = location.substring(location.lastIndexOf('/') + 1);
-            boolean plain = !tail.isEmpty() && tail.chars().noneMatch(c -> "@:?#".indexOf(c) >= 0);
-            return LOCATION_WITH_CREDENTIALS + (plain ? " ending in " + io.github.aindriub.dataprism.core.model.StrictYaml.shown(tail) : "");
+            return LOCATION_WITH_CREDENTIALS;
         }
-        int cut = indexOfAny(location, '?', '#');
-        return io.github.aindriub.dataprism.core.model.StrictYaml.shown(cut < 0 ? location : location.substring(0, cut));
+        java.util.regex.Matcher scheme = SCHEME.matcher(location);
+        boolean otherScheme = scheme.lookingAt() && scheme.group(1).length() > 1
+                && !scheme.group(1).equalsIgnoreCase("classpath") && !scheme.group(1).equalsIgnoreCase("file");
+        if (!otherScheme) {
+            int cut = indexOfAny(location, '?', '#');
+            return io.github.aindriub.dataprism.core.model.StrictYaml.shown(
+                    cut < 0 ? location : location.substring(0, cut));
+        }
+        try {
+            URI uri = new URI(location);
+            if (uri.getHost() == null || uri.getScheme() == null) {
+                return LOCATION_WITH_CREDENTIALS;
+            }
+            return io.github.aindriub.dataprism.core.model.StrictYaml.shown(uri.getScheme() + "://" + uri.getHost()
+                    + (uri.getPort() >= 0 ? ":" + uri.getPort() : ""));
+        } catch (URISyntaxException e) {
+            return LOCATION_WITH_CREDENTIALS;
+        }
     }
 
-    static final String LOCATION_WITH_CREDENTIALS = "<location with credentials, not shown>";
+    private static final java.util.regex.Pattern SCHEME = java.util.regex.Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
+
+    static final String LOCATION_WITH_CREDENTIALS = "<location not shown>";
 
     private static int indexOfAny(String text, char first, char second) {
         int a = text.indexOf(first);
