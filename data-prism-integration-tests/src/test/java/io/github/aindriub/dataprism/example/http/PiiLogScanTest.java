@@ -24,6 +24,7 @@ import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
+import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
@@ -1093,11 +1094,10 @@ class PiiLogScanTest {
         ParameterFingerprinter fingerprinter =
                 new ParameterFingerprinter(StaticSecretKeyProvider.of("pii-scan-test-key-not-for-any-real-data-32b"));
         GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock, null,
-                ToolAdmission.none(), fingerprinter, CorrelationRequirement.OPTIONAL, mdc);
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build());
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
                 authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
-                toolAudit, clock, null, ToolAdmission.none(), fingerprinter, CorrelationRequirement.OPTIONAL, mdc);
+                toolAudit, clock, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build());
 
         AuthenticatedCaller caller = new AuthenticatedCaller(
                 "pii-scan-principal", "pii-scan-client", Set.of(role), purpose, "CASE-PII-SCAN-1", null);

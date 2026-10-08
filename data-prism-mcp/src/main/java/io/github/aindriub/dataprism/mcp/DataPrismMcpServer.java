@@ -2,16 +2,12 @@ package io.github.aindriub.dataprism.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
-import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
-import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
-import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
@@ -83,6 +79,10 @@ public final class DataPrismMcpServer {
      * @param productionDeployment          {@code true} when the deployment's own configuration
      *                                      says it is production. stdio refuses regardless of
      *                                      {@code singlePrincipalDevelopmentMode} when this is set
+     * @param options                       admission, fingerprinter, correlation requirement, MDC and
+     *                                      audited entity types, delivered to both tools. A real
+     *                                      admission without a fingerprinter is refused by
+     *                                      {@link ToolOptions} itself
      * @throws SecurityRefusedException with code {@code STDIO_DEVELOPMENT_ONLY} when
      *                                  {@code singlePrincipalDevelopmentMode} is {@code false} or
      *                                  {@code productionDeployment} is {@code true}
@@ -90,93 +90,18 @@ public final class DataPrismMcpServer {
     public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                       ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
                                       boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
-                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock) {
-        return stdio(orchestrator, authorizationService, scopeResolver, developmentCaller,
-                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock,
-                CorrelationRequirement.OPTIONAL);
-    }
-
-    /** As {@link #stdio} without admission, with a {@link CorrelationRequirement} on the transport context's id. */
-    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
-                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                       PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                      CorrelationRequirement correlationRequirement) {
+                                      ToolOptions options) {
+        Objects.requireNonNull(options, "options");
         return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
-                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, null,
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off(),
-                AuditedEntityTypes.shape());
-    }
-
-    /**
-     * As the {@link CorrelationRequirement} overload, with the {@link AuditedEntityTypes} that decides what the
-     * audit record's {@code entityType} holds. Every other overload applies {@link AuditedEntityTypes#shape()}.
-     */
-    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
-                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
-                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                      CorrelationRequirement correlationRequirement,
-                                      AuditedEntityTypes entityTypes) {
-        return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
-                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, null,
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off(),
-                Objects.requireNonNull(entityTypes, "entityTypes"));
-    }
-
-    /**
-     * As above, with admission (pauses, per-caller rate limit, human approval) checked by both
-     * tools after scope resolution and before the orchestrator.
-     *
-     * @param fingerprinter binds an approval to the call's arguments
-     */
-    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
-                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
-                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                      ToolAdmission admission, ParameterFingerprinter fingerprinter) {
-        return stdio(orchestrator, authorizationService, scopeResolver, developmentCaller,
-                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, admission,
-                fingerprinter, CorrelationRequirement.OPTIONAL);
-    }
-
-    /** As the admission overload, with a {@link CorrelationRequirement} on the transport context's id. */
-    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
-                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
-                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                      ToolAdmission admission, ParameterFingerprinter fingerprinter,
-                                      CorrelationRequirement correlationRequirement) {
-        return stdio(orchestrator, authorizationService, scopeResolver, developmentCaller,
-                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, admission,
-                fingerprinter, correlationRequirement, AuditedEntityTypes.shape());
-    }
-
-    /**
-     * As the admission overload, with the {@link AuditedEntityTypes} that decides what the audit record's
-     * {@code entityType} holds. Every other overload applies {@link AuditedEntityTypes#shape()}.
-     */
-    public static McpSyncServer stdio(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                      ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
-                                      boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
-                                      PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                      ToolAdmission admission, ParameterFingerprinter fingerprinter,
-                                      CorrelationRequirement correlationRequirement,
-                                      AuditedEntityTypes entityTypes) {
-        Objects.requireNonNull(fingerprinter, "fingerprinter");
-        return build(orchestrator, authorizationService, scopeResolver, developmentCaller,
-                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock,
-                new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter),
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off(),
-                Objects.requireNonNull(entityTypes, "entityTypes"));
+                singlePrincipalDevelopmentMode, productionDeployment, metrics, audit, clock, options);
     }
 
     private static McpSyncServer build(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                        ScopeResolver scopeResolver, AuthenticatedCaller developmentCaller,
                                        boolean singlePrincipalDevelopmentMode, boolean productionDeployment,
                                        PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                       Oversight oversight, CorrelationRequirement correlationRequirement,
-                                       CorrelationMdc mdc, AuditedEntityTypes entityTypes) {
+                                       ToolOptions options) {
         if (!singlePrincipalDevelopmentMode || productionDeployment) {
             throw new SecurityRefusedException("STDIO_DEVELOPMENT_ONLY",
                     "stdio is a single-principal development transport and refuses to start "
@@ -192,10 +117,10 @@ public final class DataPrismMcpServer {
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, developmentCaller, oversight, correlationRequirement, mdc, entityTypes).specification(),
-                        compareEntitySources(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, developmentCaller, oversight, correlationRequirement, mdc, entityTypes).specification())
+                .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, developmentCaller, options).specification(),
+                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, developmentCaller, options).specification())
                 .build();
     }
 
@@ -212,108 +137,27 @@ public final class DataPrismMcpServer {
      *                        empty context when the request could not be authenticated. Never a
      *                        caller with a defaulted field — an unresolvable request is an empty
      *                        context, not a guess.
+     * @param options         admission, fingerprinter, correlation requirement, MDC and audited
+     *                        entity types, delivered to both tools. A real admission without a
+     *                        fingerprinter is refused by {@link ToolOptions} itself
      */
     public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
                                                AuthorizationService authorizationService,
                                                ScopeResolver scopeResolver,
                                                McpTransportContextExtractor<HttpServletRequest> contextExtractor,
                                                String endpointPath,
-                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock) {
-        return streamableHttp(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, CorrelationRequirement.OPTIONAL);
-    }
-
-    /** As {@link #streamableHttp} without admission, with a {@link CorrelationRequirement} on the transport context's id. */
-    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
-                                               AuthorizationService authorizationService,
-                                               ScopeResolver scopeResolver,
-                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
-                                               String endpointPath,
                                                PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                               CorrelationRequirement correlationRequirement) {
+                                               ToolOptions options) {
+        Objects.requireNonNull(options, "options");
         return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, null, Objects.requireNonNull(correlationRequirement, "correlationRequirement"),
-                CorrelationMdc.off(), AuditedEntityTypes.shape());
-    }
-
-    /**
-     * As above, with admission (pauses, per-caller rate limit, human approval) checked by both
-     * tools after scope resolution and before the orchestrator.
-     *
-     * @param fingerprinter binds an approval to the call's arguments
-     */
-    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
-                                               AuthorizationService authorizationService,
-                                               ScopeResolver scopeResolver,
-                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
-                                               String endpointPath,
-                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                               ToolAdmission admission, ParameterFingerprinter fingerprinter) {
-        return streamableHttp(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, admission, fingerprinter, CorrelationRequirement.OPTIONAL);
-    }
-
-    /** As the admission overload, with a {@link CorrelationRequirement} on the transport context's id. */
-    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
-                                               AuthorizationService authorizationService,
-                                               ScopeResolver scopeResolver,
-                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
-                                               String endpointPath,
-                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                               ToolAdmission admission, ParameterFingerprinter fingerprinter,
-                                               CorrelationRequirement correlationRequirement) {
-        Objects.requireNonNull(fingerprinter, "fingerprinter");
-        return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter),
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"), CorrelationMdc.off(),
-                AuditedEntityTypes.shape());
-    }
-
-    /**
-     * As the admission overload, with {@code mdc} opened around every tool call so the validated external
-     * id is on each log line the call writes. Every other overload delegates with {@link CorrelationMdc#off()}.
-     */
-    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
-                                               AuthorizationService authorizationService,
-                                               ScopeResolver scopeResolver,
-                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
-                                               String endpointPath,
-                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                               ToolAdmission admission, ParameterFingerprinter fingerprinter,
-                                               CorrelationRequirement correlationRequirement,
-                                               CorrelationMdc mdc) {
-        return streamableHttp(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, admission, fingerprinter, correlationRequirement, mdc,
-                AuditedEntityTypes.shape());
-    }
-
-    /**
-     * As the {@code mdc} overload, with the {@link AuditedEntityTypes} that decides what the audit record's
-     * {@code entityType} holds. Every other overload applies {@link AuditedEntityTypes#shape()}.
-     */
-    public static HttpTransport streamableHttp(ContextOrchestrator orchestrator,
-                                               AuthorizationService authorizationService,
-                                               ScopeResolver scopeResolver,
-                                               McpTransportContextExtractor<HttpServletRequest> contextExtractor,
-                                               String endpointPath,
-                                               PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                               ToolAdmission admission, ParameterFingerprinter fingerprinter,
-                                               CorrelationRequirement correlationRequirement,
-                                               CorrelationMdc mdc, AuditedEntityTypes entityTypes) {
-        Objects.requireNonNull(fingerprinter, "fingerprinter");
-        return build(orchestrator, authorizationService, scopeResolver, contextExtractor, endpointPath,
-                metrics, audit, clock, new Oversight(Objects.requireNonNull(admission, "admission"), fingerprinter),
-                Objects.requireNonNull(correlationRequirement, "correlationRequirement"),
-                Objects.requireNonNull(mdc, "mdc"), Objects.requireNonNull(entityTypes, "entityTypes"));
+                metrics, audit, clock, options);
     }
 
     private static HttpTransport build(ContextOrchestrator orchestrator,
                                        AuthorizationService authorizationService, ScopeResolver scopeResolver,
                                        McpTransportContextExtractor<HttpServletRequest> contextExtractor,
                                        String endpointPath, PrivacyMetrics metrics, AuditRecorder audit,
-                                       Clock clock, Oversight oversight,
-                                       CorrelationRequirement correlationRequirement, CorrelationMdc mdc,
-                                       AuditedEntityTypes entityTypes) {
+                                       Clock clock, ToolOptions options) {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
         Objects.requireNonNull(endpointPath, "endpointPath");
 
@@ -330,53 +174,14 @@ public final class DataPrismMcpServer {
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(getEntityContext(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, null, oversight, correlationRequirement, mdc, entityTypes).specification(),
-                        compareEntitySources(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, null, oversight, correlationRequirement, mdc, entityTypes).specification())
+                .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, null, options).specification(),
+                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                                audit, clock, null, options).specification())
                 .build();
 
         return new HttpTransport(server, transport);
     }
-
-    /** The admission and the fingerprinter that binds approvals to it; absent on the overloads that predate admission. */
-    private record Oversight(ToolAdmission admission, ParameterFingerprinter fingerprinter) {
-    }
-
-    private static GetEntityContextTool getEntityContext(ContextOrchestrator orchestrator,
-                                                         AuthorizationService authorizationService,
-                                                         ScopeResolver scopeResolver, ObjectMapper mapper,
-                                                         PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
-                                                         AuthenticatedCaller developmentCaller,
-                                                         Oversight oversight,
-            CorrelationRequirement correlationRequirement, CorrelationMdc mdc,
-            AuditedEntityTypes entityTypes) {
-        if (oversight == null) {
-            return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                    audit, clock, developmentCaller, correlationRequirement, entityTypes);
-        }
-        return new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter(),
-                correlationRequirement, mdc, entityTypes);
-    }
-
-    private static CompareEntitySourcesTool compareEntitySources(ContextOrchestrator orchestrator,
-                                                                 AuthorizationService authorizationService,
-                                                                 ScopeResolver scopeResolver, ObjectMapper mapper,
-                                                                 PrivacyMetrics metrics, AuditRecorder audit,
-                                                                 Clock clock, AuthenticatedCaller developmentCaller,
-                                                                 Oversight oversight,
-            CorrelationRequirement correlationRequirement, CorrelationMdc mdc,
-            AuditedEntityTypes entityTypes) {
-        if (oversight == null) {
-            return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                    audit, clock, developmentCaller, correlationRequirement, entityTypes);
-        }
-        return new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                audit, clock, developmentCaller, oversight.admission(), oversight.fingerprinter(),
-                correlationRequirement, mdc, entityTypes);
-    }
-
 
     /**
      * The two halves task 07 needs: the built server, and the transport

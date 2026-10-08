@@ -100,7 +100,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         this(adapters, scrubber, resolver,
                 List.of(Objects.requireNonNull(validator, "validator"), new SensitivePatternValidator()),
                 synthetics, fingerprinter, audit, new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver), aliasing, PrivacyMetrics.none());
     }

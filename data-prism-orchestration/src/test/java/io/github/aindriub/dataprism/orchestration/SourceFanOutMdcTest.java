@@ -64,7 +64,7 @@ class SourceFanOutMdcTest {
 
     private List<ILoggingEvent> run(CorrelationMdc mdc, Optional<ExternalCorrelationId> id) {
         DataRequest request = DataRequest.of("THING", "s-1").withContext(new SourceCallContext(id));
-        new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none(), mdc)
+        new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMdc(mdc))
                 .fetchAll(List.of(new Logging()), Map.of("src", request),
                         new RequestLimits(8, 500, 512 * 1024, Duration.ofSeconds(5), 4, 100));
         return appender.list;

@@ -38,6 +38,7 @@ import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
+import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
@@ -45,6 +46,7 @@ import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
+import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
@@ -908,7 +910,8 @@ public class DataPrismAutoConfiguration {
             CorrelationMdc correlationMdc) {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 fingerprinter, audit, identities,
-                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics, correlationMdc), budget, RequestLimits.DEFAULT,
+                new SourceFanOut(SourceCircuitBreaker.disabled(), clock,
+                        new SourceFanOutOptions(metrics, correlationMdc)), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
     /**
@@ -1008,10 +1011,15 @@ public class DataPrismAutoConfiguration {
                     + "dataprism.audit.entity-types to the exact entity types in use.",
                     AuditedEntityTypes.UNREGISTERED);
         }
+        ToolOptions options = ToolOptions.defaults()
+                .admission(admission, fingerprinter)
+                .correlationRequirement(properties.getCorrelation().getInbound().isRequired()
+                        ? CorrelationRequirement.REQUIRED : CorrelationRequirement.OPTIONAL)
+                .mdc(correlationMdc)
+                .entityTypes(entityTypes)
+                .build();
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
-                properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter,
-                properties.getCorrelation().getInbound().isRequired() ? CorrelationRequirement.REQUIRED
-                        : CorrelationRequirement.OPTIONAL, correlationMdc, entityTypes);
+                properties.getTransport().getHttp().getPath(), metrics, audit, clock, options);
     }
 
     @Bean(destroyMethod = "closeGracefully")
