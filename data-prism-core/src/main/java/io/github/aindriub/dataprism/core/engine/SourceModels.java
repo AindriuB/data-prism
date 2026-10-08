@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ValueSerializer;
@@ -120,6 +121,12 @@ public final class SourceModels {
         }
     }
 
+    /** An enum written as an object is read through its getters, like a bean. */
+    private static boolean objectShaped(Class<?> enumType) {
+        JsonFormat format = enumType.getAnnotation(JsonFormat.class);
+        return format != null && format.shape() == JsonFormat.Shape.OBJECT;
+    }
+
     private static boolean isEnum(Class<?> c) {
         return c.isEnum() || (c.getSuperclass() != null && c.getSuperclass().isEnum());
     }
@@ -129,7 +136,7 @@ public final class SourceModels {
         return loader == null || loader == ClassLoader.getPlatformClassLoader();
     }
 
-    private static void walk(Type type, Set<Class<?>> seen) {
+    private static void walk(Type type, Set<Object> seen) {
         if (type instanceof Class<?> c) {
             if (c.isArray()) {
                 walk(c.getComponentType(), seen);
@@ -139,6 +146,8 @@ public final class SourceModels {
                         walk(component.getGenericType(), seen);
                     }
                 }
+            } else if (c.isEnum() && objectShaped(c)) {
+                throw refusal(c);
             } else if (Throwable.class.isAssignableFrom(c)
                     || (!allowedLeaf(c) && !c.isInterface() && c != Object.class)) {
                 throw refusal(c);
@@ -151,7 +160,7 @@ public final class SourceModels {
         } else if (type instanceof GenericArrayType g) {
             walk(g.getGenericComponentType(), seen);
         } else if (type instanceof TypeVariable<?> v) {
-            for (Type bound : v.getBounds()) {
+            for (Type bound : seen.add(v) ? v.getBounds() : new Type[0]) {
                 walk(bound, seen);
             }
         } else if (type instanceof WildcardType w) {
@@ -172,8 +181,18 @@ public final class SourceModels {
                 || c.getName().startsWith("tools.jackson.");
     }
 
+    /** The simple name; an anonymous or hidden class has none, so its name without the package stands in. */
+    private static String simpleName(Class<?> type) {
+        String simple = type.getSimpleName();
+        if (!simple.isEmpty()) {
+            return simple;
+        }
+        String name = type.getName();
+        return name.substring(name.lastIndexOf('.') + 1);
+    }
+
     private static PrivacyRefusedException refusal(Class<?> type) {
         return new PrivacyRefusedException(CODE, "$",
-                type.getSimpleName() + " is not a record; source models must be records");
+                simpleName(type) + " is not a record; source models must be records");
     }
 }

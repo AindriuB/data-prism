@@ -310,10 +310,12 @@ fixture source shares a single id:
 !!! warning "A response type must be a record"
     The response type, and every user type nested inside it, must be a Java
     `record`. Enums, JDK types (`String`, numbers, `Instant`, `UUID`, ...),
-    `JsonNode`, and collections, maps, `Optional`s and arrays of those are also
-    fine. Any other class (a bean or POJO), at any depth, is refused at startup
-    with `SOURCE_MODEL_NOT_A_RECORD`, and again at runtime if one turns up behind
-    an `Object`- or interface-typed component. The message names the class's
+    `JsonNode`, and collections, maps (with String, enum, number, UUID, date or
+    similar keys), `Optional`s and arrays of those are also fine. A record is read
+    by its components only; an extra `getX()` on it is not emitted. Any other
+    class (a bean or POJO, a subclass of a collection, a `Throwable`), at any
+    depth, is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`, and again at
+    runtime if one turns up behind an `Object`- or interface-typed component. The message names the class's
     simple name only, never a value.
 
 A response type is never exposed through MCP unless it carries

@@ -290,6 +290,23 @@ class SourceModelsTest {
         assertRefused(() -> SourceTree.of(new Untyped(List.of(new MyMap()))), "MyMap");
     }
 
+    public record Recursive<T extends Comparable<T>>(T t) {
+    }
+
+    public record ObjectEnumHolder(ObjectEnum e) {
+    }
+
+    @Test
+    void aRecursiveTypeVariableBoundTerminatesAndAnObjectShapedEnumIsRefusedAtStartup() {
+        assertThatCode(() -> SourceModels.require(Recursive.class)).doesNotThrowAnyException();
+        assertRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
+    }
+
+    @Test
+    void anAnonymousClassIsNamedWithoutAPackage() {
+        assertRefused(() -> SourceTree.of(new Untyped(new ArrayList<>() { })), "SourceModelsTest$");
+    }
+
     @Test
     void aTypeVariableBoundIsWalkedAtStartup() {
         assertRefused(() -> SourceModels.require(Boxed.class));
