@@ -241,6 +241,10 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
         assertThat(ConfiguredJsonSourcesInitializer.describe("https://[::1]:8443/a.yaml")).isEqualTo("https://[::1]:8443");
         assertThat(ConfiguredJsonSourcesInitializer.describe("https:///a.yaml")).isEqualTo(none);
         assertThat(ConfiguredJsonSourcesInitializer.describe("https://exa mple/a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("jar:https://h/x!/y")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("mailto:a")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://host:abc/x")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("svc:s3cr3t/host")).isEqualTo(none);
         assertThat(ConfiguredJsonSourcesInitializer.describe("file:/etc/dataprism/a.yaml")).isEqualTo("file:/etc/dataprism/a.yaml");
         assertThat(ConfiguredJsonSourcesInitializer.describe("/etc/dataprism/a.yaml")).isEqualTo("/etc/dataprism/a.yaml");
         assertThat(ConfiguredJsonSourcesInitializer.describe("C:\\cfg\\a.yaml")).isEqualTo("C:\\cfg\\a.yaml");

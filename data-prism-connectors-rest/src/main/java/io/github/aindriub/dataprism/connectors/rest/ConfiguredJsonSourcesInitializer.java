@@ -90,10 +90,11 @@ public final class ConfiguredJsonSourcesInitializer
      *   <li>any other scheme is reduced to {@code scheme://host[:port]}, never a path (it can embed
      *       a token), user-info, query or fragment.</li>
      * </ul>
+     * Limit: for a remote location the host is shown, so a token placed in a host label would appear.
      */
     static String describe(String location) {
         if (location.indexOf('@') >= 0) {
-            return LOCATION_WITH_CREDENTIALS;
+            return LOCATION_NOT_SHOWN;
         }
         java.util.regex.Matcher scheme = SCHEME.matcher(location);
         boolean otherScheme = scheme.lookingAt() && scheme.group(1).length() > 1
@@ -106,18 +107,18 @@ public final class ConfiguredJsonSourcesInitializer
         try {
             URI uri = new URI(location);
             if (uri.getHost() == null || uri.getScheme() == null) {
-                return LOCATION_WITH_CREDENTIALS;
+                return LOCATION_NOT_SHOWN;
             }
             return io.github.aindriub.dataprism.core.model.StrictYaml.shown(uri.getScheme() + "://" + uri.getHost()
                     + (uri.getPort() >= 0 ? ":" + uri.getPort() : ""));
         } catch (URISyntaxException e) {
-            return LOCATION_WITH_CREDENTIALS;
+            return LOCATION_NOT_SHOWN;
         }
     }
 
     private static final java.util.regex.Pattern SCHEME = java.util.regex.Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
 
-    static final String LOCATION_WITH_CREDENTIALS = "<location not shown>";
+    static final String LOCATION_NOT_SHOWN = "<location not shown>";
 
     private static int indexOfAny(String text, char first, char second) {
         int a = text.indexOf(first);
