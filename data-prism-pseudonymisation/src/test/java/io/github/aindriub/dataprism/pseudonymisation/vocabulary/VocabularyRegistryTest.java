@@ -271,8 +271,8 @@ class VocabularyRegistryTest {
     @Test
     @DisplayName("pools that are not a mapping are refused with INVALID_CONFIG_SHAPE")
     void wrongShapedPools() {
-        assertRefused("id: probe\nlocale: en\npools: [a]\n", "INVALID_CONFIG_SHAPE: vocabulary file.pools must be a mapping");
-        assertRefused("id: probe\nlocale: en\npools:\n", "INVALID_CONFIG_SHAPE: vocabulary file.pools must be a mapping");
+        assertRefused("id: probe\nlocale: en\npools: [a]\n", "INVALID_CONFIG_SHAPE: vocabulary file pools must be a mapping");
+        assertRefused("id: probe\nlocale: en\npools:\n", "INVALID_CONFIG_SHAPE: vocabulary file pools must be a mapping");
     }
 
     @Test

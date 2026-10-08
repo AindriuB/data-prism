@@ -264,4 +264,19 @@ class StrictYamlTest {
         assertThat(StrictYaml.optionalMapping(Map.of(), "s", "doc p")).isNull();
         assertThat(StrictYaml.optionalList(Map.of("s", List.of(1)), "s", "doc p")).containsExactly(1);
     }
+
+    @Test
+    @DisplayName("an anchor on a key is UNSUPPORTED_CONFIG_YAML")
+    void keyAnchorRefused() {
+        assertThatThrownBy(() -> read("&a key: v\nb: x\n")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: test doc uses an anchor");
+        assertThatThrownBy(() -> read("x:\n  &a k: v\n")).hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+    }
+
+    @Test
+    @DisplayName("a tag on a key is not visible to the parser and leaves the key as its plain text")
+    void keyTagLeavesPlainText() {
+        assertThat(read("!!str key: v\n")).containsOnlyKeys("key");
+        assertThat(read("!custom key: v\n")).containsOnlyKeys("key");
+    }
 }

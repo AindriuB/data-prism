@@ -121,6 +121,7 @@ public final class StrictYaml {
     private static Map<String, Object> mapping(YAMLParser p, String kind, String path) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (JsonToken t = p.nextToken(); t != JsonToken.END_OBJECT; t = p.nextToken()) {
+            plainOnly(p, kind, path);
             String key = p.currentName();
             String child = path.isEmpty() ? shown(key) : path + "." + shown(key);
             if (out.containsKey(key)) {
@@ -236,13 +237,24 @@ public final class StrictYaml {
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> optionalMapping(Map<String, Object> body, String key, String where) {
+        return optionalMapping(body, key, where, false);
+    }
+
+    /**
+     * As above; {@code top} says {@code where} is only the document kind, so the path is read
+     * "{@code <kind> <key>}" and not "{@code <kind>.<key>}".
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> optionalMapping(Map<String, Object> body, String key, String where,
+                                                      boolean top) {
         if (!body.containsKey(key)) {
             return null;
         }
         if (body.get(key) instanceof Map<?, ?> m) {
             return (Map<String, Object>) m;
         }
-        throw new IllegalArgumentException(INVALID_SHAPE + ": " + where + "." + shown(key) + " must be a mapping");
+        throw new IllegalArgumentException(INVALID_SHAPE + ": " + where + (top ? " " : ".") + shown(key)
+                + " must be a mapping");
     }
 
     /** As {@link #optionalMapping}, for a list. */

@@ -90,7 +90,7 @@ public final class RestSources {
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             String name = String.valueOf(entry.getKey());
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
-                throw new IllegalArgumentException("source " + name + " is not a mapping");
+                throw new IllegalArgumentException("source " + StrictYaml.shown(name) + " is not a mapping");
             }
             StrictYaml.requireOnlyKeys(body.keySet(), SOURCE_KEYS, KIND + " sources." + StrictYaml.shown(name));
             out.put(name, source(name, (Map<String, Object>) body, requireHttps,
@@ -101,8 +101,8 @@ public final class RestSources {
 
     private static RestSource source(String name, Map<String, Object> body, boolean requireHttps,
                                      String defaultCorrelationHeader, byte[] yaml) {
-        String baseUrl = required(body, "base-url", "source " + name);
-        String path = required(body, "path", "source " + name);
+        String baseUrl = required(body, "base-url", "source " + StrictYaml.shown(name));
+        String path = required(body, "path", "source " + StrictYaml.shown(name));
         String timeout = StrictYaml.optionalString(body, "timeout",
                 "source configuration sources." + StrictYaml.shown(name));
 
@@ -113,9 +113,9 @@ public final class RestSources {
                     requireHttps, header);
         } catch (URISyntaxException e) {
             // No cause: URISyntaxException's message repeats the whole input, user-info included.
-            throw new IllegalArgumentException("source " + name + " has an unparseable base-url");
+            throw new IllegalArgumentException("source " + StrictYaml.shown(name) + " has an unparseable base-url");
         } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("source " + name
+            throw new IllegalArgumentException("source " + StrictYaml.shown(name)
                     + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
         }
     }
@@ -127,7 +127,7 @@ public final class RestSources {
             return defaultHeader;
         }
         Object raw = body.get(OutboundCorrelationHeader.KEY);
-        String where = "source " + name;
+        String where = "source " + StrictYaml.shown(name);
         return OutboundCorrelationHeader.validate(
                 raw == null ? "" : StrictYaml.text(raw, rootKey + "." + StrictYaml.shown(name) + "."
                         + OutboundCorrelationHeader.KEY),
@@ -138,7 +138,7 @@ public final class RestSources {
     /** Package-private: {@link ConfiguredJsonSources} parses the same {@code tls:} shape. */
     @SuppressWarnings("unchecked")
     static TlsSettings tls(Map<String, Object> root) {
-        Map<String, Object> tlsBody = StrictYaml.optionalMapping(root, "tls", "tls configuration");
+        Map<String, Object> tlsBody = StrictYaml.optionalMapping(root, "tls", "tls configuration", true);
         if (tlsBody == null) {
             return null;
         }

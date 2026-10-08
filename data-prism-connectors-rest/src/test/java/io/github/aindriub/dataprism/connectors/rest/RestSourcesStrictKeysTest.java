@@ -125,7 +125,7 @@ class RestSourcesStrictKeysTest {
     @Test
     @DisplayName("tls that is not a mapping, including an empty value, is refused with INVALID_CONFIG_SHAPE")
     void wrongShapedTls() {
-        assertRefused(SOURCE + "tls:\n", "INVALID_CONFIG_SHAPE: tls configuration.tls must be a mapping");
+        assertRefused(SOURCE + "tls:\n", "INVALID_CONFIG_SHAPE: tls configuration tls must be a mapping");
         assertRefused(SOURCE + "tls: [a]\n", "INVALID_CONFIG_SHAPE: ");
     }
 
@@ -161,5 +161,17 @@ class RestSourcesStrictKeysTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("source s requires https but its base URL is plaintext http")
                 .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("a source name is cut to 64 characters, control characters replaced, in refusal messages")
+    void sourceNameIsTruncated() {
+        String yaml = "sources:\n  \"" + "n".repeat(100) + "\\nx\":\n    base-url: \"https://exa mple\"\n    path: /x/{subject}\n";
+        assertThatThrownBy(() -> load(yaml)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("source " + "n".repeat(64) + " has an unparseable base-url");
+        assertThatThrownBy(() -> load("sources:\n  \"a\\nb\":\n    path: /x\n"))
+                .hasMessage("source a?b has no base-url");
+        assertThatThrownBy(() -> load("sources:\n  \"a\\nb\": 5\n"))
+                .hasMessage("source a?b is not a mapping");
     }
 }
