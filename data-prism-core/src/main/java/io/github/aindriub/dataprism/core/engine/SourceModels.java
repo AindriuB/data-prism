@@ -159,6 +159,15 @@ public final class SourceModels {
      * A map key is written as text; only types with a defined text form are allowed. Any other key
      * would be written by {@code toString()}, which for a bean or record is not a defined form.
      */
+    static void refuseDeclaredKey(Class<?> type) {
+        // An interface or abstract class says nothing about the key actually used (CharSequence,
+        // Comparable, Serializable): each key's own class is checked as it is written.
+        if (type.isInterface() || (java.lang.reflect.Modifier.isAbstract(type.getModifiers()) && !isEnum(type))) {
+            return;
+        }
+        refuseKey(type);
+    }
+
     static void refuseKey(Class<?> type) {
         if (type == Object.class) {
             return;
