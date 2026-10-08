@@ -151,17 +151,20 @@ the boundary is crossed; catching a violation depends on review.
 1. **No source data reaches `mcp` without passing the privacy engine.** The
    engine walks a data tree (§A4) and is not registered on any mapper. The
    invariant is that only `DataPrismObjectMapper` writes what a model sees, and
-   only seven designated classes build a Jackson mapper, so bypassing the engine
+   only three designated classes build a Jackson mapper, so bypassing the engine
    means building a different mapper, which is the thing to look for in review.
    **Enforced, for building** — `ArchitectureTest
    .onlyDesignatedClassesCreateMappers` forbids any class in
    `io.github.aindriub.dataprism..` other than `DataPrismObjectMapper`,
-   `SourceTree`, `RestSources`, `SecurityPolicy`, `PrivacyProfiles`,
-   `ModelDescriptors` and `VocabularyRegistry` from constructing a mapper, calling
+   `SourceTree` and `RestSources` (the one YAML mapper) from constructing a mapper, calling
    a static `builder(..)`, calling `build()` on a mapper builder, or calling
    `ObjectMapper#rebuild()`. `ArchitectureTest.designatedYamlReadersDoNotWrite`
-   keeps the five YAML readers read-only: they may not call `write*` or
-   `writer*`. Negative fixtures prove the first rule still catches a constructor,
+   keeps the two YAML readers, `RestSources` and `core.model.StrictYaml`,
+   read-only: they may not call `write*` or `writer*`, create a generator, or
+   construct one (a negative fixture proves it catches a parse-only class that
+   starts writing). `SecurityPolicy`, `PrivacyProfiles`, `ModelDescriptors` and
+   `VocabularyRegistry` parse through `StrictYaml` and build no mapper, so they
+   are not on either list. Negative fixtures prove the first rule still catches a constructor,
    a builder, a `build()` on a passed-in builder and a `rebuild()`. **Enforced, for
    obtaining** (task 168) — the same rule also forbids the static shared
    accessor, `JsonMapper.shared()`. `ArchitectureTest
@@ -174,8 +177,8 @@ the boundary is crossed; catching a violation depends on review.
    public data-prism class from exposing an `ObjectMapper`, a mapper builder, an
    `ObjectWriter` or the MCP SDK's `McpJsonMapper`. `ArchitectureTest
    .onlyDesignatedClassesConstructJsonFactories` allows only
-   `DataPrismObjectMapper`, `AuditJsonRenderer`, `audit.AuditCheckpoint` and
-   `JwtDecoderSupport` to construct a streaming JSON factory or generator.
+   `DataPrismObjectMapper`, `AuditJsonRenderer`, `audit.AuditCheckpoint`,
+   `JwtDecoderSupport` and `core.model.StrictYaml` (parse-only, see above) to construct a streaming JSON factory or generator.
    Beyond the rules, `DataPrismObjectMapper` and its `create()` are
    package-private, the two tool constructors take no mapper, and
    `DataPrismMcpServer` builds one mapper that the MCP server and both tools
@@ -328,7 +331,7 @@ all of these is in `design-review.md` under the section named.
   second major to be split; the real invariant is that only
   `DataPrismObjectMapper` writes and only the designated classes build mappers.
   Data-prism keeps its own private, fixed mappers (`DataPrismObjectMapper`, the
-  `SourceTree` reader and the five YAML readers), built with Jackson 3 builders.
+  `SourceTree` reader and the `RestSources` YAML mapper; `StrictYaml` holds a parse-only YAML factory), built with Jackson 3 builders.
   They are not Spring beans and cannot be customised by application
   configuration, because an adapter author may bring their own `ObjectMapper`
   for their APIs and must never be able to reconfigure data-prism's mapper for

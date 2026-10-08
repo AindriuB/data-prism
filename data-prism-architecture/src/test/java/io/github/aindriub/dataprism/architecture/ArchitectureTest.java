@@ -29,6 +29,7 @@ import io.github.aindriub.dataprism.mapper.fixture.ConstructorMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.ContextLookupObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.InjectedObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.JsonFactoryFixture;
+import io.github.aindriub.dataprism.mapper.fixture.YamlReaderWritesFixture;
 import io.github.aindriub.dataprism.mapper.fixture.ProviderInjectedObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.PublicMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.SharedObtainedMapperFixture;
@@ -83,13 +84,14 @@ class ArchitectureTest {
      * a route from source data to the transport that never passes through the
      * privacy engine, and it would look completely normal in review.
      *
-     * <p>The allowlist also names five classes that build a YAML mapper
-     * ({@code YAMLMapper.builder()}) to hand-parse a configuration file read
-     * once at startup: {@code RestSources} (source definitions), {@code
-     * SecurityPolicy} (the role-to-capability map), {@code PrivacyProfiles},
-     * {@code ModelDescriptors} and {@code VocabularyRegistry}. None of them
-     * ever sees a source record: each reads a file the operator wrote before
-     * the process started, and none of their output reaches a transport.
+     * <p>The allowlist also names {@code RestSources}, which builds a YAML
+     * mapper ({@code YAMLMapper.builder()}) to read the source-definitions file
+     * once at startup. It never sees a source record: it reads a file the
+     * operator wrote before the process started, and none of its output reaches
+     * a transport. The other configuration readers ({@code SecurityPolicy},
+     * {@code PrivacyProfiles}, {@code ModelDescriptors}, {@code
+     * VocabularyRegistry}) parse through {@code core.model.StrictYaml} and
+     * build no mapper, so they are deliberately not listed.
      *
      * <p>Jackson 3 mappers are immutable and built from a builder, so a rule
      * that matched only {@code ObjectMapper} constructors would no longer see
@@ -107,11 +109,6 @@ class ArchitectureTest {
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.mcp.DataPrismObjectMapper")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.engine.SourceTree")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.connectors.rest.RestSources")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.security.SecurityPolicy")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.policy.PrivacyProfiles")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.descriptor.ModelDescriptors")
-            .and().doNotHaveFullyQualifiedName(
-                    "io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry")
             .should().callConstructorWhere(constructsAMapper())
             .orShould().callMethodWhere(callsAMapperBuilderFactory())
             .orShould().callMethodWhere(buildsAMapper())
@@ -331,9 +328,10 @@ class ArchitectureTest {
 
     /**
      * Streaming JSON factories and generators are how JSON bytes come into being below the
-     * mapper. Four classes may build one: the mapper class itself, the audit renderer, the
-     * checkpoint writer and the JWT discovery-metadata reader (which builds a factory to parse,
-     * with tightened limits, and writes nothing). Anywhere else, a factory or generator is a way
+     * mapper. Five classes may build one: the mapper class itself, the audit renderer, the
+     * checkpoint writer, the JWT discovery-metadata reader and {@code core.model.StrictYaml}
+     * (the last two build a factory to parse and write nothing; {@code
+     * designatedYamlReadersDoNotWrite} holds {@code StrictYaml} to that). Anywhere else, a factory or generator is a way
      * to produce JSON that no audited writer governs. Matches constructing a factory or generator
      * subtype, the static {@code builder(..)} factories, {@code build()} on a {@code TSFBuilder},
      * {@code rebuild()} and {@code copy()} of a factory, and {@code createGenerator*} on a factory,
@@ -347,6 +345,7 @@ class ArchitectureTest {
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.audit.format.AuditJsonRenderer")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.audit.AuditCheckpoint")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.model.StrictYaml")
             .should().callConstructorWhere(constructsAFactoryOrGenerator())
             .orShould().callMethodWhere(obtainsAFactoryOrGenerator())
             .because("JSON bytes are produced only in audited places");
@@ -392,35 +391,47 @@ class ArchitectureTest {
     }
 
     /**
-     * The allowlist above only holds "a YAML configuration reader is not a
-     * route from source data to transport" for as long as these five classes
-     * actually only read. Nothing stops a later edit from also calling
-     * {@code mapper.writeValue(...)} on the same instance: the mapper-creation
-     * rule above would stay silent, because it is not about what the mapper
-     * is used for once built. This rule is: none of the five designated YAML
-     * readers may call any {@code ObjectMapper#write*} or {@code
-     * ObjectMapper#writer*} method, so the exemption cannot quietly widen from
-     * "parses a configuration file" to "also serialises something" without
-     * failing here first.
+     * The allowlists above only hold "a YAML configuration reader is not a
+     * route from source data to transport" for as long as these two classes
+     * actually only read: {@code RestSources}, which owns a YAML mapper, and
+     * {@code StrictYaml}, which owns a YAML factory. Nothing else stops a later
+     * edit from also calling {@code mapper.writeValue(...)} or {@code
+     * factory.createGenerator(...)}: the creation rules stay silent, because
+     * they are not about what the instance is used for once built. This rule
+     * is: neither class may call any {@code ObjectMapper#write*} or {@code
+     * ObjectMapper#writer*} method, nor create or derive a generator
+     * ({@code createGenerator*} on a factory, mapper or writer), nor
+     * construct a {@code JsonGenerator}.
      */
-    private static final ArchRule DESIGNATED_YAML_READERS_DO_NOT_WRITE = noClasses()
-            .that(isADesignatedYamlReader())
-            .should().callMethodWhere(callsAMapperWriteMethod());
+    private static final Set<String> DESIGNATED_YAML_READERS = Set.of(
+            "io.github.aindriub.dataprism.connectors.rest.RestSources",
+            "io.github.aindriub.dataprism.core.model.StrictYaml");
+
+    private static ArchRule yamlReadersDoNotWrite(Set<String> readers) {
+        return noClasses()
+                .that(DescribedPredicate.describe("is one of the designated YAML readers",
+                        (JavaClass javaClass) -> readers.contains(javaClass.getFullName())))
+                .should().callMethodWhere(callsAMapperWriteMethod())
+                .orShould().callMethodWhere(callsAGeneratorFactoryMethod())
+                .orShould().callConstructorWhere(constructsAGenerator());
+    }
 
     @Test
     void designatedYamlReadersDoNotWrite() {
-        DESIGNATED_YAML_READERS_DO_NOT_WRITE.check(CLASSES);
+        yamlReadersDoNotWrite(DESIGNATED_YAML_READERS).check(CLASSES);
     }
 
-    private static DescribedPredicate<JavaClass> isADesignatedYamlReader() {
-        Set<String> designatedYamlReaders = Set.of(
-                "io.github.aindriub.dataprism.connectors.rest.RestSources",
-                "io.github.aindriub.dataprism.security.SecurityPolicy",
-                "io.github.aindriub.dataprism.core.policy.PrivacyProfiles",
-                "io.github.aindriub.dataprism.core.descriptor.ModelDescriptors",
-                "io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry");
-        return DescribedPredicate.describe("is one of the five designated YAML readers",
-                javaClass -> designatedYamlReaders.contains(javaClass.getFullName()));
+    /** A parse-only class that starts writing, by mapper or by generator, is reported. */
+    @Test
+    void yamlReaderRuleCatchesAParseOnlyClassThatStartsWriting() {
+        EvaluationResult result = yamlReadersDoNotWrite(Set.of(YamlReaderWritesFixture.class.getName()))
+                .evaluate(new ClassFileImporter().importClasses(YamlReaderWritesFixture.class));
+        org.assertj.core.api.Assertions.assertThat(result.hasViolation()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(String.join("\n", result.getFailureReport().getDetails()))
+                .contains("ObjectMapper.writeValueAsString")
+                .contains("ObjectMapper.writer")
+                .contains("YAMLFactory.createGenerator")
+                .contains("ObjectWriter.createGenerator");
     }
 
     private static DescribedPredicate<JavaMethodCall> callsAMapperWriteMethod() {
@@ -428,6 +439,19 @@ class ArchitectureTest {
                 call.getTargetOwner().isAssignableTo(ObjectMapper.class)
                         && (call.getTarget().getName().startsWith("write")
                         || call.getTarget().getName().startsWith("writer")));
+    }
+
+    private static DescribedPredicate<JavaMethodCall> callsAGeneratorFactoryMethod() {
+        return DescribedPredicate.describe("call createGenerator* on a factory, mapper or writer", call ->
+                call.getTarget().getName().startsWith("createGenerator")
+                        && (call.getTargetOwner().isAssignableTo(TokenStreamFactory.class)
+                        || call.getTargetOwner().isAssignableTo(ObjectMapper.class)
+                        || call.getTargetOwner().isAssignableTo(ObjectWriter.class)));
+    }
+
+    private static DescribedPredicate<JavaConstructorCall> constructsAGenerator() {
+        return DescribedPredicate.describe("call a constructor of a JsonGenerator subtype",
+                call -> call.getTargetOwner().isAssignableTo(JsonGenerator.class));
     }
 
     /**
