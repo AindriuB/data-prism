@@ -10,6 +10,7 @@ package io.github.aindriub.dataprism.spring.boot;
  * this property existed.
  */
 public class IdentityProperties {
+    /** Built-in IdentityResolver to select. pass-through is the only accepted value; unset selects nothing. */
     private String resolver;
 
     public String getResolver() {

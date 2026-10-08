@@ -43,6 +43,7 @@ public class DataPrismProperties {
     private ReidentificationProperties reidentification = new ReidentificationProperties();
     @NestedConfigurationProperty
     private OperatorProperties operator = new OperatorProperties();
+    /** Named source entries, one per configured Java-first REST adapter, each with base-url, timeout and mTLS or credential references. */
     private Map<String, SourceProperties> sources = new LinkedHashMap<>();
 
     public TransportProperties getTransport() {

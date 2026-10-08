@@ -7,9 +7,23 @@ import java.util.Map;
 import java.util.Set;
 
 public class HazelcastProperties {
-    private String topology, tlsKeyReference, tlsTrustReference, reidentificationControlsReference;
+    /** embedded shares state across members that have joined one cluster; single-node keeps state per process. Required for a protected deployment, never defaulted. */
+    private String topology;
+    /** Refused if set: member TLS is not available in the open-source distribution. */
+    private String tlsKeyReference;
+    /** Refused if set: member TLS is not available in the open-source distribution. */
+    private String tlsTrustReference;
+    /** Reference to the reviewed re-identification controls. Needed to enable the re-identification index. */
+    private String reidentificationControlsReference;
+    /** Identity cache time to live. Follows the privacy scope lifetime when unset. */
     private Duration identityCacheTtl;
-    private boolean reidentificationEnabled, persistenceEnabled, mapStoreEnabled;
+    /** Whether the re-identification index is kept in the cluster. Defaults to false. */
+    private boolean reidentificationEnabled;
+    /** Persistence of cluster state. Defaults to false; enabling it without a reviewed configuration is refused. */
+    private boolean persistenceEnabled;
+    /** MapStore backing of cluster state. Defaults to false; enabling it without a reviewed configuration is refused. */
+    private boolean mapStoreEnabled;
+    /** Cluster name for topology embedded. Required there and never dev. */
     private String clusterName;
     private final Join join = new Join();
     private final Member member = new Member();
@@ -44,7 +58,9 @@ public class HazelcastProperties {
 
     /** How members find each other. {@code mode} is {@code tcp-ip}, {@code kubernetes} or {@code none}. */
     public static class Join {
+        /** Join mode for topology embedded: tcp-ip, kubernetes or none. */
         private String mode;
+        /** host or host:port entries for join mode tcp-ip. Refused with any other mode. */
         private List<String> members = new ArrayList<>();
         private final Kubernetes kubernetes = new Kubernetes();
 
@@ -72,7 +88,12 @@ public class HazelcastProperties {
 
     /** For {@code kubernetes} only: a namespace and exactly one of service name or service DNS. */
     public static class Kubernetes {
-        private String namespace, serviceName, serviceDns;
+        /** Kubernetes namespace to join in. Required with join mode kubernetes. */
+        private String namespace;
+        /** Kubernetes service name (API mode). Exactly one of this and service-dns. */
+        private String serviceName;
+        /** Kubernetes service DNS name (DNS mode). Exactly one of this and service-name. */
+        private String serviceDns;
 
         public String getNamespace() {
             return namespace;
@@ -106,7 +127,9 @@ public class HazelcastProperties {
      * binds {@code 127.0.0.1} and refuses an interface.
      */
     public static class Member {
+        /** Member port. Unset uses 5701. */
         private Integer port;
+        /** Network interface the member binds. Unset binds every interface for tcp-ip and kubernetes. */
         private String interfaceAddress;
 
         public Integer getPort() {

@@ -1,0 +1,73 @@
+{
+  "properties": [
+    {
+      "name": "dataprism.audit.retention",
+      "type": "java.time.Period",
+      "description": "With directory: segments dated before today minus this period are deleted after a retention anchor is recorded. Defaults to six months.",
+      "defaultValue": "P6M"
+    },
+    {
+      "name": "dataprism.hazelcast.member.interface",
+      "type": "java.lang.String",
+      "description": "Network interface the member binds. Unset binds every interface for tcp-ip and kubernetes."
+    }
+  ],
+  "hints": [
+    {
+      "name": "dataprism.audit.sink",
+      "values": [
+        { "value": "approved-sink", "description": "The application supplies its own reviewed AuditSink bean." },
+        { "value": "slf4j", "description": "Write audit events through SLF4J." },
+        { "value": "hash-chained", "description": "Write a hash-chained audit file or directory of segments." }
+      ]
+    },
+    {
+      "name": "dataprism.audit.output.field-preset",
+      "values": [
+        { "value": "canonical", "description": "Each field under its own name." },
+        { "value": "ecs", "description": "Elastic Common Schema field names." }
+      ]
+    },
+    {
+      "name": "dataprism.correlation.inbound.format",
+      "values": [
+        { "value": "opaque", "description": "Accept a value matching the configured pattern." },
+        { "value": "traceparent", "description": "Accept a W3C traceparent value and record its trace id." }
+      ]
+    },
+    {
+      "name": "dataprism.hazelcast.topology",
+      "values": [
+        { "value": "embedded", "description": "Share state across members that have joined one cluster." },
+        { "value": "single-node", "description": "State is per process." }
+      ]
+    },
+    {
+      "name": "dataprism.hazelcast.join.mode",
+      "values": [
+        { "value": "tcp-ip", "description": "Join the listed members." },
+        { "value": "kubernetes", "description": "Discover members through Kubernetes." },
+        { "value": "none", "description": "An explicit single member that neither discovers nor accepts other members." }
+      ]
+    },
+    {
+      "name": "dataprism.identity.resolver",
+      "values": [
+        { "value": "pass-through", "description": "Select PassThroughIdentityResolver." }
+      ]
+    },
+    {
+      "name": "dataprism.metrics.sink",
+      "values": [
+        { "value": "micrometer", "description": "Publish metrics to a Micrometer registry." }
+      ]
+    },
+    {
+      "name": "dataprism.privacy.profile",
+      "values": [
+        { "value": "DEFAULT", "description": "Bundled default privacy profile." },
+        { "value": "STRICT", "description": "Bundled strict privacy profile." }
+      ]
+    }
+  ]
+}
