@@ -56,3 +56,6 @@ this is a move.
 - Narrowing visibility. Everything that is public stays public; a follow-up can tighten it once the layout settles.
 - Forwarding or deprecated types at the old FQCNs (D-0.6-1 chose a clean break).
 - `CHANGELOG.md` and the migration page (task 162).
+
+## Outcome (2026-10-08, wave 2)
+Merged (merge commit on `release/0.6.0-moves`, task branch head 5a5d345d). The 34 root types moved into `spi`, `model`, `engine`, `refusal`, `limits` and `metrics` as a pure move; ArchUnit locks the empty core root, `spi` not depending on `engine`, and acyclic `core.*` slices. Tester PASS on JDK 21 (full reactor, 1396 tests, 0 failures; JDK 25 not available locally, CI covers it); reviewer APPROVE. Follow-ups are in PLAN.md (ar), (as), (at).

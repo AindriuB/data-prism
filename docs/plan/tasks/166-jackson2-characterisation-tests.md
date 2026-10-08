@@ -1,10 +1,11 @@
 # 166 — Pin Jackson 2 output and YAML parsing behaviour with characterisation tests before the Jackson 3 port
 
 **Repo:** .
-**Base:** branch from `origin/main` (0.5.0 plus wave 1, at or after 9a00c04e). This task must merge
-before 156 branches, so 156 and 157 carry these tests through the moves. 156 adds 166 to its
-Depends on line; the scribe makes that edit, not this task.
-**Depends on:** none
+**Base:** branch from the 0.6.0 moves branch (`release/0.6.0-moves`) once 157 has merged onto it.
+Owner-side sequencing: 156 was already running when this task was planned, so 166 runs after the
+moves (156, 157) and before the port (167). The tests are written against the post-move package
+names.
+**Depends on:** 157
 **Owns:**
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/characterisation/** (new)
 - data-prism-integration-tests/src/test/resources/characterisation/** (new: golden files and YAML inputs)

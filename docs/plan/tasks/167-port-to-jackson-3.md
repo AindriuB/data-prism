@@ -8,7 +8,7 @@
 - data-prism-{core,security,mcp,quickstart-extension,server,spring-boot-starter,quickstart-fixtures,quickstart-issuer}/pom.xml (Jackson, `mcp-json-*` and `spring-boot-*jackson*` entries only)
 - data-prism-*/src/main/java/**/*.java: every file that imports `com.fasterxml.jackson` other than `com.fasterxml.jackson.annotation`. At 9a00c04e that is 31 files in core (including the files 156 and 157 move, at their post-move paths), connectors-rest, mcp, orchestration, pseudonymisation, security, server, spring-boot-autoconfigure (`JwtDecoderSupport.java`, at its pre-159 path) and validation.
 - data-prism-*/src/test/java/**/*.java: every file that imports `com.fasterxml.jackson` or calls an `ObjectMapper` constructor. That is roughly 45 files across 12 modules.
-- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ArchitectureTest.java (the two mapper rules and their helpers only)
+- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ArchitectureTest.java (the two mapper rules and their helpers only; plus dropping the redundant `.allowEmptyShould(true)` on `CORE_ROOT_PACKAGE_IS_EMPTY`, follow-up (at) from 156)
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/*MapperFixture.java (new negative-test fixtures. They sit next to `AuditDependsOnMcpFixture.java` and, like it, declare a package under `io.github.aindriub.dataprism..` outside the allowlist.)
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/boot/Boot4RegressionGuardsTest.java
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/characterisation/** (import lines only; every assertion change is a listed difference, see Acceptance)

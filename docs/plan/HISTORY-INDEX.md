@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-08 | 156 | 0.6.0 wave 2: core root's 34 types moved into spi, model, engine, refusal, limits, metrics; ArchUnit locks the layout; Jackson 3 tasks 166-169 merged and wave table re-sequenced. | `## 2026-10-08 — 0.6.0 wave 2: core root package split into spi, model, engine, refusal, limits, metrics (task 156)` |
 | 2026-10-08 | 154, 155, 160, 165 | 0.6.0 wave 1: audit/oversight under ArchUnit outer-layer rule, ToolOptions/SourceFanOutOptions replace overloads, tee poisons on Throwable and torn checkpoint tail reported, `ci-gate` job. | `## 2026-10-08 — 0.6.0 wave 1: ArchUnit audit/oversight, tool options records, tee/checkpoint hardening, ci-gate` |
 | 2026-10-08 | 152, 153 | 0.5.0 released in git: PR #117 and Javadoc fix #119 merged, v0.5.0 moved from 05bbd00b to c850c3e2, branch-protection checks corrected; publication pending. | `## 2026-10-08 — 0.5.0 released in git: PR #117 merged, v0.5.0 tagged at c850c3e2` |
 | 2026-10-08 | 152, 153 | External review of PR #117: correlation header stripped unconditionally; torn audit tail terminated with CRLF on resume; smoke SIGPIPE fix. | `## 2026-10-08 — External review of PR #117: correlation header stripped unconditionally, torn audit tail terminated on resume` |

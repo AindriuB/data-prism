@@ -1,8 +1,8 @@
 # 168 — Stop exposing data-prism's `ObjectMapper` in public API, guard it with ArchUnit, and hand 162 the signature inventory
 
 **Repo:** .
-**Base:** branch from `origin/main` after 167 has merged into it. Do not start until owner
-decision D-J3-1 below is recorded in this file.
+**Base:** branch from `origin/main` after 167 has merged into it. Owner decision D-J3-1 is
+decided (option (a), 2026-10-08), so nothing blocks this task but 167.
 **Depends on:** 167
 **Owns:**
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/{DataPrismObjectMapper,DataPrismMcpServer,GetEntityContextTool,CompareEntitySourcesTool}.java
@@ -27,7 +27,7 @@ completes the public-signature inventory that 162's migration page lists.
 - Callers outside `mcp`: 10 test files in data-prism-integration-tests (for example EndToEndTest.java:81 and McpHttpEndToEndTest.java:315, which use it to `readTree` a response body) and CorrelationConfigurationTest.java:291 (`createObjectNode()`). Test code may build its own test-local `JsonMapper`. ArchitectureTest imports with `DO_NOT_INCLUDE_TESTS`, so the mapper rule does not apply to tests.
 - data-prism-architecture/.../ArchitectureTest.java:166-178. The negative-test pattern.
 
-## D-J3-1 — how the tool constructors stop accepting data-prism's mapper (owner to decide)
+## D-J3-1 — how the tool constructors stop accepting data-prism's mapper (DECIDED 2026-10-08: option (a))
 - (a) Remove the `ObjectMapper mapper` parameter from both public constructors. Each tool takes
   its mapper from package-private `DataPrismObjectMapper.create()`. `DataPrismMcpServer` passes
   one instance to `JacksonMcpJsonMapper` and to both tools through a package-private constructor,
@@ -38,13 +38,13 @@ completes the public-signature inventory that 162's migration page lists.
   which they cannot reach from another module.
 - (c) Keep the public constructors but change the parameter to a data-prism-owned opaque type,
   such as a `ToolSerialiser` with no Jackson in its signature.
-- **Recommendation: (a).** It meets J3-3's intent: no public method accepts the mapper, and the
+- **Decision: (a)**, chosen by the owner on 2026-10-08, matching the planner's recommendation. The reasons follow. It meets J3-3's intent: no public method accepts the mapper, and the
   shared-instance invariant stays enforced inside the package. It keeps test churn to deleting
   one argument, and adds no new public type. (b) is the literal reading of "stop being public"
   but costs the most rewriting and gives no extra protection. (c) adds a type only to carry one
   that is already hidden.
 
-## Acceptance (written for D-J3-1 (a); if the owner picks (b) or (c), the scribe rewrites the second and third items)
+## Acceptance (written for D-J3-1 (a), which the owner chose)
 - [ ] `DataPrismObjectMapper` is a package-private `final class` and `create()` is package-private. `git grep -n 'DataPrismObjectMapper' -- '*.java' ':!data-prism-mcp/src/main/*'` shows only the ArchitectureTest allowlist string.
 - [ ] Neither `GetEntityContextTool` nor `CompareEntitySourcesTool` has a public or protected constructor or method with a `tools.jackson.databind.ObjectMapper` parameter. `DataPrismMcpServer` still hands one mapper instance to `JacksonMcpJsonMapper` and both tools. A test in `data-prism-mcp/src/test` asserts that sharing by reflection or by a package-private accessor.
 - [ ] New ArchUnit rule `noPublicApiExposesAnObjectMapper`: no public or protected method, constructor or field of a public class in `io.github.aindriub.dataprism..` has a parameter, return or field type assignable to `tools.jackson.databind.ObjectMapper`, `tools.jackson.databind.cfg.MapperBuilder` or `tools.jackson.databind.ObjectWriter`. A fixture `*PublicMapperFixture.java` with a public method returning a `JsonMapper` makes the rule's negative test report a violation naming the fixture.

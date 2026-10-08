@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 2: core root package split into spi, model, engine, refusal, limits, metrics (task 156)
+
+Task 156 merged onto `release/0.6.0-moves`. The 34 public types that sat in the `core` root now live in six subpackages with unchanged simple names, as a pure move with no forwarding types (D-0.6-1). ArchUnit locks the layout: the exact `core` package is empty, `core.spi` does not depend on `core.engine`, and the `core.*` slices are free of cycles. The old to new FQCN table is in the last commit body for task 162. The Jackson 3 task files (166 to 169, branch `plan/jackson3`) were merged in the same pass and the 0.6.0 wave table re-sequenced around them. Tester PASS on JDK 21 (full reactor, 1396 tests, 0 failures); reviewer APPROVE.
+
+**Cost:** JDK 25 was not available locally, so only CI covers it. The bytecode-based slices rule cannot see a javadoc-only import, so `RefusalPaths` importing `model.ScrubResult` leaves a source-level `refusal` and `model` cycle (follow-up as). `docs-site/diagrams/README.md` still links the old paths (ar, folded into 162). 156 was already running when the Jackson 3 plan landed, so 166 was re-sequenced to follow the moves instead of preceding them; its tests are written against the post-move names.
+
 ## 2026-10-08 — 0.6.0 wave 1: ArchUnit audit/oversight, tool options records, tee/checkpoint hardening, ci-gate
 
 Tasks 154, 155, 160 and 165 merged onto `release/0.6.0-wave1`. `audit` and `oversight` are now under the core outer-layer ArchUnit rule (baseline 0 violations). `ToolOptions` and `SourceFanOutOptions` replace the MCP and orchestration overloads, with admission named explicitly through `.noAdmission()` or `.admission(policy, fingerprinter)`. `TeeAuditSink` poisons on any `Throwable`, the checkpoint writer terminates a torn tail with `\r\n`, and the verifier reports `TORN_CHECKPOINT_LINE`. build.yml has a `ci-gate` summary job and pages.yml's job is `docs-site`. Tester counts were about 1,380 to 1,386 tests per branch with no failures; Dependabot PR #118 (maven-dependency-plugin 3.11.0) was folded into 155.
