@@ -18,7 +18,7 @@ import java.util.Set;
  *
  * <p>{@code toolName} and {@code includeAgreementFindings} exist for task 42's
  * comparison path and default to the shipped tool's behaviour on every
- * constructor and factory that predates them: {@code toolName} defaults to
+ * factory that predates them: {@code toolName} defaults to
  * {@value #DEFAULT_TOOL_NAME} — the name audited against a request built any
  * other way — and {@code includeAgreementFindings} defaults to {@code false},
  * so {@code get_entity_context}'s response is unchanged unless a caller
@@ -44,9 +44,9 @@ import java.util.Set;
  *                                 {@code null}. Audited, and handed to every source request.
  * @param auditedEntityType        what the audit record's {@code entityType} holds: the value
  *                                 {@link AuditedEntityTypes#audited} returned for {@code entityType},
- *                                 so a free-text argument never reaches the audit trail. Every
- *                                 constructor that does not take it applies
- *                                 {@link AuditedEntityTypes#shape()}. {@code entityType} itself
+ *                                 so a free-text argument never reaches the audit trail. The
+ *                                 {@link #of} and {@link #comparison} factories, which take none,
+ *                                 audit {@link AuditedEntityTypes#UNREGISTERED}. {@code entityType} itself
  *                                 stays raw: adapters and the response echo use it.
  */
 public record ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
@@ -76,37 +76,10 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
         externalCorrelationId = externalCorrelationId == null ? Optional.empty() : externalCorrelationId;
     }
 
-    /** Source-compatible with every call site that predates the audited entity type: the shape fallback applies. */
-    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
-                          String toolName, boolean includeAgreementFindings,
-                          String approvalId, String approverId,
-                          Optional<ExternalCorrelationId> externalCorrelationId) {
-        this(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings, approvalId,
-                approverId, externalCorrelationId, AuditedEntityTypes.shape().audited(entityType));
-    }
-
-    /** Source-compatible with every call site that predates external correlation ids: none. */
-    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
-                          String toolName, boolean includeAgreementFindings,
-                          String approvalId, String approverId) {
-        this(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings, approvalId,
-                approverId, Optional.empty());
-    }
-
-    /** Source-compatible with every call site that predates approval ids: both are {@code ""}. */
-    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
-                          String toolName, boolean includeAgreementFindings) {
-        this(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings, "", "");
-    }
-
-    /** Source-compatible with every call site that predates {@code toolName} and agreement findings. */
-    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments) {
-        this(entityType, subjectId, rejectedArguments, DEFAULT_TOOL_NAME, false);
-    }
-
     /** No reserved argument was rejected — the ordinary case. */
     public static ContextRequest of(String entityType, String subjectId) {
-        return new ContextRequest(entityType, subjectId, Set.of(), DEFAULT_TOOL_NAME, false);
+        return new ContextRequest(entityType, subjectId, Set.of(), DEFAULT_TOOL_NAME, false, "", "",
+                Optional.empty(), AuditedEntityTypes.UNREGISTERED);
     }
 
     /**
@@ -116,6 +89,7 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
      */
     public static ContextRequest comparison(String entityType, String subjectId,
                                             Set<String> rejectedArguments, String toolName) {
-        return new ContextRequest(entityType, subjectId, rejectedArguments, toolName, true);
+        return new ContextRequest(entityType, subjectId, rejectedArguments, toolName, true, "", "",
+                Optional.empty(), AuditedEntityTypes.UNREGISTERED);
     }
 }

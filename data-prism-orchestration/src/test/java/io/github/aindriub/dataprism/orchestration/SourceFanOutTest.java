@@ -69,7 +69,7 @@ class SourceFanOutTest {
     }
 
     private SourceFanOut fanOut() {
-        return new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC());
+        return new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults());
     }
 
     @Test
@@ -206,7 +206,7 @@ class SourceFanOutTest {
     @DisplayName("a failing source trips its breaker and is then skipped, not retried")
     void breakerOpensAfterRepeatedFailures() {
         var breaker = new SourceCircuitBreaker(2, Duration.ofMinutes(5), Clock.systemUTC());
-        var fanOut = new SourceFanOut(breaker, Clock.systemUTC());
+        var fanOut = new SourceFanOut(breaker, Clock.systemUTC(), SourceFanOutOptions.defaults());
         List<DataSourceAdapter<?>> adapters = List.of(Stub.failing("broken"));
 
         for (int attempt = 0; attempt < 2; attempt++) {
@@ -225,7 +225,7 @@ class SourceFanOutTest {
     @DisplayName("holding nothing for a subject is an answer, and does not trip the breaker")
     void noDataDoesNotTripTheBreaker() {
         var breaker = new SourceCircuitBreaker(2, Duration.ofMinutes(5), Clock.systemUTC());
-        var fanOut = new SourceFanOut(breaker, Clock.systemUTC());
+        var fanOut = new SourceFanOut(breaker, Clock.systemUTC(), SourceFanOutOptions.defaults());
         List<DataSourceAdapter<?>> adapters = List.of(
                 new Stub("empty", Duration.ZERO, null, null));
 
@@ -292,7 +292,7 @@ class SourceFanOutTest {
                 recorded.add(metric);
             }
         };
-        var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), metrics);
+        var fanOut = new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMetrics(metrics));
         List<DataSourceAdapter<?>> adapters = List.of(Stub.answering("ok", "A"), Stub.failing("broken"));
 
         fanOut.fetchAll(adapters, askAll(adapters), limits(8, Duration.ofSeconds(5), 4));

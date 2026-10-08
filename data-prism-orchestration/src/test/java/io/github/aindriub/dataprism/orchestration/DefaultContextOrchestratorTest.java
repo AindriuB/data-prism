@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -109,7 +110,7 @@ class DefaultContextOrchestratorTest {
                 new ParameterFingerprinter(KEYS),
                 new AuditRecorder(event -> { }, CLOCK, "test-1"),
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), metrics),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMetrics(metrics)),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
@@ -155,7 +156,7 @@ class DefaultContextOrchestratorTest {
                 new ParameterFingerprinter(KEYS),
                 audit,
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
@@ -292,7 +293,7 @@ class DefaultContextOrchestratorTest {
                 new ParameterFingerprinter(KEYS),
                 new AuditRecorder(sink::add, CLOCK, "test-1"),
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), metrics),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMetrics(metrics)),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
@@ -349,7 +350,7 @@ class DefaultContextOrchestratorTest {
     @DisplayName("approvalId and approverId default to empty and are copied into the audit entry")
     void approvalIdsReachTheAudit() {
         assertThat(ContextRequest.of("THING", "1").approvalId()).isEmpty();
-        assertThat(new ContextRequest("THING", "1", Set.of()).approverId()).isEmpty();
+        assertThat(ContextRequest.of("THING", "1").approverId()).isEmpty();
         assertThat(ContextRequest.comparison("THING", "1", Set.of(), "t").approvalId()).isEmpty();
 
         List<AuditEvent> events = new ArrayList<>();
@@ -357,7 +358,8 @@ class DefaultContextOrchestratorTest {
         LlmResponseValidator refusing = (response, prohibited, emitted, ctx) ->
                 ValidationResult.failed(List.of(new Violation("/value", "X", "TEST")));
         ContextRequest request = new ContextRequest("THING", "1", Set.of(),
-                ContextRequest.DEFAULT_TOOL_NAME, false, "APR-1", "approver-2");
+                ContextRequest.DEFAULT_TOOL_NAME, false, "APR-1", "approver-2",
+                Optional.empty(), "THING");
 
         dispositionOrchestrator(events, alwaysOk, PrivacyMetrics.none())
                 .buildContext(request, context(), caller());

@@ -94,7 +94,7 @@ class DenyDecisionCodeTest {
                 new ParameterFingerprinter(KEYS),
                 new AuditRecorder(events::add, CLOCK, "test-1"),
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), limits,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),

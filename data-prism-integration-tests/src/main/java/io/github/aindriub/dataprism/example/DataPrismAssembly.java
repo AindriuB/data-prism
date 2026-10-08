@@ -29,6 +29,7 @@ import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
+import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
@@ -118,7 +119,7 @@ public final class DataPrismAssembly {
         this.orchestrator = new DefaultContextOrchestrator(adapters, scrubber, resolver,
                 List.of(validator, new SensitivePatternValidator()), synthetics, new ParameterFingerprinter(keys),
                 new AuditRecorder(sink, clock, "example-1"), new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none(), mdc),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMdc(mdc)),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
                 new SourceAliasing(tokens), PrivacyMetrics.none());
 

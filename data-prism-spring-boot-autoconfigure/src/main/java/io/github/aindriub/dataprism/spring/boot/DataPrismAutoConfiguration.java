@@ -45,6 +45,7 @@ import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
+import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
@@ -908,7 +909,8 @@ public class DataPrismAutoConfiguration {
             CorrelationMdc correlationMdc) {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 fingerprinter, audit, identities,
-                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics, correlationMdc), budget, RequestLimits.DEFAULT,
+                new SourceFanOut(SourceCircuitBreaker.disabled(), clock,
+                        new SourceFanOutOptions(metrics, correlationMdc)), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
     /**

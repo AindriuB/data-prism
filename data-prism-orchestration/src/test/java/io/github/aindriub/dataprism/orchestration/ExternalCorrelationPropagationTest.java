@@ -98,7 +98,7 @@ class ExternalCorrelationPropagationTest {
                 (subjectId, namespace, ctx) -> "SUBJ-1", new ParameterFingerprinter(KEYS),
                 new AuditRecorder(audited::add, CLOCK, "test-110"),
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
     }
@@ -114,17 +114,16 @@ class ExternalCorrelationPropagationTest {
 
     private static ContextRequest requestWith(ExternalCorrelationId id) {
         return new ContextRequest("THING", "1", Set.of(), ContextRequest.DEFAULT_TOOL_NAME, false, "", "",
-                Optional.ofNullable(id));
+                Optional.ofNullable(id), "THING");
     }
 
     @Test
     @DisplayName("every pre-existing ContextRequest constructor and factory gives Optional.empty(), never null")
     void existingShapesHaveNoExternalId() {
         assertThat(ContextRequest.of("THING", "1").externalCorrelationId()).isEmpty();
-        assertThat(new ContextRequest("THING", "1", Set.of()).externalCorrelationId()).isEmpty();
         assertThat(ContextRequest.comparison("THING", "1", Set.of(), "compare_entity_sources")
                 .externalCorrelationId()).isEmpty();
-        assertThat(new ContextRequest("THING", "1", Set.of(), "t", false, "", "", null).externalCorrelationId())
+        assertThat(new ContextRequest("THING", "1", Set.of(), "t", false, "", "", null, "THING").externalCorrelationId())
                 .isEmpty();
     }
 

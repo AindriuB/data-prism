@@ -55,24 +55,13 @@ public final class SourceFanOut {
     private final PrivacyMetrics metrics;
     private final CorrelationMdc mdc;
 
-    public SourceFanOut(SourceCircuitBreaker breaker, Clock clock) {
-        this(breaker, clock, PrivacyMetrics.none());
-    }
-
-    public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, PrivacyMetrics metrics) {
-        this(breaker, clock, metrics, CorrelationMdc.off());
-    }
-
-    /**
-     * @param mdc opened on each source's own thread from that source's request, so the
-     *            call's validated external id is on every log line the fetch writes;
-     *            {@link CorrelationMdc#off()} puts nothing anywhere
-     */
-    public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, PrivacyMetrics metrics, CorrelationMdc mdc) {
-        this.mdc = Objects.requireNonNull(mdc, "mdc");
+    /** @param options the metrics and MDC; {@link SourceFanOutOptions#defaults()} for neither */
+    public SourceFanOut(SourceCircuitBreaker breaker, Clock clock, SourceFanOutOptions options) {
+        Objects.requireNonNull(options, "options");
+        this.mdc = options.mdc();
         this.breaker = Objects.requireNonNull(breaker, "breaker");
         this.clock = Objects.requireNonNull(clock, "clock");
-        this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.metrics = options.metrics();
     }
 
     /**

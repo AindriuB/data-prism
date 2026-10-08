@@ -21,6 +21,7 @@ import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
+import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -140,8 +141,8 @@ public class ConfiguredJsonSourcesAutoConfiguration {
 
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 new ParameterFingerprinter(keys), audit, identities,
-                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics,
-                        correlationMdc.getIfAvailable(CorrelationMdc::off)), budget, RequestLimits.DEFAULT,
+                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, new SourceFanOutOptions(metrics,
+                        correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
 }
