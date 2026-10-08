@@ -222,6 +222,20 @@ class AuditOutputConfigurationTest {
     }
 
     @Test
+    void an_application_audit_sink_with_a_json_directory_is_refused_and_the_directory_untouched(@TempDir Path dir)
+            throws Exception {
+        Path json = Files.createDirectories(dir.resolve("json"));
+        Path seeded = Files.writeString(json.resolve("audit-2020-01-01.ndjson"), "{}\n");
+        assertRefusedWith(segmented(dir).withBean("applicationSink", AuditSink.class, () -> event -> { })
+                .withPropertyValues("dataprism.audit.output.json-directory=" + json),
+                "AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK", json.toString());
+        assertThat(seeded).exists();
+        try (var files = Files.list(json)) {
+            assertThat(files.count()).isEqualTo(1);
+        }
+    }
+
+    @Test
     void an_application_bean_cannot_replace_the_projection(@TempDir Path dir) {
         segmented(dir).withPropertyValues("dataprism.audit.output.json-directory=" + dir.resolve("json"))
                 .withBean("dataPrismJsonAuditProjection", Object.class, Object::new).run(context ->

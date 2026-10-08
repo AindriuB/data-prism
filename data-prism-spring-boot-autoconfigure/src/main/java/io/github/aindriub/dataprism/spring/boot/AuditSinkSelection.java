@@ -109,13 +109,24 @@ class AuditSinkSelection {
      * @ConditionalOnMissingBean}: the type is package-private and final, so an application cannot
      * supply a competing bean, and a bean of the same name is refused by the context's default
      * refusal to override a bean definition. A directory that cannot be opened is refused at
-     * startup, before the authoritative sink is opened, without repeating the path.
+     * startup, before the authoritative sink is opened, without repeating the path. An application {@link
+     * AuditSink} makes the built-in sink back off, so that combination is refused before the directory is touched.
      */
     @Bean
     @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
     @ConditionalOnExpression("T(org.springframework.util.StringUtils)"
             + ".hasText('${dataprism.audit.output.json-directory:}')")
-    JsonProjection dataPrismJsonAuditProjection(DataPrismProperties properties, ObjectProvider<Clock> clock) {
+    JsonProjection dataPrismJsonAuditProjection(DataPrismProperties properties, ObjectProvider<Clock> clock,
+            org.springframework.beans.factory.ListableBeanFactory beanFactory) {
+        // Before the directory is touched: an application AuditSink makes the built-in sink back off, so
+        // nothing would write here, and the retention purge would still run on a directory nobody writes.
+        for (String name : beanFactory.getBeanNamesForType(AuditSink.class, true, false)) {
+            if (!name.equals("dataPrismHashChainedAuditSink")) {
+                throw new DataPrismConfigurationException("AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK",
+                        "dataprism.audit.output.json-directory needs the built-in hash-chained sink;"
+                                + " an application AuditSink bean replaces it");
+            }
+        }
         AuditProperties.Output output = properties.getAudit().getOutput();
         SegmentedJsonAuditSink json;
         try {
