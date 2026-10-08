@@ -143,8 +143,9 @@ public interface DataSourceAdapter<T> {
   `dataprism.sources.<name>` configuration entry — see the binding section
   below; nothing else about this class name, package or bean name matters
   for that.
-- `responseType()` returns the `@LlmExposedModel`-annotated class this
-  adapter produces.
+- `responseType()` returns the `@LlmExposedModel`-annotated record this
+  adapter produces. It, and every user type nested in it, must be a record:
+  any other class is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`.
 - `fetch(DataRequest request)` does the actual call. `DataRequest` carries
   only `entityType`, `subjectId` and a parameters map your adapter chooses to
   read — never a caller-supplied URL, path or query
@@ -305,6 +306,15 @@ fixture source shares a single id:
 `data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartExtensionAutoConfiguration.java:36-43`
 
 ## Classify the model with `@LlmExposedModel`
+
+!!! warning "A response type must be a record"
+    The response type, and every user type nested inside it, must be a Java
+    `record`. Enums, JDK types (`String`, numbers, `Instant`, `UUID`, ...),
+    `JsonNode`, and collections, maps, `Optional`s and arrays of those are also
+    fine. Any other class (a bean or POJO), at any depth, is refused at startup
+    with `SOURCE_MODEL_NOT_A_RECORD`, and again at runtime if one turns up behind
+    an `Object`- or interface-typed component. The message names the class's
+    simple name only, never a value.
 
 A response type is never exposed through MCP unless it carries
 `@LlmExposedModel`, and every field of an annotated type must then carry one

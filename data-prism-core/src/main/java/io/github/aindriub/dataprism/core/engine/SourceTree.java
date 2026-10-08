@@ -41,11 +41,19 @@ import java.util.Locale;
  * an operator-written configuration file at startup, and anything else
  * constructing or obtaining a mapper is a finding.
  *
- * <p>Converting a source object is serialisation, so this mapper is configured to give the
- * values Jackson 2 gave, with one deliberate exception (D-173-1): Jackson 2's plain mapper
- * refused java.time types, {@code Optional} and {@code OptionalInt}, and they are now accepted
- * and passed to the engine, java.time as ISO-8601 text and an {@code Optional} unwrapped (empty
- * is null). That is a change, not a pin back to Jackson 2.
+ * <p>A source model must be a record (D-173-2). Reading a user class through its getters and
+ * fields follows conventions that differ between Jackson majors, so the property names a rule
+ * matches would depend on the library version; a record has exactly one reading. The top-level
+ * object must be a record (or a Jackson tree node), and nested values may be records, enums, JDK
+ * types, tree nodes, or collections, maps, optionals and arrays of those. Any other user class,
+ * at any depth, is refused with {@link SourceModels#CODE}; {@link SourceModels#require} checks
+ * the declared types at startup and this class checks the actual object graph.
+ *
+ * <p>Within that shape the mapper starts from the Jackson 2 settings so values are unchanged,
+ * with one deliberate exception (D-173-1): Jackson 2's plain mapper refused java.time types,
+ * {@code Optional} and {@code OptionalInt}. They are now accepted and passed to the engine,
+ * java.time as ISO-8601 text and an {@code Optional} unwrapped (empty is null). That is a
+ * change, not a pin back to Jackson 2.
  */
 public final class SourceTree {
 
