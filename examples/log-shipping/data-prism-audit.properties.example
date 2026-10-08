@@ -1,0 +1,15 @@
+# Data Prism side of the log-shipping recipes. Property names are those of
+# docs/configuration.md. Paths are placeholders.
+dataprism.audit.sink=hash-chained
+dataprism.audit.writer-id=writer-a
+dataprism.audit.directory=/var/lib/data-prism/audit
+dataprism.audit.checkpoint.file-path=/var/lib/data-prism/checkpoints/audit.checkpoints
+
+# The JSON projection that the shippers below tail. A different directory from
+# the native one above (the same directory is refused at startup).
+dataprism.audit.output.json-directory=/var/lib/data-prism/audit-json
+dataprism.audit.output.field-preset=ecs
+dataprism.audit.output.routing.event-dataset=dataprism.audit
+dataprism.audit.output.routing.data-stream-type=logs
+dataprism.audit.output.routing.data-stream-dataset=dataprism.audit
+dataprism.audit.output.routing.data-stream-namespace=default

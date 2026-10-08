@@ -2,11 +2,15 @@ package io.github.aindriub.dataprism.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.core.Capability;
 import io.github.aindriub.dataprism.core.Metric;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.RefusalCodes;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
+import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
+import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
@@ -95,6 +99,9 @@ public final class GetEntityContextTool {
     private final AuthenticatedCaller developmentCaller;
     private final ToolAdmission admission;
     private final ParameterFingerprinter fingerprinter;
+    private final CorrelationRequirement correlationRequirement;
+    private final CorrelationMdc mdc;
+    private final AuditedEntityTypes entityTypes;
 
     public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
                                 ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
@@ -112,7 +119,7 @@ public final class GetEntityContextTool {
                                 ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
                                 AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, true);
+                ToolAdmission.none(), null, CorrelationRequirement.OPTIONAL, AuditedEntityTypes.shape(), CorrelationMdc.off());
     }
 
     /**
@@ -125,14 +132,71 @@ public final class GetEntityContextTool {
                                 AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller,
                                 ToolAdmission admission, ParameterFingerprinter fingerprinter) {
         this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), true);
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), CorrelationRequirement.OPTIONAL, AuditedEntityTypes.shape(), CorrelationMdc.off());
+    }
+
+    /** As the development-caller overload, with a {@link CorrelationRequirement} on the transport context's external id. */
+    public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, CorrelationRequirement correlationRequirement) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                ToolAdmission.none(), null, correlationRequirement, AuditedEntityTypes.shape(), CorrelationMdc.off());
+    }
+
+    /**
+     * As the admission overload, with a {@link CorrelationRequirement} on the transport context's external id.
+     * A real admission needs a fingerprinter, or every approval would bind to the same empty fingerprint.
+     */
+    public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
+            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, AuditedEntityTypes.shape(), CorrelationMdc.off());
+    }
+
+    /**
+     * As the admission overload, opening {@code mdc} around the whole call so every log line on the
+     * handler thread, denials included, carries the validated external id.
+     */
+    public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
+            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
+            CorrelationMdc mdc) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, AuditedEntityTypes.shape(), mdc);
+    }
+
+    /** As the development-caller overload with a {@link CorrelationRequirement}, and the {@link AuditedEntityTypes} that decides what the audit record's {@code entityType} holds. */
+    public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, CorrelationRequirement correlationRequirement,
+            AuditedEntityTypes entityTypes) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                ToolAdmission.none(), null, correlationRequirement, entityTypes, CorrelationMdc.off());
+    }
+
+    /**
+     * As the {@code mdc} overload, with the {@link AuditedEntityTypes} that decides what the audit
+     * record's {@code entityType} holds. Every other overload applies {@link AuditedEntityTypes#shape()}.
+     */
+    public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
+            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
+            CorrelationMdc mdc, AuditedEntityTypes entityTypes) {
+        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
+                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, entityTypes,
+                mdc);
     }
 
     /** {@code fingerprinter} is {@code null} only on the overloads that predate admission, which pass {@link ToolAdmission#none()}. */
     private GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
             Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
-            ParameterFingerprinter fingerprinter, boolean canonical) {
+            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
+            AuditedEntityTypes entityTypes, CorrelationMdc mdc) {
         this.orchestrator = Objects.requireNonNull(orchestrator, "orchestrator");
         this.authorizationService = Objects.requireNonNull(authorizationService, "authorizationService");
         this.scopeResolver = Objects.requireNonNull(scopeResolver, "scopeResolver");
@@ -143,6 +207,9 @@ public final class GetEntityContextTool {
         this.developmentCaller = developmentCaller;
         this.admission = Objects.requireNonNull(admission, "admission");
         this.fingerprinter = fingerprinter;
+        this.correlationRequirement = Objects.requireNonNull(correlationRequirement, "correlationRequirement");
+        this.mdc = Objects.requireNonNull(mdc, "mdc");
+        this.entityTypes = Objects.requireNonNull(entityTypes, "entityTypes");
     }
 
     public McpServerFeatures.SyncToolSpecification specification() {
@@ -173,6 +240,18 @@ public final class GetEntityContextTool {
     }
 
     private McpSchema.CallToolResult handle(McpSyncServerExchange exchange, McpSchema.CallToolRequest request) {
+        // First, so nothing below can run before the id is known. Read from the transport
+        // context only: no tool argument is ever a source for it. The MDC scope covers every
+        // return and throw path below, denials included, and is restored on this reused thread.
+        InboundCorrelation inbound = ToolCalls.inboundCorrelation(exchange);
+        try (CorrelationMdc.Scope ignored = mdc.open(inbound)) {
+            return handle(exchange, request, inbound);
+        }
+    }
+
+    private McpSchema.CallToolResult handle(McpSyncServerExchange exchange, McpSchema.CallToolRequest request,
+                                            InboundCorrelation inbound) {
+        String externalId = inbound.id().map(ExternalCorrelationId::value).orElse("");
         Map<String, Object> arguments = request.arguments();
         String entityType = text(arguments, "entityType");
         String subjectId = text(arguments, "subjectId");
@@ -184,19 +263,24 @@ public final class GetEntityContextTool {
 
         AuthenticatedCaller caller = callerFrom(exchange);
         if (caller == null) {
-            return denyUnauthenticated(entityType, rejectedArguments);
+            return denyUnauthenticated(entityType, rejectedArguments, externalId);
+        }
+
+        if (correlationRequirement == CorrelationRequirement.REQUIRED && !inbound.isPresent()) {
+            return deny(caller, inbound.isRejected() ? DataPrismMcpServer.EXTERNAL_CORRELATION_ID_INVALID
+                    : DataPrismMcpServer.EXTERNAL_CORRELATION_ID_REQUIRED, entityType, rejectedArguments, externalId);
         }
 
         AuthorizationDecision decision = authorizationService.authorize(caller, TOOL_INVOCATION);
         if (!decision.allowed()) {
-            return deny(caller, decision.denialCode(), entityType, rejectedArguments);
+            return deny(caller, decision.denialCode(), entityType, rejectedArguments, externalId);
         }
 
         PrivacySession session;
         try {
             session = scopeResolver.resolve(caller, decision, clock);
         } catch (SecurityRefusedException refused) {
-            return deny(caller, refused.code(), entityType, rejectedArguments);
+            return deny(caller, refused.code(), entityType, rejectedArguments, externalId);
         }
 
         // Admission runs before anything reaches the orchestrator. It is never
@@ -206,7 +290,7 @@ public final class GetEntityContextTool {
                 session.privacyContext(), ToolCalls.binding(entityType, subjectId, session.privacyContext(),
                         session.investigationContext()));
         if (!admitted.admitted()) {
-            return deny(caller, admitted.code(), admitted.approvalId(), entityType, rejectedArguments);
+            return deny(caller, admitted.code(), admitted.approvalId(), entityType, rejectedArguments, externalId);
         }
 
         // Past this point the call is accepted: authorisation, scope
@@ -219,7 +303,8 @@ public final class GetEntityContextTool {
             response = orchestrator.buildContext(
                     new ContextRequest(entityType, subjectId, rejectedArguments,
                             ContextRequest.DEFAULT_TOOL_NAME, false,
-                            admitted.approvalId(), admitted.approverPrincipalId()),
+                            admitted.approvalId(), admitted.approverPrincipalId(), inbound.id(),
+                            entityTypes.audited(entityType)),
                     session.privacyContext(), session.investigationContext());
             return ToolCalls.withCorrelation(McpSchema.CallToolResult.builder()
                     .structuredContent(mapper.convertValue(response, Map.class))
@@ -264,13 +349,14 @@ public final class GetEntityContextTool {
      * past — it is rethrown as {@link AuditUnavailableException} so the call
      * still aborts, carrying no text from the audit sink's own exception.
      */
-    private McpSchema.CallToolResult denyUnauthenticated(String entityType, Set<String> rejectedArguments) {
+    private McpSchema.CallToolResult denyUnauthenticated(String entityType, Set<String> rejectedArguments,
+                                                       String externalId) {
         metrics.increment(Metric.MCP_DENIED);
         String correlationId = UUID.randomUUID().toString();
         try {
-            audit.record(UNAUTHENTICATED_PRINCIPAL, UNAUTHENTICATED_PRINCIPAL, NAME, entityType, "", "", "", "",
-                    "", "", ToolCalls.denyDecision(NO_AUTHENTICATED_CALLER), Set.of(), rejectedArguments,
-                    correlationId);
+            audit.record(new AuditEntry(UNAUTHENTICATED_PRINCIPAL, UNAUTHENTICATED_PRINCIPAL, NAME, entityTypes.audited(entityType),
+                    "", "", "", "", "", "", ToolCalls.denyDecision(NO_AUTHENTICATED_CALLER), Set.of(),
+                    rejectedArguments, correlationId, Map.of(), "", "", externalId));
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
             // the server's own log; only the stable code below crosses to the
@@ -289,21 +375,22 @@ public final class GetEntityContextTool {
      * aborts, carrying no text from the audit sink's own exception.
      */
     private McpSchema.CallToolResult deny(AuthenticatedCaller caller, String code, String entityType,
-                                          Set<String> rejectedArguments) {
-        return deny(caller, code, null, entityType, rejectedArguments);
+                                          Set<String> rejectedArguments, String externalId) {
+        return deny(caller, code, null, entityType, rejectedArguments, externalId);
     }
 
     /** As above; {@code approvalId}, when not {@code null}, is audited and returned with the code. */
     private McpSchema.CallToolResult deny(AuthenticatedCaller caller, String code, String approvalId,
-                                          String entityType, Set<String> rejectedArguments) {
+                                          String entityType, Set<String> rejectedArguments,
+                                          String externalId) {
         metrics.increment(Metric.MCP_DENIED);
         String correlationId = UUID.randomUUID().toString();
         String audited = approvalId == null ? "" : approvalId;
         try {
-            audit.record(new AuditEntry(caller.principalId(), caller.clientId(), NAME, entityType, "", "", "", "",
+            audit.record(new AuditEntry(caller.principalId(), caller.clientId(), NAME, entityTypes.audited(entityType), "", "", "", "",
                     caller.purpose(), caller.caseId(), ToolCalls.denyDecision(code), Set.of(), rejectedArguments,
                     correlationId,
-                    Map.of(), audited, ""));
+                    Map.of(), audited, "", externalId));
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
             // the server's own log; only the stable code below crosses to the

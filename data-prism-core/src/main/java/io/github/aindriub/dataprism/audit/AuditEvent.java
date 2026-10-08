@@ -35,7 +35,10 @@ import java.util.TreeMap;
  * values. {@code approvalId} and {@code approverId} identify a four-eyes approval
  * and the second principal, or are empty. {@code recordVersion} is {@code 1} for
  * records written before these fields existed and {@code 2} after; version 1
- * records verify over exactly the original nineteen hashed fields.
+ * records verify over exactly the original nineteen hashed fields. {@code externalCorrelationId}
+ * is the caller's correlation id (task 108), or empty; it is hashed from {@code recordVersion} 3
+ * on, and is checked against the same ceiling as the inbound validation (at most 256 characters
+ * from {@code [A-Za-z0-9._:/+=-]}).
  */
 public record AuditEvent(
         String eventId,
@@ -61,10 +64,14 @@ public record AuditEvent(
         int recordVersion,
         Map<String, String> fieldDispositions,
         String approvalId,
-        String approverId) {
+        String approverId,
+        String externalCorrelationId) {
 
     /** The record version written by this code. */
-    public static final int CURRENT_VERSION = 2;
+    public static final int CURRENT_VERSION = 3;
+
+    /** Task 108's ceiling on an external correlation id: at most this many characters. */
+    private static final int EXTERNAL_ID_MAX_LENGTH = 256;
 
     public AuditEvent {
         sourceSystems = Set.copyOf(sourceSystems);
@@ -78,6 +85,44 @@ public record AuditEvent(
         });
         approvalId = approvalId == null ? "" : approvalId;
         approverId = approverId == null ? "" : approverId;
+        externalCorrelationId = externalCorrelationId == null ? "" : externalCorrelationId;
+        if (recordVersion < 3 && !externalCorrelationId.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "externalCorrelationId requires recordVersion 3 or later: earlier versions do not hash it");
+        }
+        if (!withinExternalIdCeiling(externalCorrelationId)) {
+            throw new IllegalArgumentException(
+                    "externalCorrelationId exceeds the ceiling: at most 256 characters from [A-Za-z0-9._:/+=-]");
+        }
+    }
+
+    /** The version-2 shape: yields an empty {@code externalCorrelationId}, whatever {@code recordVersion} says. */
+    public AuditEvent(String eventId, Instant timestamp, String principalId, String clientId, String tool,
+                      String entityType, String subjectPseudonym, String parameterFingerprint,
+                      String privacyProfile, String scopeId, String purpose, String caseId,
+                      String policyDecision, Set<String> sourceSystems, Set<String> rejectedArguments,
+                      String correlationId, String instanceId, long sequence, String previousHash,
+                      String eventHash, int recordVersion, Map<String, String> fieldDispositions,
+                      String approvalId, String approverId) {
+        this(eventId, timestamp, principalId, clientId, tool, entityType, subjectPseudonym,
+                parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, sourceSystems,
+                rejectedArguments, correlationId, instanceId, sequence, previousHash, eventHash, recordVersion,
+                fieldDispositions, approvalId, approverId, "");
+    }
+
+    private static boolean withinExternalIdCeiling(String value) {
+        if (value.length() > EXTERNAL_ID_MAX_LENGTH) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            boolean ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '.' || c == '_' || c == ':' || c == '/' || c == '+' || c == '=' || c == '-';
+            if (!ok) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** The pre-version-2 shape: yields {@code recordVersion == 1}, no dispositions and no approval. */
@@ -90,7 +135,7 @@ public record AuditEvent(
         this(eventId, timestamp, principalId, clientId, tool, entityType, subjectPseudonym,
                 parameterFingerprint, privacyProfile, scopeId, purpose, caseId, policyDecision, sourceSystems,
                 rejectedArguments, correlationId, instanceId, sequence, previousHash, eventHash, 1, Map.of(),
-                "", "");
+                "", "", "");
     }
 
     private static boolean isValidAction(String action) {

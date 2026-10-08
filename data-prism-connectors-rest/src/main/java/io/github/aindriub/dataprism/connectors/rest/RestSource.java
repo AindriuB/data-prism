@@ -24,9 +24,12 @@ import java.util.Objects;
  *                     from configuration set this whenever TLS is required, and it
  *                     defaults to {@code false} only through the compatibility
  *                     constructor used by the in-process stub tests below
+ * @param correlationHeader the validated name of the header on which the external
+ *                     correlation id is sent to this source, or {@code null} to send
+ *                     nothing
  */
 public record RestSource(String name, URI baseUrl, String pathTemplate, Duration timeout,
-                          boolean requireHttps) {
+                          boolean requireHttps, String correlationHeader) {
 
     private static final String PLACEHOLDER = "{subject}";
 
@@ -35,6 +38,7 @@ public record RestSource(String name, URI baseUrl, String pathTemplate, Duration
         Objects.requireNonNull(baseUrl, "baseUrl");
         Objects.requireNonNull(pathTemplate, "pathTemplate");
         Objects.requireNonNull(timeout, "timeout");
+        OutboundCorrelationHeader.validate(correlationHeader, "source " + name, 0);
 
         String scheme = baseUrl.getScheme();
         if (scheme == null || !(scheme.equals("http") || scheme.equals("https"))) {
@@ -61,6 +65,12 @@ public record RestSource(String name, URI baseUrl, String pathTemplate, Duration
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("source " + name + " timeout must be positive");
         }
+    }
+
+    /** Sends no correlation header. */
+    public RestSource(String name, URI baseUrl, String pathTemplate, Duration timeout,
+                      boolean requireHttps) {
+        this(name, baseUrl, pathTemplate, timeout, requireHttps, null);
     }
 
     /**

@@ -10,6 +10,9 @@ import io.github.aindriub.dataprism.security.AdmissionDecision;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.ReservedArguments;
 import io.github.aindriub.dataprism.security.ToolAdmission;
+import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 
 import java.util.ArrayList;
@@ -36,6 +39,17 @@ final class ToolCalls {
     private static final Set<String> APPROVAL_ARGUMENTS = Set.of("approvalId", "approverId");
 
     private ToolCalls() {
+    }
+
+    /**
+     * The correlation the transport context carries, or {@code absent()} when there is no
+     * exchange, no context, no entry, or an entry that is not an {@link InboundCorrelation}.
+     * Never read from tool arguments.
+     */
+    static InboundCorrelation inboundCorrelation(McpSyncServerExchange exchange) {
+        McpTransportContext context = exchange == null ? McpTransportContext.EMPTY : exchange.transportContext();
+        Object value = context == null ? null : context.get(DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY);
+        return value instanceof InboundCorrelation inbound ? inbound : InboundCorrelation.absent();
     }
 
     static Set<String> rejectedArguments(Map<String, Object> arguments) {

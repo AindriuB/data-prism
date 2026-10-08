@@ -17,7 +17,7 @@
 #
 # An agent client with a "command"/"args" style stdio MCP configuration runs
 # this script directly; see docs/agents/stdio.md for a config snippet. It
-# takes no arguments and needs nothing beyond a JDK 21 and network access to a
+# takes no arguments and needs nothing beyond a JDK 21 or newer and network access to a
 # Maven repository the first time it runs (subsequent runs use the local
 # repository cache, same as any other Maven build in this repository).
 set -euo pipefail

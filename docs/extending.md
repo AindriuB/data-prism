@@ -95,11 +95,11 @@ consumer building their own extension would find it:
 > jar's own classes and resources to the running server's classpath, never
 > its dependencies, so everything below other than `data-prism-core` and
 > `data-prism-annotations` is scoped "provided" — it must already be on
-> `data-prism-server`'s own classpath, and `spring-boot-starter-web` and
+> `data-prism-server`'s own classpath, and `spring-boot-starter-webmvc` and
 > `spring-boot-starter-oauth2-resource-server` (`data-prism-server`'s own
 > dependencies) put it there.
 
-— `data-prism-quickstart-extension/pom.xml:18-26`
+— `data-prism-quickstart-extension/pom.xml:19-25`
 
 > `LOADER_PATH`: a directory, read by Spring Boot's `PropertiesLauncher`
 > exactly as
@@ -204,6 +204,38 @@ throwing. That is what lets the orchestrator record this source's outcome as
 consistency finding — instead of tripping this source's circuit breaker
 (`data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceOutcome.java:19-23`,
 `QuickstartCustomerAdapter.java:12-21`).
+
+## Using the caller's correlation id in an adapter
+
+When the caller sent a correlation id and it passed validation, it arrives on
+the request, not in `parameters`:
+
+```java
+@Override
+public Object fetch(DataRequest request) {
+    var spec = client.get().uri("/customers/{id}", request.subjectId());
+    var withId = request.context().externalCorrelationId()
+            .map(id -> spec.header("X-Correlation-Id", id.value()))
+            .orElse(spec);
+    return withId.retrieve().body(Customer.class);
+}
+```
+
+The value has already been validated against the operator's policy, so it is
+syntactically constrained (validation does not prove it is free of personal
+data). Do not log it next to source data: it is what joins an
+audit record to the caller's own systems, and logging it beside the payload
+rebuilds that join in a place the privacy engine does not control. Do not send
+it to a source unless that source's owner expects it; an unexpected header is a
+disclosure to a third party.
+
+The built-in REST and configured JSON sources do this for you, without any
+adapter code. A source that sets `correlation-header` in its YAML has the id
+set on that header by an interceptor that reads it from the request, so it is
+correct under parallel fan-out. A source without the key sends nothing, unless
+`dataprism.correlation.outbound.header` is set: that global default then
+applies to every source without its own key, and each such source is one more
+party that can join the id.
 
 ## Implement `IdentityResolver`
 
@@ -467,8 +499,8 @@ depending on Data Prism:
 ```xml
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <data-prism.version>0.4.1</data-prism.version>
-    <spring-boot.version>3.5.16</spring-boot.version>
+    <data-prism.version>0.5.0</data-prism.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
   <dependencyManagement>
@@ -509,8 +541,9 @@ depending on Data Prism:
   </dependencies>
 ```
 
-`spring-boot.version` (`3.5.16`) is the exact Spring Boot version the 0.3.0
-server distribution was built against (recorded against 0.3.0) — importing its
+`spring-boot.version` (`4.1.1`, which brings `spring-web` `7.0.9` and
+`spring-boot-autoconfigure` `4.1.1`) is the exact Spring Boot version the
+server distribution is built against — importing its
 `spring-boot-dependencies` BOM is what lets `spring-web` and
 `spring-boot-autoconfigure` above go unversioned safely, resolving to the
 same versions already on the running server's classpath, which is the whole
@@ -525,19 +558,24 @@ dependencies at lines 60-94 — those exist only so the Maven reactor builds
 the packaged artifacts this module's own smoke test starts as
 subprocesses; a consumer's extension pom has no reason to carry them.)
 
-This was verified, not assumed (recorded against 0.3.0): a throwaway project's pom was assembled by
-pasting the `<properties>`/`<dependencyManagement>`/`<dependencies>` block
-above and the `<plugin>` block below unmodified into a pom whose only other
-content is the top-level fields already assumed (`groupId`, `artifactId`,
-`version`, `packaging`) — nothing added, nothing implied. Alongside a
-minimal `DataSourceAdapter` and an `@LlmExposedModel` record, it was built
-with `mvn package` against a clean local repository with no other
-data-prism artifacts in it, resolving `data-prism-core`,
-`data-prism-annotations` and `data-prism-processor` `0.3.0` from Maven
-Central and `spring-web` `6.2.19`/`spring-boot-autoconfigure` `3.5.16` from
-the imported BOM — the same Spring Boot version the 0.3.0 server
-distribution itself was built against (recorded against 0.3.0). The build produced a jar; nothing in
-this paragraph is aspirational.
+What has been checked, and what has not (recorded 2026-10-07). The two XML
+blocks in this section were extracted programmatically and pasted unmodified
+into a pom whose only other content is `modelVersion`, `groupId`,
+`artifactId`, `version` and `packaging`. Alongside a minimal
+`DataSourceAdapter` and an `@LlmExposedModel` record, that pom was built with
+`mvn package` against Maven Central, with an empty local repository, in its
+`0.4.1` form. It resolved `data-prism-core`, `data-prism-annotations` and
+`data-prism-processor` `0.4.1`, `spring-web` `7.0.9` and
+`spring-boot-autoconfigure` `4.1.1` (Spring Boot `4.1.1`), and the build
+produced a jar. The `0.5.0` form of the snippet differs only in
+`data-prism.version`. The snippet's Spring dependencies were re-resolved
+against Spring Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1
+migration, at `data-prism.version` `0.4.1`; those Spring versions come from the
+imported BOM and do not depend on `data-prism.version`. A
+full `mvn package` of the `0.5.0` form against the published `0.5.0` artifacts
+has not been run, because they were not on Maven Central when this was
+written. It is repeated after publication, and this paragraph is amended if
+the result differs. Nothing here has been shown for any other version.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above. If your
@@ -643,7 +681,7 @@ the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.4.1.jar \
+  java -jar data-prism-server/target/data-prism-server-0.5.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 

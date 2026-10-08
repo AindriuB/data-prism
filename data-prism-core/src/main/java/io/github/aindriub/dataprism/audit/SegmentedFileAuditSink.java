@@ -24,7 +24,9 @@ import java.util.regex.Pattern;
  * return and poisoning discipline is that class's, unchanged. On top of it,
  * this sink poisons as a whole: once any segment's write has failed, every
  * later {@link #record(AuditEvent)} throws, whichever day it belongs to.
- * Segment files are never truncated or rewritten by this class.
+ * Segment files are never truncated or rewritten by this class. Opening a segment that
+ * already ends without a newline (a process died mid-write) first terminates that torn tail
+ * with {@code "\r\n"}, as {@link FileAuditSink} does; one live writer per directory is assumed.
  */
 public final class SegmentedFileAuditSink implements AuditSink, Closeable {
 
@@ -40,18 +42,34 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
 
     private final Path directory;
     private final ChannelOpener opener;
+    private final String suffix;
+    private final java.util.function.Function<AuditEvent, String> renderer;
     private FileAuditSink current;
     private LocalDate currentDate;
     private volatile RuntimeException poisonedBy;
 
     public SegmentedFileAuditSink(Path directory) {
-        this(directory, segment -> FileChannel.open(segment, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
-                StandardOpenOption.APPEND));
+        this(directory, APPEND_OPENER);
     }
 
+    /** Opens a segment create-and-append. */
+    static final ChannelOpener APPEND_OPENER = segment -> FileChannel.open(segment, StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE, StandardOpenOption.APPEND);
+
     SegmentedFileAuditSink(Path directory, ChannelOpener opener) {
+        this(directory, opener, SUFFIX, AuditRecordFormat::serialize);
+    }
+
+    /**
+     * Segments named {@code audit-YYYY-MM-DD<suffix>}, each line produced by {@code renderer}. Used by
+     * {@link SegmentedJsonAuditSink}; the date, fsync and poisoning behaviour are this class's.
+     */
+    SegmentedFileAuditSink(Path directory, ChannelOpener opener, String suffix,
+                           java.util.function.Function<AuditEvent, String> renderer) {
         this.directory = directory;
         this.opener = opener;
+        this.suffix = suffix;
+        this.renderer = renderer;
         try {
             Files.createDirectories(directory);
         } catch (IOException e) {
@@ -94,7 +112,7 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
             if (current == null || !date.equals(currentDate)) {
                 switchTo(date);
             }
-            current.record(event);
+            current.recordLine(renderer.apply(event));
         } catch (RuntimeException e) {
             poisonedBy = e;
             throw e;
@@ -111,9 +129,16 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
                 current = null;
             }
         }
-        Path segment = directory.resolve(segmentName(date));
+        Path segment = directory.resolve(PREFIX + date + suffix);
         try {
-            current = new FileAuditSink(segment, opener.open(segment));
+            FileChannel channel = opener.open(segment);
+            try {
+                FileAuditSink.terminateTornTail(segment, channel);
+            } catch (IOException | RuntimeException e) {
+                FileAuditSink.closeQuietly(channel);
+                throw e;
+            }
+            current = new FileAuditSink(segment, channel);
         } catch (IOException e) {
             throw new FileAuditSink.OpenFailedException("AUDIT_SINK_OPEN_FAILED", segment, e);
         }

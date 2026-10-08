@@ -84,19 +84,26 @@ A few properties are deliberate, not accidental gaps:
   `subjectPseudonym`, `parameterFingerprint`, `privacyProfile`, `scopeId`,
   `purpose`, `caseId`, `policyDecision`, `correlationId`, `sourceSystems`,
   `rejectedArguments` and `previousHash` — never a raw source value, only what
-  `Slf4jAuditSink` already emitted.
+  `Slf4jAuditSink` already emitted. `entityType` holds the requested type
+  only when it is a configured entity type, or an upper-case identifier when
+  none is configured; otherwise it holds `<unregistered>` (see
+  [`dataprism.audit`](configuration.md#dataprismaudit)). With no list, an
+  upper-case token such as `MURPHY` or `ACC123` still passes the shape, so set
+  `dataprism.audit.entity-types`.
 
-  Record version 2 adds four fields. `recordVersion` is `2` for every record
-  written now; a line with no `recordVersion` is version 1 and still verifies,
-  hashed over exactly the nineteen fields above, joined with `|` and `,` as
-  before. Because that joining does not escape its separators, some distinct
-  version 1 records can share a hash; version 1 keeps it so that committed
-  chains still verify. Version 2 hashes a length-prefixed encoding (each item
-  is written as its UTF-8 byte length, a colon and the text, so no two
-  different records produce the same input) that includes `recordVersion`,
-  `fieldDispositions`, `approvalId` and `approverId` as well as the nineteen
-  fields. Editing a version 2 record's `recordVersion` to `1` is therefore
-  reported as a break.
+  Records are written as `recordVersion` 3. Version 1 hashes the nineteen
+  fields above, version 2 adds four, and version 3 adds
+  `externalCorrelationId` (25 fields; see [Record version
+  3](#record-version-3)). Version 1, 2 and 3 records all still verify. A line
+  with no `recordVersion` is version 1 and still verifies, hashed over exactly
+  the nineteen fields above, joined with `|` and `,` as before. Because that
+  joining does not escape its separators, some distinct version 1 records can
+  share a hash; version 1 keeps it so that committed chains still verify.
+  Version 2 hashes a length-prefixed encoding (each item is written as its
+  UTF-8 byte length, a colon and the text, so no two different records produce
+  the same input) that includes `recordVersion`, `fieldDispositions`,
+  `approvalId` and `approverId` as well as the nineteen fields. Editing a
+  version 2 record's `recordVersion` to `1` is therefore reported as a break.
   `fieldDispositions` maps a field path to the action taken on it. Paths look
   like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
   example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
@@ -398,6 +405,227 @@ the Data Prism trail a record of your AI system's inputs or outputs, which are
 yours to log. A call rejected for a missing argument is not audited and has no
 id to join. See [EU AI Act and GDPR Art. 9 support](eu-ai-act.md).
 
+## Record version 3
+
+`recordVersion` is `3` for every record written now. A version 3 record has 25
+fields, the 24 of version 2 plus `externalCorrelationId` as the last one,
+after `approverId`. The fields are `eventId`, `timestamp`, `principalId`,
+`clientId`, `tool`, `entityType`, `subjectPseudonym`, `parameterFingerprint`,
+`privacyProfile`, `scopeId`, `purpose`, `caseId`, `policyDecision`,
+`sourceSystems`, `rejectedArguments`, `correlationId`, `instanceId`,
+`sequence`, `previousHash`, `eventHash`, `recordVersion`, `fieldDispositions`,
+`approvalId`, `approverId` and `externalCorrelationId`.
+
+Version 3 hashes exactly what version 2 hashes, in the same order, using the
+same length-prefixed encoding (each item written as its UTF-8 byte length, a
+colon and the text), and appends one more item after `approverId`: the
+encoding of `externalCorrelationId`. An empty value is written as `0:`. Version
+3 defines no encoding of its own, and `externalCorrelationId` is not part of
+the version 1 or version 2 hash, so records already written still verify
+unchanged. Editing the id in a version 3 record breaks its hash, and so does
+rewriting its `recordVersion` to `2` to make the id drop out of the hash.
+
+A chain may mix versions. A writer that was upgraded part way through has
+version 2 records followed by version 3 records, and the offline verifier
+replays each record under the version it declares. The line's field count has
+to agree with the declared version exactly (20 for version 1, 24 for version
+2, 25 for version 3). `FIELD_COUNT_MISMATCH`, a break (exit code 2), covers a
+line with too many fields and a full-length line that carries the wrong
+version. A shorter line that could be a torn write, for example 22 fields
+declaring version 3, is not a break: it is reported as an interrupted write
+(exit code 4). A writer's version only increases. A record whose version is
+lower than one the same writer already wrote is reported as
+`VERSION_REGRESSION`, also a
+break (exit code 2), because a downgrade is the way to forge a record that
+avoids a field the newer version hashes. Retention does not purge past it.
+
+### Interrupted writes and the restart terminator
+
+A process that dies mid-write leaves a line with no newline. A writer that
+resumes on that file (`FileAuditSink`, or a segment opened by
+`SegmentedFileAuditSink`) checks the last byte before its first record. If the
+file is non-empty and does not end in `\n`, it writes `\r\n`, fsyncs, and only
+then appends. An empty, absent or newline-terminated file is not touched.
+Existing bytes are never truncated or rewritten. If the tail cannot be read or
+the terminator cannot be written and fsynced, opening fails with
+`AUDIT_SINK_OPEN_FAILED` and nothing is appended.
+
+A serialized record never contains a raw `\r` (it is escaped), so the verifier
+reads any line that ends in one as a writer-terminated torn fragment: an
+`INTERRUPTED_WRITE_FRAGMENT`, exit code 4, never parsed as a record. This
+holds wherever the write was torn, including inside the event hash or the
+external correlation id, and when the record was complete except for its
+newline. The resumed writer's first record is on its own line and verifies as
+the `GENESIS` head of its own chain. Directory mode adds the same `\r\n` to a
+non-final segment that ends torn. The over-count rule above is unchanged: an
+over-long line with a parseable version is still `FIELD_COUNT_MISMATCH`.
+
+An attacker who appends `\r` to a valid line hides that record, which has the
+same power as deleting it. In the middle of a writer's chain the next record
+then fails its `previousHash` check, a break (exit code 2). If it was the
+writer's last record, the effect is tail truncation, which
+[`--checkpoints`](#external-checkpoints) reports as `TRUNCATED_BEFORE_CHECKPOINT`
+(exit code 5). The marker cannot inject a field, because the line is never
+parsed.
+
+Logs written before 0.5.0 may already hold a fragment fused with a restarted
+writer's first record, with no terminator between them. That is still
+`FIELD_COUNT_MISMATCH`, a break, and retention stops there. One known cause is a
+legacy interrupted write followed by a restart. To check, see whether the
+trailing 20, 24 or 25 fields of the line parse as a `GENESIS` record of a new
+`instanceId`, and whether the record after the line continues that writer.
+
+One live writer process is assumed to append to a given file or segment
+directory. A second live writer opening the same file could terminate the first
+writer's in-flight line.
+
+## External correlation id
+
+An organisation's own transaction id can be recorded on the audit event as
+`externalCorrelationId`, so an audit record can be matched to a request in the
+organisation's other systems. This is separate from Data Prism's own
+`correlationId`, which Data Prism generates and which is described under
+[Joining to your AI-system logs](#joining-to-your-ai-system-logs). Setup is in
+[configuration](configuration.md#dataprismcorrelation).
+
+- **One source.** The id is read only from the single HTTP request header named
+  by `dataprism.correlation.inbound.header`. It is never taken from a tool
+  argument, a body or a second header. A repeated header is rejected.
+- **Validated.** The value must pass a fixed ceiling (at most 256 characters,
+  each in `[A-Za-z0-9._:/+=-]`) and then the configured pattern or, for
+  `format: traceparent`, the W3C `traceparent` form, whose trace id is
+  recorded. The strict default pattern admits a canonical UUID, 16 to 128 hex
+  characters containing at least one letter a to f, or a W3C `traceparent`,
+  all within the 256-character ceiling above. The pattern limits an id's shape,
+  not its meaning, so choose one that admits generated ids only.
+- **Dropped if invalid.** A rejected value is dropped and the call proceeds as
+  if no id had been sent. A WARN line with the code
+  `EXTERNAL_CORRELATION_ID_DROPPED` is logged and the rejected text is never
+  logged.
+- **Refused if required.** With `inbound.required: true`, a call with no valid
+  id is refused and audited before any source is called:
+  `EXTERNAL_CORRELATION_ID_REQUIRED` when the header is absent,
+  `EXTERNAL_CORRELATION_ID_INVALID` when it is present but rejected.
+- **Hashed.** The validated id is part of the version 3 record hash, so editing
+  it is detected like an edit to any other hashed field.
+- **Sent only where configured.** The id goes to a source only through
+  `dataprism.correlation.outbound.header` or a source's own
+  `correlation-header`. A source's `correlation-header` overrides the global
+  header for that source. Setting the global outbound header sends it to every
+  configured source; a source with neither receives no id. It reaches a
+  source's request headers and nowhere in model-visible content.
+- **Logs.** With `dataprism.correlation.mdc-key` set, the validated id is also
+  placed in the SLF4J MDC for the duration of the tool call, so Data Prism's own
+  log lines on that call carry it. The MDC is wired by the Spring Boot starter.
+  There is no MDC overload for the stdio transport, so a library user who
+  builds a stdio server themselves always runs with the MDC off.
+
+Startup refuses a bad correlation configuration with a code before any
+request is served. Besides the codes in the
+[configuration reference](configuration.md#dataprismcorrelation),
+`INVALID_CORRELATION_FORMAT` is raised when `inbound.format` is neither
+`opaque` nor `traceparent`.
+
+This supports a deployer's own record-keeping. It does not establish who the
+caller is.
+
+## Structured JSON output
+
+The native hash-chained segments stay the authoritative record. A deployment
+that ships audit events to a log platform can also have Data Prism render each
+event as one line of JSON, with chosen field names and routing values. The
+rendering only renames and reshapes. It adds no value that is not in the event,
+apart from two things: the `event.outcome` derived from `policyDecision`, and
+the routing constants an operator sets. The properties are under
+`dataprism.audit.output.*` in
+[configuration](configuration.md#output-field-names-routing-and-a-json-projection).
+
+**Presets.** `canonical` writes each field under its own name. `ecs` writes
+the names below. The mapping is total: every field is written exactly once. An
+operator can override one field's path with
+`dataprism.audit.output.field-names.<field>`; a dot in a path nests. For
+example, to write the external correlation id as `transaction_id` instead of
+`trace.id`:
+
+```properties
+dataprism.audit.output.field-preset=ecs
+dataprism.audit.output.field-names.externalCorrelationId=transaction_id
+```
+
+| Canonical field | ECS path |
+|---|---|
+| `eventId` | `event.id` |
+| `timestamp` | `@timestamp` |
+| `principalId` | `user.id` |
+| `clientId` | `dataprism.client_id` |
+| `tool` | `event.action` |
+| `entityType` | `dataprism.entity_type` |
+| `subjectPseudonym` | `dataprism.subject_pseudonym` |
+| `parameterFingerprint` | `dataprism.parameter_fingerprint` |
+| `privacyProfile` | `dataprism.privacy_profile` |
+| `scopeId` | `dataprism.scope_id` |
+| `purpose` | `dataprism.purpose` |
+| `caseId` | `dataprism.case_id` |
+| `policyDecision` | `dataprism.policy_decision` |
+| `sourceSystems` | `dataprism.source_systems` |
+| `rejectedArguments` | `dataprism.rejected_arguments` |
+| `correlationId` | `dataprism.correlation_id` |
+| `instanceId` | `dataprism.instance_id` |
+| `sequence` | `dataprism.sequence` |
+| `previousHash` | `dataprism.previous_hash` |
+| `eventHash` | `dataprism.event_hash` |
+| `recordVersion` | `dataprism.record_version` |
+| `fieldDispositions` | `dataprism.field_dispositions` |
+| `approvalId` | `dataprism.approval_id` |
+| `approverId` | `dataprism.approver_id` |
+| `externalCorrelationId` | `trace.id` |
+| (derived) | `event.outcome` |
+
+**Derived and constant values.** `event.outcome` is derived from
+`policyDecision` alone: `ALLOW` and `ALLOW:...` give `success`, an empty
+decision gives `unknown`, and anything else (including `DENY:<code>`) gives
+`failure`. The routing constants `event.dataset`, `data_stream.type`,
+`data_stream.dataset` and `data_stream.namespace` are written exactly as the
+operator configured them, and follow the Elastic data stream naming rules. A
+routing path or the outcome path that collides with a mapped path is refused at
+startup with `AUDIT_FIELD_MAPPING_CONFLICT`.
+
+**The native segments remain authoritative.** The `.ndjson` projection
+(`dataprism.audit.output.json-directory`) is written after the native line and
+carries the same `eventHash`. It is not chained and nothing verifies it. Verify
+the native segments. Do not tail them, and point a shipper at the projection
+only. See [Log shipping](log-shipping.md).
+
+**A failed projection write stops service.** If writing the `.ndjson` line
+fails (a full or unwritable `json-directory`), the native event is already on
+disk, and every later audited tool call is refused with
+`AUDIT_PROJECTION_FAILED` until the process restarts. This is fail-closed by
+design: the alternative is reusing a sequence number. Monitor the free space
+and permissions of `json-directory`. A failure to purge expired `.ndjson`
+segments is different: it is only logged, and does not stop the native purge or
+any call.
+
+**Sinks.** With `sink: slf4j`, a configured preset, `field-names` or routing
+makes `Slf4jAuditSink` attach the mapped values to each log event as key-value
+pairs. Its mapped constructor attaches the routing constants as key-value pairs
+as well. With none of them set, the message carries no key-value pairs.
+
+**Dotted keys in `fieldDispositions`.** The keys of `fieldDispositions` are
+field paths such as `crm:/contacts/*/email`, and they can contain dots.
+Elasticsearch expands a dotted name into nested objects, which splits such a key
+into an object path and can conflict with another key that is a prefix of it.
+For `dataprism.field_dispositions` in an Elastic index, use a mapping that does
+not expand the keys: map the field as `flattened`, or as an object with
+`enabled: false` so it is kept in the source and not indexed. Check how your
+logging layer renders dotted key-value names before relying on a mapping.
+
+**Refusal codes at startup** specific to this output:
+`INVALID_AUDIT_FIELD_PRESET` (`field-preset` is neither `canonical` nor
+`ecs`) and
+`AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT` (`json-directory` is the audit `directory`,
+inside it, or contains it). The full list is in
+[configuration](configuration.md#output-field-names-routing-and-a-json-projection).
+
 ## What this does and does not prove
 
 Read this before treating an intact report, or this file's mere existence,
@@ -406,7 +634,8 @@ as more than it is.
 **What it proves.** For every record the verifier could see, in every
 writer's chain, replaying the chain found no edit or deletion of any of the
 hashed fields (the nineteen of version 1; for version 2 also `recordVersion`,
-`fieldDispositions`, `approvalId` and `approverId`). Editing a record breaks its own stored hash the
+`fieldDispositions`, `approvalId` and `approverId`; for version 3 also
+`externalCorrelationId`). Editing a record breaks its own stored hash the
 moment its content no longer matches what `AuditEventHash` recomputes from
 that content, so an edit is caught anywhere in the chain, including the very
 last record written — a chain does not have to have a successor record to
@@ -479,7 +708,8 @@ call `checkpoint()` on its own schedule.
 
 Given a directory instead of a file, the verifier reads every
 `audit-YYYY-MM-DD.log` segment in date order as one stream and replays it as
-usual. A non-final segment ending in a torn write is reported as an
+usual. A non-final segment ending in a torn write is given the same `\r\n`
+terminator a resumed writer writes, and is reported as an
 interrupted-write fragment rather than fused with the next segment's first
 record. Byte offsets in a directory report are offsets into that concatenation.
 

@@ -106,7 +106,8 @@ One correlated, privacy-safe view of one entity.
 
 Nothing else is accepted. Argument names that would identify the caller,
 scope or purpose (`principalId`, `scopeId`, `scopeType`, `purpose`, `caseId`,
-`profile`, `capabilities`) are reserved: sending one is ignored and audited,
+`profile`, `capabilities`, and the correlation names `correlationId`,
+`externalCorrelationId`, `traceparent`) are reserved: sending one is ignored and audited,
 never read for its value (`ReservedArguments`).
 
 **Response**
@@ -204,6 +205,16 @@ for every other refusal. No path from the payload is ever
 recorded, because payload keys can carry data. `merged:<refused>` also marks
 refusals that are not validation failures, such as `NO_SOURCE_DATA` or an
 exhausted budget. It names paths and actions, never values.
+
+The `entityType` the audit record holds is not always the one you sent. It is
+the requested value only when it is one of the configured
+`dataprism.audit.entity-types`, or, when none are configured, an upper-case
+identifier matching `[A-Z][A-Z0-9_]{0,63}`. Otherwise it is `<unregistered>`.
+The response still echoes the `entityType` of the request, and refusal codes
+and results are the same either way. With no list configured, an upper-case
+token such as `MURPHY` or `ACC123` still passes the shape and is recorded, so
+set `dataprism.audit.entity-types`
+(see [`dataprism.audit`](configuration.md#dataprismaudit)).
 
 [![Sequence diagram of one get_entity_context call: the MCP client calls the tool, which authorises the caller, resolves a privacy session, then asks the orchestrator to fan out to a source adapter, scrub the record, validate it and record an audit event, before returning the response to the client.](assets/diagrams/entity-context-call.svg)](assets/diagrams/entity-context-call.svg)
 Select the diagram to open it full size.
@@ -476,6 +487,34 @@ rejected for missing `entityType` or
 
 A refusal code that is not an upper-case token (`[A-Z][A-Z0-9_]{0,63}`) is shown to the
 client, and recorded in the audit, as `INVALID_REFUSAL_CODE`.
+
+## Passing your correlation id
+
+A caller can give a call its own correlation id, so that Data Prism's audit
+record can be joined to the caller's own logs. The id is read only from the
+configured HTTP header, by the transport's context extractor, and handed to the
+tools as an `InboundCorrelation` under
+`DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY`. It is never read from
+tool arguments: `correlationId`, `externalCorrelationId` and `traceparent` are
+reserved argument names, so sending one is ignored and listed in the audit
+record's `rejectedArguments`, and the audited `externalCorrelationId` is only
+ever the header's value or empty.
+
+A valid id is written as `externalCorrelationId` into the audit event of the
+call, ALLOW or DENY, and is available to source adapters on
+`DataRequest.context()`. It is never placed in `structuredContent` or in the
+result text, and is not returned in `_meta`.
+
+By default the id is optional: a call with none, or with a header that fails
+validation, proceeds and is audited with an empty `externalCorrelationId`. A
+server built with `CorrelationRequirement.REQUIRED` instead refuses, audits
+the refusal as `DENY:<code>` and calls no source. The check runs after authentication and before authorisation, so
+an unauthenticated caller still gets `NO_AUTHENTICATED_CALLER`:
+
+| Code | When |
+|---|---|
+| `EXTERNAL_CORRELATION_ID_REQUIRED` | the call carried no id |
+| `EXTERNAL_CORRELATION_ID_INVALID` | the header was present but rejected: repeated, or failing validation |
 
 ## Scope isolation
 

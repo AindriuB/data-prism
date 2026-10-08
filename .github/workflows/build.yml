@@ -11,15 +11,20 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["21", "25"]
     steps:
       - uses: actions/checkout@v7
 
-      # Built on the version the artifacts target, so a Java 21 incompatibility
-      # fails here rather than in a consumer's build. Local development on a
-      # newer JDK is fine because the compiler is pinned to --release 21.
+      # 21 is the version the artifacts target, so a Java 21 incompatibility
+      # fails here rather than in a consumer's build. 25 is the version the
+      # images and the release toolchain run on. The compiler is pinned to
+      # --release 21 on both legs.
       - uses: actions/setup-java@v6
         with:
-          java-version: "21"
+          java-version: ${{ matrix.java }}
           distribution: temurin
           cache: maven
 
@@ -33,6 +38,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: surefire-reports
+          name: surefire-reports-java-${{ matrix.java }}
           path: "**/target/surefire-reports/*.txt"
+          if-no-files-found: ignore
+
+  # Builds the images and forms a two-member cluster (task 143). Needs only
+  # Docker with Compose v2, which ubuntu-latest provides.
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Container runtime smoke test
+        run: docker/smoke/java-runtime-smoke.sh
+
+      - name: Publish smoke output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: container-smoke
+          path: docker/smoke/target/
           if-no-files-found: ignore

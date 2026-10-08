@@ -1,16 +1,36 @@
 package io.github.aindriub.dataprism.example.http;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import io.github.aindriub.dataprism.audit.AuditEntry;
+import io.github.aindriub.dataprism.audit.AuditEvent;
+import io.github.aindriub.dataprism.audit.AuditFieldMapping;
+import io.github.aindriub.dataprism.audit.AuditJsonRenderer;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.audit.AuditRouting;
+import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.audit.SegmentedJsonAuditSink;
+import io.github.aindriub.dataprism.audit.TeeAuditSink;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.Capability;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy;
+import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.example.CustomerDto;
 import io.github.aindriub.dataprism.example.DataPrismAssembly;
 import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
+import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
+import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
+import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
+import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
+import io.github.aindriub.dataprism.security.ToolAdmission;
+import org.slf4j.spi.MDCAdapter;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -39,7 +59,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -270,7 +292,7 @@ class PiiLogScanTest {
     private static final List<String> AUDIT_KEYS = List.of(
             "event", "seq", "ts", "principal", "client", "tool", "entityType", "subject",
             "params", "profile", "scope", "purpose", "case", "decision", "sources",
-            "rejected", "correlation", "hash", "prev");
+            "rejected", "correlation", "hash", "prev", "extCorrelation");
 
     private static final Pattern AUDIT_KEY_MARKER =
             Pattern.compile("\\b(" + String.join("|", AUDIT_KEYS) + ")=");
@@ -712,6 +734,320 @@ class PiiLogScanTest {
         }
     }
 
+    // ---- Task 112: the extCorrelation field, the JSON projection and the key-value pairs ----
+
+    private static final AuditRouting PROJECTION_ROUTING =
+            new AuditRouting("dataprism.audit", "logs", "dataprism.audit", "prod");
+
+    private static final JsonFactory JSON = new JsonFactory();
+
+    private static final Pattern DIGITS_SHAPE = Pattern.compile("\\d+");
+
+    /** The shape a canonical field's whole value may take to be skipped, as {@link #EXEMPT_SHAPES} does for log keys. */
+    private static final Map<String, Pattern> FIELD_EXEMPT_SHAPES = Map.of(
+            "eventId", UUID_SHAPE,
+            "correlationId", UUID_SHAPE,
+            "parameterFingerprint", HEX24_SHAPE,
+            "eventHash", HEX64_SHAPE,
+            "previousHash", HEX64_SHAPE,
+            "timestamp", INSTANT_SHAPE,
+            "sequence", DIGITS_SHAPE,
+            "recordVersion", DIGITS_SHAPE);
+
+    private static AuditEvent recordedEvent(String principal, String caseId, String externalCorrelationId) {
+        Clock clock = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), java.time.ZoneOffset.UTC);
+        return new AuditRecorder(e -> { }, clock, "pii-scan-mcp").record(new AuditEntry(principal, "client",
+                "get_entity_context", "CUSTOMER", "pseudonym", "f".repeat(24), "DEFAULT", "scope", "demonstration",
+                caseId, "ALLOW", Set.of("customer-api:ANSWERED"), Set.of(), UUID_SAMPLE, Map.of(), "", "",
+                externalCorrelationId));
+    }
+
+    private static final String UUID_SAMPLE = "123e4567-e89b-42d3-a456-426614174000";
+
+    /** Every leaf of a rendered JSON line, and every object key below a mapped field, paired with its canonical field. */
+    private static List<String[]> jsonFields(String json, AuditFieldMapping mapping) {
+        List<String[]> fields = new ArrayList<>();
+        List<String> path = new ArrayList<>();
+        try (JsonParser p = JSON.createParser(json)) {
+            walkJson(p, p.nextToken(), path, mapping, fields);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+        return fields;
+    }
+
+    private static void walkJson(JsonParser p, JsonToken token, List<String> path, AuditFieldMapping mapping,
+                                 List<String[]> out) throws IOException {
+        if (token == JsonToken.START_OBJECT) {
+            while (p.nextToken() != JsonToken.END_OBJECT) {
+                path.add(p.currentName());
+                String dotted = String.join(".", path);
+                String canonical = canonicalOf(dotted, mapping);
+                if (!canonical.equals(dotted)) {
+                    // a key below a mapped field, such as a field-disposition path: scanned like a value
+                    out.add(new String[] {canonical, path.get(path.size() - 1)});
+                }
+                walkJson(p, p.nextToken(), path, mapping, out);
+                path.remove(path.size() - 1);
+            }
+        } else if (token == JsonToken.START_ARRAY) {
+            while ((token = p.nextToken()) != JsonToken.END_ARRAY) {
+                walkJson(p, token, path, mapping, out);
+            }
+        } else if (token != JsonToken.VALUE_NULL) {
+            out.add(new String[] {canonicalOf(String.join(".", path), mapping), p.getText()});
+        }
+    }
+
+    /** The canonical field a dotted path belongs to (itself or an ancestor), or the path if none does. */
+    private static String canonicalOf(String dotted, AuditFieldMapping mapping) {
+        for (Map.Entry<String, String> e : mapping.paths().entrySet()) {
+            if (dotted.equals(e.getValue()) || dotted.startsWith(e.getValue() + ".")) {
+                return e.getKey();
+            }
+        }
+        return dotted;
+    }
+
+    /** Every key-value pair a sink attaches, flattened to canonical-field and value pairs. */
+    private static List<String[]> keyValueFields(Map<String, Object> keyValues, AuditFieldMapping mapping) {
+        List<String[]> fields = new ArrayList<>();
+        keyValues.forEach((key, value) -> flattenValue(canonicalOf(key, mapping), value, fields));
+        return fields;
+    }
+
+    private static void flattenValue(String field, Object value, List<String[]> out) {
+        if (value instanceof Map<?, ?> m) {
+            m.forEach((k, v) -> {
+                out.add(new String[] {field, String.valueOf(k)});
+                flattenValue(field, v, out);
+            });
+        } else if (value instanceof Collection<?> c) {
+            c.forEach(v -> flattenValue(field, v, out));
+        } else if (value != null) {
+            out.add(new String[] {field, String.valueOf(value)});
+        }
+    }
+
+    /** The banned values found in the fields, each field scanned alone and skipped only if its whole value has its shape. */
+    private static List<String> findLeakedInFields(List<String[]> fields, List<String> bannedValues) {
+        List<String> leaked = new ArrayList<>();
+        for (String[] field : fields) {
+            String value = field[1];
+            if ("instanceId".equals(field[0])) {
+                value = value.replaceFirst("/" + UUID_SHAPE.pattern() + "$", "");
+            } else {
+                Pattern exempt = FIELD_EXEMPT_SHAPES.get(field[0]);
+                if (exempt != null && exempt.matcher(value).matches()) {
+                    continue;
+                }
+            }
+            for (String banned : bannedValues) {
+                if (value.contains(banned) && !leaked.contains(banned)) {
+                    leaked.add(banned);
+                }
+            }
+        }
+        return leaked;
+    }
+
+    @Test
+    @DisplayName("extCorrelation is a scanned field: a banned value glued into it is caught, though the whole-token scan misses it")
+    void extCorrelationIsScannedNotShapeExempt() {
+        AuditEvent event = recordedEvent("principal-1", "CASE-1", "xACC-1y");
+        String captured = captureLogOutput(() -> new Slf4jAuditSink().record(event));
+        String line = withoutTimestamps(captured);
+
+        assertThat(line).contains("extCorrelation=xACC-1y");
+        assertThat(findLeaked(line, List.of("ACC-1"))).as("the whole-token scan alone misses a glued value").isEmpty();
+        assertThat(findLeakedAcrossLines(line, List.of("ACC-1")))
+                .as("the field-aware scan reads extCorrelation as a field").containsExactly("ACC-1");
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captureLogOutput(() ->
+                new Slf4jAuditSink().record(recordedEvent("principal-1", "CASE-1", "ord.5-a")))),
+                BANNED_VALUES)).as("a clean value passes").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the projection scan is not vacuous: a banned value in the JSON line, in a key-value pair, or in extCorrelation is caught")
+    void projectionScannerIsNotVacuous() {
+        for (AuditFieldMapping mapping : List.of(AuditFieldMapping.canonical(), AuditFieldMapping.ecs(),
+                AuditFieldMapping.ecs().withOverrides(Map.of("externalCorrelationId", "transaction_id")))) {
+            AuditEvent inPrincipal = recordedEvent("xPatrick Murphyy", "CASE-1", "");
+            AuditEvent inExternalId = recordedEvent("principal-1", "CASE-1", "xACC-1y");
+
+            assertThat(findLeakedInFields(jsonFields(
+                    AuditJsonRenderer.render(inPrincipal, mapping, PROJECTION_ROUTING), mapping), BANNED_VALUES))
+                    .as("json, principal").containsExactly("Patrick Murphy");
+            assertThat(findLeakedInFields(keyValueFields(
+                    AuditJsonRenderer.keyValues(inPrincipal, mapping, PROJECTION_ROUTING), mapping), BANNED_VALUES))
+                    .as("key-value, principal").containsExactly("Patrick Murphy");
+            assertThat(findLeakedInFields(jsonFields(
+                    AuditJsonRenderer.render(inExternalId, mapping, PROJECTION_ROUTING), mapping), BANNED_VALUES))
+                    .as("json, external id").containsExactly("ACC-1");
+            assertThat(findLeakedInFields(keyValueFields(
+                    AuditJsonRenderer.keyValues(inExternalId, mapping, PROJECTION_ROUTING), mapping), BANNED_VALUES))
+                    .as("key-value, external id").containsExactly("ACC-1");
+
+            AuditEvent clean = recordedEvent("principal-1", "CASE-1", "ord.5-a");
+            assertThat(findLeakedInFields(jsonFields(
+                    AuditJsonRenderer.render(clean, mapping, PROJECTION_ROUTING), mapping), BANNED_VALUES)).isEmpty();
+            assertThat(findLeakedInFields(keyValueFields(
+                    AuditJsonRenderer.keyValues(clean, mapping, PROJECTION_ROUTING), mapping), BANNED_VALUES))
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("a full integration run's JSON projection file and key-value pairs contain none of the stub fixtures' values")
+    void fullIntegrationRunProjectionsLeakNoPii() throws IOException {
+        Path dir = Files.createTempDirectory("pii-json-scan");
+        AuditFieldMapping mapping = AuditFieldMapping.ecs()
+                .withOverrides(Map.of("externalCorrelationId", "transaction_id"));
+        List<AuditEvent> events = new ArrayList<>();
+        try (SegmentedJsonAuditSink projection = new SegmentedJsonAuditSink(dir, mapping, PROJECTION_ROUTING)) {
+            captureLogOutput(() -> runFullIntegrationRun(new TeeAuditSink(events::add, projection)));
+        }
+
+        List<Path> files;
+        try (var listing = Files.list(dir)) {
+            files = listing.toList();
+        }
+        List<String> jsonLines = new ArrayList<>();
+        for (Path file : files) {
+            assertThat(file.getFileName().toString()).endsWith(".ndjson");
+            jsonLines.addAll(Files.readAllLines(file));
+        }
+        assertThat(events).as("the run reached the audit sink, or this scan proves nothing").hasSizeGreaterThan(3);
+        assertThat(jsonLines).as("the projection file holds one line per event").hasSameSizeAs(events);
+        assertThat(String.join("\n", jsonLines)).contains("\"event\":{").contains("\"user\":{");
+
+        List<String[]> fields = new ArrayList<>();
+        for (String line : jsonLines) {
+            fields.addAll(jsonFields(line, mapping));
+        }
+        for (AuditEvent event : events) {
+            fields.addAll(keyValueFields(AuditJsonRenderer.keyValues(event, mapping, PROJECTION_ROUTING), mapping));
+        }
+        assertThat(fields).as("fields scanned").hasSizeGreaterThan(events.size() * 10);
+        assertThat(findLeakedInFields(fields, BANNED_VALUES)).as("leaked from the projections").isEmpty();
+        assertThat(findLeaked(String.join("\n", jsonLines), BANNED_VALUES)).as("whole-token safety net").isEmpty();
+    }
+
+    private static final String SYNTHETIC_CLID = "synthetic-clid-0001";
+
+    private static InboundCorrelation inboundCorrelation(String value) {
+        return InboundCorrelation.resolve(List.of(value), CorrelationIdPolicy.opaque("[A-Za-z0-9._:-]{1,128}"));
+    }
+
+    @Test
+    @DisplayName("a full run carrying a correlation id logs it as extCorrelation, and the line and its key-value pairs leak nothing")
+    void fullIntegrationRunWithCorrelationIdLeaksNoPii() {
+        AuditFieldMapping mapping = AuditFieldMapping.ecs();
+        List<AuditEvent> events = new ArrayList<>();
+        InboundCorrelation inbound = inboundCorrelation(SYNTHETIC_CLID);
+        assertThat(inbound.isPresent()).isTrue();
+        // The plain sink, so the line parser sees only the message; its key-value pairs are
+        // rendered from the collected events, as fullIntegrationRunProjectionsLeakNoPii does.
+        String captured = captureLogOutput(() -> runFullIntegrationRun(
+                new TeeAuditSink(new Slf4jAuditSink(), events::add), inbound));
+
+        String stripped = withoutTimestamps(captured);
+        assertThat(stripped.lines().filter(line -> line.contains("extCorrelation=" + SYNTHETIC_CLID)).count())
+                .as("at least one audit line carries the id, or this scan proves nothing").isGreaterThan(0);
+        assertThat(events).as("the run reached the sink").isNotEmpty()
+                .allSatisfy(event -> assertThat(event.externalCorrelationId()).isEqualTo(SYNTHETIC_CLID));
+
+        List<String[]> pairs = new ArrayList<>();
+        for (AuditEvent event : events) {
+            pairs.addAll(keyValueFields(AuditJsonRenderer.keyValues(event, mapping, PROJECTION_ROUTING), mapping));
+        }
+        assertThat(pairs).as("key-value pairs scanned").hasSizeGreaterThan(events.size() * 10);
+        assertThat(pairs).anySatisfy(pair -> assertThat(pair).containsExactly("externalCorrelationId", SYNTHETIC_CLID));
+
+        assertThat(findLeakedAcrossLines(stripped, BANNED_VALUES)).as("log lines").isEmpty();
+        assertThat(findLeakedInFields(pairs, BANNED_VALUES)).as("key-value pairs").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the correlation-id log scan is not vacuous: a fixture value admitted as the id is caught in the line and its pairs")
+    void correlationIdLogScanIsNotVacuous() {
+        AuditFieldMapping mapping = AuditFieldMapping.ecs();
+        List<AuditEvent> events = new ArrayList<>();
+        InboundCorrelation inbound = inboundCorrelation("ACC-1");
+        String captured = captureLogOutput(() -> runFullIntegrationRun(
+                new TeeAuditSink(new Slf4jAuditSink(), events::add), inbound));
+
+        assertThat(withoutTimestamps(captured)).contains("extCorrelation=ACC-1");
+        assertThat(findLeakedAcrossLines(withoutTimestamps(captured), BANNED_VALUES)).contains("ACC-1");
+        List<String[]> pairs = new ArrayList<>();
+        for (AuditEvent event : events) {
+            pairs.addAll(keyValueFields(AuditJsonRenderer.keyValues(event, mapping, PROJECTION_ROUTING), mapping));
+        }
+        assertThat(findLeakedInFields(pairs, BANNED_VALUES)).contains("ACC-1");
+    }
+
+    /** Records every value put under any key, with whether it came from a virtual (fan-out) thread. */
+    private static final class RecordingMdcAdapter implements MDCAdapter {
+        record Put(boolean virtualThread, String key, String value) {
+        }
+
+        final List<Put> puts = new CopyOnWriteArrayList<>();
+        private final ThreadLocal<Map<String, String>> local = ThreadLocal.withInitial(HashMap::new);
+
+        @Override public void put(String key, String val) {
+            puts.add(new Put(Thread.currentThread().isVirtual(), key, val));
+            local.get().put(key, val);
+        }
+        @Override public String get(String key) { return local.get().get(key); }
+        @Override public void remove(String key) { local.get().remove(key); }
+        @Override public void clear() { local.get().clear(); }
+        @Override public Map<String, String> getCopyOfContextMap() { return new HashMap<>(local.get()); }
+        @Override public void setContextMap(Map<String, String> map) { local.set(new HashMap<>(map)); }
+        @Override public void pushByKey(String key, String value) { }
+        @Override public String popByKey(String key) { return null; }
+        @Override public java.util.Deque<String> getCopyOfDequeByKey(String key) { return null; }
+        @Override public void clearDequeByKey(String key) { }
+    }
+
+    private static List<String[]> mdcFields(RecordingMdcAdapter adapter) {
+        List<String[]> fields = new ArrayList<>();
+        adapter.puts.forEach(put -> fields.add(new String[] {put.key(), put.value()}));
+        return fields;
+    }
+
+    @Test
+    @DisplayName("a full run with mdc-key transaction_id puts only the id, on the fan-out threads too, and it leaks nothing")
+    void fullIntegrationRunWithMdcLeaksNoPii() {
+        RecordingMdcAdapter adapter = new RecordingMdcAdapter();
+        InboundCorrelation inbound = inboundCorrelation(SYNTHETIC_CLID);
+        captureLogOutput(() -> runFullIntegrationRun(new Slf4jAuditSink(), inbound,
+                CorrelationMdc.of("transaction_id", adapter)));
+
+        assertThat(adapter.puts).as("puts recorded").isNotEmpty();
+        assertThat(adapter.puts).anySatisfy(put -> {
+            assertThat(put.virtualThread()).isTrue();
+            assertThat(put.key()).isEqualTo("transaction_id");
+            assertThat(put.value()).isEqualTo(SYNTHETIC_CLID);
+        });
+        assertThat(adapter.puts).allSatisfy(put -> {
+            assertThat(put.key()).isEqualTo("transaction_id");
+            assertThat(put.value()).isEqualTo(SYNTHETIC_CLID);
+        });
+        assertThat(findLeakedInFields(mdcFields(adapter), BANNED_VALUES)).as("values put into the MDC").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the MDC scan is not vacuous: a fixture value admitted by a permissive pattern is caught in the put values")
+    void mdcScanIsNotVacuous() {
+        RecordingMdcAdapter adapter = new RecordingMdcAdapter();
+        InboundCorrelation inbound = inboundCorrelation("ACC-1");
+        captureLogOutput(() -> runFullIntegrationRun(new Slf4jAuditSink(), inbound,
+                CorrelationMdc.of("transaction_id", adapter)));
+
+        assertThat(adapter.puts).extracting(RecordingMdcAdapter.Put::value).contains("ACC-1");
+        assertThat(findLeakedInFields(mdcFields(adapter), BANNED_VALUES)).contains("ACC-1");
+    }
+
     /**
      * Three {@code get_entity_context} calls through the real pipeline —
      * {@code DataPrismAssembly}, {@code GetEntityContextTool}, a real
@@ -728,11 +1064,25 @@ class PiiLogScanTest {
      * so the leak scan also covers the comparison path's own serialised output.
      */
     private static void runFullIntegrationRun() {
+        runFullIntegrationRun(new Slf4jAuditSink());
+    }
+
+    private static void runFullIntegrationRun(AuditSink sink) {
+        runFullIntegrationRun(sink, InboundCorrelation.absent());
+    }
+
+    private static void runFullIntegrationRun(AuditSink sink, InboundCorrelation inbound) {
+        runFullIntegrationRun(sink, inbound, CorrelationMdc.off());
+    }
+
+    private static void runFullIntegrationRun(AuditSink sink, InboundCorrelation inbound, CorrelationMdc mdc) {
         Clock clock = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), java.time.ZoneOffset.UTC);
         String purpose = "demonstration";
         String role = "investigator";
 
-        DataPrismAssembly assembly = DataPrismAssembly.standard();
+        // The pipeline's own audit events come from the assembly's recorder, so the sink goes there.
+        DataPrismAssembly assembly = new DataPrismAssembly(List.of(new StubCustomerAdapter(),
+                new StubAccountAdapter(), new StubOrderAdapter()), Clock.systemUTC(), sink, mdc);
         AuditRecorder toolAudit = new AuditRecorder(new Slf4jAuditSink(), clock, "pii-scan-mcp");
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
@@ -740,17 +1090,21 @@ class PiiLogScanTest {
                 new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                 new PurposeValidator(Set.of(purpose)));
+        ParameterFingerprinter fingerprinter =
+                new ParameterFingerprinter(StaticSecretKeyProvider.of("pii-scan-test-key-not-for-any-real-data-32b"));
         GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock);
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock, null,
+                ToolAdmission.none(), fingerprinter, CorrelationRequirement.OPTIONAL, mdc);
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
                 authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
-                toolAudit, clock);
+                toolAudit, clock, null, ToolAdmission.none(), fingerprinter, CorrelationRequirement.OPTIONAL, mdc);
 
         AuthenticatedCaller caller = new AuthenticatedCaller(
                 "pii-scan-principal", "pii-scan-client", Set.of(role), purpose, "CASE-PII-SCAN-1", null);
         McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(
                 "pii-scan-session", null, null, null,
-                McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller))));
+                McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller,
+                        DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY, inbound))));
 
         for (String subjectId : List.of("123", "456")) {
             tool.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(

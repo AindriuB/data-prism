@@ -1,8 +1,12 @@
 package io.github.aindriub.dataprism.orchestration;
 
+import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.core.ConsistencyFinding;
 
+import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
+
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -35,10 +39,21 @@ import java.util.Set;
  * @param approvalId               the four-eyes approval this call runs under, or {@code ""}.
  * @param approverId               the second principal who approved it, or {@code ""}.
  *                                 Both are copied verbatim into the audit entry.
+ * @param externalCorrelationId    the caller's own correlation id for this call, read from the
+ *                                 transport context and never from a tool argument; never
+ *                                 {@code null}. Audited, and handed to every source request.
+ * @param auditedEntityType        what the audit record's {@code entityType} holds: the value
+ *                                 {@link AuditedEntityTypes#audited} returned for {@code entityType},
+ *                                 so a free-text argument never reaches the audit trail. Every
+ *                                 constructor that does not take it applies
+ *                                 {@link AuditedEntityTypes#shape()}. {@code entityType} itself
+ *                                 stays raw: adapters and the response echo use it.
  */
 public record ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
                              String toolName, boolean includeAgreementFindings,
-                             String approvalId, String approverId) {
+                             String approvalId, String approverId,
+                             Optional<ExternalCorrelationId> externalCorrelationId,
+                             String auditedEntityType) {
 
     /** The tool every pre-task-42 constructor and factory audits a request under. */
     public static final String DEFAULT_TOOL_NAME = "get_entity_context";
@@ -48,6 +63,7 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
         Objects.requireNonNull(subjectId, "subjectId");
         Objects.requireNonNull(rejectedArguments, "rejectedArguments");
         Objects.requireNonNull(toolName, "toolName");
+        Objects.requireNonNull(auditedEntityType, "auditedEntityType");
         if (entityType.isBlank() || subjectId.isBlank()) {
             throw new IllegalArgumentException("entityType and subjectId must not be blank");
         }
@@ -57,6 +73,24 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
         rejectedArguments = Set.copyOf(rejectedArguments);
         approvalId = approvalId == null ? "" : approvalId;
         approverId = approverId == null ? "" : approverId;
+        externalCorrelationId = externalCorrelationId == null ? Optional.empty() : externalCorrelationId;
+    }
+
+    /** Source-compatible with every call site that predates the audited entity type: the shape fallback applies. */
+    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
+                          String toolName, boolean includeAgreementFindings,
+                          String approvalId, String approverId,
+                          Optional<ExternalCorrelationId> externalCorrelationId) {
+        this(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings, approvalId,
+                approverId, externalCorrelationId, AuditedEntityTypes.shape().audited(entityType));
+    }
+
+    /** Source-compatible with every call site that predates external correlation ids: none. */
+    public ContextRequest(String entityType, String subjectId, Set<String> rejectedArguments,
+                          String toolName, boolean includeAgreementFindings,
+                          String approvalId, String approverId) {
+        this(entityType, subjectId, rejectedArguments, toolName, includeAgreementFindings, approvalId,
+                approverId, Optional.empty());
     }
 
     /** Source-compatible with every call site that predates approval ids: both are {@code ""}. */

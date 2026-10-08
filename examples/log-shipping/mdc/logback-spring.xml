@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!-- One JSON object per line in the Elastic Common Schema. Spring Boot writes every MDC
+       entry as a top-level field, so dataprism.correlation.mdc-key: transaction_id arrives
+       as "transaction_id". -->
+  <appender name="ECS_JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="org.springframework.boot.logging.logback.StructuredLogEncoder">
+      <format>ecs</format>
+    </encoder>
+  </appender>
+  <root level="INFO">
+    <appender-ref ref="ECS_JSON"/>
+  </root>
+</configuration>

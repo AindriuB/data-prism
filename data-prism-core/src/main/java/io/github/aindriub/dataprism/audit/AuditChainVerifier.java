@@ -62,11 +62,11 @@ import java.util.Optional;
  *   <li>a torn trailing record with no newline — an in-progress write, per
  *       {@link AuditRecordFormat}'s class javadoc — reported as the
  *       possibly-in-flight {@link VerificationReport#tail()};
- *   <li>a mid-file field-count error — the shape an operator restart after a
- *       torn write produces when the new {@link FileAuditSink} opens append
- *       on the same path, landing its first record directly after the
- *       surviving fragment — reported as an {@link
- *       AnomalyType#INTERRUPTED_WRITE_FRAGMENT} anomaly, not a break;
+ *   <li>a line ending in a raw carriage return — the {@code "\r\n"} a resumed {@link
+ *       FileAuditSink} writes after a torn fragment, before its first record — reported as an {@link
+ *       AnomalyType#INTERRUPTED_WRITE_FRAGMENT} anomaly, not a break, and never parsed. A fragment
+ *       fused with a restarted writer's first record (logs written before 0.5.0) has more fields
+ *       than its version allows and is a {@link AnomalyType#FIELD_COUNT_MISMATCH} break;
  *   <li>a duplicate sequence number within one writer — the shape a sink
  *       produces if it violates {@link AuditSink}'s all-or-nothing contract
  *       by writing durably and then throwing — reported as an {@link
@@ -125,8 +125,8 @@ public final class AuditChainVerifier {
 
     /**
      * Reads {@code path}: a single file as is, or a directory as every {@code audit-YYYY-MM-DD.log}
-     * segment in date order. A non-final segment that ends without a newline (a torn write) has one
-     * added so its fragment cannot fuse with the next segment's first record; it then reads as an
+     * segment in date order. A non-final segment that ends without a newline (a torn write) has the
+     * writer's torn-tail terminator ({@code "\r\n"}) added so its fragment cannot fuse with the next segment's first record; it then reads as an
      * interrupted-write fragment. Byte offsets in a directory report are into that concatenation.
      */
     private static byte[] readAudit(Path path) throws IOException {
@@ -156,7 +156,8 @@ public final class AuditChainVerifier {
             all.write(bytes);
             remaining--;
             if (remaining > 0 && bytes.length > 0 && bytes[bytes.length - 1] != '\n') {
-                all.write('\n');
+                // The same terminator a resumed writer adds, so the torn line reads the same way.
+                all.write(FileAuditSink.TORN_TAIL_TERMINATOR.getBytes(StandardCharsets.US_ASCII));
             }
         }
         return all.toByteArray();
@@ -375,6 +376,19 @@ public final class AuditChainVerifier {
         if (line.isEmpty()) {
             return;
         }
+        if (line.charAt(line.length() - 1) == '\r') {
+            // A serialized record never contains a raw CR (AuditRecordFormat escapes it), so this
+            // is a torn write that a resumed writer terminated. Never parsed as a record.
+            anomalies.add(new StructuralAnomaly(AnomalyType.INTERRUPTED_WRITE_FRAGMENT,
+                    "the line at byte offset " + offset + " ends in a carriage return, the marker a resumed "
+                            + "writer adds after an interrupted write (a process died mid-line and a new one "
+                            + "terminated the fragment before appending). The fragment is not parsed and is not "
+                            + "a record. Durable append-only storage is an operator responsibility this release "
+                            + "does not enforce -- this is not tampering with an existing record. The records "
+                            + "immediately before and after this line were verified independently.",
+                    offset, -1));
+            return;
+        }
         AuditEvent event;
         try {
             event = AuditRecordFormat.parse(line);
@@ -391,6 +405,16 @@ public final class AuditChainVerifier {
             writer.recordCount++;
             return;
         }
+        if (writer.highestVersion > event.recordVersion()) {
+            anomalies.add(new StructuralAnomaly(AnomalyType.VERSION_REGRESSION,
+                    "VERSION_REGRESSION: writer " + event.instanceId() + " wrote a recordVersion "
+                            + event.recordVersion() + " record at sequence " + event.sequence() + " (byte offset "
+                            + offset + ") after a recordVersion " + writer.highestVersion + " record. A writer's "
+                            + "version only ever increases, so this is a downgrade: investigate it as a possible "
+                            + "forgery that avoids a field the newer version hashes.",
+                    offset, -1));
+        }
+        writer.highestVersion = Math.max(writer.highestVersion, event.recordVersion());
         writer.seenSequences.put(event.sequence(), offset);
         writer.hashBySequence.put(event.sequence(), event.eventHash());
         writer.recordCount++;
@@ -536,6 +560,18 @@ public final class AuditChainVerifier {
      * rather than only in production.
      */
     private static StructuralAnomaly classifyParseFailure(long offset, RuntimeException cause) {
+        if (cause instanceof FieldCountMismatchException) {
+            return new StructuralAnomaly(AnomalyType.FIELD_COUNT_MISMATCH,
+                    "FIELD_COUNT_MISMATCH: the line at byte offset " + offset + " declares a recordVersion "
+                            + "that does not match its field count (" + cause.getMessage() + "). A torn write "
+                            + "cannot produce this shape, so it is a tampering signature: a field was added, "
+                            + "removed or relabelled. Investigate this line directly. One known cause for logs "
+                            + "written before 0.5.0: a legacy interrupted write followed by a restart, whose "
+                            + "first record was appended onto the unterminated fragment. To check, see whether "
+                            + "the trailing 20, 24 or 25 fields parse as a GENESIS record of a new instanceId, "
+                            + "and whether the record after this line continues that writer.",
+                    offset, -1);
+        }
         if (cause.getClass() == IllegalArgumentException.class) {
             return new StructuralAnomaly(AnomalyType.INTERRUPTED_WRITE_FRAGMENT,
                     "the line at byte offset " + offset + " does not parse as one record (field count "
@@ -601,6 +637,7 @@ public final class AuditChainVerifier {
         private AuditCheckpoint retentionAnchor;
         private String anchorRejection;
         private long firstOffset;
+        private int highestVersion;
 
         WriterState(String instanceId) {
             this.instanceId = instanceId;
@@ -616,13 +653,32 @@ public final class AuditChainVerifier {
     /** What kind of non-tampering structural anomaly a line represents. */
     public enum AnomalyType {
         /** A field-count mismatch: a torn write's fragment concatenated with a restarted writer's first record. */
-        INTERRUPTED_WRITE_FRAGMENT,
+        INTERRUPTED_WRITE_FRAGMENT(false),
         /** Two durable records sharing a sequence number for one writer: a sink-contract violation. */
-        DUPLICATE_SEQUENCE,
+        DUPLICATE_SEQUENCE(false),
         /** A parse failure that is not the known interrupted-write shape and cannot be ruled out as tampering. */
-        UNPARSEABLE_RECORD,
+        UNPARSEABLE_RECORD(true),
         /** A retention anchor that matches a writer's start but is too recent, or undated, to be a purge's. */
-        RETENTION_ANCHOR_REJECTED
+        RETENTION_ANCHOR_REJECTED(true),
+        /** A writer's {@code recordVersion} decreased within its chain: a downgrade, never a normal upgrade. */
+        VERSION_REGRESSION(true),
+        /** A line whose field count contradicts its declared {@code recordVersion}: tampering, never a torn write. */
+        FIELD_COUNT_MISMATCH(true);
+
+        private final boolean counted;
+
+        AnomalyType(boolean counted) {
+            this.counted = counted;
+        }
+
+        /**
+         * True if this anomaly is counted as a break: it cannot be ruled out as tampering. The single
+         * predicate behind {@link VerificationReport#hasBreak()}, {@link VerificationReport#hasStructuralAnomaly()}
+         * and retention's purge boundary, so a new type must choose here and nowhere else.
+         */
+        public boolean isBreak() {
+            return counted;
+        }
     }
 
     /** The first edit or deletion found in one writer's chain. */
@@ -694,8 +750,7 @@ public final class AuditChainVerifier {
         /** True if any writer's chain has a break, or any anomaly cannot be ruled out as tampering. */
         public boolean hasBreak() {
             return writers.stream().anyMatch(WriterResult::broken)
-                    || anomalies.stream().anyMatch(a -> a.type() == AnomalyType.UNPARSEABLE_RECORD
-                            || a.type() == AnomalyType.RETENTION_ANCHOR_REJECTED);
+                    || anomalies.stream().anyMatch(a -> a.type().isBreak());
         }
 
         /**
@@ -705,8 +760,7 @@ public final class AuditChainVerifier {
          * is reported as a break (the more severe finding), via {@link #hasBreak()}.
          */
         public boolean hasStructuralAnomaly() {
-            return anomalies.stream().anyMatch(a -> a.type() != AnomalyType.UNPARSEABLE_RECORD
-                    && a.type() != AnomalyType.RETENTION_ANCHOR_REJECTED)
+            return anomalies.stream().anyMatch(a -> !a.type().isBreak())
                     || writers.stream().anyMatch(w -> w.nonGenesisStart().isPresent());
         }
     }

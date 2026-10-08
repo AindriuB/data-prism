@@ -9,6 +9,10 @@ updates:
     groups:
       maven:
         patterns: ["*"]
+    ignore:
+      # A Boot major is a migration (task 139), not a bump.
+      - dependency-name: "org.springframework.boot:*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -24,8 +28,23 @@ updates:
       - "/docker/certs-init"
       - "/docker/fixtures"
       - "/docker/issuer"
+      - "/docker/distribution"
     schedule:
       interval: "weekly"
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      # Java 25 is the approved LTS (decision D-140-B); 26 and later are
+      # non-LTS. Moving to the next LTS, 29, is an owner decision.
+      # Dependabot reads the Java major in "3.9-eclipse-temurin-N" as the
+      # patch segment (3.9.N), so a Java bump on the maven image looks like a
+      # semver-patch update and a semver-major ignore never matches it. Block
+      # it by version range instead. Docker ranges use Bundler syntax.
+      - dependency-name: "eclipse-temurin"
+        versions: [">= 26"]
+      - dependency-name: "maven"
+        versions: [">= 3.9.26"]
+      # Maven 4 is a major (4.x tags), not a Java change.
+      - dependency-name: "maven"
+        update-types: ["version-update:semver-major"]

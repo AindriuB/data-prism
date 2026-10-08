@@ -1,5 +1,8 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy;
+import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
+import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.ClaimNames;
@@ -14,6 +17,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,11 +45,17 @@ public final class JwtCallerContextExtractor implements McpTransportContextExtra
 
     private static final Logger LOG = LoggerFactory.getLogger(JwtCallerContextExtractor.class);
     private final ClaimNames claimNames;
+    private final String correlationHeader; // null: the feature is off
+    private final CorrelationIdPolicy correlationPolicy;
 
     public JwtCallerContextExtractor(DataPrismProperties properties) {
         DataPrismProperties.Security.CallerClaims configured = properties.getSecurity().getCallerClaims();
         this.claimNames = new ClaimNames(configured.getPrincipal(), List.of("azp", "client_id"),
                 configured.getRoles(), "purpose", configured.getInvestigation());
+        DataPrismProperties.Correlation.Inbound inbound = properties.getCorrelation().getInbound();
+        boolean enabled = inbound.getHeader() != null && !inbound.getHeader().isBlank();
+        this.correlationHeader = enabled ? inbound.getHeader() : null;
+        this.correlationPolicy = enabled ? inbound.policy() : null;
     }
 
     @Override
@@ -62,7 +72,19 @@ public final class JwtCallerContextExtractor implements McpTransportContextExtra
         try {
             AuthenticatedCaller caller =
                     AuthenticatedCaller.fromClaims(claimsOf(jwtAuthentication.getToken()), claimNames);
-            return McpTransportContext.create(Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller));
+            Map<String, Object> context = new HashMap<>();
+            context.put(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller);
+            if (correlationHeader != null) {
+                java.util.Enumeration<String> values = request.getHeaders(correlationHeader);
+                InboundCorrelation correlation = InboundCorrelation.resolve(
+                        values == null ? List.of() : Collections.list(values), correlationPolicy);
+                if (correlation.isRejected()) {
+                    // The code only. The rejected text is caller-supplied and may carry personal data.
+                    LOG.warn("an inbound correlation id was dropped: {}", "EXTERNAL_CORRELATION_ID_DROPPED");
+                }
+                context.put(DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY, correlation);
+            }
+            return McpTransportContext.create(context);
         } catch (SecurityRefusedException refused) {
             // The code is safe to log; the claims that produced it are not, and
             // are never read here again to find out.

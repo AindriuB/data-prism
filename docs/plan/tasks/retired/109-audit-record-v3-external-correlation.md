@@ -1,0 +1,142 @@
+# 109 — Record the external correlation id in audit record version 3
+
+**Repo:** `.`
+**Depends on:** 102, 108, 117, 123
+*(123 added 2026-10-06: task 123 edits the DENY filter in `AuditFieldDispositionTest`, which this task also edits.)*
+**Owns:**
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/** *(except `Slf4jAuditSink.java`, which must stay unchanged; task 112 changes it)*
+- data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/**
+- data-prism-core/src/test/resources/audit/**
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/AuditFieldDispositionTest.java *(the `recordVersion` assertion at `:97` only)*
+
+## Goal
+
+The audit record gains `externalCorrelationId`, next to Data Prism's own
+`correlationId`. The field must be inside the hash, or it can be edited
+without breaking the chain. A v2 record's hash cannot include it without
+changing what v2 means, so new records are written as `recordVersion` 3 and
+the verifier accepts v1, v2 and v3 records in one chain. Version 3 hashes
+with task 117's length-prefixed v2 encoding, and appends
+`externalCorrelationId` as one more encoded field. It defines no encoding of
+its own. (Amended 2026-10-06: the C2 encoding items moved to task 117, in
+release 0.4.0.)
+
+## Context
+
+- `AuditEvent.java` — v2 added `recordVersion`, `fieldDispositions`,
+  `approvalId` and `approverId`. It is a record with a 20-argument
+  compatibility constructor. `CURRENT_VERSION = 2`.
+- `AuditEventHash.java` — the v1 body is `|`-joined and unchanged. After
+  task 117, v2 is a length-prefixed encoding that starts with the version and
+  ends with `approverId`, documented in the class Javadoc. Task 117's
+  `src/test/resources/audit/hash-vectors.txt` pins one v1 and one v2 vector.
+- `AuditRecordFormat.java` — v1 has 20 fields, v2 has 24. `parse` decides the
+  version by field count.
+- `AuditEntry.java` — the recorder input. It is constructed positionally
+  (17 arguments) in `data-prism-orchestration`, `data-prism-mcp`,
+  `data-prism-security` and `data-prism-reidentification`, all outside
+  `Owns`. Those calls must keep compiling.
+- Task 102's `SegmentedFileAuditSink`, `AuditRetention` and directory-mode
+  verifier, and task 97's checkpoints. Checkpoints carry sequence and hash
+  only, so v3 does not change them.
+- Task 108's `ExternalCorrelationId` and its ceiling character class.
+
+## Acceptance
+
+- [ ] `AuditEvent` gains `externalCorrelationId` (null becomes `""`).
+      `CURRENT_VERSION = 3`. The constructor throws
+      `IllegalArgumentException` if a non-empty value fails task 108's
+      ceiling (length at most 256, characters in `[A-Za-z0-9._:/+=-]`). This
+      is a second fail-closed check behind the inbound validation.
+- [ ] Every existing `AuditEvent`, `AuditEntry` and `AuditEventHash.compute`
+      signature still compiles and keeps its current meaning. The v2-shaped
+      24-argument `AuditEvent` constructor still produces a record with
+      whatever `recordVersion` it is given. `AuditEntry` gains an 18-argument
+      constructor, and the 17-argument one passes `""`.
+- [ ] `AuditRecorder` writes `recordVersion` 3 records carrying
+      `entry.externalCorrelationId()`.
+- [ ] The v3 hash input is task 117's v2 encoding with version `3`, followed
+      by `enc(externalCorrelationId)`. The `AuditEventHash` Javadoc says so.
+- [ ] v1 and v2 hashes are unchanged. `hash-vectors.txt` gains one v3 line,
+      and its v1 and v2 lines are byte-identical in `git diff`. A test asserts
+      all three vectors.
+- [ ] `AuditRecordFormat` writes v3 as 25 fields, with `externalCorrelationId`
+      last, and parses 20, 24 or 25 fields. Any other count throws as today.
+      A round-trip test covers v3 with an empty and a non-empty value.
+- [ ] The verifier, in both file and directory mode, accepts one writer
+      chain that starts with v2 records and continues with v3 records. It
+      reports `VERSION_REGRESSION` with a non-zero exit when a writer's
+      `recordVersion` decreases within its chain. One test covers each case.
+- [ ] Editing `externalCorrelationId` in one line of a v3 file makes the
+      verifier report a break at that line. A test asserts this.
+- [ ] `Slf4jAuditSink.java` is unchanged.
+- [ ] `AuditFieldDispositionTest`'s `recordVersion` assertion reads
+      `AuditEvent.CURRENT_VERSION`, and nothing else in that file changes.
+- [ ] `mvn verify` over the full reactor passes with no edit outside `Owns`.
+
+## Out of scope
+
+- Populating the field from a request. That is task 110.
+- The slf4j sink and any JSON output. That is task 112.
+- `docs/audit.md`, which tasks 102 and 106 own until they land. The v3
+  format is documented by task 116. Until then, the Javadoc on
+  `AuditRecordFormat` and `AuditEventHash` states the v3 layout and encoding.
+- A keyed chain. Task 107 was dropped (D2).
+
+## Attempt 1 — failed (2026-10-07)
+
+Reviewer: CHANGES (head 4f56f120). Everything else is met: vectors byte-identical, downgrade breaks the hash, VERSION_REGRESSION.
+Required for attempt 2:
+1. **Unhashed field injection (blocker).** AuditRecordFormat.java:97,132 parses 25 fields for any
+   recordVersion. Appending `\u001fforged-id` to a real v2 line gives externalCorrelationId "forged-id" while the
+   chain still verifies, because the hash ignores the field below v3. Field count must match the version exactly:
+   v1 → 20, v2 → 24, v3 → 25. Anything else is refused at parse, as a structural anomaly or break, consistent with
+   how the verifier reports malformed lines. Add a test that a v2 line with an appended field is reported, not accepted.
+2. Reject a non-empty externalCorrelationId when recordVersion < 3 in the AuditEvent constructor, rather than
+   silently dropping it at serialize. Add a test.
+3. Add a test that sends the same edge inputs (256 and 257 chars, each allowed symbol, one character just outside the class)
+   through CorrelationIdPolicy's ceiling and the AuditEvent constructor, and asserts identical outcomes. If the ceiling
+   is package-private, test it through CorrelationIdPolicy's public validate with a permissive pattern.
+4. Add an explicit test that a v3 record downgraded to v2 (field deleted, recordVersion edited to 2) is reported as a break.
+
+## Attempt 2 — failed (2026-10-07)
+
+Reviewer: CHANGES. All 4 attempt-1 items are done. It is not fail-open (never accepted, never exit 0), but a field-count/version
+mismatch now raises a plain IllegalArgumentException. `classifyParseFailure` files that as INTERRUPTED_WRITE_FRAGMENT,
+so the CLI says "INTERRUPTED WRITE, not tampering" and exits 4. A v3 log relabelled v1 used to exit 2. A torn
+write cannot produce these shapes, so a mismatch is a tampering signature.
+Required for attempt 3 (AuditChainVerifier.java and AuditChainVerifierCli.java are in Owns via `audit/**`):
+1. Report a field-count/version mismatch as its own anomaly, `FIELD_COUNT_MISMATCH`, treated as a **break** (exit 2)
+   everywhere, never as an interrupted write. Throw a distinct exception type from parse, or otherwise carry the
+   classification. Add a CLI header line for it that says tampering is possible.
+2. Restore `AuditEventHashTest.currentVersionRecordEditedToVersionOneIsABreak` to assert exactly EXIT_BREAK_DETECTED.
+3. Make the tests exact:
+   - AuditRecordV3Test:192 (the appended field, including on the LAST line of a file) asserts FIELD_COUNT_MISMATCH and exit 2.
+   - :265 (the downgrade) asserts `hasBreak()` and exit 2.
+   - :208 rewrites field index 20 directly rather than using String.replace.
+
+## Attempt 3 — failed (2026-10-07)
+
+Reviewer: CHANGES. FIELD_COUNT_MISMATCH is correct everywhere.
+Required for attempt 4:
+1. **The purge can delete evidence of a downgrade (blocker, introduced by this task).** `AuditRetention.firstBadOffset`
+   (:247) ignores VERSION_REGRESSION, so an expired segment holding a downgrade (which the verifier reports as a break, exit 2)
+   can be purged. Make firstBadOffset stop at **every anomaly type that `hasBreak()` counts**, derived from the same
+   predicate so the two cannot drift. That includes VERSION_REGRESSION and the pre-existing RETENTION_ANCHOR_REJECTED.
+2. Retention tests: a purge stops at, and keeps, a segment containing FIELD_COUNT_MISMATCH, and likewise VERSION_REGRESSION.
+3. AuditRecordV3Test:201 asserts `isInstanceOf(FieldCountMismatchException.class)`.
+Follow-up, not 109: an unterminated last line is reported as "POSSIBLY IN FLIGHT (not a break)", exit 3. A forged final record
+with its newline stripped reads as benign. That is pre-existing. Reword it as "unverified, tampering not ruled out", and/or cover the
+tail with `--checkpoints`.
+
+## Attempt 4 — needs one more item (2026-10-07)
+
+Attempt 4 is done (one `isBreak()` predicate, so retention stops at every break). The implementer found that a v3 line with an appended
+field (26 fields) is still classified INTERRUPTED_WRITE_FRAGMENT, which is benign, rather than FIELD_COUNT_MISMATCH. A torn write
+truncates a line; it cannot add separators. So any line that has **more** fields than its declared version allows, or more than the
+maximum (25), and whose declared version is parseable, is a FIELD_COUNT_MISMATCH break. Only a line with **fewer** fields, consistent
+with truncation, may be classified as an interrupted write.
+Required for attempt 5:
+1. Classify every over-count line (v1 > 20, v2 > 24, v3 > 25, any line > 25) as FIELD_COUNT_MISMATCH, a break.
+2. Tests: append 1 and 2 fields to v3 and to v2 lines (mid-file and on a newline-terminated last line). Assert FIELD_COUNT_MISMATCH and exit 2.
+   Keep a test that a genuinely truncated line (fewer fields) is still reported as an interrupted write.

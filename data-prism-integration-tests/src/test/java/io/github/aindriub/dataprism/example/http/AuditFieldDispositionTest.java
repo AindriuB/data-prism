@@ -94,7 +94,7 @@ class AuditFieldDispositionTest {
                 .filter(event -> "ALLOW".equals(event.policyDecision())).toList();
 
         assertThat(allows).hasSize(1);
-        assertThat(allows.get(0).recordVersion()).isEqualTo(2);
+        assertThat(allows.get(0).recordVersion()).isEqualTo(AuditEvent.CURRENT_VERSION);
         assertThat(allows.get(0).fieldDispositions()).isNotEmpty();
 
         List<String> leaked = new ArrayList<>();

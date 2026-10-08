@@ -46,6 +46,8 @@ dataprism:
   audit:
     sink: slf4j
     writer-id: data-prism-example
+    entity-types:
+      - CUSTOMER
   metrics:
     sink: micrometer
   hazelcast:

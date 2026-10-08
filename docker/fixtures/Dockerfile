@@ -1,7 +1,7 @@
 # Builds data-prism-quickstart-fixtures from the repository root so the
 # Maven reactor resolves its data-prism parent and sibling modules, then
 # ships only the resulting executable Spring Boot jar.
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /workspace
 COPY . .
 RUN mvn -B -q -pl data-prism-quickstart-fixtures -am package -DskipTests
@@ -19,7 +19,7 @@ RUN mvn -B -q -pl data-prism-quickstart-fixtures -am package -DskipTests
 RUN find data-prism-quickstart-fixtures/target -maxdepth 1 -name '*.jar' ! -name '*.original' \
       -exec cp {} /workspace/app.jar \;
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 # The GHCR package page is the one place a user can encounter this image
 # without ever reading this Dockerfile or the repository it lives in — so

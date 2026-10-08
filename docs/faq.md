@@ -113,7 +113,7 @@ and [`design-review.md`](https://github.com/AindriuB/data-prism/blob/main/docs/d
 
 No — [`SECURITY.md`](../SECURITY.md#supported-versions) states plainly that
 the project is pre-1.0, and that only the latest released version receives
-security fixes. Version 0.4.1 is that latest release, and across its
+security fixes. Version 0.5.0 is that latest release, and across its
 history the privacy engine, deterministic pseudonymisation, correlation and
 consistency findings, the JSON REST and reviewed-adapter connectors, the
 OAuth2 resource server, an opt-in durable hash-chained audit sink with

@@ -40,6 +40,8 @@ dataprism:
   audit:
     sink: slf4j
     writer-id: quickstart
+    entity-types:
+      - CUSTOMER
   metrics:
     sink: micrometer
   hazelcast:

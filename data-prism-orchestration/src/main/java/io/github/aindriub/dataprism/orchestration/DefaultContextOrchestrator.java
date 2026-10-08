@@ -24,6 +24,8 @@ import io.github.aindriub.dataprism.core.RequestLimits;
 import io.github.aindriub.dataprism.core.ScopeBudget;
 import io.github.aindriub.dataprism.core.ScrubResult;
 import io.github.aindriub.dataprism.core.ScrubbingEngine;
+import io.github.aindriub.dataprism.core.SourceCallContext;
+import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 import io.github.aindriub.dataprism.core.SourceValues;
 import io.github.aindriub.dataprism.core.SyntheticValueSource;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
@@ -358,7 +360,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         Map<String, DataRequest> requests = new LinkedHashMap<>();
         for (IdentityResolver.SourceRef ref : identities.expand(
                 new IdentityResolver.CanonicalId(request.subjectId()), names)) {
-            requests.put(ref.sourceName(), DataRequest.of(request.entityType(), ref.key()));
+            requests.put(ref.sourceName(), DataRequest.of(request.entityType(), ref.key())
+                    .withContext(new SourceCallContext(request.externalCorrelationId())));
         }
         return requests;
     }
@@ -374,9 +377,10 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 .map(outcome -> outcome.sourceName() + ":" + outcome.status())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         audit.record(new AuditEntry(investigationContext.principalId(), investigationContext.clientId(),
-                request.toolName(), request.entityType(), subjectToken, fingerprint,
+                request.toolName(), request.auditedEntityType(), subjectToken, fingerprint,
                 context.redactionProfile(), context.scopeId(), context.purpose(),
                 investigationContext.caseId(), decision, names, request.rejectedArguments(),
-                correlationId, dispositions, request.approvalId(), request.approverId()));
+                correlationId, dispositions, request.approvalId(), request.approverId(),
+                request.externalCorrelationId().map(ExternalCorrelationId::value).orElse("")));
     }
 }

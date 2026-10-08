@@ -481,8 +481,9 @@ class AuditChainVerifierTest {
             assertThatThrownBy(() -> torn.record(unfinished)).isInstanceOf(UncheckedIOException.class);
         }
 
-        // The operator restarts: a fresh FileAuditSink opens APPEND on the same path and its
-        // first record lands directly after the surviving fragment, with no newline between them.
+        // The operator restarts: a fresh FileAuditSink opens APPEND on the same path, terminates
+        // the surviving fragment with CRLF, and only then appends, so its first record is on its
+        // own line and heads its own chain from GENESIS.
         AuditEvent afterSecond;
         String instanceId2;
         try (FileAuditSink restarted = new FileAuditSink(path)) {
@@ -498,7 +499,7 @@ class AuditChainVerifierTest {
         AuditChainVerifier.StructuralAnomaly anomaly = report.anomalies().get(0);
         assertThat(anomaly.type()).isEqualTo(AuditChainVerifier.AnomalyType.INTERRUPTED_WRITE_FRAGMENT);
         assertThat(anomaly.primaryOffset()).isEqualTo(fragmentOffset);
-        assertThat(anomaly.message()).contains("not tampering").contains("field count");
+        assertThat(anomaly.message()).contains("not tampering").contains("carriage return");
 
         assertThat(report.hasBreak()).isFalse();
         assertThat(report.hasStructuralAnomaly()).isTrue();
@@ -508,22 +509,53 @@ class AuditChainVerifierTest {
         assertThat(writer1.sequenceCount()).isEqualTo(1);
         assertThat(writer1.headHash()).isEqualTo(before.eventHash());
 
-        // instance-2's own first record() call produced the unparseable merged line above (its
-        // bytes are the ones landing directly after the fragment); only its second call produced
-        // a clean, attributable line. That surviving record's previousHash chains from the FIRST
-        // call's hash, which was never durably parsed -- so instance-2's chain genuinely does not
-        // start at GENESIS here. This must be reported as its own structural finding, never as
-        // "intact" and never at exit code 0 (acceptance requires only that it not be reported AS
-        // TAMPERING, which this finding, at structural severity, satisfies without hiding it).
+        // instance-2's first record sits on its own line, so its chain starts at GENESIS and both of
+        // its records verify.
         AuditChainVerifier.WriterResult writer2 = writerFor(report, instanceId2);
         assertThat(writer2.broken()).isFalse();
-        assertThat(writer2.sequenceCount()).isEqualTo(1);
+        assertThat(writer2.sequenceCount()).isEqualTo(2);
         assertThat(writer2.headHash()).isEqualTo(afterSecond.eventHash());
-        assertThat(writer2.nonGenesisStart()).isPresent();
-        assertThat(writer2.nonGenesisStart().get().message())
-                .contains("CHAIN DOES NOT START AT GENESIS")
-                .contains(instanceId2)
-                .contains(String.valueOf(fragmentOffset));
+        assertThat(writer2.nonGenesisStart()).isEmpty();
+    }
+
+    @Test
+    void legacyFragmentFusedWithARestartsFirstRecordIsABreakNamingTheLegacyCause() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        AuditEvent before;
+        String instanceId1;
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "instance-1");
+            instanceId1 = recorder.instanceId();
+            before = write(recorder);
+        }
+        Path scratch = tempDir.resolve("scratch.log");
+        try (FileAuditSink scratchSink = new FileAuditSink(scratch)) {
+            write(new AuditRecorder(scratchSink, FIXED, "instance-1"));
+        }
+        // A real v3 line, torn after its recordVersion field (index 20) as in the review.
+        String torn = Files.readString(scratch, StandardCharsets.UTF_8).split("\n")[0];
+        int cut = 0;
+        for (int seps = 0; seps < 21; cut++) {
+            if (torn.charAt(cut) == '\u001f') {
+                seps++;
+            }
+        }
+        torn = torn.substring(0, cut + 3);
+        Path restartedFile = tempDir.resolve("restarted.log");
+        try (FileAuditSink restarted = new FileAuditSink(restartedFile)) {
+            write(new AuditRecorder(restarted, FIXED, "instance-2"));
+        }
+        String firstOfRestart = Files.readString(restartedFile, StandardCharsets.UTF_8).split("\n")[0];
+        // The pre-0.5.0 shape, built explicitly: no terminator between fragment and first record.
+        Files.writeString(path, Files.readString(path, StandardCharsets.UTF_8) + torn + firstOfRestart + "\n",
+                StandardCharsets.UTF_8);
+
+        AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(path);
+
+        assertThat(report.anomalies()).hasSize(1);
+        assertThat(report.anomalies().get(0).type()).isEqualTo(AuditChainVerifier.AnomalyType.FIELD_COUNT_MISMATCH);
+        assertThat(report.anomalies().get(0).message()).contains("before 0.5.0");
+        assertThat(report.hasBreak()).isTrue();
     }
 
     @Test
@@ -545,7 +577,15 @@ class AuditChainVerifierTest {
         }
 
         // The chain continues legitimately after the duplicate, chaining from the real first record.
-        AuditEvent third = eventWithComputedHash("event-3", instanceId, first.sequence() + 1, first.eventHash());
+        AuditEvent thirdDraft = new AuditEvent("event-3", FIXED.instant(), "investigator-1", "client-1",
+                "get_entity_context", "CUSTOMER", "pseudo-1", "fp-1", "DEFAULT", "scope-1", "investigation",
+                "CASE-1", "ALLOW", Set.of("customer-api:ANSWERED"), Set.of(), "corr-1", instanceId,
+                first.sequence() + 1, first.eventHash(), "", first.recordVersion(), java.util.Map.of(), "", "");
+        AuditEvent third = new AuditEvent("event-3", FIXED.instant(), "investigator-1", "client-1",
+                "get_entity_context", "CUSTOMER", "pseudo-1", "fp-1", "DEFAULT", "scope-1", "investigation",
+                "CASE-1", "ALLOW", Set.of("customer-api:ANSWERED"), Set.of(), "corr-1", instanceId,
+                first.sequence() + 1, first.eventHash(), AuditEventHash.compute(thirdDraft),
+                first.recordVersion(), java.util.Map.of(), "", "");
         try (FileAuditSink sink = new FileAuditSink(path)) {
             sink.record(third);
         }

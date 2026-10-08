@@ -7,7 +7,7 @@
   <parent>
     <groupId>io.github.aindriub</groupId>
     <artifactId>data-prism</artifactId>
-    <version>0.4.1</version>
+    <version>0.5.0</version>
   </parent>
 
   <artifactId>data-prism-quickstart-issuer</artifactId>
@@ -33,18 +33,22 @@
   <dependencies>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
+      <artifactId>spring-boot-starter-webmvc</artifactId>
+      <exclusions>
+        <!-- Jackson 2 only (D-139-A): the scrubbing module serialises through one Jackson 2 ObjectMapper. -->
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-jackson</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
-      <!-- Not managed by spring-boot-dependencies directly: it arrives
-           transitively through spring-security-oauth2-jose, which
-           data-prism-server depends on but this module does not. The version
-           below matches what that transitive resolution already settles on
-           elsewhere in this reactor, so this issuer signs with the exact
-           library data-prism-server verifies with. -->
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-jackson2</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.nimbusds</groupId>
       <artifactId>nimbus-jose-jwt</artifactId>
-      <version>10.9.1</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

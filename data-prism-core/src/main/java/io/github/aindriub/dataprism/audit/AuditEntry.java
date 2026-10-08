@@ -25,5 +25,17 @@ public record AuditEntry(
         String correlationId,
         Map<String, String> fieldDispositions,
         String approvalId,
-        String approverId) {
+        String approverId,
+        String externalCorrelationId) {
+
+    /** The pre-version-3 shape: no external correlation id. */
+    public AuditEntry(String principalId, String clientId, String tool, String entityType,
+                      String subjectPseudonym, String parameterFingerprint, String privacyProfile,
+                      String scopeId, String purpose, String caseId, String policyDecision,
+                      Set<String> sourceSystems, Set<String> rejectedArguments, String correlationId,
+                      Map<String, String> fieldDispositions, String approvalId, String approverId) {
+        this(principalId, clientId, tool, entityType, subjectPseudonym, parameterFingerprint, privacyProfile,
+                scopeId, purpose, caseId, policyDecision, sourceSystems, rejectedArguments, correlationId,
+                fieldDispositions, approvalId, approverId, "");
+    }
 }

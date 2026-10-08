@@ -20,6 +20,18 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-08 | 152, 153 | External review of PR #117: correlation header stripped unconditionally; torn audit tail terminated with CRLF on resume; smoke SIGPIPE fix. | `## 2026-10-08 — External review of PR #117: correlation header stripped unconditionally, torn audit tail terminated on resume` |
+| 2026-10-07 | 151 | 0.5.0 cut done locally: version 0.5.0, dated changelog, cut-time docs fixes; release checks deferred to CI. | `## 2026-10-07 — 0.5.0 cut done locally: version 0.5.0, changelog, cut-time docs fixes` |
+| 2026-10-07 | 116, 150 | 0.5.0 wave 6: audit v3 and log-shipping docs; entityType audited only when registered or upper-case-shaped, else `<unregistered>` (D-150-A). | `## 2026-10-07 — 0.5.0 wave 6: audit and log-shipping docs, entityType audited only when registered or shaped` |
+| 2026-10-07 | 115, 148 | Correlation client snippets and log-shipping recipes; validated id into the SLF4J MDC | `## 2026-10-07 — 0.5.0 wave 5: correlation examples and MDC logging` |
+| 2026-10-07 | 113, 114, 147 | 0.5.0 wave 4: correlation headers and JSON projection wired to configuration, PII scans extended, 0.5.0 platform documented. | `## 2026-10-07 — 0.5.0 wave 4: correlation wired into configuration, PII scans extended, platform documented` |
+| 2026-10-07 | 149 | Test ports claimed by OS file lock, probes run sequentially; macOS 1223/0/0/0 and one Linux container run; end-to-end flake causes unproven. | `## 2026-10-07 — Task 149: test-suite port races removed` |
+| 2026-10-07 | none | Baseline on a2c6bdf7 after wave 3 (20/20 modules, about 1,220 tests, class-version gate and actionlint clean); owner paused all work. | `## 2026-10-07 — Baseline after 0.5.0 wave 3, and the owner's pause` |
+| 2026-10-07 | 144 | 0.5.0 wave 3 part 2: CI matrix on JDK 21 and 25, release on 25, class-version-65 gate on released jars that fails closed. | `## 2026-10-07 — 0.5.0 wave 3, part 2: task 144` |
+| 2026-10-07 | 110, 111, 112 | 0.5.0 wave 3 part 1: MCP tools carry the external correlation id, REST sources send it as a header, audit events project to ECS JSON. | `## 2026-10-07 — 0.5.0 wave 3, part 1: tasks 110, 111, 112` |
+| 2026-10-07 | 109, 142, 146 | 0.5.0 wave 2: audit record v3 with hashed external correlation id and FIELD_COUNT_MISMATCH breaks, five Spring Boot 4 guards, suite proven on JDK 25 and 21 on Linux. | `## 2026-10-07 — 0.5.0 wave 2: tasks 109, 142, 146` |
+| 2026-10-07 | 108, 141, 143, 145 | 0.5.0 wave 1: external correlation id core, Spring Boot 4.1.1 on Jackson 2, Docker images and smoke on Java 25, Dependabot blocks 26+. | `## 2026-10-07 — 0.5.0 wave 1: tasks 108, 141, 143, 145` |
+| 2026-10-07 | 130 | Cleared the dependency backlog: nimbus-jose-jwt, archunit, source plugin, five GitHub Actions, Pillow; Dependabot ignore rules. | `## 2026-10-07 — Task 130: clear the dependency backlog` |
 | 2026-10-07 | 138 | `join.mode: none` starts standalone under a random internal cluster name and refuses incoming joins; client write risk documented. | `## 2026-10-07 — Task 138: join.mode none refuses incoming joins` |
 | 2026-10-07 | 136 | Cut 0.4.1: versions, CHANGELOG, live Compose run, Hazelcast 5.7.0 packaging check; isolation claim weakened. | `## 2026-10-07 — Task 136: cut 0.4.1` |
 | 2026-10-06 | 134, 135, 137 | Multi-member server test, `multiple-instances.md` docs, Hazelcast 5.7.0 pinned over the Boot BOM. | `## 2026-10-06 — Tasks 134, 135 and 137: multi-member test, multiple-instances docs, Hazelcast 5.7.0 pin` |

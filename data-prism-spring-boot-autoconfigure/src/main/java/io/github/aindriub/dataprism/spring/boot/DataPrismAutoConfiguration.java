@@ -5,14 +5,19 @@ import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditRetention;
+import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.audit.FileAuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.FileAuditSink;
+import io.github.aindriub.dataprism.audit.JsonAuditRetention;
+import io.github.aindriub.dataprism.audit.SegmentedJsonAuditSink;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
+import io.github.aindriub.dataprism.audit.TeeAuditSink;
 import io.github.aindriub.dataprism.core.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.EntityCorrelationService;
+import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.core.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.IdentityResolver;
 import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
@@ -31,6 +36,7 @@ import io.github.aindriub.dataprism.core.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
+import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
@@ -187,8 +193,11 @@ public class DataPrismAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "slf4j")
-        AuditSink dataPrismSlf4jAuditSink() {
-            return new Slf4jAuditSink();
+        AuditSink dataPrismSlf4jAuditSink(DataPrismProperties properties) {
+            DataPrismProperties.Audit.Output output = properties.getAudit().getOutput();
+            // Nothing configured keeps the message-only form; any output setting adds the mapped pairs.
+            return output.isDefault() ? new Slf4jAuditSink()
+                    : new Slf4jAuditSink(output.mapping(), output.getRouting().toRouting());
         }
 
         /**
@@ -239,7 +248,42 @@ public class DataPrismAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
-        AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties) {
+        AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties, ObjectProvider<Clock> clock,
+                org.springframework.beans.factory.config.ConfigurableListableBeanFactory beanFactory) {
+            AuditSink primary = openPrimary(properties);
+            DataPrismProperties.Audit.Output output = properties.getAudit().getOutput();
+            if (output.getJsonDirectory() == null || output.getJsonDirectory().isBlank()) {
+                return primary;
+            }
+            SegmentedJsonAuditSink json;
+            try {
+                json = new SegmentedJsonAuditSink(Path.of(output.getJsonDirectory()), output.mapping(),
+                        output.getRouting().toRouting());
+            } catch (FileAuditSink.OpenFailedException e) {
+                closeQuietly(primary);
+                LOG.error("dataprism.audit.output.json-directory could not be opened", e);
+                throw new DataPrismConfigurationException("AUDIT_JSON_DIRECTORY_UNUSABLE",
+                        "dataprism.audit.output.json-directory could not be opened for writing");
+            } catch (RuntimeException e) {
+                closeQuietly(primary);
+                throw e;
+            }
+            if (!(beanFactory instanceof org.springframework.beans.factory.support.DefaultSingletonBeanRegistry registry)) {
+                closeQuietly(primary);
+                closeQuietly(json);
+                throw new DataPrismConfigurationException("AUDIT_JSON_DIRECTORY_UNUSABLE",
+                        "the JSON audit projection needs a bean factory that can close it");
+            }
+            // Neither TeeAuditSink nor the context knows the two sinks need closing, so the context is told.
+            JsonProjection projection = new JsonProjection(primary, json, new JsonAuditRetention(
+                    Path.of(output.getJsonDirectory()), properties.getAudit().getRetention(),
+                    clock.getIfAvailable(Clock::systemUTC), properties.getAudit().isRetentionOverride()));
+            registry.registerDisposableBean("dataPrismJsonAuditProjection", projection);
+            return new TeeAuditSink(primary, json);
+        }
+
+        /** The authoritative sink. The cause can name a filesystem path, so it is logged and never repeated. */
+        static AuditSink openPrimary(DataPrismProperties properties) {
             String directory = properties.getAudit().getDirectory();
             Path path = Path.of(directory == null || directory.isBlank()
                     ? properties.getAudit().getFilePath() : directory);
@@ -255,6 +299,61 @@ public class DataPrismAutoConfiguration {
                 LOG.error("dataprism.audit.file-path or directory could not be opened for the hash-chained audit sink", e);
                 throw new DataPrismConfigurationException("AUDIT_SINK_FILE_UNUSABLE",
                         "dataprism.audit.file-path or directory could not be opened for the hash-chained audit sink");
+            }
+        }
+
+        static void closeQuietly(Object sink) {
+            if (sink instanceof java.io.Closeable closeable) {
+                try {
+                    closeable.close();
+                } catch (java.io.IOException | RuntimeException ignored) {
+                    // the startup refusal is the failure that matters
+                }
+            }
+        }
+    }
+
+    /**
+     * Owns the close of both sinks of a JSON-projected audit sink, and runs the projection's purge:
+     * once now, then every 24 hours, as {@link AuditMaintenance} does for the native segments. A
+     * failed purge is logged and never stops the native one.
+     */
+    static final class JsonProjection implements org.springframework.beans.factory.DisposableBean {
+        private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(JsonProjection.class);
+        private final AuditSink primary;
+        private final SegmentedJsonAuditSink json;
+        private final java.util.concurrent.ScheduledExecutorService scheduler;
+
+        JsonProjection(AuditSink primary, SegmentedJsonAuditSink json, JsonAuditRetention retention) {
+            this.primary = primary;
+            this.json = json;
+            scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "dataprism-audit-json-retention");
+                t.setDaemon(true);
+                return t;
+            });
+            purge(retention);
+            scheduler.scheduleWithFixedDelay(() -> purge(retention), 24, 24, java.util.concurrent.TimeUnit.HOURS);
+        }
+
+        private static void purge(JsonAuditRetention retention) {
+            try {
+                retention.purge();
+            } catch (RuntimeException e) {
+                LOG.error("JSON audit projection purge did not complete; the native audit is unaffected", e);
+            }
+        }
+
+        @Override
+        public void destroy() throws Exception {
+            scheduler.shutdown();
+            scheduler.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+            try {
+                json.close();
+            } finally {
+                if (primary instanceof java.io.Closeable closeable) {
+                    closeable.close();
+                }
             }
         }
     }
@@ -538,19 +637,19 @@ public class DataPrismAutoConfiguration {
     }
     /** The {@code auditIntegrity} health contributor; present only when Spring Boot Actuator is. */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(org.springframework.boot.actuate.health.HealthIndicator.class)
+    @ConditionalOnClass(org.springframework.boot.health.contributor.HealthIndicator.class)
     static class AuditIntegrityHealth {
         /** The bean name minus {@code HealthIndicator} is the contributor name: {@code auditIntegrity}. */
         @Bean
-        org.springframework.boot.actuate.health.HealthIndicator auditIntegrityHealthIndicator(
+        org.springframework.boot.health.contributor.HealthIndicator auditIntegrityHealthIndicator(
                 AuditMaintenance maintenance) {
             return () -> {
                 String code = maintenance.failureCode();
                 if (code == null) {
-                    return org.springframework.boot.actuate.health.Health.up().build();
+                    return org.springframework.boot.health.contributor.Health.up().build();
                 }
-                org.springframework.boot.actuate.health.Health.Builder down =
-                        org.springframework.boot.actuate.health.Health.down().withDetail("code", code);
+                org.springframework.boot.health.contributor.Health.Builder down =
+                        org.springframework.boot.health.contributor.Health.down().withDetail("code", code);
                 if (maintenance.failureSegmentDate() != null) {
                     down.withDetail("segmentDate", maintenance.failureSegmentDate());
                 }
@@ -794,14 +893,22 @@ public class DataPrismAutoConfiguration {
             }
         };
     }
+    /** Off unless {@code dataprism.correlation.mdc-key} is set; validated by {@link DataPrismProperties#validate()}. */
+    @Bean @ConditionalOnMissingBean
+    CorrelationMdc dataPrismCorrelationMdc(DataPrismProperties properties) {
+        String key = properties.getCorrelation().getMdcKey();
+        return key == null ? CorrelationMdc.off() : CorrelationMdc.of(key);
+    }
+
     @Bean @ConditionalOnMissingBean
     ContextOrchestrator dataPrismContextOrchestrator(List<DataSourceAdapter<?>> adapters, IdentityResolver identities,
             JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, List<LlmResponseValidator> validators,
             SyntheticValueSource synthetics, ValueTokenSource tokens, SecretKeyProvider keys, AuditRecorder audit,
-            ScopeBudget budget, PrivacyMetrics metrics, Clock clock, ParameterFingerprinter fingerprinter) {
+            ScopeBudget budget, PrivacyMetrics metrics, Clock clock, ParameterFingerprinter fingerprinter,
+            CorrelationMdc correlationMdc) {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 fingerprinter, audit, identities,
-                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics), budget, RequestLimits.DEFAULT,
+                new SourceFanOut(SourceCircuitBreaker.disabled(), clock, metrics, correlationMdc), budget, RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
     /**
@@ -892,9 +999,19 @@ public class DataPrismAutoConfiguration {
     DataPrismMcpServer.HttpTransport dataPrismHttpTransport(ContextOrchestrator orchestrator, AuthorizationService authorization,
             ScopeResolver scopeResolver, McpTransportContextExtractor<HttpServletRequest> extractor,
             PrivacyMetrics metrics, AuditRecorder audit, Clock clock, DataPrismProperties properties,
-            ToolAdmission admission, ParameterFingerprinter fingerprinter) {
+            ToolAdmission admission, ParameterFingerprinter fingerprinter, CorrelationMdc correlationMdc) {
+        AuditedEntityTypes entityTypes = AuditedEntityTypes.of(properties.getAudit().getEntityTypes());
+        if (entityTypes.isShapeMode()) {
+            // Not a WARN: leaving the list unset is a supported mode, but the shape cannot tell ACC123 from CUSTOMER.
+            AUDIT_LOG.info("dataprism.audit.entity-types is not set: the audit record's entityType is kept only when "
+                    + "it matches [A-Z][A-Z0-9_]{0,63} and is otherwise recorded as {}. Set "
+                    + "dataprism.audit.entity-types to the exact entity types in use.",
+                    AuditedEntityTypes.UNREGISTERED);
+        }
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
-                properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter);
+                properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter,
+                properties.getCorrelation().getInbound().isRequired() ? CorrelationRequirement.REQUIRED
+                        : CorrelationRequirement.OPTIONAL, correlationMdc, entityTypes);
     }
 
     @Bean(destroyMethod = "closeGracefully")

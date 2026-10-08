@@ -29,6 +29,7 @@ public class DataPrismProperties {
     private SecurityPolicy securityPolicy = new SecurityPolicy();
     private Privacy privacy = new Privacy();
     private Audit audit = new Audit();
+    private Correlation correlation = new Correlation();
     private Metrics metrics = new Metrics();
     private Hazelcast hazelcast = new Hazelcast();
     private Identity identity = new Identity();
@@ -117,6 +118,14 @@ public class DataPrismProperties {
         reidentification = v == null ? new Reidentification() : v;
     }
 
+    public Correlation getCorrelation() {
+        return correlation;
+    }
+
+    public void setCorrelation(Correlation v) {
+        correlation = v == null ? new Correlation() : v;
+    }
+
     public Operator getOperator() {
         return operator;
     }
@@ -159,8 +168,117 @@ public class DataPrismProperties {
             refuse("FIXTURE_DEVELOPMENT_STDIO_ONLY",
                     "dataprism.transport.fixture-development requires dataprism.transport.mode=stdio");
         }
+        validateCorrelation();
+        validateAuditOutput();
+        validateAuditEntityTypes();
         validateSources(fixture);
         validateOversight();
+    }
+
+    private static final java.util.regex.Pattern HEADER_TOKEN =
+            java.util.regex.Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]+");
+    private static final Set<String> CREDENTIAL_HEADERS = Set.of("authorization", "cookie", "proxy-authorization");
+
+    /** True if the value is an RFC 9110 token and not a header that carries a credential. */
+    static boolean usableHeaderName(String name) {
+        return name != null && HEADER_TOKEN.matcher(name).matches()
+                && !CREDENTIAL_HEADERS.contains(name.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private void validateCorrelation() {
+        Correlation.Inbound inbound = correlation.inbound;
+        if (!blank(inbound.header) && !usableHeaderName(inbound.header)) {
+            refuse("INVALID_CORRELATION_HEADER",
+                    "dataprism.correlation.inbound.header must be an HTTP header name other than a credential header");
+        }
+        if (!blank(correlation.outbound.header) && !usableHeaderName(correlation.outbound.header)) {
+            refuse("INVALID_CORRELATION_HEADER",
+                    "dataprism.correlation.outbound.header must be an HTTP header name other than a credential header");
+        }
+        if (!"opaque".equals(inbound.format) && !"traceparent".equals(inbound.format)) {
+            refuse("INVALID_CORRELATION_FORMAT", "dataprism.correlation.inbound.format must be opaque or traceparent");
+        }
+        if ("traceparent".equals(inbound.format)) {
+            if (inbound.pattern != null) {
+                refuse("CORRELATION_PATTERN_NOT_APPLICABLE",
+                        "dataprism.correlation.inbound.pattern does not apply to the traceparent format");
+            }
+        } else {
+            try {
+                io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy.opaque(inbound.effectivePattern());
+            } catch (IllegalArgumentException e) {
+                refuse("INVALID_CORRELATION_PATTERN", "dataprism.correlation.inbound.pattern is not a valid regular expression");
+            }
+        }
+        if (inbound.required) {
+            if (blank(inbound.header)) {
+                refuse("CORRELATION_REQUIRED_WITHOUT_HEADER",
+                        "dataprism.correlation.inbound.required needs dataprism.correlation.inbound.header");
+            }
+            if (transport.mode != Transport.Mode.HTTP) {
+                refuse("CORRELATION_REQUIRES_HTTP_TRANSPORT",
+                        "dataprism.correlation.inbound.required needs the HTTP transport");
+            }
+        }
+        validateCorrelationMdcKey();
+    }
+
+    private void validateCorrelationMdcKey() {
+        String key = correlation.mdcKey;
+        if (key == null) {
+            return;
+        }
+        if (!io.github.aindriub.dataprism.core.correlation.CorrelationMdc.KEY_PATTERN.matcher(key).matches()) {
+            refuse("INVALID_CORRELATION_MDC_KEY",
+                    "dataprism.correlation.mdc-key must match [A-Za-z][A-Za-z0-9_.-]{0,63}");
+        }
+        if (io.github.aindriub.dataprism.core.correlation.CorrelationMdc.isReserved(key)) {
+            refuse("CORRELATION_MDC_KEY_RESERVED",
+                    "dataprism.correlation.mdc-key is a name that tracing or structured logging already writes");
+        }
+        if (blank(correlation.inbound.header)) {
+            refuse("CORRELATION_MDC_KEY_WITHOUT_HEADER",
+                    "dataprism.correlation.mdc-key needs dataprism.correlation.inbound.header");
+        }
+    }
+
+    /** Refuses a bad name without repeating it: the value could itself be personal data. */
+    private void validateAuditEntityTypes() {
+        try {
+            io.github.aindriub.dataprism.audit.AuditedEntityTypes.of(audit.entityTypes);
+        } catch (IllegalArgumentException e) {
+            refuse("INVALID_AUDIT_ENTITY_TYPE", "every dataprism.audit.entity-types entry must match "
+                    + io.github.aindriub.dataprism.audit.AuditedEntityTypes.REGISTERED_NAME.pattern());
+        }
+    }
+
+    private void validateAuditOutput() {
+        Audit.Output output = audit.output;
+        try {
+            output.mapping();
+            output.routing.toRouting().checkAgainst(output.mapping());
+        } catch (IllegalArgumentException e) {
+            String message = e.getMessage() == null ? "" : e.getMessage();
+            int colon = message.indexOf(':');
+            String code = colon > 0 ? message.substring(0, colon) : message;
+            refuse(switch (code) {
+                case "UNKNOWN_AUDIT_FIELD", "INVALID_AUDIT_FIELD_PATH", "AUDIT_FIELD_MAPPING_CONFLICT",
+                        "INVALID_AUDIT_ROUTING_VALUE", "INVALID_AUDIT_FIELD_PRESET" -> code;
+                default -> "INVALID_AUDIT_FIELD_PATH";
+            }, "dataprism.audit.output is not valid: " + code);
+        }
+        if (!blank(output.jsonDirectory)) {
+            if (!"hash-chained".equals(audit.sink) || blank(audit.directory)) {
+                refuse("AUDIT_JSON_REQUIRES_SEGMENTED_SINK",
+                        "dataprism.audit.output.json-directory requires dataprism.audit.sink=hash-chained"
+                                + " and dataprism.audit.directory");
+            }
+            if (sameOrInside(output.jsonDirectory, audit.directory)
+                    || sameOrInside(audit.directory, output.jsonDirectory)) {
+                refuse("AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT",
+                        "dataprism.audit.output.json-directory must be separate from dataprism.audit.directory");
+            }
+        }
     }
 
     /**
@@ -839,6 +957,126 @@ public class DataPrismProperties {
         private java.time.Period retention = java.time.Period.ofMonths(6);
         private boolean retentionOverride;
         private final Checkpoint checkpoint = new Checkpoint();
+        private final Output output = new Output();
+        private List<String> entityTypes = new java.util.ArrayList<>();
+
+        /**
+         * The entity types an audit record's {@code entityType} may hold verbatim. Empty (the default)
+         * means the shape fallback {@code [A-Z][A-Z0-9_]{0,63}}; anything else is audited as
+         * {@code <unregistered>}.
+         */
+        public List<String> getEntityTypes() {
+            return entityTypes;
+        }
+
+        public void setEntityTypes(List<String> v) {
+            entityTypes = v == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(v);
+        }
+
+        public Output getOutput() {
+            return output;
+        }
+
+        /**
+         * How the JSON rendering of an audit event is shaped: the field preset and overrides,
+         * routing constants, and an optional directory for the {@code .ndjson} projection.
+         */
+        public static class Output {
+            private String fieldPreset = "canonical";
+            private Map<String, String> fieldNames = new LinkedHashMap<>();
+            private final Routing routing = new Routing();
+            private String jsonDirectory;
+
+            public String getFieldPreset() {
+                return fieldPreset;
+            }
+
+            public void setFieldPreset(String v) {
+                fieldPreset = v;
+            }
+
+            public Map<String, String> getFieldNames() {
+                return fieldNames;
+            }
+
+            public void setFieldNames(Map<String, String> v) {
+                fieldNames = v == null ? new LinkedHashMap<>() : new LinkedHashMap<>(v);
+            }
+
+            public Routing getRouting() {
+                return routing;
+            }
+
+            public String getJsonDirectory() {
+                return jsonDirectory;
+            }
+
+            public void setJsonDirectory(String v) {
+                jsonDirectory = v;
+            }
+
+            /** True when nothing here departs from the canonical names with no routing. */
+            boolean isDefault() {
+                return "canonical".equals(fieldPreset) && fieldNames.isEmpty() && routing.isEmpty();
+            }
+
+            /** The bound mapping; throws {@code IllegalArgumentException} led by a stable code. */
+            public io.github.aindriub.dataprism.audit.AuditFieldMapping mapping() {
+                io.github.aindriub.dataprism.audit.AuditFieldMapping base = switch (fieldPreset == null ? "" : fieldPreset) {
+                    case "canonical" -> io.github.aindriub.dataprism.audit.AuditFieldMapping.canonical();
+                    case "ecs" -> io.github.aindriub.dataprism.audit.AuditFieldMapping.ecs();
+                    default -> throw new IllegalArgumentException(
+                            "INVALID_AUDIT_FIELD_PRESET: field-preset must be canonical or ecs");
+                };
+                return base.withOverrides(fieldNames);
+            }
+
+            public static class Routing {
+                private String eventDataset, dataStreamType, dataStreamDataset, dataStreamNamespace;
+
+                public String getEventDataset() {
+                    return eventDataset;
+                }
+
+                public void setEventDataset(String v) {
+                    eventDataset = v;
+                }
+
+                public String getDataStreamType() {
+                    return dataStreamType;
+                }
+
+                public void setDataStreamType(String v) {
+                    dataStreamType = v;
+                }
+
+                public String getDataStreamDataset() {
+                    return dataStreamDataset;
+                }
+
+                public void setDataStreamDataset(String v) {
+                    dataStreamDataset = v;
+                }
+
+                public String getDataStreamNamespace() {
+                    return dataStreamNamespace;
+                }
+
+                public void setDataStreamNamespace(String v) {
+                    dataStreamNamespace = v;
+                }
+
+                boolean isEmpty() {
+                    return eventDataset == null && dataStreamType == null && dataStreamDataset == null
+                            && dataStreamNamespace == null;
+                }
+
+                public io.github.aindriub.dataprism.audit.AuditRouting toRouting() {
+                    return new io.github.aindriub.dataprism.audit.AuditRouting(eventDataset, dataStreamType,
+                            dataStreamDataset, dataStreamNamespace);
+                }
+            }
+        }
 
         public String getDirectory() {
             return directory;
@@ -925,6 +1163,98 @@ public class DataPrismProperties {
 
         public void setFilePath(String v) {
             filePath = v;
+        }
+    }
+
+    public static class Correlation {
+        private final Inbound inbound = new Inbound();
+        private final Outbound outbound = new Outbound();
+
+        public Inbound getInbound() {
+            return inbound;
+        }
+
+        public Outbound getOutbound() {
+            return outbound;
+        }
+
+        public static class Inbound {
+            private String header;
+            private String format = "opaque";
+            private String pattern;
+            private boolean required;
+
+            public String getHeader() {
+                return header;
+            }
+
+            public void setHeader(String v) {
+                header = v;
+            }
+
+            public String getFormat() {
+                return format;
+            }
+
+            public void setFormat(String v) {
+                format = v;
+            }
+
+            /** Unset means {@code CorrelationIdPolicy.DEFAULT_OPAQUE_PATTERN}. */
+            public String getPattern() {
+                return pattern;
+            }
+
+            public void setPattern(String v) {
+                pattern = v;
+            }
+
+            public boolean isRequired() {
+                return required;
+            }
+
+            public void setRequired(boolean v) {
+                required = v;
+            }
+
+            String effectivePattern() {
+                return pattern == null
+                        ? io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy.DEFAULT_OPAQUE_PATTERN
+                        : pattern;
+            }
+
+            /** The policy for the configured format; only meaningful after {@code validate()}. */
+            public io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy policy() {
+                return "traceparent".equals(format)
+                        ? io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy.traceparent()
+                        : io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy.opaque(effectivePattern());
+            }
+        }
+
+        public static class Outbound {
+            private String header;
+
+            public String getHeader() {
+                return header;
+            }
+
+            public void setHeader(String v) {
+                header = v;
+            }
+        }
+
+        private String mdcKey;
+
+        /**
+         * The SLF4J MDC key the validated external correlation id is put under for the duration of a
+         * tool call. Unset (the default) means MDC is never touched.
+         */
+        public String getMdcKey() {
+            return mdcKey;
+        }
+
+        public void setMdcKey(String v) {
+            mdcKey = v;
         }
     }
 

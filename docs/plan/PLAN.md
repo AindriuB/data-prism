@@ -28,7 +28,7 @@ brief; the reasoning and the rejected alternatives are in
 
 ## Now
 
-### EU AI Act plan — in flight, waves 1 to 4 mostly landed
+### EU AI Act plan — every planned task landed, 0.5.0 awaits the release cut
 
 Tasks that make the audit, oversight and re-identification surfaces support an
 EU AI Act deployment (Arts. 9, 10, 12, 14, 26) and GDPR Art. 9. The work is on
@@ -266,7 +266,7 @@ The owner dropped this for now. It is recorded so it is not re-researched. The a
 Follow-ups from 136:
 
 - The lychee link check was not run locally; CI is the first run. Check its result before tagging.
-- 130 is now unblocked (it waited on 136).
+- 130 is now unblocked (it waited on 136). It has since landed.
 
 ### 0.4.1 release checklist (owner go-ahead required)
 
@@ -276,15 +276,26 @@ and needs the owner's go-ahead. Nothing has been pushed.
 
 1. Push `claude/release-0.4.1` and open a PR to `main`.
 2. Wait for CI green (including the lychee link check, not run locally), then merge.
-3. Close the old Dependabot PRs. The grouping config ships in this branch, so after the merge Dependabot regenerates grouped PRs and the old ungrouped ones are stale.
+3. Done: Dependabot superseded the old PRs with grouped PRs. Dependabot PRs are not closed by hand.
 4. Push an annotated tag `v0.4.1` on the merge commit, matching `v0.4.0`. It is not signed.
 5. Watch the `release.yml` run for `v0.4.1`; create the GitHub Release if the workflow has not.
 6. Dispatch `publish-central`, then verify the library modules at 0.4.1 on Central (`data-prism-server` must not appear).
 7. Dispatch `publish-image` with `-f version=0.4.1`, then verify the GHCR manifests for `data-prism-server` and the four `data-prism-quickstart-*` images.
 8. Dispatch `publish-mcp`, then verify the registry lists 0.4.1 as latest.
-9. Re-verify the `docs/extending.md` consumer snippet against Central 0.4.1 (throwaway project, no local repository), and drop any remaining "(recorded against ...)" markers if it passes.
+9. Re-verify the `docs/extending.md` consumer snippet against Central 0.4.1 (throwaway project, no local repository), and drop any remaining "(recorded against ...)" markers if it passes. Still open.
 
-#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116)
+**0.4.1 release complete (2026-10-07).** Steps 1 to 8 are done and verified:
+
+- The GitHub Release exists.
+- Maven Central has the 13 library modules at 0.4.1. `data-prism-server` is absent, as intended, and the parent pom pins Hazelcast 5.7.0.
+- GHCR has 5 images at 0.4.1, each for amd64 and arm64.
+- The MCP Registry lists 0.4.1 as latest.
+
+Only step 9 remains.
+
+#### Release 0.5.0 — correlation ids and log-stack output (tasks 108-116, 130, 141-147)
+
+Scope per the owner, 2026-10-07: 108-116, 130 and 141-147 (139 and 140 split into them).
 
 Lets an organisation's own correlation id flow from its MCP client through the
 audit record and on to its REST sources, and writes audit events as JSON that
@@ -293,48 +304,221 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
-| 1 | 130 | Clear the dependency backlog (`docs/plan/tasks/130-clear-dependency-backlog.md`). Runs only after the 0.4.1 cut (136). Owns no files shared with 108-116 | 136 |
-| 1 | 108 | Validated external correlation id carried on `DataRequest` | none |
-| 1 | 111 | REST sources send the correlation id as a header through an interceptor | 108 |
-| 2 | 109 | Audit record version 3 records the external correlation id | 102, 108, 117 |
-| 3 | 110 | MCP tools and orchestrator carry the id to audit and sources | 101, 108, 109, 118 |
-| 3 | 112 | JSON audit projection with ECS field mapping and routing hints | 109, 118 |
-| 4 | 113 | Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112 |
-| 4 | 114 | PII scans cover the correlation id and the JSON projection | 110, 112 |
-| 5 | 115 | Client correlation-header snippets and log-shipping recipes as examples | 113 |
-| 6 | 116 | Document record v3, the JSON projection and log shipping | 106, 113, 114, 115 |
+| Done | 130 | **Done** (2026-10-07). Cleared the dependency backlog; see HISTORY | 136 |
+| Done | 108 | **Done** (2026-10-07). Add a validated external correlation id and carry it on `DataRequest` | none |
+| Done | 141 | **Done** (2026-10-07). Migrate the reactor to Spring Boot 4.1.1 on a single Jackson 2 classpath | none (130 is done) |
+| Done | 143 | **Done** (2026-10-07). Build and run every Docker image on Java 25 LTS, with a container smoke test | none |
+| Done | 145 | **Done** (2026-10-07). Make Dependabot allow Java 25 images and really block 26 and later | none |
+| Done | 109 | **Done** (2026-10-07, attempt 5). Record the external correlation id in audit record version 3 | 102, 108, 117, 123 |
+| Done | 142 | **Done** (2026-10-07). Pin what Spring Boot 4 moved: Jackson 2 converters, actuator JSON, the operator error path | 141 |
+| Done | 146 | **Done** (2026-10-07). Make the test suite clean and proven on JDK 25, including on Linux | 141 |
+| Done | 110 | **Done** (2026-10-07, attempt 2). MCP tools and orchestrator carry the external correlation id to audit and sources | 101, 108, 109, 118, 123, 128 |
+| Done | 111 | **Done** (2026-10-07, attempt 2). Send the external correlation id to configured REST sources through an interceptor | 108, 141, 146 |
+| Done | 112 | **Done** (2026-10-07). Add a structured JSON audit projection with ECS field mapping and routing hints | 109, 118 |
+| Done | 144 | **Done** (2026-10-07, attempt 2). Build on a JDK 21 and 25 matrix, release on 25, and gate released jars on class version 65 | 143, 146 |
+| Done | 149 | **Done** (2026-10-07, attempt 2). Remove the port races behind the known test flakes, without weakening any test (test sources only) | none |
+| Done | 113 | **Done** (2026-10-07). Wire inbound correlation headers and audit JSON output into configuration | 103, 104, 110, 112, 127, 141 |
+| Done | 114 | **Done** (2026-10-07). Extend the PII scans to the correlation id and the JSON projection | 110, 112 |
+| Done | 147 | **Done** (2026-10-07). Document the 0.5.0 platform: Spring Boot 4.1, Java 25 images, Java 21+ for consumers | 108, 111, 141, 143, 144 |
+| Done | 148 | **Done** (2026-10-07). Put the validated external correlation id into the SLF4J MDC under an operator-configured key | 110, 111, 113, 114 |
+| Done | 115 | **Done** (2026-10-07, attempt 2). Ship client correlation-header snippets and log-shipping recipes as examples | 113 |
+| Done | 116 | **Done** (2026-10-07, attempt 2). Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
+| Done | 150 | **Done** (2026-10-07, attempt 2, D-150-A decided). Audit `entityType` verbatim only when registered or upper-case-identifier-shaped, otherwise `<unregistered>` | 148 |
+
+**Every planned 0.5.0 task is done (waves 1 to 6).** The next step is the 0.5.0 release cut, which needs the owner's go-ahead. The pause stays in force: do not push, tag, publish or open a PR on the strength of this file alone. The consolidated checklist is below, under "0.5.0 release-cut checklist".
+
+**Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
+
+#### Open owner questions
+
+- 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
+- Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
+
+Release-cut items are consolidated in "0.5.0 release-cut checklist" below.
+
+Follow-ups from wave 1, not yet tasks:
+
+- Remove the unused `ServerProperties` import in `OperatorErrorController`.
+- `ServerStartupTest` should assert 401/404 rather than "not 200".
+- The smoke teardown should remove images explicitly rather than rely on `--rmi local` semantics.
+- Hazelcast fixed-port tests flake when worktrees build in parallel.
+
+139 was an umbrella and is split into 141, 142 and 147 (all three done). Its file was retired to `docs/plan/tasks/retired/` on 2026-10-07 with the owner's approval. 140 is split into 143,
+144, 145 and 146 and has no file of its own.
 
 108 has no dependency and could start at any time, but nothing in 0.5.0 ships
-before 0.4.0. Task 130 starts only after the 0.4.1 cut (task 136), and it owns no files shared with tasks 108-116, so it
-can run alongside any of them.
+before 0.4.0. Task 130 owned no files shared with tasks 108-116.
+
+**Decisions from task 130 (2026-10-07):**
+
+- **D-130-A:** Spring Boot 4 is not part of 130. It is its own migration, task 139.
+- **D-130-B (historical, superseded 2026-10-07 by the Java 25 decision below):** the Docker images stay on Java 21.
+- **Java 25 (2026-10-07):** the owner approved runtime and build images on Java 25 LTS, not 26, with a CI matrix on JDK 21 and 25. Bytecode stays `--release 21`, the README states the Java 21 consumer minimum, and Dependabot allows 25 but not 26. Language level 25 is not adopted. Risks: Hazelcast's Unsafe warnings, Mockito agent warnings, a JDK TLS message-text test, and Maven image tags. Work is task 140.
+
+Follow-ups from 130, not yet tasks:
+
+- (a) Closed by D-139-C, in task 141. (`data-prism-server` bundled nimbus-jose-jwt 9.37.4 through the Spring Boot BOM while the quickstart issuer pinned 10.10.)
+- (b) Answered. The task 130 docker `maven` semver-major ignore does not block `-temurin-26`, because Dependabot reads `3.9-eclipse-temurin-21` as 3.9.21, so `-26` is a patch update. Task 145 fixes it.
+
+**Owner decisions on the platform, 2026-10-07** (all decided):
+
+- **D-139-A:** Stay on Jackson 2 for 0.5.0 and keep the Jackson 3 enforcer ban.
+- **D-139-B:** 0.5.0's starter and autoconfigure require Spring Boot 4.1. Boot 3 users stay on 0.4.x. CHANGELOG Breaking.
+- **D-139-C:** Manage nimbus-jose-jwt once in the root pom at 10.10, and remove the quickstart-issuer pin and its stale comment.
+- **D-139-D:** Target Spring Boot 4.1.1, not 4.2 milestones. 4.1 OSS support runs to 2027-07-31.
+- **D-140-A:** Floating `eclipse-temurin:25-jre` and `maven:3.9-eclipse-temurin-25` tags.
+- **D-140-B:** Dependabot ignores eclipse-temurin 26 and later and maven 3.9.26 and later, plus Maven 4 (semver-major). Moving to the next LTS, 29, is an owner decision.
+- **D-140-C:** Record the Hazelcast `sun.misc.Unsafe` warning on JDK 25; never silence it with `--sun-misc-unsafe-memory-access=allow`.
+- **D-140-D:** Load Mockito as a `-javaagent` in data-prism-mcp only.
+
+**Decisions on task 149, test-suite stability (2026-10-07):**
+
+- **D-149-A:** If the only clean fix is in production code (`src/main`, POMs), the implementer stops and files a follow-up task. Owns is not widened.
+- **D-149-B:** Proof on macOS alone is enough for acceptance. CI's Linux matrix runs on the next push give the Linux evidence, tracked as a release-cut item.
+- **D-149-C:** Bounded port re-allocation is allowed: at most 3 attempts, only on a bind failure of the chosen port, never wrapped around an assertion. It is a port-selection retry, not a test rerun.
+
+**Decision D-148-A (2026-10-07):** correlated logging through the SLF4J MDC.
+
+- Data Prism supports MDC-based correlated logging. `dataprism.correlation.mdc-key` is unset by default, which means off.
+- It puts only the validated `ExternalCorrelationId.value()` into the MDC.
+- It is opened at the MCP tool handler, because the SDK runs sync tools off the servlet thread, and inside each `SourceFanOut` task from that task's own `DataRequest`. It never relies on ThreadLocal inheritance.
+- It is always cleared in `finally`, restoring any previous value. A rejected or absent id sets nothing.
+- Codes: `INVALID_CORRELATION_MDC_KEY`, `CORRELATION_MDC_KEY_RESERVED`, `CORRELATION_MDC_KEY_WITHOUT_HEADER`.
+- Whatever the inbound pattern admits appears in every log line on those threads, so the pattern should admit generated ids only.
+- No Micrometer or OTel propagation (C6 stays deferred), and no MDC on Hazelcast or other background threads.
+- The optional global `dataprism.correlation.outbound.header` is an amendment to 111 (consumption) and 113 (binding, validation, docs). A per-source correlation-header overrides it.
+- 115's Owns excludes `examples/log-shipping/mdc/**`, which is task 148's. 116 now depends on 148.
+
+Follow-ups from wave 2, not yet tasks:
+
+- (a) Audit verifier wording. An unterminated last line ("POSSIBLY IN FLIGHT, not a break", exit 3), and the truncation-equivalent residuals (21-23 fields with field 20 = "2"/"3", and more than 25 fields with an unparseable field 20, both reported as "INTERRUPTED WRITE, not tampering"), should read "unverified, tampering not ruled out". Consider covering a writer's tail with `--checkpoints`.
+- (b) `AuditRecordFormat:113` relies on an NPE for a null field-20 token. It fails closed, but make it a deliberate check.
+- (c) The CLI help and runbook should say that an interrupted write joined to a restarted writer can surface as exit 2, which is a safe false positive.
+- (d) Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
+- (e) Record surefire and failsafe counts separately in future JDK runs.
+- (f) Task 149 merged: the port races are addressed (ports are now claimed with an OS file lock, probes run one after the other). The three end-to-end symptoms below are **cause unproven; mechanisms reproduced**, not fixed, so watch CI and the next full runs and treat a recurrence as new information. Original observations: `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun. A third, in task 144's run: `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` failed once in the full reactor, then passed on a module rerun and on a full rerun.
+
+Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
+
+- (g) `TeeAuditSink` catches only `RuntimeException`. An `Error` from the projection after the primary write leaves the tee unpoisoned, so a sequence number could be reused. Catch `Throwable`, poison, and rethrow.
+- (h) For task 116: `fieldDispositions` keys can contain dots, which Elasticsearch expands into nested objects. Document this and recommend a flattened or disabled mapping for `dataprism.field_dispositions`. Also check how Boot's ECS formatter renders dotted key-value names.
+- (i) `PiiLogScanTest`'s full-run projection scan covers only the assembly recorder. The tool-level `toolAudit` recorder's events are not scanned as JSON or key-value pairs.
+- (j) `OutboundCorrelationHeader` should also forbid hop-by-hop and framing names: Connection, Upgrade, TE, Keep-Alive, Content-Type, Expect.
+- (k) In `ExternalCorrelationToolTest`, `nullFingerprinterWithAdmissionIsRefused` should also cover `CompareEntitySourcesTool`'s 10-arg constructor and the `DataPrismMcpServer` factories, and assert the "fingerprinter" message. `toolsListUnchanged` should add a streamableHttp case.
+- (l) Task 110 defines `DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY = "externalCorrelation"`. Task 113 needs it.
+- (m) `.github/scripts/check-class-version.sh`: the exit status of the `find` in `< <(...)` is not propagated. A class file of 4 to 6 bytes aborts the run under `set -e` without naming the jar. The nomagic case also prints a cosmetic "no classes to check" after its error. All of these still fail closed.
+- (n) `publish-central.yml`: the `publish` job deploys a fresh `clean deploy` build that is not itself gated on class version. It is covered only through `needs: stage`.
+Follow-ups from task 149, not yet tasks:
+
+- (o) The lock files in `java.io.tmpdir/dataprism-test-ports` are never deleted. They are zero-byte and harmless, and the lock is the claim, not the file.
+- (p) `QuickstartSmokeIT.freePort()` still uses `ServerSocket(0)`.
+- (q) In `OperatorHarness`, a re-pick of a claimed port uses up one of the 3 attempts allowed by D-149-C.
+- (r) The dfc9160c commit body cites stale line numbers for the `ServerSocket` hits. The current ones are `FreePorts` 53/56, `ClusterConfigurationTest` 76/79 and `OperatorHarness` 458/463. Recorded in HISTORY; the commits are not rewritten.
+
+Follow-ups from wave 4 (tasks 113, 114, 147), not yet tasks:
+
+- (s) The JSON projection purge failure only logs. It should record a failure code surfaced by `auditIntegrity` health, as the native purge does. It should not fail closed, since the projection is not authoritative.
+- (t) Move the projection into its own classified bean, with `TeeAuditSink` made `Closeable` in core, instead of `registerDisposableBean` inside `dataPrismHashChainedAuditSink`. This needs `PrivacyExtensionPoints` and core in Owns.
+- (u) Add an integration-tests case: a Spring context with the real `DefaultContextOrchestrator`, carrying the correlation id onto the ALLOW event. Task 113's test uses a stub orchestrator.
+- (v) In `CorrelationConfigurationTest.a_rejected_value_is_logged_as_a_code_and_the_text_never_appears`, split the chained `noneSatisfy` into two separate `noneMatch` checks (message and args).
+- (w) In `AuditOutputConfigurationTest`, add nested json-directory cases (under and over `directory`) for `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT`.
+- (x) Task 114's commit body records no mutation for `PiiLogScanTest`'s key-value scan. The `AuditFilePiiScanTest` javadoc for `extraArguments` is inaccurate, and there is a stray `{ }` block at about line 673.
+- (y) For task 148 (merged; 148 captured pairs from a real sink): the log-line parser's `\b` key markers misparse when slf4j-simple prints key-value pairs before the message (a false hit from a UUID). Capture pairs from a real mapped sink rather than parsing lines.
+- Task 113 added three refusal codes beyond its contract: `INVALID_CORRELATION_FORMAT`, `INVALID_AUDIT_FIELD_PRESET` and `AUDIT_JSON_DIRECTORY_SAME_AS_AUDIT` (which also covers a json directory inside or containing `directory`). Task 116 should document them.
+
+- Owner-visible point for 116: the `Slf4jAuditSink` mapped constructor attaches the routing constants as key-value pairs. That is the implementer's reading of the spec.
+
+Follow-ups from wave 5 (tasks 115, 148), not yet tasks:
+
+- (z) `CorrelationMdcToolTest.rejectedPutsNothing` asserts on text that can never be present. Feed a real rejected header through `InboundCorrelation.resolve(...)`.
+- (aa) `concurrentCallsDoNotCross` checks only the marker events. Also check the audit-event lines.
+- (ab) The 5f5f5df7 commit body calls a positive control "the mutation". Wording only; recorded in HISTORY, the commit is not rewritten.
+- (ac) There is no stdio MDC overload, so library users of stdio always run with MDC off. Documented in `docs/log-shipping.md` by task 116 (done).
+- (ad) The Python client snippets need Python 3.10 or later. Said in `docs/log-shipping.md` by task 116 (done).
+
+Follow-ups from wave 6 (tasks 116, 150), not yet tasks:
+
+- (ae) `docs/audit.md:87` now holds two sentences where task 150's Owns said one. Rewrap the 150 doc lines and the 116 fix lines, and remove the double blank line in `audit.md` around :506.
+- (af) `docs/audit.md` field-count wording: a line of more than 25 fields whose field 20 is non-numeric is an interrupted write, not `FIELD_COUNT_MISMATCH`. A rare edge.
+- (ag) The mutation proof for the stdio drop in 150 did not record the name of the failing test.
+- (ah) The `OperatorAudit`, `OversightOperatorController` and `ReidentificationService` `entityType` fields were out of scope for 150. Raise a recon if they are a concern.
+
+Follow-ups from the 0.5.0 cut (task 151), not yet tasks:
+
+- (ai) `docs/audit.md:77` (81 characters, old text) and the short orphan line at :584 are cosmetic.
+- (aj) Process: the AI tooling's auto-mode classifier denied the `-Prelease` build, mkdocs and a `bash -c` script locally during the cut. Release checks now rely on CI.
+
+External review of PR #117 (2026-10-08) found two P2 defects. Both are fixed and merged on the PR branch (tasks 152 and 153). The container-smoke SIGPIPE fix (e23de419, merged as fix/smoke-sigpipe) also landed on PR #117 after CI caught exit 141.
+
+Decisions recorded for task 153 (2026-10-08):
+
+- D-153-A: A2. A resumed writer terminates a torn tail with `"\r\n"` and fsyncs before appending. The verifier reports any line ending in a raw `\r` as INTERRUPTED_WRITE_FRAGMENT without parsing it. Directory mode uses the same terminator.
+- D-153-B: B1. A fused line already present in a pre-0.5.0 log stays a break (exit 2), and the FIELD_COUNT_MISMATCH text, `docs/audit.md` and the CHANGELOG name the legacy cause.
+
+Follow-ups from tasks 152 and 153, not yet tasks:
+
+- (ak) 153: assert "carriage return" in the anomaly message, so that mutation 2 kills all five tear points.
+- (al) 153, post-0.5.0: when a CR-ended line hash-verifies as a complete record with the CR stripped, word it as "a complete record hidden behind the restart marker".
+- (am) `FileAuditCheckpointSink` has the same append-after-torn-tail hazard as the audit sink had.
+- (an) 152: the rejected-id test should pass the `validate()` result through `SourceCallContext`.
+- (ao) 152, known limit to document: the interceptor is installed only when a correlation header is configured, so a client default header on a source with no correlation header is untouched.
+
+### 0.5.0 release-cut checklist (owner go-ahead required)
+
+Task 151 did the local cut on 2026-10-07 (merge 98b42144). Nothing has been pushed. Every outward action needs the owner's go-ahead.
+
+Done by task 151:
+
+- Version bump 0.4.1 to 0.5.0 and the CHANGELOG `[0.5.0] - 2026-10-07` section.
+- `docs/extending.md` snippet and the "verified" paragraph. The post-publish rebuild of the extension pom is still open, below.
+- `README.md:203`, the `docs/audit.md` stale record-version text and hashed-field list, and the (ae) rewraps.
+- The 0.4.1 step 9 re-verify: the consumer snippet passed against Central on 2026-10-07.
+- Class-version check: the owner ran `check-class-version.sh 65` over the 19 `data-prism-*-0.5.0.jar` files on 2026-10-08. All passed at major 65.
+
+Still open, owner-gated:
+
+- Re-run CI on PR #117 after the 152/153 push, and check it is green on JDK 21 and 25 plus `container-smoke`.
+- Push and open the PR.
+- CI PR run green on JDK 21 and 25, plus `container-smoke` (task 144 acceptance).
+- Linux CI evidence for 149 (D-149-B): the Linux legs pass without a rerun.
+- The amd64 Docker smoke (`docker/smoke/java-runtime-smoke.sh`) on CI or a Linux host; only arm64 has run.
+- Dependabot ignore-condition proof (task 145): post `@dependabot show maven ignore conditions` and `@dependabot show eclipse-temurin ignore conditions` on a docker PR, or confirm the next docker group run proposes no 26 tags.
+- Close Dependabot PR #116 (143 and 145 supersede it) and #114 (141 supersedes its Spring Boot bump).
+- The `-Prelease` build and gate, run by `release.yml` on the tag and by publish-central's stage job. It was denied locally.
+- The docs checks (`mkdocs --strict`, `check_site`, `check_snippet_markers`, `check_changelog`), run by the pages workflow or by the owner. Denied locally.
+- Annotated tag `v0.5.0`. If it is tagged after 2026-10-07, re-date the CHANGELOG first (D-151-C).
+- `publish-central`, `publish-image` and `publish-mcp`, following the 0.4.1 steps 1 to 8 pattern.
+- After publication, rebuild the `docs/extending.md` extension pom with `mvn package` against Central 0.5.0 (D-151-A fallback).
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
 grouped into one PR per ecosystem per week (`.github/dependabot.yml`).
 GitHub-hosted runner minutes are free on this public repo, so the concern was
-noise and queueing, not cost. C1, C3, C4, C5, C6 and C7 are open; C2 is resolved. The
+noise and queueing, not cost. C1 to C7 are all decided (2026-10-07). The
 full text follows, recorded here because no other file holds it.
 
 - **C1** — Record the external correlation id inside the hash, as
-  `recordVersion` 3. Recommended: yes. The alternative, a field outside the
+  `recordVersion` 3. **Confirmed 2026-10-07.** The alternative, a field outside the
   hash, could be edited without breaking the chain.
 - **C2** — Resolved: task 117 fixes the v2 encoding before release, and v3
   appends to it.
 - **C3** — Keep the hash-chained native `.log` segments authoritative and write
   a separate JSON projection through a tee. Recommended. The alternative is JSON
   as the chained format, which means the verifier must know the mapping. Cost:
-  a second copy on disk, purged on the same retention.
-- **C4** — The default inbound correlation-id pattern `[A-Za-z0-9._:-]{1,128}`
-  also admits name-like tokens such as `jane.doe`. Keep it, or default to
-  stricter UUID/hex only. Open.
+  a second copy on disk, purged on the same retention. **Confirmed 2026-10-07:** the hash-chained `.log` stays authoritative and JSON is a separate projection.
+- **C4** — The broad pattern `[A-Za-z0-9._:-]{1,128}` admits name-like tokens
+  such as `jane.doe`. **Decided 2026-10-07: strict default.** The default
+  inbound pattern accepts only a UUID, hex of 16-128 characters, or a W3C
+  traceparent. The broader pattern is available only by explicit
+  configuration. This protects against personal data being smuggled in as an id.
 - **C5** — ECS `event.outcome` is derived from `policyDecision` (`ALLOW` or
   `ALLOW:*` is success, empty is unknown, anything else is failure), and
   operator-set routing constants (dataset, namespace) are added to each output
-  line. Is this acceptable as reshaping? The raw decision is kept as well. Open.
+  line. Is this acceptable as reshaping? The raw decision is kept as well. **Decided 2026-10-07:** acceptable. `event.outcome` is derived from `policyDecision`, operator routing constants are allowed, and the raw decision is kept.
 - **C6** — Defer OpenTelemetry and Micrometer Tracing. Traceparent mode covers
   W3C propagation without a tracing dependency, and Micrometer's ThreadLocal
-  context propagation conflicts with the parallel fan-out. Recommended: defer.
+  context propagation conflicts with the parallel fan-out. **Confirmed 2026-10-07:** defer.
 - **C7** — No direct Elasticsearch sink; ship from local files with Filebeat or
-  Elastic Agent. Recommended: confirm.
+  Elastic Agent. **Confirmed 2026-10-07.**
 
 Task 112 cites C3 and C5.
 
@@ -445,8 +629,9 @@ Follow-ups from the task 100 review, not yet tasks:
 
 Follow-ups from the task 105 review (0.4.x), not yet tasks:
 
-- Add a behavioural test that an MCP-port MVC error still reaches Boot's
-  `/error`. Today it is checked only structurally, through `ControllerAdviceBean`.
+- ~~Add a behavioural test that an MCP-port MVC error still reaches Boot's
+  `/error`~~ — closed 2026-10-07: task 142's `Boot4ErrorPathTest` guards the
+  `spring.web.error.path` operator error mapping.
 - `data-prism-architecture` tests log the SLF4J multiple-providers warning
   (logback-classic plus slf4j-simple). Remove one from that module's test
   classpath.
@@ -1953,6 +2138,11 @@ it was going to build landed in S6. S12's mutation and load testing is for a
 system with users.
 
 ### Small open items, unscheduled
+
+**Risk, unscheduled (2026-10-07):** Spring Boot 4.1 supports Jackson 2 but has
+deprecated it for removal since 4.0.0.
+
+- Jackson 3 port (scrubbing module, mcp-json-jackson3, flip the enforcer ban) before a Boot release removes Jackson 2 support. D-139-A keeps 0.5.0 on Jackson 2.
 
 Found across v0.3.0 wave 1 (tasks 63, 64, 68), 2026-09-22. None blocks 63,
 64 or 68, all merged; several are load-bearing for the wave-2 tasks named.

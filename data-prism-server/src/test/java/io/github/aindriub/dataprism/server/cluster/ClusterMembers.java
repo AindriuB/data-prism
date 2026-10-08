@@ -3,9 +3,6 @@ package io.github.aindriub.dataprism.server.cluster;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.server.operator.OperatorHarness;
 
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -135,32 +132,13 @@ final class ClusterMembers implements AutoCloseable {
         }
     }
 
-    /** Distinct loopback ports, probed together so none repeats, with a retry on a failed probe. */
-    private static int[] freePorts(int count) throws IOException {
-        IOException last = null;
-        for (int attempt = 0; attempt < 3; attempt++) {
-            List<ServerSocket> probes = new ArrayList<>();
-            try {
-                int[] ports = new int[count];
-                for (int i = 0; i < count; i++) {
-                    ServerSocket probe = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
-                    probes.add(probe);
-                    ports[i] = probe.getLocalPort();
-                }
-                return ports;
-            } catch (IOException e) {
-                last = e;
-            } finally {
-                for (ServerSocket probe : probes) {
-                    try {
-                        probe.close();
-                    } catch (IOException ignored) {
-                        // best effort
-                    }
-                }
-            }
+    /** Distinct ports, each claimed by {@link OperatorHarness#freePort()} so no build hands one out twice. */
+    private static int[] freePorts(int count) throws Exception {
+        int[] ports = new int[count];
+        for (int i = 0; i < count; i++) {
+            ports[i] = OperatorHarness.freePort();
         }
-        throw new IllegalStateException("no free loopback ports after 3 attempts", last);
+        return ports;
     }
 
     @Override

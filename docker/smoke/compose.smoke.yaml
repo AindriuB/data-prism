@@ -1,0 +1,15 @@
+# Smoke-only override, layered after compose.build.yaml by java-runtime-smoke.sh.
+# compose.build.yaml leaves the published image names in place, so building
+# would overwrite (and `down --rmi local` delete) a user's own tags. Every
+# service gets a unique local name here instead. SMOKE_RUN_ID is set by the script.
+services:
+  cert-init:
+    image: data-prism-smoke/cert-init:${SMOKE_RUN_ID:?set by java-runtime-smoke.sh}
+  issuer:
+    image: data-prism-smoke/issuer:${SMOKE_RUN_ID:?set by java-runtime-smoke.sh}
+  fixtures:
+    image: data-prism-smoke/fixtures:${SMOKE_RUN_ID:?set by java-runtime-smoke.sh}
+  server-a:
+    image: data-prism-smoke/server-a:${SMOKE_RUN_ID:?set by java-runtime-smoke.sh}
+  server-b:
+    image: data-prism-smoke/server-b:${SMOKE_RUN_ID:?set by java-runtime-smoke.sh}

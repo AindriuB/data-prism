@@ -8,7 +8,7 @@
 # LOADER_PATH below) and a deployment configuration (see CONFIG_DIR below).
 # That refusal, not a bug, is the image's whole point: it cannot leak a
 # working server with someone else's data behind it.
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /workspace
 COPY . .
 # data-prism-server is a real Maven <dependency> of every module it needs
@@ -19,7 +19,7 @@ COPY . .
 # annotationProcessorPath. This image never builds that extension.
 RUN mvn -B -q -pl data-prism-server -am package -DskipTests
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 
 LABEL io.modelcontextprotocol.server.name="io.github.AindriuB/data-prism"
 LABEL org.opencontainers.image.title="Data Prism"
@@ -68,7 +68,7 @@ ENV LOADER_PATH=/app/adapters
 # path below (matching docker/server/Dockerfile's own convention) precisely
 # so nothing past this COPY step, ENTRYPOINT included, ever needs to know
 # this ARG's value.
-ARG VERSION=0.4.1
+ARG VERSION=0.5.0
 COPY --from=build /workspace/data-prism-server/target/data-prism-server-${VERSION}.jar /app/data-prism-server.jar
 RUN chown dataprism:dataprism /app/data-prism-server.jar
 

@@ -1,0 +1,7 @@
+dataprism:
+  correlation:
+    inbound:
+      header: X-Transaction-Id
+      # The default pattern admits generated ids only (a UUID, hex, or a W3C traceparent).
+      # Leave it alone unless every client mints its ids.
+    mdc-key: transaction_id

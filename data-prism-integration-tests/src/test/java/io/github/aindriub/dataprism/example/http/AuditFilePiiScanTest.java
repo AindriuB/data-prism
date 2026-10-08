@@ -1,18 +1,28 @@
 package io.github.aindriub.dataprism.example.http;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
+import io.github.aindriub.dataprism.audit.AuditFieldMapping;
+import io.github.aindriub.dataprism.audit.AuditRouting;
+import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.audit.SegmentedJsonAuditSink;
+import io.github.aindriub.dataprism.audit.TeeAuditSink;
 import io.github.aindriub.dataprism.audit.AuditRecordFormat;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.FileAuditSink;
 import io.github.aindriub.dataprism.core.Capability;
 import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy;
+import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.example.CustomerDto;
 import io.github.aindriub.dataprism.example.DataPrismAssembly;
 import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
+import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -489,6 +499,154 @@ class AuditFilePiiScanTest {
         assertThat(leaked).containsExactly(UndeclaredKeyFixture.TOKEN);
     }
 
+    private static final String SYNTHETIC_CLID = "synthetic-clid-0001";
+
+    private static final AuditRouting PROJECTION_ROUTING =
+            new AuditRouting("dataprism.audit", "logs", "dataprism.audit", "prod");
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private static InboundCorrelation inboundCorrelation(String value) {
+        InboundCorrelation inbound =
+                InboundCorrelation.resolve(List.of(value), CorrelationIdPolicy.opaque("[A-Za-z0-9._:-]{1,128}"));
+        assertThat(inbound.isPresent()).as("the permissive test policy admits %s", value).isTrue();
+        return inbound;
+    }
+
+    /** What one full run through {@code Tee(FileAuditSink, SegmentedJsonAuditSink)} wrote. */
+    private record TeeOutput(Path nativeFile, List<String> nativeLines, List<String> ndjsonLines) { }
+
+    private static TeeOutput runThroughTee(Path dir, InboundCorrelation inbound, Map<String, Object> extraArguments)
+            throws IOException {
+        Path nativeFile = dir.resolve("audit.log");
+        Path jsonDir = Files.createDirectory(dir.resolve("json"));
+        try (FileAuditSink fileSink = new FileAuditSink(nativeFile);
+             SegmentedJsonAuditSink jsonSink =
+                     new SegmentedJsonAuditSink(jsonDir, AuditFieldMapping.ecs(), PROJECTION_ROUTING)) {
+            runFullIntegrationRun(new TeeAuditSink(fileSink, jsonSink), inbound, extraArguments);
+        }
+        List<String> ndjson = new ArrayList<>();
+        try (var listing = Files.list(jsonDir)) {
+            for (Path file : listing.toList()) {
+                assertThat(file.getFileName().toString()).endsWith(".ndjson");
+                ndjson.addAll(Files.readAllLines(file, StandardCharsets.UTF_8));
+            }
+        }
+        return new TeeOutput(nativeFile, Files.readAllLines(nativeFile, StandardCharsets.UTF_8), ndjson);
+    }
+
+    /** Every leaf of one NDJSON line, and every object key below a mapped field, as canonical-field and value pairs. */
+    private static List<String[]> ndjsonFields(String line, AuditFieldMapping mapping) throws IOException {
+        List<String[]> out = new ArrayList<>();
+        walk(JSON.readTree(line), "", mapping, out);
+        return out;
+    }
+
+    private static void walk(JsonNode node, String path, AuditFieldMapping mapping, List<String[]> out) {
+        if (node.isObject()) {
+            node.fields().forEachRemaining(entry -> {
+                String child = path.isEmpty() ? entry.getKey() : path + "." + entry.getKey();
+                String canonical = canonicalOf(child, mapping);
+                if (!canonical.equals(child)) {
+                    out.add(new String[] {canonical, entry.getKey()}); // a key below a mapped field is scanned as a value
+                }
+                walk(entry.getValue(), child, mapping, out);
+            });
+        } else if (node.isArray()) {
+            node.forEach(element -> walk(element, path, mapping, out));
+        } else if (!node.isNull()) {
+            out.add(new String[] {canonicalOf(path, mapping), node.asText()});
+        }
+    }
+
+    private static String canonicalOf(String dotted, AuditFieldMapping mapping) {
+        for (Map.Entry<String, String> e : mapping.paths().entrySet()) {
+            if (dotted.equals(e.getValue()) || dotted.startsWith(e.getValue() + ".")) {
+                return e.getKey();
+            }
+        }
+        return dotted;
+    }
+
+    /** The banned values found in the NDJSON lines; timestamp, sequence and recordVersion carry no text and are skipped. */
+    private static List<String> leaksInNdjson(List<String> lines, List<String> bannedValues) throws IOException {
+        List<String> leaked = new ArrayList<>();
+        for (String line : lines) {
+            for (String[] field : ndjsonFields(line, AuditFieldMapping.ecs())) {
+                if (NON_SCANNABLE_COMPONENTS.contains(field[0]) || "recordVersion".equals(field[0])) {
+                    continue;
+                }
+                checkField(leaked, field[0], field[1], bannedValues);
+            }
+        }
+        return leaked;
+    }
+
+    private static List<String> leaksInNative(List<String> lines, List<String> bannedValues) {
+        List<String> leaked = new ArrayList<>();
+        for (String line : lines) {
+            for (String value : leaksIn(AuditRecordFormat.parse(line), bannedValues)) {
+                if (!leaked.contains(value)) {
+                    leaked.add(value);
+                }
+            }
+        }
+        return leaked;
+    }
+
+    @Test
+    @DisplayName("a full run carrying a correlation id leaks no fixture value into the native file or the ndjson projection")
+    void fullIntegrationRunWithCorrelationIdLeaksNoPiiInNativeOrJson(@TempDir Path tempDir) throws IOException {
+        TeeOutput out = runThroughTee(tempDir, inboundCorrelation(SYNTHETIC_CLID), Map.of());
+
+        assertThat(out.nativeLines()).as("native file %s", out.nativeFile()).isNotEmpty();
+        assertThat(out.ndjsonLines()).as("the projection holds one line per native record")
+                .hasSameSizeAs(out.nativeLines());
+        long withTraceId = 0;
+        for (String line : out.ndjsonLines()) {
+            if (SYNTHETIC_CLID.equals(JSON.readTree(line).path("trace").path("id").asText())) {
+                withTraceId++;
+            }
+        }
+        assertThat(withTraceId).as("at least one ndjson line carries trace.id, or the scan sees an empty projection")
+                .isGreaterThan(0);
+        assertThat(out.nativeLines().stream().map(AuditRecordFormat::parse).map(AuditEvent::externalCorrelationId))
+                .contains(SYNTHETIC_CLID);
+
+        assertThat(leaksInNative(out.nativeLines(), BANNED_VALUES)).as("native file").isEmpty();
+        assertThat(leaksInNdjson(out.ndjsonLines(), BANNED_VALUES)).as("ndjson projection").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the correlation-id scans are not vacuous: a fixture value admitted as the id is caught in the native file and the ndjson")
+    void correlationIdScansAreNotVacuous(@TempDir Path tempDir) throws IOException {
+        // A surname-bearing value cannot pass the ceiling (it has a space), so the fixture
+        // value is the account number, which can.
+        TeeOutput out = runThroughTee(tempDir, inboundCorrelation("ACC-1"), Map.of());
+
+        assertThat(leaksInNative(out.nativeLines(), BANNED_VALUES)).contains("ACC-1");
+        assertThat(leaksInNdjson(out.ndjsonLines(), BANNED_VALUES)).contains("ACC-1");
+    }
+
+    @Test
+    @DisplayName("a correlation-shaped tool argument reaches no audit output; it appears only as a name in rejectedArguments")
+    void correlationShapedArgumentReachesNoAuditOutput(@TempDir Path tempDir) throws IOException {
+        String fixtureValue = "ACC-1";
+        TeeOutput out = runThroughTee(tempDir, InboundCorrelation.absent(), Map.of(
+                "correlationId", fixtureValue, "externalCorrelationId", fixtureValue, "traceparent", fixtureValue));
+
+        List<AuditEvent> events = out.nativeLines().stream().map(AuditRecordFormat::parse).toList();
+        assertThat(events.stream().flatMap(event -> event.rejectedArguments().stream()))
+                .as("the argument names are reported as rejected")
+                .contains("correlationId", "externalCorrelationId", "traceparent");
+        assertThat(events).extracting(AuditEvent::externalCorrelationId).containsOnly("");
+
+        assertThat(leaksInNative(out.nativeLines(), List.of(fixtureValue))).as("native file").isEmpty();
+        assertThat(leaksInNdjson(out.ndjsonLines(), List.of(fixtureValue))).as("ndjson").isEmpty();
+        assertThat(String.join("\n", out.nativeLines())).doesNotContain(fixtureValue);
+        assertThat(String.join("\n", out.ndjsonLines())).doesNotContain(fixtureValue);
+    }
+
     /**
      * The same full-pipeline run {@code PiiLogScanTest.runFullIntegrationRun}
      * drives, retargeted at a {@link FileAuditSink} writing to {@code auditFile}
@@ -499,10 +657,22 @@ class AuditFilePiiScanTest {
      * come from) and the tool-level recorder used for denials.
      */
     private static void runFullIntegrationRun(Path auditFile) throws IOException {
+        try (FileAuditSink fileSink = new FileAuditSink(auditFile)) {
+            runFullIntegrationRun(fileSink, InboundCorrelation.absent(), Map.of());
+        }
+    }
+
+    /**
+     * The same run against a sink of the caller's choosing, with every call carrying
+     * {@code inbound} in its transport context and {@code extraArguments} added to the
+     * first call's tool arguments.
+     */
+    private static void runFullIntegrationRun(AuditSink fileSink, InboundCorrelation inbound,
+                                              Map<String, Object> extraArguments) {
         String purpose = "demonstration";
         String role = "investigator";
 
-        try (FileAuditSink fileSink = new FileAuditSink(auditFile)) {
+        {
             DataPrismAssembly assembly = new DataPrismAssembly(
                     List.of(new StubCustomerAdapter(), new StubAccountAdapter(), new StubOrderAdapter()),
                     FIXED_CLOCK, fileSink);
@@ -524,11 +694,15 @@ class AuditFilePiiScanTest {
             McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(
                     "pii-scan-session", null, null, null,
                     McpTransportContext.create(
-                            Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller))));
+                            Map.of(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller,
+                                    DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY, inbound))));
 
             for (String subjectId : List.of("123", "456")) {
+                Map<String, Object> arguments = new java.util.HashMap<>(extraArguments);
+                arguments.put("entityType", "CUSTOMER");
+                arguments.put("subjectId", subjectId);
                 tool.specification().callHandler().apply(exchange, new McpSchema.CallToolRequest(
-                        GetEntityContextTool.NAME, Map.of("entityType", "CUSTOMER", "subjectId", subjectId)));
+                        GetEntityContextTool.NAME, arguments));
             }
             // A refusal too, so the file carries a denial record alongside the
             // two successes rather than only ever the happy path.

@@ -6,7 +6,7 @@
   <parent>
     <groupId>io.github.aindriub</groupId>
     <artifactId>data-prism</artifactId>
-    <version>0.4.1</version>
+    <version>0.5.0</version>
   </parent>
   <artifactId>data-prism-spring-boot-starter</artifactId>
   <name>Data Prism :: Spring Boot starter</name>
@@ -43,7 +43,18 @@
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
+      <artifactId>spring-boot-starter-webmvc</artifactId>
+      <exclusions>
+        <!-- Jackson 2 only (D-139-A): the scrubbing module serialises through one Jackson 2 ObjectMapper. -->
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-jackson</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-jackson2</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

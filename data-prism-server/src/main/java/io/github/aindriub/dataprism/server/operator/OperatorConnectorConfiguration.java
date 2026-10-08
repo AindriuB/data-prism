@@ -3,8 +3,8 @@ package io.github.aindriub.dataprism.server.operator;
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
 import org.apache.catalina.connector.Connector;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.web.ServerProperties;
-import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
+import org.springframework.boot.web.server.autoconfigure.ServerProperties;
+import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -42,7 +42,7 @@ class OperatorConnectorConfiguration {
             } else if (server.getAddress() != null) {
                 connector.setProperty("address", server.getAddress().getHostAddress());
             }
-            factory.addAdditionalTomcatConnectors(connector);
+            factory.addAdditionalConnectors(connector);
             // Tomcat's own error report is HTML and echoes the failure; on this port it is a code.
             factory.addContextCustomizers(context -> {
                 if (context.getParent() instanceof org.apache.catalina.core.StandardHost host) {
