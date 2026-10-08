@@ -469,7 +469,8 @@ Follow-ups from tasks 152 and 153, not yet tasks:
 Follow-ups from task 156 (2026-10-08), not yet tasks:
 
 - (ar) `docs-site/diagrams/README.md:275-276` still links the old `core/` file paths. Folded into 162.
-- (as) `RefusalPaths` has a javadoc-only import of `model.ScrubResult`, which makes a source-level `refusal` and `model` cycle that the bytecode-based slices rule cannot see. Optional: use a fully qualified name in the `{@link}` and drop the import.
+- (as) DONE in task 157's review polish (2026-10-08): `RefusalPaths` now uses an FQCN `{@link}`; the Javadoc-only imports are gone.
+- (au) From task 157: `FileAuditCheckpointSink` could move to `audit.sink` so `terminateTornTail()` and `closeQuietly()` stay package-private. Considered and declined: `terminateTornTail` only appends CRLF, so the widening grants no new power. Not a task.
 - (at) `coreRootPackageIsEmpty` (ArchitectureTest, about :418) carries a redundant `allowEmptyShould(true)`. Drop it; 167 already touches ArchitectureTest, so fold it in there.
 
 ### 0.5.0 release checklist (0.5.0 released 2026-10-08; owner steps remain)
@@ -505,7 +506,7 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 1 | 160 | Poison `TeeAuditSink` on any `Throwable`; terminate a torn checkpoint tail; `TORN_CHECKPOINT_LINE` | none |
 | 1 | 165 | Single `ci-gate` summary check; rename pages.yml's `build` job | none |
 | 2 | 156 | Split the `core` root package into `spi`, `model`, `engine`, `refusal`, `limits`, `metrics` (pure move) | 154, 155, 160. **Done 2026-10-08** |
-| 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160 |
+| 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160. **Done 2026-10-08** |
 | 4 | 166 | Pin Jackson 2 output and YAML behaviour with characterisation tests before the port | 157 |
 | 5 | 167 | Port the reactor to Jackson 3 in one step (code, mappers, MCP binding, Spring converters, enforcer) | 155, 156, 157, 166 |
 | 6 | 168 | Stop exposing data-prism's `ObjectMapper` in public API; ArchUnit guard; signature inventory | 167 (D-J3-1 decided) |
@@ -536,7 +537,7 @@ Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jacks
 - J3-5: A, a full flip. Enforcer: ban the Jackson 2 artifacts (`com.fasterxml.jackson.core:jackson-databind`, `jackson-core`, the `jackson-dataformat-*` and `jackson-datatype-*` artifacts), `io.modelcontextprotocol.sdk:mcp-json-jackson2` and `org.springframework.boot:spring-boot-jackson2`. CARVE-OUT: allow `com.fasterxml.jackson.core:jackson-annotations`, which Jackson 3 still uses and mcp-core needs. Lift the `tools.jackson`, mcp aggregate and `mcp-json-jackson3` bans. Spring: re-adopt `spring-boot-starter-jackson`, removing the exclusions and `spring-boot-jackson2` in the server, starter, quickstart-fixtures and quickstart-issuer poms. Task 142's `Boot4RegressionGuardsTest`: invert it to assert Jackson 3 converters and no Jackson 2. Docs: update the D-139-A decision in architecture.md (:284-290), and fix the stale "scrubbing engine is a Jackson module" wording at architecture.md:152 and conventions.md:36. The real invariant is "only `DataPrismObjectMapper` writes".
 
 - **D-J3-1: DECIDED 2026-10-08, option (a)** (168). The two tool constructors lose their `ObjectMapper` parameter; the tools take the mapper from package-private `DataPrismObjectMapper.create()`, and `DataPrismMcpServer` passes one shared instance through a package-private constructor so tools and transport still share it. Rejected: (b) package-private constructors, which rewrites 10 integration-test files for no extra protection; (c) an opaque data-prism-owned type, which adds a public type to carry one already hidden. 168 is no longer blocked.
-- **D-J3-2: PENDING, does not block 167** (167). Should the mapper ArchUnit rule also allowlist streaming JSON factory construction (`AuditJsonRenderer`, the checkpoint writer, `JwtDecoderSupport`)? Recommendation: (a) mappers only now, (b) a factory allowlist as a 0.6.x follow-up.
+- **D-J3-2: DECIDED 2026-10-08, option (b), in 0.6.0, folded into task 168** (owner delegated the call). 168 adds an ArchUnit allowlist rule for streaming JSON factory and generator construction (allowed: `DataPrismObjectMapper`, `AuditJsonRenderer`, the checkpoint writer `audit.checkpoint.FileAuditCheckpointSink`, `JwtDecoderSupport`) with its own negative-test fixture. Not in 167, whose port stays behaviour-neutral.
 
 Owner decisions, all decided 2026-10-08:
 

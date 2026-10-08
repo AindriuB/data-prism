@@ -9,8 +9,9 @@ decided (option (a), 2026-10-08), so nothing blocks this task but 167.
 - data-prism-mcp/src/test/** (tool construction and `DataPrismObjectMapper` call sites only)
 - data-prism-integration-tests/src/test/** (tool construction and `DataPrismObjectMapper` call sites only, including the 166 characterisation tests' tool construction. Their expected bytes do not change.)
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/CorrelationConfigurationTest.java (the `DataPrismObjectMapper.create()` call at :291 only)
-- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ArchitectureTest.java (insertions only: one rule, its test and its negative test)
+- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ArchitectureTest.java (insertions only: two rules, their tests and their negative tests)
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/*PublicMapperFixture.java (new)
+- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/*JsonFactoryFixture.java (new; the negative-test fixture for the factory rule)
 
 ## Goal
 Owner decision J3-3 (C). Jackson 3 tree types stay public where they carry real data; 167 already
@@ -19,6 +20,13 @@ made that change. Data-prism's own `ObjectMapper` must stop being reachable from
 reinforces J3-2, because an adapter author can bring their own mapper but can never obtain or
 substitute data-prism's. An ArchUnit rule keeps the surface closed. The task also checks and
 completes the public-signature inventory that 162's migration page lists.
+
+Decision D-J3-2 (b), 2026-10-08: the task also adds an ArchUnit allowlist rule for construction of
+streaming JSON factories and generators (`tools.jackson.core.json.JsonFactory`, its builders, and
+`JsonGenerator` creation), so JSON bytes cannot be produced outside the audited places. Allowed:
+`DataPrismObjectMapper`, `AuditJsonRenderer` (`audit.format`), the checkpoint writer
+(`audit.checkpoint.FileAuditCheckpointSink`) and `JwtDecoderSupport` (use the locations after
+157 and 167). This is here and not in 167 so that the port stays behaviour-neutral.
 
 ## Context
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/DataPrismObjectMapper.java:21-33. `public final class` with `public static ObjectMapper create()`.
@@ -48,6 +56,7 @@ completes the public-signature inventory that 162's migration page lists.
 - [ ] `DataPrismObjectMapper` is a package-private `final class` and `create()` is package-private. `git grep -n 'DataPrismObjectMapper' -- '*.java' ':!data-prism-mcp/src/main/*'` shows only the ArchitectureTest allowlist string.
 - [ ] Neither `GetEntityContextTool` nor `CompareEntitySourcesTool` has a public or protected constructor or method with a `tools.jackson.databind.ObjectMapper` parameter. `DataPrismMcpServer` still hands one mapper instance to `JacksonMcpJsonMapper` and both tools. A test in `data-prism-mcp/src/test` asserts that sharing by reflection or by a package-private accessor.
 - [ ] New ArchUnit rule `noPublicApiExposesAnObjectMapper`: no public or protected method, constructor or field of a public class in `io.github.aindriub.dataprism..` has a parameter, return or field type assignable to `tools.jackson.databind.ObjectMapper`, `tools.jackson.databind.cfg.MapperBuilder` or `tools.jackson.databind.ObjectWriter`. A fixture `*PublicMapperFixture.java` with a public method returning a `JsonMapper` makes the rule's negative test report a violation naming the fixture.
+- [ ] New ArchUnit rule `onlyDesignatedClassesConstructJsonFactories` (D-J3-2 (b)): only the four classes named in Goal construct a streaming JSON factory or generator. A fixture `*JsonFactoryFixture.java` outside the allowlist makes the rule's negative test report a violation naming the fixture. The hand-back lists the construction sites found, confirming each is in the allowlist.
 - [ ] `mvn -B --no-transfer-progress verify` is green, and the 166 characterisation tests pass with unchanged expected bytes.
 - [ ] Hand-back: the inventory below checked against `git diff <pre-167 sha>..HEAD` over `data-prism-*/src/main`, restricted to public and protected declarations. It has one row per change (old → new, final FQCN after 156/157), corrected and completed where the planner's list is wrong. 162 copies it into docs/migration-0.6.md.
 

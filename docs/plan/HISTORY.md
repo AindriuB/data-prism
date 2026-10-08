@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 3: audit package split into format, sink, checkpoint, retention, verify; verifier CLI moved (task 157)
+
+Task 157 merged onto `release/0.6.0-moves`. `audit` keeps 9 contract types in its root and has five subpackages (`format`, `sink`, `checkpoint`, `retention`, `verify`). The verifier CLI is now `audit.verify.AuditChainVerifierCli` with no forwarding class (D-0.6-4), which breaks operators' command lines until 162 documents it. ArchUnit locks the layout: the audit root does not depend on its subpackages, `format`, `sink` and `checkpoint` do not depend on `verify`, `retention` reaches `verify` only through `AuditRetention` to `AuditChainVerifier`, and the audit slices are free of cycles. Tester PASS twice on JDK 21 (full reactor, 1400 tests, 0 failures); reviewer APPROVE.
+
+**Cost:** Six package-private members had to become public because they cross the new boundaries (`FileAuditSink.TORN_TAIL_TERMINATOR`, `terminateTornTail()`, `closeQuietly()`; `SegmentedFileAuditSink.segmentDate()`; `AuditChainVerifier.verifySegments()`; `AuditChainVerifierCli.run()`). `AuditEventHash`, `AuditCheckpoint` and `AuditCheckpointSink` stayed in the root, against the planner's guess, because `AuditRecorder` uses them and the root may not depend on a subpackage. `retention` to `verify` cannot be removed by placement, hence the class-level allow-list. `FileAuditCheckpointSink` could have moved to `audit.sink` to keep the torn-tail helpers package-private; declined, since `terminateTornTail` only appends CRLF and the widening grants no new power. Review polish closed follow-up (as) from 156 by replacing Javadoc-only imports with FQCN links.
+
 ## 2026-10-08 — 0.6.0 wave 2: core root package split into spi, model, engine, refusal, limits, metrics (task 156)
 
 Task 156 merged onto `release/0.6.0-moves`. The 34 public types that sat in the `core` root now live in six subpackages with unchanged simple names, as a pure move with no forwarding types (D-0.6-1). ArchUnit locks the layout: the exact `core` package is empty, `core.spi` does not depend on `core.engine`, and the `core.*` slices are free of cycles. The old to new FQCN table is in the last commit body for task 162. The Jackson 3 task files (166 to 169, branch `plan/jackson3`) were merged in the same pass and the 0.6.0 wave table re-sequenced around them. Tester PASS on JDK 21 (full reactor, 1396 tests, 0 failures); reviewer APPROVE.

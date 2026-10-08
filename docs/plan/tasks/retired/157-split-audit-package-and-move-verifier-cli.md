@@ -60,3 +60,10 @@ stops working. Task 162 puts it in the 0.6.0 CHANGELOG Breaking section.
 - PLAN follow-ups (ak) and (al) on the verifier.
 - A forwarding `AuditChainVerifierCli` at the old FQCN (D-0.6-4 rejected it).
 - `CHANGELOG.md` (task 162).
+
+## Outcome (2026-10-08, wave 3)
+Merged onto `release/0.6.0-moves` (task branch head df47729a). `audit` now has 9 types in the root and 5 subpackages: `format`, `sink`, `checkpoint`, `retention`, `verify`. The verifier CLI is `audit.verify.AuditChainVerifierCli` with no forwarding class at the old FQCN (D-0.6-4); this breaks operators' command lines, and the CHANGELOG entry is task 162. ArchUnit locks the layout; the one cross-package edge that placement could not remove, `retention` to `verify`, is allowed at class level only (`AuditRetention` to `AuditChainVerifier`, because retention replays the chain before deleting a segment).
+
+Six package-private members became public because each is used across the new package boundary: `FileAuditSink.TORN_TAIL_TERMINATOR`, `terminateTornTail()` and `closeQuietly()` (used by `AuditChainVerifier` and `FileAuditCheckpointSink`); `SegmentedFileAuditSink.segmentDate()` (used by `AuditChainVerifier` and `AuditRetention`); `AuditChainVerifier.verifySegments()` (used by `AuditRetention`); `AuditChainVerifierCli.run()` (used by tests in other audit packages).
+
+Review polish: the `verifySegments` Javadoc now warns that it is not a full verification; Javadoc-only imports were replaced with FQCN links, including `RefusalPaths`, which closes follow-up (as) from 156; one sentence in `docs/audit.md` was made intact. Tester PASS twice on JDK 21 (full reactor, 1400 tests, 0 failures); reviewer APPROVE.
