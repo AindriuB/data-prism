@@ -195,4 +195,76 @@ class VocabularyRegistryTest {
             default -> null; // Zyyy and anything unmapped is not checked.
         };
     }
+
+    private static final String OTHER_POOLS =
+            "  lastNames: [l]\n  streets: [s]\n  towns: [t]\n  organisations: [o]\n";
+    private static final String VOCABULARY = "id: probe\nlocale: en\nscript: Latn\npools:\n  firstNames: [a]\n" + OTHER_POOLS;
+
+    private static VocabularyRegistry.Builder load(String yaml) {
+        return VocabularyRegistry.builder().load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static void assertRefused(String yaml, String prefix) {
+        assertThatThrownBy(() -> load(yaml))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith(prefix);
+    }
+
+    @Test
+    @DisplayName("a duplicate top-level key is refused with DUPLICATE_CONFIG_KEY")
+    void duplicateTopLevelKey() {
+        assertRefused("id: first\n" + VOCABULARY, "DUPLICATE_CONFIG_KEY: vocabulary file has a duplicate key 'id'");
+    }
+
+    @Test
+    @DisplayName("a duplicate pool is refused with DUPLICATE_CONFIG_KEY, naming the path")
+    void duplicatePool() {
+        assertRefused(VOCABULARY + "  firstNames: [b]\n",
+                "DUPLICATE_CONFIG_KEY: vocabulary file has a duplicate key 'firstNames' in pools");
+    }
+
+    @Test
+    @DisplayName("an unknown top-level key is refused with UNKNOWN_CONFIG_KEY")
+    void unknownTopLevelKey() {
+        assertRefused("extra: 1\n" + VOCABULARY, "UNKNOWN_CONFIG_KEY: vocabulary file has an unknown key 'extra'");
+    }
+
+    @Test
+    @DisplayName("an unknown pool name is refused with UNKNOWN_CONFIG_KEY, naming the path")
+    void unknownPool() {
+        assertRefused(VOCABULARY + "  firstName: [x]\n",
+                "UNKNOWN_CONFIG_KEY: vocabulary file pools has an unknown key 'firstName'");
+    }
+
+    @Test
+    @DisplayName("a second YAML document is refused with TRAILING_CONFIG_CONTENT")
+    void secondDocument() {
+        assertRefused(VOCABULARY + "---\n" + VOCABULARY, "TRAILING_CONFIG_CONTENT: vocabulary file ");
+    }
+
+    @Test
+    @DisplayName("a pool entry, id, locale or script written as a number or boolean is refused with NON_STRING_CONFIG_SCALAR")
+    void textFieldsMustBeStrings() {
+        assertRefused(VOCABULARY.replace("[a]", "[a, 12345]"),
+                "NON_STRING_CONFIG_SCALAR: vocabulary file pools.firstNames[1] must be a quoted string");
+        assertRefused(VOCABULARY.replace("id: probe", "id: true"),
+                "NON_STRING_CONFIG_SCALAR: vocabulary file id must be a quoted string");
+        assertRefused(VOCABULARY.replace("locale: en", "locale: 1"),
+                "NON_STRING_CONFIG_SCALAR: vocabulary file locale must be a quoted string");
+        assertRefused(VOCABULARY.replace("script: Latn", "script: 1.5"),
+                "NON_STRING_CONFIG_SCALAR: vocabulary file script must be a quoted string");
+        assertThat(load(VOCABULARY.replace("[a]", "[\"12345\", 010]")).defaultLocale("en").build()
+                .resolve("en").pool(PoolKind.FIRST_NAME)).containsExactly("12345", "010");
+    }
+
+    @Test
+    @DisplayName("a version written with a leading zero is refused with LEADING_ZERO_CONFIG_NUMBER; a plain one loads")
+    void versionLeadingZero() {
+        for (String version : new String[] {"010", "0777", "00"}) {
+            assertRefused("version: " + version + "\n" + VOCABULARY,
+                    "LEADING_ZERO_CONFIG_NUMBER: vocabulary file version must not be written with a leading zero");
+        }
+        assertThat(load("version: 2\n" + VOCABULARY).defaultLocale("en").build().resolve("en").id())
+                .startsWith("probe-v2#");
+    }
 }

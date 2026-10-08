@@ -259,7 +259,7 @@ class DescriptorFieldMetadataResolverTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("PIII");
 
-        assertThatThrownBy(() -> descriptors("nothing: here\n"))
+        assertThatThrownBy(() -> descriptors("models: {}\n"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("models");
     }

@@ -1,14 +1,9 @@
 package io.github.aindriub.dataprism.security;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.dataformat.yaml.YAMLMapper;
 import io.github.aindriub.dataprism.core.model.Capability;
+import io.github.aindriub.dataprism.core.model.StrictYaml;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,10 +22,7 @@ import java.util.Set;
  */
 public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String>> roleCapabilities) {
 
-    private static final ObjectMapper YAML = YAMLMapper.builder()
-            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-            .build();
+    private static final String KIND = "security policy";
     private static final Set<String> TOP_LEVEL_KEYS = Set.of("purposes", "roles");
 
     public SecurityPolicy {
@@ -56,22 +48,12 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
         return Set.copyOf(out);
     }
 
-    @SuppressWarnings("unchecked")
     public static SecurityPolicy fromYaml(InputStream in) {
-        Map<String, Object> root;
-        try {
-            root = YAML.readValue(in, Map.class);
-        } catch (JacksonException e) {
-            throw new UncheckedIOException("security policy could not be read", new IOException(e.getMessage(), e));
-        }
+        Map<String, Object> root = StrictYaml.readMapping(in, KIND);
         if (root == null) {
             throw new IllegalArgumentException("security policy file is empty");
         }
-        for (String key : root.keySet()) {
-            if (!TOP_LEVEL_KEYS.contains(key)) {
-                throw new IllegalArgumentException("unknown security policy key '" + key + "'");
-            }
-        }
+        StrictYaml.requireOnlyKeys(root.keySet(), TOP_LEVEL_KEYS, KIND);
 
         return new SecurityPolicy(purposes(root.get("purposes")), roles(root.get("roles")));
     }
@@ -81,8 +63,8 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
             throw new IllegalArgumentException("security policy has no purposes");
         }
         Set<String> out = new LinkedHashSet<>();
-        for (Object item : list) {
-            String purpose = String.valueOf(item).trim();
+        for (int i = 0; i < list.size(); i++) {
+            String purpose = StrictYaml.text(list.get(i), KIND + " purposes[" + i + "]").trim();
             if (purpose.isBlank()) {
                 throw new IllegalArgumentException("security policy has a blank purpose");
             }
@@ -105,8 +87,9 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
                 throw new IllegalArgumentException("role '" + role + "' capabilities must be a list");
             }
             Set<String> capabilities = new LinkedHashSet<>();
-            for (Object item : list) {
-                String capability = String.valueOf(item).trim();
+            for (int i = 0; i < list.size(); i++) {
+                String capability = StrictYaml.text(list.get(i),
+                        KIND + " roles." + StrictYaml.shown(role) + "[" + i + "]").trim();
                 if (!Capability.KNOWN.contains(capability)) {
                     throw new IllegalArgumentException(
                             "role '" + role + "' names unknown capability '" + capability + "'");

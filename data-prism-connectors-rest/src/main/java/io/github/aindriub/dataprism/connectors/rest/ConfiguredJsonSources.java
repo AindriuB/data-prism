@@ -1,11 +1,10 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.StrictYaml;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,7 +18,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -71,9 +69,8 @@ public final class ConfiguredJsonSources {
      */
     static final String NESTED_FIELD_REASON_PREFIX = "nested catalogue ";
 
-    // Reuses RestSources.YAML rather than constructing a second ObjectMapper:
-    // see that field's Javadoc.
-    private static final ObjectMapper YAML = RestSources.YAML;
+    private static final String KIND = "configured JSON source configuration";
+    private static final Set<String> ROOT_KEYS = Set.of("json-sources", "tls");
 
     private ConfiguredJsonSources() {
     }
@@ -111,15 +108,17 @@ public final class ConfiguredJsonSources {
                                                        String defaultCorrelationHeader) {
         OutboundCorrelationHeader.validate(defaultCorrelationHeader, "the global outbound header default", 0);
         byte[] bytes;
-        Map<String, Object> root;
         try {
             bytes = in.readAllBytes();
-            root = YAML.readValue(bytes, Map.class);
         } catch (IOException e) {
             throw new UncheckedIOException("configured JSON source configuration could not be read", e);
-        } catch (JacksonException e) {
-            throw new UncheckedIOException("configured JSON source configuration could not be read", new IOException(e.getMessage(), e));
         }
+        Map<String, Object> root = StrictYaml.readMapping(bytes, KIND);
+        if (root == null) {
+            throw new IllegalArgumentException(
+                    "configured JSON source configuration has no `json-sources` section");
+        }
+        StrictYaml.requireOnlyKeys(root.keySet(), ROOT_KEYS, KIND);
 
         Object sources = root.get("json-sources");
         if (!(sources instanceof Map<?, ?> map) || map.isEmpty()) {
@@ -154,11 +153,13 @@ public final class ConfiguredJsonSources {
         String path = RestSources.required(body, "path", "json source " + name);
         String modelVersion = RestSources.required(body, "model-version", "json source " + name);
         String subjectJsonPath = RestSources.required(body, "subject-json-path", "json source " + name);
-        Object timeoutRaw = body.get("timeout");
-        if (timeoutRaw == null) {
+        Object timeoutNode = body.get("timeout");
+        if (timeoutNode == null) {
             throw new IllegalArgumentException("json source " + name + " has no timeout;"
                     + " this mode requires an explicit bounded timeout, it does not default one");
         }
+
+        String timeoutRaw = StrictYaml.text(timeoutNode, "json source " + StrictYaml.shown(name) + " timeout");
 
         URI baseUri;
         try {
@@ -188,7 +189,7 @@ public final class ConfiguredJsonSources {
         RestSource transport;
         try {
             transport = new RestSource(name, baseUri, path,
-                    Duration.parse(String.valueOf(timeoutRaw)), requireHttps, correlationHeader);
+                    Duration.parse(timeoutRaw), requireHttps, correlationHeader);
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException(
                     "json source " + name + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
@@ -382,7 +383,7 @@ public final class ConfiguredJsonSources {
 
         if (nested) {
             rejectUnknownKeys(body.keySet(), NESTED_FIELD_KEYS, where);
-            String catalogueName = String.valueOf(body.get("nested"));
+            String catalogueName = StrictYaml.text(body.get("nested"), where + " nested");
             if (!FIELD_NAME.matcher(catalogueName).matches()) {
                 throw new IllegalArgumentException(where + " nested catalogue name '" + catalogueName
                         + "' is not a bare property name");
@@ -401,7 +402,7 @@ public final class ConfiguredJsonSources {
 
         if (identifier) {
             rejectUnknownKeys(body.keySet(), IDENTIFIER_FIELD_KEYS, where);
-            if (!Boolean.parseBoolean(String.valueOf(body.get("identifier")))) {
+            if (!StrictYaml.optionalBoolean(body, "identifier", where)) {
                 throw new IllegalArgumentException(where + " sets identifier: false;"
                         + " remove the key entirely instead of stating a negative");
             }
@@ -411,7 +412,7 @@ public final class ConfiguredJsonSources {
 
         if (nonSensitive) {
             rejectUnknownKeys(body.keySet(), NON_SENSITIVE_FIELD_KEYS, where);
-            String reason = String.valueOf(body.get("nonSensitive"));
+            String reason = StrictYaml.text(body.get("nonSensitive"), where + " nonSensitive");
             if (reason.isBlank()) {
                 throw new IllegalArgumentException(where + " has a blank nonSensitive reason");
             }
@@ -440,20 +441,23 @@ public final class ConfiguredJsonSources {
                 throw new IllegalArgumentException(where + " has an empty classifications list");
             }
             for (Object value : list) {
-                classifications.add(enumValue(DataClassification.class, value, where + ".classifications"));
+                classifications.add(StrictYaml.enumValue(DataClassification.class, value, where + ".classifications"));
             }
         } else if (raw != null) {
-            classifications.add(enumValue(DataClassification.class, raw, where + ".classifications"));
+            classifications.add(StrictYaml.enumValue(DataClassification.class, raw, where + ".classifications"));
+        } else if (body.containsKey("classifications")) {
+            throw new IllegalArgumentException(StrictYaml.NON_STRING_SCALAR + ": " + where
+                    + " classifications must be a quoted string");
         } else {
             throw new IllegalArgumentException(where + " has no classifications");
         }
 
-        PrivacyNamespace namespace = body.get("namespace") == null
-                ? PrivacyNamespace.NONE
-                : enumValue(PrivacyNamespace.class, body.get("namespace"), where + ".namespace");
-        PrivacyAction action = body.get("action") == null
-                ? PrivacyAction.REDACT
-                : enumValue(PrivacyAction.class, body.get("action"), where + ".action");
+        PrivacyNamespace namespace = body.containsKey("namespace")
+                ? StrictYaml.optionalEnum(PrivacyNamespace.class, body, "namespace", where + ".namespace")
+                : PrivacyNamespace.NONE;
+        PrivacyAction action = body.containsKey("action")
+                ? StrictYaml.optionalEnum(PrivacyAction.class, body, "action", where + ".action")
+                : PrivacyAction.REDACT;
 
         return new FieldMetadata(fieldName, false, null, classifications, namespace, action,
                 "", null, String.class, null);
@@ -465,20 +469,6 @@ public final class ConfiguredJsonSources {
     }
 
     private static void rejectUnknownKeys(Set<?> present, Set<String> allowed, String where) {
-        for (Object key : present) {
-            if (!allowed.contains(String.valueOf(key))) {
-                throw new IllegalArgumentException(where + " has an unknown key '" + key + "'");
-            }
-        }
-    }
-
-    private static <E extends Enum<E>> E enumValue(Class<E> type, Object raw, String where) {
-        String value = String.valueOf(raw).trim().toUpperCase(Locale.ROOT);
-        try {
-            return Enum.valueOf(type, value);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                    "unknown " + type.getSimpleName() + " '" + value + "' at " + where, e);
-        }
+        StrictYaml.requireOnlyKeys(present, allowed, where);
     }
 }

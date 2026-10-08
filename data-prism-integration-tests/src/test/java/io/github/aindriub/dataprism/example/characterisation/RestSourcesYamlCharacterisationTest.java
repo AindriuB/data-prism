@@ -44,11 +44,11 @@ class RestSourcesYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("duplicate key: last wins, silently (second base-url is used)")
+    @DisplayName("duplicate key: refused, IllegalArgumentException \"DUPLICATE_CONFIG_KEY: ...\" (base-url given twice)")
     void duplicateKey() {
         assertThat(outcome("sources:\n  s:\n    base-url: https://first.example.invalid\n"
                 + "    base-url: https://second.example.invalid\n    path: /things/{subject}\n"))
-                .isEqualTo("ok s: baseUrl=https://second.example.invalid path=/things/{subject} timeout=PT3S requireHttps=false header=null");
+                .isEqualTo("refused IllegalArgumentException \"DUPLICATE_CONFIG_KEY: source configuration has a duplicate key 'base-u\"");
     }
 
     @Test
@@ -75,15 +75,32 @@ class RestSourcesYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("unknown top-level key: ignored silently")
+    @DisplayName("unknown top-level key: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownTopLevelKey() {
-        assertThat(outcome("extra: 1\n" + SOURCE)).isEqualTo("ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=false header=null");
+        assertThat(outcome("extra: 1\n" + SOURCE)).isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: source configuration has an unknown key 'extra'\"");
     }
 
     @Test
-    @DisplayName("unknown nested key (in a source and in tls): ignored silently")
+    @DisplayName("unknown nested key in a source: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownNestedKey() {
-        assertThat(outcome(SOURCE + "    surprise: 1\n" + tls("ks.p12") + "  surprise: 2\n"))
-                .isEqualTo("ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=ks.p12 tls.trustStore=ts.p12");
+        assertThat(outcome(SOURCE + "    surprise: 1\n"))
+                .isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: source configuration sources.s has an unknown key \"");
+    }
+
+    @Test
+    @DisplayName("unknown nested key in tls: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
+    void unknownNestedKeyInTls() {
+        assertThat(outcome(SOURCE + tls("ks.p12") + "  surprise: 2\n"))
+                .isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: tls configuration has an unknown key 'surprise'\"");
+    }
+
+    @Test
+    @DisplayName("a number or boolean where a string is expected (the tls key-store) is refused, \"NON_STRING_CONFIG_SCALAR: ...\"; the quoted form is accepted")
+    void nonStringScalarsInAStringField() {
+        assertThat(Observe.table(java.util.List.of("1", "true", "1.5", "\"1\""), s -> SOURCE + tls(s),
+                RestSourcesYamlCharacterisationTest::render)).isEqualTo("1 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: tls configuration key-store must be a quoted\"\n"
+                + "true => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: tls configuration key-store must be a quoted\"\n"
+                + "1.5 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: tls configuration key-store must be a quoted\"\n"
+                + "\"1\" => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=1 tls.trustStore=ts.p12\n");
     }
 }

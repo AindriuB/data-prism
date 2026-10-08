@@ -211,4 +211,123 @@ class PrivacyProfilesTest {
                 DataClassification.RELIGIOUS_BELIEF, DataClassification.TRADE_UNION,
                 DataClassification.SEX_LIFE_ORIENTATION);
     }
+
+    private static void assertRefused(String yaml, String prefix) {
+        assertThatThrownBy(() -> PrivacyProfiles.fromYaml(yaml(yaml)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith(prefix);
+    }
+
+    private static final String RULE = "profiles:\n  p:\n    classifications:\n      PII:\n        action: REDACT\n";
+
+    @Test
+    @DisplayName("a duplicate top-level key is refused with DUPLICATE_CONFIG_KEY")
+    void duplicateTopLevelKey() {
+        assertRefused(RULE + "profiles:\n  q:\n    unclassified: FAIL_REQUEST\n",
+                "DUPLICATE_CONFIG_KEY: privacy profiles has a duplicate key 'profiles'");
+    }
+
+    @Test
+    @DisplayName("a duplicate key in a profile is refused with DUPLICATE_CONFIG_KEY, naming the path")
+    void duplicateKeyInProfile() {
+        assertRefused("profiles:\n  p:\n    unclassified: REDACT_AND_WARN\n    unclassified: DROP_AND_WARN\n",
+                "DUPLICATE_CONFIG_KEY: privacy profiles has a duplicate key 'unclassified' in profiles.p");
+    }
+
+    @Test
+    @DisplayName("a duplicate key in a rule is refused with DUPLICATE_CONFIG_KEY, naming the path")
+    void duplicateKeyInRule() {
+        assertRefused(RULE + "        action: SYNTHESIZE\n",
+                "DUPLICATE_CONFIG_KEY: privacy profiles has a duplicate key 'action' in profiles.p.classifications.PII");
+    }
+
+    @Test
+    @DisplayName("a duplicate classification in one profile is refused with DUPLICATE_CONFIG_KEY")
+    void duplicateClassification() {
+        assertRefused(RULE + "      PII:\n        action: SYNTHESIZE\n",
+                "DUPLICATE_CONFIG_KEY: privacy profiles has a duplicate key 'PII' in profiles.p.classifications");
+    }
+
+    @Test
+    @DisplayName("an unknown top-level key is refused with UNKNOWN_CONFIG_KEY")
+    void unknownTopLevelKey() {
+        assertRefused("extra: 1\n" + RULE, "UNKNOWN_CONFIG_KEY: privacy profiles has an unknown key 'extra'");
+    }
+
+    @Test
+    @DisplayName("an unknown key in a profile is refused with UNKNOWN_CONFIG_KEY, naming the path")
+    void unknownKeyInProfile() {
+        assertRefused("profiles:\n  p:\n    unclasified: REDACT_AND_WARN\n",
+                "UNKNOWN_CONFIG_KEY: privacy profiles profiles.p has an unknown key 'unclasified'");
+    }
+
+    @Test
+    @DisplayName("an unknown key in a rule is refused with UNKNOWN_CONFIG_KEY, naming the path")
+    void unknownKeyInRule() {
+        assertRefused(RULE + "        overide: true\n",
+                "UNKNOWN_CONFIG_KEY: privacy profiles profiles.p.classifications.PII has an unknown key 'overide'");
+    }
+
+    @Test
+    @DisplayName("an unknown key in a generalization rule is refused with UNKNOWN_CONFIG_KEY, naming the path")
+    void unknownKeyInGeneralization() {
+        assertRefused("profiles:\n  p:\n    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, 10]\n"
+                        + "        bound: [1]\n",
+                "UNKNOWN_CONFIG_KEY: privacy profiles profiles.p.generalization.FINANCIAL_VALUE has an unknown key 'bound'");
+    }
+
+    @Test
+    @DisplayName("a second YAML document is refused with TRAILING_CONFIG_CONTENT")
+    void secondDocument() {
+        assertRefused(RULE + "---\nprofiles:\n  q:\n    unclassified: FAIL_REQUEST\n", "TRAILING_CONFIG_CONTENT: ");
+    }
+
+    @Test
+    @DisplayName("override accepts true and false, and refuses yes, on, True and 1 with INVALID_CONFIG_BOOLEAN")
+    void overrideBoolean() {
+        assertThat(PrivacyProfiles.fromYaml(yaml(RULE + "        override: true\n")).get("p")
+                .classifications().get(DataClassification.PII).override()).isTrue();
+        for (String spelling : new String[] {"yes", "no", "on", "off", "True", "FALSE", "1"}) {
+            assertRefused(RULE + "        override: " + spelling + "\n",
+                    "INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PII.override "
+                            + "must be exactly true or false");
+        }
+    }
+
+    @Test
+    @DisplayName("a band bound written with a leading zero is refused with LEADING_ZERO_CONFIG_NUMBER")
+    void leadingZeroBound() {
+        for (String bound : new String[] {"010", "0777", "00", "-01"}) {
+            assertRefused("profiles:\n  p:\n    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, " + bound
+                            + "]\n",
+                    "LEADING_ZERO_CONFIG_NUMBER: privacy profiles profiles.p.generalization.FINANCIAL_VALUE.bounds[1] "
+                            + "must not be written with a leading zero");
+        }
+        assertThat(PrivacyProfiles.fromYaml(yaml(
+                "profiles:\n  p:\n    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, 0.5, 10]\n"))
+                .get("p").generalizations()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a unit written as a number or boolean is refused with NON_STRING_CONFIG_SCALAR; a quoted one is accepted")
+    void unitMustBeAString() {
+        for (String unit : new String[] {"5", "true", "1.5"}) {
+            assertRefused("profiles:\n  p:\n    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, 10]\n"
+                            + "        unit: " + unit + "\n",
+                    "NON_STRING_CONFIG_SCALAR: privacy profiles profiles.p.generalization.FINANCIAL_VALUE.unit "
+                            + "must be a quoted string");
+        }
+        assertThat(PrivacyProfiles.fromYaml(yaml(
+                "profiles:\n  p:\n    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, 10]\n"
+                        + "        unit: \"010\"\n")).get("p").generalizations()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a refusal names the key and never the value")
+    void messageNeverRepeatsTheValue() {
+        assertThatThrownBy(() -> PrivacyProfiles.fromYaml(yaml(RULE + "        overide: s3cr3t\n")))
+                .hasMessageNotContaining("s3cr3t");
+        assertThatThrownBy(() -> PrivacyProfiles.fromYaml(yaml(RULE + "        override: s3cr3t\n")))
+                .hasMessageNotContaining("s3cr3t");
+    }
 }

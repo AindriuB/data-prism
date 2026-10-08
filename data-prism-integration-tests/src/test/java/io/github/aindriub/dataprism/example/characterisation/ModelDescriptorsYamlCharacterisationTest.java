@@ -42,23 +42,27 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("duplicate key: last wins, silently (exposed true then false gives false)")
+    @DisplayName("duplicate key: refused, IllegalArgumentException \"DUPLICATE_CONFIG_KEY: ...\" (exposed given twice)")
     void duplicateKey() {
-        assertThat(outcome(model("    exposed: true\n    exposed: false\n"))).isEqualTo("ok M: exposed=false descendable=null undeclaredFields=null");
+        assertThat(outcome(model("    exposed: true\n    exposed: false\n"))).isEqualTo("refused IllegalArgumentException \"DUPLICATE_CONFIG_KEY: model descriptors has a duplicate key 'exposed' \"");
     }
 
     @Test
-    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
+    @DisplayName("exposed: yes, no, on, off, y, n, True and FALSE are refused, IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: ...\"; true and false are accepted")
     void booleanSpellings() {
-        assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> model("    exposed: " + s + "\n"),
-                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "no => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "on => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "off => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "y => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "n => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "True => ok M: exposed=true descendable=null undeclaredFields=null\n"
-                + "FALSE => ok M: exposed=false descendable=null undeclaredFields=null\n");
+        assertThat(Observe.table(java.util.stream.Stream.concat(Observe.BOOLEAN_SPELLINGS.stream(),
+                        java.util.stream.Stream.of("true", "false")).toList(),
+                s -> model("    exposed: " + s + "\n"),
+                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "no => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "on => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "off => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "y => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "n => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "True => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "FALSE => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: model descriptors models.M.exposed must be exa\"\n"
+                + "true => ok M: exposed=true descendable=null undeclaredFields=null\n"
+                + "false => ok M: exposed=false descendable=null undeclaredFields=null\n");
     }
 
     @Test
@@ -70,6 +74,18 @@ class ModelDescriptorsYamlCharacterisationTest {
                 ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("010 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=010 nonSensitive=010 identifier=010}\n"
                 + "0o10 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=0o10 nonSensitive=0o10 identifier=0o10}\n"
                 + "0777 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=0777 nonSensitive=0777 identifier=0777}\n");
+    }
+
+    @Test
+    @DisplayName("a number, boolean or decimal where a string is expected (subject) is refused, IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: ...\"; the quoted form is accepted")
+    void nonStringScalarsInAStringField() {
+        assertThat(Observe.table(java.util.List.of("1", "true", "1.5", "\"1\"", "\"true\""),
+                s -> model("    fields:\n      f:\n        subject: " + s + "\n"),
+                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("1 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: model descriptors models.M.fields.f.subject \"\n"
+                + "true => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: model descriptors models.M.fields.f.subject \"\n"
+                + "1.5 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: model descriptors models.M.fields.f.subject \"\n"
+                + "\"1\" => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=1 nonSensitive=null identifier=null}\n"
+                + "\"true\" => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=true nonSensitive=null identifier=null}\n");
     }
 
     @Test
@@ -88,16 +104,23 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("unknown top-level key: ignored silently")
+    @DisplayName("unknown top-level key: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownTopLevelKey() {
-        assertThat(outcome("extra: 1\nmodels:\n  M:\n    exposed: true\n")).isEqualTo("ok M: exposed=true descendable=null undeclaredFields=null");
+        assertThat(outcome("extra: 1\nmodels:\n  M:\n    exposed: true\n")).isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: model descriptors has an unknown key 'extra'\"");
     }
 
     @Test
-    @DisplayName("unknown nested key (in a model and in a field): ignored silently")
+    @DisplayName("unknown nested key in a model: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownNestedKey() {
-        assertThat(outcome(model("    surprise: 1\n    fields:\n      f:\n        surprise: 2\n        subject: s\n")))
-                .isEqualTo("ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=s nonSensitive=null identifier=null}");
+        assertThat(outcome(model("    surprise: 1\n    fields:\n      f:\n        subject: s\n")))
+                .isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: model descriptors models.M has an unknown key 'sur\"");
+    }
+
+    @Test
+    @DisplayName("unknown nested key in a field: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
+    void unknownNestedKeyInField() {
+        assertThat(outcome(model("    fields:\n      f:\n        surprise: 2\n        subject: s\n")))
+                .isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: model descriptors models.M.fields.f has an unknown\"");
     }
 
     @Test

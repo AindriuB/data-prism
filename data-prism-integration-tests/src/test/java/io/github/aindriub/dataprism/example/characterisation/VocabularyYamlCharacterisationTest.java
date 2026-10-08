@@ -38,10 +38,10 @@ class VocabularyYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("duplicate key: last wins, silently (id first then second gives second)")
+    @DisplayName("duplicate key: refused, IllegalArgumentException \"DUPLICATE_CONFIG_KEY: ...\" (id given twice)")
     void duplicateKey() {
         assertThat(outcome("id: first\nid: second\nlocale: en\npools:\n  firstNames: [a]\n" + OTHER_POOLS))
-                .isEqualTo("ok id=second-v1 locale=en script=Zyyy firstNames=[a]");
+                .isEqualTo("refused IllegalArgumentException \"DUPLICATE_CONFIG_KEY: vocabulary file has a duplicate key 'id'\"");
     }
 
     @Test
@@ -60,25 +60,46 @@ class VocabularyYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
+    @DisplayName("a version written with a leading zero, such as 010 or 0777, is refused, IllegalArgumentException \"LEADING_ZERO_CONFIG_NUMBER: ...\"; 0o10 is not a number; pool entries are text")
     void octalLookingScalars() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
                 s -> vocabulary("version: " + s + "\npools:\n  firstNames: [" + s + "]\n" + OTHER_POOLS),
-                VocabularyYamlCharacterisationTest::render)).isEqualTo("010 => ok id=probe-v10 locale=en script=Latn firstNames=[010]\n"
+                VocabularyYamlCharacterisationTest::render)).isEqualTo("010 => refused IllegalArgumentException \"LEADING_ZERO_CONFIG_NUMBER: vocabulary file version must not be writte\"\n"
                 + "0o10 => refused NumberFormatException \"For input string: \"0o10\"\"\n"
-                + "0777 => ok id=probe-v777 locale=en script=Latn firstNames=[0777]\n");
+                + "0777 => refused IllegalArgumentException \"LEADING_ZERO_CONFIG_NUMBER: vocabulary file version must not be writte\"\n");
     }
 
     @Test
-    @DisplayName("unknown top-level key: ignored silently")
+    @DisplayName("a pool entry that looks like a leading-zero number is text and is read as written")
+    void octalLookingPoolEntries() {
+        assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
+                s -> vocabulary("pools:\n  firstNames: [" + s + "]\n" + OTHER_POOLS),
+                VocabularyYamlCharacterisationTest::render)).isEqualTo("010 => ok id=probe-v1 locale=en script=Latn firstNames=[010]\n"
+                + "0o10 => ok id=probe-v1 locale=en script=Latn firstNames=[0o10]\n"
+                + "0777 => ok id=probe-v1 locale=en script=Latn firstNames=[0777]\n");
+    }
+
+    @Test
+    @DisplayName("a number or boolean pool entry is refused, \"NON_STRING_CONFIG_SCALAR: ...\"; the quoted form is accepted")
+    void nonStringScalarsInAPool() {
+        assertThat(Observe.table(java.util.List.of("1", "true", "1.5", "\"1\""),
+                s -> vocabulary("pools:\n  firstNames: [" + s + "]\n" + OTHER_POOLS),
+                VocabularyYamlCharacterisationTest::render)).isEqualTo("1 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: vocabulary file pools.firstNames[0] must be \"\n"
+                + "true => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: vocabulary file pools.firstNames[0] must be \"\n"
+                + "1.5 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: vocabulary file pools.firstNames[0] must be \"\n"
+                + "\"1\" => ok id=probe-v1 locale=en script=Latn firstNames=[1]\n");
+    }
+
+    @Test
+    @DisplayName("unknown top-level key: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownTopLevelKey() {
-        assertThat(outcome(vocabulary("extra: 1\npools:\n  firstNames: [a]\n" + OTHER_POOLS))).isEqualTo("ok id=probe-v1 locale=en script=Latn firstNames=[a]");
+        assertThat(outcome(vocabulary("extra: 1\npools:\n  firstNames: [a]\n" + OTHER_POOLS))).isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: vocabulary file has an unknown key 'extra'\"");
     }
 
     @Test
-    @DisplayName("unknown nested key inside pools: ignored silently")
+    @DisplayName("unknown nested key inside pools: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownNestedKey() {
         assertThat(outcome(vocabulary("pools:\n  surprise: [x]\n  firstNames: [a]\n" + OTHER_POOLS)))
-                .isEqualTo("ok id=probe-v1 locale=en script=Latn firstNames=[a]");
+                .isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: vocabulary file pools has an unknown key 'surprise\"");
     }
 }

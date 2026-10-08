@@ -30,9 +30,9 @@ class SecurityPolicyYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("duplicate key: last wins, silently (purposes [first] then [second] gives [second])")
+    @DisplayName("duplicate key: refused, IllegalArgumentException \"DUPLICATE_CONFIG_KEY: security policy has a duplicate key 'purposes'\"")
     void duplicateKey() {
-        assertThat(outcome("purposes: [first]\npurposes: [second]\n")).isEqualTo("ok purposes=[second] roles={}");
+        assertThat(outcome("purposes: [first]\npurposes: [second]\n")).isEqualTo("refused IllegalArgumentException \"DUPLICATE_CONFIG_KEY: security policy has a duplicate key 'purposes'\"");
     }
 
     @Test
@@ -59,9 +59,19 @@ class SecurityPolicyYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("unknown top-level key: refused, IllegalArgumentException \"unknown security policy key 'extra'\"")
+    @DisplayName("a number or boolean where a purpose is expected is refused, \"NON_STRING_CONFIG_SCALAR: ...\"; the quoted form is accepted")
+    void nonStringScalarsInAStringField() {
+        assertThat(Observe.table(java.util.List.of("1", "true", "1.5", "\"1\""), s -> "purposes:\n  - " + s + "\n",
+                SecurityPolicyYamlCharacterisationTest::render)).isEqualTo("1 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: security policy purposes[0] must be a quoted\"\n"
+                + "true => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: security policy purposes[0] must be a quoted\"\n"
+                + "1.5 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: security policy purposes[0] must be a quoted\"\n"
+                + "\"1\" => ok purposes=[1] roles={}\n");
+    }
+
+    @Test
+    @DisplayName("unknown top-level key: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: security policy has an unknown key 'extra'\"")
     void unknownTopLevelKey() {
-        assertThat(outcome("purposes: [p]\nextra: 1\n")).isEqualTo("refused IllegalArgumentException \"unknown security policy key 'extra'\"");
+        assertThat(outcome("purposes: [p]\nextra: 1\n")).isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: security policy has an unknown key 'extra'\"");
     }
 
     @Test

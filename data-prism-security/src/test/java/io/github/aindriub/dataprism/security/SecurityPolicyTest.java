@@ -102,4 +102,63 @@ class SecurityPolicyTest {
         assertThat(policy.capabilitiesFor(Set.of("investigator", "unknown-role")))
                 .containsExactly("GET_ENTITY_CONTEXT");
     }
+
+    private static void assertRefused(String yaml, String message) {
+        assertThatThrownBy(() -> SecurityPolicy.fromYaml(yaml(yaml)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(message);
+    }
+
+    @Test
+    @DisplayName("an unknown top-level key is refused with UNKNOWN_CONFIG_KEY")
+    void unknownTopLevelKeyCode() {
+        assertRefused("purposes: [p]\nextra: 1\n", "UNKNOWN_CONFIG_KEY: security policy has an unknown key 'extra'");
+    }
+
+    @Test
+    @DisplayName("an unknown key longer than 64 characters is named cut to 64")
+    void longUnknownKeyIsTruncated() {
+        assertRefused("purposes: [p]\n" + "k".repeat(100) + ": 1\n",
+                "UNKNOWN_CONFIG_KEY: security policy has an unknown key '" + "k".repeat(64) + "'");
+    }
+
+    @Test
+    @DisplayName("a duplicate top-level key is refused with DUPLICATE_CONFIG_KEY")
+    void duplicateTopLevelKey() {
+        assertRefused("purposes: [first]\npurposes: [second]\n",
+                "DUPLICATE_CONFIG_KEY: security policy has a duplicate key 'purposes'");
+    }
+
+    @Test
+    @DisplayName("a duplicate role is refused with DUPLICATE_CONFIG_KEY, naming the path")
+    void duplicateRole() {
+        assertRefused("purposes: [p]\nroles:\n  r: [GET_ENTITY_CONTEXT]\n  r: [EXPOSE_SOURCE_NAMES]\n",
+                "DUPLICATE_CONFIG_KEY: security policy has a duplicate key 'r' in roles");
+    }
+
+    @Test
+    @DisplayName("a second YAML document is refused with TRAILING_CONFIG_CONTENT")
+    void secondDocument() {
+        assertThatThrownBy(() -> SecurityPolicy.fromYaml(yaml("purposes: [p]\n---\npurposes: [q]\n")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("TRAILING_CONFIG_CONTENT: security policy ");
+    }
+
+    @Test
+    @DisplayName("a purpose written as a number or boolean is refused with NON_STRING_CONFIG_SCALAR, without the value")
+    void purposeMustBeAString() {
+        assertRefused("purposes: [p, 12345]\n",
+                "NON_STRING_CONFIG_SCALAR: security policy purposes[1] must be a quoted string");
+        assertRefused("purposes: [true]\n",
+                "NON_STRING_CONFIG_SCALAR: security policy purposes[0] must be a quoted string");
+        assertThat(SecurityPolicy.fromYaml(yaml("purposes: [\"12345\", 010]\n")).allowedPurposes())
+                .containsExactlyInAnyOrder("12345", "010");
+    }
+
+    @Test
+    @DisplayName("a capability written as a number is refused with NON_STRING_CONFIG_SCALAR")
+    void capabilityMustBeAString() {
+        assertRefused("purposes: [p]\nroles:\n  r: [1]\n",
+                "NON_STRING_CONFIG_SCALAR: security policy roles.r[0] must be a quoted string");
+    }
 }
