@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-08 | 167 | 0.6.0 wave 5: reactor on Jackson 3.1.5 with private builder-made mappers, Jackson 2 banned except annotations, defaults pinned to Jackson 2 behaviour, goldens unchanged; D-167-1 (b) adds YAML look-alike and trailing-document refusals to 170. | `## 2026-10-08 — 0.6.0 wave 5: reactor ported to Jackson 3 (task 167) and D-167-1 decided` |
 | 2026-10-08 | 166, 170 | 0.6.0 wave 4: 44 Jackson 2 characterisation tests pin audit JSON, checkpoint, tool results and YAML reader behaviour; task 170 planned (readers refuse duplicate/unknown keys and unquoted non-string scalars). | `## 2026-10-08 — 0.6.0 wave 4: Jackson 2 characterisation tests (task 166) and task 170 planned` |
 | 2026-10-08 | 157 | 0.6.0 wave 3: audit split into format, sink, checkpoint, retention, verify (9 root types remain); verifier CLI now audit.verify.AuditChainVerifierCli with no forwarding class; six members widened to public; ArchUnit locks layout. | `## 2026-10-08 — 0.6.0 wave 3: audit package split into format, sink, checkpoint, retention, verify; verifier CLI moved (task 157)` |
 | 2026-10-08 | 156 | 0.6.0 wave 2: core root's 34 types moved into spi, model, engine, refusal, limits, metrics; ArchUnit locks the layout; Jackson 3 tasks 166-169 merged and wave table re-sequenced. | `## 2026-10-08 — 0.6.0 wave 2: core root package split into spi, model, engine, refusal, limits, metrics (task 156)` |

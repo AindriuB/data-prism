@@ -64,3 +64,22 @@ and 154 deliberately left `audit` without a databind ban.
 - The Spring property and auto-configuration splits (158, 159), even where a file here will move later.
 - Adding a rule for streaming `JsonFactory` or `JsonGenerator` construction (D-J3-2 was raised with this plan. If the owner picks the wider rule, it is a separate task). The audit renderer's generator stays allowed, as decided under 154.
 - Upgrading any other dependency, or touching `.github/workflows/**` (its "single Jackson major" comment stays true).
+
+## Outcome (2026-10-08, wave 5)
+Merged onto `release/0.6.0-jackson3` (task branch head bfab230e, base 3dbabc4b). Tester PASS on JDK 21 (full reactor, 1455 tests, 0 failed, 0 skipped; `dependency:tree` shows only `jackson-annotations` left under `com.fasterxml.jackson`). The first review asked for changes because the `JwtDecoderSupport` catch missed `JacksonException`; fixed with tests, and the re-review approved. JDK 25 and container-smoke run in CI.
+
+What landed:
+- Jackson 3.1.5 throughout, built with builders, behind private mappers (J3-2).
+- The enforcer follows J3-5, with a ban proof. `Boot4RegressionGuardsTest` is inverted.
+- The ArchUnit mapper rule covers constructor, `builder()`, `build()` and `rebuild()`, with four negative fixtures.
+- Jackson 3 defaults are pinned back to Jackson 2 behaviour, each with a test: `SORT_PROPERTIES_ALPHABETICALLY` off, `FAIL_ON_EMPTY_BEANS` on, `WRITE_ENUMS_USING_TO_STRING` off and `WRITE_DATES_AS_TIMESTAMPS` off on `DataPrismObjectMapper`; `STRIP_TRAILING_BIGDECIMAL_ZEROES` on in `SourceTree`; `FAIL_ON_TRAILING_TOKENS` and `FAIL_ON_NULL_FOR_PRIMITIVES` off in the YAML readers.
+- The JSON goldens from 166 are unchanged.
+
+Behaviour changes accepted or noted:
+- YAML is now parsed as YAML 1.2 (D-167-1): `yes`/`no`/`on`/`off` are text and leading-zero numbers are decimal. Task 170 refuses these where they matter.
+- `java.time` and `Optional` values are now serialised natively in `SourceTree`. The engine still classifies or refuses them.
+- The tool `convertValue` failure message is now "the response could not be serialised".
+
+Public signature changes (for 162): `DataPrismObjectMapper.create()` returns `JsonMapper`; `SourceTree.text` returns `StringNode`; the rest are `com.fasterxml` to `tools.jackson` identity moves on `SourceTree`, `ScrubResult`, `Generalizer`, `ContextResponse`, `ComparisonResponse.identity`, the `ObjectMapper` parameter of the two tool constructors, `LlmResponseValidator`/`RawValueLeakValidator`/`SensitivePatternValidator.validate` and `SensitiveDataScanner.scan`.
+
+Owns WAIVER: seven test files were edited outside Owns, `asText` to `asString` only: `ConfiguredJsonDataSourceAdapterHttpTest`, `ConfiguredJsonSourceEndToEndTest`, `EmittedValuesTest`, `HazelcastStoredValueBoundaryTest`, `WorkedExampleTest`, `ConfiguredJsonNestedHttpTest`, `McpHttpEndToEndTest`.

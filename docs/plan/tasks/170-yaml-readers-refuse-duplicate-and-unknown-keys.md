@@ -1,7 +1,7 @@
-# 170 — Make the five YAML readers refuse duplicate keys and unknown keys at startup
+# 170 — Make the five YAML readers refuse duplicate keys, unknown keys, trailing documents and YAML 1.2 look-alikes at startup
 
 **Repo:** .
-**Base:** branch from `origin/main` after 166 and 167 have merged into it. Owner decisions D-170-1 (b) and D-170-2 (a) are recorded below.
+**Base:** branch from `origin/main` after 166 and 167 have merged into it. Owner decisions D-170-1 (b), D-170-2 (a) and D-167-1 (b) are recorded below.
 **Depends on:** 166, 167
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/StrictYaml.java
@@ -34,6 +34,15 @@ also silently ignore unknown keys, both top-level and nested. A mistyped `undecl
 `override`, or a duplicated `action`, therefore changes the privacy result without any error.
 After this task, each reader refuses both cases at startup with a stable code. The task also adds
 a `.gitattributes` entry so that line-ending conversion cannot rewrite the 166 golden files.
+
+Added 2026-10-08 (D-167-1 (b)): 167 moved the readers to YAML 1.2, so `yes`/`no`/`on`/`off` are now
+plain text and a leading-zero number such as `010` is decimal, which is a silent change of meaning
+from 0.5.x. This task therefore also refuses, at startup, any boolean-typed field whose value is
+anything other than exactly `true` or `false`, and any numeric-typed field written with a leading
+zero (for example `010`), each with a stable code that follows this task's conventions
+(`UPPER_SNAKE_CODE: ` prefix, key and path, never the value). Likewise, each reader refuses a
+multi-document file or trailing content after the first document (enable `FAIL_ON_TRAILING_TOKENS`
+or an equivalent check) with a stable code, so a second document cannot be silently dropped.
 
 ## Context
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/StrictYaml.java. This is the shared helper for hand-written YAML parsing, and every reader's module already depends on data-prism-core. Put the shared key check here (for example `requireOnlyKeys(Map<?,?> body, Set<String> allowed, String where)`) rather than copying it into five places.
@@ -85,6 +94,13 @@ Allowed keys. For each fixed-schema mapping, the allowed set is exactly the set 
 - [ ] Numeric and boolean fields (`exposed`, `override`, band bounds, `version`, ...) are unchanged.
 - [ ] Every 166 `booleanSpellings*` and `octalLookingScalars` test is updated where its subject is a string-typed field. Those are `SecurityPolicy` (purpose), `RestSources` (key-store), `ModelDescriptors` (`octalLookingScalars`, `booleanSpellingsAsText`), `PrivacyProfiles` (`octalLookingScalars`, for `unit` only) and `Vocabulary` (pool entry). After the update each one pins refusal for an unquoted coerced scalar and acceptance for the quoted form. Tests whose subject is a boolean or numeric field stay as 167 left them.
 
+**D-167-1 (b), decided 2026-10-08, and the trailing-content scope addition:**
+- [ ] A boolean-typed field (`exposed`, `override`, and every other field the readers read as a boolean) refuses any value other than exactly `true` or `false` (so `yes`, `no`, `on`, `off`, `True`, `1`) with a new stable code, proposed `INVALID_CONFIG_BOOLEAN`. The message names the key and its path, never the value.
+- [ ] A numeric-typed field (band bounds, `version`, and every other field the readers read as a number) refuses a value written with a leading zero (`010`, `0777`, `00`) with a new stable code, proposed `LEADING_ZERO_CONFIG_NUMBER`. A plain `0` and a decimal such as `0.5` are still accepted. The message never contains the value. The implementer may choose different code names if the existing conventions require it, and lists the final names in the hand-back.
+- [ ] Each of the five readers (and `ConfiguredJsonSources`) refuses a multi-document file (`---` followed by a second document) and any trailing content after the first document, with a stable code, proposed `TRAILING_CONFIG_CONTENT`. 167 pinned `FAIL_ON_TRAILING_TOKENS` off; this task turns it on or adds an equivalent check. One test per reader asserts the exception type and the message prefix, and that an empty trailing document marker is handled as the implementer documents.
+- [ ] The 166 `booleanSpellings*` and `octalLookingScalars` tests whose subject is a boolean or numeric field flip from "accepted as 167 left it" to refusal with the new codes: `booleanSpellings*` where the field is boolean-typed (the `override` and `exposed` cases), and `octalLookingScalars` where the field is numeric (band bounds, vocabulary `version`). Tests on string-typed fields stay as D-170-1 (b) set them. Each flipped test keeps the quoted-form or `true`/`false` case as an accepted control.
+- [ ] docs/configuration.md's "Strict keys" subsection also names the three added codes and states that `yes`/`no`/`on`/`off` and leading-zero numbers are refused.
+
 ## Out of scope
 - `DataPrismAutoConfiguration`'s wrapping of reader exceptions, and any other Spring Boot `dataprism.*` property binding (158 and 159 own those files). Unknown Spring properties are not this task.
 - Changing which YAML version or library the readers use, or any other Jackson setting beyond duplicate detection (167 settled the port).
@@ -105,3 +121,5 @@ Allowed keys. For each fixed-schema mapping, the allowed set is exactly the set 
   **Recommendation: (a).** A key name is schema rather than data, and an operator needs it to fix a typo. Truncation limits the damage if someone pastes a secret where a key should be.
 
 Recorded 2026-10-08: D-166-1 = (a), this task exists (0.6.0, after 167). D-170-1 = (b): a string-typed field refuses any non-string scalar with `NON_STRING_CONFIG_SCALAR`, so values must be quoted. D-170-2 = (a): refusal messages name the offending key and its path, never the value, with the key truncated to 64 characters. `ConfiguredJsonSources` is covered because it shares the `RestSources` mapper. Task 158 and 162 now depend on this task.
+
+Recorded 2026-10-08: D-167-1 = (b). The owner had no opinion; chosen on correctness. 167 accepts YAML 1.2 parsing (`yes`/`no`/`on`/`off` are text, leading-zero numbers are decimal), and this task refuses the look-alikes at startup rather than letting them change meaning. Scope addition, same date, fail-closed (the owner was told and did not object): the readers also refuse multi-document files and trailing content.

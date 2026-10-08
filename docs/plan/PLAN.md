@@ -508,10 +508,10 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 2 | 156 | Split the `core` root package into `spi`, `model`, `engine`, `refusal`, `limits`, `metrics` (pure move) | 154, 155, 160. **Done 2026-10-08** |
 | 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160. **Done 2026-10-08** |
 | 4 | 166 | Pin Jackson 2 output and YAML behaviour with characterisation tests before the port | 157. **Done 2026-10-08** |
-| 5 | 167 | Port the reactor to Jackson 3 in one step (code, mappers, MCP binding, Spring converters, enforcer) | 155, 156, 157, 166. **In progress** |
+| 5 | 167 | Port the reactor to Jackson 3 in one step (code, mappers, MCP binding, Spring converters, enforcer) | 155, 156, 157, 166. **Done 2026-10-08** |
 | 6 | 168 | Stop exposing data-prism's `ObjectMapper` in public API; ArchUnit guard; signature inventory | 167 (D-J3-1 decided) |
 | 6 | 169 | Record the Jackson 3 decision and the mapper invariant in architecture, conventions, README | 167 |
-| 6 | 170 | All five YAML readers (and `ConfiguredJsonSources`) refuse duplicate keys, unknown keys and unquoted non-string scalars in string fields at startup | 166, 167 |
+| 6 | 170 | All five YAML readers (and `ConfiguredJsonSources`) refuse duplicate keys, unknown keys, trailing documents, unquoted non-string scalars in string fields, non-`true`/`false` booleans and leading-zero numbers at startup | 166, 167 |
 | 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169, 170 |
 | 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt` | 158 |
 | 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
@@ -523,7 +523,15 @@ Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jacks
 
 Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iteration order varies between JVM runs. This is pre-existing nondeterminism, found while writing the golden for that tool; the golden normalises it. Candidate for a deterministic (for example sorted or insertion) order.
 
-**Wave 4 done 2026-10-08:** 166 merged onto `release/0.6.0-jackson3` (branched from main c6b6b8bd). 167 is the current wave.
+**Wave 4 done 2026-10-08:** 166 merged onto `release/0.6.0-jackson3` (branched from main c6b6b8bd).
+
+**Wave 5 done 2026-10-08:** 167 merged onto `release/0.6.0-jackson3` (Jackson 3.1.5; 1455 tests, 0 failed on JDK 21; JDK 25 and container-smoke run in CI on the PR). Wave 6 is next: 168, 169 and 170 in parallel. Accepted or noted behaviour changes, signature changes and the pinned Jackson defaults are in the retired 167 task file's Outcome.
+
+- **D-167-1: DECIDED 2026-10-08, option (b)** (170; owner had no opinion, chosen on correctness). 167 accepts YAML 1.2 parsing (`yes`/`no`/`on`/`off` are text; leading-zero numbers are decimal). 170 additionally refuses at startup any boolean-typed field value other than exactly `true`/`false`, and any numeric-typed field written with a leading zero (for example `010`), with stable codes. 170's file now carries the acceptance items and the list of characterisation tests that flip to refusal.
+- Scope added to 170 (fail-closed, owner told and did not object): the readers also refuse multi-document files and trailing content with a stable code.
+- Scope added to 168 (same basis): the ArchUnit mapper rule also catches obtained mappers (`JsonMapper.shared()` and similar static accessors, and data-prism classes using Spring Boot's auto-configured `JsonMapper`/`ObjectMapper` bean), with negative fixtures; the `SourceTree` Javadoc ("two names on the allowlist") is updated; `SourceTreeJacksonParityTest` asserts the specific Jackson empty-bean exception type.
+- Scope added to 162: the migration page records the YAML 1.2 meaning changes now refused by 170, and 167's public signature changes.
+- Follow-up from 167 (not yet a task): `JwtDecoderSupport.parseDiscoveryMetadata` has a stale `throws IOException`. The file is not in 168's Owns, so fold it into 159 (which moves the file) or file a small task.
 
 **Wave 1 done 2026-10-08** (tasks 154, 155, 160, 165, integrated on `release/0.6.0-wave1`; task files retired to `docs/plan/tasks/retired/`). Owner decisions and notes:
 
