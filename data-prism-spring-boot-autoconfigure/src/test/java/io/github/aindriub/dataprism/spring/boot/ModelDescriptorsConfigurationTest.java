@@ -134,6 +134,48 @@ class ModelDescriptorsConfigurationTest {
         fails("UNSAFE_MODEL_DESCRIPTOR_UNDECLARED_FIELDS", file.toString());
     }
 
+    @Test
+    void chains_the_readers_code_onto_an_invalid_descriptor_refusal(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("unknown-key.yaml");
+        Files.writeString(file, """
+                models:
+                  %s$DescriptorOnlyModel:
+                    exposed: true
+                    surprise: true
+                """.formatted(PACKAGE));
+        context.withPropertyValues("dataprism.privacy.descriptor-file=" + file).run(result -> {
+            assertThat(result).hasFailed();
+            Throwable failure = result.getStartupFailure();
+            while (!(failure instanceof DataPrismConfigurationException)) {
+                failure = failure.getCause();
+            }
+            DataPrismConfigurationException refusal = (DataPrismConfigurationException) failure;
+            assertThat(refusal.code()).isEqualTo("INVALID_MODEL_DESCRIPTOR_FILE");
+            assertThat(refusal.getCause()).isNotNull();
+            assertThat(refusal.getCause().getMessage()).startsWith("UNKNOWN_CONFIG_KEY");
+            assertThat(refusal.getMessage()).doesNotContain(file.toString());
+        });
+    }
+
+    @Test
+    void does_not_chain_a_reader_message_that_carries_a_configured_value(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("bad-enum.yaml");
+        Files.writeString(file, """
+                models:
+                  %s$DescriptorOnlyModel:
+                    exposed: true
+                    fields:
+                      name:
+                        classifications: "hunter2-not-a-classification"
+                """.formatted(PACKAGE));
+        context.withPropertyValues("dataprism.privacy.descriptor-file=" + file).run(result -> {
+            assertThat(result).hasFailed();
+            for (Throwable t = result.getStartupFailure(); t != null; t = t.getCause()) {
+                assertThat(String.valueOf(t.getMessage())).doesNotContain("hunter2");
+            }
+        });
+    }
+
     private void fails(String code, String descriptorFile) {
         context.withPropertyValues("dataprism.privacy.descriptor-file=" + descriptorFile).run(result -> {
             assertThat(result).hasFailed();
@@ -144,8 +186,9 @@ class ModelDescriptorsConfigurationTest {
     }
 
     private static String rootMessage(Throwable failure) {
+        // The refusal itself, not what it chains: a descriptor refusal now carries the reader's code as its cause.
         Throwable current = failure;
-        while (current.getCause() != null) {
+        while (!(current instanceof DataPrismConfigurationException) && current.getCause() != null) {
             current = current.getCause();
         }
         return current.getMessage();

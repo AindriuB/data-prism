@@ -467,6 +467,23 @@ public class DataPrismAutoConfiguration {
     }
 
     /**
+     * The reader's own refusal, for the operator to see why the file was refused: a fresh
+     * exception with only the message, and only when that message leads with a stable
+     * {@code UPPER_SNAKE_CODE: } (the code, the document path and the key name, never a value).
+     * Any other failure -- an I/O error, or a message the reader built without a code, which
+     * can quote a value -- is not chained, so nothing from the file's content reaches a log.
+     */
+    private static Throwable descriptorReason(Exception e) {
+        String message = e instanceof IllegalArgumentException ? e.getMessage() : null;
+        if (message == null || !message.matches("[A-Z][A-Z0-9_]*: [^\\r\\n]*")) {
+            return null;
+        }
+        Throwable reason = new IllegalArgumentException(message);
+        reason.setStackTrace(new StackTraceElement[0]);
+        return reason;
+    }
+
+    /**
      * Loaded and validated eagerly, rather than left to the first {@code resolve()}
      * call, so a bad file refuses startup instead of surfacing on the first request.
      * No line of the descriptor file itself ever reaches an exception message: only
@@ -486,8 +503,13 @@ public class DataPrismAutoConfiguration {
         try (InputStream in = Files.newInputStream(path)) {
             descriptors = ModelDescriptors.fromYaml(in);
         } catch (IOException | UncheckedIOException | IllegalArgumentException e) {
-            throw new DataPrismConfigurationException("INVALID_MODEL_DESCRIPTOR_FILE",
-                    "dataprism.privacy.descriptor-file could not be parsed");
+            DataPrismConfigurationException refusal = new DataPrismConfigurationException(
+                    "INVALID_MODEL_DESCRIPTOR_FILE", "dataprism.privacy.descriptor-file could not be parsed");
+            Throwable reason = descriptorReason(e);
+            if (reason != null) {
+                refusal.initCause(reason);
+            }
+            throw refusal;
         }
         for (ModelDescriptor descriptor : descriptors.values()) {
             if (descriptor.undeclaredFields() == UndeclaredFields.NON_SENSITIVE) {
