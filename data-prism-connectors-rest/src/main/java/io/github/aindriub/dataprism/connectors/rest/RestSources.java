@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -35,7 +37,10 @@ public final class RestSources {
      * constructor at all; sharing the instance is what lets a sibling loader in
      * this module avoid needing its own entry on that list.
      */
-    static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    static final ObjectMapper YAML = YAMLMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .build();
 
     private RestSources() {
     }
@@ -60,6 +65,8 @@ public final class RestSources {
             root = YAML.readValue(bytes, Map.class);
         } catch (IOException e) {
             throw new UncheckedIOException("source configuration could not be read", e);
+        } catch (JacksonException e) {
+            throw new UncheckedIOException("source configuration could not be read", new IOException(e.getMessage(), e));
         }
 
         Object sources = root.get("sources");

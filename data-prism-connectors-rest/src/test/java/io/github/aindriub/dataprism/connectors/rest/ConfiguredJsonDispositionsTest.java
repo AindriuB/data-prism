@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -46,7 +48,7 @@ class ConfiguredJsonDispositionsTest {
 
     private static final StaticSecretKeyProvider KEYS =
             StaticSecretKeyProvider.of("task-93-dispositions-test-key-not-for-any-real-data-32bytes");
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     private static PrivacyPolicyResolver defaultProfilePolicy() {
         try (var input = ConfiguredJsonDispositionsTest.class
@@ -101,7 +103,7 @@ class ConfiguredJsonDispositionsTest {
     private static ObjectNode body(String json) {
         try {
             return (ObjectNode) JSON.readTree(json);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException(e);
         }
     }

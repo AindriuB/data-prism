@@ -1,10 +1,12 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.node.TextNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.StringNode;
 
 /**
  * Reads source objects into trees, and builds the nodes that replace them.
@@ -24,7 +26,9 @@ import com.fasterxml.jackson.databind.node.TextNode;
  */
 public final class SourceTree {
 
-    private static final ObjectMapper READER = new ObjectMapper();
+    private static final ObjectMapper READER = JsonMapper.builder()
+            .disable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+            .build();
 
     private SourceTree() {
     }
@@ -42,7 +46,7 @@ public final class SourceTree {
         return READER.createArrayNode();
     }
 
-    public static TextNode text(String value) {
-        return READER.getNodeFactory().textNode(value);
+    public static StringNode text(String value) {
+        return READER.getNodeFactory().stringNode(value);
     }
 }

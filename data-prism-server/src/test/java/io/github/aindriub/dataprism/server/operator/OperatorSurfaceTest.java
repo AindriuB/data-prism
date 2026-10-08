@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.server.operator;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.modelcontextprotocol.client.McpSyncClient;
 import org.junit.jupiter.api.AfterAll;
@@ -23,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class OperatorSurfaceTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     @TempDir
     static Path tempDir;
@@ -294,7 +295,7 @@ class OperatorSurfaceTest {
     private static void assertCodeOnly(HttpResponse<String> response, String what) throws Exception {
         assertThat(response.statusCode()).as(what).isBetween(400, 499);
         JsonNode json = JSON.readTree(response.body());
-        assertThat(json.fieldNames()).as(what + " " + response.body()).toIterable().containsExactly("code");
+        assertThat(json.propertyNames()).as(what + " " + response.body()).containsExactly("code");
         assertThat(response.body()).as(what).doesNotContain("path").doesNotContain("timestamp")
                 .doesNotContain("/operator").doesNotContain("state");
     }

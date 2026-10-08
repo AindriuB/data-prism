@@ -266,22 +266,31 @@
             <configuration>
               <rules>
                 <bannedDependencies>
-                  <!-- The `mcp` aggregate pulls mcp-json-jackson3, which puts a
-                       second Jackson major on the classpath. The scrubbing engine
-                       is a Jackson module registered on one ObjectMapper; a split
-                       would register it on a mapper that does not serialise MCP
-                       output, and would do so silently. Depend on mcp-core plus
-                       mcp-json-jackson2 instead. -->
+                  <!-- Jackson 3 only (J3-5). Jackson 3 lives under tools.jackson; the
+                       Jackson 2 databind, core, dataformat and datatype artifacts, the
+                       Jackson 2 MCP binding and Spring Boot's Jackson 2 bridge would put
+                       a second Jackson major on the classpath, and with it a second
+                       mapper family that data-prism's single DataPrismObjectMapper does
+                       not govern. jackson-annotations stays: Jackson 3 still reads
+                       com.fasterxml.jackson.annotation, and mcp-core needs it. -->
                   <excludes>
-                    <exclude>io.modelcontextprotocol.sdk:mcp</exclude>
-                    <exclude>io.modelcontextprotocol.sdk:mcp-json-jackson3</exclude>
-                    <exclude>tools.jackson.core:*</exclude>
+                    <exclude>com.fasterxml.jackson.core:jackson-databind</exclude>
+                    <exclude>com.fasterxml.jackson.core:jackson-core</exclude>
+                    <exclude>com.fasterxml.jackson.dataformat:*</exclude>
+                    <exclude>com.fasterxml.jackson.datatype:*</exclude>
+                    <exclude>io.modelcontextprotocol.sdk:mcp-json-jackson2</exclude>
+                    <exclude>org.springframework.boot:spring-boot-jackson2</exclude>
                   </excludes>
+                  <includes>
+                    <include>com.fasterxml.jackson.core:jackson-annotations</include>
+                  </includes>
                   <message>
-                    Do not depend on the `mcp` aggregate or Jackson 3. See
-                    docs/architecture.md and the S0 plan: this project is on a
-                    single Jackson 2 classpath so the scrubbing module cannot be
-                    silently bypassed.
+                    Do not depend on Jackson 2 (databind, core, dataformat, datatype),
+                    mcp-json-jackson2 or spring-boot-jackson2. This project is on a
+                    single Jackson 3 classpath (tools.jackson), so no second mapper
+                    family can bypass DataPrismObjectMapper. Only
+                    com.fasterxml.jackson.core:jackson-annotations is allowed.
+                    See docs/plan/PLAN.md J3-5.
                   </message>
                 </bannedDependencies>
                 <requireMavenVersion>

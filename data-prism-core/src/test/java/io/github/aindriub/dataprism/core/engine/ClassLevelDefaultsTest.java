@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -97,11 +97,11 @@ class ClassLevelDefaultsTest {
                 new Legacy("s-1", "Patrick Murphy", "ACTIVE", "WEB", "RETAIL"), context()).tree();
 
         // The profile still says FAIL_REQUEST. Only this type opted out.
-        assertThat(out.get("status").asText()).isEqualTo("ACTIVE");
-        assertThat(out.get("channel").asText()).isEqualTo("WEB");
-        assertThat(out.get("segment").asText()).isEqualTo("RETAIL");
+        assertThat(out.get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(out.get("channel").asString()).isEqualTo("WEB");
+        assertThat(out.get("segment").asString()).isEqualTo("RETAIL");
         // And the field someone did classify is unaffected by the default.
-        assertThat(out.get("customerName").asText()).startsWith("synthetic:");
+        assertThat(out.get("customerName").asString()).startsWith("synthetic:");
         assertThat(out.has("subjectRef")).isFalse();
     }
 
@@ -125,7 +125,7 @@ class ClassLevelDefaultsTest {
     @DisplayName("REDACT and DROP are available as class-level defaults too")
     void otherClassLevelDefaults() {
         assertThat(engine().scrub(new CautiousLegacy("s-1", "free text"), context()).tree()
-                .get("note").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+                .get("note").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
 
         assertThat(engine().scrub(new TerseLegacy("s-1", "free text"), context()).tree()
                 .has("note")).isFalse();
@@ -138,10 +138,10 @@ class ClassLevelDefaultsTest {
                 new Address("12 Elm Street", "Apt 4", "Belmont", "D02 XY45")), context()).tree();
 
         ObjectNode address = (ObjectNode) out.get("address");
-        assertThat(address.get("line1").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
-        assertThat(address.get("line2").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
-        assertThat(address.get("town").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
-        assertThat(address.get("postcode").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+        assertThat(address.get("line1").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+        assertThat(address.get("line2").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+        assertThat(address.get("town").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+        assertThat(address.get("postcode").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
         assertThat(out.toString()).doesNotContain("Belmont").doesNotContain("D02 XY45");
     }
 

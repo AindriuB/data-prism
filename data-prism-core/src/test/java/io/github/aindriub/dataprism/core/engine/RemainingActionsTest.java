@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -132,8 +132,8 @@ class RemainingActionsTest {
         ObjectNode out = engine(TOKENS).scrub(new Account("s-1", "IE29", "ACC-1",
                 new BigDecimal("4200.55"), "1980-04-17"), context()).tree();
 
-        assertThat(out.get("balance").asText()).isEqualTo("EUR 1000–10000");
-        assertThat(out.get("dateOfBirth").asText()).isEqualTo("1980");
+        assertThat(out.get("balance").asString()).isEqualTo("EUR 1000–10000");
+        assertThat(out.get("dateOfBirth").asString()).isEqualTo("1980");
         assertThat(out.toString()).doesNotContain("4200").doesNotContain("04-17");
     }
 
@@ -141,13 +141,13 @@ class RemainingActionsTest {
     @DisplayName("values outside the configured bands are open-ended, not clamped")
     void bandsAreOpenEnded() {
         assertThat(engine(TOKENS).scrub(new Account("s-1", "IE29", "ACC-1",
-                new BigDecimal("-5"), "1980-04-17"), context()).tree().get("balance").asText())
+                new BigDecimal("-5"), "1980-04-17"), context()).tree().get("balance").asString())
                 .isEqualTo("< EUR 0");
 
         // A closed top band would either be unbounded in effect or would have to
         // name the largest value seen, which is itself a disclosure.
         assertThat(engine(TOKENS).scrub(new Account("s-1", "IE29", "ACC-1",
-                new BigDecimal("99999"), "1980-04-17"), context()).tree().get("balance").asText())
+                new BigDecimal("99999"), "1980-04-17"), context()).tree().get("balance").asString())
                 .isEqualTo(">= EUR 10000");
     }
 

@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;

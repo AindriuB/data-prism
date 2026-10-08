@@ -1,13 +1,12 @@
 package io.github.aindriub.dataprism.audit;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.json.JsonFactory;
 
-import java.io.IOException;
 import java.io.StringWriter;
-import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -32,7 +31,7 @@ public record AuditCheckpoint(Kind kind, String instanceId, long sequence, Strin
                               LocalDate segmentDate) {
 
     // Streaming API only: ArchitectureTest allows exactly one ObjectMapper in the build.
-    private static final JsonFactory JSON = new JsonFactory();
+    private static final JsonFactory JSON = JsonFactory.builder().build();
 
     public enum Kind { BOOT, PERIODIC, SHUTDOWN, RETENTION_ANCHOR }
 
@@ -62,17 +61,15 @@ public record AuditCheckpoint(Kind kind, String instanceId, long sequence, Strin
         StringWriter out = new StringWriter();
         try (JsonGenerator g = JSON.createGenerator(out)) {
             g.writeStartObject();
-            g.writeStringField("kind", kind.name());
-            g.writeStringField("instanceId", instanceId);
-            g.writeNumberField("sequence", sequence);
-            g.writeStringField("headHash", headHash);
-            g.writeStringField("recordedAt", recordedAt.toString());
+            g.writeStringProperty("kind", kind.name());
+            g.writeStringProperty("instanceId", instanceId);
+            g.writeNumberProperty("sequence", sequence);
+            g.writeStringProperty("headHash", headHash);
+            g.writeStringProperty("recordedAt", recordedAt.toString());
             if (segmentDate != null) {
-                g.writeStringField("segmentDate", segmentDate.toString());
+                g.writeStringProperty("segmentDate", segmentDate.toString());
             }
             g.writeEndObject();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
         }
         return out.toString();
     }
@@ -84,13 +81,13 @@ public record AuditCheckpoint(Kind kind, String instanceId, long sequence, Strin
             if (p.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalArgumentException("checkpoint line is not a JSON object");
             }
-            while (p.nextToken() == JsonToken.FIELD_NAME) {
+            while (p.nextToken() == JsonToken.PROPERTY_NAME) {
                 String name = p.currentName();
                 JsonToken value = p.nextToken();
                 if (value != JsonToken.VALUE_STRING && value != JsonToken.VALUE_NUMBER_INT) {
                     throw new IllegalArgumentException("checkpoint field has an unsupported type: " + name);
                 }
-                if (fields.put(name, p.getText()) != null) {
+                if (fields.put(name, p.getString()) != null) {
                     throw new IllegalArgumentException("checkpoint field repeated: " + name);
                 }
             }
@@ -104,7 +101,7 @@ public record AuditCheckpoint(Kind kind, String instanceId, long sequence, Strin
                     required(fields, "headHash"),
                     Instant.parse(required(fields, "recordedAt")),
                     fields.containsKey("segmentDate") ? LocalDate.parse(fields.get("segmentDate")) : null);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new IllegalArgumentException("checkpoint line could not be parsed: " + e.getMessage(), e);
         } catch (IllegalArgumentException e) {
             throw e;

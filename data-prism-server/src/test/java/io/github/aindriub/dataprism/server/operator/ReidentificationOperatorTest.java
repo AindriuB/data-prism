@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.server.operator;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
@@ -22,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Task 105: re-identification over the operator port, against a real embedded cluster. */
 class ReidentificationOperatorTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
     private static final String SUBJECT = "subject-4711";
 
     @TempDir
@@ -71,7 +72,7 @@ class ReidentificationOperatorTest {
                 requestBody("CASE-R1", synthetic, "fraud-review"));
         assertThat(requested.statusCode()).isEqualTo(202);
         assertThat(requested.body()).doesNotContain(SUBJECT);
-        String approvalId = body(requested).path("approvalId").asText();
+        String approvalId = body(requested).path("approvalId").asString();
         assertThat(approvalId).isNotBlank();
 
         HttpResponse<String> early = app.operator("GET", "/operator/reidentifications/" + approvalId, requester,
@@ -92,8 +93,8 @@ class ReidentificationOperatorTest {
         HttpResponse<String> collected = app.operator("GET", "/operator/reidentifications/" + approvalId,
                 requester, null);
         assertThat(collected.statusCode()).isEqualTo(200);
-        assertThat(body(collected).path("status").asText()).isEqualTo("RESOLVED");
-        assertThat(body(collected).path("subjectId").asText()).isEqualTo(SUBJECT);
+        assertThat(body(collected).path("status").asString()).isEqualTo("RESOLVED");
+        assertThat(body(collected).path("subjectId").asString()).isEqualTo(SUBJECT);
 
         HttpResponse<String> again = app.operator("GET", "/operator/reidentifications/" + approvalId, requester,
                 null);
@@ -122,7 +123,7 @@ class ReidentificationOperatorTest {
         String synthetic = synthetic("CASE-R2");
         String both = app.operatorToken("requester-2", "requester", "approver");
         String approvalId = body(app.operator("POST", "/operator/reidentifications", both,
-                requestBody("CASE-R2", synthetic, "fraud-review"))).path("approvalId").asText();
+                requestBody("CASE-R2", synthetic, "fraud-review"))).path("approvalId").asString();
 
         HttpResponse<String> response = app.operator("POST", "/operator/reidentifications/" + approvalId
                 + "/approve", both, null);
@@ -166,7 +167,7 @@ class ReidentificationOperatorTest {
         String approver = app.operatorToken("approver-3", "approver");
         String unheld = "Nobody Atall (ZZZZZZZZ)";
         String approvalId = body(app.operator("POST", "/operator/reidentifications", requester,
-                requestBody("CASE-R3", unheld, "fraud-review"))).path("approvalId").asText();
+                requestBody("CASE-R3", unheld, "fraud-review"))).path("approvalId").asString();
         assertThat(app.operator("POST", "/operator/reidentifications/" + approvalId + "/approve", approver, null)
                 .statusCode()).isEqualTo(200);
         HttpResponse<String> notFound = app.operator("GET", "/operator/reidentifications/" + approvalId,
@@ -216,29 +217,29 @@ class ReidentificationOperatorTest {
         String approver = app.operatorToken("approver-view", "approver");
         HttpResponse<String> requested = app.operator("POST", "/operator/reidentifications", requester,
                 requestBody("CASE-VIEW", synthetic, "fraud-review"));
-        String approvalId = body(requested).path("approvalId").asText();
+        String approvalId = body(requested).path("approvalId").asString();
         app.audit.clear();
 
         HttpResponse<String> list = app.operator("GET", "/operator/approvals", approver, null);
         JsonNode listed = null;
         for (JsonNode entry : body(list).path("approvals")) {
-            if (entry.path("approvalId").asText().equals(approvalId)) listed = entry;
+            if (entry.path("approvalId").asString().equals(approvalId)) listed = entry;
         }
         assertThat(listed).isNotNull();
-        assertThat(listed.path("syntheticValue").asText()).isEqualTo(synthetic);
-        assertThat(listed.path("namespace").asText()).isEqualTo("PERSON_NAME");
-        assertThat(listed.path("requesterPrincipalId").asText()).isEqualTo("requester-view");
-        assertThat(listed.path("purpose").asText()).isEqualTo("fraud-review");
-        assertThat(listed.path("caseId").asText()).isEqualTo("CASE-VIEW");
-        assertThat(listed.path("expiresAt").asText()).isNotBlank();
+        assertThat(listed.path("syntheticValue").asString()).isEqualTo(synthetic);
+        assertThat(listed.path("namespace").asString()).isEqualTo("PERSON_NAME");
+        assertThat(listed.path("requesterPrincipalId").asString()).isEqualTo("requester-view");
+        assertThat(listed.path("purpose").asString()).isEqualTo("fraud-review");
+        assertThat(listed.path("caseId").asString()).isEqualTo("CASE-VIEW");
+        assertThat(listed.path("expiresAt").asString()).isNotBlank();
         assertThat(list.body()).doesNotContain(SUBJECT).doesNotContain("bindingFingerprint");
 
         HttpResponse<String> detail = app.operator("GET", "/operator/approvals/" + approvalId, approver, null);
         assertThat(detail.statusCode()).isEqualTo(200);
         JsonNode view = body(detail);
-        assertThat(view.path("syntheticValue").asText()).isEqualTo(synthetic);
-        assertThat(view.path("namespace").asText()).isEqualTo("PERSON_NAME");
-        assertThat(view.path("scopeId").asText()).isEqualTo("case:CASE-VIEW");
+        assertThat(view.path("syntheticValue").asString()).isEqualTo(synthetic);
+        assertThat(view.path("namespace").asString()).isEqualTo("PERSON_NAME");
+        assertThat(view.path("scopeId").asString()).isEqualTo("case:CASE-VIEW");
         assertThat(detail.body()).doesNotContain(SUBJECT).doesNotContain("bindingFingerprint");
         assertThat(app.auditFor("operator:approval")).singleElement()
                 .satisfies(e -> assertThat(e.approvalId()).isEqualTo(approvalId));

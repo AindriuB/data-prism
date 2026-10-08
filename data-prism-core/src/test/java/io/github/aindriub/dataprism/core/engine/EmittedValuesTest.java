@@ -70,7 +70,7 @@ class EmittedValuesTest {
         ScrubResult result = engine.scrub(
                 new Contactable("s-1", "patrick@example.invalid", "ACTIVE"), context());
 
-        assertThat(result.emitted()).containsExactly(result.tree().get("email").asText());
+        assertThat(result.emitted()).containsExactly(result.tree().get("email").asString());
     }
 
     @Test

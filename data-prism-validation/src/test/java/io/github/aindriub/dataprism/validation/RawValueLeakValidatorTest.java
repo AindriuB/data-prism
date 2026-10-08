@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.validation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
@@ -19,7 +20,7 @@ class RawValueLeakValidatorTest {
     private static final Set<String> NONE = Set.of();
 
     private final RawValueLeakValidator validator = new RawValueLeakValidator();
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = JsonMapper.builder().build();
 
     private final PrivacyContext context = new PrivacyContext("CASE-1", PrivacyScopeType.CASE,
             "DEFAULT", "test", Instant.parse("2030-01-01T00:00:00Z"),

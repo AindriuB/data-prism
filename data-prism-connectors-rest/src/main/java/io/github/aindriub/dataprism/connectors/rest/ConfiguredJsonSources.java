@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -116,6 +117,8 @@ public final class ConfiguredJsonSources {
             root = YAML.readValue(bytes, Map.class);
         } catch (IOException e) {
             throw new UncheckedIOException("configured JSON source configuration could not be read", e);
+        } catch (JacksonException e) {
+            throw new UncheckedIOException("configured JSON source configuration could not be read", new IOException(e.getMessage(), e));
         }
 
         Object sources = root.get("json-sources");

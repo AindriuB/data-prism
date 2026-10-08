@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.model;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 
 import java.util.Collections;

@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.pseudonymisation.vocabulary;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,7 +48,10 @@ public final class VocabularyRegistry {
 
     public static final String DEFAULT_LOCALE = "en";
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper YAML = YAMLMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .build();
 
     private final Map<String, Vocabulary> byLocale;
     private final String defaultLocale;
@@ -177,8 +182,8 @@ public final class VocabularyRegistry {
         Map<String, Object> root;
         try {
             root = YAML.readValue(yaml, Map.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException("vocabulary file could not be read", e);
+        } catch (JacksonException e) {
+            throw new UncheckedIOException("vocabulary file could not be read", new IOException(e.getMessage(), e));
         }
 
         Map<PoolKind, List<String>> pools = new EnumMap<>(PoolKind.class);

@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
@@ -120,7 +121,7 @@ class ExternalCorrelationToolTest {
     private static DefaultContextOrchestrator real(AuditRecorder audit, Thing thing) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         ScrubbingEngine scrubber = (source, ctx) ->
-                new ScrubResult(new ObjectMapper().createObjectNode().put("value", "ok"), Set.of());
+                new ScrubResult(JsonMapper.builder().build().createObjectNode().put("value", "ok"), Set.of());
         LlmResponseValidator ok = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
         DataSourceAdapter<Thing> source = new DataSourceAdapter<>() {
             @Override

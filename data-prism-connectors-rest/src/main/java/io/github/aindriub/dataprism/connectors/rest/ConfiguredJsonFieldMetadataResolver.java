@@ -16,7 +16,7 @@ import java.util.Objects;
  * metadata from a Java {@code Class}, because there is a real, reviewed type to
  * key on. A configuration-driven JSON source has no such type: every response
  * this source ever produces reads into the same {@link
- * com.fasterxml.jackson.databind.node.ObjectNode}, so a resolver shared across
+ * tools.jackson.databind.node.ObjectNode}, so a resolver shared across
  * several such sources could not tell them apart by the {@code type} argument
  * alone. Rather than invent a Java type per configured source to make the
  * existing {@code Class}-keyed resolvers work, one instance of this class is

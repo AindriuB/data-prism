@@ -56,8 +56,8 @@ class WorkedExampleTest {
 
         // And the fields that carried them all resolve to the same pseudonym,
         // because the pseudonym is keyed on the subject rather than the value.
-        String customerName = response.entity().get("customerName").asText();
-        String holderName = response.entity().get("holderName").asText();
+        String customerName = response.entity().get("customerName").asString();
+        String holderName = response.entity().get("holderName").asString();
         assertThat(holderName).isEqualTo(customerName);
         assertThat(customerName).matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
     }

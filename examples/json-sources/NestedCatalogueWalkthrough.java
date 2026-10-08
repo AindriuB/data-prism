@@ -31,8 +31,9 @@
 // order.
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
@@ -104,7 +105,7 @@ public final class NestedCatalogueWalkthrough {
                 "investigation", Instant.parse("2030-01-01T00:00:00Z"),
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("v1").withVocabulary(vocabulary.id()));
 
-        ObjectMapper json = new ObjectMapper();
+        ObjectMapper json = JsonMapper.builder().build();
         ObjectNode body = (ObjectNode) json.readTree("""
                 {"customerId":"1001","customerName":"Fixture Person One","email":"fixture.person.one@example.invalid",\
 "status":"ACTIVE","address":{"line1":"123 Main St","postcode":"90210"}}""");
