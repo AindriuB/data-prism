@@ -30,7 +30,7 @@ import java.util.Objects;
 public record AuditCheckpoint(Kind kind, String instanceId, long sequence, String headHash, Instant recordedAt,
                               LocalDate segmentDate) {
 
-    // Streaming API only: ArchitectureTest allows exactly one ObjectMapper in the build.
+    // Streaming API only: no mapper is built here (ArchitectureTest allows only the designated mapper classes).
     private static final JsonFactory JSON = JsonFactory.builder().build();
 
     public enum Kind { BOOT, PERIODIC, SHUTDOWN, RETENTION_ANCHOR }

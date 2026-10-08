@@ -23,8 +23,8 @@ import java.util.Objects;
  * timestamp as {@code Instant.toString()}, the form the hash is computed over.
  *
  * <p>Output is ASCII (non-ASCII characters are written as unicode escapes), so no character that
- * any reader treats as a line break can occur inside a line. Streaming API only:
- * {@code ArchitectureTest} allows exactly one {@code ObjectMapper} in the build.
+ * any reader treats as a line break can occur inside a line. Streaming API only: no
+ * mapper is built here ({@code ArchitectureTest} allows only the designated mapper classes).
  */
 public final class AuditJsonRenderer {
 
