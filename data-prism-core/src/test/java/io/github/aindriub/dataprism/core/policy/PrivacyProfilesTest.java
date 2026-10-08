@@ -330,4 +330,36 @@ class PrivacyProfilesTest {
         assertThatThrownBy(() -> PrivacyProfiles.fromYaml(yaml(RULE + "        override: s3cr3t\n")))
                 .hasMessageNotContaining("s3cr3t");
     }
+
+    @Test
+    @DisplayName("an alias where classifications are expected is refused, not loaded as zero rules")
+    void aliasedClassifications() {
+        assertRefused("profiles:\n  p:\n    classifications: &r\n      PII:\n        action: REDACT\n"
+                + "  q:\n    classifications: *r\n", "UNSUPPORTED_CONFIG_YAML: ");
+    }
+
+    @Test
+    @DisplayName("classifications that are not a mapping are refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedClassifications() {
+        for (String shape : new String[] {"[PII]", "REDACT", ""}) {
+            assertRefused("profiles:\n  p:\n    classifications: " + shape + "\n",
+                    "INVALID_CONFIG_SHAPE: privacy profiles profiles.p.classifications must be a mapping");
+        }
+    }
+
+    @Test
+    @DisplayName("generalization that is not a mapping is refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedGeneralization() {
+        for (String shape : new String[] {"[FINANCIAL_VALUE]", "x", ""}) {
+            assertRefused("profiles:\n  p:\n    generalization: " + shape + "\n",
+                    "INVALID_CONFIG_SHAPE: privacy profiles profiles.p.generalization must be a mapping");
+        }
+    }
+
+    @Test
+    @DisplayName("a unit of null-like text is refused with NULL_LIKE_CONFIG_SCALAR")
+    void nullLikeUnit() {
+        assertRefused("profiles:\n  p:\n    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, 10]\n"
+                + "        unit: Null\n", "NULL_LIKE_CONFIG_SCALAR: privacy profiles profiles.p.generalization.FINANCIAL_VALUE.unit ");
+    }
 }

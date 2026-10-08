@@ -181,16 +181,16 @@ public final class VocabularyRegistry {
         StrictYaml.requireOnlyKeys(root.keySet(), ROOT_KEYS, KIND);
 
         Map<PoolKind, List<String>> pools = new EnumMap<>(PoolKind.class);
-        Object poolsNode = root.get("pools");
-        if (poolsNode instanceof Map<?, ?> map) {
+        Map<String, Object> map = StrictYaml.optionalMapping(root, "pools", KIND);
+        if (map != null) {
             Set<String> poolNames = new java.util.HashSet<>();
             for (PoolKind kind : PoolKind.values()) {
                 poolNames.add(kind.key());
             }
             StrictYaml.requireOnlyKeys(map.keySet(), poolNames, KIND + " pools");
             for (PoolKind kind : PoolKind.values()) {
-                Object entries = map.get(kind.key());
-                if (entries instanceof List<?> list && !list.isEmpty()) {
+                List<Object> list = StrictYaml.optionalList(map, kind.key(), KIND + " pools");
+                if (list != null && !list.isEmpty()) {
                     List<String> texts = new java.util.ArrayList<>();
                     for (int i = 0; i < list.size(); i++) {
                         texts.add(StrictYaml.text(list.get(i), KIND + " pools." + kind.key() + "[" + i + "]"));

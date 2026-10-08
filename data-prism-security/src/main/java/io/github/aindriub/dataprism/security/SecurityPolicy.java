@@ -55,7 +55,8 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
         }
         StrictYaml.requireOnlyKeys(root.keySet(), TOP_LEVEL_KEYS, KIND);
 
-        return new SecurityPolicy(purposes(root.get("purposes")), roles(root.get("roles")));
+        return new SecurityPolicy(purposes(root.get("purposes")),
+                root.containsKey("roles") ? roles(root.get("roles")) : Map.of());
     }
 
     private static Set<String> purposes(Object node) {
@@ -74,11 +75,8 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
     }
 
     private static Map<String, Set<String>> roles(Object node) {
-        if (node == null) {
-            return Map.of();
-        }
         if (!(node instanceof Map<?, ?> map)) {
-            throw new IllegalArgumentException("security policy 'roles' is not a mapping");
+            throw new IllegalArgumentException(StrictYaml.INVALID_SHAPE + ": " + KIND + " roles must be a mapping");
         }
         Map<String, Set<String>> out = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {

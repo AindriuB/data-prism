@@ -267,4 +267,27 @@ class VocabularyRegistryTest {
         assertThat(load("version: 2\n" + VOCABULARY).defaultLocale("en").build().resolve("en").id())
                 .startsWith("probe-v2#");
     }
+
+    @Test
+    @DisplayName("pools that are not a mapping are refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedPools() {
+        assertRefused("id: probe\nlocale: en\npools: [a]\n", "INVALID_CONFIG_SHAPE: vocabulary file.pools must be a mapping");
+        assertRefused("id: probe\nlocale: en\npools:\n", "INVALID_CONFIG_SHAPE: vocabulary file.pools must be a mapping");
+    }
+
+    @Test
+    @DisplayName("a pool that is not a list is refused with INVALID_CONFIG_SHAPE, not dropped")
+    void wrongShapedPool() {
+        assertRefused(VOCABULARY.replace("[a]", "alice"),
+                "INVALID_CONFIG_SHAPE: vocabulary file pools.firstNames must be a list");
+        assertRefused(VOCABULARY.replace("firstNames: [a]", "firstNames:"),
+                "INVALID_CONFIG_SHAPE: vocabulary file pools.firstNames must be a list");
+    }
+
+    @Test
+    @DisplayName("an alias is refused with UNSUPPORTED_CONFIG_YAML")
+    void aliasRefused() {
+        assertRefused(VOCABULARY.replace("firstNames: [a]", "firstNames: &n [a]").replace("lastNames: [l]", "lastNames: *n"),
+                "UNSUPPORTED_CONFIG_YAML: ");
+    }
 }

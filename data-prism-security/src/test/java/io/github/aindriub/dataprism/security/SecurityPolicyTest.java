@@ -161,4 +161,27 @@ class SecurityPolicyTest {
         assertRefused("purposes: [p]\nroles:\n  r: [1]\n",
                 "NON_STRING_CONFIG_SCALAR: security policy roles.r[0] must be a quoted string");
     }
+
+    @Test
+    @DisplayName("roles that are not a mapping, including an empty value, are refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedRoles() {
+        assertRefused("purposes: [p]\nroles: [r]\n", "INVALID_CONFIG_SHAPE: security policy roles must be a mapping");
+        assertRefused("purposes: [p]\nroles:\n", "INVALID_CONFIG_SHAPE: security policy roles must be a mapping");
+    }
+
+    @Test
+    @DisplayName("a null-like purpose is refused with NULL_LIKE_CONFIG_SCALAR")
+    void nullLikePurpose() {
+        assertThatThrownBy(() -> SecurityPolicy.fromYaml(yaml("purposes: [Null]\n")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("NULL_LIKE_CONFIG_SCALAR: security policy purposes[0] ");
+    }
+
+    @Test
+    @DisplayName("an alias is refused with UNSUPPORTED_CONFIG_YAML")
+    void aliasRefused() {
+        assertThatThrownBy(() -> SecurityPolicy.fromYaml(yaml("purposes: &p [a]\nroles:\n  r: *p\n")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+    }
 }

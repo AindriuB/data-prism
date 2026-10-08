@@ -66,8 +66,8 @@ public final class PrivacyProfiles {
                 : PrivacyProfile.UnclassifiedBehaviour.FAIL_REQUEST;
 
         Map<DataClassification, PrivacyProfile.ClassificationRule> rules = new LinkedHashMap<>();
-        Object classifications = body.get("classifications");
-        if (classifications instanceof Map<?, ?> map) {
+        Map<String, Object> map = StrictYaml.optionalMapping(body, "classifications", profileWhere);
+        if (map != null) {
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 String key = String.valueOf(e.getKey());
                 DataClassification classification =
@@ -106,8 +106,9 @@ public final class PrivacyProfiles {
     private static Map<PrivacyNamespace, GeneralizationRule> generalizations(
             String profile, Map<String, Object> body) {
         Map<PrivacyNamespace, GeneralizationRule> out = new LinkedHashMap<>();
-        Object node = body.get("generalization");
-        if (!(node instanceof Map<?, ?> map)) {
+        Map<String, Object> map = StrictYaml.optionalMapping(body, "generalization",
+                KIND + " profiles." + StrictYaml.shown(profile));
+        if (map == null) {
             return out;
         }
         for (Map.Entry<?, ?> e : map.entrySet()) {

@@ -185,4 +185,41 @@ class ModelDescriptorsStrictKeysTest {
                 .isInstanceOf(UncheckedIOException.class)
                 .hasMessage("model descriptors could not be read");
     }
+
+    @Test
+    @DisplayName("fields that are not a mapping are refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedFields() {
+        for (String shape : new String[] {"[f]", "x", ""}) {
+            assertRefused("models:\n  M:\n    fields: " + shape + "\n",
+                    "INVALID_CONFIG_SHAPE: model descriptors models.M.fields must be a mapping");
+        }
+    }
+
+    @Test
+    @DisplayName("an empty classifications value is refused rather than loading a field with no classifications")
+    void emptyClassificationsRefused() {
+        assertRefused("models:\n  M:\n    fields:\n      f:\n        classifications:\n",
+                "NON_STRING_CONFIG_SCALAR: model descriptors models.M.fields.f.classifications must be a quoted string");
+    }
+
+    @Test
+    @DisplayName("null-like nonSensitive text is refused rather than becoming the reason: null as a non-string, ~, Null and NULL as NULL_LIKE_CONFIG_SCALAR")
+    void nullLikeNonSensitive() {
+        for (String value : new String[] {"null"}) {
+            assertRefused("models:\n  M:\n    fields:\n      f:\n        nonSensitive: " + value + "\n",
+                    "NON_STRING_CONFIG_SCALAR: model descriptors models.M.fields.f.nonSensitive ");
+        }
+        for (String value : new String[] {"~", "Null", "NULL"}) {
+            assertRefused("models:\n  M:\n    fields:\n      f:\n        nonSensitive: " + value + "\n",
+                    "NULL_LIKE_CONFIG_SCALAR: model descriptors models.M.fields.f.nonSensitive ");
+        }
+    }
+
+    @Test
+    @DisplayName("an alias, anchor or tag is refused with UNSUPPORTED_CONFIG_YAML")
+    void unsupportedYaml() {
+        assertRefused("models:\n  M:\n    fields: &f\n      a:\n        subject: s\n  N:\n    fields: *f\n",
+                "UNSUPPORTED_CONFIG_YAML: ");
+        assertRefused("models:\n  M:\n    exposed: !!int 010\n", "UNSUPPORTED_CONFIG_YAML: ");
+    }
 }

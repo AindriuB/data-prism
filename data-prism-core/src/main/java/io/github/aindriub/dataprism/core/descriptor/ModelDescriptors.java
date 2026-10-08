@@ -62,8 +62,8 @@ public final class ModelDescriptors {
     private static ModelDescriptor model(String typeName, Map<String, Object> body) {
         String modelWhere = KIND + " models." + StrictYaml.shown(typeName);
         Map<String, ModelDescriptor.FieldDescriptor> fields = new LinkedHashMap<>();
-        Object fieldsNode = body.get("fields");
-        if (fieldsNode instanceof Map<?, ?> map) {
+        Map<String, Object> map = StrictYaml.optionalMapping(body, "fields", modelWhere);
+        if (map != null) {
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 String name = String.valueOf(e.getKey());
                 if (!(e.getValue() instanceof Map<?, ?> fieldBody)) {
