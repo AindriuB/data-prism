@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 
+import io.github.aindriub.dataprism.audit.retention.AuditRetention;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;

@@ -3,8 +3,8 @@ package io.github.aindriub.dataprism.spring.boot;
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.audit.FileAuditSink;
-import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
+import io.github.aindriub.dataprism.audit.sink.FileAuditSink;
+import io.github.aindriub.dataprism.audit.sink.SegmentedFileAuditSink;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
@@ -207,13 +207,13 @@ class AuditRetentionConfigurationTest {
                         "investigation", "case-1", "ALLOW", Set.of("customer"), Set.of(), "corr");
             }
         }
-        try (io.github.aindriub.dataprism.audit.FileAuditCheckpointSink cp =
-                new io.github.aindriub.dataprism.audit.FileAuditCheckpointSink(dir.resolve("cp.jsonl"),
+        try (io.github.aindriub.dataprism.audit.checkpoint.FileAuditCheckpointSink cp =
+                new io.github.aindriub.dataprism.audit.checkpoint.FileAuditCheckpointSink(dir.resolve("cp.jsonl"),
                         dir.resolve("unrelated.log"))) {
             // first purge deletes only January; the February segment survives to be purged later
             now.set(Instant.parse("2025-07-20T00:00:00Z"));
-            io.github.aindriub.dataprism.audit.AuditRetention retention =
-                    new io.github.aindriub.dataprism.audit.AuditRetention(audit, java.time.Period.ofMonths(6), cp,
+            io.github.aindriub.dataprism.audit.retention.AuditRetention retention =
+                    new io.github.aindriub.dataprism.audit.retention.AuditRetention(audit, java.time.Period.ofMonths(6), cp,
                             moving);
             assertThat(retention.purge()).hasSize(1);
             now.set(Instant.parse("2025-08-20T00:00:00Z"));

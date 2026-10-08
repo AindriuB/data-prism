@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.audit;
 
+import io.github.aindriub.dataprism.audit.verify.AuditChainVerifier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.audit;
 
+import io.github.aindriub.dataprism.audit.retention.AuditRetention;
+
 /**
  * Where checkpoints go. Deliberately separate from {@link AuditSink}: a
  * checkpoint only helps if whoever can edit the audit file cannot also edit

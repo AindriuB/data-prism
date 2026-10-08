@@ -211,8 +211,8 @@ class AuditSinkFailureAbortsResponseTest {
     @DisplayName("a real FileAuditSink poisoned by a prior failure never lets its path reach the client")
     void poisonedFileAuditSinkNeverDisclosesItsPathToTheClient() throws Exception {
         java.nio.file.Path auditFile = java.nio.file.Files.createTempFile("data-prism-audit-failure-test-", ".log");
-        io.github.aindriub.dataprism.audit.FileAuditSink fileSink =
-                new io.github.aindriub.dataprism.audit.FileAuditSink(auditFile);
+        io.github.aindriub.dataprism.audit.sink.FileAuditSink fileSink =
+                new io.github.aindriub.dataprism.audit.sink.FileAuditSink(auditFile);
         AuditRecorder poisonProbe = new AuditRecorder(fileSink,
                 Clock.fixed(Instant.parse("2026-09-22T12:00:00Z"), java.time.ZoneOffset.UTC),
                 "audit-sink-failure-test-poison-probe");
