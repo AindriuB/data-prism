@@ -156,8 +156,8 @@ public final class SourceModels {
     }
 
     /**
-     * A map key is written as text; only types with a defined text form are allowed. Any other key
-     * would be written by {@code toString()}, which for a bean or record is not a defined form.
+     * A declared map key type. An interface or abstract type is deferred to the per-key check at
+     * write time; anything else is checked now by {@link #refuseKey(Class)}.
      */
     static void refuseDeclaredKey(Class<?> type) {
         // An interface or abstract class says nothing about the key actually used (CharSequence,
@@ -168,6 +168,10 @@ public final class SourceModels {
         refuseKey(type);
     }
 
+    /**
+     * A map key is written as text; only types with a defined text form are allowed. Any other key
+     * would be written by {@code toString()}, which for a bean or record is not a defined form.
+     */
     static void refuseKey(Class<?> type) {
         if (type == Object.class) {
             return;
