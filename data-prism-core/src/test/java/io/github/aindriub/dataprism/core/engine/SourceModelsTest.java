@@ -1,11 +1,22 @@
 package io.github.aindriub.dataprism.core.engine;
 
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonValue;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.annotation.JsonSerialize;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -139,6 +150,149 @@ class SourceModelsTest {
     @Test
     void aRecursiveRecordTypeTerminates() {
         assertThatCode(() -> SourceModels.require(Tree.class)).doesNotThrowAnyException();
+    }
+
+    public interface Urled {
+        default String getURL() {
+            return "from-interface";
+        }
+    }
+
+    public record WithExtraGetters(String name) {
+        public String getURL() {
+            return "extra";
+        }
+
+        public boolean isXFlag() {
+            return true;
+        }
+    }
+
+    public record WithInterfaceGetter(String name) implements Urled {
+    }
+
+    public record Annotated(@JsonProperty("renamed") String a, @JsonIgnore String b, String c) {
+    }
+
+    public record WithAny(String a) {
+        @JsonAnyGetter
+        public Map<String, Object> any() {
+            return Map.of("extra", 1);
+        }
+    }
+
+    public record Valued(String a) {
+        @JsonValue
+        public String v() {
+            return "as-value";
+        }
+    }
+
+    @JsonFormat(shape = JsonFormat.Shape.OBJECT)
+    public enum ObjectEnum {
+        A;
+
+        public String getURL() {
+            return "x";
+        }
+    }
+
+    public enum ValueEnum {
+        A;
+
+        @JsonValue
+        public String text() {
+            return "text-a";
+        }
+    }
+
+    public enum RenamedEnum {
+        @JsonProperty("renamed-b") B
+    }
+
+    public static class Custom extends ValueSerializer<Object> {
+        @Override
+        public void serialize(Object value, JsonGenerator gen, SerializationContext ctxt) {
+            gen.writeString("custom");
+        }
+    }
+
+    @JsonSerialize(using = Custom.class)
+    public static class AnnotatedBean {
+    }
+
+    public static class MyList extends ArrayList<Object> {
+    }
+
+    public static class MyMap extends HashMap<String, Object> {
+    }
+
+    public record Key(String id) {
+    }
+
+    public record Boxed<T extends Bean>(T t) {
+    }
+
+    @Test
+    void aRecordIsReadByItsComponentsOnly() {
+        assertThat(SourceTree.of(new WithExtraGetters("n")).propertyNames()).containsExactly("name");
+        assertThat(SourceTree.of(new WithInterfaceGetter("n")).propertyNames()).containsExactly("name");
+    }
+
+    @Test
+    void recordComponentAnnotationsStillApply() {
+        assertThat(SourceTree.of(new Annotated("a", "b", "c")).propertyNames()).containsExactly("renamed", "c");
+        assertThat(SourceTree.of(new WithAny("a")).propertyNames()).containsExactlyInAnyOrder("a", "extra");
+        assertThat(SourceTree.of(new Valued("a")).isString()).isTrue();
+    }
+
+    @Test
+    void enumsAreAllowedUnlessReadByGetters() {
+        assertThat(SourceTree.of(new Untyped(ValueEnum.A)).get("any").asString()).isEqualTo("text-a");
+        assertThat(SourceTree.of(new Untyped(RenamedEnum.B)).get("any").asString()).isEqualTo("renamed-b");
+        assertRefused(() -> SourceTree.of(new Untyped(ObjectEnum.A)), "ObjectEnum");
+    }
+
+    @Test
+    void jdkClassesReadByGettersAreRefused() {
+        assertRefused(() -> SourceTree.of(new Untyped(new IllegalStateException("personal data"))),
+                "IllegalStateException");
+        assertRefused(() -> SourceTree.of(new Untyped(java.awt.Color.RED)), "Color");
+        assertRefused(() -> SourceModels.require(WithThrowable.class), "Throwable");
+    }
+
+    public record WithThrowable(Throwable t) {
+    }
+
+    @Test
+    void aMapKeyMustHaveADefinedTextForm() {
+        assertRefused(() -> SourceTree.of(new Untyped(Map.of(new Bean(), 1))), "Bean");
+        assertRefused(() -> SourceTree.of(new Untyped(Map.of(new Key("k"), 1))), "Key");
+        assertRefused(() -> SourceTree.of(new InMapKey(Map.of(new Key("k"), 1))), "Key");
+        assertThat(SourceTree.of(new Untyped(Map.of(Tier.GOLD, 1))).get("any").propertyNames())
+                .containsExactly("GOLD");
+        assertThat(SourceTree.of(new Untyped(Map.of(UUID.fromString("00000000-0000-0000-0000-000000000001"), 1)))
+                .get("any").propertyNames()).containsExactly("00000000-0000-0000-0000-000000000001");
+    }
+
+    public record InMapKey(Map<Object, Integer> m) {
+    }
+
+    @Test
+    void aClassLevelSerializerAnnotationDoesNotLetAUserClassThrough() {
+        assertRefused(() -> SourceTree.of(new Untyped(new AnnotatedBean())), "AnnotatedBean");
+    }
+
+    @Test
+    void aUserSubclassOfACollectionOrMapIsRefused() {
+        assertRefused(() -> SourceTree.of(new Untyped(new MyList())), "MyList");
+        assertRefused(() -> SourceTree.of(new Untyped(new MyMap())), "MyMap");
+        assertRefused(() -> SourceTree.of(new Untyped(List.of(new MyMap()))), "MyMap");
+    }
+
+    @Test
+    void aTypeVariableBoundIsWalkedAtStartup() {
+        assertRefused(() -> SourceModels.require(Boxed.class));
     }
 
     public record Tree(String name, List<Tree> children) {

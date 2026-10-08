@@ -2,13 +2,28 @@ package io.github.aindriub.dataprism.core.engine;
 
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.ser.bean.BeanSerializerBase;
+import tools.jackson.databind.ser.impl.UnknownSerializer;
 
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
+import java.lang.reflect.TypeVariable;
 import java.lang.reflect.Type;
 import java.lang.reflect.WildcardType;
+import java.net.URI;
+import java.net.URL;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAccessor;
+import java.time.temporal.TemporalAmount;
+import java.util.Calendar;
+import java.util.Currency;
+import java.util.Date;
 import java.util.HashSet;
+import java.util.Locale;
+import java.util.TimeZone;
+import java.util.UUID;
 import java.util.Set;
 
 /**
@@ -53,11 +68,65 @@ public final class SourceModels {
         }
     }
 
-    /** Refuses a class that is neither a record, an enum, a JDK type nor a Jackson tree node. */
-    static void refuseIfNotAllowed(Class<?> type) {
-        if (!allowedLeaf(type) && !type.isRecord()) {
+    /**
+     * Called as a serializer is built for {@code type}. A record is read by its components, so it
+     * passes. Anything else is refused if it would be read by getters (a bean serializer, which
+     * includes JDK classes such as Throwable and Color, and an enum written as an object) or is a user
+     * class at all, whatever serializer annotations it carries. JDK value types with a dedicated
+     * serializer, enums, and Jackson tree nodes pass.
+     */
+    static void refuseSerializer(Class<?> type, ValueSerializer<?> serializer) {
+        if (type.isRecord() || JsonNode.class.isAssignableFrom(type) || type.getName().startsWith("tools.jackson.")) {
+            return;
+        }
+        boolean gettersRead = serializer instanceof BeanSerializerBase || serializer instanceof UnknownSerializer;
+        if (gettersRead || (!platform(type) && !isEnum(type))) {
             throw refusal(type);
         }
+    }
+
+    /** A user class that is not a record or an enum, however its serializer is supplied. */
+    static void refuseUserClass(Class<?> type) {
+        if (!type.isArray() && !type.isRecord() && !platform(type) && !isEnum(type) && !JsonNode.class.isAssignableFrom(type)
+                && !type.getName().startsWith("tools.jackson.")) {
+            throw refusal(type);
+        }
+    }
+
+    /** A collection or map: a user subclass of one can add getters or its own conventions. */
+    static void refuseContainer(Class<?> type) {
+        if (!type.isRecord() && !platform(type)) {
+            throw refusal(type);
+        }
+    }
+
+    /**
+     * A map key is written as text; only types with a defined text form are allowed. Any other key
+     * would be written by {@code toString()}, which for a bean or record is not a defined form.
+     */
+    static void refuseKey(Class<?> type) {
+        if (type == Object.class) {
+            return;
+        }
+        boolean allowed = type == String.class || type.isEnum() || isEnum(type) || Number.class.isAssignableFrom(type)
+                || type.isPrimitive() || type == Boolean.class || type == Character.class
+                || type == UUID.class || type == Locale.class || Date.class.isAssignableFrom(type)
+                || Calendar.class.isAssignableFrom(type) || type == Class.class || type == URI.class
+                || type == URL.class || type == Currency.class || TimeZone.class.isAssignableFrom(type)
+                || TemporalAccessor.class.isAssignableFrom(type) || TemporalAmount.class.isAssignableFrom(type)
+                || ZoneId.class.isAssignableFrom(type) || type == byte[].class;
+        if (!allowed) {
+            throw refusal(type);
+        }
+    }
+
+    private static boolean isEnum(Class<?> c) {
+        return c.isEnum() || (c.getSuperclass() != null && c.getSuperclass().isEnum());
+    }
+
+    private static boolean platform(Class<?> c) {
+        ClassLoader loader = c.getClassLoader();
+        return loader == null || loader == ClassLoader.getPlatformClassLoader();
     }
 
     private static void walk(Type type, Set<Class<?>> seen) {
@@ -70,7 +139,8 @@ public final class SourceModels {
                         walk(component.getGenericType(), seen);
                     }
                 }
-            } else if (!allowedLeaf(c) && !c.isInterface() && c != Object.class) {
+            } else if (Throwable.class.isAssignableFrom(c)
+                    || (!allowedLeaf(c) && !c.isInterface() && c != Object.class)) {
                 throw refusal(c);
             }
         } else if (type instanceof ParameterizedType p) {
@@ -80,6 +150,10 @@ public final class SourceModels {
             }
         } else if (type instanceof GenericArrayType g) {
             walk(g.getGenericComponentType(), seen);
+        } else if (type instanceof TypeVariable<?> v) {
+            for (Type bound : v.getBounds()) {
+                walk(bound, seen);
+            }
         } else if (type instanceof WildcardType w) {
             for (Type bound : w.getUpperBounds()) {
                 walk(bound, seen);
