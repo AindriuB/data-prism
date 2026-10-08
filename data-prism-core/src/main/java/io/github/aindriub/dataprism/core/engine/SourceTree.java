@@ -4,6 +4,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.cfg.EnumFeature;
 import tools.jackson.databind.cfg.JsonNodeFeature;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -38,6 +40,13 @@ public final class SourceTree {
             // Jackson 2 stripped trailing zeros from a BigDecimal in a tree (1.50 became 1.5);
             // Jackson 3 keeps them unless asked.
             .enable(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES)
+            // valueToTree is serialisation, so the write-side Jackson 3 defaults apply. Jackson 3
+            // writes an enum, and an enum map key, by toString(); Jackson 2 wrote name(). The engine
+            // hashes and tokenises the converted scalar, so an overridden toString() would silently
+            // change what is emitted and what a subject is derived from.
+            .disable(EnumFeature.WRITE_ENUMS_USING_TO_STRING)
+            // Jackson 2 wrote a java.util.Date as epoch millis; Jackson 3 writes an ISO string.
+            .enable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
             .build();
 
     private SourceTree() {
