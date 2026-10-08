@@ -1,0 +1,4 @@
+{"kind":"BOOT","instanceId":"instance-1","sequence":0,"headHash":"head-0","recordedAt":"2026-09-08T12:00:00Z"}
+{"kind":"PERIODIC","instanceId":"instance-café-中","sequence":41,"headHash":"head-41","recordedAt":"2026-09-08T12:05:00.123456789Z"}
+{"kind":"RETENTION_ANCHOR","instanceId":"instance-1","sequence":42,"headHash":"head-42","recordedAt":"2026-09-08T12:06:00Z","segmentDate":"2026-08-01"}
+{"kind":"SHUTDOWN","instanceId":"quote\"slash\\","sequence":43,"headHash":"head-43","recordedAt":"2026-09-08T12:07:00Z"}
