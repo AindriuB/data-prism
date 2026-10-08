@@ -125,8 +125,8 @@ public final class AuditChainVerifier {
 
     /**
      * Reads {@code path}: a single file as is, or a directory as every {@code audit-YYYY-MM-DD.log}
-     * segment in date order. A non-final segment that ends without a newline (a torn write) has one
-     * added so its fragment cannot fuse with the next segment's first record; it then reads as an
+     * segment in date order. A non-final segment that ends without a newline (a torn write) has the
+     * writer's torn-tail terminator ({@code "\r\n"}) added so its fragment cannot fuse with the next segment's first record; it then reads as an
      * interrupted-write fragment. Byte offsets in a directory report are into that concatenation.
      */
     private static byte[] readAudit(Path path) throws IOException {
@@ -156,7 +156,8 @@ public final class AuditChainVerifier {
             all.write(bytes);
             remaining--;
             if (remaining > 0 && bytes.length > 0 && bytes[bytes.length - 1] != '\n') {
-                all.write('\n');
+                // The same terminator a resumed writer adds, so the torn line reads the same way.
+                all.write(FileAuditSink.TORN_TAIL_TERMINATOR.getBytes(StandardCharsets.US_ASCII));
             }
         }
         return all.toByteArray();
@@ -375,6 +376,19 @@ public final class AuditChainVerifier {
         if (line.isEmpty()) {
             return;
         }
+        if (line.charAt(line.length() - 1) == '\r') {
+            // A serialized record never contains a raw CR (AuditRecordFormat escapes it), so this
+            // is a torn write that a resumed writer terminated. Never parsed as a record.
+            anomalies.add(new StructuralAnomaly(AnomalyType.INTERRUPTED_WRITE_FRAGMENT,
+                    "the line at byte offset " + offset + " ends in a carriage return, the marker a resumed "
+                            + "writer adds after an interrupted write (a process died mid-line and a new one "
+                            + "terminated the fragment before appending). The fragment is not parsed and is not "
+                            + "a record. Durable append-only storage is an operator responsibility this release "
+                            + "does not enforce -- this is not tampering with an existing record. The records "
+                            + "immediately before and after this line were verified independently.",
+                    offset, -1));
+            return;
+        }
         AuditEvent event;
         try {
             event = AuditRecordFormat.parse(line);
@@ -551,7 +565,11 @@ public final class AuditChainVerifier {
                     "FIELD_COUNT_MISMATCH: the line at byte offset " + offset + " declares a recordVersion "
                             + "that does not match its field count (" + cause.getMessage() + "). A torn write "
                             + "cannot produce this shape, so it is a tampering signature: a field was added, "
-                            + "removed or relabelled. Investigate this line directly.",
+                            + "removed or relabelled. Investigate this line directly. One known cause for logs "
+                            + "written before 0.5.0: a legacy interrupted write followed by a restart, whose "
+                            + "first record was appended onto the unterminated fragment. To check, see whether "
+                            + "the trailing 20, 24 or 25 fields parse as a GENESIS record of a new instanceId, "
+                            + "and whether the record after this line continues that writer.",
                     offset, -1);
         }
         if (cause.getClass() == IllegalArgumentException.class) {

@@ -24,7 +24,9 @@ import java.util.regex.Pattern;
  * return and poisoning discipline is that class's, unchanged. On top of it,
  * this sink poisons as a whole: once any segment's write has failed, every
  * later {@link #record(AuditEvent)} throws, whichever day it belongs to.
- * Segment files are never truncated or rewritten by this class.
+ * Segment files are never truncated or rewritten by this class. Opening a segment that
+ * already ends without a newline (a process died mid-write) first terminates that torn tail
+ * with {@code "\r\n"}, as {@link FileAuditSink} does; one live writer per directory is assumed.
  */
 public final class SegmentedFileAuditSink implements AuditSink, Closeable {
 
@@ -129,7 +131,14 @@ public final class SegmentedFileAuditSink implements AuditSink, Closeable {
         }
         Path segment = directory.resolve(PREFIX + date + suffix);
         try {
-            current = new FileAuditSink(segment, opener.open(segment));
+            FileChannel channel = opener.open(segment);
+            try {
+                FileAuditSink.terminateTornTail(segment, channel);
+            } catch (IOException | RuntimeException e) {
+                FileAuditSink.closeQuietly(channel);
+                throw e;
+            }
+            current = new FileAuditSink(segment, channel);
         } catch (IOException e) {
             throw new FileAuditSink.OpenFailedException("AUDIT_SINK_OPEN_FAILED", segment, e);
         }

@@ -40,11 +40,33 @@ import java.nio.file.StandardOpenOption;
  * channel — this sink poisons itself: every subsequent {@link
  * #record(AuditEvent)} throws immediately without touching the channel again,
  * rather than risking another write landing after whatever the failed write
- * left behind. This class deliberately does not attempt to inspect, truncate
- * or repair the file to recover from that state; whether the failed write's
- * bytes reached the page cache at all is not knowable from here.
+ * left behind. Within a process this class does not try to recover from that
+ * state; whether the failed write's bytes reached the page cache at all is not
+ * knowable from here.
+ *
+ * <p>The same hazard exists across a restart: a process that died mid-write
+ * leaves an unterminated fragment, and a new writer appending to the file
+ * would land its first record on that same physical line. So when a sink is
+ * opened on an existing file whose last byte is not {@code '\n'}, it first
+ * writes {@link #TORN_TAIL_TERMINATOR} ({@code "\r\n"}) and fsyncs, before any
+ * record. A raw {@code \r} never occurs in a serialized record (it is
+ * escaped), so {@link AuditChainVerifier} reads a line ending in one as a
+ * writer-terminated interrupted write, never as a record. If the tail cannot
+ * be read or the terminator cannot be written and fsynced, opening fails with
+ * {@link OpenFailedException} and nothing is appended. A file that is empty,
+ * absent or already newline-terminated is not touched. This class never
+ * truncates, rewrites or repairs existing bytes, and it assumes one live
+ * writer per file: a second live writer could terminate the first one's
+ * in-flight line.
  */
 public final class FileAuditSink implements AuditSink, Closeable {
+
+    /**
+     * Written before the first record when a file's last byte is not a newline. A serialized record
+     * never contains a raw carriage return, so a line ending in one is unambiguously a torn write
+     * that a resumed writer terminated.
+     */
+    static final String TORN_TAIL_TERMINATOR = "\r\n";
 
     private final Path path;
     private final FileChannel channel;
@@ -52,11 +74,55 @@ public final class FileAuditSink implements AuditSink, Closeable {
 
     public FileAuditSink(Path path) {
         this.path = path;
+        FileChannel opened = null;
         try {
-            this.channel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+            opened = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
                     StandardOpenOption.APPEND);
+            terminateTornTail(path, opened);
         } catch (IOException e) {
+            closeQuietly(opened);
             throw new OpenFailedException("AUDIT_SINK_OPEN_FAILED", path, e);
+        }
+        this.channel = opened;
+    }
+
+    /**
+     * If {@code path} is non-empty and its last byte is not a newline, writes {@link
+     * #TORN_TAIL_TERMINATOR} through {@code appendChannel} and fsyncs. Existing bytes are never
+     * modified. The tail is read through a separate read-only channel because append channels
+     * cannot be read.
+     */
+    static void terminateTornTail(Path path, FileChannel appendChannel) throws IOException {
+        int last = -1;
+        try (FileChannel reader = FileChannel.open(path, StandardOpenOption.READ)) {
+            long size = reader.size();
+            if (size > 0) {
+                ByteBuffer one = ByteBuffer.allocate(1);
+                while (one.hasRemaining()) {
+                    if (reader.read(one, size - 1 + one.position()) < 0) {
+                        throw new IOException("audit file shrank while its tail was being read");
+                    }
+                }
+                last = one.get(0);
+            }
+        }
+        if (last == -1 || last == '\n') {
+            return;
+        }
+        ByteBuffer terminator = ByteBuffer.wrap(TORN_TAIL_TERMINATOR.getBytes(StandardCharsets.US_ASCII));
+        while (terminator.hasRemaining()) {
+            appendChannel.write(terminator);
+        }
+        appendChannel.force(true);
+    }
+
+    static void closeQuietly(FileChannel channel) {
+        if (channel != null) {
+            try {
+                channel.close();
+            } catch (IOException ignored) {
+                // the open is already failing; the original cause is the one worth reporting
+            }
         }
     }
 
