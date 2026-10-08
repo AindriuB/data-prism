@@ -102,100 +102,19 @@ public final class CompareEntitySourcesTool {
     private final CorrelationMdc mdc;
     private final AuditedEntityTypes entityTypes;
 
-    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                    ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
-                                    AuditRecorder audit, Clock clock) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, null);
-    }
-
     /**
      * @param developmentCaller used only when {@code exchange.transportContext()} carries no
      *                          caller under {@link #TRANSPORT_CONTEXT_CALLER_KEY} — the
      *                          single-principal stdio development mode. {@code null} on every
      *                          other transport, so a missing extraction always refuses.
-     */
-    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                    ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
-                                    AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, CorrelationRequirement.OPTIONAL, AuditedEntityTypes.shape(), CorrelationMdc.off());
-    }
-
-    /**
-     * @param admission     checked after scope resolution and before the orchestrator; any
-     *                      failure to evaluate it refuses the call
-     * @param fingerprinter binds an approval to this call's arguments; required with a real admission
-     */
-    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-                                    ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics,
-                                    AuditRecorder audit, Clock clock, AuthenticatedCaller developmentCaller,
-                                    ToolAdmission admission, ParameterFingerprinter fingerprinter) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), CorrelationRequirement.OPTIONAL, AuditedEntityTypes.shape(), CorrelationMdc.off());
-    }
-
-    /** As the development-caller overload, with a {@link CorrelationRequirement} on the transport context's external id. */
-    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
-            Clock clock, AuthenticatedCaller developmentCaller, CorrelationRequirement correlationRequirement) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, correlationRequirement, AuditedEntityTypes.shape(), CorrelationMdc.off());
-    }
-
-    /**
-     * As the admission overload, with a {@link CorrelationRequirement} on the transport context's external id.
-     * A real admission needs a fingerprinter, or every approval would bind to the same empty fingerprint.
+     * @param options           admission, fingerprinter, correlation requirement, MDC and audited
+     *                          entity types; the fingerprinter requirement for a real admission is
+     *                          enforced by {@link ToolOptions} itself
      */
     public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
-            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
-            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, AuditedEntityTypes.shape(), CorrelationMdc.off());
-    }
-
-    /**
-     * As the admission overload, opening {@code mdc} around the whole call so every log line on the
-     * handler thread, denials included, carries the validated external id.
-     */
-    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
-            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
-            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
-            CorrelationMdc mdc) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, AuditedEntityTypes.shape(), mdc);
-    }
-
-    /** As the development-caller overload with a {@link CorrelationRequirement}, and the {@link AuditedEntityTypes} that decides what the audit record's {@code entityType} holds. */
-    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
-            Clock clock, AuthenticatedCaller developmentCaller, CorrelationRequirement correlationRequirement,
-            AuditedEntityTypes entityTypes) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                ToolAdmission.none(), null, correlationRequirement, entityTypes, CorrelationMdc.off());
-    }
-
-    /**
-     * As the {@code mdc} overload, with the {@link AuditedEntityTypes} that decides what the audit
-     * record's {@code entityType} holds. Every other overload applies {@link AuditedEntityTypes#shape()}.
-     */
-    public CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
-            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
-            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
-            CorrelationMdc mdc, AuditedEntityTypes entityTypes) {
-        this(orchestrator, authorizationService, scopeResolver, mapper, metrics, audit, clock, developmentCaller,
-                admission, Objects.requireNonNull(fingerprinter, "fingerprinter"), correlationRequirement, entityTypes,
-                mdc);
-    }
-
-    /** {@code fingerprinter} is {@code null} only on the overloads that predate admission, which pass {@link ToolAdmission#none()}. */
-    private CompareEntitySourcesTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
-            ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
-            Clock clock, AuthenticatedCaller developmentCaller, ToolAdmission admission,
-            ParameterFingerprinter fingerprinter, CorrelationRequirement correlationRequirement,
-            AuditedEntityTypes entityTypes, CorrelationMdc mdc) {
+            Clock clock, AuthenticatedCaller developmentCaller, ToolOptions options) {
+        Objects.requireNonNull(options, "options");
         this.orchestrator = Objects.requireNonNull(orchestrator, "orchestrator");
         this.authorizationService = Objects.requireNonNull(authorizationService, "authorizationService");
         this.scopeResolver = Objects.requireNonNull(scopeResolver, "scopeResolver");
@@ -204,11 +123,11 @@ public final class CompareEntitySourcesTool {
         this.audit = Objects.requireNonNull(audit, "audit");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.developmentCaller = developmentCaller;
-        this.admission = Objects.requireNonNull(admission, "admission");
-        this.fingerprinter = fingerprinter;
-        this.correlationRequirement = Objects.requireNonNull(correlationRequirement, "correlationRequirement");
-        this.mdc = Objects.requireNonNull(mdc, "mdc");
-        this.entityTypes = Objects.requireNonNull(entityTypes, "entityTypes");
+        this.admission = options.admission();
+        this.fingerprinter = options.fingerprinter();
+        this.correlationRequirement = options.correlationRequirement();
+        this.mdc = options.mdc();
+        this.entityTypes = options.entityTypes();
     }
 
     public McpServerFeatures.SyncToolSpecification specification() {
