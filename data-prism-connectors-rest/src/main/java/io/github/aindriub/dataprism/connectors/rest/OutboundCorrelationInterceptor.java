@@ -32,9 +32,9 @@ final class OutboundCorrelationInterceptor implements ClientHttpRequestIntercept
     @Override
     public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution)
             throws IOException {
+        request.getHeaders().remove(header);
         if (request.getAttributes().get(ATTRIBUTE) instanceof ExternalCorrelationId id) {
             String value = id.childTraceparent().orElseGet(id::value);
-            request.getHeaders().remove(header);
             request.getHeaders().set(header, value);
         }
         return execution.execute(request, body);
