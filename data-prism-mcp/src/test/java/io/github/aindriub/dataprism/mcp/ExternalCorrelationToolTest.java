@@ -156,9 +156,9 @@ class ExternalCorrelationToolTest {
                 new PurposeValidator(Set.of("demonstration")));
         ParameterFingerprinter fingerprinter = new ParameterFingerprinter(KEYS);
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).build());
         return List.of(get.specification().callHandler(), compare.specification().callHandler());
     }
 

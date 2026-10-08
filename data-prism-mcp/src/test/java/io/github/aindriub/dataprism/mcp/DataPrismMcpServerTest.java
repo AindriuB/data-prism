@@ -105,6 +105,26 @@ class DataPrismMcpServerTest {
     }
 
     @Test
+    @DisplayName("the transport's JSON mapper and both tools share one mapper instance")
+    void transportAndBothToolsShareOneMapper() throws Exception {
+        DataPrismMcpServer.Wiring wiring = DataPrismMcpServer.Wiring.of(new NeverCalledOrchestrator(),
+                authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
+                PrivacyMetrics.none(), audit(), FIXED, developmentCaller(Set.of()),
+                ToolOptions.defaults().noAdmission().build());
+
+        assertThat(mapperOf(wiring.get())).isSameAs(wiring.mapper());
+        assertThat(mapperOf(wiring.compare())).isSameAs(wiring.mapper());
+        assertThat(((io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper) wiring.json()).getJsonMapper())
+                .isSameAs(wiring.mapper());
+    }
+
+    private static Object mapperOf(Object tool) throws Exception {
+        var field = tool.getClass().getDeclaredField("mapper");
+        field.setAccessible(true);
+        return field.get(tool);
+    }
+
+    @Test
     @DisplayName("the stdio development caller does not carry EXPOSE_SOURCE_NAMES unless configured onto it")
     void stdioDevelopmentCallerDoesNotExposeSourceNamesByDefault() {
         // stdio has no per-request context extractor, so a call always falls
@@ -113,7 +133,7 @@ class DataPrismMcpServerTest {
         AliasAwareOrchestrator orchestrator = new AliasAwareOrchestrator();
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit(), FIXED,
+                PrivacyMetrics.none(), audit(), FIXED,
                 developmentCaller(Set.of()), ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
@@ -132,7 +152,7 @@ class DataPrismMcpServerTest {
         AliasAwareOrchestrator orchestrator = new AliasAwareOrchestrator();
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT", Capability.EXPOSE_SOURCE_NAMES)),
-                scopeResolver(), DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit(), FIXED,
+                scopeResolver(), PrivacyMetrics.none(), audit(), FIXED,
                 developmentCaller(Set.of()), ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(

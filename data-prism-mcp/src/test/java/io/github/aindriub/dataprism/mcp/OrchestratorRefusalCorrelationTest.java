@@ -118,9 +118,9 @@ class OrchestratorRefusalCorrelationTest {
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
                 Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         return List.of(get.specification().callHandler(), compare.specification().callHandler());
     }
 

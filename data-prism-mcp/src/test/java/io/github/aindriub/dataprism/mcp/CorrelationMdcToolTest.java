@@ -155,10 +155,8 @@ class CorrelationMdcToolTest {
                 new PurposeValidator(Set.of("demonstration")));
         ParameterFingerprinter fingerprinter = new ParameterFingerprinter(KEYS);
         BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> handler = tool == 0
-                ? new GetEntityContextTool(orchestrator, authz, scopes, DataPrismObjectMapper.create(),
-                        PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build()).specification().callHandler()
-                : new CompareEntitySourcesTool(orchestrator, authz, scopes, DataPrismObjectMapper.create(),
-                        PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build()).specification().callHandler();
+                ? new GetEntityContextTool(orchestrator, authz, scopes, PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build()).specification().callHandler()
+                : new CompareEntitySourcesTool(orchestrator, authz, scopes, PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build()).specification().callHandler();
         Map<String, Object> entries = new HashMap<>();
         entries.put(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY, caller);
         entries.put(DataPrismMcpServer.TRANSPORT_CONTEXT_CORRELATION_KEY, inbound);

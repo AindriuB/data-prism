@@ -24,7 +24,6 @@ import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -686,9 +685,9 @@ class AuditFilePiiScanTest {
             ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                     new PurposeValidator(Set.of(purpose)));
             GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                    scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
+                    scopeResolver, PrivacyMetrics.none(), toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
             CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
-                    authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
+                    authorizationService, scopeResolver, PrivacyMetrics.none(),
                     toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
 
             AuthenticatedCaller caller = new AuthenticatedCaller(

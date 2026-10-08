@@ -9,7 +9,7 @@ import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -110,9 +110,9 @@ class CompareEntitySourcesWorkedExampleTest {
         ScopeResolver scopeResolver = scopeResolverFor(assembly);
 
         GetEntityContextTool contextTool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                scopeResolver, PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
-                authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
+                authorizationService, scopeResolver, PrivacyMetrics.none(),
                 toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         // get_entity_context, in the same scope, only to read off the
@@ -139,7 +139,7 @@ class CompareEntitySourcesWorkedExampleTest {
         Map<String, Object> structured = (Map<String, Object>) compareResult.structuredContent();
         // Re-serialised independently of the tool's own mapper call, so this is
         // a check of the structured content itself -- not a re-read of `text`.
-        String structuredJson = DataPrismObjectMapper.create().writeValueAsString(structured);
+        String structuredJson = JsonMapper.builder().build().writeValueAsString(structured);
         assertThat(structuredJson)
                 .doesNotContain("Patrick Murphy").doesNotContain("Pat Murphy").doesNotContain("P. Murphy")
                 .doesNotContain("patrick.murphy@example.invalid").doesNotContain("\"123\"");
@@ -219,8 +219,7 @@ class CompareEntitySourcesWorkedExampleTest {
         AuthorizationService authorizationService =
                 authorizationServiceGranting(Set.of(Capability.COMPARE_ENTITY_SOURCES));
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(localAssembly.orchestrator(),
-                authorizationService, scopeResolverFor(localAssembly), DataPrismObjectMapper.create(),
-                PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                authorizationService, scopeResolverFor(localAssembly), PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = compareTool.specification().callHandler().apply(
                 exchangeFor(caller()), new McpSchema.CallToolRequest(
@@ -247,8 +246,7 @@ class CompareEntitySourcesWorkedExampleTest {
         AuthorizationService authorizationService =
                 authorizationServiceGranting(Set.of(Capability.GET_ENTITY_CONTEXT));
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(localAssembly.orchestrator(),
-                authorizationService, scopeResolverFor(localAssembly), DataPrismObjectMapper.create(),
-                PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                authorizationService, scopeResolverFor(localAssembly), PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = compareTool.specification().callHandler().apply(
                 exchangeFor(caller()), new McpSchema.CallToolRequest(

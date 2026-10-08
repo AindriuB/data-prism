@@ -114,6 +114,17 @@ public final class GetEntityContextTool {
      *                          enforced by {@link ToolOptions} itself
      */
     public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolOptions options) {
+        this(orchestrator, authorizationService, scopeResolver, DataPrismObjectMapper.create(), metrics, audit,
+                clock, developmentCaller, options);
+    }
+
+    /**
+     * The constructor {@link DataPrismMcpServer} uses so that both tools and the transport share
+     * one mapper instance. Package-private on purpose: no public signature accepts a mapper.
+     */
+    GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
             Clock clock, AuthenticatedCaller developmentCaller, ToolOptions options) {
         Objects.requireNonNull(options, "options");

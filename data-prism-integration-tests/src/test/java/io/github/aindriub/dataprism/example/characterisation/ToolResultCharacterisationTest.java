@@ -9,7 +9,7 @@ import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -36,10 +36,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pins a whole tool result as serialised by the production mapper
- * ({@link DataPrismObjectMapper#create()}, Jackson 2 defaults plus dates-as-text and
+ * ({@code JsonMapper.builder().build()}, Jackson 2 defaults plus dates-as-text and
  * fail-on-empty-beans), for a fixed synthetic subject, a fixed clock and the shipped scope
  * rules. The compared text is the tool's text content. The structured-content golden pins the
- * convertValue-to-Map conversion of the result, re-serialised through {@link DataPrismObjectMapper};
+ * convertValue-to-Map conversion of the result, re-serialised through {@code DataPrismObjectMapper};
  * it is not the MCP SDK's wire bytes.
  *
  * <p>Neither tool result contains a null or a date, so null inclusion and date format are NOT
@@ -77,7 +77,7 @@ class ToolResultCharacterisationTest {
 
     private McpSchema.CallToolResult getEntityContext() {
         var tool = new GetEntityContextTool(assembly.orchestrator(), authorization, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED, null,
+                PrivacyMetrics.none(), toolAudit, FIXED, null,
                 ToolOptions.defaults().noAdmission().build());
         return tool.specification().callHandler().apply(
                 exchange(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY),
@@ -87,7 +87,7 @@ class ToolResultCharacterisationTest {
 
     private McpSchema.CallToolResult compareEntitySources() {
         var tool = new CompareEntitySourcesTool(assembly.orchestrator(), authorization, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED, null,
+                PrivacyMetrics.none(), toolAudit, FIXED, null,
                 ToolOptions.defaults().noAdmission().build());
         return tool.specification().callHandler().apply(
                 exchange(CompareEntitySourcesTool.TRANSPORT_CONTEXT_CALLER_KEY),
@@ -118,7 +118,7 @@ class ToolResultCharacterisationTest {
     }
 
     private static String structured(McpSchema.CallToolResult result) throws Exception {
-        return DataPrismObjectMapper.create().writeValueAsString(result.structuredContent());
+        return JsonMapper.builder().build().writeValueAsString(result.structuredContent());
     }
 
     @Test
