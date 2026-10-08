@@ -610,4 +610,49 @@ class ConfiguredJsonSourcesTest {
         assertRefused(VALID.replace("model-version: customer-v1", "model-version: 1.0"),
                 "NON_STRING_CONFIG_SCALAR: json source customer-api model-version must be a quoted string");
     }
+
+    @Test
+    @DisplayName("a base-url with user-info is refused without repeating the URL or its credentials")
+    void userInfoBaseUrlDoesNotEchoCredentials() {
+        assertThatThrownBy(() -> load(VALID.replace("https://customer.example", "https://svc:s3cr3t@customer.example")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("json source customer-api base-url must not carry user-info, a query string or a fragment")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("an unparseable base-url is refused without repeating it")
+    void unparseableBaseUrlDoesNotEchoCredentials() {
+        assertThatThrownBy(() -> load(VALID.replace("https://customer.example", "\"https://svc:s3cr3t@cust omer\"")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("json source customer-api has an unparseable base-url")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("an empty nested-catalogues value is refused with INVALID_CONFIG_SHAPE")
+    void emptyNestedCatalogues() {
+        assertRefused(VALID.replace("    fields:", "    nested-catalogues:\n    fields:"),
+                "INVALID_CONFIG_SHAPE: json source customer-api nested-catalogues must be a mapping");
+    }
+
+    @Test
+    @DisplayName("an empty tls value is refused with INVALID_CONFIG_SHAPE rather than meaning no tls")
+    void emptyTls() {
+        assertRefused(VALID + "tls:\n", "INVALID_CONFIG_SHAPE: tls configuration.tls must be a mapping");
+    }
+
+    @Test
+    @DisplayName("a null-like nonSensitive reason is refused with NULL_LIKE_CONFIG_SCALAR")
+    void nullLikeReason() {
+        assertRefused(VALID.replace("nonSensitive: \"enumerated lifecycle state\"", "nonSensitive: Null"),
+                "NULL_LIKE_CONFIG_SCALAR: json source customer-api field status nonSensitive ");
+    }
+
+    @Test
+    @DisplayName("an alias is refused with UNSUPPORTED_CONFIG_YAML")
+    void aliasRefused() {
+        assertRefused(VALID.replace("classifications: [CONTACT]", "classifications: &c [CONTACT]")
+                .replace("classifications: [PII]", "classifications: *c"), "UNSUPPORTED_CONFIG_YAML: ");
+    }
 }

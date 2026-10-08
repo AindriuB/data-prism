@@ -165,7 +165,8 @@ public final class ConfiguredJsonSources {
         try {
             baseUri = new URI(baseUrl);
         } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("json source " + name + " has an unparseable base-url", e);
+            // No cause: URISyntaxException's message repeats the whole input, user-info included.
+            throw new IllegalArgumentException("json source " + name + " has an unparseable base-url");
         }
         // The same gate a Java-first source's dataprism.sources.<name>.base-url must
         // clear (DataPrismProperties.trustedUri), reimplemented here rather than
@@ -175,7 +176,7 @@ public final class ConfiguredJsonSources {
         // own validation does not check for them.
         if (baseUri.getUserInfo() != null || baseUri.getRawQuery() != null || baseUri.getRawFragment() != null) {
             throw new IllegalArgumentException("json source " + name
-                    + " base-url must not carry user-info, a query string or a fragment: " + baseUri);
+                    + " base-url must not carry user-info, a query string or a fragment");
         }
         // A plaintext base URL is refused unless this is fixture development and
         // the host is loopback, and a tls: block always closes even that
@@ -203,7 +204,7 @@ public final class ConfiguredJsonSources {
         }
 
         Map<String, Map<String, FieldMetadata>> nestedCatalogues =
-                nestedCatalogues(name, body.get("nested-catalogues"));
+                nestedCatalogues(name, body.get("nested-catalogues"), body.containsKey("nested-catalogues"));
 
         Object fieldsNode = body.get("fields");
         if (!(fieldsNode instanceof Map<?, ?> fieldsMap) || fieldsMap.isEmpty()) {
@@ -301,7 +302,12 @@ public final class ConfiguredJsonSources {
      * has been validated, see {@link #assignNestedTokens}.
      */
     @SuppressWarnings("unchecked")
-    private static Map<String, Map<String, FieldMetadata>> nestedCatalogues(String sourceName, Object rawNode) {
+    private static Map<String, Map<String, FieldMetadata>> nestedCatalogues(String sourceName, Object rawNode,
+                                                                            boolean present) {
+        if (rawNode == null && present) {
+            throw new IllegalArgumentException(StrictYaml.INVALID_SHAPE + ": json source " + sourceName
+                    + " nested-catalogues must be a mapping");
+        }
         if (rawNode == null) {
             return Map.of();
         }

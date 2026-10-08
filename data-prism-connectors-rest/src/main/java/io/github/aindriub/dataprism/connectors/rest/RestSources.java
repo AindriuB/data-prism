@@ -112,8 +112,8 @@ public final class RestSources {
                     timeout == null ? Duration.ofSeconds(3) : Duration.parse(timeout),
                     requireHttps, header);
         } catch (URISyntaxException e) {
-            throw new IllegalArgumentException(
-                    "source " + name + " has an unparseable base-url", e);
+            // No cause: URISyntaxException's message repeats the whole input, user-info included.
+            throw new IllegalArgumentException("source " + name + " has an unparseable base-url");
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException("source " + name
                     + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
@@ -138,14 +138,10 @@ public final class RestSources {
     /** Package-private: {@link ConfiguredJsonSources} parses the same {@code tls:} shape. */
     @SuppressWarnings("unchecked")
     static TlsSettings tls(Map<String, Object> root) {
-        Object node = root.get("tls");
-        if (node == null) {
+        Map<String, Object> tlsBody = StrictYaml.optionalMapping(root, "tls", "tls configuration");
+        if (tlsBody == null) {
             return null;
         }
-        if (!(node instanceof Map<?, ?> body)) {
-            throw new IllegalArgumentException("tls configuration is not a mapping");
-        }
-        Map<String, Object> tlsBody = (Map<String, Object>) body;
         StrictYaml.requireOnlyKeys(tlsBody.keySet(), TLS_KEYS, "tls configuration");
 
         String keyStore = required(tlsBody, "key-store", "tls configuration");

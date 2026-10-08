@@ -121,4 +121,35 @@ class RestSourcesStrictKeysTest {
         assertRefused(SOURCE + "    timeout: 3\n",
                 "NON_STRING_CONFIG_SCALAR: source configuration sources.s.timeout must be a quoted string");
     }
+
+    @Test
+    @DisplayName("tls that is not a mapping, including an empty value, is refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedTls() {
+        assertRefused(SOURCE + "tls:\n", "INVALID_CONFIG_SHAPE: tls configuration.tls must be a mapping");
+        assertRefused(SOURCE + "tls: [a]\n", "INVALID_CONFIG_SHAPE: ");
+    }
+
+    @Test
+    @DisplayName("a correlation-header written as a number is refused with NON_STRING_CONFIG_SCALAR")
+    void correlationHeaderMustBeAString() {
+        assertRefused(SOURCE + "    correlation-header: 1\n",
+                "NON_STRING_CONFIG_SCALAR: sources.s.correlation-header must be a quoted string");
+    }
+
+    @Test
+    @DisplayName("an unparseable base-url is refused without repeating it or its user-info")
+    void unparseableBaseUrlDoesNotEchoCredentials() {
+        assertThatThrownBy(() -> load(SOURCE.replace("https://source.example.invalid",
+                "\"https://user:s3cr3t@exa mple\"")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("source s has an unparseable base-url")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("an alias is refused with UNSUPPORTED_CONFIG_YAML")
+    void aliasRefused() {
+        assertRefused("sources: &s\n  s:\n    base-url: https://a.example.invalid\n    path: /x\nother: *s\n",
+                "UNSUPPORTED_CONFIG_YAML: ");
+    }
 }
