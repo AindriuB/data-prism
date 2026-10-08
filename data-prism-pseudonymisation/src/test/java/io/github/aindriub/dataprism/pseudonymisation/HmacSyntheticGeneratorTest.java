@@ -1,9 +1,9 @@
 package io.github.aindriub.dataprism.pseudonymisation;
 
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.PoolKind;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;

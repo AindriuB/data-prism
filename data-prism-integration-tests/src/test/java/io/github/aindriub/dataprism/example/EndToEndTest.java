@@ -3,9 +3,9 @@ package io.github.aindriub.dataprism.example;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.PrivacyRefusedException;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
@@ -249,7 +249,7 @@ class EndToEndTest {
 
     /** A source whose type was never approved for exposure. */
     private static final class UnexposedAdapter
-            implements io.github.aindriub.dataprism.core.DataSourceAdapter<UnexposedAdapter.Record> {
+            implements io.github.aindriub.dataprism.core.spi.DataSourceAdapter<UnexposedAdapter.Record> {
 
         record Record(String id, String secret) {
         }
@@ -265,7 +265,7 @@ class EndToEndTest {
         }
 
         @Override
-        public Record fetch(io.github.aindriub.dataprism.core.DataRequest request) {
+        public Record fetch(io.github.aindriub.dataprism.core.spi.DataRequest request) {
             return new Record("1", "should never be emitted");
         }
     }

@@ -1,9 +1,9 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.InitializingBean;

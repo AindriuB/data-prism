@@ -268,10 +268,14 @@ relies on when read back from `FileAuditSink`'s own file.
 Run it against a copy of the file:
 
 ```sh
-java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli /path/to/audit.log
+java -cp <classpath> io.github.aindriub.dataprism.audit.verify.AuditChainVerifierCli /path/to/audit.log
 ```
 
 or `--help` for a shorter summary.
+
+The verifier class moved in 0.6.0: before that release it sat directly in the
+`audit` package (the class name is unchanged), and the old name no longer
+exists (no forwarding class).
 
 ### Exit codes
 
@@ -733,7 +737,7 @@ with `AuditCheckpointUnavailableException`, without advancing the chain, until
 a later `checkpoint()` succeeds.
 
 ```sh
-java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli \
+java -cp <classpath> io.github.aindriub.dataprism.audit.verify.AuditChainVerifierCli \
     /path/to/audit.log --checkpoints /path/to/checkpoints.jsonl
 ```
 

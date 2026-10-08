@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.example.http;
 
-import io.github.aindriub.dataprism.core.Metric;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;

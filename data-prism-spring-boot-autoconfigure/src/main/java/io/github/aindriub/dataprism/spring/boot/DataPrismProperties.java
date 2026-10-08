@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import io.github.aindriub.dataprism.core.Capability;
+import io.github.aindriub.dataprism.core.model.Capability;
 import io.github.aindriub.dataprism.security.ReservedArguments;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import jakarta.annotation.PostConstruct;
@@ -549,7 +549,7 @@ public class DataPrismProperties {
         if (!audit.retentionOverride) {
             try {
                 // AuditRetention owns the six-month rule; reuse it rather than restate it.
-                new io.github.aindriub.dataprism.audit.AuditRetention(java.nio.file.Path.of("."), audit.retention,
+                new io.github.aindriub.dataprism.audit.retention.AuditRetention(java.nio.file.Path.of("."), audit.retention,
                         c -> { }, java.time.Clock.systemUTC());
             } catch (IllegalArgumentException e) {
                 refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention " + audit.retention
@@ -1021,10 +1021,10 @@ public class DataPrismProperties {
             }
 
             /** The bound mapping; throws {@code IllegalArgumentException} led by a stable code. */
-            public io.github.aindriub.dataprism.audit.AuditFieldMapping mapping() {
-                io.github.aindriub.dataprism.audit.AuditFieldMapping base = switch (fieldPreset == null ? "" : fieldPreset) {
-                    case "canonical" -> io.github.aindriub.dataprism.audit.AuditFieldMapping.canonical();
-                    case "ecs" -> io.github.aindriub.dataprism.audit.AuditFieldMapping.ecs();
+            public io.github.aindriub.dataprism.audit.format.AuditFieldMapping mapping() {
+                io.github.aindriub.dataprism.audit.format.AuditFieldMapping base = switch (fieldPreset == null ? "" : fieldPreset) {
+                    case "canonical" -> io.github.aindriub.dataprism.audit.format.AuditFieldMapping.canonical();
+                    case "ecs" -> io.github.aindriub.dataprism.audit.format.AuditFieldMapping.ecs();
                     default -> throw new IllegalArgumentException(
                             "INVALID_AUDIT_FIELD_PRESET: field-preset must be canonical or ecs");
                 };
@@ -1071,8 +1071,8 @@ public class DataPrismProperties {
                             && dataStreamNamespace == null;
                 }
 
-                public io.github.aindriub.dataprism.audit.AuditRouting toRouting() {
-                    return new io.github.aindriub.dataprism.audit.AuditRouting(eventDataset, dataStreamType,
+                public io.github.aindriub.dataprism.audit.format.AuditRouting toRouting() {
+                    return new io.github.aindriub.dataprism.audit.format.AuditRouting(eventDataset, dataStreamType,
                             dataStreamDataset, dataStreamNamespace);
                 }
             }

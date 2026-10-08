@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
 import com.sun.net.httpserver.HttpServer;
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.SourceCallContext;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.SourceCallContext;
 import io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy;
 import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 import org.junit.jupiter.api.AfterEach;

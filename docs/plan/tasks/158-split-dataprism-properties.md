@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Base:** branch from `origin/main` (0.5.0 released at v0.5.0 / c850c3e2) after 157 has merged into it.
-**Depends on:** 157
+**Depends on:** 157, 167, 168, 169
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/*Properties.java (new)

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
  * source's {@code fields:} map, including the field carrying the subject
  * identifier. There is no default that lets a property through unclassified:
  * an entry not listed here never reaches {@link ConfiguredJsonFieldMetadataResolver}
- * and is refused by {@link io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine}
+ * and is refused by {@link io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine}
  * as an unknown field before anything is returned.
  */
 public final class ConfiguredJsonSources {

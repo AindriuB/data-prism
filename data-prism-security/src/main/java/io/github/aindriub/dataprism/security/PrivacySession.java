@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.security;
 
-import io.github.aindriub.dataprism.core.InvestigationContext;
-import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
 
 import java.util.Objects;
 

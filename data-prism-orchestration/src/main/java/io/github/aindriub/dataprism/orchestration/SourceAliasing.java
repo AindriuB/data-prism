@@ -1,10 +1,10 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.Capability;
-import io.github.aindriub.dataprism.core.InvestigationContext;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.ValueTokenSource;
+import io.github.aindriub.dataprism.core.model.Capability;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 
 import java.util.Objects;
 

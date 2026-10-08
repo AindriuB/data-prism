@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.server;
 
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfiguration;

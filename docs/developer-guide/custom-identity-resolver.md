@@ -113,7 +113,7 @@ unchanged, never looking anything up:
 --8<-- "src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartExtensionAutoConfiguration.java:quickstart-identity-resolver"
 ```
 
-[`PassThroughIdentityResolver`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/PassThroughIdentityResolver.java)'s
+[`PassThroughIdentityResolver`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/PassThroughIdentityResolver.java)'s
 `expand` returns one `SourceRef(sourceName, id.value())` per requested
 source, for every source, with no lookup at all (`PassThroughIdentityResolver.java:21-25`).
 That is the *correct* choice, not a shortcut, whenever every configured
@@ -277,7 +277,7 @@ mvn -pl data-prism-quickstart-extension -am test
 [INFO]  T E S T S
 [INFO] -------------------------------------------------------
 [INFO] Running io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOrderingTest
-19:02:16.263 [main] WARN org.springframework.context.annotation.AnnotationConfigApplicationContext -- Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'identityResolverConsumer' defined in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOrderingTest$SingleIdentityResolverConsumer: Unsatisfied dependency expressed through method 'identityResolverConsumer' parameter 0: No qualifying bean of type 'io.github.aindriub.dataprism.core.IdentityResolver' available: expected single matching bean but found 2: quickstartIdentityResolver,unorderedCustomIdentityResolver
+19:02:16.263 [main] WARN org.springframework.context.annotation.AnnotationConfigApplicationContext -- Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'identityResolverConsumer' defined in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOrderingTest$SingleIdentityResolverConsumer: Unsatisfied dependency expressed through method 'identityResolverConsumer' parameter 0: No qualifying bean of type 'io.github.aindriub.dataprism.core.spi.IdentityResolver' available: expected single matching bean but found 2: quickstartIdentityResolver,unorderedCustomIdentityResolver
 [INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.644 s -- in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOrderingTest
 [INFO] Running io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOverrideTest
 [INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.099 s -- in io.github.aindriub.dataprism.quickstart.extension.identity.IdentityResolverOverrideTest

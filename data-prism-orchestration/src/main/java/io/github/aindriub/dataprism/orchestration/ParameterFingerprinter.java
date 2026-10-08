@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.SecretKeyProvider;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;

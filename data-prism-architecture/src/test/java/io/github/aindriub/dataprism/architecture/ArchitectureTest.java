@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Set;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 /**
  * The boundaries, enforced rather than described.
@@ -77,7 +78,7 @@ class ArchitectureTest {
     private static final ArchRule ONLY_DESIGNATED_CLASSES_CREATE_MAPPERS = noClasses()
             .that().resideInAPackage("io.github.aindriub.dataprism..")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.mcp.DataPrismObjectMapper")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.SourceTree")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.engine.SourceTree")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.connectors.rest.RestSources")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.security.SecurityPolicy")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.policy.PrivacyProfiles")
@@ -404,5 +405,107 @@ class ArchitectureTest {
         JavaClasses fixture = new ClassFileImporter().importClasses(SubjectForMethodReferenceFixture.class);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> ONLY_REIDENTIFICATION_CALLS_SUBJECT_FOR.check(fixture))
                 .isInstanceOf(AssertionError.class);
+    }
+
+    /**
+     * The {@code core} root package is empty. Every type lives in a named
+     * subpackage ({@code spi}, {@code model}, {@code engine}, {@code refusal},
+     * {@code limits}, {@code metrics}, or the pre-existing {@code policy},
+     * {@code correlation} and {@code descriptor}). The package is matched
+     * exactly, not as {@code ..core..}, so the subpackages are not flagged.
+     */
+    private static final ArchRule CORE_ROOT_PACKAGE_IS_EMPTY = noClasses()
+            .should().resideInAPackage("io.github.aindriub.dataprism.core")
+            .allowEmptyShould(true);
+
+    @Test
+    void coreRootPackageIsEmpty() {
+        CORE_ROOT_PACKAGE_IS_EMPTY.check(CLASSES);
+    }
+
+    /** The extension SPI is a contract, not an implementation: it never reaches into the engine. */
+    private static final ArchRule SPI_DOES_NOT_DEPEND_ON_ENGINE = noClasses()
+            .that().resideInAPackage("io.github.aindriub.dataprism.core.spi..")
+            .should().dependOnClassesThat().resideInAPackage("io.github.aindriub.dataprism.core.engine..");
+
+    @Test
+    void spiDoesNotDependOnEngine() {
+        SPI_DOES_NOT_DEPEND_ON_ENGINE.check(CLASSES);
+    }
+
+    /** The {@code core} subpackages form a directed acyclic graph. */
+    private static final ArchRule CORE_SUBPACKAGES_ARE_FREE_OF_CYCLES = slices()
+            .matching("..dataprism.core.(*)..")
+            .should().beFreeOfCycles();
+
+    @Test
+    void coreSubpackagesAreFreeOfCycles() {
+        CORE_SUBPACKAGES_ARE_FREE_OF_CYCLES.check(CLASSES);
+    }
+
+    private static final String AUDIT = "io.github.aindriub.dataprism.audit";
+    private static final String[] AUDIT_SUBPACKAGES = {
+        AUDIT + ".format..", AUDIT + ".sink..", AUDIT + ".checkpoint..", AUDIT + ".retention..", AUDIT + ".verify.."};
+
+    /** The {@code audit} contract package (exactly, not {@code ..audit..}) never reaches into its subpackages. */
+    private static final ArchRule AUDIT_CONTRACT_DOES_NOT_DEPEND_ON_SUBPACKAGES = noClasses()
+            .that().resideInAPackage(AUDIT)
+            .should().dependOnClassesThat().resideInAnyPackage(AUDIT_SUBPACKAGES);
+
+    @Test
+    void auditContractDoesNotDependOnItsSubpackages() {
+        AUDIT_CONTRACT_DOES_NOT_DEPEND_ON_SUBPACKAGES.check(CLASSES);
+    }
+
+    /** Writers of the record never depend on the offline verifier. */
+    private static final ArchRule AUDIT_WRITERS_DO_NOT_DEPEND_ON_VERIFY = noClasses()
+            .that().resideInAnyPackage(AUDIT + ".format..", AUDIT + ".sink..", AUDIT + ".checkpoint..")
+            .should().dependOnClassesThat().resideInAPackage(AUDIT + ".verify..");
+
+    @Test
+    void auditWritersDoNotDependOnVerify() {
+        AUDIT_WRITERS_DO_NOT_DEPEND_ON_VERIFY.check(CLASSES);
+    }
+
+    /**
+     * Retention replays the chain with the verifier before it deletes a segment, so that one
+     * edge cannot be removed by placement. It is allow-listed at class level: only
+     * {@code AuditRetention} (and its nested types), only {@code AuditChainVerifier} (and its
+     * nested types) -- not the CLI, and not any other retention class.
+     */
+    private static final DescribedPredicate<JavaClass> AUDIT_RETENTION_CORE = DescribedPredicate.describe(
+            "AuditRetention or a type nested in it",
+            c -> c.getName().equals(AUDIT + ".retention.AuditRetention")
+                    || c.getName().startsWith(AUDIT + ".retention.AuditRetention$"));
+
+    private static final DescribedPredicate<JavaClass> AUDIT_CHAIN_VERIFIER_CORE = DescribedPredicate.describe(
+            "AuditChainVerifier or a type nested in it",
+            c -> c.getName().equals(AUDIT + ".verify.AuditChainVerifier")
+                    || c.getName().startsWith(AUDIT + ".verify.AuditChainVerifier$"));
+
+    private static final ArchRule AUDIT_RETENTION_VERIFY_EDGE_IS_ALLOW_LISTED = noClasses()
+            .that().resideInAPackage(AUDIT + ".retention..").and(DescribedPredicate.not(AUDIT_RETENTION_CORE))
+            .should().dependOnClassesThat().resideInAPackage(AUDIT + ".verify..");
+
+    private static final ArchRule AUDIT_RETENTION_USES_ONLY_THE_VERIFIER = noClasses()
+            .that(AUDIT_RETENTION_CORE)
+            .should().dependOnClassesThat(
+                    DescribedPredicate.and(JavaClass.Predicates.resideInAPackage(AUDIT + ".verify.."),
+                            DescribedPredicate.not(AUDIT_CHAIN_VERIFIER_CORE)));
+
+    @Test
+    void auditRetentionDependsOnVerifyOnlyThroughTheAllowList() {
+        AUDIT_RETENTION_VERIFY_EDGE_IS_ALLOW_LISTED.check(CLASSES);
+        AUDIT_RETENTION_USES_ONLY_THE_VERIFIER.check(CLASSES);
+    }
+
+    /** The {@code audit} subpackages form a directed acyclic graph. */
+    private static final ArchRule AUDIT_SUBPACKAGES_ARE_FREE_OF_CYCLES = slices()
+            .matching("..dataprism.audit.(*)..")
+            .should().beFreeOfCycles();
+
+    @Test
+    void auditSubpackagesAreFreeOfCycles() {
+        AUDIT_SUBPACKAGES_ARE_FREE_OF_CYCLES.check(CLASSES);
     }
 }

@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.quickstart.extension;
 
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.convert.DurationStyle;

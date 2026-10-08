@@ -9,8 +9,8 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.example.DataPrismAssembly;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
@@ -211,8 +211,8 @@ class AuditSinkFailureAbortsResponseTest {
     @DisplayName("a real FileAuditSink poisoned by a prior failure never lets its path reach the client")
     void poisonedFileAuditSinkNeverDisclosesItsPathToTheClient() throws Exception {
         java.nio.file.Path auditFile = java.nio.file.Files.createTempFile("data-prism-audit-failure-test-", ".log");
-        io.github.aindriub.dataprism.audit.FileAuditSink fileSink =
-                new io.github.aindriub.dataprism.audit.FileAuditSink(auditFile);
+        io.github.aindriub.dataprism.audit.sink.FileAuditSink fileSink =
+                new io.github.aindriub.dataprism.audit.sink.FileAuditSink(auditFile);
         AuditRecorder poisonProbe = new AuditRecorder(fileSink,
                 Clock.fixed(Instant.parse("2026-09-22T12:00:00Z"), java.time.ZoneOffset.UTC),
                 "audit-sink-failure-test-poison-probe");
@@ -341,7 +341,7 @@ class AuditSinkFailureAbortsResponseTest {
         DataPrismAssembly assembly = DataPrismAssembly.standard();
         AuditRecorder toolAudit = new AuditRecorder(recordingSink, clock, "audit-sink-failure-test-control");
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
-                Map.of(role, Set.of(io.github.aindriub.dataprism.core.Capability.GET_ENTITY_CONTEXT)));
+                Map.of(role, Set.of(io.github.aindriub.dataprism.core.model.Capability.GET_ENTITY_CONTEXT)));
         AuthorizationService authorizationService =
                 new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),

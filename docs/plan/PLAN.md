@@ -466,6 +466,13 @@ Follow-ups from tasks 152 and 153, not yet tasks:
 - (ap) `release.yml` runs plain `mvn verify`, not the release profile, so it never builds Javadoc. A Javadoc error was caught only by publish-central's stage after `release.yml` had already created a GitHub Release (v0.5.0, first tag). Make `release.yml` build with the same profile, or make it depend on the stage.
 - (aq) Branch protection on `main` required a check named `build`, which `pages.yml` also produced. After task 144's matrix it silently gated on the docs build. The owner switched it on 2026-10-08 to require `build (21)`, `build (25)` and `container-smoke`. Task 165 fixes this properly with a `ci-gate` job (D-165-A).
 
+Follow-ups from task 156 (2026-10-08), not yet tasks:
+
+- (ar) `docs-site/diagrams/README.md:275-276` still links the old `core/` file paths. Folded into 162.
+- (as) DONE in task 157's review polish (2026-10-08): `RefusalPaths` now uses an FQCN `{@link}`; the Javadoc-only imports are gone.
+- (au) From task 157: `FileAuditCheckpointSink` could move to `audit.sink` so `terminateTornTail()` and `closeQuietly()` stay package-private. Considered and declined: `terminateTornTail` only appends CRLF, so the widening grants no new power. Not a task.
+- (at) `coreRootPackageIsEmpty` (ArchitectureTest, about :418) carries a redundant `allowEmptyShould(true)`. Drop it; 167 already touches ArchitectureTest, so fold it in there.
+
 ### 0.5.0 release checklist (0.5.0 released 2026-10-08; owner steps remain)
 
 Task 151 did the local cut on 2026-10-07 (merge 98b42144). Nothing has been pushed. Every outward action needs the owner's go-ahead.
@@ -498,14 +505,20 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 1 | 155 | Replace MCP tool, server-factory and orchestration overloads with validated options records | none |
 | 1 | 160 | Poison `TeeAuditSink` on any `Throwable`; terminate a torn checkpoint tail; `TORN_CHECKPOINT_LINE` | none |
 | 1 | 165 | Single `ci-gate` summary check; rename pages.yml's `build` job | none |
-| 2 | 156 | Split the `core` root package into `spi`, `model`, `engine`, `refusal`, `limits`, `metrics` (pure move) | 154, 155, 160 |
-| 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160 |
-| 4 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157 |
-| 5 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt` | 158 |
-| 6 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
-| 6 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159 |
-| 7 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164 |
-| 8 | 162 | 0.6.0 CHANGELOG Breaking section and old to new FQCN migration page | 154-161, 163, 164, 165 |
+| 2 | 156 | Split the `core` root package into `spi`, `model`, `engine`, `refusal`, `limits`, `metrics` (pure move) | 154, 155, 160. **Done 2026-10-08** |
+| 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160. **Done 2026-10-08** |
+| 4 | 166 | Pin Jackson 2 output and YAML behaviour with characterisation tests before the port | 157 |
+| 5 | 167 | Port the reactor to Jackson 3 in one step (code, mappers, MCP binding, Spring converters, enforcer) | 155, 156, 157, 166 |
+| 6 | 168 | Stop exposing data-prism's `ObjectMapper` in public API; ArchUnit guard; signature inventory | 167 (D-J3-1 decided) |
+| 6 | 169 | Record the Jackson 3 decision and the mapper invariant in architecture, conventions, README | 167 |
+| 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169 |
+| 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt` | 158 |
+| 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
+| 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159 |
+| 10 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164 |
+| 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-169 |
+
+Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169) and 9 (161, 164) are parallel; 161 and 164 touch different files.
 
 **Wave 1 done 2026-10-08** (tasks 154, 155, 160, 165, integrated on `release/0.6.0-wave1`; task files retired to `docs/plan/tasks/retired/`). Owner decisions and notes:
 
@@ -514,7 +527,7 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 - 160: `TeeAuditSink` poisons on any `Throwable`; the checkpoint writer terminates a torn tail with `\r\n`; the verifier reports `TORN_CHECKPOINT_LINE`. Owner decisions: (a) the Owns list widened by one line in `AuditChainVerifierCli.header(AnomalyType)`; (b) the NARROW torn rule, where only `\r`-ended lines and a final unterminated unparseable chunk are torn and other garbage stays exit 1. This narrows D-0.6-7's "or otherwise unparseable" wording. Residual risk, to document: an attacker who can write the checkpoint file can label a deletion as "not tampering", which is still noisier than an outright delete; a CRLF-converted checkpoint file reports every line torn (exit 4).
 - 165: `ci-gate` job in build.yml; pages.yml's job renamed `docs-site` (D-165-A). Owner post-merge step: once `ci-gate` has reported on main, switch main's required checks from `build (21)`, `build (25)` and `container-smoke` to `ci-gate` alone.
 
-**Jackson 3 port is now IN 0.6.0.** Owner decisions J3-0 to J3-5, dated 2026-10-08. Task files are being written separately on branch `plan/jackson3`. The wave table above will be re-sequenced when they land: package moves (156, 157), then Jackson 3, then the Spring splits (158, 159).
+**Jackson 3 port is now IN 0.6.0.** Owner decisions J3-0 to J3-5, dated 2026-10-08. Task files are 166 to 169; the wave table above carries the order: package moves (156, 157), then Jackson 3 (166 to 169), then the Spring splits (158, 159).
 
 - J3-0: Jackson 3 port is IN 0.6.0 (owner: "let that shape everything").
 - J3-1: B, after the package moves (156, 157) and after 155; before the Spring splits (158, 159). Strictly separate tasks from the moves.
@@ -522,6 +535,9 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 - J3-3: C. Expose Jackson 3 tree types (`tools.jackson.databind.JsonNode`/`ObjectNode`) where they are the real data: `ScrubResult`, `SourceTree`, `Generalizer`, the validators, `ContextResponse` and `ComparisonResponse`. Narrow the accidental surface: `DataPrismObjectMapper.create()` and any public method that hands out or accepts data-prism's `ObjectMapper` stop being public, which reinforces J3-2. List every public signature change for the 162 migration page.
 - J3-4: A. A small characterisation task runs first, on Jackson 2, before the port. Golden-byte tests for the audit JSON projection (non-ASCII, U+2028/2029, control characters, surrogate pairs, escape casing), checkpoint lines, and a full tool-result response. YAML characterisation tests for duplicate keys, YAML 1.1 booleans no/yes/on/off, unknown keys, enum case and whitespace, octal-looking scalars. The port must keep all of them green, or list each difference for owner acceptance.
 - J3-5: A, a full flip. Enforcer: ban the Jackson 2 artifacts (`com.fasterxml.jackson.core:jackson-databind`, `jackson-core`, the `jackson-dataformat-*` and `jackson-datatype-*` artifacts), `io.modelcontextprotocol.sdk:mcp-json-jackson2` and `org.springframework.boot:spring-boot-jackson2`. CARVE-OUT: allow `com.fasterxml.jackson.core:jackson-annotations`, which Jackson 3 still uses and mcp-core needs. Lift the `tools.jackson`, mcp aggregate and `mcp-json-jackson3` bans. Spring: re-adopt `spring-boot-starter-jackson`, removing the exclusions and `spring-boot-jackson2` in the server, starter, quickstart-fixtures and quickstart-issuer poms. Task 142's `Boot4RegressionGuardsTest`: invert it to assert Jackson 3 converters and no Jackson 2. Docs: update the D-139-A decision in architecture.md (:284-290), and fix the stale "scrubbing engine is a Jackson module" wording at architecture.md:152 and conventions.md:36. The real invariant is "only `DataPrismObjectMapper` writes".
+
+- **D-J3-1: DECIDED 2026-10-08, option (a)** (168). The two tool constructors lose their `ObjectMapper` parameter; the tools take the mapper from package-private `DataPrismObjectMapper.create()`, and `DataPrismMcpServer` passes one shared instance through a package-private constructor so tools and transport still share it. Rejected: (b) package-private constructors, which rewrites 10 integration-test files for no extra protection; (c) an opaque data-prism-owned type, which adds a public type to carry one already hidden. 168 is no longer blocked.
+- **D-J3-2: DECIDED 2026-10-08, option (b), in 0.6.0, folded into task 168** (owner delegated the call). 168 adds an ArchUnit allowlist rule for streaming JSON factory and generator construction (allowed: `DataPrismObjectMapper`, `AuditJsonRenderer`, the checkpoint writer `audit.checkpoint.FileAuditCheckpointSink`, `JwtDecoderSupport`) with its own negative-test fixture. Not in 167, whose port stays behaviour-neutral.
 
 Owner decisions, all decided 2026-10-08:
 

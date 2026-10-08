@@ -5,17 +5,17 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditEvent;
-import io.github.aindriub.dataprism.audit.AuditFieldMapping;
-import io.github.aindriub.dataprism.audit.AuditJsonRenderer;
+import io.github.aindriub.dataprism.audit.format.AuditFieldMapping;
+import io.github.aindriub.dataprism.audit.format.AuditJsonRenderer;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
-import io.github.aindriub.dataprism.audit.AuditRouting;
+import io.github.aindriub.dataprism.audit.format.AuditRouting;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.audit.SegmentedJsonAuditSink;
-import io.github.aindriub.dataprism.audit.TeeAuditSink;
-import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
-import io.github.aindriub.dataprism.core.Capability;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.audit.sink.SegmentedJsonAuditSink;
+import io.github.aindriub.dataprism.audit.sink.TeeAuditSink;
+import io.github.aindriub.dataprism.audit.sink.Slf4jAuditSink;
+import io.github.aindriub.dataprism.core.model.Capability;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy;
 import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.example.CustomerDto;
@@ -715,14 +715,14 @@ class PiiLogScanTest {
                 io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN,
                 io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.DROP_AND_WARN,
                 io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE)) {
-            var engine = new io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine(
+            var engine = new io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine(
                     UndeclaredKeyFixture.mixedResolver(),
                     new io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver(
                             UndeclaredKeyFixture.profiles(behaviour)),
                     (subject, namespace, ctx) -> "synthetic");
-            var context = new io.github.aindriub.dataprism.core.PrivacyContext("C",
+            var context = new io.github.aindriub.dataprism.core.model.PrivacyContext("C",
                     PrivacyScopeType.CASE, "DEFAULT", "test", Instant.parse("2030-01-01T00:00:00Z"),
-                    io.github.aindriub.dataprism.core.PseudonymisationVersion.HMAC_SHA256_V1);
+                    io.github.aindriub.dataprism.core.model.PseudonymisationVersion.HMAC_SHA256_V1);
 
             String captured = captureLogOutput(() -> engine.scrub(new UndeclaredKeyFixture.Mixed(
                     "1", "a note", Map.of(UndeclaredKeyFixture.KEY, "v")), context));

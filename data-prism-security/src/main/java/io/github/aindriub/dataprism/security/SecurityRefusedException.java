@@ -6,7 +6,7 @@ package io.github.aindriub.dataprism.security;
  *
  * <p>Carries a stable code and nothing else — never the claim, purpose or
  * argument value that caused the refusal. Mirrors
- * {@code io.github.aindriub.dataprism.core.PrivacyRefusedException} for the
+ * {@code io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException} for the
  * same reason: an exception message is one of the places sensitive data most
  * often escapes. See docs/pack.md §51.
  */

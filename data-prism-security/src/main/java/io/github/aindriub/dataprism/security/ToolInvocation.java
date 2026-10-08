@@ -2,7 +2,7 @@ package io.github.aindriub.dataprism.security;
 
 /**
  * One MCP tool call, reduced to the one fact authorisation needs: which
- * capability it requires. See {@code io.github.aindriub.dataprism.core.Capability}.
+ * capability it requires. See {@code io.github.aindriub.dataprism.core.model.Capability}.
  */
 public record ToolInvocation(String toolName, String requiredCapability) {
 

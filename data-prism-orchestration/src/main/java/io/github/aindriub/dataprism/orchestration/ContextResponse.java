@@ -3,8 +3,8 @@ package io.github.aindriub.dataprism.orchestration;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.ConsistencyFinding;
-import io.github.aindriub.dataprism.core.InvestigationContext;
+import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -89,7 +89,7 @@ public record ContextResponse(
                               List<ConsistencyFinding> findings, ObjectNode entity,
                               Map<PrivacyNamespace, List<String>> fieldsByNamespace,
                               SourceAliasing aliasing, InvestigationContext investigationContext,
-                              io.github.aindriub.dataprism.core.PrivacyContext context,
+                              io.github.aindriub.dataprism.core.model.PrivacyContext context,
                               String correlationId) {
         Map<String, String> statuses = new LinkedHashMap<>();
         outcomes.forEach(outcome -> statuses.put(

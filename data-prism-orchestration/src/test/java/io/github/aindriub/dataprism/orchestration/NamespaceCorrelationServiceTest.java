@@ -7,12 +7,12 @@ import io.github.aindriub.dataprism.annotations.NonSensitive;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.annotations.SensitiveData;
-import io.github.aindriub.dataprism.core.ConsistencyFinding;
-import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
-import io.github.aindriub.dataprism.core.EntityCorrelationService.SourceRecord;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
+import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.spi.EntityCorrelationService.SourceRecord;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

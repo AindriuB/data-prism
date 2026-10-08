@@ -3,7 +3,7 @@ package io.github.aindriub.dataprism.connectors.rest;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
-import io.github.aindriub.dataprism.core.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

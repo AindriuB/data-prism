@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.quickstart.extension.identity;
 
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.quickstart.extension.QuickstartExtensionAutoConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;

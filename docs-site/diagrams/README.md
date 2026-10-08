@@ -237,7 +237,7 @@ is empty.
 | Node | `Boot` — Writer boot: instanceId is writer-id / uuid | `docs/audit.md:61-67`; `data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditRecorder.java:63` |
 | Node | `Genesis` — GENESIS | `docs/audit.md:67`; `AuditRecorder.java:28,42` |
 | Node | `R1`/`R2`/`R3` — record 1 / record 2 / record N | `docs/audit.md:8`; `AuditRecorder.java:84-110` (`previousHash` chaining) |
-| Node | `Verifier` — Offline verifier replays the chain | `docs/audit.md:87` (`AuditChainVerifierCli` replays each writer's chain); `data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditChainVerifier.java:16` |
+| Node | `Verifier` — Offline verifier replays the chain | `docs/audit.md:87` (`AuditChainVerifierCli` replays each writer's chain); `data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/verify/AuditChainVerifier.java:16` |
 | Node | `Detect` — Detects: an edit anywhere in the chain, including the last record, and a deletion that has later records after it | `docs/audit.md:231-239` (edit caught anywhere including the tail; only deleting a writer's *most recent* records goes undetected, so a deletion followed by later records is caught) |
 | Node | `Blind` — Cannot detect: tail truncation, deletion of a whole boot's records, or recomputation by someone with write access | `docs/audit.md:246-261` (truncation, whole-boot deletion); `docs/audit.md:262-269` (recomputation by anyone with write access) |
 | Edge | Boot → Genesis | `docs/audit.md:61-67` |

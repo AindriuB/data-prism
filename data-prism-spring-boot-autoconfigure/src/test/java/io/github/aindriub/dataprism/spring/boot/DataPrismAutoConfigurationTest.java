@@ -1,13 +1,13 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.audit.FileAuditSink;
-import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.SecretKeyProvider;
+import io.github.aindriub.dataprism.audit.sink.FileAuditSink;
+import io.github.aindriub.dataprism.audit.sink.Slf4jAuditSink;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -270,7 +270,7 @@ class DataPrismAutoConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedIntegrations {
         @Bean DataSourceAdapter<String> customerAdapter() { return new DataSourceAdapter<>() { public String sourceName(){return "customer";} public Class<String> responseType(){return String.class;} public String fetch(DataRequest request){return null;} }; }
-        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.PassThroughIdentityResolver(); }
+        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return (id, reference) -> (reference+":"+id+":resolved-key-material").getBytes(); }
         @Bean AuditSink audit() { return event -> {}; }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
@@ -291,7 +291,7 @@ class DataPrismAutoConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedHttpIntegrationsWithoutAudit {
         @Bean DataSourceAdapter<String> customerAdapter() { return new ReviewedIntegrations().customerAdapter(); }
-        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.PassThroughIdentityResolver(); }
+        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return new ReviewedIntegrations().keys(); }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
         @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor() {
@@ -308,7 +308,7 @@ class DataPrismAutoConfigurationTest {
     }
     @Configuration(proxyBeanMethods = false)
     static class IntegrationsWithoutAdapter {
-        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.PassThroughIdentityResolver(); }
+        @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return new ReviewedIntegrations().keys(); }
         @Bean AuditSink audit() { return new ReviewedIntegrations().audit(); }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
