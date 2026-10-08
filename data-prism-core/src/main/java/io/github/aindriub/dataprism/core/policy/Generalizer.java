@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.core.policy;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

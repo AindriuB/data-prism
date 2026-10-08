@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import io.github.aindriub.dataprism.core.FieldMetadata;
-import io.github.aindriub.dataprism.core.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,8 +31,8 @@ import java.util.Objects;
  * that source's nested catalogues. For those tokens, and only those, {@code
  * type} genuinely selects which catalogue answers -- the nested one rather than
  * the root one -- which is exactly how {@link
- * io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine} and {@link
- * io.github.aindriub.dataprism.core.SourceValues} already ask any other
+ * io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine} and {@link
+ * io.github.aindriub.dataprism.core.engine.SourceValues} already ask any other
  * resolver to descend into a nested Java model. Core needed no change to make
  * this work: it already keys descent on {@code Class}, never on a name.
  *

@@ -2,7 +2,7 @@ package io.github.aindriub.dataprism.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import io.github.aindriub.dataprism.core.Capability;
+import io.github.aindriub.dataprism.core.model.Capability;
 
 import java.io.IOException;
 import java.io.InputStream;

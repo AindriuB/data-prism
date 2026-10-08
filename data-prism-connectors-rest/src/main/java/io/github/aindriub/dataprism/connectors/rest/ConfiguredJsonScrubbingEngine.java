@@ -1,14 +1,14 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyRefusedException;
-import io.github.aindriub.dataprism.core.RefusalPaths;
-import io.github.aindriub.dataprism.core.ScrubResult;
-import io.github.aindriub.dataprism.core.ScrubbingEngine;
-import io.github.aindriub.dataprism.core.SourceValues;
-import io.github.aindriub.dataprism.core.SyntheticValueSource;
-import io.github.aindriub.dataprism.core.ValueTokenSource;
+import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.refusal.RefusalPaths;
+import io.github.aindriub.dataprism.core.model.ScrubResult;
+import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
+import io.github.aindriub.dataprism.core.engine.SourceValues;
+import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
@@ -38,7 +38,7 @@ import java.util.Set;
  * rather than left to the orchestrator's. {@link
  * io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator} builds
  * its prohibited-value set by resolving the fetched record's own {@code Class}
- * against one shared {@link io.github.aindriub.dataprism.core.FieldMetadataResolver}
+ * against one shared {@link io.github.aindriub.dataprism.core.spi.FieldMetadataResolver}
  * — correct for a Java-first model, but a {@link ConfiguredJsonPayload} is one
  * compiled wrapper shared by every configured source, so that resolution cannot
  * recover a specific source's catalogue from the wrapper's class the way it can

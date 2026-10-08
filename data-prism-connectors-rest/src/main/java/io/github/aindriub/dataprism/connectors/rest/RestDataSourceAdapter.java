@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.HttpClientErrorException;

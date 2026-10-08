@@ -2,10 +2,10 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.config.Config;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
-import io.github.aindriub.dataprism.core.SyntheticValueSource;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

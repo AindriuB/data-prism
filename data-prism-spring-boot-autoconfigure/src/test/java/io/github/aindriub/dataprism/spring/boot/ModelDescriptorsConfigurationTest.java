@@ -2,16 +2,16 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
-import io.github.aindriub.dataprism.core.FieldMetadataResolver;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
@@ -189,7 +189,7 @@ class ModelDescriptorsConfigurationTest {
 
         @Bean
         IdentityResolver identities() {
-            return new io.github.aindriub.dataprism.core.PassThroughIdentityResolver();
+            return new io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver();
         }
 
         @Bean

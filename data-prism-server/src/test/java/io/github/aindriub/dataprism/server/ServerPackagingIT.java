@@ -4,10 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
 
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;

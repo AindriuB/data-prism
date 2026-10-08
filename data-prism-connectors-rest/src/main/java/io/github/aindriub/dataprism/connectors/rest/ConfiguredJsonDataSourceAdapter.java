@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import org.springframework.web.client.RestClient;
 
 import java.util.Objects;

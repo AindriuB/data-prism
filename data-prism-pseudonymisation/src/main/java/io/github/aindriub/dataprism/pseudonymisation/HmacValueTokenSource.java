@@ -1,11 +1,11 @@
 package io.github.aindriub.dataprism.pseudonymisation;
 
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
-import io.github.aindriub.dataprism.core.SecretKeyProvider;
-import io.github.aindriub.dataprism.core.Text;
-import io.github.aindriub.dataprism.core.ValueTokenSource;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
+import io.github.aindriub.dataprism.core.engine.Text;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;

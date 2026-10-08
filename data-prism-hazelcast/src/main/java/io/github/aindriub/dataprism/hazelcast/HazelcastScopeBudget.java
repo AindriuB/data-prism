@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.IMap;
-import io.github.aindriub.dataprism.core.ScopeBudget;
+import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

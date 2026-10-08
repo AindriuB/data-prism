@@ -14,25 +14,25 @@ import io.github.aindriub.dataprism.audit.JsonAuditRetention;
 import io.github.aindriub.dataprism.audit.SegmentedJsonAuditSink;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
 import io.github.aindriub.dataprism.audit.TeeAuditSink;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.DefaultFieldMetadataResolver;
-import io.github.aindriub.dataprism.core.EntityCorrelationService;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.spi.EntityCorrelationService;
 import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
-import io.github.aindriub.dataprism.core.FieldMetadataResolver;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptors;
-import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
-import io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
-import io.github.aindriub.dataprism.core.RequestLimits;
-import io.github.aindriub.dataprism.core.ScopeBudget;
-import io.github.aindriub.dataprism.core.SecretKeyProvider;
-import io.github.aindriub.dataprism.core.SyntheticValueSource;
-import io.github.aindriub.dataprism.core.ValueTokenSource;
+import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.limits.RequestLimits;
+import io.github.aindriub.dataprism.core.limits.ScopeBudget;
+import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
+import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
@@ -561,7 +561,7 @@ public class DataPrismAutoConfiguration {
         return new SecurityPolicy(Set.copyOf(properties.getSecurityPolicy().getPurposes()), properties.getSecurityPolicy().getRoles().entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> Set.copyOf(entry.getValue()))));
     }
     @Bean @ConditionalOnMissingBean
-    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties) { return new AuthorizationService(policy, properties.getPrivacy().getProfile(), io.github.aindriub.dataprism.core.PrivacyScopeType.INVESTIGATION); }
+    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties) { return new AuthorizationService(policy, properties.getPrivacy().getProfile(), io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION); }
     @Bean @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties) { return new ScopeResolver(version, properties.getPrivacy().getScopeLifetime(), new PurposeValidator(Set.copyOf(properties.getSecurityPolicy().getPurposes()))); }
     @Bean @ConditionalOnMissingBean @ConditionalOnBean(AuditSink.class)

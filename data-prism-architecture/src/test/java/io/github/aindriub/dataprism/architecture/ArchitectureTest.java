@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Set;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 /**
  * The boundaries, enforced rather than described.
@@ -77,7 +78,7 @@ class ArchitectureTest {
     private static final ArchRule ONLY_DESIGNATED_CLASSES_CREATE_MAPPERS = noClasses()
             .that().resideInAPackage("io.github.aindriub.dataprism..")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.mcp.DataPrismObjectMapper")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.SourceTree")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.engine.SourceTree")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.connectors.rest.RestSources")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.security.SecurityPolicy")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.policy.PrivacyProfiles")
@@ -404,5 +405,41 @@ class ArchitectureTest {
         JavaClasses fixture = new ClassFileImporter().importClasses(SubjectForMethodReferenceFixture.class);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> ONLY_REIDENTIFICATION_CALLS_SUBJECT_FOR.check(fixture))
                 .isInstanceOf(AssertionError.class);
+    }
+
+    /**
+     * The {@code core} root package is empty. Every type lives in a named
+     * subpackage ({@code spi}, {@code model}, {@code engine}, {@code refusal},
+     * {@code limits}, {@code metrics}, or the pre-existing {@code policy},
+     * {@code correlation} and {@code descriptor}). The package is matched
+     * exactly, not as {@code ..core..}, so the subpackages are not flagged.
+     */
+    private static final ArchRule CORE_ROOT_PACKAGE_IS_EMPTY = noClasses()
+            .should().resideInAPackage("io.github.aindriub.dataprism.core")
+            .allowEmptyShould(true);
+
+    @Test
+    void coreRootPackageIsEmpty() {
+        CORE_ROOT_PACKAGE_IS_EMPTY.check(CLASSES);
+    }
+
+    /** The extension SPI is a contract, not an implementation: it never reaches into the engine. */
+    private static final ArchRule SPI_DOES_NOT_DEPEND_ON_ENGINE = noClasses()
+            .that().resideInAPackage("io.github.aindriub.dataprism.core.spi..")
+            .should().dependOnClassesThat().resideInAPackage("io.github.aindriub.dataprism.core.engine..");
+
+    @Test
+    void spiDoesNotDependOnEngine() {
+        SPI_DOES_NOT_DEPEND_ON_ENGINE.check(CLASSES);
+    }
+
+    /** The {@code core} subpackages form a directed acyclic graph. */
+    private static final ArchRule CORE_SUBPACKAGES_ARE_FREE_OF_CYCLES = slices()
+            .matching("..dataprism.core.(*)..")
+            .should().beFreeOfCycles();
+
+    @Test
+    void coreSubpackagesAreFreeOfCycles() {
+        CORE_SUBPACKAGES_ARE_FREE_OF_CYCLES.check(CLASSES);
     }
 }

@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.example.http;
 
-import io.github.aindriub.dataprism.core.Metric;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;

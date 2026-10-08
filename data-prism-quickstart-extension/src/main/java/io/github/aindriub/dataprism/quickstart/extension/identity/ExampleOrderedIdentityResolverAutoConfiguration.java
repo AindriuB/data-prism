@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.quickstart.extension.identity;
 
-import io.github.aindriub.dataprism.core.IdentityResolver;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.quickstart.extension.QuickstartExtensionAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;

@@ -5,17 +5,17 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.FieldMetadata;
-import io.github.aindriub.dataprism.core.FieldMetadataResolver;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyRefusedException;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
-import io.github.aindriub.dataprism.core.ScrubResult;
-import io.github.aindriub.dataprism.core.ScrubbingEngine;
-import io.github.aindriub.dataprism.core.SourceValues;
-import io.github.aindriub.dataprism.core.SyntheticValueSource;
-import io.github.aindriub.dataprism.core.ValueTokenSource;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.model.ScrubResult;
+import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
+import io.github.aindriub.dataprism.core.engine.SourceValues;
+import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
 import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
@@ -44,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Exercises the one level of named nested catalogues (docs/plan/tasks/60-*.md)
  * against the real, unmodified core engine and validators: {@link
- * io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine}, {@link
+ * io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine}, {@link
  * SourceValues} and {@link RawValueLeakValidator} are never told about "nested
  * catalogues" as a concept -- they only ever see a {@code Class} token, exactly
  * as they do for a Java-first nested model. This file proves that wiring

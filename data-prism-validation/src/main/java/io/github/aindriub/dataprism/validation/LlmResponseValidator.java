@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.validation;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
 
 import java.util.Set;
 

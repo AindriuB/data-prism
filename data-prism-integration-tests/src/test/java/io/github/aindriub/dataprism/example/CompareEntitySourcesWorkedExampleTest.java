@@ -3,11 +3,11 @@ package io.github.aindriub.dataprism.example;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.core.Capability;
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.Capability;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@code compare_entity_sources} put on the real assembly named in task 43:
- * real stub adapters, the real {@link io.github.aindriub.dataprism.core.ScrubbingEngine}
+ * real stub adapters, the real {@link io.github.aindriub.dataprism.core.spi.ScrubbingEngine}
  * ({@code DataPrismAssembly.standard()} wires {@code JsonTreeScrubbingEngine}, never a
  * stub), real validators, real audit.
  *

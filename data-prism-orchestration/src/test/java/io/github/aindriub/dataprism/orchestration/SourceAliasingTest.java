@@ -1,10 +1,10 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import io.github.aindriub.dataprism.core.Capability;
-import io.github.aindriub.dataprism.core.InvestigationContext;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
-import io.github.aindriub.dataprism.core.PseudonymisationVersion;
+import io.github.aindriub.dataprism.core.model.Capability;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import org.junit.jupiter.api.DisplayName;

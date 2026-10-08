@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 
 import java.util.Objects;
 

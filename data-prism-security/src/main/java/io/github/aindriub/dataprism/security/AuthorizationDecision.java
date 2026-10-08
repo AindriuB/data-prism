@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.security;
 
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 
 import java.util.Objects;
 import java.util.Set;

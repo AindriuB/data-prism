@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.example;
 
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 
 import java.util.Collection;
 import java.util.Map;

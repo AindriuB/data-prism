@@ -2,10 +2,10 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.Metric;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.SyntheticValueSource;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -2,7 +2,7 @@ package io.github.aindriub.dataprism.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;

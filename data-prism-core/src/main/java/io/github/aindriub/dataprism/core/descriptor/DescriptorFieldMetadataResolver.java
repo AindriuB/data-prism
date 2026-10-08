@@ -4,8 +4,8 @@ import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
-import io.github.aindriub.dataprism.core.FieldMetadata;
-import io.github.aindriub.dataprism.core.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.policy.ActionStrictness;
 
 import java.util.ArrayList;

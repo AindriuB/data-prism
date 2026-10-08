@@ -2,7 +2,7 @@ package io.github.aindriub.dataprism.server;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;

@@ -9,8 +9,8 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.PrivacyScopeType;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.example.DataPrismAssembly;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
@@ -341,7 +341,7 @@ class AuditSinkFailureAbortsResponseTest {
         DataPrismAssembly assembly = DataPrismAssembly.standard();
         AuditRecorder toolAudit = new AuditRecorder(recordingSink, clock, "audit-sink-failure-test-control");
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
-                Map.of(role, Set.of(io.github.aindriub.dataprism.core.Capability.GET_ENTITY_CONTEXT)));
+                Map.of(role, Set.of(io.github.aindriub.dataprism.core.model.Capability.GET_ENTITY_CONTEXT)));
         AuthorizationService authorizationService =
                 new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),

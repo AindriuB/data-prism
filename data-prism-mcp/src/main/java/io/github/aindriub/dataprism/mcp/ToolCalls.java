@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.mcp;
 
-import io.github.aindriub.dataprism.core.InvestigationContext;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.RefusalCodes;
+import io.github.aindriub.dataprism.core.model.InvestigationContext;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.refusal.RefusalCodes;
 import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;

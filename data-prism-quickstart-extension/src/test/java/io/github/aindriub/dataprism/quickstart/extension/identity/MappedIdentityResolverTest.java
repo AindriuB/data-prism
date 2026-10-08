@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.quickstart.extension.identity;
 
-import io.github.aindriub.dataprism.core.IdentityResolver.CanonicalId;
-import io.github.aindriub.dataprism.core.IdentityResolver.SourceRef;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver.CanonicalId;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver.SourceRef;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
