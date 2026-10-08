@@ -2,7 +2,6 @@ package io.github.aindriub.dataprism.example.characterisation;
 
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptors;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -14,8 +13,8 @@ import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link ModelDescriptors#fromYaml} does today (Jackson 2 YAML, SnakeYAML, YAML 1.1 reading
- * rules). The expected text is what the current code printed.
+ * What {@link ModelDescriptors#fromYaml} does today (Jackson 3 YAML, YAML 1.2 reading rules; decision D-167-1 accepted
+ * the change from Jackson 2 and YAML 1.1). The expected text is what the current code printed.
  */
 class ModelDescriptorsYamlCharacterisationTest {
 
@@ -49,23 +48,8 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by booleanSpellingsJackson3")
-    @DisplayName("as exposed, yes, on and True read as true; no, off and FALSE read as false; y and n are read as text, so the flag is false (YAML 1.1 booleans, but only the long forms); exposed is true only for the ones that read as true")
+    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
     void booleanSpellings() {
-        assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> model("    exposed: " + s + "\n"),
-                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=true descendable=null undeclaredFields=null\n"
-                + "no => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "on => ok M: exposed=true descendable=null undeclaredFields=null\n"
-                + "off => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "y => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "n => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "True => ok M: exposed=true descendable=null undeclaredFields=null\n"
-                + "FALSE => ok M: exposed=false descendable=null undeclaredFields=null\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: booleanSpellings (YAML 1.2 reading)")
-    void booleanSpellingsJackson3() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> model("    exposed: " + s + "\n"),
                 ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=false descendable=null undeclaredFields=null\n"
                 + "no => ok M: exposed=false descendable=null undeclaredFields=null\n"
@@ -78,20 +62,8 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by octalLookingScalarsJackson3")
-    @DisplayName("as a field's subject, identifier and nonSensitive text, 010 reads as decimal 8 and 0777 as decimal 511 (YAML 1.1 octal); 0o10 stays the text 0o10")
+    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
     void octalLookingScalars() {
-        assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
-                s -> model("    fields:\n      f:\n        nonSensitive: " + s + "\n        subject: " + s
-                        + "\n        identifier: " + s + "\n"),
-                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("010 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=8 nonSensitive=8 identifier=8}\n"
-                + "0o10 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=0o10 nonSensitive=0o10 identifier=0o10}\n"
-                + "0777 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=511 nonSensitive=511 identifier=511}\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: octalLookingScalars (YAML 1.2 reading)")
-    void octalLookingScalarsJackson3() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
                 s -> model("    fields:\n      f:\n        nonSensitive: " + s + "\n        subject: " + s
                         + "\n        identifier: " + s + "\n"),
@@ -101,24 +73,8 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by booleanSpellingsAsTextJackson3")
-    @DisplayName("as a field's subject text, yes/no/on/off arrive as true/false text; yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms)")
+    @DisplayName("yes, no, on and off arrive as the text yes, no, on and off (YAML 1.2)")
     void booleanSpellingsAsText() {
-        assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
-                s -> model("    fields:\n      f:\n        subject: " + s + "\n"),
-                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=true nonSensitive=null identifier=null}\n"
-                + "no => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=false nonSensitive=null identifier=null}\n"
-                + "on => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=true nonSensitive=null identifier=null}\n"
-                + "off => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=false nonSensitive=null identifier=null}\n"
-                + "y => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=y nonSensitive=null identifier=null}\n"
-                + "n => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=n nonSensitive=null identifier=null}\n"
-                + "True => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=true nonSensitive=null identifier=null}\n"
-                + "FALSE => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=false nonSensitive=null identifier=null}\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: booleanSpellingsAsText (YAML 1.2 reading)")
-    void booleanSpellingsAsTextJackson3() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
                 s -> model("    fields:\n      f:\n        subject: " + s + "\n"),
                 ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=yes nonSensitive=null identifier=null}\n"

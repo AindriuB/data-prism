@@ -3,7 +3,6 @@ package io.github.aindriub.dataprism.example.characterisation;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.PoolKind;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -12,8 +11,8 @@ import java.io.InputStream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code VocabularyRegistry.builder().load(...)} does today (Jackson 2 YAML, SnakeYAML,
- * YAML 1.1 reading rules). The expected text is what the current code printed. The id is shown
+ * What {@code VocabularyRegistry.builder().load(...)} does today (Jackson 3 YAML, YAML 1.2 reading rules; decision D-167-1 accepted
+ * the change from Jackson 2 and YAML 1.1). The expected text is what the current code printed. The id is shown
  * up to the {@code #} (the part after it is a content digest and moves with every value).
  */
 class VocabularyYamlCharacterisationTest {
@@ -46,24 +45,8 @@ class VocabularyYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by booleanSpellingsJackson3")
-    @DisplayName("as a pool entry, yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms); yes/no/on/off arrive as true/false text")
+    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
     void booleanSpellings() {
-        assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
-                s -> vocabulary("pools:\n  firstNames: [" + s + "]\n" + OTHER_POOLS),
-                VocabularyYamlCharacterisationTest::render)).isEqualTo("yes => ok id=probe-v1 locale=en script=Latn firstNames=[true]\n"
-                + "no => ok id=probe-v1 locale=en script=Latn firstNames=[false]\n"
-                + "on => ok id=probe-v1 locale=en script=Latn firstNames=[true]\n"
-                + "off => ok id=probe-v1 locale=en script=Latn firstNames=[false]\n"
-                + "y => ok id=probe-v1 locale=en script=Latn firstNames=[y]\n"
-                + "n => ok id=probe-v1 locale=en script=Latn firstNames=[n]\n"
-                + "True => ok id=probe-v1 locale=en script=Latn firstNames=[true]\n"
-                + "FALSE => ok id=probe-v1 locale=en script=Latn firstNames=[false]\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: booleanSpellings (YAML 1.2 reading)")
-    void booleanSpellingsJackson3() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
                 s -> vocabulary("pools:\n  firstNames: [" + s + "]\n" + OTHER_POOLS),
                 VocabularyYamlCharacterisationTest::render)).isEqualTo("yes => ok id=probe-v1 locale=en script=Latn firstNames=[yes]\n"
@@ -77,19 +60,8 @@ class VocabularyYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by octalLookingScalarsJackson3")
-    @DisplayName("as a pool entry, 010 reads as decimal 8 and 0777 as decimal 511 (YAML 1.1 octal); 0o10 stays the text 0o10; as the version 010 gives v8 and 0o10 is refused with NumberFormatException")
+    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
     void octalLookingScalars() {
-        assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
-                s -> vocabulary("version: " + s + "\npools:\n  firstNames: [" + s + "]\n" + OTHER_POOLS),
-                VocabularyYamlCharacterisationTest::render)).isEqualTo("010 => ok id=probe-v8 locale=en script=Latn firstNames=[8]\n"
-                + "0o10 => refused NumberFormatException \"For input string: \"0o10\"\"\n"
-                + "0777 => ok id=probe-v511 locale=en script=Latn firstNames=[511]\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: octalLookingScalars (YAML 1.2 reading)")
-    void octalLookingScalarsJackson3() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
                 s -> vocabulary("version: " + s + "\npools:\n  firstNames: [" + s + "]\n" + OTHER_POOLS),
                 VocabularyYamlCharacterisationTest::render)).isEqualTo("010 => ok id=probe-v10 locale=en script=Latn firstNames=[010]\n"

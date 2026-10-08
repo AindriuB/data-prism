@@ -3,7 +3,6 @@ package io.github.aindriub.dataprism.example.characterisation;
 import io.github.aindriub.dataprism.connectors.rest.RestSource;
 import io.github.aindriub.dataprism.connectors.rest.RestSources;
 import io.github.aindriub.dataprism.connectors.rest.RestSourcesConfig;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,8 +12,8 @@ import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link RestSources#fromYaml} does today (Jackson 2 YAML, SnakeYAML, YAML 1.1 reading
- * rules). The expected text is what the current code printed. The scalar probes use the TLS
+ * What {@link RestSources#fromYaml} does today (Jackson 3 YAML, YAML 1.2 reading rules; decision D-167-1 accepted
+ * the change from Jackson 2 and YAML 1.1). The expected text is what the current code printed. The scalar probes use the TLS
  * {@code key-store} path, the one place a plain scalar's text is observable in the result.
  */
 class RestSourcesYamlCharacterisationTest {
@@ -53,23 +52,8 @@ class RestSourcesYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by booleanSpellingsJackson3")
-    @DisplayName("as the key-store path text, yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms); yes/no/on/off arrive as true/false text")
+    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
     void booleanSpellings() {
-        assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> SOURCE + tls(s),
-                RestSourcesYamlCharacterisationTest::render)).isEqualTo("yes => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=true tls.trustStore=ts.p12\n"
-                + "no => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=false tls.trustStore=ts.p12\n"
-                + "on => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=true tls.trustStore=ts.p12\n"
-                + "off => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=false tls.trustStore=ts.p12\n"
-                + "y => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=y tls.trustStore=ts.p12\n"
-                + "n => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=n tls.trustStore=ts.p12\n"
-                + "True => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=true tls.trustStore=ts.p12\n"
-                + "FALSE => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=false tls.trustStore=ts.p12\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: booleanSpellings (YAML 1.2 reading)")
-    void booleanSpellingsJackson3() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> SOURCE + tls(s),
                 RestSourcesYamlCharacterisationTest::render)).isEqualTo("yes => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=yes tls.trustStore=ts.p12\n"
                 + "no => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=no tls.trustStore=ts.p12\n"
@@ -82,18 +66,8 @@ class RestSourcesYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by octalLookingScalarsJackson3")
-    @DisplayName("as the key-store path text, 010 reads as decimal 8 and 0777 as decimal 511 (YAML 1.1 octal); 0o10 stays the text 0o10")
+    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
     void octalLookingScalars() {
-        assertThat(Observe.table(Observe.OCTAL_SPELLINGS, s -> SOURCE + tls(s),
-                RestSourcesYamlCharacterisationTest::render)).isEqualTo("010 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=8 tls.trustStore=ts.p12\n"
-                + "0o10 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=0o10 tls.trustStore=ts.p12\n"
-                + "0777 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=511 tls.trustStore=ts.p12\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: octalLookingScalars (YAML 1.2 reading)")
-    void octalLookingScalarsJackson3() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS, s -> SOURCE + tls(s),
                 RestSourcesYamlCharacterisationTest::render)).isEqualTo("010 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=010 tls.trustStore=ts.p12\n"
                 + "0o10 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=0o10 tls.trustStore=ts.p12\n"

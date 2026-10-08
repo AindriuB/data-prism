@@ -1,7 +1,6 @@
 package io.github.aindriub.dataprism.example.characterisation;
 
 import io.github.aindriub.dataprism.security.SecurityPolicy;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -12,8 +11,8 @@ import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link SecurityPolicy#fromYaml} does today (Jackson 2 YAML, SnakeYAML, YAML 1.1 reading
- * rules). Each test's name or Javadoc states the observed behaviour; the expected text is what the
+ * What {@link SecurityPolicy#fromYaml} does today (Jackson 3 YAML, YAML 1.2 reading rules; decision D-167-1 accepted
+ * the change from Jackson 2 and YAML 1.1). Each test's name or Javadoc states the observed behaviour; the expected text is what the
  * current code printed.
  */
 class SecurityPolicyYamlCharacterisationTest {
@@ -37,23 +36,8 @@ class SecurityPolicyYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by booleanSpellingsJackson3")
-    @DisplayName("as a purpose, yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms)")
+    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
     void booleanSpellings() {
-        assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> "purposes:\n  - " + s + "\n",
-                SecurityPolicyYamlCharacterisationTest::render)).isEqualTo("yes => ok purposes=[true] roles={}\n"
-                + "no => ok purposes=[false] roles={}\n"
-                + "on => ok purposes=[true] roles={}\n"
-                + "off => ok purposes=[false] roles={}\n"
-                + "y => ok purposes=[y] roles={}\n"
-                + "n => ok purposes=[n] roles={}\n"
-                + "True => ok purposes=[true] roles={}\n"
-                + "FALSE => ok purposes=[false] roles={}\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: booleanSpellings (YAML 1.2 reading)")
-    void booleanSpellingsJackson3() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> "purposes:\n  - " + s + "\n",
                 SecurityPolicyYamlCharacterisationTest::render)).isEqualTo("yes => ok purposes=[yes] roles={}\n"
                 + "no => ok purposes=[no] roles={}\n"
@@ -66,18 +50,8 @@ class SecurityPolicyYamlCharacterisationTest {
     }
 
     @Test
-    @Disabled("Jackson 3 reads YAML 1.2 where Jackson 2 read 1.1; awaiting owner acceptance, see the 167 hand-back; the Jackson 3 behaviour is asserted by octalLookingScalarsJackson3")
-    @DisplayName("as a purpose, 010 reads as decimal 8 and 0777 as decimal 511 (YAML 1.1 octal); 0o10 stays the text 0o10")
+    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
     void octalLookingScalars() {
-        assertThat(Observe.table(Observe.OCTAL_SPELLINGS, s -> "purposes:\n  - " + s + "\n",
-                SecurityPolicyYamlCharacterisationTest::render)).isEqualTo("010 => ok purposes=[8] roles={}\n"
-                + "0o10 => ok purposes=[0o10] roles={}\n"
-                + "0777 => ok purposes=[511] roles={}\n");
-    }
-
-    @Test
-    @DisplayName("Jackson 3: octalLookingScalars (YAML 1.2 reading)")
-    void octalLookingScalarsJackson3() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS, s -> "purposes:\n  - " + s + "\n",
                 SecurityPolicyYamlCharacterisationTest::render)).isEqualTo("010 => ok purposes=[010] roles={}\n"
                 + "0o10 => ok purposes=[0o10] roles={}\n"
