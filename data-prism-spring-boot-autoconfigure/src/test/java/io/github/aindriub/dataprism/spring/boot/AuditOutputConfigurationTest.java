@@ -187,6 +187,48 @@ class AuditOutputConfigurationTest {
     }
 
     @Test
+    void the_json_projection_is_its_own_bean_and_closing_the_context_closes_both_sinks(@TempDir Path dir) {
+        Path json = dir.resolve("json");
+        List<String> destroyed = new java.util.concurrent.CopyOnWriteArrayList<>();
+        org.springframework.beans.factory.config.DestructionAwareBeanPostProcessor recorder =
+                (bean, name) -> {
+                    if (name.equals("dataPrismHashChainedAuditSink") || name.equals("dataPrismJsonAuditProjection")) {
+                        destroyed.add(name);
+                    }
+                };
+        AuditSink[] sinks = new AuditSink[2];
+        segmented(dir).withPropertyValues("dataprism.audit.output.json-directory=" + json)
+                .withBean("destructionRecorder",
+                        org.springframework.beans.factory.config.DestructionAwareBeanPostProcessor.class, () -> recorder)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasBean("dataPrismJsonAuditProjection");
+                    sinks[0] = context.getBean(AuditSink.class);
+                    sinks[1] = context.getBean(JsonProjection.class).asSink();
+                });
+        // the tee goes first and closes the projection and the native sink; the context's own close of the
+        // projection afterwards is a no-op
+        assertThat(destroyed).containsExactly("dataPrismHashChainedAuditSink", "dataPrismJsonAuditProjection");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sinks[1].record(null)).isInstanceOf(RuntimeException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sinks[0].record(null)).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void no_projection_bean_without_a_json_directory(@TempDir Path dir) {
+        segmented(dir).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).doesNotHaveBean("dataPrismJsonAuditProjection");
+        });
+    }
+
+    @Test
+    void an_application_bean_cannot_replace_the_projection(@TempDir Path dir) {
+        segmented(dir).withPropertyValues("dataprism.audit.output.json-directory=" + dir.resolve("json"))
+                .withBean("dataPrismJsonAuditProjection", Object.class, Object::new).run(context ->
+                        assertThat(context).hasFailed());
+    }
+
+    @Test
     void startup_purges_an_expired_ndjson_segment_and_keeps_a_current_one(@TempDir Path dir) throws Exception {
         Path json = Files.createDirectories(dir.resolve("json"));
         Path expired = Files.writeString(json.resolve("audit-2025-01-10.ndjson"), "{}\n");

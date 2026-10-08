@@ -17,6 +17,7 @@ dataPrismHashChainedAuditSink | io.github.aindriub.dataprism.audit.AuditSink
 dataPrismHttpTransport | io.github.aindriub.dataprism.mcp.DataPrismMcpServer$HttpTransport
 dataPrismHttpTransportValidated | java.lang.Object
 dataPrismIdentityResolverPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismJsonAuditProjection | io.github.aindriub.dataprism.spring.boot.JsonProjection
 dataPrismMcpServlet | org.springframework.boot.web.servlet.ServletRegistrationBean<io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider>
 dataPrismMcpSyncServer | io.modelcontextprotocol.server.McpSyncServer
 dataPrismMcpTransportPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor

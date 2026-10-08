@@ -62,6 +62,9 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismAuditRecorder", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismSlf4jAuditSink", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismHashChainedAuditSink", Classification.REPLACEABLE, Guard.NONE),
+            // The JSON projection writes audit-derived output; it cannot be replaced (D-0.6-8): its type is
+            // package-private and final, and a same-named bean is refused as a bean-definition override.
+            entry("dataPrismJsonAuditProjection", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismAuditCheckpointSink", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismAuditRetention", Classification.REPLACEABLE, Guard.NONE),
             // Internal scheduler, not an extension point; the enum has no "internal" value, and it is not privacy-critical.
