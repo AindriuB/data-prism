@@ -6,7 +6,8 @@
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/sink/TeeAuditSink.java (location after 157; adjust to where 157 put it)
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/sink/TeeAuditSinkTest.java (same)
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/*Audit*Configuration.java (the extracted audit configuration class from 159)
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/AuditSinkSelection.java (declares `dataPrismHashChainedAuditSink`; owns `JsonProjection`), `AuditWiring.java` if the new bean belongs there, and `JsonProjection.java`
+- data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/ (the checked-in inventory lists from 159)
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java (insertions only: one row)
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanClassificationTest.java (insertions only, if it pins a count)
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanInventoryTest.java and its checked-in lists (from 159)
@@ -22,13 +23,13 @@ This is a behaviour change (one more bean), deliberately kept out of the
 pure-move tasks.
 
 ## Context
-- DataPrismAutoConfiguration.java:321 at 438ef802 — `JsonProjection implements DisposableBean`; after 159 it lives in the extracted audit configuration class.
+- DataPrismAutoConfiguration.java:321 at 438ef802 — `JsonProjection implements DisposableBean`; after 159 it is the package-private `JsonProjection` class, used by `AuditSinkSelection`.
 - PrivacyExtensionPoints.java:1-40 — the classification contract; a `PRIVACY_CRITICAL` bean needs a guard and must not carry `@ConditionalOnMissingBean`.
 - docs/plan/HISTORY.md, grep `0.5.0 wave 3, part 1` and the 148 cost note — task 148 was blocked once because a new `@Bean` needed a `PrivacyExtensionPoints` row outside its Owns. That row is in Owns here.
 
 ## Acceptance
 - [ ] The projection is a `@Bean` with a stable name, present only when `dataprism.audit.output.json-directory` is set, and the hash-chained sink receives it by injection. `registerDisposableBean` no longer appears in `data-prism-spring-boot-autoconfigure/src/main`.
-- [ ] `PrivacyExtensionPoints` has one new row for it, classified per D-0.6-8 (planner's proposal: `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`, because a replaced projection would write audit-derived JSON the framework no longer controls). The `@Bean` sweep finds 56 methods.
+- [ ] `PrivacyExtensionPoints` has one new row for it, classified per D-0.6-8 (planner's proposal: `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`, because a replaced projection would write audit-derived JSON the framework no longer controls). The `@Bean` sweep finds 51 methods (50 after 159, plus this one).
 - [ ] `TeeAuditSink implements Closeable`; `close()` closes the projection exactly once and is idempotent. A unit test calls `close()` twice and asserts one close of the projection.
 - [ ] A context test shows that shutting the context down closes the projection once and the native sink once, in that order or the order the hand-back states and justifies.
 - [ ] The poisoning behaviour 160 added is unchanged: `TeeAuditSinkTest`'s `Error` case passes unedited.

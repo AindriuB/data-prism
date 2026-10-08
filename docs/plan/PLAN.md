@@ -518,9 +518,9 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 6 | 174 | Record source models: every emitted property must come from a record component (closes interface-default `@JsonProperty` rename bypass) | unplanned, external review P2 on 173. **Done 2026-10-08** |
 | 6 | 175 | Interface and abstract map key types (`CharSequence`, `Comparable`, `Serializable`) deferred to the per-key runtime check; `CheckedKey` forwards `resolve`/`createContextual`/`handledType` | unplanned, external review P2 on 173. **Done 2026-10-08** |
 | 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169, 170. **Done 2026-10-08** |
-| 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt`; drops `allowEmptyShould(true)` on 158's "validation must not depend on spring.boot.jwt" rule | 158. **Next** |
-| 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
-| 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159 |
+| 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt`; drops `allowEmptyShould(true)` on 158's "validation must not depend on spring.boot.jwt" rule | 158. **Done 2026-10-08** |
+| 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160. **Next** |
+| 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159. **Next** |
 | 10 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164 |
 | 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-170 |
 
@@ -550,6 +550,8 @@ Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iterat
 - Scope added to 170 (fail-closed, owner told and did not object): the readers also refuse multi-document files and trailing content with a stable code.
 - Scope added to 168 (same basis): the ArchUnit mapper rule also catches obtained mappers (`JsonMapper.shared()` and similar static accessors, and data-prism classes using Spring Boot's auto-configured `JsonMapper`/`ObjectMapper` bean), with negative fixtures; the `SourceTree` Javadoc ("two names on the allowlist") is updated; `SourceTreeJacksonParityTest` asserts the specific Jackson empty-bean exception type.
 - Scope added to 162: the migration page records the YAML 1.2 meaning changes now refused by 170, and 167's public signature changes.
+**Wave 8 done 2026-10-08:** 159 merged onto `release/0.6.0-spring`. Wave 9 is next: 161 and 164 in parallel. Details are in the retired 159 task file's Outcome. Notes carried forward: the audit wiring is now `AuditSinkSelection` (owns `dataPrismHashChainedAuditSink` and `JsonProjection`) and `AuditWiring` (owns `dataPrismAuditRecorder`); 161 and 163 Owns updated. 162 gained the logger-category rename, bean-name change and stale-reference fixes.
+
 - Follow-up from 167 (not yet a task): `JwtDecoderSupport.parseDiscoveryMetadata` has a stale `throws IOException`. The file is not in 168's Owns, so fold it into 159 (which moves the file) or file a small task.
 
 **Wave 1 done 2026-10-08** (tasks 154, 155, 160, 165, integrated on `release/0.6.0-wave1`; task files retired to `docs/plan/tasks/retired/`). Owner decisions and notes:

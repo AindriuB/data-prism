@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 8: DataPrismAutoConfiguration split by concern, JWT into spring.boot.jwt (159)
+
+Task 159 merged onto `release/0.6.0-spring`. `DataPrismAutoConfiguration` keeps its FQCN but is about 45 lines with no beans; it imports 14 package-private configuration classes in the old registration order, one per concern, plus a `JsonProjection` helper. There are 50 `@Bean` methods (the task's 55 counted Javadoc mentions). `JwtDecoderSupport` and `JwtCallerContextExtractor` are in `spring.boot.jwt`, and ArchUnit forbids `validation` and `jwt` depending on each other in either direction.
+
+**Cost:** The risk was `@ConditionalOnMissingBean` order, so `AutoConfiguredBeanInventoryTest` was generated before the move and passes unchanged after it: a static view of method- and class-level conditions and classifications, and runtime views for 8 scenarios. Review found the static view ignored class-level `@Conditional*`; the polish commit added it, proven by mutation. Visible side effects: the logger categories `DataPrismAutoConfiguration$AuditSinkSelection` and `$JsonProjection` became `AuditSinkSelection` and `JsonProjection`, and configuration-class bean names changed (both go in 162's migration page). Stale `DataPrismAutoConfiguration#method` references remain in comments and docs and are assigned to 162. Scope waiver: one comment line in `validation/DataPrismContractValidator.java`. Tester PASS at 4a0764a3 (1669 tests, 0 failed).
+
 ## 2026-10-08 — 0.6.0 wave 7: DataPrismProperties split by concern (158)
 
 Task 158 merged onto `release/0.6.0-spring`. `DataPrismProperties` is now a 182-line root plus 12 other top-level `*Properties` classes, one per concern. Validation lives in `spring.boot.validation` (`DataPrismPropertiesValidator`, `DataPrismContractValidator`). `PropertyNamesFrozenTest` freezes 110 `dataprism.*` paths, types and defaults, there are still 103 + 8 refusal codes in the same order and 55 `@Bean` methods, and the FQCN, prefix and imports files are unchanged. ArchUnit now says `validation` must not depend on `spring.boot.jwt` (with `allowEmptyShould` until 159 creates the package) and nothing outside `spring.boot` depends on `validation`.

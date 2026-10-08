@@ -11,7 +11,7 @@ recorded in this file.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditRecorder.java (the post-write hook and a constructor or factory that accepts listeners; no existing constructor removed)
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/AuditEventListener*Test.java (new)
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/AuditRecorderTest.java (insertions only)
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/*Audit*Configuration.java (the class that declares `dataPrismAuditRecorder` after 159; `DataPrismAutoConfiguration.java` instead if 159 left that bean there; the recorder bean method only)
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/AuditWiring.java (declares `dataPrismAuditRecorder` after 159; the recorder bean method only)
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java (only if D-163-C picks (b), (c) or (d): one row, plus one enum value for (c))
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanClassificationTest.java (insertions only, only if D-163-C adds a bean)
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanInventoryTest.java and its checked-in lists (only if D-163-C adds a bean)

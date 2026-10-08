@@ -9,6 +9,7 @@
 - mkdocs.yml (one nav entry under "Reference")
 - docs/architecture.md (the components table, the boundary/ArchitectureTest prose, and one new entry in "Decisions worth knowing")
 - docs/conventions.md (the "Deliberate, reviewed exception" paragraph: class names only)
+- Comment- and doc-only stale-reference fixes from 159: AuditProperties.java (~211), IdentityProperties.java (~8), PrivacyProperties.java (~46), validation/DataPrismPropertiesValidator.java (~419, ~442), ServerIntegrationsConfiguration (stale `DataPrismAutoConfiguration#method` references), docs-site/diagrams/README.md (~278-288), docs/developer-guide/write-an-adapter.md (~65)
 - docs-site/diagrams/README.md (lines ~275-276 only: the two source-path links to `core/DataSourceAdapter.java` and `core/PassThroughIdentityResolver.java` must name `core/spi/`; found stale after 156 by the reviewer)
 
 ## Goal
@@ -45,6 +46,8 @@ check). Each is copied from that task's hand-back.
 - [ ] (Task 168.) `docs/migration-0.6.md` carries 168's signature inventory from the retired 168 task file's Outcome, including the dependency swaps (`mcp-json-jackson2` to `mcp-json-jackson3`, `spring-boot-jackson2` to `spring-boot-starter-jackson`) and `DataPrismObjectMapper`/`create()` no longer being public.
 - [ ] (Task 171.) The CHANGELOG notes, under a CI or build heading, that `build.yml` now builds the Javadoc with the release profile (unsigned) on every PR.
 - [ ] (Task 175 follow-up, resolved by architect review 2026-10-08.) `docs/architecture.md` "Decisions worth knowing" records the map-key decision: map keys and dynamic property names are treated as undeclared data; the profile's `unclassified` setting governs; kept names become `<undeclared-N>`; refusals, audit and logs carry only `<undeclared>`; only a Java-built `PASS_THROUGH_UNSAFE` profile emits keys verbatim. Point to `docs/extending.md` (the section around lines 391-416) and name the pinning tests: `UndeclaredPropertyNameTest`, `UndeclaredKeyRefusalTest`, `UndeclaredNameToolResultScanTest`.
+
+- [ ] (From task 159, merged 2026-10-08.) `docs/migration-0.6.md` records that the logger categories `DataPrismAutoConfiguration$AuditSinkSelection` and `DataPrismAutoConfiguration$JsonProjection` are now `AuditSinkSelection` and `JsonProjection` (package `io.github.aindriub.dataprism.spring.boot`), so operators who set levels on them must change them, and that the bean names of the configuration classes themselves changed. `docs/conventions.md` (~78) names `AuditSinkSelection` as the home of `dataPrismHashChainedAuditSink`. The stale `DataPrismAutoConfiguration#method` and line references in the files listed in Owns are corrected to the new classes (comment and doc changes only).
 
 ## Out of scope
 - The 0.6.0 release cut: version bump, `server.json`, image tags, tagging and publishing. A separate task, filed when the owner calls the cut.

@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-08 | 159 | `DataPrismAutoConfiguration` split into 14 package-private configuration classes (50 beans, order preserved, inventory test); JWT classes into `spring.boot.jwt` | ## 2026-10-08 — 0.6.0 wave 8: DataPrismAutoConfiguration split by concern, JWT into spring.boot.jwt (159) |
 | 2026-10-08 | 158 | DataPrismProperties split into 13 top-level *Properties classes; validation moved to spring.boot.validation; property names frozen by test | ## 2026-10-08 — 0.6.0 wave 7: DataPrismProperties split by concern (158) |
 | 2026-10-08 | 175 | Interface and abstract map key types deferred to the per-key runtime check; CheckedKey forwards resolve/createContextual/handledType | ## 2026-10-08 — 0.6.0 wave 6 addendum: interface and abstract map key types (175) |
 | 2026-10-08 | 174 | Source-model record properties must come from record components (structural check, startup and runtime) | ## 2026-10-08 — 0.6.0 wave 6 addendum: record properties must match components (174) |
