@@ -20,6 +20,8 @@ import java.util.Objects;
  *
  * <p>{@link #close()} closes the projection, then the primary, each only if it is {@link Closeable};
  * the primary is closed even if the projection's close throws. Idempotent: later calls do nothing.
+ * A {@link #record} racing shutdown writes the primary first: a closed projection then poisons the tee
+ * after the durable write, and a closed primary throws before the projection is called (fails closed).
  */
 public final class TeeAuditSink implements AuditSink, Closeable {
 

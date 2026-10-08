@@ -18,6 +18,7 @@ dataPrismHttpTransport | io.github.aindriub.dataprism.mcp.DataPrismMcpServer$Htt
 dataPrismHttpTransportValidated | java.lang.Object
 dataPrismIdentityResolverPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismJsonAuditProjection | io.github.aindriub.dataprism.spring.boot.JsonProjection
+dataPrismJsonAuditProjectionPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismMcpServlet | org.springframework.boot.web.servlet.ServletRegistrationBean<io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider>
 dataPrismMcpSyncServer | io.modelcontextprotocol.server.McpSyncServer
 dataPrismMcpTransportPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
