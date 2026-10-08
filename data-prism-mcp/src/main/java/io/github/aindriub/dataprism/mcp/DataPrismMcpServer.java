@@ -16,6 +16,8 @@ import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpServerTransportProvider;
+import io.modelcontextprotocol.spec.McpStreamableServerTransportProvider;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -113,7 +115,27 @@ public final class DataPrismMcpServer {
                 developmentCaller, options);
         var transport = new StdioServerTransportProvider(wiring.json());
 
+        return syncServer(wiring, transport);
+    }
+
+    /**
+     * Builds the server with the shared mapper set explicitly. Without {@code jsonMapper(..)} the
+     * SDK falls back to a ServiceLoader-discovered default mapper, a second and unconfigured one.
+     */
+    static McpSyncServer syncServer(Wiring wiring, McpServerTransportProvider transport) {
         return McpServer.sync(transport)
+                .jsonMapper(wiring.json())
+                .serverInfo("data-prism", VERSION)
+                .instructions(INSTRUCTIONS)
+                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
+                .tools(wiring.get().specification(), wiring.compare().specification())
+                .build();
+    }
+
+    /** As {@link #syncServer(Wiring, McpServerTransportProvider)}, for a streamable transport. */
+    static McpSyncServer syncServer(Wiring wiring, McpStreamableServerTransportProvider transport) {
+        return McpServer.sync(transport)
+                .jsonMapper(wiring.json())
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
@@ -167,12 +189,7 @@ public final class DataPrismMcpServer {
                 .mcpEndpoint(endpointPath)
                 .build();
 
-        McpSyncServer server = McpServer.sync(transport)
-                .serverInfo("data-prism", VERSION)
-                .instructions(INSTRUCTIONS)
-                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(wiring.get().specification(), wiring.compare().specification())
-                .build();
+        McpSyncServer server = syncServer(wiring, transport);
 
         return new HttpTransport(server, transport);
     }
