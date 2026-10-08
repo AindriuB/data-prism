@@ -82,7 +82,7 @@ class ConfiguredJsonSourcesTest {
     @Test
     @DisplayName("no json-sources section is a stable, named refusal")
     void noSectionRefuses() {
-        assertThatThrownBy(() -> load("other: {}"))
+        assertThatThrownBy(() -> load("json-sources: {}"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("json-sources");
     }
@@ -515,5 +515,178 @@ class ConfiguredJsonSourcesTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("overflowing-source")
                 .hasMessageContaining(String.valueOf(poolSize));
+    }
+
+    private static void assertRefused(String yaml, String prefix) {
+        assertThatThrownBy(() -> load(yaml))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith(prefix);
+    }
+
+    @Test
+    @DisplayName("an unknown key on a source is refused with UNKNOWN_CONFIG_KEY, naming the key")
+    void unknownSourceKeyCode() {
+        assertRefused(VALID.replace("timeout: PT2S", "timeout: PT2S\n    extra: true"),
+                "UNKNOWN_CONFIG_KEY: json source customer-api has an unknown key 'extra'");
+    }
+
+    @Test
+    @DisplayName("an unknown key on a field is refused with UNKNOWN_CONFIG_KEY, naming the key")
+    void unknownFieldKeyCode() {
+        assertRefused(VALID.replace("nonSensitive: \"enumerated lifecycle state\"",
+                        "nonSensitive: \"enumerated lifecycle state\"\n        extra: true"),
+                "UNKNOWN_CONFIG_KEY: json source customer-api field status has an unknown key 'extra'");
+    }
+
+    @Test
+    @DisplayName("an unknown top-level key is refused with UNKNOWN_CONFIG_KEY")
+    void unknownTopLevelKey() {
+        assertRefused("extra: 1\n" + VALID,
+                "UNKNOWN_CONFIG_KEY: configured JSON source configuration has an unknown key 'extra'");
+    }
+
+    @Test
+    @DisplayName("an unknown key in tls is refused with UNKNOWN_CONFIG_KEY")
+    void unknownTlsKey() {
+        assertRefused(VALID + "tls:\n  key-store: ks.p12\n  key-store-password-env: PATH\n  trust-store: ts.p12\n"
+                        + "  trust-store-password-env: PATH\n  store-type: PKCS12\n  surprise: 1\n",
+                "UNKNOWN_CONFIG_KEY: tls configuration has an unknown key 'surprise'");
+    }
+
+    @Test
+    @DisplayName("a unknown key longer than 64 characters is named cut to 64")
+    void longUnknownKeyIsTruncated() {
+        assertThatThrownBy(() -> load(VALID.replace("timeout: PT2S", "timeout: PT2S\n    " + "k".repeat(100) + ": 1")))
+                .hasMessageContaining("'" + "k".repeat(64) + "'")
+                .hasMessageNotContaining("k".repeat(65));
+    }
+
+    @Test
+    @DisplayName("a duplicate top-level key is refused with DUPLICATE_CONFIG_KEY")
+    void duplicateTopLevelKey() {
+        assertRefused(VALID + VALID,
+                "DUPLICATE_CONFIG_KEY: configured JSON source configuration has a duplicate key 'json-sources'");
+    }
+
+    @Test
+    @DisplayName("a duplicate key in a source is refused with DUPLICATE_CONFIG_KEY, naming the path")
+    void duplicateKeyInSource() {
+        assertRefused(VALID.replace("timeout: PT2S", "timeout: PT2S\n    timeout: PT9S"),
+                "DUPLICATE_CONFIG_KEY: configured JSON source configuration has a duplicate key 'timeout'"
+                        + " in json-sources.customer-api");
+    }
+
+    @Test
+    @DisplayName("a duplicate field name is refused with DUPLICATE_CONFIG_KEY")
+    void duplicateFieldName() {
+        assertRefused(VALID + "      email:\n        nonSensitive: \"again\"\n",
+                "DUPLICATE_CONFIG_KEY: configured JSON source configuration has a duplicate key 'email'"
+                        + " in json-sources.customer-api.fields");
+    }
+
+    @Test
+    @DisplayName("a second YAML document is refused with TRAILING_CONFIG_CONTENT")
+    void secondDocument() {
+        assertRefused(VALID + "---\n" + VALID, "TRAILING_CONFIG_CONTENT: configured JSON source configuration ");
+    }
+
+    @Test
+    @DisplayName("identifier accepts true and refuses yes, on and True with INVALID_CONFIG_BOOLEAN")
+    void identifierBoolean() {
+        for (String spelling : new String[] {"yes", "on", "True", "1"}) {
+            assertRefused(VALID.replace("identifier: true", "identifier: " + spelling),
+                    "INVALID_CONFIG_BOOLEAN: json source customer-api field customerId.identifier "
+                            + "must be exactly true or false");
+        }
+    }
+
+    @Test
+    @DisplayName("a nonSensitive reason, timeout or model-version written as a non-string is refused with NON_STRING_CONFIG_SCALAR")
+    void stringFieldsMustBeStrings() {
+        assertRefused(VALID.replace("nonSensitive: \"enumerated lifecycle state\"", "nonSensitive: 12345"),
+                "NON_STRING_CONFIG_SCALAR: json source customer-api field status nonSensitive must be a quoted string");
+        assertRefused(VALID.replace("timeout: PT2S", "timeout: 2"),
+                "NON_STRING_CONFIG_SCALAR: json source customer-api timeout must be a quoted string");
+        assertRefused(VALID.replace("model-version: customer-v1", "model-version: 1.0"),
+                "NON_STRING_CONFIG_SCALAR: json source customer-api model-version must be a quoted string");
+    }
+
+    @Test
+    @DisplayName("a base-url with user-info is refused without repeating the URL or its credentials")
+    void userInfoBaseUrlDoesNotEchoCredentials() {
+        assertThatThrownBy(() -> load(VALID.replace("https://customer.example", "https://svc:s3cr3t@customer.example")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("json source customer-api base-url must not carry user-info, a query string or a fragment")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("an unparseable base-url is refused without repeating it")
+    void unparseableBaseUrlDoesNotEchoCredentials() {
+        assertThatThrownBy(() -> load(VALID.replace("https://customer.example", "\"https://svc:s3cr3t@cust omer\"")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("json source customer-api has an unparseable base-url")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("an empty nested-catalogues value is refused with INVALID_CONFIG_SHAPE")
+    void emptyNestedCatalogues() {
+        assertRefused(VALID.replace("    fields:", "    nested-catalogues:\n    fields:"),
+                "INVALID_CONFIG_SHAPE: json source customer-api nested-catalogues must be a mapping");
+    }
+
+    @Test
+    @DisplayName("an empty tls value is refused with INVALID_CONFIG_SHAPE rather than meaning no tls")
+    void emptyTls() {
+        assertRefused(VALID + "tls:\n", "INVALID_CONFIG_SHAPE: tls configuration tls must be a mapping");
+    }
+
+    @Test
+    @DisplayName("a null-like nonSensitive reason is refused with NULL_LIKE_CONFIG_SCALAR")
+    void nullLikeReason() {
+        assertRefused(VALID.replace("nonSensitive: \"enumerated lifecycle state\"", "nonSensitive: Null"),
+                "NULL_LIKE_CONFIG_SCALAR: json source customer-api field status nonSensitive ");
+    }
+
+    @Test
+    @DisplayName("an alias is refused with UNSUPPORTED_CONFIG_YAML")
+    void aliasRefused() {
+        assertRefused(VALID.replace("classifications: [CONTACT]", "classifications: &c [CONTACT]")
+                .replace("classifications: [PII]", "classifications: *c"), "UNSUPPORTED_CONFIG_YAML: ");
+    }
+
+    @Test
+    @DisplayName("a source name is cut to 64 characters, with control characters replaced, in a refusal message")
+    void sourceNameIsTruncatedInMessages() {
+        String longName = "n".repeat(100);
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"" + longName + "\\nx\":")
+                .replace("    timeout: PT2S\n", "")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("json source " + "n".repeat(64) + " has no timeout")
+                .hasMessageNotContaining("n".repeat(65));
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"a\\nb\":").replace("    timeout: PT2S\n", "")))
+                .hasMessageStartingWith("json source a?b has no timeout");
+    }
+
+    @Test
+    @DisplayName("nested-catalogues of the wrong shape, empty or non-empty, is refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedNestedCatalogues() {
+        assertRefused(VALID.replace("    fields:", "    nested-catalogues: [a]\n    fields:"),
+                "INVALID_CONFIG_SHAPE: json source customer-api nested-catalogues must be a mapping");
+        assertRefused(VALID.replace("    fields:", "    nested-catalogues: x\n    fields:"),
+                "INVALID_CONFIG_SHAPE: json source customer-api nested-catalogues must be a mapping");
+    }
+
+    @Test
+    @DisplayName("the source name in the nested-catalogues shape refusal is cut to 64 characters, control characters replaced")
+    void nestedCataloguesShapeMessageTruncatesName() {
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"" + "n".repeat(100) + "\\nx\":")
+                .replace("    fields:", "    nested-catalogues:\n    fields:")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("INVALID_CONFIG_SHAPE: json source " + "n".repeat(64) + " nested-catalogues must be a mapping");
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"a\\nb\":")
+                .replace("    fields:", "    nested-catalogues:\n    fields:")))
+                .hasMessage("INVALID_CONFIG_SHAPE: json source a?b nested-catalogues must be a mapping");
     }
 }

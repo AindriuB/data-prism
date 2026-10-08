@@ -57,6 +57,64 @@ four.
 - Names in this document use Spring's relaxed binding spelling. For example,
   `dataprism.security.jwt.jwk-set-uri` may bind to `jwkSetUri` in Java.
 
+### Strict keys in YAML configuration files
+
+Six readers parse a YAML file by hand, not through Spring's property binding.
+Each refuses a mistake at startup rather than loading a configuration that
+protects less than the file says.
+
+| Reader | Where the file comes from |
+|---|---|
+| `ModelDescriptors` | `dataprism.privacy.descriptor-file` |
+| `ConfiguredJsonSources` | `dataprism.json-sources.config-location` |
+| `PrivacyProfiles` | the bundled `privacy-profiles-default.yaml` (Spring), or `PrivacyProfiles.fromYaml(InputStream)` |
+| `VocabularyRegistry` | the seven bundled vocabularies (Spring), or `VocabularyRegistry.builder().load(InputStream)` |
+| `SecurityPolicy` | `SecurityPolicy.fromYaml(InputStream)`; the Spring path builds it from `dataprism.security-policy.*` properties instead |
+| `RestSources` | `RestSources.fromYaml(InputStream)` |
+
+Every refusal in the table below is an `IllegalArgumentException` whose
+message starts with the stable code and `: `. The message names the kind of
+file, the path to the mapping and the offending key (each path segment cut to
+64 characters, control characters replaced), and never a value. Other
+refusals from these readers keep their older messages, and some of those
+(an unknown enum name, an unknown capability, a non-numeric band bound) do
+repeat the configured schema value, which is useful to the operator; treat
+those messages as operator-visible only.
+
+| Code | Triggered by |
+|---|---|
+| `DUPLICATE_CONFIG_KEY` | a mapping, at any depth, with the same key twice. Before this, the last one silently won. This includes user-chosen names: two models, fields, profiles, sources or roles with the same name. |
+| `UNKNOWN_CONFIG_KEY` | a key outside the allowed set of a fixed-schema mapping, at any depth: a root, a model, a field, a profile, a rule, a generalization rule, a source, `tls`, a vocabulary file, or `pools` (an unknown pool name is an unknown key). Before this, most readers ignored it. |
+| `NON_STRING_CONFIG_SCALAR` | a string-typed field (a purpose, a path, a `base-url`, a `timeout`, a `subject`, `identifier`, `nonSensitive`, a `unit`, a vocabulary `id`, `locale`, `script` or pool entry, an enum name) written as a number, a boolean or an empty value. Quote it. |
+| `INVALID_CONFIG_BOOLEAN` | a boolean-typed field (`exposed`, `descendable`, `override`, `identifier`) that is not exactly `true` or `false`. `yes`, `no`, `on`, `off`, `True` and `1` are refused: YAML 1.2 reads the first four as text, and 0.5.x read them as booleans. |
+| `LEADING_ZERO_CONFIG_NUMBER` | a numeric-typed field (a band bound, a vocabulary `version`) written with a leading zero, such as `010`, `0777` or `-01`. 0.5.x read these as octal. A plain `0` and a decimal such as `0.5` are fine. The parser cannot tell a quoted `"010"` from `010`, so quoting does not help; write `10`. |
+| `UNSUPPORTED_CONFIG_YAML` | an alias (`*name`), an anchor (`&name`) or an explicit tag (`!custom`, `!!int`). Only plain YAML is accepted: an alias would be read as the text of its anchor name, and a tag changes how a scalar resolves behind the readers' checks. An anchor on a key is refused too. A tag on a key cannot be seen by the parser; the key is still read as its plain text, so it has no effect. |
+| `INVALID_CONFIG_SHAPE` | a section that is present but not the required shape: `classifications`, `generalization`, `fields`, `pools`, `roles`, `tls` and `nested-catalogues` must be mappings, and each pool must be a list. An empty value (`fields:` with nothing after it) is also refused; omit the key instead. Before this they were silently ignored. |
+| `NULL_LIKE_CONFIG_SCALAR` | a string field whose text is `~`, `Null` or `NULL`. YAML 1.2 does not make these null here, and 0.5.x read `~` as absent. Quoting does not help (the parser cannot tell the two apart); write the text you mean. An empty value or lower-case `null` in a string field is `NON_STRING_CONFIG_SCALAR`. |
+| `TRAILING_CONFIG_CONTENT` | a second YAML document (`---` followed by more), or anything after the first. A bare trailing `---` counts as a second, empty document and is refused; a `...` document-end marker is accepted. |
+
+A file whose text is not YAML, or whose root is not a mapping, is still
+reported as "could not be read".
+
+A configuration that loaded on 0.5.x may now refuse to start. This is
+intended: each of these used to change what the file meant without any error.
+
+The Spring path reports a refusal from the descriptor file as
+`INVALID_MODEL_DESCRIPTOR_FILE` and does not repeat the file's content. The
+inner code above is currently not carried over, so the operator learns that
+the file was refused, not which rule; the reader's own message is visible only
+when `ModelDescriptors.fromYaml` is called directly.
+
+**Quoting rule.** A value that must be text and could be read as something
+else has to be quoted. `timeout: PT2S` and `model-version: customer-v1` are
+fine as written, but `model-version: 1.0` is a number, so write
+`model-version: "1.0"`. A value that starts a YAML number (`1`, `1.5`, `true`)
+in a string field is `NON_STRING_CONFIG_SCALAR`.
+
+`ConfiguredJsonSources` shares its tls and key handling with `RestSources`, so
+it is subject to the same rules; unlike 0.5.x it also refuses an unknown root
+key other than `json-sources` and `tls`.
+
 ## `dataprism.*` vocabulary
 
 The table is the complete V1 vocabulary. `Required` means required in every

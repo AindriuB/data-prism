@@ -73,9 +73,57 @@ public final class ConfiguredJsonSourcesInitializer
             String outboundHeader = bindString(environment, OUTBOUND_HEADER_PROPERTY);
             return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment, outboundHeader);
         } catch (IOException e) {
+            // The cause is not chained (its message repeats the raw location) and the location is
+            // shown without user-info, query string or fragment.
             throw new IllegalStateException(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY
-                    + " '" + location + "' could not be read", e);
+                    + " '" + describe(location) + "' could not be read");
         }
+    }
+
+    /**
+     * A config location safe to name in a message, safe by construction:
+     * <ul>
+     *   <li>anything containing {@code @} is never shown (credentials can hide in a form no parser
+     *       can be trusted to split);</li>
+     *   <li>a {@code classpath:} or {@code file:} location, or a plain path, is cut at the first
+     *       {@code ?} or {@code #} and cut to 64 characters;</li>
+     *   <li>any other scheme is reduced to {@code scheme://host[:port]}, never a path (it can embed
+     *       a token), user-info, query or fragment.</li>
+     * </ul>
+     * Limit: for a remote location the host is shown, so a token placed in a host label would appear.
+     */
+    static String describe(String location) {
+        if (location.indexOf('@') >= 0) {
+            return LOCATION_NOT_SHOWN;
+        }
+        java.util.regex.Matcher scheme = SCHEME.matcher(location);
+        boolean otherScheme = scheme.lookingAt() && scheme.group(1).length() > 1
+                && !scheme.group(1).equalsIgnoreCase("classpath") && !scheme.group(1).equalsIgnoreCase("file");
+        if (!otherScheme) {
+            int cut = indexOfAny(location, '?', '#');
+            return io.github.aindriub.dataprism.core.model.StrictYaml.shown(
+                    cut < 0 ? location : location.substring(0, cut));
+        }
+        try {
+            URI uri = new URI(location);
+            if (uri.getHost() == null || uri.getScheme() == null) {
+                return LOCATION_NOT_SHOWN;
+            }
+            return io.github.aindriub.dataprism.core.model.StrictYaml.shown(uri.getScheme() + "://" + uri.getHost()
+                    + (uri.getPort() >= 0 ? ":" + uri.getPort() : ""));
+        } catch (URISyntaxException e) {
+            return LOCATION_NOT_SHOWN;
+        }
+    }
+
+    private static final java.util.regex.Pattern SCHEME = java.util.regex.Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
+
+    static final String LOCATION_NOT_SHOWN = "<location not shown>";
+
+    private static int indexOfAny(String text, char first, char second) {
+        int a = text.indexOf(first);
+        int b = text.indexOf(second);
+        return a < 0 ? b : b < 0 ? a : Math.min(a, b);
     }
 
     /**
@@ -93,7 +141,7 @@ public final class ConfiguredJsonSourcesInitializer
      * <p>Nothing stops an operator from also naming the source under {@code
      * dataprism.sources} — the field still exists, unconditionally optional now
      * rather than required — and if they do, this method still refuses startup
-     * the moment the two disagree, naming both values, since the validated URL
+     * the moment the two disagree, naming the source and the two properties but neither URL, since the validated URL
      * silently losing to the one {@link ConfiguredJsonDataSourceAdapter}
      * actually dials would otherwise go unnoticed.
      */
@@ -112,9 +160,11 @@ public final class ConfiguredJsonSourcesInitializer
                 declaredElsewhere = null;
             }
             if (!declaredHere.equals(declaredElsewhere)) {
-                throw new IllegalStateException("json source " + name + " base-url disagrees: json-sources "
-                        + "declares " + declaredHere + " but dataprism.sources." + name + ".base-url declares "
-                        + declaredElsewhereRaw + "; these must name the same transport");
+                // Neither URL is repeated: either may carry user-info.
+                String shownName = io.github.aindriub.dataprism.core.model.StrictYaml.shown(name);
+                throw new IllegalStateException("json source " + shownName + " base-url disagrees: json-sources "
+                        + "declares one transport but dataprism.sources." + shownName + ".base-url declares another"
+                        + "; these must name the same transport");
             }
         }
     }

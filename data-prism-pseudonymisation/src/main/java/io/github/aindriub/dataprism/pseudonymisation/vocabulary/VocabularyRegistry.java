@@ -1,9 +1,6 @@
 package io.github.aindriub.dataprism.pseudonymisation.vocabulary;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.dataformat.yaml.YAMLMapper;
+import io.github.aindriub.dataprism.core.model.StrictYaml;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,10 +45,8 @@ public final class VocabularyRegistry {
 
     public static final String DEFAULT_LOCALE = "en";
 
-    private static final ObjectMapper YAML = YAMLMapper.builder()
-            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
-            .build();
+    private static final String KIND = "vocabulary file";
+    private static final Set<String> ROOT_KEYS = Set.of("id", "version", "locale", "script", "pools");
 
     private final Map<String, Vocabulary> byLocale;
     private final String defaultLocale;
@@ -177,30 +172,38 @@ public final class VocabularyRegistry {
         }
     }
 
-    @SuppressWarnings("unchecked")
     static NameSet read(InputStream yaml) {
-        Map<String, Object> root;
-        try {
-            root = YAML.readValue(yaml, Map.class);
-        } catch (JacksonException e) {
-            throw new UncheckedIOException("vocabulary file could not be read", new IOException(e.getMessage(), e));
+        Map<String, Object> root = StrictYaml.readMapping(yaml, KIND);
+        if (root == null) {
+            // An empty file used to be a NullPointerException; it is still a refusal.
+            throw new IllegalArgumentException("vocabulary file is empty");
         }
+        StrictYaml.requireOnlyKeys(root.keySet(), ROOT_KEYS, KIND);
 
         Map<PoolKind, List<String>> pools = new EnumMap<>(PoolKind.class);
-        Object poolsNode = root.get("pools");
-        if (poolsNode instanceof Map<?, ?> map) {
+        Map<String, Object> map = StrictYaml.optionalMapping(root, "pools", KIND, true);
+        if (map != null) {
+            Set<String> poolNames = new java.util.HashSet<>();
             for (PoolKind kind : PoolKind.values()) {
-                Object entries = map.get(kind.key());
-                if (entries instanceof List<?> list && !list.isEmpty()) {
-                    pools.put(kind, list.stream().map(String::valueOf).toList());
+                poolNames.add(kind.key());
+            }
+            StrictYaml.requireOnlyKeys(map.keySet(), poolNames, KIND + " pools");
+            for (PoolKind kind : PoolKind.values()) {
+                List<Object> list = StrictYaml.optionalList(map, kind.key(), KIND + " pools");
+                if (list != null && !list.isEmpty()) {
+                    List<String> texts = new java.util.ArrayList<>();
+                    for (int i = 0; i < list.size(); i++) {
+                        texts.add(StrictYaml.text(list.get(i), KIND + " pools." + kind.key() + "[" + i + "]"));
+                    }
+                    pools.put(kind, List.copyOf(texts));
                 }
             }
         }
         return new NameSet(
-                String.valueOf(root.getOrDefault("id", "unnamed")),
-                Integer.parseInt(String.valueOf(root.getOrDefault("version", "1"))),
-                String.valueOf(root.getOrDefault("locale", "und")),
-                String.valueOf(root.getOrDefault("script", "Zyyy")),
+                root.containsKey("id") ? StrictYaml.text(root.get("id"), KIND + " id") : "unnamed",
+                root.containsKey("version") ? StrictYaml.integer(root.get("version"), KIND + " version") : 1,
+                root.containsKey("locale") ? StrictYaml.text(root.get("locale"), KIND + " locale") : "und",
+                root.containsKey("script") ? StrictYaml.text(root.get("script"), KIND + " script") : "Zyyy",
                 pools);
     }
 

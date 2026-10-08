@@ -47,7 +47,7 @@ public record RestSource(String name, URI baseUrl, String pathTemplate, Duration
         }
         if (requireHttps && scheme.equals("http")) {
             throw new IllegalArgumentException(
-                    "source " + name + " requires https but its base URL is " + baseUrl);
+                    "source " + name + " requires https but its base URL is plaintext http");
         }
         if (baseUrl.getHost() == null) {
             throw new IllegalArgumentException("source " + name + " has no host");

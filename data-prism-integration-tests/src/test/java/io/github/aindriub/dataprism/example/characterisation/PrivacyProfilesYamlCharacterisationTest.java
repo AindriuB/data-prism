@@ -41,49 +41,79 @@ class PrivacyProfilesYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("duplicate key: last wins, silently (unclassified redact_and_warn then drop_and_warn gives DROP_AND_WARN)")
+    @DisplayName("duplicate key: refused, IllegalArgumentException \"DUPLICATE_CONFIG_KEY: ...\" (unclassified given twice)")
     void duplicateKey() {
         assertThat(outcome(profile("    unclassified: redact_and_warn\n    unclassified: drop_and_warn\n")))
-                .isEqualTo("ok p: unclassified=DROP_AND_WARN");
+                .isEqualTo("refused IllegalArgumentException \"DUPLICATE_CONFIG_KEY: privacy profiles has a duplicate key 'unclassifi\"");
     }
 
     @Test
-    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
+    @DisplayName("override: yes, no, on, off, y, n, True and FALSE are refused, IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: ...\"; true and false are accepted")
     void booleanSpellings() {
-        assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
+        assertThat(Observe.table(java.util.stream.Stream.concat(Observe.BOOLEAN_SPELLINGS.stream(),
+                        java.util.stream.Stream.of("true", "false")).toList(),
                 s -> profile("    classifications:\n      PII:\n        action: REDACT\n        override: " + s + "\n"),
-                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("yes => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
-                + "no => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
-                + "on => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
-                + "off => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
-                + "y => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
-                + "n => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
-                + "True => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=true\n"
-                + "FALSE => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n");
+                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("yes => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "no => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "on => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "off => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "y => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "n => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "True => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "FALSE => refused IllegalArgumentException \"INVALID_CONFIG_BOOLEAN: privacy profiles profiles.p.classifications.PI\"\n"
+                + "true => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=true\n"
+                + "false => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n");
     }
 
     @Test
-    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
+    @DisplayName("a band bound written with a leading zero, such as 010 or 0777, is refused, IllegalArgumentException \"LEADING_ZERO_CONFIG_NUMBER: ...\"; 0o10 is not a number")
     void octalLookingScalars() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
-                s -> profile("    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, " + s + "]\n"
-                        + "        unit: " + s + "\n"),
-                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("010 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 10]/unit=010/precision=null\n"
+                s -> profile("    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, " + s + "]\n"),
+                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("010 => refused IllegalArgumentException \"LEADING_ZERO_CONFIG_NUMBER: privacy profiles profiles.p.generalization\"\n"
                 + "0o10 => refused IllegalArgumentException \"p.generalization.FINANCIAL_VALUE has a non-numeric bound '0o10'\" caused by NumberFormatException\n"
-                + "0777 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 777]/unit=0777/precision=null\n");
+                + "0777 => refused IllegalArgumentException \"LEADING_ZERO_CONFIG_NUMBER: privacy profiles profiles.p.generalization\"\n");
     }
 
     @Test
-    @DisplayName("unknown top-level key: ignored silently")
+    @DisplayName("a plain 0 and a decimal such as 0.5 are still accepted as band bounds")
+    void plainZeroAndDecimalBounds() {
+        assertThat(outcome(profile("    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, 0.5, 10]\n")))
+                .isEqualTo("ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 0.5, 10]/unit=null/precision=null");
+    }
+
+    @Test
+    @DisplayName("a unit that looks like a leading-zero number is text here and is read as written; a number or boolean unit is refused, \"NON_STRING_CONFIG_SCALAR: ...\"")
+    void unitIsAString() {
+        assertThat(Observe.table(java.util.List.of("010", "0777", "\"010\"", "5", "true", "1.5"),
+                s -> profile("    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, 10]\n        unit: " + s + "\n"),
+                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("010 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 10]/unit=010/precision=null\n"
+                + "0777 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 10]/unit=0777/precision=null\n"
+                + "\"010\" => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 10]/unit=010/precision=null\n"
+                + "5 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: privacy profiles profiles.p.generalization.F\"\n"
+                + "true => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: privacy profiles profiles.p.generalization.F\"\n"
+                + "1.5 => refused IllegalArgumentException \"NON_STRING_CONFIG_SCALAR: privacy profiles profiles.p.generalization.F\"\n");
+    }
+
+    @Test
+    @DisplayName("unknown top-level key: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownTopLevelKey() {
-        assertThat(outcome("extra: 1\nprofiles:\n  p:\n    unclassified: FAIL_REQUEST\n")).isEqualTo("ok p: unclassified=FAIL_REQUEST");
+        assertThat(outcome("extra: 1\nprofiles:\n  p:\n    unclassified: FAIL_REQUEST\n")).isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: privacy profiles has an unknown key 'extra'\"");
     }
 
     @Test
-    @DisplayName("unknown nested key (in a profile and in a rule): ignored silently")
+    @DisplayName("unknown nested key in a profile: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
     void unknownNestedKey() {
-        assertThat(outcome(profile("    surprise: 1\n    classifications:\n      PII:\n        action: REDACT\n"
-                + "        surprise: 2\n"))).isEqualTo("ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false");
+        assertThat(outcome(profile("    surprise: 1\n    classifications:\n      PII:\n        action: REDACT\n")))
+                .isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: privacy profiles profiles.p has an unknown key 'su\"");
+    }
+
+    @Test
+    @DisplayName("unknown nested key in a rule: refused, IllegalArgumentException \"UNKNOWN_CONFIG_KEY: ...\"")
+    void unknownNestedKeyInRule() {
+        assertThat(outcome(profile("    classifications:\n      PII:\n        action: REDACT\n"
+                + "        surprise: 2\n")))
+                .isEqualTo("refused IllegalArgumentException \"UNKNOWN_CONFIG_KEY: privacy profiles profiles.p.classifications.PII ha\"");
     }
 
     @Test

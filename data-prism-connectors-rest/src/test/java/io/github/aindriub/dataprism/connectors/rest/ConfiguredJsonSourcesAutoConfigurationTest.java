@@ -181,6 +181,106 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
                 .run(context -> assertThat(context).hasFailed());
     }
 
+    @Test
+    @DisplayName("an unreadable config-location names the plain location, with no cause")
+    void unreadableLocationIsNamed() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", Map.of(
+                    "dataprism.json-sources.config-location", "classpath:/does-not-exist.yaml")));
+            assertThatThrownBy(() -> new ConfiguredJsonSourcesInitializer().initialize(context))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("dataprism.json-sources.config-location 'classpath:/does-not-exist.yaml' could not be read")
+                    .hasNoCause();
+        }
+    }
+
+    @Test
+    @DisplayName("no part of a secret in a location survives describe(), whatever characters it holds or where it sits")
+    void describeNeverShowsSecrets() {
+        String[][] cases = {
+                {"https://svc:s3#cr3t@host/a.yaml", "s3#cr3t"},
+                {"https://svc:s3/cr3t@host/a.yaml", "s3/cr3t"},
+                {"https://svc:p@ss@host/a.yaml", "p@ss"},
+                {"svc:s3cr3t@host/a.yaml", "s3cr3t"},
+                {"https://svc:s3?cr3t@host/a.yaml", "s3?cr3t"},
+                {"https://user@host/a.yaml", "user"},
+                {"https://svc:s3%40cr3t@host/a.yaml", "s3%40cr3t"},
+                {"https://svc:s3cr3t@[::1]:8443/a.yaml", "s3cr3t"},
+                {"file://user@host/path/a.yaml", "user"},
+                {"https://svc:pw@host/a.yaml?sig=AbC/9xSECRETsigPart", "9xSECRETsigPart"},
+                {"https://host/a.yaml?sig=AbC/9xSECRETsigPart", "9xSECRETsigPart"},
+                {"https://host/a.yaml#frag/secret", "frag/secret"},
+                {"https://host/a.yaml?token=a/b@c/xyz", "a/b@c/xyz"},
+                {"https://hooks.example/T000/B000/XXXXsecret", "XXXXsecret"},
+                {"https://host/a;key=matrixSECRET/b.yaml", "matrixSECRET"},
+                {"/etc/dataprism/a.yaml?token=plainSECRET", "plainSECRET"},
+                {"classpath:/cfg/a.yaml#plainSECRET", "plainSECRET"},
+        };
+        for (String[] c : cases) {
+            String shown = ConfiguredJsonSourcesInitializer.describe(c[0]);
+            for (int len = 3; len <= c[1].length(); len++) {
+                for (int from = 0; from + len <= c[1].length(); from++) {
+                    assertThat(shown).as(c[0] + " leaks " + c[1].substring(from, from + len))
+                            .doesNotContain(c[1].substring(from, from + len));
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("describe() gives exact, safe output: a placeholder for @, scheme://host[:port] for other schemes, the path for files")
+    void describeExactOutputs() {
+        String none = "<location not shown>";
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://svc:pw@host/a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("svc:s3cr3t@host/a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("file://user@host/path")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://cfg.example.invalid/a.yaml?t=1#f"))
+                .isEqualTo("https://cfg.example.invalid");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://hooks.example:8443/T000/B000/XXXXsecret"))
+                .isEqualTo("https://hooks.example:8443");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://[::1]:8443/a.yaml")).isEqualTo("https://[::1]:8443");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https:///a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://exa mple/a.yaml")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("jar:https://h/x!/y")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("mailto:a")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://host:abc/x")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("svc:s3cr3t/host")).isEqualTo(none);
+        assertThat(ConfiguredJsonSourcesInitializer.describe("file:/etc/dataprism/a.yaml")).isEqualTo("file:/etc/dataprism/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("/etc/dataprism/a.yaml")).isEqualTo("/etc/dataprism/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("C:\\cfg\\a.yaml")).isEqualTo("C:\\cfg\\a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("classpath:/cfg/a.yaml")).isEqualTo("classpath:/cfg/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("/etc/a.yaml?t=1#f")).isEqualTo("/etc/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("/" + "d".repeat(100))).hasSize(64);
+    }
+
+    @Test
+    @DisplayName("an unreadable config-location URL with credentials is refused without them, with no cause")
+    void unreadableLocationUrlHidesCredentials() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", Map.of(
+                    "dataprism.json-sources.config-location", "http://svc:s3#cr3t@127.0.0.1:1/a.yaml")));
+            assertThatThrownBy(() -> new ConfiguredJsonSourcesInitializer().initialize(context))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("dataprism.json-sources.config-location '<location not shown>' could not be read")
+                    .hasNoCause();
+        }
+    }
+
+    @Test
+    @DisplayName("the disagreement refusal repeats neither URL, so user-info in either is not leaked")
+    void disagreementMessageDoesNotEchoEitherUrl() {
+        runner.withPropertyValues(
+                        "dataprism.json-sources.config-location=classpath:/task20-json-sources.yaml",
+                        "dataprism.sources.customer-api.base-url=https://svc:s3cr3t@somewhere-else.example")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .hasStackTraceContaining("disagrees")
+                        .satisfies(e -> {
+                            for (Throwable t = e; t != null; t = t.getCause()) {
+                                assertThat(String.valueOf(t.getMessage())).doesNotContain("s3cr3t");
+                            }
+                        }));
+    }
+
     /**
      * The deployment idiom this repository actually uses for {@code
      * dataprism.sources.<name>.base-url}, per {@code compose.yaml}'s own
