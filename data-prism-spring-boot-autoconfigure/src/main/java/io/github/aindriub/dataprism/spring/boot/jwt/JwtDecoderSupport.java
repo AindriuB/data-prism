@@ -1,5 +1,8 @@
-package io.github.aindriub.dataprism.spring.boot;
+package io.github.aindriub.dataprism.spring.boot.jwt;
 
+import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
+import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
+import io.github.aindriub.dataprism.spring.boot.SecurityProperties;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.json.JsonFactory;
 import tools.jackson.core.JsonToken;
@@ -101,7 +104,7 @@ public final class JwtDecoderSupport {
         }
     }
 
-    private static DiscoveryMetadata parseDiscoveryMetadata(byte[] document) throws IOException {
+    private static DiscoveryMetadata parseDiscoveryMetadata(byte[] document) {
         String issuer = null;
         String jwkSetUri = null;
         try (var parser = DISCOVERY_JSON.createParser(document)) {
