@@ -45,7 +45,7 @@ class AuditEntityTypesConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class Served {
-        @Bean DataSourceAdapter<String> customerAdapter() { return new AuditRetentionConfigurationTest.Integrations().customerAdapter(); }
+        @Bean DataSourceAdapter<TestPayload> customerAdapter() { return new AuditRetentionConfigurationTest.Integrations().customerAdapter(); }
         @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return new AuditRetentionConfigurationTest.Integrations().keys(); }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }

@@ -140,11 +140,11 @@ class HashChainedAuditSinkTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedHttpIntegrationsWithoutAudit {
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 @Override public String sourceName() { return "customer"; }
-                @Override public Class<String> responseType() { return String.class; }
-                @Override public String fetch(io.github.aindriub.dataprism.core.spi.DataRequest request) { return null; }
+                @Override public Class<TestPayload> responseType() { return TestPayload.class; }
+                @Override public TestPayload fetch(io.github.aindriub.dataprism.core.spi.DataRequest request) { return null; }
             };
         }
 

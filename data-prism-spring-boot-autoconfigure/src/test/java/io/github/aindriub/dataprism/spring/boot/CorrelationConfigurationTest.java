@@ -273,7 +273,7 @@ class CorrelationConfigurationTest {
     /** The application's side: adapters, keys, a recording audit sink and a stub orchestrator, and the real extractor. */
     @Configuration(proxyBeanMethods = false)
     static class ServedIntegrations {
-        @Bean DataSourceAdapter<String> customerAdapter() { return new AuditRetentionConfigurationTest.Integrations().customerAdapter(); }
+        @Bean DataSourceAdapter<TestPayload> customerAdapter() { return new AuditRetentionConfigurationTest.Integrations().customerAdapter(); }
         @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return new AuditRetentionConfigurationTest.Integrations().keys(); }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }

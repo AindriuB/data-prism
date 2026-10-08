@@ -269,7 +269,7 @@ class DataPrismAutoConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class ReviewedIntegrations {
-        @Bean DataSourceAdapter<String> customerAdapter() { return new DataSourceAdapter<>() { public String sourceName(){return "customer";} public Class<String> responseType(){return String.class;} public String fetch(DataRequest request){return null;} }; }
+        @Bean DataSourceAdapter<TestPayload> customerAdapter() { return new DataSourceAdapter<>() { public String sourceName(){return "customer";} public Class<TestPayload> responseType(){return TestPayload.class;} public TestPayload fetch(DataRequest request){return null;} }; }
         @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return (id, reference) -> (reference+":"+id+":resolved-key-material").getBytes(); }
         @Bean AuditSink audit() { return event -> {}; }
@@ -290,7 +290,7 @@ class DataPrismAutoConfigurationTest {
      */
     @Configuration(proxyBeanMethods = false)
     static class ReviewedHttpIntegrationsWithoutAudit {
-        @Bean DataSourceAdapter<String> customerAdapter() { return new ReviewedIntegrations().customerAdapter(); }
+        @Bean DataSourceAdapter<TestPayload> customerAdapter() { return new ReviewedIntegrations().customerAdapter(); }
         @Bean IdentityResolver identities() { return new io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver(); }
         @Bean HmacKeyReferenceResolver keys() { return new ReviewedIntegrations().keys(); }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
@@ -300,7 +300,7 @@ class DataPrismAutoConfigurationTest {
     }
     @Configuration(proxyBeanMethods = false)
     static class IntegrationsWithoutIdentity {
-        @Bean DataSourceAdapter<String> customerAdapter() { return new ReviewedIntegrations().customerAdapter(); }
+        @Bean DataSourceAdapter<TestPayload> customerAdapter() { return new ReviewedIntegrations().customerAdapter(); }
         @Bean HmacKeyReferenceResolver keys() { return new ReviewedIntegrations().keys(); }
         @Bean AuditSink audit() { return new ReviewedIntegrations().audit(); }
         @Bean PrivacyMetrics metrics() { return PrivacyMetrics.none(); }
