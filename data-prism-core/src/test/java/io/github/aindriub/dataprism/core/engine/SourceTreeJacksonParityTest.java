@@ -2,7 +2,6 @@ package io.github.aindriub.dataprism.core.engine;
 
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.exc.InvalidDefinitionException;
 
 import java.math.BigDecimal;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -27,7 +26,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Jackson 3 changed defaults that touch a source tree; each is pinned back to the Jackson 2 value. */
 class SourceTreeJacksonParityTest {
@@ -60,7 +58,7 @@ class SourceTreeJacksonParityTest {
     public record Maybe(Optional<String> present, Optional<String> absent) {
     }
 
-    public static final class Empty {
+    public record Box(Object v) {
     }
 
     @Test
@@ -73,11 +71,6 @@ class SourceTreeJacksonParityTest {
     @Test
     void propertiesKeepDeclaredOrder() {
         assertThat(SourceTree.of(new Pair("z", "a")).propertyNames()).containsExactly("zeta", "alpha");
-    }
-
-    @Test
-    void anEmptyBeanIsRefusedNotReadAsAnEmptyObject() {
-        assertThatThrownBy(() -> SourceTree.of(new Empty())).isInstanceOf(InvalidDefinitionException.class);
     }
 
     @Test
@@ -125,31 +118,18 @@ class SourceTreeJacksonParityTest {
     public record Flagged(boolean isFlag, URL URL) {
     }
 
-    public static class Legacy {
-        private final String xRef = "v";
-
-        public String getXRef() {
-            return xRef;
-        }
-
-        public boolean isOk() {
-            return true;
-        }
-
-        public String getURL() {
-            return "u";
-        }
+    public record Shaped(@JsonFormat(shape = JsonFormat.Shape.STRING) Date d) {
     }
 
     public record Formatted(@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd", timezone = "UTC") Date d) {
     }
 
     private static String text(Object value) {
-        return SourceTree.of(Map.of("v", value)).get("v").asString();
+        return SourceTree.of(new Box(value)).get("v").asString();
     }
 
     private static String json(Object value) {
-        return SourceTree.of(Map.of("v", value)).get("v").toString();
+        return SourceTree.of(new Box(value)).get("v").toString();
     }
 
     @Test
@@ -160,9 +140,9 @@ class SourceTreeJacksonParityTest {
         assertThat(json(new java.sql.Date(1_700_000_000_123L))).isEqualTo("1700000000123");
         assertThat(json(java.sql.Time.valueOf("12:30:00"))).isEqualTo("\"12:30:00\"");
         assertThat(json(utc)).isEqualTo("1700000000123");
-        assertThat(SourceTree.of(Map.of(new Date(0L), 1)).propertyNames())
+        assertThat(SourceTree.of(new Box(Map.of(new Date(0L), 1))).get("v").propertyNames())
                 .containsExactly("1970-01-01T00:00:00.000+00:00");
-        assertThat(SourceTree.of(Map.of(utc, 1)).propertyNames()).containsExactly("2023-11-14T22:13:20.123+00:00");
+        assertThat(SourceTree.of(new Box(Map.of(utc, 1))).get("v").propertyNames()).containsExactly("2023-11-14T22:13:20.123+00:00");
     }
 
     @Test
@@ -176,7 +156,7 @@ class SourceTreeJacksonParityTest {
         assertThat(json(TimeZone.getTimeZone("Europe/Dublin"))).isEqualTo("\"Europe/Dublin\"");
         assertThat(json(Locale.forLanguageTag("en-IE"))).isEqualTo("\"en_IE\"");
         assertThat(json(Locale.forLanguageTag("sr-Latn-RS"))).isEqualTo("\"sr_RS_#Latn\"");
-        assertThat(SourceTree.of(Map.of(Locale.forLanguageTag("en-IE"), 1)).propertyNames()).containsExactly("en_IE");
+        assertThat(SourceTree.of(new Box(Map.of(Locale.forLanguageTag("en-IE"), 1))).get("v").propertyNames()).containsExactly("en_IE");
         assertThat(json(Path.of("/tmp/x"))).isEqualTo("\"file:///tmp/x\"");
         assertThat(json(new File("/tmp/x"))).isEqualTo("\"/tmp/x\"");
         assertThat(json(URI.create("http://h/x"))).isEqualTo("\"http://h/x\"");
@@ -200,12 +180,6 @@ class SourceTreeJacksonParityTest {
         assertThat(json(new BigDecimal("1.50"))).isEqualTo("1.5");
         assertThat(json(new BigDecimal("0.000"))).isEqualTo("0");
         assertThat(json(BigDecimal.ZERO)).isEqualTo("0");
-    }
-
-    @Test
-    void aGetterNamedWithALeadingCapitalRunIsLowerCasedAsInJackson2() {
-        JsonNode tree = SourceTree.of(new Legacy());
-        assertThat(tree.propertyNames()).containsExactlyInAnyOrder("xref", "ok", "url");
     }
 
     @Test
@@ -239,7 +213,7 @@ class SourceTreeJacksonParityTest {
 
     @Test
     void aDateMapKeyIsWrittenAsInJackson2() {
-        JsonNode t = SourceTree.of(Map.of(new Date(0L), 1));
+        JsonNode t = SourceTree.of(new Box(Map.of(new Date(0L), 1))).get("v");
         assertThat(t.propertyNames()).containsExactly("1970-01-01T00:00:00.000+00:00");
     }
 
@@ -248,5 +222,19 @@ class SourceTreeJacksonParityTest {
         JsonNode t = SourceTree.of(new Maybe(Optional.of("x"), Optional.empty()));
         assertThat(t.get("present").asString()).isEqualTo("x");
         assertThat(t.get("absent").isNull()).isTrue();
+    }
+
+    @Test
+    void aMonthIsItsNameAsValueAndKey() {
+        assertThat(json(Month.OCTOBER)).isEqualTo("\"OCTOBER\"");
+        assertThat(SourceTree.of(new Box(Map.of(Month.OCTOBER, 1))).get("v").propertyNames())
+                .containsExactly("OCTOBER");
+        assertThat(json(DayOfWeek.MONDAY)).isEqualTo("\"MONDAY\"");
+    }
+
+    @Test
+    void aJsonFormatStringDateWithoutAPatternCarriesAColonOffsetForUtc() {
+        assertThat(SourceTree.of(new Shaped(new Date(1_700_000_000_123L))).get("d").asString())
+                .isEqualTo("2023-11-14T22:13:20.123+00:00");
     }
 }

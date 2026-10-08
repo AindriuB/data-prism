@@ -111,7 +111,7 @@ class AuditFieldDispositionTest {
 
     /** A payload whose only property is undeclared, and whose name is itself identifying. */
     @LlmExposedModel
-    public static final class KeyedPayload {
+    public record KeyedPayload() {
         @JsonAnyGetter
         public Map<String, Object> extras() {
             return Map.of(PAYLOAD_KEY, 1);

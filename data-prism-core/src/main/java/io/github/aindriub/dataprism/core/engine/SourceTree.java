@@ -1,13 +1,17 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.BeanDescription;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.PropertyNamingStrategy;
-import tools.jackson.databind.cfg.MapperConfig;
-import tools.jackson.databind.introspect.AnnotatedMethod;
+import tools.jackson.databind.SerializationConfig;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.ser.ValueSerializerModifier;
 import tools.jackson.databind.module.SimpleModule;
 import tools.jackson.databind.ser.jdk.JavaUtilCalendarSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilDateSerializer;
 import tools.jackson.databind.ser.std.ToStringSerializer;
+import tools.jackson.databind.util.StdDateFormat;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -15,6 +19,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.node.StringNode;
 
+import java.time.Month;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
@@ -56,7 +61,10 @@ public final class SourceTree {
             .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
             .disable(DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
             .disable(DateTimeFeature.WRITE_DATES_WITH_ZONE_ID)
-            .propertyNamingStrategy(new Jackson2GetterNames())
+            // Jackson 3 counts months from zero unless asked; Jackson 2 wrote a Month by name (see legacyTypes).
+            .enable(DateTimeFeature.ONE_BASED_MONTHS)
+            // A Date written as text (an @JsonFormat STRING) carries +00:00 for UTC, as Jackson 2 wrote it.
+            .defaultDateFormat(new StdDateFormat().withColonInTimeZone(true).withZeroOffsetAsZ(false))
             .addModule(legacyTypes())
             .build();
 
@@ -68,34 +76,25 @@ public final class SourceTree {
      */
     private static SimpleModule legacyTypes() {
         return new SimpleModule()
+                .setSerializerModifier(new RecordsOnly())
                 .addSerializer(Date.class, new JavaUtilDateSerializer(Boolean.TRUE, null))
                 .addSerializer(Calendar.class, new JavaUtilCalendarSerializer(Boolean.TRUE, null))
                 .addSerializer(java.sql.Time.class, ToStringSerializer.instance)
+                .addSerializer(Month.class, ToStringSerializer.instance)
                 .addSerializer(Locale.class, ToStringSerializer.instance);
     }
 
     /**
-     * Jackson 2 named a bean property from its getter by lower-casing the whole leading run of capitals
-     * ({@code getXRef} is "xref", {@code getURL} is "url"); Jackson 3 keeps the JavaBeans form ("XRef").
-     * The name is what a rule's field path matches, so it has to be the one the rules were written
-     * against. A record accessor keeps its component name, as it always did.
+     * Refuses, while a serializer is being built, any user class that is not a record. Only a record
+     * or an enum, a JDK type or a Jackson tree node reaches the engine, so the declared check in
+     * {@link SourceModels#require} cannot be bypassed by an {@code Object}-typed component.
      */
-    private static final class Jackson2GetterNames extends PropertyNamingStrategy {
+    private static final class RecordsOnly extends ValueSerializerModifier {
         @Override
-        public String nameForGetterMethod(MapperConfig<?> config, AnnotatedMethod method, String defaultName) {
-            if (method.getDeclaringClass().isRecord()) {
-                return defaultName;
-            }
-            String name = method.getName();
-            String base = name.startsWith("get") ? name.substring(3) : name.startsWith("is") ? name.substring(2) : "";
-            if (base.isEmpty()) {
-                return defaultName;
-            }
-            char[] chars = base.toCharArray();
-            for (int i = 0; i < chars.length && Character.isUpperCase(chars[i]); i++) {
-                chars[i] = Character.toLowerCase(chars[i]);
-            }
-            return new String(chars);
+        public ValueSerializer<?> modifySerializer(SerializationConfig config, BeanDescription.Supplier beanDesc,
+                                                   ValueSerializer<?> serializer) {
+            SourceModels.refuseIfNotAllowed(beanDesc.getBeanClass());
+            return serializer;
         }
     }
 
@@ -104,7 +103,17 @@ public final class SourceTree {
 
     /** A source object as a tree. Never used to produce output. */
     public static JsonNode of(Object source) {
-        return READER.valueToTree(source);
+        SourceModels.refuseUnlessRecord(source.getClass());
+        try {
+            return READER.valueToTree(source);
+        } catch (JacksonException e) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                if (cause instanceof PrivacyRefusedException refused) {
+                    throw refused;
+                }
+            }
+            throw e;
+        }
     }
 
     public static ObjectNode newObject() {

@@ -44,28 +44,39 @@ class DataPrismObjectMapperDefaultsTest {
     public static final class Empty {
     }
 
-    /**
-     * The source reader and this mapper cannot share one pin list (the reader is in core and keeps no public
-     * configuration), so this asserts they agree on the pinned features that show up in a tree of a record:
-     * property order, enum names (as a value and as a map key) and refusal of an empty bean. A legacy
-     * java.util.Date is a deliberate difference (D-173-1): the reader writes epoch millis for Jackson 2 parity,
-     * the output mapper writes ISO text. Features that differ by design, such as the output mapper not
-     * stripping BigDecimal zeros, are not covered here.
-     */
+    public static final class PlainShape {
+        public String zeta = "z";
+        public String alpha = "a";
+    }
+
+    /** A record keeps its component order whatever the sort setting, so only a plain class exercises the pin. */
     @Test
-    void sourceReaderAndOutputMapperAgreeOnWhatTheyPin() {
-        Shape source = new Shape("z", "a", Kind.FIRST);
-        JsonNode written = mapper.readTree(mapper.writeValueAsString(source));
-        assertThat(SourceTree.of(source)).isEqualTo(written);
-        assertThat(SourceTree.of(source).toString()).isEqualTo(written.toString());
+    void aPlainClassKeepsDeclaredOrderNotAlphabetical() {
+        assertThat(mapper.writeValueAsString(new PlainShape())).isEqualTo("{\"zeta\":\"z\",\"alpha\":\"a\"}");
+    }
 
-        Map<Kind, String> notes = new LinkedHashMap<>();
-        notes.put(Kind.FIRST, "n");
-        assertThat(SourceTree.of(notes).toString()).isEqualTo(mapper.writeValueAsString(notes));
-
+    @Test
+    void anEmptyBeanIsRefusedNotWrittenAsAnEmptyObject() {
         assertThatThrownBy(() -> mapper.writeValueAsString(new Empty()))
                 .isInstanceOf(InvalidDefinitionException.class);
-        assertThatThrownBy(() -> SourceTree.of(new Empty()))
-                .isInstanceOf(InvalidDefinitionException.class);
+    }
+
+    /**
+     * The source reader (core) and this mapper cannot share one pin list, and since source models are records
+     * the reader's sort pin is not observable. What this asserts is narrower: for a record, and for an enum
+     * used as a map value, the reader's tree equals what this mapper writes. It does not cover sorting,
+     * BigDecimal zero stripping or dates, which differ by design or are tested on each mapper alone.
+     */
+    @Test
+    void sourceReaderAndOutputMapperAgreeOnEnumNamesAndRecordOrder() {
+        Shape source = new Shape("z", "a", Kind.FIRST);
+        JsonNode written = mapper.readTree(mapper.writeValueAsString(source));
+        assertThat(SourceTree.of(source).toString()).isEqualTo(written.toString());
+
+        record Notes(Map<Kind, String> notes) { }
+        Map<Kind, String> notes = new LinkedHashMap<>();
+        notes.put(Kind.FIRST, "n");
+        assertThat(SourceTree.of(new Notes(notes)).get("notes").toString())
+                .isEqualTo(mapper.writeValueAsString(notes));
     }
 }

@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
+import io.github.aindriub.dataprism.core.engine.SourceModels;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
@@ -39,6 +41,15 @@ final class DataPrismContractValidator implements InitializingBean {
             ObjectProvider<IdentityResolver> identities, ObjectProvider<HmacKeyReferenceResolver> keys,
             ObjectProvider<AuditSink> audit, ObjectProvider<PrivacyMetrics> metrics,
             ObjectProvider<Set<String>> configuredJsonSourceNames) {
+        // A response type and every user type nested in it must be a record; see SourceModels.
+        for (DataSourceAdapter<?> adapter : adapterList) {
+            try {
+                SourceModels.require(adapter.responseType());
+            } catch (PrivacyRefusedException e) {
+                throw new DataPrismConfigurationException(e.code(),
+                        "the response type of source '" + adapter.sourceName() + "' is refused: " + e.getMessage());
+            }
+        }
         if (properties.getTransport().isFixtureDevelopment()
                 && properties.getTransport().getMode() == DataPrismProperties.Transport.Mode.STDIO) return;
         Set<String> configured=properties.getSources().keySet(); Set<String> supplied=adapterList.stream().map(DataSourceAdapter::sourceName).collect(Collectors.toSet());
