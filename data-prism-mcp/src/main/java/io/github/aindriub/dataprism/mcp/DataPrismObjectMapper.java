@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.mcp;
 
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.cfg.EnumFeature;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -31,6 +32,9 @@ public final class DataPrismObjectMapper {
                 // Jackson 3 sorts properties alphabetically by default; Jackson 2 did not,
                 // and the bytes a model sees must not change with the Jackson major.
                 .disable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+                // Jackson 3 writes an enum by toString() by default; Jackson 2 wrote its name().
+                // An enum that overrides toString() would otherwise change what a model sees.
+                .disable(EnumFeature.WRITE_ENUMS_USING_TO_STRING)
                 // Anything reaching this mapper has already been through the
                 // engine. Failing on an unexpected shape is better than emitting
                 // it: an empty bean here means something was not scrubbed.

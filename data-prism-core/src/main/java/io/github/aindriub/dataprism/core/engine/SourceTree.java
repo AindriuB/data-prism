@@ -4,6 +4,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.cfg.JsonNodeFeature;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -33,6 +34,9 @@ public final class SourceTree {
             // and refuse a shape it cannot read rather than read it as an empty object.
             .disable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
             .enable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+            // Jackson 2 stripped trailing zeros from a BigDecimal in a tree (1.50 became 1.5);
+            // Jackson 3 keeps them unless asked.
+            .enable(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES)
             .build();
 
     private SourceTree() {
