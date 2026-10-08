@@ -162,11 +162,28 @@ the boundary is crossed; catching a violation depends on review.
    `ObjectMapper#rebuild()`. `ArchitectureTest.designatedYamlReadersDoNotWrite`
    keeps the five YAML readers read-only: they may not call `write*` or
    `writer*`. Negative fixtures prove the first rule still catches a constructor,
-   a builder, a `build()` on a passed-in builder and a `rebuild()`. **Not yet
-   enforced** — obtaining a mapper rather than building one (for example
-   `JsonMapper.shared()`, or injecting Spring Boot's auto-configured mapper) is
-   not caught at this point, and neither is the streaming-factory allowlist.
-   Task 168 adds both and is not yet merged.
+   a builder, a `build()` on a passed-in builder and a `rebuild()`. **Enforced, for
+   obtaining** (task 168) — the same rule also forbids the static shared
+   accessor, `JsonMapper.shared()`. `ArchitectureTest
+   .springManagedClassesDoNotInjectAMapper` forbids any data-prism class that
+   depends on `org.springframework..` (taken to mean Spring-managed, annotated
+   or not) from depending on any `ObjectMapper` subtype, including as a type
+   argument such as `ObjectProvider<JsonMapper>`, so Spring Boot's
+   auto-configured mapper cannot be injected or looked up. `ArchitectureTest
+   .noPublicApiExposesAnObjectMapper` forbids a public or protected member of a
+   public data-prism class from exposing an `ObjectMapper`, a mapper builder, an
+   `ObjectWriter` or the MCP SDK's `McpJsonMapper`. `ArchitectureTest
+   .onlyDesignatedClassesConstructJsonFactories` allows only
+   `DataPrismObjectMapper`, `AuditJsonRenderer`, `audit.AuditCheckpoint` and
+   `JwtDecoderSupport` to construct a streaming JSON factory or generator.
+   Beyond the rules, `DataPrismObjectMapper` and its `create()` are
+   package-private, the two tool constructors take no mapper, and
+   `DataPrismMcpServer` builds one mapper that the MCP server and both tools
+   share (`DataPrismMcpServerTest.serverUsesTheSharedMapper`). Each rule has
+   negative fixtures. **Known limit** — ArchUnit cannot see a class-literal
+   `getBean(JsonMapper.class)` in a class with no Spring dependency; by the
+   construction of the Spring rule no such class can obtain a context, so none
+   exists.
 2. **The privacy engine operates on a data tree, not on the Java object graph.**
    Records are immutable and their constructors validate; reflective field
    mutation is not an option and `Unsafe` is not acceptable in a security
@@ -319,8 +336,8 @@ all of these is in `design-review.md` under the section named.
   to data-prism. The Jackson 3 tree types (`JsonNode`, `ObjectNode`) are public
   where they are the real data (J3-3). J3-3 also decided that the mapper
   is not public: `DataPrismObjectMapper.create()` and any public method that
-  hands out or accepts data-prism's mapper are to stop being public, which task
-  168 carries out and has not yet merged. The enforcer bans the Jackson
+  hands out or accepts data-prism's mapper stop being public. Task 168 did that and
+  added the ArchUnit rules listed under Boundary 1. The enforcer bans the Jackson
   2 artifacts (`jackson-databind`, `jackson-core`, `jackson-dataformat-*`,
   `jackson-datatype-*`), `mcp-json-jackson2` and `spring-boot-jackson2`, with one
   carve-out: `com.fasterxml.jackson.core:jackson-annotations`, which Jackson 3
