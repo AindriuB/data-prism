@@ -358,6 +358,145 @@ class SourceModelsTest {
         assertThat(SourceTree.of(new WithAny("a")).propertyNames()).containsExactlyInAnyOrder("a", "extra");
     }
 
+    public interface AnnotatedUrled {
+        @JsonProperty
+        default String getURL() {
+            return "x";
+        }
+    }
+
+    public interface GetterUrled {
+        @JsonGetter("url")
+        default String computed() {
+            return "x";
+        }
+    }
+
+    public interface SuperUrled extends AnnotatedUrled {
+    }
+
+    public interface NamedAccessor {
+        @JsonProperty("renamed")
+        String name();
+    }
+
+    public record ViaInterfaceProperty(String name) implements AnnotatedUrled {
+    }
+
+    public record ViaInterfaceGetter(String name) implements GetterUrled {
+    }
+
+    public record ViaSuperInterface(String name) implements SuperUrled {
+    }
+
+    public record RenamedViaInterface(String name) implements NamedAccessor {
+    }
+
+    @Test
+    void anAnnotatedMethodInheritedFromAnInterfaceIsRefusedAtStartupAndRuntime() {
+        assertRefused(() -> SourceTree.of(new ViaInterfaceProperty("n")), "ViaInterfaceProperty");
+        assertRefused(() -> SourceModels.require(ViaInterfaceProperty.class), "ViaInterfaceProperty");
+        assertRefused(() -> SourceTree.of(new ViaInterfaceGetter("n")), "ViaInterfaceGetter");
+        assertRefused(() -> SourceModels.require(ViaInterfaceGetter.class), "ViaInterfaceGetter");
+        assertRefused(() -> SourceTree.of(new ViaSuperInterface("n")), "ViaSuperInterface");
+        assertRefused(() -> SourceModels.require(ViaSuperInterface.class), "ViaSuperInterface");
+    }
+
+    @Test
+    void aComponentAccessorRenamedOnTheInterfaceItImplementsKeepsTheName() {
+        assertThat(SourceTree.of(new RenamedViaInterface("n")).propertyNames()).containsExactly("renamed");
+        assertThatCode(() -> SourceModels.require(RenamedViaInterface.class)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void theAllowedExplicitChoicesStillPassAtStartup() {
+        assertThatCode(() -> SourceModels.require(Annotated.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(WithAny.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(Valued.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(WithExtraGetters.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(WithInterfaceGetter.class)).doesNotThrowAnyException();
+    }
+
+    public record ComponentSerialized(@JsonSerialize(using = Custom.class) String secret, @JsonIgnore String hidden) {
+    }
+
+    @Test
+    void aComponentSerializerAndAnIgnoredComponentStillPass() {
+        assertThatCode(() -> SourceModels.require(ComponentSerialized.class)).doesNotThrowAnyException();
+        JsonNode tree = SourceTree.of(new ComponentSerialized("s", "h"));
+        assertThat(tree.propertyNames()).containsExactly("secret");
+        assertThat(tree.get("secret").asString()).isEqualTo("custom");
+    }
+
+    public interface AnyOff {
+        @JsonAnyGetter(enabled = false)
+        @JsonProperty
+        default String getURL() {
+            return "leak";
+        }
+    }
+
+    public interface AnyOffMap {
+        @JsonAnyGetter(enabled = false)
+        @JsonProperty
+        default Map<String, Object> getURL() {
+            return Map.of("k", "v");
+        }
+    }
+
+    public record ViaAnyOff(String name) implements AnyOff {
+    }
+
+    public record ViaAnyOffMap(String name) implements AnyOffMap {
+    }
+
+    public record AnyOffDirect(String name) {
+        @JsonAnyGetter(enabled = false)
+        @JsonProperty
+        public String getURL() {
+            return "leak";
+        }
+    }
+
+    @tools.jackson.databind.annotation.JsonAppend(props = @tools.jackson.databind.annotation.JsonAppend.Prop(
+            value = Appender.class, name = "name"))
+    public record Appended(String name) {
+    }
+
+    public static class Appender extends tools.jackson.databind.ser.VirtualBeanPropertyWriter {
+        public Appender() {
+        }
+
+        protected Appender(tools.jackson.databind.introspect.BeanPropertyDefinition propDef,
+                           tools.jackson.databind.util.Annotations ctxtAnn, tools.jackson.databind.JavaType type) {
+            super(propDef, ctxtAnn, type);
+        }
+
+        @Override
+        protected Object value(Object bean, JsonGenerator g, SerializationContext prov) {
+            return "replaced";
+        }
+
+        @Override
+        public tools.jackson.databind.ser.VirtualBeanPropertyWriter withConfig(
+                tools.jackson.databind.cfg.MapperConfig<?> config, tools.jackson.databind.introspect.AnnotatedClass declaringClass,
+                tools.jackson.databind.introspect.BeanPropertyDefinition propDef, tools.jackson.databind.JavaType type) {
+            return new Appender(propDef, declaringClass.getAnnotations(), type);
+        }
+    }
+
+    @Test
+    void aDisabledAnyGetterIsAnOrdinaryPropertyAndAVirtualPropertyIsNotAComponent() {
+        assertRefused(() -> SourceTree.of(new ViaAnyOff("n")), "ViaAnyOff");
+        assertRefused(() -> SourceModels.require(ViaAnyOff.class), "ViaAnyOff");
+        assertRefused(() -> SourceTree.of(new ViaAnyOffMap("n")), "ViaAnyOffMap");
+        assertRefused(() -> SourceModels.require(ViaAnyOffMap.class), "ViaAnyOffMap");
+        assertRefused(() -> SourceTree.of(new AnyOffDirect("n")), "AnyOffDirect");
+        assertRefused(() -> SourceModels.require(AnyOffDirect.class), "AnyOffDirect");
+        assertRefused(() -> SourceTree.of(new Appended("n")), "Appended");
+        assertRefused(() -> SourceModels.require(Appended.class), "Appended");
+    }
+
     @Test
     void aJdkClassReadByGettersIsRefusedAtStartup() {
         assertRefused(() -> SourceModels.require(WithPoint.class), "Point");

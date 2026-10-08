@@ -66,8 +66,8 @@ import java.util.Locale;
  * object, and a JDK class that would be read by getters (a Throwable can carry personal data in its
  * message). A model author's explicit choices stay allowed: {@code @JsonSerialize(using/keyUsing)} on a
  * record or one of its components, {@code @JsonAnyGetter} and {@code @JsonValue}; the engine still
- * classifies their output and a bean looked up through them is refused. {@code @JsonProperty} or
- * {@code @JsonGetter} on a record method that is not a component is refused. {@link SourceModels#require} checks the declared types at startup and this class checks the
+ * classifies their output and a bean looked up through them is refused. A property that is not backed by a record
+ * component (an annotated method on the record or an interface it implements) is refused. {@link SourceModels#require} checks the declared types at startup and this class checks the
  * actual object graph.
  *
  * <p>Within that shape the mapper starts from the Jackson 2 settings so values are unchanged,
