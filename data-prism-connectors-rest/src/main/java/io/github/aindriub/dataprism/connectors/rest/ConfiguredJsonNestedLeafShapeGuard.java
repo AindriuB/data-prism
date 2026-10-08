@@ -2,8 +2,8 @@ package io.github.aindriub.dataprism.connectors.rest;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.aindriub.dataprism.core.FieldMetadata;
-import io.github.aindriub.dataprism.core.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 
 import java.util.Map;
 
@@ -13,7 +13,7 @@ import java.util.Map;
  * its own -- turns up as a structure instead.
  *
  * <p>Without this, that shape mismatch would fall through to {@link
- * io.github.aindriub.dataprism.core.JsonTreeScrubbingEngine}'s generic {@code
+ * io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine}'s generic {@code
  * UNCLASSIFIED_STRUCTURE} refusal, the same one an entirely unclassified
  * nested object gets. That conflates two different failures: a field nobody
  * ever reviewed, and a field that was reviewed and classified as a leaf, but

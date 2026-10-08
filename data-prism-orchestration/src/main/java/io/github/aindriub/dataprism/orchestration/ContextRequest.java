@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
 import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
-import io.github.aindriub.dataprism.core.ConsistencyFinding;
+import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 
 import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 

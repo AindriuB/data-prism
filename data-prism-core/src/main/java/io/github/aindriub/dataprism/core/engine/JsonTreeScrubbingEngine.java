@@ -1,0 +1,377 @@
+package io.github.aindriub.dataprism.core.engine;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.aindriub.dataprism.annotations.PrivacyAction;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.ScrubResult;
+import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
+import io.github.aindriub.dataprism.core.policy.Generalizer;
+import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
+
+import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
+import io.github.aindriub.dataprism.core.refusal.RefusalPaths;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
+import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * The tree-based scrubbing engine.
+ *
+ * <p>The engine works on a data tree rather than the Java object graph. Records
+ * are immutable and their canonical constructors may validate, so there is no
+ * way to write a scrubbed value back into one; and a tree makes unknown fields
+ * visible, which is what fail-closed needs. See docs/design-review.md §A4.
+ *
+ * <p>It applies decisions, it does not make them. Every field goes through
+ * {@link PrivacyPolicyResolver}, so what happens to a value is a configuration
+ * question rather than a property of the model class.
+ *
+ * <p>Nested objects and collections are descended into rather than copied. A
+ * nested object is not a value, it is more fields, and copying one would emit
+ * every field inside it without anything having classified them — which is
+ * exactly the hole this replaced. Descent needs the declared Java type, because
+ * a JSON tree does not remember what it was built from; where the type says
+ * nothing (a raw collection, a bare {@code Object}, a type with no annotation)
+ * the contents are treated as unclassified and the profile decides.
+ */
+public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
+
+    public static final String REDACTED = "[REDACTED]";
+
+    /** Stands in a disposition path for a property the model does not declare. */
+    static final String UNDECLARED = RefusalPaths.UNDECLARED;
+
+    /** Stands in an output tree for a property the model does not declare; numbered from 1 per object. */
+    private static final String PLACEHOLDER_PREFIX = "<undeclared-";
+
+    /**
+     * Guards against a self-referencing structure. A cycle in the source object
+     * would already have failed when Jackson built the tree, so this catches
+     * pathologically deep data rather than true cycles.
+     */
+    private static final int MAX_DEPTH = 16;
+
+    private final FieldMetadataResolver resolver;
+    private final PrivacyPolicyResolver policies;
+    private final SyntheticValueSource synthetics;
+    private final ValueTokenSource tokens;
+
+    /** Without a token source, HASH and TOKENIZE refuse rather than degrade. */
+    public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
+                                   SyntheticValueSource synthetics) {
+        this(resolver, policies, synthetics, ValueTokenSource.unavailable());
+    }
+
+    public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
+                                   SyntheticValueSource synthetics, ValueTokenSource tokens) {
+        this.resolver = Objects.requireNonNull(resolver, "resolver");
+        this.policies = Objects.requireNonNull(policies, "policies");
+        this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
+        this.tokens = Objects.requireNonNull(tokens, "tokens");
+    }
+
+    @Override
+    public ScrubResult scrub(Object source, PrivacyContext context) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(context, "context");
+
+        Class<?> type = source.getClass();
+        if (!resolver.exposed(type)) {
+            throw new PrivacyRefusedException("MODEL_NOT_EXPOSED", type.getName(),
+                    "type is not annotated @LlmExposedModel");
+        }
+
+        JsonNode read = SourceTree.of(source);
+        if (!read.isObject()) {
+            throw new PrivacyRefusedException("NOT_AN_OBJECT", type.getName(),
+                    "source did not read as a JSON object");
+        }
+        Run run = new Run(context, new HashSet<>(), new TreeMap<>());
+        ObjectNode tree = scrubObject((ObjectNode) read, type, run, "$", "", 0, null);
+        return new ScrubResult(tree, run.emitted(), run.dispositions());
+    }
+
+    /**
+     * Per-call state: the scope, and the values this call generated.
+     *
+     * <p>It travels with the context rather than living on the engine, which has
+     * to stay stateless — one engine serves concurrent requests in different
+     * scopes, and a shared set would leak one scope's values into another's
+     * allowlist.
+     */
+    private record Run(PrivacyContext context, Set<String> emitted, Map<String, PrivacyAction> dispositions) {
+
+        /** Records a generated value and hands it straight back, so call sites read as one expression. */
+        String emit(String value) {
+            if (value != null && !value.isBlank()) {
+                emitted.add(value);
+            }
+            return value;
+        }
+
+        /** Records the action applied at a field, keyed by its declared-name pointer. */
+        void disposed(String pointer, PrivacyAction action) {
+            dispositions.put(pointer, action);
+        }
+    }
+
+    /** Appends one declared field name to a JSON pointer, escaped per RFC 6901. */
+    private static String child(String pointer, String name) {
+        return pointer + "/" + name.replace("~", "~0").replace("/", "~1");
+    }
+
+    /**
+     * The object a value being scrubbed lives on: its parent node, that node's
+     * fields by name, and the Java type they were resolved against. The three
+     * travel together for one reason — a {@code SYNTHESIZE} field whose
+     * {@code subjectField} names a sibling needs all three to look that
+     * sibling up, and none of them individually.
+     */
+    private record OwnerScope(ObjectNode parent, Map<String, FieldMetadata> siblings, Class<?> owner) {
+    }
+
+    /**
+     * @param inheritedSubject the enclosing object's subject. A nested structure
+     *                         usually describes the same subject as its parent
+     *                         and carries no identifier of its own; without
+     *                         inheritance every nested synthesised field would
+     *                         fail for want of a subject
+     */
+    private ObjectNode scrubObject(ObjectNode in, Class<?> type, Run run,
+                                   String path, String pointer, int depth, String inheritedSubject) {
+        if (depth > MAX_DEPTH) {
+            throw new PrivacyRefusedException("TOO_DEEP", path,
+                    "nesting exceeded " + MAX_DEPTH + " levels");
+        }
+
+        Map<String, FieldMetadata> byName = resolver.resolve(type).stream()
+                .collect(Collectors.toMap(FieldMetadata::fieldName, Function.identity()));
+
+        // Read subjects before anything is removed: identifier fields are dropped
+        // below, and synthesis still needs their values.
+        String declaredSubject = subjectValue(in, byName, null, type);
+        String ownSubject = declaredSubject != null ? declaredSubject : inheritedSubject;
+
+        Map<String, String> placeholders = placeholders(in, byName);
+        ObjectNode out = SourceTree.newObject();
+        for (String field : fieldNames(in)) {
+            FieldMetadata md = byName.get(field);
+            boolean unknownProperty = md == null;
+            // The same rule as the pointer below, for the same reason: an undeclared
+            // property's name is payload data, and this path ends up in refusals.
+            String fieldPath = path + "." + (unknownProperty ? UNDECLARED : field);
+            // An undeclared property's name comes from the payload, not from the
+            // model, so it must never reach the record of dispositions.
+            String fieldPointer = unknownProperty ? pointer + "/" + UNDECLARED : child(pointer, field);
+            if (unknownProperty) {
+                // Present in the serialised source, absent from the model. Same
+                // question as an unannotated field, so the same setting answers it.
+                md = FieldMetadata.undeclared(field);
+            }
+
+            EffectivePrivacyPolicy policy = policies.resolve(md, run.context());
+            if (!policy.allowed()) {
+                throw new PrivacyRefusedException(
+                        unknownProperty ? "UNKNOWN_FIELD" : "UNDECLARED_FIELD", fieldPath,
+                        unknownProperty
+                                ? "property present in the source but not declared on " + type.getName()
+                                : "field on an @LlmExposedModel carries neither @SensitiveData nor @NonSensitive");
+            }
+
+            run.disposed(fieldPointer, policy.action());
+            JsonNode value = in.get(field);
+            JsonNode scrubbed = apply(value, md, policy, run, fieldPath, fieldPointer, depth, ownSubject,
+                    new OwnerScope(in, byName, type));
+            if (scrubbed != null) {
+                // The key is payload data and can be personal data. Unless the profile
+                // releases unclassified data wholesale, the model sees a placeholder.
+                boolean rename = unknownProperty && policy.action() != PrivacyAction.PASS_THROUGH;
+                out.set(rename ? placeholders.get(field) : field, scrubbed);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Names for this object's undeclared properties, numbered by raw key order
+     * ({@link String#compareTo}) so the assignment does not depend on the order a
+     * source happens to serialise a map in. A number is skipped when its
+     * placeholder equals a declared property present in the same object, so no
+     * output property is overwritten.
+     */
+    private static Map<String, String> placeholders(ObjectNode in, Map<String, FieldMetadata> byName) {
+        List<String> undeclared = new ArrayList<>();
+        Set<String> taken = new HashSet<>();
+        for (String field : fieldNames(in)) {
+            if (byName.containsKey(field)) {
+                taken.add(field);
+            } else {
+                undeclared.add(field);
+            }
+        }
+        undeclared.sort(null);
+        Map<String, String> names = new java.util.HashMap<>();
+        int next = 1;
+        for (String field : undeclared) {
+            String name = PLACEHOLDER_PREFIX + next + ">";
+            while (taken.contains(name)) {
+                next++;
+                name = PLACEHOLDER_PREFIX + next + ">";
+            }
+            names.put(field, name);
+            next++;
+        }
+        return names;
+    }
+
+    /** @return the value to emit, or null to drop the field entirely */
+    private JsonNode apply(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,
+                           Run run, String path, String pointer, int depth, String ownSubject, OwnerScope scope) {
+        if (policy.action() == PrivacyAction.REMOVE) {
+            return null;
+        }
+        if (value == null || value.isNull()) {
+            // Nothing to protect, and dropping it would change the shape of the
+            // response for a reason unrelated to privacy.
+            return value;
+        }
+
+        if (value.isObject()) {
+            return scrubNestedObject((ObjectNode) value, md, run, path, pointer, depth, ownSubject);
+        }
+        if (value.isArray()) {
+            ArrayNode out = SourceTree.newArray();
+            ArrayNode in = (ArrayNode) value;
+            for (int i = 0; i < in.size(); i++) {
+                JsonNode element = in.get(i);
+                String elementPath = path + "[" + i + "]";
+                JsonNode scrubbed = element.isObject()
+                        ? scrubNestedObject((ObjectNode) element, md, run, elementPath, pointer + "/*", depth, ownSubject)
+                        : scalar(element, md, policy, run, elementPath, ownSubject, scope);
+                if (scrubbed != null) {
+                    out.add(scrubbed);
+                }
+            }
+            return out;
+        }
+        return scalar(value, md, policy, run, path, ownSubject, scope);
+    }
+
+    /**
+     * A nested object is only descended into when its declared type says it was
+     * reviewed. Anything else — a bare {@code Object}, a third-party type, a
+     * class nobody annotated — is unclassified, and the profile's setting for
+     * unclassified data decides, exactly as it would for a scalar.
+     */
+    private JsonNode scrubNestedObject(ObjectNode value, FieldMetadata md, Run run,
+                                       String path, String pointer, int depth, String inheritedSubject) {
+        Class<?> nested = md.elementType() != null && md.elementType() != Object.class
+                ? md.elementType()
+                : md.valueType();
+
+        if (nested != null && resolver.descendable(nested)) {
+            return scrubObject(value, nested, run, path, pointer, depth + 1, inheritedSubject);
+        }
+
+        // The field holding this structure may well be declared non-sensitive --
+        // that is the natural thing to write for something believed inert. It
+        // says nothing about the fields inside, which nobody has classified, so
+        // the profile's setting for unclassified data decides, not the field's.
+        EffectivePrivacyPolicy structure =
+                policies.resolve(FieldMetadata.unannotated(md.fieldName()), run.context());
+
+        if (!structure.allowed()) {
+            throw new PrivacyRefusedException("UNCLASSIFIED_STRUCTURE", path,
+                    "nested value has no descendable type; annotate it @SensitiveObject, "
+                            + "classify the field that holds it, or choose a looser "
+                            + "`unclassified` setting for this profile");
+        }
+        run.disposed(pointer, structure.action());
+        return switch (structure.action()) {
+            case PASS_THROUGH -> value;
+            case REDACT -> SourceTree.text(REDACTED);
+            default -> null;
+        };
+    }
+
+    /**
+     * Every branch that invents a value records it on the run. Those are exactly
+     * the values a pattern detector will match without them being a leak — a
+     * synthesised email is shaped like an email on purpose, so that a bug
+     * emitting a real one is still caught by shape.
+     */
+    private JsonNode scalar(JsonNode value, FieldMetadata md, EffectivePrivacyPolicy policy,
+                            Run run, String path, String ownSubject, OwnerScope scope) {
+        return switch (policy.action()) {
+            case PASS_THROUGH -> value;
+            case REDACT -> SourceTree.text(REDACTED);
+            case REMOVE -> null;
+            case SYNTHESIZE -> {
+                String subject = md.subjectField().isEmpty()
+                        ? ownSubject
+                        : subjectValue(scope.parent(), scope.siblings(), md.subjectField(), scope.owner());
+                if (subject == null || subject.isBlank()) {
+                    throw new PrivacyRefusedException("NO_SUBJECT", path,
+                            "SYNTHESIZE needs a subject identifier and none resolved");
+                }
+                yield SourceTree.text(run.emit(
+                        synthetics.syntheticValue(subject, policy.namespace(), run.context())));
+            }
+            // HASH and TOKENIZE key on the value rather than the subject, so equal
+            // values stay equal and joins on them survive. That also discloses
+            // equality, and for a small value space it discloses the value --
+            // see ValueTokenSource.
+            case HASH -> SourceTree.text(run.emit(
+                    tokens.hash(value.asText(), policy.namespace(), run.context())));
+            case TOKENIZE -> SourceTree.text(run.emit(
+                    tokens.token(value.asText(), policy.namespace(), run.context())));
+            case GENERALIZE -> SourceTree.text(run.emit(
+                    Generalizer.generalise(value, policy.generalization(), path)));
+        };
+    }
+
+    /**
+     * @param named the field to read, or null for the type's own
+     *              {@code @InternalIdentifier}
+     */
+    private static String subjectValue(ObjectNode in, Map<String, FieldMetadata> byName,
+                                       String named, Class<?> type) {
+        String field = named;
+        if (field == null) {
+            field = byName.values().stream()
+                    .filter(FieldMetadata::internalIdentifier)
+                    .map(FieldMetadata::fieldName)
+                    .findFirst()
+                    .orElse(null);
+            if (field == null) {
+                return null;
+            }
+        } else if (!byName.containsKey(field)) {
+            throw new PrivacyRefusedException("UNKNOWN_SUBJECT_FIELD", field,
+                    "subject field named on " + type.getName() + " does not exist");
+        }
+        JsonNode node = in.get(field);
+        return node == null || node.isNull() ? null : node.asText();
+    }
+
+    private static List<String> fieldNames(ObjectNode node) {
+        List<String> names = new ArrayList<>();
+        for (Map.Entry<String, JsonNode> e : node.properties()) {
+            names.add(e.getKey());
+        }
+        return names;
+    }
+}

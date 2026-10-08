@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.security;
 
-import io.github.aindriub.dataprism.core.Capability;
+import io.github.aindriub.dataprism.core.model.Capability;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

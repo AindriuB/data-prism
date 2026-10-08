@@ -1,13 +1,13 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.Hazelcast;
-import io.github.aindriub.dataprism.core.DataRequest;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.InMemoryScopeBudget;
-import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
-import io.github.aindriub.dataprism.core.ScopeBudget;
+import io.github.aindriub.dataprism.core.spi.DataRequest;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
+import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.modelcontextprotocol.common.McpTransportContext;

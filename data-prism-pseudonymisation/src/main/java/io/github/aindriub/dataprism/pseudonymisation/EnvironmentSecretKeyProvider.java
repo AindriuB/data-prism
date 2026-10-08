@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.pseudonymisation;
 
-import io.github.aindriub.dataprism.core.SecretKeyProvider;
+import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;

@@ -3,7 +3,7 @@ package io.github.aindriub.dataprism.connectors.rest;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

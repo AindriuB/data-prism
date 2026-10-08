@@ -2,7 +2,7 @@ package io.github.aindriub.dataprism.example;
 
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.core.ConsistencyFinding;
+import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import org.junit.jupiter.api.DisplayName;

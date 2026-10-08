@@ -3,7 +3,7 @@ package io.github.aindriub.dataprism.spring.boot;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import io.github.aindriub.dataprism.core.ScopeBudget;
+import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

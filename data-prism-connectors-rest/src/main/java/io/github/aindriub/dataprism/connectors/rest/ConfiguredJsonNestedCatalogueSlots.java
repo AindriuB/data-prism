@@ -8,7 +8,7 @@ package io.github.aindriub.dataprism.connectors.rest;
  * <p>Each of these classes exists for exactly one reason: to be a distinct,
  * compiled, package-private {@code Class} object that a source's nested {@code
  * fields:} entry can carry as its {@link
- * io.github.aindriub.dataprism.core.FieldMetadata#valueType()}/{@code
+ * io.github.aindriub.dataprism.core.model.FieldMetadata#valueType()}/{@code
  * elementType()}, so that core's {@code Class}-keyed {@code
  * FieldMetadataResolver} can tell one nested catalogue's descent target apart
  * from another's -- and from the root catalogue's -- without core growing a

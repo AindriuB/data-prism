@@ -6,7 +6,7 @@ import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
-import io.github.aindriub.dataprism.core.StrictYaml;
+import io.github.aindriub.dataprism.core.model.StrictYaml;
 
 import java.io.IOException;
 import java.io.InputStream;

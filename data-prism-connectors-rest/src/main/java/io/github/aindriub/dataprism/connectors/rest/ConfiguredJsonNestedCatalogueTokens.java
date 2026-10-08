@@ -7,8 +7,8 @@ import java.util.List;
  * from a bounded, fixed pool of pre-declared marker types ({@link
  * ConfiguredJsonNestedCatalogueSlot0} and its siblings).
  *
- * <p>Core's {@link io.github.aindriub.dataprism.core.FieldMetadata} and {@link
- * io.github.aindriub.dataprism.core.FieldMetadataResolver} key everything on
+ * <p>Core's {@link io.github.aindriub.dataprism.core.model.FieldMetadata} and {@link
+ * io.github.aindriub.dataprism.core.spi.FieldMetadataResolver} key everything on
  * {@code Class<?>}, never on a name, and that is deliberately not something
  * this feature is allowed to change (see docs/plan/tasks/60-*.md). A
  * configuration-driven JSON source has no compiled Java type to hand core for

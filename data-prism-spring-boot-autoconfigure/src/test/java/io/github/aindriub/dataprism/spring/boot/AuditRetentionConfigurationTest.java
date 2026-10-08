@@ -5,10 +5,10 @@ import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.FileAuditSink;
 import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
-import io.github.aindriub.dataprism.core.DataSourceAdapter;
-import io.github.aindriub.dataprism.core.IdentityResolver;
-import io.github.aindriub.dataprism.core.PassThroughIdentityResolver;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
+import io.github.aindriub.dataprism.core.spi.IdentityResolver;
+import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.http.HttpServletRequest;
@@ -318,7 +318,7 @@ class AuditRetentionConfigurationTest {
             return new DataSourceAdapter<>() {
                 @Override public String sourceName() { return "customer"; }
                 @Override public Class<String> responseType() { return String.class; }
-                @Override public String fetch(io.github.aindriub.dataprism.core.DataRequest request) { return null; }
+                @Override public String fetch(io.github.aindriub.dataprism.core.spi.DataRequest request) { return null; }
             };
         }
 

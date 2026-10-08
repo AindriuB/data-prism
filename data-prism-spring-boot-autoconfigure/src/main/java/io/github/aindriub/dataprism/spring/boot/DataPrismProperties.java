@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import io.github.aindriub.dataprism.core.Capability;
+import io.github.aindriub.dataprism.core.model.Capability;
 import io.github.aindriub.dataprism.security.ReservedArguments;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import jakarta.annotation.PostConstruct;

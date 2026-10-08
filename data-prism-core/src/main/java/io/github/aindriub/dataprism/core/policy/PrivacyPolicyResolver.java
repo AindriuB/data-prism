@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.core.policy;
 
-import io.github.aindriub.dataprism.core.FieldMetadata;
-import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
 
 /**
  * Decides what actually happens to a field.

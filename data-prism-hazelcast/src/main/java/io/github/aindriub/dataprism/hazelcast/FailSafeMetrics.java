@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
-import io.github.aindriub.dataprism.core.Metric;
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

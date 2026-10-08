@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import io.github.aindriub.dataprism.core.SecretKeyProvider;
+import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 import java.util.Objects;
 
 /** Pins a reviewed reference resolver to the one reference selected in deployment configuration. */

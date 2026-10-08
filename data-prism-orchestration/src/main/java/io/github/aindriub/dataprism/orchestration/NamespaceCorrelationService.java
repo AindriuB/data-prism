@@ -2,12 +2,12 @@ package io.github.aindriub.dataprism.orchestration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
-import io.github.aindriub.dataprism.core.ConsistencyFinding;
-import io.github.aindriub.dataprism.core.EntityCorrelationService;
-import io.github.aindriub.dataprism.core.FieldMetadata;
-import io.github.aindriub.dataprism.core.FieldMetadataResolver;
-import io.github.aindriub.dataprism.core.PrivacyContext;
-import io.github.aindriub.dataprism.core.SourceTree;
+import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
+import io.github.aindriub.dataprism.core.spi.EntityCorrelationService;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
+import io.github.aindriub.dataprism.core.engine.SourceTree;
 
 import java.util.ArrayList;
 import java.util.Comparator;

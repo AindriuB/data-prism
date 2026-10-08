@@ -23,14 +23,14 @@ YAML-only path first.
   (`sourceName()`), states the model it returns (`responseType()`), and
   fetches one record (`fetch(DataRequest request)`), never seeing anything
   a caller supplied beyond an entity type and a subject id
-  ([`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataSourceAdapter.java`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataSourceAdapter.java)).
+  ([`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/DataSourceAdapter.java`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/DataSourceAdapter.java)).
   Tutorial 1, below, writes one from nothing. Full reference:
   [Implement `DataSourceAdapter`](../extending.md#implement-datasourceadapter).
 - **`IdentityResolver`** — how a subject's per-source keys relate to one
   canonical identity. Most integrations use the shipped
   `PassThroughIdentityResolver` as-is; write your own only when your sources
   disagree about identity
-  ([`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/IdentityResolver.java`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/IdentityResolver.java)).
+  ([`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/IdentityResolver.java`](https://github.com/AindriuB/data-prism/blob/main/data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/IdentityResolver.java)).
   Tutorial 2 covers writing one. Full reference:
   [Implement `IdentityResolver`](../extending.md#implement-identityresolver).
 - **`AuditSink`** and the **classification annotations**

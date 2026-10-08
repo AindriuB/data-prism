@@ -9,7 +9,7 @@ import java.util.Objects;
  * carrying the name of the source it came from.
  *
  * <p>The name travels with the value because {@link
- * io.github.aindriub.dataprism.core.ScrubbingEngine#scrub} receives only the
+ * io.github.aindriub.dataprism.core.spi.ScrubbingEngine#scrub} receives only the
  * fetched object and the privacy context — not the adapter that produced it —
  * and {@link ConfiguredJsonScrubbingEngine} needs to know which source's
  * catalogue applies before it can classify a single field. See that class for

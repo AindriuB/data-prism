@@ -137,7 +137,7 @@ public interface DataSourceAdapter<T> {
 }
 ```
 
-`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataSourceAdapter.java:10-17`
+`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/DataSourceAdapter.java:10-17`
 
 - `sourceName()` is the string that later binds this adapter to a
   `dataprism.sources.<name>` configuration entry — see the binding section
@@ -148,7 +148,7 @@ public interface DataSourceAdapter<T> {
 - `fetch(DataRequest request)` does the actual call. `DataRequest` carries
   only `entityType`, `subjectId` and a parameters map your adapter chooses to
   read — never a caller-supplied URL, path or query
-  (`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/DataRequest.java:6-12`).
+  (`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/DataRequest.java:6-12`).
 
 The worked implementation:
 
@@ -256,7 +256,7 @@ public interface IdentityResolver {
     List<SourceRef> expand(CanonicalId id, List<String> sourceNames);
 ```
 
-`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/IdentityResolver.java:22-32`
+`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/IdentityResolver.java:22-32`
 
 Most integrations do not need a custom implementation. `PassThroughIdentityResolver`
 is the honest default:
@@ -277,7 +277,7 @@ public final class PassThroughIdentityResolver implements IdentityResolver {
 }
 ```
 
-`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/PassThroughIdentityResolver.java:14-26`
+`data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/PassThroughIdentityResolver.java:14-26`
 
 Use it **only** when every configured source genuinely keys its records on
 the same identifier (see the README's "Building and running" section): it

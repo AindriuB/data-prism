@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.example;
 
-import io.github.aindriub.dataprism.core.Capability;
+import io.github.aindriub.dataprism.core.model.Capability;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
 import org.junit.jupiter.api.DisplayName;

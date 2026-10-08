@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import io.github.aindriub.dataprism.core.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 
 import java.util.Objects;

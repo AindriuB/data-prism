@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import io.github.aindriub.dataprism.core.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;

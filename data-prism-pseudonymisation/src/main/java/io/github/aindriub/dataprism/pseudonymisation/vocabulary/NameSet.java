@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.pseudonymisation.vocabulary;
 
-import io.github.aindriub.dataprism.core.Text;
+import io.github.aindriub.dataprism.core.engine.Text;
 
 import java.util.EnumMap;
 import java.util.List;

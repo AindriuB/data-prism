@@ -2,8 +2,8 @@ package io.github.aindriub.dataprism.core.policy;
 
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
-import io.github.aindriub.dataprism.core.FieldMetadata;
-import io.github.aindriub.dataprism.core.PrivacyContext;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
