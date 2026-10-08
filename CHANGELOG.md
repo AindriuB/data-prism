@@ -80,6 +80,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grouped into one pull request per ecosystem per week, and Java image majors
   and non-LTS Java 26 and later are ignored.
 
+### Fixed
+
+- An interrupted audit write is no longer reported as tampering after a
+  restart. A writer that opened a file or segment ending in an unterminated
+  fragment appended its first record onto that same line, and the verifier
+  reported the over-long line as `FIELD_COUNT_MISMATCH` (exit code 2). A
+  resumed writer now writes `\r\n` and fsyncs before its first record when the
+  last byte is not a newline. It never truncates or rewrites existing bytes,
+  and it fails the open (`AUDIT_SINK_OPEN_FAILED`) if it cannot do so. The
+  verifier reads a line ending in a raw carriage return, which a serialized
+  record never contains, as an `INTERRUPTED_WRITE_FRAGMENT` (exit code 4) and
+  does not parse it. Directory mode uses the same terminator. The rule that an
+  over-count line with a parseable version is a break is unchanged. One live
+  writer per file or segment directory is assumed.
+- The configured outbound correlation header (including `traceparent`) is now
+  removed from every outbound REST request, so a client-level default or preset
+  header can no longer send an unvalidated value when no valid id is present.
+
+### Upgrade notes
+
+- Logs written before 0.5.0, including every 0.4.x release, can already hold a
+  torn fragment fused with a restarted writer's first record on one line. The
+  0.4.x verifier mostly reported these as `INTERRUPTED_WRITE_FRAGMENT` (exit
+  code 4). The 0.5.0 verifier reports them as `FIELD_COUNT_MISMATCH` (exit code
+  2), and retention stops there. To check, see whether the trailing 20, 24 or
+  25 fields of the line parse as a `GENESIS` record of a new `instanceId`, and
+  whether the record after the line continues that writer. If so it is a legacy
+  interrupted write, not an edit.
+
 ## [0.4.1] - 2026-10-07
 
 Real, explicit clustering. In 0.4.0, `topology: embedded` started a bare

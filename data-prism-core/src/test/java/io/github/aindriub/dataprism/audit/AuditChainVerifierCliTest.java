@@ -327,11 +327,48 @@ class AuditChainVerifierCliTest {
 
         assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_STRUCTURAL_ANOMALY);
         assertThat(out).contains("INTERRUPTED WRITE, not tampering");
-        assertThat(out).contains("field count");
+        assertThat(out).contains("carriage return");
         assertThat(out).doesNotContain("CHAIN BREAK");
         assertThat(out).doesNotContain("SINK-CONTRACT VIOLATION");
         assertThat(out).doesNotContain("POSSIBLY IN FLIGHT");
         assertThat(out).contains("cannot detect truncation");
+    }
+
+    @Test
+    void legacyFusedFragmentReadsAsAFieldCountBreakNamingTheLegacyCauseOnTheCli() throws IOException {
+        Path path = tempDir.resolve("audit.log");
+        AuditEvent before;
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            before = write(new AuditRecorder(sink, FIXED, "instance-1"));
+        }
+        Path scratch = tempDir.resolve("scratch.log");
+        try (FileAuditSink scratchSink = new FileAuditSink(scratch)) {
+            write(new AuditRecorder(scratchSink, FIXED, "instance-1"));
+        }
+        // A real v3 line, torn after its recordVersion field (index 20) as in the review.
+        String torn = Files.readString(scratch, StandardCharsets.UTF_8).split("\n")[0];
+        int cut = 0;
+        for (int seps = 0; seps < 21; cut++) {
+            if (torn.charAt(cut) == '\u001f') {
+                seps++;
+            }
+        }
+        torn = torn.substring(0, cut + 3);
+        Path restartedFile = tempDir.resolve("restarted.log");
+        try (FileAuditSink restarted = new FileAuditSink(restartedFile)) {
+            write(new AuditRecorder(restarted, FIXED, "instance-2"));
+        }
+        String firstOfRestart = Files.readString(restartedFile, StandardCharsets.UTF_8).split("\n")[0];
+        // The pre-0.5.0 shape, built explicitly: no terminator between fragment and first record.
+        Files.writeString(path, Files.readString(path, StandardCharsets.UTF_8) + torn + firstOfRestart + "\n",
+                StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        int code = run(path, outBytes, new ByteArrayOutputStream());
+        String out = outBytes.toString(StandardCharsets.UTF_8);
+
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_BREAK_DETECTED);
+        assertThat(out).contains("FIELD_COUNT_MISMATCH").contains("before 0.5.0");
     }
 
     @Test
