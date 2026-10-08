@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Base:** branch from `origin/main` (0.5.0 released at v0.5.0 / c850c3e2) after 154-161 have merged into it.
-**Depends on:** 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 169
+**Depends on:** 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 169, 170
 **Owns:**
 - CHANGELOG.md (the `[Unreleased]` section only)
 - docs/migration-0.6.md (new)
@@ -36,6 +36,8 @@ check). Each is copied from that task's hand-back.
 - [ ] `grep -rnE 'dataprism\.(core\.[A-Z]|audit\.[A-Z]|spring\.boot\.Jwt)' docs README.md` (excluding `docs/plan/`, `docs/pack.md`, `docs/design-review.md`) finds only new-location names.
 - [ ] `mkdocs build --strict` exits 0 (or, if the local environment refuses it as in the 0.5.0 cut, the CI docs job on the PR is green, linked in the hand-back).
 - [ ] `mvn -B verify` over the full reactor exits 0.
+
+- [ ] (Task 170, owner decisions D-166-1, D-170-1, D-170-2.) The `[Unreleased]` `### Breaking` section and `docs/migration-0.6.md` record that the five YAML readers (and `ConfiguredJsonSources`) now refuse, at startup, a duplicate key (`DUPLICATE_CONFIG_KEY`), an unknown key (`UNKNOWN_CONFIG_KEY`) and a non-string scalar in a string-typed field (`NON_STRING_CONFIG_SCALAR`). They state that a configuration which loaded on 0.5.x may now refuse to start, and the quoting rule: values such as `010`, `yes` or `1e3` in string-typed fields must be quoted. Messages name the key and its path (key truncated to 64 characters), never the value. Take the exact list of changed files and fields from 170's hand-back.
 
 ## Out of scope
 - The 0.6.0 release cut: version bump, `server.json`, image tags, tagging and publishing. A separate task, filed when the owner calls the cut.

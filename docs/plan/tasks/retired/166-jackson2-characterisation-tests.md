@@ -37,3 +37,17 @@ difference for the owner to accept. The tests add coverage and change no product
 - Changing any behaviour the tests reveal, even one that looks wrong. Record it in the hand-back as a candidate follow-up.
 - Editing existing tests, or moving any production class (156 and 157 do the moves).
 - Any Jackson 3 dependency or code (167).
+
+## Outcome (2026-10-08, wave 4)
+Merged onto `release/0.6.0-jackson3` (task branch head 3dbabc4b). 44 characterisation tests in `data-prism-integration-tests` pin Jackson 2 behaviour before the port. Tester PASS on JDK 21 (full reactor, 1444 tests, 0 failures; the characterisation tests were stable over 3 JVMs); reviewer APPROVE.
+
+Observed Jackson 2 behaviours, now golden or asserted:
+- Audit JSON projection: upper-case hex escapes (`\u00E9`), U+2028 and U+2029 escaped, U+007F written raw.
+- Checkpoint lines: fixed field order, one trailing LF.
+- A duplicate key is accepted and the last one wins, in all five YAML readers (`SecurityPolicy`, `PrivacyProfiles`, `ModelDescriptors`, `RestSources`, `VocabularyRegistry`).
+- YAML 1.1 scalars: `yes`/`no`/`on`/`off` are booleans and leading-zero numbers are octal, and both coerce into String fields (a security purpose, a key-store path, a pool entry).
+- Unknown keys are silently ignored, top-level and nested, in every reader except `SecurityPolicy`, which refuses an unknown top-level key.
+- Enum values are matched case-insensitively and with surrounding whitespace trimmed.
+- Tool results: the text content and structured-content goldens pin the Map conversion, not the SDK wire bytes. Null inclusion and date format are not pinned there.
+
+Golden record mode: run with `-Dcharacterisation.record=<dir>` and each actual output is also written to that directory, to regenerate or inspect goldens. Follow-ups: task 170 (readers refuse duplicate and unknown keys), PLAN.md follow-up on `get_entity_context` source order.

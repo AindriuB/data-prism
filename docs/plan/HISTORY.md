@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 4: Jackson 2 characterisation tests (task 166) and task 170 planned
+
+Task 166 merged onto `release/0.6.0-jackson3`. 44 tests in `data-prism-integration-tests` now pin today's Jackson 2 behaviour as golden files or parsed values: the JSON audit projection, checkpoint lines, two tool results and the five YAML readers. Task 167 must keep them green or list each difference for owner acceptance. The run also led to task 170 (D-166-1 a, D-170-1 b, D-170-2 a), so the readers will refuse duplicate keys, unknown keys and unquoted non-string scalars at startup. Tester PASS on JDK 21 (1444 tests, 0 failures; stable over 3 JVMs); reviewer APPROVE.
+
+**Cost:** The tests found silent behaviour nobody had chosen: duplicate keys last-wins in all five readers, unknown keys ignored in four, and YAML 1.1 booleans and octal coerced into String fields such as a key-store path. `get_entity_context`'s `sources` map order varies between JVM runs, so that golden normalises it (follow-up in PLAN.md). The structured-content golden pins the Map conversion, not the SDK wire bytes, so do not read it as a wire-format guarantee. Regenerate goldens with `-Dcharacterisation.record=<dir>` and diff by hand; do not let line-ending conversion touch them (170 adds `.gitattributes`).
+
 ## 2026-10-08 — 0.6.0 wave 3: audit package split into format, sink, checkpoint, retention, verify; verifier CLI moved (task 157)
 
 Task 157 merged onto `release/0.6.0-moves`. `audit` keeps 9 contract types in its root and has five subpackages (`format`, `sink`, `checkpoint`, `retention`, `verify`). The verifier CLI is now `audit.verify.AuditChainVerifierCli` with no forwarding class (D-0.6-4), which breaks operators' command lines until 162 documents it. ArchUnit locks the layout: the audit root does not depend on its subpackages, `format`, `sink` and `checkpoint` do not depend on `verify`, `retention` reaches `verify` only through `AuditRetention` to `AuditChainVerifier`, and the audit slices are free of cycles. Tester PASS twice on JDK 21 (full reactor, 1400 tests, 0 failures); reviewer APPROVE.

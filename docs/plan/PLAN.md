@@ -507,18 +507,23 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 1 | 165 | Single `ci-gate` summary check; rename pages.yml's `build` job | none |
 | 2 | 156 | Split the `core` root package into `spi`, `model`, `engine`, `refusal`, `limits`, `metrics` (pure move) | 154, 155, 160. **Done 2026-10-08** |
 | 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160. **Done 2026-10-08** |
-| 4 | 166 | Pin Jackson 2 output and YAML behaviour with characterisation tests before the port | 157 |
-| 5 | 167 | Port the reactor to Jackson 3 in one step (code, mappers, MCP binding, Spring converters, enforcer) | 155, 156, 157, 166 |
+| 4 | 166 | Pin Jackson 2 output and YAML behaviour with characterisation tests before the port | 157. **Done 2026-10-08** |
+| 5 | 167 | Port the reactor to Jackson 3 in one step (code, mappers, MCP binding, Spring converters, enforcer) | 155, 156, 157, 166. **In progress** |
 | 6 | 168 | Stop exposing data-prism's `ObjectMapper` in public API; ArchUnit guard; signature inventory | 167 (D-J3-1 decided) |
 | 6 | 169 | Record the Jackson 3 decision and the mapper invariant in architecture, conventions, README | 167 |
-| 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169 |
+| 6 | 170 | All five YAML readers (and `ConfiguredJsonSources`) refuse duplicate keys, unknown keys and unquoted non-string scalars in string fields at startup | 166, 167 |
+| 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169, 170 |
 | 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt` | 158 |
 | 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
 | 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159 |
 | 10 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164 |
-| 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-169 |
+| 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-170 |
 
-Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169) and 9 (161, 164) are parallel; 161 and 164 touch different files.
+Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169, 170) and 9 (161, 164) are parallel; 170 was added 2026-10-08 (D-166-1) and 158 waits for it because both edit `ConfiguredJsonSources`; 161 and 164 touch different files.
+
+Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iteration order varies between JVM runs. This is pre-existing nondeterminism, found while writing the golden for that tool; the golden normalises it. Candidate for a deterministic (for example sorted or insertion) order.
+
+**Wave 4 done 2026-10-08:** 166 merged onto `release/0.6.0-jackson3` (branched from main c6b6b8bd). 167 is the current wave.
 
 **Wave 1 done 2026-10-08** (tasks 154, 155, 160, 165, integrated on `release/0.6.0-wave1`; task files retired to `docs/plan/tasks/retired/`). Owner decisions and notes:
 
@@ -536,6 +541,9 @@ Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jacks
 - J3-4: A. A small characterisation task runs first, on Jackson 2, before the port. Golden-byte tests for the audit JSON projection (non-ASCII, U+2028/2029, control characters, surrogate pairs, escape casing), checkpoint lines, and a full tool-result response. YAML characterisation tests for duplicate keys, YAML 1.1 booleans no/yes/on/off, unknown keys, enum case and whitespace, octal-looking scalars. The port must keep all of them green, or list each difference for owner acceptance.
 - J3-5: A, a full flip. Enforcer: ban the Jackson 2 artifacts (`com.fasterxml.jackson.core:jackson-databind`, `jackson-core`, the `jackson-dataformat-*` and `jackson-datatype-*` artifacts), `io.modelcontextprotocol.sdk:mcp-json-jackson2` and `org.springframework.boot:spring-boot-jackson2`. CARVE-OUT: allow `com.fasterxml.jackson.core:jackson-annotations`, which Jackson 3 still uses and mcp-core needs. Lift the `tools.jackson`, mcp aggregate and `mcp-json-jackson3` bans. Spring: re-adopt `spring-boot-starter-jackson`, removing the exclusions and `spring-boot-jackson2` in the server, starter, quickstart-fixtures and quickstart-issuer poms. Task 142's `Boot4RegressionGuardsTest`: invert it to assert Jackson 3 converters and no Jackson 2. Docs: update the D-139-A decision in architecture.md (:284-290), and fix the stale "scrubbing engine is a Jackson module" wording at architecture.md:152 and conventions.md:36. The real invariant is "only `DataPrismObjectMapper` writes".
 
+- **D-166-1: DECIDED 2026-10-08, option (a).** New 0.6.0 task 170, after 167: all five YAML readers (and `ConfiguredJsonSources`, which shares the `RestSources` mapper) refuse duplicate and unknown keys at startup (`DUPLICATE_CONFIG_KEY`, `UNKNOWN_CONFIG_KEY`). Background: the 166 characterisation tests showed all five readers keep the last of two duplicate keys and four ignore unknown keys.
+- **D-170-1: DECIDED 2026-10-08, option (b)** (170). A string-typed field refuses any non-string scalar with `NON_STRING_CONFIG_SCALAR`, so values must be quoted. Rejected: (a) deferring it, (c) documenting only. 170's conditional acceptance items are now unconditional.
+- **D-170-2: DECIDED 2026-10-08, option (a)** (170). Refusal messages name the offending key and its path, never the value, with the key truncated to 64 characters. 162's migration page and `[Unreleased]` Breaking entry record the three codes, that 0.5.x configs may now refuse to start, and the quoting rule.
 - **D-J3-1: DECIDED 2026-10-08, option (a)** (168). The two tool constructors lose their `ObjectMapper` parameter; the tools take the mapper from package-private `DataPrismObjectMapper.create()`, and `DataPrismMcpServer` passes one shared instance through a package-private constructor so tools and transport still share it. Rejected: (b) package-private constructors, which rewrites 10 integration-test files for no extra protection; (c) an opaque data-prism-owned type, which adds a public type to carry one already hidden. 168 is no longer blocked.
 - **D-J3-2: DECIDED 2026-10-08, option (b), in 0.6.0, folded into task 168** (owner delegated the call). 168 adds an ArchUnit allowlist rule for streaming JSON factory and generator construction (allowed: `DataPrismObjectMapper`, `AuditJsonRenderer`, the checkpoint writer `audit.checkpoint.FileAuditCheckpointSink`, `JwtDecoderSupport`) with its own negative-test fixture. Not in 167, whose port stays behaviour-neutral.
 

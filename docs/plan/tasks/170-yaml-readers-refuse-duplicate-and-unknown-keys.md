@@ -1,8 +1,7 @@
 # 170 — Make the five YAML readers refuse duplicate keys and unknown keys at startup
 
 **Repo:** .
-**Base:** branch from `origin/main` after 166 and 167 have merged into it. Before you start,
-read D-170-1 and D-170-2 below and check that the owner has decided them.
+**Base:** branch from `origin/main` after 166 and 167 have merged into it. Owner decisions D-170-1 (b) and D-170-2 (a) are recorded below.
 **Depends on:** 166, 167
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/StrictYaml.java
@@ -51,9 +50,9 @@ a `.gitattributes` entry so that line-ending conversion cannot rewrite the 166 g
 Allowed keys. For each fixed-schema mapping, the allowed set is exactly the set of keys the reader reads today. Do not remove any key that the reader reads. Mappings whose keys are names the user chooses are checked for duplicates only: model names, field names, profile names, source names, role names and the classification keys of a profile's rule map. `pools` keys are `PoolKind` names. An unknown pool name is an unknown key.
 
 ## Acceptance
-- [ ] Two new codes. `DUPLICATE_CONFIG_KEY` covers a mapping, at any depth, that has the same key twice. `UNKNOWN_CONFIG_KEY` covers a fixed-schema mapping, at any depth, that has a key outside its allowed set. Each is thrown at load time as an `IllegalArgumentException` whose message starts with `<CODE>: `. The message names the document kind, the path to the mapping and the key (subject to D-170-2), and never a value.
+- [ ] Two new codes. `DUPLICATE_CONFIG_KEY` covers a mapping, at any depth, that has the same key twice. `UNKNOWN_CONFIG_KEY` covers a fixed-schema mapping, at any depth, that has a key outside its allowed set. Each is thrown at load time as an `IllegalArgumentException` whose message starts with `<CODE>: `. The message names the document kind, the path to the mapping and the key (D-170-2 (a): the key and its path, the key truncated to 64 characters), and never a value.
 - [ ] Neither code arrives wrapped as `UncheckedIOException` "could not be read". A test per reader asserts the exception type and the message prefix.
-- [ ] `SecurityPolicy`'s existing unknown-top-level refusal uses the new form: `UNKNOWN_CONFIG_KEY: security policy has an unknown key 'extra'`, or the D-170-2 equivalent. `ConfiguredJsonSources.rejectUnknownKeys` also carries the `UNKNOWN_CONFIG_KEY: ` prefix. The text after each prefix may otherwise stay as it is.
+- [ ] `SecurityPolicy`'s existing unknown-top-level refusal uses the new form: `UNKNOWN_CONFIG_KEY: security policy has an unknown key 'extra'`, with the key truncated to 64 characters. `ConfiguredJsonSources.rejectUnknownKeys` also carries the `UNKNOWN_CONFIG_KEY: ` prefix. The text after each prefix may otherwise stay as it is.
 - [ ] Tests per reader and per case. Each test is one behaviour, with a sentence-style name, and lives in the reader's own module test file listed in Owns. A cell marked (none) has no fixed-schema nested mapping, so no test is needed; the hand-back must confirm that.
 
   | Reader | duplicate top-level | duplicate nested | unknown top-level | unknown nested |
@@ -72,16 +71,16 @@ Allowed keys. For each fixed-schema mapping, the allowed set is exactly the set 
   - `RestSourcesYamlCharacterisationTest`: `duplicateKey`, `unknownTopLevelKey`, `unknownNestedKey`
   - `VocabularyYamlCharacterisationTest`: `duplicateKey`, `unknownTopLevelKey`, `unknownNestedKey`
 
-  `SecurityPolicyYamlCharacterisationTest.unknownNestedKey` (a role given a mapping) and every enum-spelling test stay byte-for-byte unchanged. So do the boolean and octal tests, unless D-170-1 is (b).
+  `SecurityPolicyYamlCharacterisationTest.unknownNestedKey` (a role given a mapping) and every enum-spelling test stay byte-for-byte unchanged. So do the boolean and octal tests, except the string-field ones that D-170-1 (b) changes (see below).
 - [ ] `git diff origin/main -- data-prism-integration-tests/src/test/resources/characterisation/` is empty. No golden file changes.
 - [ ] `ShippedYamlLoadsStrictlyTest` loads every shipped YAML that no other test loads and asserts that it parses. That covers `privacy-profiles-default.yaml` through `PrivacyProfiles.fromYaml`, all seven bundled vocabularies through `VocabularyRegistry.withBuiltIns()`, and `examples/json-sources/customer-api.yaml` and `customer-api-nested.yaml` through `ConfiguredJsonSources.fromYaml`, read from the reactor root by a path relative to the module. Every other shipped YAML (`data-prism-connectors-rest/src/test/resources/task20-*.yaml`, `data-prism-server/src/test/resources/configured-json/reidentification-source.yaml`) is already loaded by an existing test. The hand-back names that test for each file.
 - [ ] Every YAML code block in docs/**/*.md that is input for one of the six readers is checked for unknown and duplicate keys. The hand-back lists each block it checked (file:line) and each one it fixed. The same goes for every shipped YAML file and every inline test YAML it fixed. If nothing needed fixing, the hand-back says so.
 - [ ] `.gitattributes` exists at the repository root and contains the line `data-prism-integration-tests/src/test/resources/characterisation/** -text`. `git check-attr text -- data-prism-integration-tests/src/test/resources/characterisation/audit-ascii.json` prints `text: unset`.
-- [ ] docs/configuration.md gets a new subsection under "Configuration rules", "Strict keys in YAML configuration files". It names the six readers and the property or entry point that feeds each one, and states both codes, what triggers each, and that the message names the key but never a value. It states that the Spring path reports a descriptor-file refusal as `INVALID_MODEL_DESCRIPTOR_FILE` with the inner code in the cause, and that a configuration which loaded on 0.5.x may now refuse to start. If D-170-1 is (b), it also states the quoting rule and its code.
+- [ ] docs/configuration.md gets a new subsection under "Configuration rules", "Strict keys in YAML configuration files". It names the six readers and the property or entry point that feeds each one, and states both codes, what triggers each, and that the message names the key but never a value. It states that the Spring path reports a descriptor-file refusal as `INVALID_MODEL_DESCRIPTOR_FILE` with the inner code in the cause, and that a configuration which loaded on 0.5.x may now refuse to start. It also states the quoting rule and `NON_STRING_CONFIG_SCALAR`.
 - [ ] `mvn -q verify` passes on the full reactor.
 - [ ] `git diff --stat origin/main` shows changes only under the Owns paths.
 
-**Only if D-170-1 is (b):**
+**D-170-1 (b), decided:**
 - [ ] Every string-typed field in the six readers refuses a YAML scalar that the parser resolved to a non-string type (boolean, integer, float or null) with `NON_STRING_CONFIG_SCALAR: <where> must be a quoted string`. The message never contains the value. That covers a security purpose, the `RestSources` `tls` paths and `base-url`/`path`, a field's `subject`, `identifier` and `nonSensitive`, a band `unit`, a vocabulary `id`/`locale`/`script` and its pool entries, and any other field the reader reads with `String.valueOf`. The hand-back lists the full set.
 - [ ] Numeric and boolean fields (`exposed`, `override`, band bounds, `version`, ...) are unchanged.
 - [ ] Every 166 `booleanSpellings*` and `octalLookingScalars` test is updated where its subject is a string-typed field. Those are `SecurityPolicy` (purpose), `RestSources` (key-store), `ModelDescriptors` (`octalLookingScalars`, `booleanSpellingsAsText`), `PrivacyProfiles` (`octalLookingScalars`, for `unit` only) and `Vocabulary` (pool entry). After the update each one pins refusal for an unquoted coerced scalar and acceptance for the quoted form. Tests whose subject is a boolean or numeric field stay as 167 left them.
@@ -94,13 +93,15 @@ Allowed keys. For each fixed-schema mapping, the allowed set is exactly the set 
 - Any other characterisation test or golden file, and the audit, checkpoint and tool-result tests in particular.
 - Renaming, adding or removing an accepted configuration key.
 
-## Decisions for the owner
-- **D-170-1: YAML-coerced scalars in string-typed fields.** Under Jackson 2 (YAML 1.1), `010` becomes `"8"`, `0777` becomes `"511"`, and `yes`/`on` become `"true"` in string fields across all readers, including a TLS key-store path and a security purpose. YAML 1.2 under Jackson 3 probably stops the `yes`/`on` and leading-zero-octal cases, but `010` still resolves to an integer (shown as `"10"`), and `1e3`, `0x1F` and `~` still coerce. 167's difference table will show exactly what remains.
+## Decisions (owner, all decided 2026-10-08)
+- **D-170-1: DECIDED (b). YAML-coerced scalars in string-typed fields.** Under Jackson 2 (YAML 1.1), `010` becomes `"8"`, `0777` becomes `"511"`, and `yes`/`on` become `"true"` in string fields across all readers, including a TLS key-store path and a security purpose. YAML 1.2 under Jackson 3 probably stops the `yes`/`on` and leading-zero-octal cases, but `010` still resolves to an integer (shown as `"10"`), and `1e3`, `0x1F` and `~` still coerce. 167's difference table will show exactly what remains.
   (a) Leave it out of 170. Raise a follow-up after 167 reports.
-  (b) In 170: a string-typed field refuses any non-string scalar, so a config author must quote `"010"`. This needs the conditional acceptance above.
+  (b) In 170: a string-typed field refuses any non-string scalar, so a config author must quote `"010"`. This needs the acceptance items below.
   (c) In 170: document "quote every string" only, and refuse nothing.
   **Recommendation: (b).** It is the same fail-closed reasoning as D-166-1. It touches the same files, so it costs no extra coordination. It is also the only option that stops a silently changed key-store path or purpose whatever 167 observes. If 167's table shows that no coercion survives into string fields, (b) reduces to a guard and still costs little.
-- **D-170-2: may a refusal message name the offending key?** `SecurityPolicy` and `ConfiguredJsonSources` already do. docs/configuration.md:194 forbids repeating an entry's value.
+- **D-170-2: DECIDED (a). May a refusal message name the offending key?** `SecurityPolicy` and `ConfiguredJsonSources` already do. docs/configuration.md:194 forbids repeating an entry's value.
   (a) Name the key and its path, never the value, and truncate the key to 64 characters.
   (b) Name only the path to the parent mapping and the line and column.
   **Recommendation: (a).** A key name is schema rather than data, and an operator needs it to fix a typo. Truncation limits the damage if someone pastes a secret where a key should be.
+
+Recorded 2026-10-08: D-166-1 = (a), this task exists (0.6.0, after 167). D-170-1 = (b): a string-typed field refuses any non-string scalar with `NON_STRING_CONFIG_SCALAR`, so values must be quoted. D-170-2 = (a): refusal messages name the offending key and its path, never the value, with the key truncated to 64 characters. `ConfiguredJsonSources` is covered because it shares the `RestSources` mapper. Task 158 and 162 now depend on this task.

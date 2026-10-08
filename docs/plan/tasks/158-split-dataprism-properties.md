@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Base:** branch from `origin/main` (0.5.0 released at v0.5.0 / c850c3e2) after 157 has merged into it.
-**Depends on:** 157, 167, 168, 169
+**Depends on:** 157, 167, 168, 169, 170
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/*Properties.java (new)
@@ -11,7 +11,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java (type references and validator wiring only)
 - data-prism-spring-boot-autoconfigure/src/test/**
 - data-prism-server/src/** (type references only)
-- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java and data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesTest.java (type references only)
+- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java and data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesTest.java (type references only; 170 also edits `rejectUnknownKeys` and the read path in `ConfiguredJsonSources.java`, so 158 branches after 170 has merged)
 - data-prism-integration-tests/src/**/{SecurityConfig,SecurityConfigTest,ShippedDefaultsTest,ConfiguredJsonNestedHttpTest}.java (type references only)
 - data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartExtensionAutoConfiguration.java (type references only)
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ArchitectureTest.java
