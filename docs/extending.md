@@ -315,7 +315,11 @@ fixture source shares a single id:
     by its components only; an extra `getX()` on it is not emitted. Any other
     class (a bean or POJO, a subclass of a collection, a `Throwable`), at any
     depth, is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`, and again at
-    runtime if one turns up behind an `Object`- or interface-typed component. The message names the class's
+    runtime if one turns up behind an `Object`- or interface-typed component.
+    A `@JsonSerialize(using=...)` on a record or its components, `@JsonAnyGetter`
+    and `@JsonValue` are the model author's explicit choice and stay allowed (the
+    engine still classifies what they produce); `@JsonProperty` or `@JsonGetter` on
+    a method that is not a record component is refused. The message names the class's
     simple name only, never a value.
 
 A response type is never exposed through MCP unless it carries

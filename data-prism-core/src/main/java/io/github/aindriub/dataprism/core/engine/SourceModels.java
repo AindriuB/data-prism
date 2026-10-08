@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.core.engine;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ValueSerializer;
@@ -8,6 +10,7 @@ import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.ser.impl.UnknownSerializer;
 
 import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.TypeVariable;
@@ -35,6 +38,12 @@ import java.util.Set;
  * conventions that differ between Jackson majors, so the property names a rule matches would
  * depend on the library version. A record has exactly one reading. Such a class is refused with
  * {@link #CODE}, naming the class's simple name only, never a value.
+ *
+ * <p>A model author's explicit choices stay allowed: a {@code @JsonSerialize(using/keyUsing)} on a record
+ * component or record class, {@code @JsonAnyGetter} and {@code @JsonValue}. The engine still classifies
+ * what they produce, and any bean looked up through them is refused. {@code @JsonProperty} or
+ * {@code @JsonGetter} on a method that is not a record component is refused, since the property name it
+ * implies depends on the Jackson major.
  *
  * <p>{@link #require(Class)} checks the declared types at startup. A component declared as
  * {@code Object} or an interface can hold a bean at runtime, so {@link SourceTree#of} checks the
@@ -77,12 +86,36 @@ public final class SourceModels {
      * serializer, enums, and Jackson tree nodes pass.
      */
     static void refuseSerializer(Class<?> type, ValueSerializer<?> serializer) {
-        if (type.isRecord() || JsonNode.class.isAssignableFrom(type) || type.getName().startsWith("tools.jackson.")) {
+        if (type.isRecord()) {
+            refuseNamingAnnotations(type);
+            return;
+        }
+        if (JsonNode.class.isAssignableFrom(type) || type.getName().startsWith("tools.jackson.")) {
             return;
         }
         boolean gettersRead = serializer instanceof BeanSerializerBase || serializer instanceof UnknownSerializer;
         if (gettersRead || (!platform(type) && !isEnum(type))) {
             throw refusal(type);
+        }
+    }
+
+    /**
+     * {@code @JsonProperty} or {@code @JsonGetter} on a record method that is not a component accessor
+     * adds a property whose name depends on the Jackson major (getURL is "URL" or "url"). {@code
+     * @JsonAnyGetter} and {@code @JsonValue} are explicit and stable, so they stay allowed.
+     */
+    static void refuseNamingAnnotations(Class<?> record) {
+        Set<String> components = new HashSet<>();
+        for (RecordComponent component : record.getRecordComponents()) {
+            components.add(component.getName());
+        }
+        for (Method method : record.getDeclaredMethods()) {
+            boolean accessor = method.getParameterCount() == 0 && components.contains(method.getName());
+            if (!accessor && (method.isAnnotationPresent(JsonProperty.class)
+                    || method.isAnnotationPresent(JsonGetter.class))) {
+                throw new PrivacyRefusedException(CODE, "$", simpleName(record)
+                        + " names a property on a method that is not a record component");
+            }
         }
     }
 
@@ -109,13 +142,16 @@ public final class SourceModels {
         if (type == Object.class) {
             return;
         }
-        boolean allowed = type == String.class || type.isEnum() || isEnum(type) || Number.class.isAssignableFrom(type)
-                || type.isPrimitive() || type == Boolean.class || type == Character.class
+        // The type tests below match subclasses, so they apply to JDK classes only: a user class that
+        // extends Number or Date can define its own toString(), and that would become the field name.
+        boolean jdk = platform(type);
+        boolean allowed = type == String.class || isEnum(type) || type == Enum.class || type.isPrimitive()
+                || (jdk && (Number.class.isAssignableFrom(type) || type == Boolean.class || type == Character.class
                 || type == UUID.class || type == Locale.class || Date.class.isAssignableFrom(type)
                 || Calendar.class.isAssignableFrom(type) || type == Class.class || type == URI.class
                 || type == URL.class || type == Currency.class || TimeZone.class.isAssignableFrom(type)
                 || TemporalAccessor.class.isAssignableFrom(type) || TemporalAmount.class.isAssignableFrom(type)
-                || ZoneId.class.isAssignableFrom(type) || type == byte[].class;
+                || ZoneId.class.isAssignableFrom(type) || type == byte[].class));
         if (!allowed) {
             throw refusal(type);
         }
@@ -142,6 +178,7 @@ public final class SourceModels {
                 walk(c.getComponentType(), seen);
             } else if (c.isRecord()) {
                 if (seen.add(c)) {
+                    refuseNamingAnnotations(c);
                     for (RecordComponent component : c.getRecordComponents()) {
                         walk(component.getGenericType(), seen);
                     }
@@ -151,6 +188,10 @@ public final class SourceModels {
             } else if (Throwable.class.isAssignableFrom(c)
                     || (!allowedLeaf(c) && !c.isInterface() && c != Object.class)) {
                 throw refusal(c);
+            } else if (platform(c) && !c.isInterface() && !c.isEnum() && !c.isPrimitive() && c != Object.class
+                    && !JsonNode.class.isAssignableFrom(c)) {
+                // A JDK class read by getters (java.awt.Point) is found out by asking the reader.
+                SourceTree.refuseIfReadByGetters(c);
             }
         } else if (type instanceof ParameterizedType p) {
             walk(p.getRawType(), seen);

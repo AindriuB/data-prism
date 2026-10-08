@@ -3,7 +3,9 @@ package io.github.aindriub.dataprism.core.engine;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.BeanDescription;
+import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.JavaType;
+import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.cfg.MapperConfig;
 import tools.jackson.databind.introspect.Annotated;
 import tools.jackson.databind.introspect.AnnotatedClass;
@@ -62,7 +64,10 @@ import java.util.Locale;
  * form. Any other class, at any depth, is refused with {@link SourceModels#CODE}: a user class, a user
  * subclass of a collection or map, a class with its own class-level serializer, an enum written as an
  * object, and a JDK class that would be read by getters (a Throwable can carry personal data in its
- * message). {@link SourceModels#require} checks the declared types at startup and this class checks the
+ * message). A model author's explicit choices stay allowed: {@code @JsonSerialize(using/keyUsing)} on a
+ * record or one of its components, {@code @JsonAnyGetter} and {@code @JsonValue}; the engine still
+ * classifies their output and a bean looked up through them is refused. {@code @JsonProperty} or
+ * {@code @JsonGetter} on a record method that is not a component is refused. {@link SourceModels#require} checks the declared types at startup and this class checks the
  * actual object graph.
  *
  * <p>Within that shape the mapper starts from the Jackson 2 settings so values are unchanged,
@@ -164,7 +169,26 @@ public final class SourceTree {
                                                       BeanDescription.Supplier beanDesc,
                                                       ValueSerializer<?> serializer) {
             SourceModels.refuseKey(type.getRawClass());
-            return serializer;
+            return new CheckedKey(serializer);
+        }
+    }
+
+    /**
+     * A key serializer chosen for a declared type such as Number or Object writes whatever class the
+     * key turns out to be, so the actual class is checked as well.
+     */
+    private static final class CheckedKey extends ValueSerializer<Object> {
+        private final ValueSerializer<Object> delegate;
+
+        @SuppressWarnings("unchecked")
+        CheckedKey(ValueSerializer<?> delegate) {
+            this.delegate = (ValueSerializer<Object>) delegate;
+        }
+
+        @Override
+        public void serialize(Object value, JsonGenerator gen, SerializationContext ctxt) {
+            SourceModels.refuseKey(value.getClass());
+            delegate.serialize(value, gen, ctxt);
         }
     }
 
@@ -180,6 +204,20 @@ public final class SourceTree {
                 SourceModels.refuseUserClass(c.getRawType());
             }
             return null;
+        }
+    }
+
+    /** Refuses a JDK class that this reader would write through getters, found by building its serializer. */
+    static void refuseIfReadByGetters(Class<?> type) {
+        try {
+            READER.writerFor(type);
+        } catch (JacksonException e) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                if (cause instanceof PrivacyRefusedException refused) {
+                    throw refused;
+                }
+            }
+            // Any other failure is left for the runtime check, which sees the actual object.
         }
     }
 

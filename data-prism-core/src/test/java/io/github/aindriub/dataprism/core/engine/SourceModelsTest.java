@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.core.engine;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonGetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonValue;
@@ -288,6 +289,80 @@ class SourceModelsTest {
         assertRefused(() -> SourceTree.of(new Untyped(new MyList())), "MyList");
         assertRefused(() -> SourceTree.of(new Untyped(new MyMap())), "MyMap");
         assertRefused(() -> SourceTree.of(new Untyped(List.of(new MyMap()))), "MyMap");
+    }
+
+    public record Attrs(Map<String, Object> attrs) {
+    }
+
+    public static final class NumKey extends Number {
+        @Override public int intValue() { return 1; }
+        @Override public long longValue() { return 1; }
+        @Override public float floatValue() { return 1; }
+        @Override public double doubleValue() { return 1; }
+        @Override public String toString() {
+            return "personal-data";
+        }
+    }
+
+    public record NumKeyed(Map<Number, String> m, Map<Object, String> o) {
+    }
+
+    public record RenamedGetter(String name) {
+        @JsonProperty("extra")
+        public String getURL() {
+            return "x";
+        }
+    }
+
+    public record GetterAnnotated(String name) {
+        @JsonGetter("extra")
+        public String computed() {
+            return "x";
+        }
+    }
+
+    public record AccessorAnnotated(@JsonProperty("n") String name) {
+        @Override
+        @JsonProperty("n")
+        public String name() {
+            return name;
+        }
+    }
+
+    public record WithPoint(java.awt.Point p) {
+    }
+
+    public record Collected(List<java.awt.Color> colours) {
+    }
+
+    @Test
+    void anEnumMapReachedThroughAnObjectComponentIsAllowed() {
+        Map<java.time.Month, Integer> months = new java.util.EnumMap<>(java.time.Month.class);
+        months.put(java.time.Month.OCTOBER, 1);
+        JsonNode tree = SourceTree.of(new Attrs(Map.of("m", months)));
+        assertThat(tree.get("attrs").get("m").propertyNames()).containsExactly("OCTOBER");
+    }
+
+    @Test
+    void aUserClassExtendingNumberIsNotAMapKey() {
+        assertRefused(() -> SourceTree.of(new NumKeyed(Map.of(new NumKey(), "v"), Map.of())), "NumKey");
+        assertRefused(() -> SourceTree.of(new NumKeyed(Map.of(), Map.of(new NumKey(), "v"))), "NumKey");
+    }
+
+    @Test
+    void jsonPropertyOrJsonGetterOnAMethodThatIsNotAComponentIsRefused() {
+        assertRefused(() -> SourceTree.of(new RenamedGetter("n")), "RenamedGetter");
+        assertRefused(() -> SourceModels.require(RenamedGetter.class), "RenamedGetter");
+        assertRefused(() -> SourceTree.of(new GetterAnnotated("n")), "GetterAnnotated");
+        assertThat(SourceTree.of(new AccessorAnnotated("n")).propertyNames()).containsExactly("n");
+        assertThat(SourceTree.of(new WithAny("a")).propertyNames()).containsExactlyInAnyOrder("a", "extra");
+    }
+
+    @Test
+    void aJdkClassReadByGettersIsRefusedAtStartup() {
+        assertRefused(() -> SourceModels.require(WithPoint.class), "Point");
+        assertRefused(() -> SourceModels.require(Collected.class), "Color");
+        assertThatCode(() -> SourceModels.require(Allowed.class)).doesNotThrowAnyException();
     }
 
     public record Recursive<T extends Comparable<T>>(T t) {
