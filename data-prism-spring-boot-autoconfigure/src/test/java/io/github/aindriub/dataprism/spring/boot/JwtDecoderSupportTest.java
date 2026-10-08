@@ -84,10 +84,10 @@ class JwtDecoderSupportTest {
     }
 
     @Test
-    void refuses_a_discovery_document_breaking_the_stream_constraints_without_parser_detail() throws Exception {
-        // Under the 16 KiB response limit, but one string is longer than the 2048 the parser allows.
+    void refuses_a_discovery_document_nested_past_the_stream_constraints_without_parser_detail() throws Exception {
+        // Well under the 16 KiB response limit, but nested ten deep where the parser allows eight.
         String body = "{\"issuer\":\"" + CONFIGURED_ISSUER + "\",\"jwks_uri\":\"https://keys.example/jwks\","
-                + "\"padding\":\"" + "x".repeat(3000) + "\"}";
+                + "\"deep\":" + "[".repeat(10) + "]".repeat(10) + "}";
         assertDiscoveryRefused(body.getBytes(StandardCharsets.UTF_8), "metadata could not be retrieved or parsed");
     }
 
