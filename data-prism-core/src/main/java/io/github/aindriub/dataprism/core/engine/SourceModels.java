@@ -38,7 +38,7 @@ import java.util.Set;
  *
  * <p>{@link #require(Class)} checks the declared types at startup. A component declared as
  * {@code Object} or an interface can hold a bean at runtime, so {@link SourceTree#of} checks the
- * actual object graph too, through {@link #refuseIfNotAllowed(Class)}.
+ * actual object graph too, through serializer modifiers that call back into this class.
  */
 public final class SourceModels {
 
