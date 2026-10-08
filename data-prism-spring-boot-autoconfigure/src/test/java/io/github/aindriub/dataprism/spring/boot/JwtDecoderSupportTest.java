@@ -77,6 +77,20 @@ class JwtDecoderSupportTest {
         assertDiscoveryRefused(body.getBytes(StandardCharsets.UTF_8), "trailing content");
     }
 
+    @Test
+    void refuses_a_truncated_discovery_document_without_parser_detail() throws Exception {
+        assertDiscoveryRefused("{\"issuer\":".getBytes(StandardCharsets.UTF_8),
+                "metadata could not be retrieved or parsed");
+    }
+
+    @Test
+    void refuses_a_discovery_document_breaking_the_stream_constraints_without_parser_detail() throws Exception {
+        // Under the 16 KiB response limit, but one string is longer than the 2048 the parser allows.
+        String body = "{\"issuer\":\"" + CONFIGURED_ISSUER + "\",\"jwks_uri\":\"https://keys.example/jwks\","
+                + "\"padding\":\"" + "x".repeat(3000) + "\"}";
+        assertDiscoveryRefused(body.getBytes(StandardCharsets.UTF_8), "metadata could not be retrieved or parsed");
+    }
+
     private static void assertDiscoveryRefused(byte[] discoveryResponseBody, String expectedMessageFragment)
             throws Exception {
         AtomicInteger metadataRequests = new AtomicInteger();
@@ -103,7 +117,12 @@ class JwtDecoderSupportTest {
             assertThatThrownBy(() -> JwtDecoderSupport.buildJwtDecoder(properties))
                     .isInstanceOf(DataPrismConfigurationException.class)
                     .hasMessageContaining("JWT_DISCOVERY_FAILED")
-                    .hasMessageContaining(expectedMessageFragment);
+                    .hasMessageContaining(expectedMessageFragment)
+                    .hasMessageNotContaining("tools.jackson")
+                    .hasMessageNotContaining("Unexpected")
+                    .hasMessageNotContaining("Unrecognized")
+                    .hasMessageNotContaining("end-of-input")
+                    .hasMessageNotContaining("String value length");
             assertThat(metadataRequests).hasValue(1);
             assertThat(unexpectedRequests).hasValue(0);
         } finally {

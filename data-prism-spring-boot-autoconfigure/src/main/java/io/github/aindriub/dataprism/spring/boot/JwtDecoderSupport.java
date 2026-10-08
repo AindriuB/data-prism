@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import tools.jackson.core.JacksonException;
 import tools.jackson.core.json.JsonFactory;
 import tools.jackson.core.JsonToken;
 import tools.jackson.core.StreamReadConstraints;
@@ -91,7 +92,7 @@ public final class JwtDecoderSupport {
             }
         } catch (DataPrismConfigurationException exception) {
             throw exception;
-        } catch (IOException | IllegalArgumentException exception) {
+        } catch (IOException | JacksonException | IllegalArgumentException exception) {
             throw discoveryFailure("metadata could not be retrieved or parsed");
         } finally {
             if (connection != null) {
