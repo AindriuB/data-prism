@@ -195,17 +195,56 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
     }
 
     @Test
-    @DisplayName("an unreadable config-location URL is named without its user-info, query or fragment")
-    void unreadableLocationUrlHidesCredentials() {
-        assertThat(ConfiguredJsonSourcesInitializer.describe("https://svc:s3cr3t@cfg.example.invalid/a.yaml?t=s3cr3t#f"))
-                .isEqualTo("https://cfg.example.invalid/a.yaml");
+    @DisplayName("a location that may carry credentials is never shown, whatever characters the password holds")
+    void describeNeverShowsCredentials() {
+        String[][] cases = {
+                {"https://svc:s3#cr3t@host/a.yaml", "s3#cr3t"},
+                {"https://svc:s3/cr3t@host/a.yaml", "s3/cr3t"},
+                {"https://svc:p@ss@host/a.yaml", "p@ss"},
+                {"svc:s3cr3t@host/a.yaml", "s3cr3t"},
+                {"https://svc:s3?cr3t@host/a.yaml", "s3?cr3t"},
+                {"https://user@host/a.yaml", "user"},
+                {"https://svc:s3%40cr3t@host/a.yaml", "s3%40cr3t"},
+                {"https://svc:s3cr3t@[::1]:8443/a.yaml", "s3cr3t"},
+                {"file://user@host/path/a.yaml", "user"},
+                {"https://svc:s3cr3t@host/a.yaml?token=t0k3n#frag", "s3cr3t"},
+        };
+        for (String[] c : cases) {
+            String shown = ConfiguredJsonSourcesInitializer.describe(c[0]);
+            assertThat(shown).startsWith(ConfiguredJsonSourcesInitializer.LOCATION_WITH_CREDENTIALS);
+            for (int len = 3; len <= c[1].length(); len++) {
+                for (int from = 0; from + len <= c[1].length(); from++) {
+                    assertThat(shown).as(c[0] + " leaks " + c[1].substring(from, from + len))
+                            .doesNotContain(c[1].substring(from, from + len));
+                }
+            }
+            assertThat(shown).doesNotContain("t0k3n");
+        }
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://svc:s3cr3t@host/dir/a.yaml"))
+                .isEqualTo("<location with credentials, not shown> ending in a.yaml");
+    }
+
+    @Test
+    @DisplayName("a location without @ is shown, cut at the first ? or #, and cut to 64 characters")
+    void describeShowsPlainLocations() {
         assertThat(ConfiguredJsonSourcesInitializer.describe("file:/etc/dataprism/a.yaml")).isEqualTo("file:/etc/dataprism/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("/etc/dataprism/a.yaml")).isEqualTo("/etc/dataprism/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("classpath:/cfg/a.yaml")).isEqualTo("classpath:/cfg/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://cfg.example.invalid/a.yaml?t=1#f"))
+                .isEqualTo("https://cfg.example.invalid/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("/" + "d".repeat(100))).hasSize(64);
+    }
+
+    @Test
+    @DisplayName("an unreadable config-location URL with credentials is refused without them, with no cause")
+    void unreadableLocationUrlHidesCredentials() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", Map.of(
-                    "dataprism.json-sources.config-location", "http://svc:s3cr3t@127.0.0.1:1/a.yaml?k=s3cr3t")));
+                    "dataprism.json-sources.config-location", "http://svc:s3#cr3t@127.0.0.1:1/a.yaml")));
             assertThatThrownBy(() -> new ConfiguredJsonSourcesInitializer().initialize(context))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("dataprism.json-sources.config-location 'http://127.0.0.1:1/a.yaml' could not be read")
+                    .hasMessage("dataprism.json-sources.config-location '<location with credentials, not shown>"
+                            + " ending in a.yaml' could not be read")
                     .hasNoCause();
         }
     }

@@ -639,7 +639,7 @@ class ConfiguredJsonSourcesTest {
     @Test
     @DisplayName("an empty tls value is refused with INVALID_CONFIG_SHAPE rather than meaning no tls")
     void emptyTls() {
-        assertRefused(VALID + "tls:\n", "INVALID_CONFIG_SHAPE: tls configuration.tls must be a mapping");
+        assertRefused(VALID + "tls:\n", "INVALID_CONFIG_SHAPE: tls configuration tls must be a mapping");
     }
 
     @Test
@@ -667,5 +667,26 @@ class ConfiguredJsonSourcesTest {
                 .hasMessageNotContaining("n".repeat(65));
         assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"a\\nb\":").replace("    timeout: PT2S\n", "")))
                 .hasMessageStartingWith("json source a?b has no timeout");
+    }
+
+    @Test
+    @DisplayName("nested-catalogues of the wrong shape, empty or non-empty, is refused with INVALID_CONFIG_SHAPE")
+    void wrongShapedNestedCatalogues() {
+        assertRefused(VALID.replace("    fields:", "    nested-catalogues: [a]\n    fields:"),
+                "INVALID_CONFIG_SHAPE: json source customer-api nested-catalogues must be a mapping");
+        assertRefused(VALID.replace("    fields:", "    nested-catalogues: x\n    fields:"),
+                "INVALID_CONFIG_SHAPE: json source customer-api nested-catalogues must be a mapping");
+    }
+
+    @Test
+    @DisplayName("the source name in the nested-catalogues shape refusal is cut to 64 characters, control characters replaced")
+    void nestedCataloguesShapeMessageTruncatesName() {
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"" + "n".repeat(100) + "\\nx\":")
+                .replace("    fields:", "    nested-catalogues:\n    fields:")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("INVALID_CONFIG_SHAPE: json source " + "n".repeat(64) + " nested-catalogues must be a mapping");
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"a\\nb\":")
+                .replace("    fields:", "    nested-catalogues:\n    fields:")))
+                .hasMessage("INVALID_CONFIG_SHAPE: json source a?b nested-catalogues must be a mapping");
     }
 }

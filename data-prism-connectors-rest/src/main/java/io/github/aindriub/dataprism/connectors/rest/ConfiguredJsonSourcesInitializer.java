@@ -80,12 +80,24 @@ public final class ConfiguredJsonSourcesInitializer
         }
     }
 
-    /** A config location safe to name in a message: no user-info, query or fragment, cut to 64 characters. */
+    /**
+     * A config location safe to name in a message. Fails closed: a location containing {@code @}
+     * anywhere may carry credentials in a form no parser can be trusted to split (an unencoded
+     * {@code #}, {@code ?}, {@code /} or {@code @} in a password), so it is never shown; only a
+     * placeholder and the last path segment, and that only if the segment is free of {@code @ : ? #}.
+     * A location without {@code @} is cut at the first {@code ?} or {@code #} and shown, cut to 64 characters.
+     */
     static String describe(String location) {
-        String stripped = location.replaceFirst("(?<=//)[^/@?#]*@", "");
-        int cut = indexOfAny(stripped, '?', '#');
-        return io.github.aindriub.dataprism.core.model.StrictYaml.shown(cut < 0 ? stripped : stripped.substring(0, cut));
+        if (location.indexOf('@') >= 0) {
+            String tail = location.substring(location.lastIndexOf('/') + 1);
+            boolean plain = !tail.isEmpty() && tail.chars().noneMatch(c -> "@:?#".indexOf(c) >= 0);
+            return LOCATION_WITH_CREDENTIALS + (plain ? " ending in " + io.github.aindriub.dataprism.core.model.StrictYaml.shown(tail) : "");
+        }
+        int cut = indexOfAny(location, '?', '#');
+        return io.github.aindriub.dataprism.core.model.StrictYaml.shown(cut < 0 ? location : location.substring(0, cut));
     }
+
+    static final String LOCATION_WITH_CREDENTIALS = "<location with credentials, not shown>";
 
     private static int indexOfAny(String text, char first, char second) {
         int a = text.indexOf(first);
@@ -108,7 +120,7 @@ public final class ConfiguredJsonSourcesInitializer
      * <p>Nothing stops an operator from also naming the source under {@code
      * dataprism.sources} — the field still exists, unconditionally optional now
      * rather than required — and if they do, this method still refuses startup
-     * the moment the two disagree, naming both values, since the validated URL
+     * the moment the two disagree, naming the source and the two properties but neither URL, since the validated URL
      * silently losing to the one {@link ConfiguredJsonDataSourceAdapter}
      * actually dials would otherwise go unnoticed.
      */
@@ -128,8 +140,9 @@ public final class ConfiguredJsonSourcesInitializer
             }
             if (!declaredHere.equals(declaredElsewhere)) {
                 // Neither URL is repeated: either may carry user-info.
-                throw new IllegalStateException("json source " + name + " base-url disagrees: json-sources "
-                        + "declares one transport but dataprism.sources." + name + ".base-url declares another"
+                String shownName = io.github.aindriub.dataprism.core.model.StrictYaml.shown(name);
+                throw new IllegalStateException("json source " + shownName + " base-url disagrees: json-sources "
+                        + "declares one transport but dataprism.sources." + shownName + ".base-url declares another"
                         + "; these must name the same transport");
             }
         }

@@ -304,15 +304,12 @@ public final class ConfiguredJsonSources {
     @SuppressWarnings("unchecked")
     private static Map<String, Map<String, FieldMetadata>> nestedCatalogues(String sourceName, Object rawNode,
                                                                             boolean present) {
-        if (rawNode == null && present) {
-            throw new IllegalArgumentException(StrictYaml.INVALID_SHAPE + ": json source " + sourceName
-                    + " nested-catalogues must be a mapping");
-        }
-        if (rawNode == null) {
+        if (rawNode == null && !present) {
             return Map.of();
         }
         if (!(rawNode instanceof Map<?, ?> raw)) {
-            throw new IllegalArgumentException("json source " + StrictYaml.shown(sourceName) + " nested-catalogues is not a mapping");
+            throw new IllegalArgumentException(StrictYaml.INVALID_SHAPE + ": json source "
+                    + StrictYaml.shown(sourceName) + " nested-catalogues must be a mapping");
         }
         Map<String, Map<String, FieldMetadata>> out = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : raw.entrySet()) {
