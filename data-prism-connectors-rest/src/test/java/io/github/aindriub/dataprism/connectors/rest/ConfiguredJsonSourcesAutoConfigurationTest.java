@@ -181,6 +181,21 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
                 .run(context -> assertThat(context).hasFailed());
     }
 
+    @Test
+    @DisplayName("the disagreement refusal repeats neither URL, so user-info in either is not leaked")
+    void disagreementMessageDoesNotEchoEitherUrl() {
+        runner.withPropertyValues(
+                        "dataprism.json-sources.config-location=classpath:/task20-json-sources.yaml",
+                        "dataprism.sources.customer-api.base-url=https://svc:s3cr3t@somewhere-else.example")
+                .run(context -> assertThat(context.getStartupFailure())
+                        .hasStackTraceContaining("disagrees")
+                        .satisfies(e -> {
+                            for (Throwable t = e; t != null; t = t.getCause()) {
+                                assertThat(String.valueOf(t.getMessage())).doesNotContain("s3cr3t");
+                            }
+                        }));
+    }
+
     /**
      * The deployment idiom this repository actually uses for {@code
      * dataprism.sources.<name>.base-url}, per {@code compose.yaml}'s own

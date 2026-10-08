@@ -655,4 +655,17 @@ class ConfiguredJsonSourcesTest {
         assertRefused(VALID.replace("classifications: [CONTACT]", "classifications: &c [CONTACT]")
                 .replace("classifications: [PII]", "classifications: *c"), "UNSUPPORTED_CONFIG_YAML: ");
     }
+
+    @Test
+    @DisplayName("a source name is cut to 64 characters, with control characters replaced, in a refusal message")
+    void sourceNameIsTruncatedInMessages() {
+        String longName = "n".repeat(100);
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"" + longName + "\\nx\":")
+                .replace("    timeout: PT2S\n", "")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("json source " + "n".repeat(64) + " has no timeout")
+                .hasMessageNotContaining("n".repeat(65));
+        assertThatThrownBy(() -> load(VALID.replace("customer-api:", "\"a\\nb\":").replace("    timeout: PT2S\n", "")))
+                .hasMessageStartingWith("json source a?b has no timeout");
+    }
 }

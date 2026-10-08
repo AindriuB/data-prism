@@ -135,7 +135,7 @@ public final class ConfiguredJsonSources {
                 throw new IllegalArgumentException("a json-sources entry has a blank name");
             }
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
-                throw new IllegalArgumentException("json source " + name + " is not a mapping");
+                throw new IllegalArgumentException("json source " + StrictYaml.shown(name) + " is not a mapping");
             }
             out.put(name, source(name, (Map<String, Object>) body, fixtureDevelopment, tls != null,
                     defaultCorrelationHeader, bytes));
@@ -147,15 +147,15 @@ public final class ConfiguredJsonSources {
     private static ConfiguredJsonSource source(String name, Map<String, Object> body,
                                                boolean fixtureDevelopment, boolean tlsConfigured,
                                                String defaultCorrelationHeader, byte[] yaml) {
-        rejectUnknownKeys(body.keySet(), SOURCE_KEYS, "json source " + name);
+        rejectUnknownKeys(body.keySet(), SOURCE_KEYS, "json source " + StrictYaml.shown(name));
 
-        String baseUrl = RestSources.required(body, "base-url", "json source " + name);
-        String path = RestSources.required(body, "path", "json source " + name);
-        String modelVersion = RestSources.required(body, "model-version", "json source " + name);
-        String subjectJsonPath = RestSources.required(body, "subject-json-path", "json source " + name);
+        String baseUrl = RestSources.required(body, "base-url", "json source " + StrictYaml.shown(name));
+        String path = RestSources.required(body, "path", "json source " + StrictYaml.shown(name));
+        String modelVersion = RestSources.required(body, "model-version", "json source " + StrictYaml.shown(name));
+        String subjectJsonPath = RestSources.required(body, "subject-json-path", "json source " + StrictYaml.shown(name));
         Object timeoutNode = body.get("timeout");
         if (timeoutNode == null) {
-            throw new IllegalArgumentException("json source " + name + " has no timeout;"
+            throw new IllegalArgumentException("json source " + StrictYaml.shown(name) + " has no timeout;"
                     + " this mode requires an explicit bounded timeout, it does not default one");
         }
 
@@ -166,7 +166,7 @@ public final class ConfiguredJsonSources {
             baseUri = new URI(baseUrl);
         } catch (URISyntaxException e) {
             // No cause: URISyntaxException's message repeats the whole input, user-info included.
-            throw new IllegalArgumentException("json source " + name + " has an unparseable base-url");
+            throw new IllegalArgumentException("json source " + StrictYaml.shown(name) + " has an unparseable base-url");
         }
         // The same gate a Java-first source's dataprism.sources.<name>.base-url must
         // clear (DataPrismProperties.trustedUri), reimplemented here rather than
@@ -175,7 +175,7 @@ public final class ConfiguredJsonSources {
         // have no legitimate place in a server-owned base URL, and RestSource's
         // own validation does not check for them.
         if (baseUri.getUserInfo() != null || baseUri.getRawQuery() != null || baseUri.getRawFragment() != null) {
-            throw new IllegalArgumentException("json source " + name
+            throw new IllegalArgumentException("json source " + StrictYaml.shown(name)
                     + " base-url must not carry user-info, a query string or a fragment");
         }
         // A plaintext base URL is refused unless this is fixture development and
@@ -193,11 +193,11 @@ public final class ConfiguredJsonSources {
                     Duration.parse(timeoutRaw), requireHttps, correlationHeader);
         } catch (DateTimeParseException e) {
             throw new IllegalArgumentException(
-                    "json source " + name + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
+                    "json source " + StrictYaml.shown(name) + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
         }
 
         if (!FIELD_NAME.matcher(subjectJsonPath).matches()) {
-            throw new IllegalArgumentException("json source " + name
+            throw new IllegalArgumentException("json source " + StrictYaml.shown(name)
                     + " subject-json-path '" + subjectJsonPath
                     + "' is not a bare property name; this mode allows only a single top-level"
                     + " field name, never a host, a query, a nested path or an expression");
@@ -208,7 +208,7 @@ public final class ConfiguredJsonSources {
 
         Object fieldsNode = body.get("fields");
         if (!(fieldsNode instanceof Map<?, ?> fieldsMap) || fieldsMap.isEmpty()) {
-            throw new IllegalArgumentException("json source " + name + " has no fields catalogue;"
+            throw new IllegalArgumentException("json source " + StrictYaml.shown(name) + " has no fields catalogue;"
                     + " every property this source may ever emit, including its subject field,"
                     + " must be named here");
         }
@@ -218,12 +218,12 @@ public final class ConfiguredJsonSources {
         for (Map.Entry<?, ?> entry : fieldsMap.entrySet()) {
             String fieldName = String.valueOf(entry.getKey());
             if (!FIELD_NAME.matcher(fieldName).matches()) {
-                throw new IllegalArgumentException("json source " + name + " field '" + fieldName
+                throw new IllegalArgumentException("json source " + StrictYaml.shown(name) + " field '" + StrictYaml.shown(fieldName)
                         + "' is not a bare property name");
             }
             if (!(entry.getValue() instanceof Map<?, ?> fieldBody)) {
                 throw new IllegalArgumentException(
-                        "json source " + name + " field " + fieldName + " is not a mapping");
+                        "json source " + StrictYaml.shown(name) + " field " + StrictYaml.shown(fieldName) + " is not a mapping");
             }
             fields.put(fieldName, field(name, fieldName, (Map<String, Object>) fieldBody, true,
                     nestedCatalogues.keySet(), referencedNestedCatalogues));
@@ -231,8 +231,8 @@ public final class ConfiguredJsonSources {
 
         for (String catalogueName : nestedCatalogues.keySet()) {
             if (!referencedNestedCatalogues.contains(catalogueName)) {
-                throw new IllegalArgumentException("json source " + name + " nested catalogue '"
-                        + catalogueName + "' is declared but referenced by no field's `nested:`");
+                throw new IllegalArgumentException("json source " + StrictYaml.shown(name) + " nested catalogue '"
+                        + StrictYaml.shown(catalogueName) + "' is declared but referenced by no field's `nested:`");
             }
         }
 
@@ -312,30 +312,30 @@ public final class ConfiguredJsonSources {
             return Map.of();
         }
         if (!(rawNode instanceof Map<?, ?> raw)) {
-            throw new IllegalArgumentException("json source " + sourceName + " nested-catalogues is not a mapping");
+            throw new IllegalArgumentException("json source " + StrictYaml.shown(sourceName) + " nested-catalogues is not a mapping");
         }
         Map<String, Map<String, FieldMetadata>> out = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : raw.entrySet()) {
             String catalogueName = String.valueOf(entry.getKey());
             if (!FIELD_NAME.matcher(catalogueName).matches()) {
-                throw new IllegalArgumentException("json source " + sourceName + " nested catalogue name '"
-                        + catalogueName + "' is not a bare property name");
+                throw new IllegalArgumentException("json source " + StrictYaml.shown(sourceName) + " nested catalogue name '"
+                        + StrictYaml.shown(catalogueName) + "' is not a bare property name");
             }
             if (!(entry.getValue() instanceof Map<?, ?> catalogueMap) || catalogueMap.isEmpty()) {
-                throw new IllegalArgumentException("json source " + sourceName + " nested catalogue '"
-                        + catalogueName + "' has no fields; every property it may ever carry must be named here");
+                throw new IllegalArgumentException("json source " + StrictYaml.shown(sourceName) + " nested catalogue '"
+                        + StrictYaml.shown(catalogueName) + "' has no fields; every property it may ever carry must be named here");
             }
 
             Map<String, FieldMetadata> catalogueFields = new LinkedHashMap<>();
             for (Map.Entry<?, ?> fieldEntry : catalogueMap.entrySet()) {
                 String fieldName = String.valueOf(fieldEntry.getKey());
                 if (!FIELD_NAME.matcher(fieldName).matches()) {
-                    throw new IllegalArgumentException("json source " + sourceName + " nested catalogue '"
-                            + catalogueName + "' field '" + fieldName + "' is not a bare property name");
+                    throw new IllegalArgumentException("json source " + StrictYaml.shown(sourceName) + " nested catalogue '"
+                            + StrictYaml.shown(catalogueName) + "' field '" + StrictYaml.shown(fieldName) + "' is not a bare property name");
                 }
                 if (!(fieldEntry.getValue() instanceof Map<?, ?> fieldBody)) {
-                    throw new IllegalArgumentException("json source " + sourceName + " nested catalogue '"
-                            + catalogueName + "' field " + fieldName + " is not a mapping");
+                    throw new IllegalArgumentException("json source " + StrictYaml.shown(sourceName) + " nested catalogue '"
+                            + StrictYaml.shown(catalogueName) + "' field " + fieldName + " is not a mapping");
                 }
                 catalogueFields.put(fieldName,
                         field(sourceName, fieldName, (Map<String, Object>) fieldBody, false, null, null));
@@ -364,7 +364,7 @@ public final class ConfiguredJsonSources {
     private static FieldMetadata field(String sourceName, String fieldName, Map<String, Object> body,
                                        boolean topLevel, Set<String> declaredNestedCatalogueNames,
                                        Set<String> referencedNestedCatalogues) {
-        String where = "json source " + sourceName + " field " + fieldName;
+        String where = "json source " + StrictYaml.shown(sourceName) + " field " + StrictYaml.shown(fieldName);
         boolean identifier = body.containsKey("identifier");
         boolean nonSensitive = body.containsKey("nonSensitive");
         boolean sensitive = body.containsKey("classifications") || body.containsKey("namespace")
@@ -391,11 +391,11 @@ public final class ConfiguredJsonSources {
             rejectUnknownKeys(body.keySet(), NESTED_FIELD_KEYS, where);
             String catalogueName = StrictYaml.text(body.get("nested"), where + " nested");
             if (!FIELD_NAME.matcher(catalogueName).matches()) {
-                throw new IllegalArgumentException(where + " nested catalogue name '" + catalogueName
+                throw new IllegalArgumentException(where + " nested catalogue name '" + StrictYaml.shown(catalogueName)
                         + "' is not a bare property name");
             }
             if (!declaredNestedCatalogueNames.contains(catalogueName)) {
-                throw new IllegalArgumentException(where + " nested: '" + catalogueName
+                throw new IllegalArgumentException(where + " nested: '" + StrictYaml.shown(catalogueName)
                         + "' does not name an entry declared under this source's nested-catalogues");
             }
             referencedNestedCatalogues.add(catalogueName);

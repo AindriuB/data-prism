@@ -152,4 +152,14 @@ class RestSourcesStrictKeysTest {
         assertRefused("sources: &s\n  s:\n    base-url: https://a.example.invalid\n    path: /x\nother: *s\n",
                 "UNSUPPORTED_CONFIG_YAML: ");
     }
+
+    @Test
+    @DisplayName("a plaintext http base-url where https is required is refused without repeating it or its user-info")
+    void plaintextBaseUrlDoesNotEchoCredentials() {
+        assertThatThrownBy(() -> load(SOURCE.replace("https://source.example.invalid",
+                "http://user:s3cr3t@source.example.invalid") + TLS))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("source s requires https but its base URL is plaintext http")
+                .hasNoCause();
+    }
 }

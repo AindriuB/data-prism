@@ -73,8 +73,9 @@ public final class ConfiguredJsonSourcesInitializer
             String outboundHeader = bindString(environment, OUTBOUND_HEADER_PROPERTY);
             return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment, outboundHeader);
         } catch (IOException e) {
+            // Neither the location nor the cause is repeated: a location can be a URL with user-info.
             throw new IllegalStateException(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY
-                    + " '" + location + "' could not be read", e);
+                    + " does not name a readable file or resource");
         }
     }
 
@@ -112,9 +113,10 @@ public final class ConfiguredJsonSourcesInitializer
                 declaredElsewhere = null;
             }
             if (!declaredHere.equals(declaredElsewhere)) {
+                // Neither URL is repeated: either may carry user-info.
                 throw new IllegalStateException("json source " + name + " base-url disagrees: json-sources "
-                        + "declares " + declaredHere + " but dataprism.sources." + name + ".base-url declares "
-                        + declaredElsewhereRaw + "; these must name the same transport");
+                        + "declares one transport but dataprism.sources." + name + ".base-url declares another"
+                        + "; these must name the same transport");
             }
         }
     }
