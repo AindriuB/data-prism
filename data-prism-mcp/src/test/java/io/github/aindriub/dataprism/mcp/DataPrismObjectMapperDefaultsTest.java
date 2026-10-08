@@ -46,24 +46,22 @@ class DataPrismObjectMapperDefaultsTest {
 
     /**
      * The source reader and this mapper cannot share one pin list (the reader is in core and keeps no public
-     * configuration), so this asserts they agree on every pinned feature that is observable in a tree: if one
-     * drifts back to a Jackson 3 default, the two stop describing the same value. A legacy
-     * java.util.Date is the one deliberate difference: the reader writes epoch millis through a Date-only
-     * serializer (D-173-1, Jackson 2 parity), the output mapper writes ISO text, and java.time types are
-     * ISO-8601 text on both.
+     * configuration), so this asserts they agree on the pinned features that show up in a tree of a record:
+     * property order, enum names (as a value and as a map key) and refusal of an empty bean. A legacy
+     * java.util.Date is a deliberate difference (D-173-1): the reader writes epoch millis for Jackson 2 parity,
+     * the output mapper writes ISO text. Features that differ by design, such as the output mapper not
+     * stripping BigDecimal zeros, are not covered here.
      */
     @Test
     void sourceReaderAndOutputMapperAgreeOnWhatTheyPin() {
-        Map<Kind, String> notes = new LinkedHashMap<>();
-        notes.put(Kind.FIRST, "n");
-        Map<String, Object> source = new LinkedHashMap<>();
-        source.put("zeta", "z");
-        source.put("alpha", Map.of("kind", Kind.FIRST));
-        source.put("notes", notes);
-
+        Shape source = new Shape("z", "a", Kind.FIRST);
         JsonNode written = mapper.readTree(mapper.writeValueAsString(source));
         assertThat(SourceTree.of(source)).isEqualTo(written);
         assertThat(SourceTree.of(source).toString()).isEqualTo(written.toString());
+
+        Map<Kind, String> notes = new LinkedHashMap<>();
+        notes.put(Kind.FIRST, "n");
+        assertThat(SourceTree.of(notes).toString()).isEqualTo(mapper.writeValueAsString(notes));
 
         assertThatThrownBy(() -> mapper.writeValueAsString(new Empty()))
                 .isInstanceOf(InvalidDefinitionException.class);

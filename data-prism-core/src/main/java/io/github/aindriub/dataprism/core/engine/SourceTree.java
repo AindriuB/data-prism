@@ -1,21 +1,23 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.SerializationContext;
-import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.PropertyNamingStrategy;
+import tools.jackson.databind.cfg.MapperConfig;
+import tools.jackson.databind.introspect.AnnotatedMethod;
 import tools.jackson.databind.module.SimpleModule;
-import java.util.Date;
-import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.ser.jdk.JavaUtilCalendarSerializer;
+import tools.jackson.databind.ser.jdk.JavaUtilDateSerializer;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.cfg.DateTimeFeature;
-import tools.jackson.databind.cfg.EnumFeature;
-import tools.jackson.databind.cfg.JsonNodeFeature;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.node.StringNode;
+
+import java.util.Calendar;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * Reads source objects into trees, and builds the nodes that replace them.
@@ -33,38 +35,67 @@ import tools.jackson.databind.node.StringNode;
  * {@code DataPrismObjectMapper} writes, a few classes build a YAML mapper to read
  * an operator-written configuration file at startup, and anything else
  * constructing or obtaining a mapper is a finding.
+ *
+ * <p>Converting a source object is serialisation, so this mapper is configured to give the
+ * values Jackson 2 gave, with one deliberate exception (D-173-1): Jackson 2's plain mapper
+ * refused java.time types, {@code Optional} and {@code OptionalInt}, and they are now accepted
+ * and passed to the engine, java.time as ISO-8601 text and an {@code Optional} unwrapped (empty
+ * is null). That is a change, not a pin back to Jackson 2.
  */
 public final class SourceTree {
 
     private static final ObjectMapper READER = JsonMapper.builder()
-            // Jackson 3 sorts properties alphabetically and tolerates an empty bean by default.
-            // Jackson 2 did neither, and a source tree must keep the source's own field order
-            // and refuse a shape it cannot read rather than read it as an empty object.
-            .disable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
-            .enable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
-            // Jackson 2 stripped trailing zeros from a BigDecimal in a tree (1.50 became 1.5);
-            // Jackson 3 keeps them unless asked.
-            .enable(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES)
-            // valueToTree is serialisation, so the write-side Jackson 3 defaults apply. Jackson 3
-            // writes an enum, and an enum map key, by toString(); Jackson 2 wrote name(). The engine
-            // hashes and tokenises the converted scalar, so an overridden toString() would silently
-            // change what is emitted and what a subject is derived from.
-            .disable(EnumFeature.WRITE_ENUMS_USING_TO_STRING)
-            // java.time types are ISO-8601 text. A java.util.Date stays epoch millis, as in Jackson 2,
-            // through the serializer registered below; the flags are pinned so a default cannot move them.
+            // Jackson 3 changed many write-side defaults, and valueToTree is serialisation, so they
+            // all apply here. The engine hashes and tokenises the converted scalars, so a changed
+            // default silently changes what is emitted and what a subject is derived from. Start from
+            // the Jackson 2 settings: alphabetical sorting off, empty beans refused, enums by name(),
+            // BigDecimal zeros stripped, a field such as xRef keeping its name, UTC as +00:00.
+            .configureForJackson2()
+            // The deliberate departure (D-173-1): java.time types and Duration are ISO-8601 text.
+            // Jackson 2's plain mapper refused them; they are accepted now and passed to the engine.
             .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
             .disable(DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
             .disable(DateTimeFeature.WRITE_DATES_WITH_ZONE_ID)
-            // A Date used as a map key is still text; Jackson 2 wrote its UTC offset as +00:00, Jackson 3 as Z.
-            .enable(DateTimeFeature.WRITE_UTC_AS_OFFSET)
-            .addModule(new SimpleModule().addSerializer(Date.class, new EpochMillisDate()))
+            .propertyNamingStrategy(new Jackson2GetterNames())
+            .addModule(legacyTypes())
             .build();
 
-    /** A legacy Date as epoch millis, which is what Jackson 2 produced for it. */
-    private static final class EpochMillisDate extends ValueSerializer<Date> {
+    /**
+     * What Jackson 2 wrote for the legacy types, which the ISO setting above would otherwise change:
+     * a Date, a Timestamp and a Calendar are epoch millis (an {@code @JsonFormat} on the property is
+     * still honoured), a java.sql.Time is its time text, and a
+     * Locale is {@code toString()} ("en_IE") rather than a language tag.
+     */
+    private static SimpleModule legacyTypes() {
+        return new SimpleModule()
+                .addSerializer(Date.class, new JavaUtilDateSerializer(Boolean.TRUE, null))
+                .addSerializer(Calendar.class, new JavaUtilCalendarSerializer(Boolean.TRUE, null))
+                .addSerializer(java.sql.Time.class, ToStringSerializer.instance)
+                .addSerializer(Locale.class, ToStringSerializer.instance);
+    }
+
+    /**
+     * Jackson 2 named a bean property from its getter by lower-casing the whole leading run of capitals
+     * ({@code getXRef} is "xref", {@code getURL} is "url"); Jackson 3 keeps the JavaBeans form ("XRef").
+     * The name is what a rule's field path matches, so it has to be the one the rules were written
+     * against. A record accessor keeps its component name, as it always did.
+     */
+    private static final class Jackson2GetterNames extends PropertyNamingStrategy {
         @Override
-        public void serialize(Date value, JsonGenerator gen, SerializationContext ctxt) {
-            gen.writeNumber(value.getTime());
+        public String nameForGetterMethod(MapperConfig<?> config, AnnotatedMethod method, String defaultName) {
+            if (method.getDeclaringClass().isRecord()) {
+                return defaultName;
+            }
+            String name = method.getName();
+            String base = name.startsWith("get") ? name.substring(3) : name.startsWith("is") ? name.substring(2) : "";
+            if (base.isEmpty()) {
+                return defaultName;
+            }
+            char[] chars = base.toCharArray();
+            for (int i = 0; i < chars.length && Character.isUpperCase(chars[i]); i++) {
+                chars[i] = Character.toLowerCase(chars[i]);
+            }
+            return new String(chars);
         }
     }
 

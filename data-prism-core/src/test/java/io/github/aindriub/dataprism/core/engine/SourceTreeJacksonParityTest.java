@@ -5,8 +5,23 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.exc.InvalidDefinitionException;
 
 import java.math.BigDecimal;
+import com.fasterxml.jackson.annotation.JsonFormat;
+
+import java.io.File;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.*;
+import java.util.Calendar;
+import java.util.Currency;
 import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.Locale;
+import java.util.TimeZone;
+import java.util.UUID;
+import java.util.OptionalInt;
 import java.util.Optional;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -98,6 +113,128 @@ class SourceTreeJacksonParityTest {
         assertThat(t.get("offset").asString()).isEqualTo("2026-10-08T12:00:00+02:00");
         assertThat(t.get("zoned").asString()).isEqualTo("2026-10-08T12:00:00+02:00");
         assertThat(t.get("duration").asString()).isEqualTo("PT1H30M");
+    }
+
+    @Test
+    void utcAndMillisecondJavaTimeValuesAreIsoText() {
+        assertThat(text(OffsetDateTime.parse("2026-10-08T12:00:00Z"))).isEqualTo("2026-10-08T12:00:00Z");
+        assertThat(text(ZonedDateTime.parse("2026-10-08T12:00:00Z[UTC]"))).isEqualTo("2026-10-08T12:00:00Z");
+        assertThat(text(Instant.parse("2026-10-08T12:00:00.120Z"))).isEqualTo("2026-10-08T12:00:00.120Z");
+    }
+
+    public record Flagged(boolean isFlag, URL URL) {
+    }
+
+    public static class Legacy {
+        private final String xRef = "v";
+
+        public String getXRef() {
+            return xRef;
+        }
+
+        public boolean isOk() {
+            return true;
+        }
+
+        public String getURL() {
+            return "u";
+        }
+    }
+
+    public record Formatted(@JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd", timezone = "UTC") Date d) {
+    }
+
+    private static String text(Object value) {
+        return SourceTree.of(Map.of("v", value)).get("v").asString();
+    }
+
+    private static String json(Object value) {
+        return SourceTree.of(Map.of("v", value)).get("v").toString();
+    }
+
+    @Test
+    void legacyDateTypesAreEpochMillisOrTextAsInJackson2() {
+        Calendar utc = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
+        utc.setTimeInMillis(1_700_000_000_123L);
+        assertThat(json(new java.sql.Timestamp(1_700_000_000_123L))).isEqualTo("1700000000123");
+        assertThat(json(new java.sql.Date(1_700_000_000_123L))).isEqualTo("1700000000123");
+        assertThat(json(java.sql.Time.valueOf("12:30:00"))).isEqualTo("\"12:30:00\"");
+        assertThat(json(utc)).isEqualTo("1700000000123");
+        assertThat(SourceTree.of(Map.of(new Date(0L), 1)).propertyNames())
+                .containsExactly("1970-01-01T00:00:00.000+00:00");
+        assertThat(SourceTree.of(Map.of(utc, 1)).propertyNames()).containsExactly("2023-11-14T22:13:20.123+00:00");
+    }
+
+    @Test
+    void aJsonFormatOnADatePropertyIsHonoured() {
+        assertThat(SourceTree.of(new Formatted(new Date(1_700_000_000_123L))).get("d").asString())
+                .isEqualTo("2023-11-14");
+    }
+
+    @Test
+    void jdkValueTypesMatchJackson2() {
+        assertThat(json(TimeZone.getTimeZone("Europe/Dublin"))).isEqualTo("\"Europe/Dublin\"");
+        assertThat(json(Locale.forLanguageTag("en-IE"))).isEqualTo("\"en_IE\"");
+        assertThat(json(Locale.forLanguageTag("sr-Latn-RS"))).isEqualTo("\"sr_RS_#Latn\"");
+        assertThat(SourceTree.of(Map.of(Locale.forLanguageTag("en-IE"), 1)).propertyNames()).containsExactly("en_IE");
+        assertThat(json(Path.of("/tmp/x"))).isEqualTo("\"file:///tmp/x\"");
+        assertThat(json(new File("/tmp/x"))).isEqualTo("\"/tmp/x\"");
+        assertThat(json(URI.create("http://h/x"))).isEqualTo("\"http://h/x\"");
+        assertThat(json(urlOf("http://h/x"))).isEqualTo("\"http://h/x\"");
+        assertThat(json(new byte[]{1, 2, 3})).isEqualTo("\"AQID\"");
+        assertThat(json(new char[]{'a', 'b'})).isEqualTo("\"ab\"");
+        assertThat(json(UUID.fromString("00000000-0000-0000-0000-000000000001")))
+                .isEqualTo("\"00000000-0000-0000-0000-000000000001\"");
+        assertThat(json(Currency.getInstance("EUR"))).isEqualTo("\"EUR\"");
+        assertThat(json(StandardCharsets.UTF_8)).isEqualTo("\"UTF-8\"");
+        assertThat(json(String.class)).isEqualTo("\"java.lang.String\"");
+        assertThat(json(java.util.regex.Pattern.compile("a+"))).isEqualTo("\"a+\"");
+        assertThat(json(new java.util.concurrent.atomic.AtomicInteger(3))).isEqualTo("3");
+        assertThat(json(new StringBuilder("sb"))).isEqualTo("\"sb\"");
+        assertThat(json(inet("127.0.0.1"))).isEqualTo("\"127.0.0.1\"");
+    }
+
+    @Test
+    void decimalsKeepJackson2Forms() {
+        assertThat(json(new BigDecimal("1E+3"))).isEqualTo("1E+3");
+        assertThat(json(new BigDecimal("1.50"))).isEqualTo("1.5");
+        assertThat(json(new BigDecimal("0.000"))).isEqualTo("0");
+        assertThat(json(BigDecimal.ZERO)).isEqualTo("0");
+    }
+
+    @Test
+    void aGetterNamedWithALeadingCapitalRunIsLowerCasedAsInJackson2() {
+        JsonNode tree = SourceTree.of(new Legacy());
+        assertThat(tree.propertyNames()).containsExactlyInAnyOrder("xref", "ok", "url");
+    }
+
+    @Test
+    void recordComponentsKeepTheirNames() {
+        assertThat(SourceTree.of(new Flagged(true, urlOf("http://h"))).propertyNames())
+                .containsExactly("isFlag", "URL");
+    }
+
+    @Test
+    void optionalsAreUnwrapped() {
+        assertThat(json(OptionalInt.of(3))).isEqualTo("3");
+        assertThat(json(java.util.Optional.of(3))).isEqualTo("3");
+    }
+
+    @SuppressWarnings("deprecation")
+    private static URL urlOf(String value) {
+        try {
+            return new URL(value);
+        } catch (java.net.MalformedURLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static InetAddress inet(String value) {
+        try {
+            return InetAddress.getByName(value);
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test
