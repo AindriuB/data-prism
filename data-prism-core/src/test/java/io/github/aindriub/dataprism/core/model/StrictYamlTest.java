@@ -200,4 +200,68 @@ class StrictYamlTest {
                 .hasMessage("NON_STRING_CONFIG_SCALAR: x.y.action must be a quoted string");
         assertThat(StrictYaml.optionalEnum(PrivacyAction.class, Map.of(), "action", "x.y.action")).isNull();
     }
+
+    @Test
+    @DisplayName("an alias is UNSUPPORTED_CONFIG_YAML, not the text of its anchor")
+    void aliasRefused() {
+        assertThatThrownBy(() -> read("a: &r x\nb: *r\n")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("UNSUPPORTED_CONFIG_YAML: test doc uses an alias at b; only plain YAML is accepted");
+    }
+
+    @Test
+    @DisplayName("an anchor on a mapping or a list is UNSUPPORTED_CONFIG_YAML")
+    void anchorRefused() {
+        assertThatThrownBy(() -> read("a: &r\n  k: 1\n")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("UNSUPPORTED_CONFIG_YAML: test doc uses an anchor at a; only plain YAML is accepted");
+        assertThatThrownBy(() -> read("a: &l [1]\n")).hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+    }
+
+    @Test
+    @DisplayName("an explicit tag, custom or standard, is UNSUPPORTED_CONFIG_YAML")
+    void tagRefused() {
+        assertThatThrownBy(() -> read("a: !custom x\n")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("UNSUPPORTED_CONFIG_YAML: test doc uses an explicit tag at a; only plain YAML is accepted");
+        assertThatThrownBy(() -> read("a: !!int 010\n")).hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+        assertThatThrownBy(() -> read("a: !!str 5\n")).hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+        assertThatThrownBy(() -> read("!!map\na: 1\n")).hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+        assertThatThrownBy(() -> read("a:\n  - !custom\n    k: v\n")).hasMessageStartingWith("UNSUPPORTED_CONFIG_YAML: ");
+    }
+
+    @Test
+    @DisplayName("no value is echoed by an unsupported-YAML refusal")
+    void unsupportedYamlNeverEchoesValue() {
+        assertThatThrownBy(() -> read("a: !custom s3cr3t\n")).hasMessageNotContaining("s3cr3t").hasMessageNotContaining("custom");
+    }
+
+    @Test
+    @DisplayName("every parent segment of a path is cut to 64 characters and has control characters replaced")
+    void pathSegmentsAreSanitised() {
+        assertThatThrownBy(() -> read("\"a\\nb\":\n  " + "x".repeat(100) + ":\n    k: 1\n    k: 2\n"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("DUPLICATE_CONFIG_KEY: test doc has a duplicate key 'k' in a?b." + "x".repeat(64));
+    }
+
+    @Test
+    @DisplayName("null-like text in a string field is NULL_LIKE_CONFIG_SCALAR")
+    void nullLikeTextRefused() {
+        for (String raw : new String[] {"~", "null", "Null", "NULL"}) {
+            assertThatThrownBy(() -> StrictYaml.text(raw, "doc a.b")).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("NULL_LIKE_CONFIG_SCALAR: doc a.b must not be null-like text (~, null, Null, NULL)");
+        }
+        assertThat(StrictYaml.text("nullable", "doc")).isEqualTo("nullable");
+    }
+
+    @Test
+    @DisplayName("a present section of the wrong shape is INVALID_CONFIG_SHAPE, including an empty one")
+    void wrongShapeRefused() {
+        assertThatThrownBy(() -> StrictYaml.optionalMapping(Map.of("s", List.of()), "s", "doc p"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("INVALID_CONFIG_SHAPE: doc p.s must be a mapping");
+        assertThatThrownBy(() -> StrictYaml.optionalMapping(java.util.Collections.singletonMap("s", null), "s", "doc p"))
+                .hasMessageStartingWith("INVALID_CONFIG_SHAPE: ");
+        assertThatThrownBy(() -> StrictYaml.optionalList(Map.of("s", Map.of()), "s", "doc p"))
+                .hasMessage("INVALID_CONFIG_SHAPE: doc p.s must be a list");
+        assertThat(StrictYaml.optionalMapping(Map.of(), "s", "doc p")).isNull();
+        assertThat(StrictYaml.optionalList(Map.of("s", List.of(1)), "s", "doc p")).containsExactly(1);
+    }
 }

@@ -1,10 +1,10 @@
 package io.github.aindriub.dataprism.core.model;
 
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
 import tools.jackson.core.ObjectReadContext;
 import tools.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.dataformat.yaml.YAMLParser;
 import tools.jackson.dataformat.yaml.YAMLReadFeature;
 
 import java.io.ByteArrayInputStream;
@@ -51,6 +51,9 @@ public final class StrictYaml {
     public static final String TRAILING_CONTENT = "TRAILING_CONFIG_CONTENT";
     public static final String NON_STRING_SCALAR = "NON_STRING_CONFIG_SCALAR";
     public static final String INVALID_BOOLEAN = "INVALID_CONFIG_BOOLEAN";
+    public static final String UNSUPPORTED_YAML = "UNSUPPORTED_CONFIG_YAML";
+    public static final String INVALID_SHAPE = "INVALID_CONFIG_SHAPE";
+    public static final String NULL_LIKE_SCALAR = "NULL_LIKE_CONFIG_SCALAR";
     public static final String LEADING_ZERO_NUMBER = "LEADING_ZERO_CONFIG_NUMBER";
 
     /** A key longer than this is cut when it is named in a message. */
@@ -60,6 +63,8 @@ public final class StrictYaml {
     private static final YAMLFactory FACTORY = YAMLFactory.builder()
             .enable(YAMLReadFeature.EMPTY_STRING_AS_NULL)
             .build();
+    /** YAML 1.1/1.2 null spellings, which this parser leaves as text unless the value is empty or lower-case {@code null}. */
+    private static final Set<String> NULL_LIKE = Set.of("~", "null", "Null", "NULL");
     private static final Pattern LEADING_ZERO = Pattern.compile("[+-]?0[0-9].*", Pattern.DOTALL);
 
     private StrictYaml() {
@@ -81,7 +86,7 @@ public final class StrictYaml {
      *         not a mapping ("{@code <kind> could not be read}")
      */
     public static Map<String, Object> readMapping(InputStream in, String kind) {
-        try (JsonParser p = FACTORY.createParser(ObjectReadContext.empty(), in)) {
+        try (YAMLParser p = (YAMLParser) FACTORY.createParser(ObjectReadContext.empty(), in)) {
             JsonToken first = p.nextToken();
             if (first == null || first == JsonToken.VALUE_NULL) {
                 return null;
@@ -90,6 +95,7 @@ public final class StrictYaml {
                 throw new UncheckedIOException(kind + " could not be read",
                         new IOException("the document root is not a mapping"));
             }
+            plainOnly(p, kind, "");
             Map<String, Object> root = mapping(p, kind, "");
             boolean more;
             try {
@@ -112,11 +118,11 @@ public final class StrictYaml {
         return readMapping(new ByteArrayInputStream(yaml), kind);
     }
 
-    private static Map<String, Object> mapping(JsonParser p, String kind, String path) {
+    private static Map<String, Object> mapping(YAMLParser p, String kind, String path) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (JsonToken t = p.nextToken(); t != JsonToken.END_OBJECT; t = p.nextToken()) {
             String key = p.currentName();
-            String child = path.isEmpty() ? key : path + "." + key;
+            String child = path.isEmpty() ? shown(key) : path + "." + shown(key);
             if (out.containsKey(key)) {
                 throw new IllegalArgumentException(DUPLICATE_KEY + ": " + kind + " has a duplicate key '"
                         + shown(key) + "'" + inPath(path));
@@ -126,7 +132,7 @@ public final class StrictYaml {
         return out;
     }
 
-    private static List<Object> sequence(JsonParser p, String kind, String path) {
+    private static List<Object> sequence(YAMLParser p, String kind, String path) {
         List<Object> out = new ArrayList<>();
         for (JsonToken t = p.nextToken(); t != JsonToken.END_ARRAY; t = p.nextToken()) {
             out.add(value(p, t, kind, path + "[" + out.size() + "]"));
@@ -134,10 +140,26 @@ public final class StrictYaml {
         return out;
     }
 
-    private static Object value(JsonParser p, JsonToken t, String kind, String path) {
+    /**
+     * Only plain YAML is accepted: an alias would be read as its anchor's name, an
+     * anchor exists only to be aliased, and an explicit tag ({@code !custom},
+     * {@code !!int}) changes how a scalar resolves behind the reader's checks.
+     */
+    private static void plainOnly(YAMLParser p, String kind, String path) {
+        String construct = p.isCurrentAlias() ? "an alias"
+                : p.getObjectId() != null ? "an anchor"
+                : p.getTypeId() != null ? "an explicit tag" : null;
+        if (construct != null) {
+            throw new IllegalArgumentException(UNSUPPORTED_YAML + ": " + kind + " uses " + construct
+                    + (path.isEmpty() ? "" : " at " + path) + "; only plain YAML is accepted");
+        }
+    }
+
+    private static Object value(YAMLParser p, JsonToken t, String kind, String path) {
+        plainOnly(p, kind, path);
         return switch (t) {
-            case START_OBJECT -> mapping(p, kind, shownPath(path));
-            case START_ARRAY -> sequence(p, kind, shownPath(path));
+            case START_OBJECT -> mapping(p, kind, path);
+            case START_ARRAY -> sequence(p, kind, path);
             case VALUE_TRUE -> Boolean.TRUE;
             case VALUE_FALSE -> Boolean.FALSE;
             case VALUE_NULL -> null;
@@ -146,12 +168,8 @@ public final class StrictYaml {
         };
     }
 
-    private static String shownPath(String path) {
-        return path.length() <= MAX_KEY_CHARS * 4 ? path : path.substring(0, MAX_KEY_CHARS * 4);
-    }
-
     private static String inPath(String path) {
-        return path.isEmpty() ? "" : " in " + shownPath(path);
+        return path.isEmpty() ? "" : " in " + path;
     }
 
     /**
@@ -201,9 +219,42 @@ public final class StrictYaml {
     /** {@code raw} if it is a string; otherwise {@code NON_STRING_CONFIG_SCALAR: <where> must be a quoted string}. */
     public static String text(Object raw, String where) {
         if (raw instanceof String s) {
+            if (NULL_LIKE.contains(s)) {
+                throw new IllegalArgumentException(NULL_LIKE_SCALAR + ": " + where
+                        + " must not be null-like text (~, null, Null, NULL)");
+            }
             return s;
         }
         throw new IllegalArgumentException(NON_STRING_SCALAR + ": " + where + " must be a quoted string");
+    }
+
+    /**
+     * The mapping at {@code key}, or {@code null} if the key is absent. Present but
+     * not a mapping (a list, a scalar, an empty value) is {@code INVALID_CONFIG_SHAPE}.
+     *
+     * @param where the path of the enclosing mapping, with its document kind
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> optionalMapping(Map<String, Object> body, String key, String where) {
+        if (!body.containsKey(key)) {
+            return null;
+        }
+        if (body.get(key) instanceof Map<?, ?> m) {
+            return (Map<String, Object>) m;
+        }
+        throw new IllegalArgumentException(INVALID_SHAPE + ": " + where + "." + shown(key) + " must be a mapping");
+    }
+
+    /** As {@link #optionalMapping}, for a list. */
+    @SuppressWarnings("unchecked")
+    public static List<Object> optionalList(Map<String, Object> body, String key, String where) {
+        if (!body.containsKey(key)) {
+            return null;
+        }
+        if (body.get(key) instanceof List<?> l) {
+            return (List<Object>) l;
+        }
+        throw new IllegalArgumentException(INVALID_SHAPE + ": " + where + "." + shown(key) + " must be a list");
     }
 
     /**
