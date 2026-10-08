@@ -58,7 +58,7 @@ public final class AuditRecorder implements AutoCloseable {
      * ${HOSTNAME}}), not this process's lifetime: {@link #instanceId} appends a
      * random per-boot suffix so a restart under the same {@code writerId}
      * stamps every event with a distinct {@link #instanceId}, which {@link
-     * AuditChainVerifier} keys chains on. That is what turns a restart into a
+     * io.github.aindriub.dataprism.audit.verify.AuditChainVerifier} keys chains on. That is what turns a restart into a
      * new writer starting at GENESIS instead of a false chain break.
      */
     public AuditRecorder(AuditSink sink, Clock clock, String writerId) {

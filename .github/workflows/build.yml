@@ -34,6 +34,16 @@ jobs:
       - name: Build and test
         run: mvn -B --no-transfer-progress verify
 
+      # The release profile builds the javadoc jars, and a Javadoc error
+      # (typically a {@link} left unresolvable by a package move) fails the
+      # release, not the build above. Run the same jar goal here, without
+      # signing and without any secret: -Dgpg.skip, and `package` stops before
+      # the signing and publishing phases. One leg is enough; Javadoc does not
+      # depend on the JDK that runs the tests.
+      - name: Javadoc (release profile, unsigned)
+        if: matrix.java == '21'
+        run: mvn -B --no-transfer-progress -Prelease -DskipTests -Dgpg.skip package
+
       - name: Publish test results
         if: always()
         uses: actions/upload-artifact@v7
