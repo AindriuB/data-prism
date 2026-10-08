@@ -21,12 +21,12 @@ import tools.jackson.databind.json.JsonMapper;
  * second major would bring a second mapper family that this class does not
  * govern. Maven Enforcer bans the Jackson 2 artifacts.
  */
-public final class DataPrismObjectMapper {
+final class DataPrismObjectMapper {
 
     private DataPrismObjectMapper() {
     }
 
-    public static JsonMapper create() {
+    static JsonMapper create() {
         return JsonMapper.builder()
                 .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
                 // Jackson 3 sorts properties alphabetically by default; Jackson 2 did not,

@@ -148,10 +148,8 @@ class UndeclaredKeyToolRefusalTest {
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
                 Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
         AuditRecorder toolAudit = new AuditRecorder(audited::add, FIXED, "test-mcp");
-        var get = new GetEntityContextTool(orchestrator, authz, scopes, DataPrismObjectMapper.create(),
-                PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
-        var compare = new CompareEntitySourcesTool(orchestrator, authz, scopes, DataPrismObjectMapper.create(),
-                PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+        var get = new GetEntityContextTool(orchestrator, authz, scopes, PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+        var compare = new CompareEntitySourcesTool(orchestrator, authz, scopes, PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         var handlers = Map.of(GetEntityContextTool.NAME, get.specification().callHandler(),
                 CompareEntitySourcesTool.NAME, compare.specification().callHandler());

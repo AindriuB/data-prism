@@ -9,7 +9,7 @@ import io.github.aindriub.dataprism.example.StubAccountAdapter;
 import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -35,12 +35,13 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pins a whole tool result as serialised by the production mapper
- * ({@link DataPrismObjectMapper#create()}, Jackson 2 defaults plus dates-as-text and
- * fail-on-empty-beans), for a fixed synthetic subject, a fixed clock and the shipped scope
- * rules. The compared text is the tool's text content. The structured-content golden pins the
- * convertValue-to-Map conversion of the result, re-serialised through {@link DataPrismObjectMapper};
- * it is not the MCP SDK's wire bytes.
+ * Pins a whole tool result for a fixed synthetic subject, a fixed clock and the shipped scope
+ * rules. The compared text is the tool's text content, which the tool writes with the production
+ * mapper ({@code DataPrismObjectMapper}), so the text goldens pin that mapper's configuration.
+ * The structured-content golden pins the convertValue-to-Map conversion the tool performs with the
+ * same mapper. That map holds only plain JSON values (see
+ * {@link #structuredContentIsPlainJsonAndAgreesWithTheText}), so the test-local mapper that
+ * writes it out adds no configuration of its own; it is not the MCP SDK's wire bytes.
  *
  * <p>Neither tool result contains a null or a date, so null inclusion and date format are NOT
  * pinned here. Dates are pinned only through the audit {@code timestamp} and the checkpoint
@@ -77,7 +78,7 @@ class ToolResultCharacterisationTest {
 
     private McpSchema.CallToolResult getEntityContext() {
         var tool = new GetEntityContextTool(assembly.orchestrator(), authorization, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED, null,
+                PrivacyMetrics.none(), toolAudit, FIXED, null,
                 ToolOptions.defaults().noAdmission().build());
         return tool.specification().callHandler().apply(
                 exchange(GetEntityContextTool.TRANSPORT_CONTEXT_CALLER_KEY),
@@ -87,7 +88,7 @@ class ToolResultCharacterisationTest {
 
     private McpSchema.CallToolResult compareEntitySources() {
         var tool = new CompareEntitySourcesTool(assembly.orchestrator(), authorization, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED, null,
+                PrivacyMetrics.none(), toolAudit, FIXED, null,
                 ToolOptions.defaults().noAdmission().build());
         return tool.specification().callHandler().apply(
                 exchange(CompareEntitySourcesTool.TRANSPORT_CONTEXT_CALLER_KEY),
@@ -118,7 +119,32 @@ class ToolResultCharacterisationTest {
     }
 
     private static String structured(McpSchema.CallToolResult result) throws Exception {
-        return DataPrismObjectMapper.create().writeValueAsString(result.structuredContent());
+        return JsonMapper.builder().build().writeValueAsString(result.structuredContent());
+    }
+
+    @Test
+    @DisplayName("structured content holds only plain JSON values and is the same document as the text content")
+    void structuredContentIsPlainJsonAndAgreesWithTheText() throws Exception {
+        for (McpSchema.CallToolResult result : List.of(getEntityContext(), compareEntitySources())) {
+            assertPlainJson(result.structuredContent());
+            var mapper = JsonMapper.builder().build();
+            tools.jackson.databind.JsonNode structured = mapper.valueToTree(result.structuredContent());
+            assertThat((Object) structured).isEqualTo(mapper.readTree(text(result)));
+        }
+    }
+
+    private static void assertPlainJson(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            map.forEach((k, v) -> {
+                assertThat((Object) k).isInstanceOf(String.class);
+                assertPlainJson(v);
+            });
+        } else if (value instanceof List<?> list) {
+            list.forEach(ToolResultCharacterisationTest::assertPlainJson);
+        } else {
+            assertThat(value == null || value instanceof String || value instanceof Number
+                    || value instanceof Boolean).as("plain JSON value: %s", value).isTrue();
+        }
     }
 
     @Test

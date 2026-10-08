@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.core.engine;
 
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.exc.InvalidDefinitionException;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -36,6 +37,6 @@ class SourceTreeJacksonParityTest {
 
     @Test
     void anEmptyBeanIsRefusedNotReadAsAnEmptyObject() {
-        assertThatThrownBy(() -> SourceTree.of(new Empty())).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> SourceTree.of(new Empty())).isInstanceOf(InvalidDefinitionException.class);
     }
 }

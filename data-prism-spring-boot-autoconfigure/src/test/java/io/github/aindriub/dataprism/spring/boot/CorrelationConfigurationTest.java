@@ -16,7 +16,7 @@ import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
@@ -288,7 +288,7 @@ class CorrelationConfigurationTest {
                         Set.of("customer"), Set.of(), "stub-correlation", Map.of(), null, null,
                         request.externalCorrelationId().map(ExternalCorrelationId::value).orElse("")));
                 return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(), List.of(),
-                        DataPrismObjectMapper.create().createObjectNode(), Map.of(), "stub-correlation");
+                        JsonMapper.builder().build().createObjectNode(), Map.of(), "stub-correlation");
             };
         }
         @Bean McpTransportContextExtractor<HttpServletRequest> callerExtractor(DataPrismProperties properties) {

@@ -12,7 +12,7 @@ import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -312,7 +312,7 @@ class McpHttpEndToEndTest {
         McpSyncClient client = clientWithToken(token);
         try {
             String body = text(callGetEntityContext(client, "123"));
-            var response = DataPrismObjectMapper.create().readTree(body);
+            var response = JsonMapper.builder().build().readTree(body);
 
             assertThat(body).doesNotContain("Patrick Murphy").doesNotContain("Pat Murphy")
                     .doesNotContain("P. Murphy").doesNotContain("patrick.murphy@example.invalid")

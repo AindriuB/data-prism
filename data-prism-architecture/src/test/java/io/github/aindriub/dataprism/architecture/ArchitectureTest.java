@@ -1,21 +1,37 @@
 package io.github.aindriub.dataprism.architecture;
 
+import io.modelcontextprotocol.json.McpJsonMapper;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.TSFBuilder;
+import tools.jackson.core.TokenStreamFactory;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.cfg.MapperBuilder;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaMember;
+import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.aindriub.dataprism.audit.fixture.AuditDependsOnMcpFixture;
 import io.github.aindriub.dataprism.mapper.fixture.BuildOnlyMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.BuilderMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.ConstructorMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.ContextLookupObtainedMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.InjectedObtainedMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.JsonFactoryFixture;
+import io.github.aindriub.dataprism.mapper.fixture.ProviderInjectedObtainedMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.PublicMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.SharedObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.RebuildMapperFixture;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.oversight.fixture.OversightDependsOnMcpFixture;
@@ -29,6 +45,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
@@ -99,6 +116,7 @@ class ArchitectureTest {
             .orShould().callMethodWhere(callsAMapperBuilderFactory())
             .orShould().callMethodWhere(buildsAMapper())
             .orShould().callMethodWhere(rebuildsAMapper())
+            .orShould().callMethodWhere(obtainsAStaticMapper())
             .because("output is serialised by one mapper, which is what makes the engine unbypassable");
 
     @Test
@@ -157,6 +175,220 @@ class ArchitectureTest {
         return DescribedPredicate.describe("call ObjectMapper#rebuild()", call ->
                 call.getTarget().getName().equals("rebuild")
                         && call.getTargetOwner().isAssignableTo(ObjectMapper.class));
+    }
+
+    /**
+     * A mapper that is obtained rather than constructed is as much a second mapper as a built one.
+     * {@code JsonMapper.shared()} hands out a process-wide instance with Jackson's defaults, and
+     * any similar static accessor does the same. This matches every static method on an {@code
+     * ObjectMapper} subtype that returns an {@code ObjectMapper} subtype ({@code shared()} is the
+     * one that exists today; {@code builder(..)} returns a builder and is matched separately).
+     */
+    private static DescribedPredicate<JavaMethodCall> obtainsAStaticMapper() {
+        return DescribedPredicate.describe("call a static accessor that returns an ObjectMapper", call ->
+                call.getTargetOwner().isAssignableTo(ObjectMapper.class)
+                        && call.getTarget().resolveMember()
+                        .map(method -> method.getModifiers().contains(JavaModifier.STATIC)
+                                && method.getRawReturnType().isAssignableTo(ObjectMapper.class))
+                        .orElse(false));
+    }
+
+    @Test
+    void mapperRuleCatchesASharedMapper() {
+        assertMapperViolation(SharedObtainedMapperFixture.class, "JsonMapper.shared");
+    }
+
+    /**
+     * A data-prism class managed by Spring must not take Spring Boot's auto-configured mapper:
+     * that bean is configured by the application and the Boot properties, not by the engine, so
+     * using it would write output the engine does not govern. "Managed by Spring" is deliberately
+     * broad: any class that depends on {@code org.springframework..}, by annotation, interface,
+     * {@code ApplicationContext}, {@code BeanFactory} or {@code ObjectProvider}. An unannotated
+     * initializer or post-processor registered through {@code spring.factories} can look the
+     * mapper up with {@code getBean(JsonMapper.class)}, so annotations alone are not enough.
+     * Any dependency on an {@code ObjectMapper} subtype counts, including a type
+     * argument such as {@code ObjectProvider<JsonMapper>}.
+     */
+    private static final ArchRule SPRING_MANAGED_CLASSES_DO_NOT_INJECT_A_MAPPER = noClasses()
+            .that().resideInAPackage("io.github.aindriub.dataprism..")
+            .and(isManagedBySpring())
+            .should().dependOnClassesThat(JavaClass.Predicates.assignableTo(ObjectMapper.class))
+            .because("the auto-configured mapper is not the engine's mapper");
+
+    @Test
+    void springManagedClassesDoNotInjectAMapper() {
+        SPRING_MANAGED_CLASSES_DO_NOT_INJECT_A_MAPPER.check(CLASSES);
+    }
+
+    @Test
+    void injectionRuleCatchesAnInjectedMapper() {
+        assertInjectionViolation(InjectedObtainedMapperFixture.class, "JsonMapper");
+    }
+
+    @Test
+    void injectionRuleCatchesAnUnannotatedContextLookup() {
+        assertInjectionViolation(ContextLookupObtainedMapperFixture.class, "JsonMapper");
+    }
+
+    @Test
+    void injectionRuleCatchesAMapperProvider() {
+        assertInjectionViolation(ProviderInjectedObtainedMapperFixture.class, "ObjectMapper");
+    }
+
+    private static void assertInjectionViolation(Class<?> fixtureClass, String type) {
+        EvaluationResult result = SPRING_MANAGED_CLASSES_DO_NOT_INJECT_A_MAPPER
+                .evaluate(new ClassFileImporter().importClasses(fixtureClass));
+        org.assertj.core.api.Assertions.assertThat(result.hasViolation()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(String.join("\n", result.getFailureReport().getDetails()))
+                .contains(fixtureClass.getName())
+                .contains(type);
+    }
+
+    private static DescribedPredicate<JavaClass> isManagedBySpring() {
+        return DescribedPredicate.describe("depends on Spring", javaClass ->
+                javaClass.getDirectDependenciesFromSelf().stream()
+                        .anyMatch(dependency -> dependency.getTargetClass().getPackageName()
+                                .startsWith("org.springframework")));
+    }
+
+    /**
+     * No public or protected member of a public data-prism class may expose a mapper, a mapper
+     * builder or an object writer in its signature or type. An adapter author can bring a mapper
+     * of their own but must never be able to obtain or substitute data-prism's. Generic type
+     * arguments count ({@code Supplier<ObjectMapper>} exposes one), and the check is by
+     * assignability, so a {@code JsonMapper} is caught as an {@code ObjectMapper}. The MCP SDK's
+     * {@code McpJsonMapper} is included because {@code JacksonMcpJsonMapper#getJsonMapper()}
+     * hands the wrapped mapper back.
+     */
+    private static final ArchRule NO_PUBLIC_API_EXPOSES_AN_OBJECT_MAPPER = classes()
+            .that().resideInAPackage("io.github.aindriub.dataprism..")
+            .and().arePublic()
+            .should(notExposeAMapper())
+            .because("data-prism's mapper must not be reachable from, or replaceable through, public API");
+
+    @Test
+    void noPublicApiExposesAnObjectMapper() {
+        NO_PUBLIC_API_EXPOSES_AN_OBJECT_MAPPER.check(CLASSES);
+    }
+
+    @Test
+    void publicApiRuleCatchesAPublicMapper() {
+        EvaluationResult result = NO_PUBLIC_API_EXPOSES_AN_OBJECT_MAPPER
+                .evaluate(new ClassFileImporter().importClasses(PublicMapperFixture.class));
+        org.assertj.core.api.Assertions.assertThat(result.hasViolation()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(String.join("\n", result.getFailureReport().getDetails()))
+                .contains(PublicMapperFixture.class.getName())
+                .contains("exposedMapper")
+                .contains("exposedProvider")
+                .contains("exposedParameter")
+                .contains("exposedBuilder")
+                .contains("exposedWriter")
+                .contains("exposedMcpMapper")
+                .contains("exposedField")
+                .contains("PublicMapperFixture.<init>")
+                .doesNotContain("hiddenMapper");
+    }
+
+    private static ArchCondition<JavaClass> notExposeAMapper() {
+        return new ArchCondition<>("not expose an ObjectMapper, MapperBuilder, ObjectWriter or McpJsonMapper") {
+            @Override
+            public void check(JavaClass javaClass, ConditionEvents events) {
+                javaClass.getMethods().forEach(method -> {
+                    if (isExposed(method) && (involvesAMapper(method.getReturnType().getAllInvolvedRawTypes())
+                            || method.getParameterTypes().stream()
+                            .anyMatch(type -> involvesAMapper(type.getAllInvolvedRawTypes())))) {
+                        events.add(SimpleConditionEvent.violated(method,
+                                method.getFullName() + " exposes a mapper type in its signature"));
+                    }
+                });
+                javaClass.getConstructors().forEach(constructor -> {
+                    if (isExposed(constructor) && constructor.getParameterTypes().stream()
+                            .anyMatch(type -> involvesAMapper(type.getAllInvolvedRawTypes()))) {
+                        events.add(SimpleConditionEvent.violated(constructor,
+                                constructor.getFullName() + " accepts a mapper type"));
+                    }
+                });
+                javaClass.getFields().forEach(field -> {
+                    if (isExposed(field) && involvesAMapper(field.getType().getAllInvolvedRawTypes())) {
+                        events.add(SimpleConditionEvent.violated(field,
+                                field.getFullName() + " is a field of a mapper type"));
+                    }
+                });
+            }
+        };
+    }
+
+    private static boolean isExposed(JavaMember member) {
+        return member.getModifiers().contains(JavaModifier.PUBLIC)
+                || member.getModifiers().contains(JavaModifier.PROTECTED);
+    }
+
+    private static boolean involvesAMapper(Set<JavaClass> rawTypes) {
+        return rawTypes.stream().anyMatch(type -> type.isAssignableTo(ObjectMapper.class)
+                || type.isAssignableTo(MapperBuilder.class) || type.isAssignableTo(ObjectWriter.class)
+                || type.isAssignableTo(McpJsonMapper.class));
+    }
+
+    /**
+     * Streaming JSON factories and generators are how JSON bytes come into being below the
+     * mapper. Four classes may build one: the mapper class itself, the audit renderer, the
+     * checkpoint writer and the JWT discovery-metadata reader (which builds a factory to parse,
+     * with tightened limits, and writes nothing). Anywhere else, a factory or generator is a way
+     * to produce JSON that no audited writer governs. Matches constructing a factory or generator
+     * subtype, the static {@code builder(..)} factories, {@code build()} on a {@code TSFBuilder},
+     * {@code rebuild()} and {@code copy()} of a factory, and {@code createGenerator*} on a factory,
+     * mapper or writer. Merely obtaining a mapper's factory ({@code ObjectMapper#tokenStreamFactory()},
+     * which {@code OutboundCorrelationHeader} uses to read) is not matched: everything useful done
+     * with it is, and that call is already limited to mappers that passed the creation rule.
+     */
+    private static final ArchRule ONLY_DESIGNATED_CLASSES_CONSTRUCT_JSON_FACTORIES = noClasses()
+            .that().resideInAPackage("io.github.aindriub.dataprism..")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.mcp.DataPrismObjectMapper")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.audit.format.AuditJsonRenderer")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.audit.AuditCheckpoint")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport")
+            .should().callConstructorWhere(constructsAFactoryOrGenerator())
+            .orShould().callMethodWhere(obtainsAFactoryOrGenerator())
+            .because("JSON bytes are produced only in audited places");
+
+    @Test
+    void onlyDesignatedClassesConstructJsonFactories() {
+        ONLY_DESIGNATED_CLASSES_CONSTRUCT_JSON_FACTORIES.check(CLASSES);
+    }
+
+    @Test
+    void jsonFactoryRuleCatchesFactoryConstructionAndGeneration() {
+        EvaluationResult result = ONLY_DESIGNATED_CLASSES_CONSTRUCT_JSON_FACTORIES
+                .evaluate(new ClassFileImporter().importClasses(JsonFactoryFixture.class));
+        org.assertj.core.api.Assertions.assertThat(result.hasViolation()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(String.join("\n", result.getFailureReport().getDetails()))
+                .contains(JsonFactoryFixture.class.getName())
+                .contains("JsonFactory.<init>")
+                .contains("JsonFactory.builder")
+                .contains("JsonFactoryBuilder.build")
+                .contains("JsonFactory.createGenerator")
+                .contains("JsonFactory.rebuild")
+                .contains("JsonMapper.createGenerator")
+                .contains("ObjectWriter.createGenerator");
+    }
+
+    private static DescribedPredicate<JavaConstructorCall> constructsAFactoryOrGenerator() {
+        return DescribedPredicate.describe("call a constructor of a TokenStreamFactory or JsonGenerator subtype",
+                call -> call.getTargetOwner().isAssignableTo(TokenStreamFactory.class)
+                        || call.getTargetOwner().isAssignableTo(JsonGenerator.class));
+    }
+
+    private static DescribedPredicate<JavaMethodCall> obtainsAFactoryOrGenerator() {
+        return DescribedPredicate.describe("create or derive a streaming JSON factory or generator", call -> {
+            String name = call.getTarget().getName();
+            var owner = call.getTargetOwner();
+            return (owner.isAssignableTo(TokenStreamFactory.class)
+                    && (name.startsWith("builder") || name.equals("rebuild") || name.equals("copy")
+                    || name.startsWith("createGenerator")))
+                    || (owner.isAssignableTo(TSFBuilder.class) && name.equals("build"))
+                    || ((owner.isAssignableTo(ObjectMapper.class) || owner.isAssignableTo(ObjectWriter.class))
+                    && name.startsWith("createGenerator"));
+        });
     }
 
     /**

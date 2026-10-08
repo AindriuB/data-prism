@@ -16,6 +16,8 @@ import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpServerTransportProvider;
+import io.modelcontextprotocol.spec.McpStreamableServerTransportProvider;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -109,18 +111,35 @@ public final class DataPrismMcpServer {
         }
         Objects.requireNonNull(developmentCaller, "developmentCaller");
 
-        JsonMapper mapper = DataPrismObjectMapper.create();
-        McpJsonMapper json = new JacksonMcpJsonMapper(mapper);
-        var transport = new StdioServerTransportProvider(json);
+        Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
+                developmentCaller, options);
+        var transport = new StdioServerTransportProvider(wiring.json());
 
+        return syncServer(wiring, transport);
+    }
+
+    /**
+     * Builds the server with the shared mapper set explicitly. Without {@code jsonMapper(..)} the
+     * SDK falls back to a ServiceLoader-discovered default mapper, a second and unconfigured one.
+     */
+    static McpSyncServer syncServer(Wiring wiring, McpServerTransportProvider transport) {
         return McpServer.sync(transport)
+                .jsonMapper(wiring.json())
                 .serverInfo("data-prism", VERSION)
                 .instructions(INSTRUCTIONS)
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, developmentCaller, options).specification(),
-                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, developmentCaller, options).specification())
+                .tools(wiring.get().specification(), wiring.compare().specification())
+                .build();
+    }
+
+    /** As {@link #syncServer(Wiring, McpServerTransportProvider)}, for a streamable transport. */
+    static McpSyncServer syncServer(Wiring wiring, McpStreamableServerTransportProvider transport) {
+        return McpServer.sync(transport)
+                .jsonMapper(wiring.json())
+                .serverInfo("data-prism", VERSION)
+                .instructions(INSTRUCTIONS)
+                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
+                .tools(wiring.get().specification(), wiring.compare().specification())
                 .build();
     }
 
@@ -161,26 +180,38 @@ public final class DataPrismMcpServer {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
         Objects.requireNonNull(endpointPath, "endpointPath");
 
-        JsonMapper mapper = DataPrismObjectMapper.create();
-        McpJsonMapper json = new JacksonMcpJsonMapper(mapper);
+        Wiring wiring = Wiring.of(orchestrator, authorizationService, scopeResolver, metrics, audit, clock,
+                null, options);
         HttpServletStreamableServerTransportProvider transport = HttpServletStreamableServerTransportProvider
                 .builder()
-                .jsonMapper(json)
+                .jsonMapper(wiring.json())
                 .contextExtractor(contextExtractor)
                 .mcpEndpoint(endpointPath)
                 .build();
 
-        McpSyncServer server = McpServer.sync(transport)
-                .serverInfo("data-prism", VERSION)
-                .instructions(INSTRUCTIONS)
-                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .tools(new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, null, options).specification(),
-                        new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
-                                audit, clock, null, options).specification())
-                .build();
+        McpSyncServer server = syncServer(wiring, transport);
 
         return new HttpTransport(server, transport);
+    }
+
+    /**
+     * The one mapper and everything built on it. Package-private so a test can assert that the
+     * transport's JSON mapper and both tools share a single instance, which is the invariant that
+     * keeps every byte a model sees on the engine's mapper.
+     */
+    record Wiring(JsonMapper mapper, McpJsonMapper json, GetEntityContextTool get,
+                  CompareEntitySourcesTool compare) {
+
+        static Wiring of(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+                         ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit, Clock clock,
+                         AuthenticatedCaller developmentCaller, ToolOptions options) {
+            JsonMapper mapper = DataPrismObjectMapper.create();
+            return new Wiring(mapper, new JacksonMcpJsonMapper(mapper),
+                    new GetEntityContextTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                            audit, clock, developmentCaller, options),
+                    new CompareEntitySourcesTool(orchestrator, authorizationService, scopeResolver, mapper, metrics,
+                            audit, clock, developmentCaller, options));
+        }
     }
 
     /**

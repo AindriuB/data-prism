@@ -22,9 +22,10 @@ import tools.jackson.databind.node.StringNode;
  *
  * <p>The rule that matters is that exactly one mapper <em>writes</em> what a model
  * sees, so the scrubbing module cannot be bypassed. Keeping the reading side to a
- * single object here lets that rule stay short: two names on the allowlist, one
- * for reading and one for writing, and anything else constructing a mapper is a
- * finding.
+ * single object here lets that rule stay short: this class reads and
+ * {@code DataPrismObjectMapper} writes, a few classes build a YAML mapper to read
+ * an operator-written configuration file at startup, and anything else
+ * constructing or obtaining a mapper is a finding.
  */
 public final class SourceTree {
 
