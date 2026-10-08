@@ -701,6 +701,12 @@ starter calls `checkpoint()` on a schedule: `dataprism.audit.checkpoint.interval
 (`dataprism.audit.checkpoint.file-path`) is configured; without one no PERIODIC
 checkpoint is written. An application that builds `AuditRecorder` itself must
 call `checkpoint()` on its own schedule.
+A torn checkpoint tail is terminated before the next append: on open, if the
+checkpoint file does not end in `\n`, `FileAuditCheckpointSink` writes `\r\n` and
+fsyncs before its first append, and fails the open if it cannot. The torn line
+is never edited and is never read back as a checkpoint. A writer whose last
+checkpoint was torn is therefore verified against its previous checkpoint, so
+tail-truncation coverage for that writer is reduced to that earlier point.
 `RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
 [Retention](#retention).
 
