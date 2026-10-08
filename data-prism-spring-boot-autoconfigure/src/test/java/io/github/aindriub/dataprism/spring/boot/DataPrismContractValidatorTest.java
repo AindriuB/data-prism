@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;

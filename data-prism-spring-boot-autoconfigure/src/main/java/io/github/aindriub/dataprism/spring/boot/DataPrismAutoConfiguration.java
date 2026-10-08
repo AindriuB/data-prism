@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator;
+import io.github.aindriub.dataprism.spring.boot.validation.DataPrismPropertiesValidator;
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
@@ -588,7 +590,7 @@ public class DataPrismAutoConfiguration {
         String auditLocation = audit.getDirectory() != null && !audit.getDirectory().isBlank()
                 ? audit.getDirectory() : audit.getFilePath();
         if (auditLocation != null && !auditLocation.isBlank()
-                && DataPrismProperties.sameOrInside(audit.getCheckpoint().getFilePath(), auditLocation)) {
+                && DataPrismPropertiesValidator.sameOrInside(audit.getCheckpoint().getFilePath(), auditLocation)) {
             throw new DataPrismConfigurationException(FileAuditCheckpointSink.SAME_AS_AUDIT_FILE,
                     "dataprism.audit.checkpoint.file-path must not be the audit file");
         }

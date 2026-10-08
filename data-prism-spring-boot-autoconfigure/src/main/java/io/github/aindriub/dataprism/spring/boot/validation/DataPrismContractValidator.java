@@ -1,4 +1,4 @@
-package io.github.aindriub.dataprism.spring.boot;
+package io.github.aindriub.dataprism.spring.boot.validation;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.core.engine.SourceModels;
@@ -6,6 +6,9 @@ import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
+import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
+import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.InitializingBean;
@@ -14,12 +17,12 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /** Final cross-checks which property binding alone cannot prove. */
-final class DataPrismContractValidator implements InitializingBean {
+public final class DataPrismContractValidator implements InitializingBean {
     private final DataPrismProperties properties; private final ObjectProvider<DataSourceAdapter<?>> adapters;
     private final ObjectProvider<IdentityResolver> identities; private final ObjectProvider<HmacKeyReferenceResolver> keys;
     private final ObjectProvider<AuditSink> audit; private final ObjectProvider<PrivacyMetrics> metrics;
     private final ObjectProvider<Set<String>> configuredJsonSourceNames;
-    DataPrismContractValidator(DataPrismProperties p,ObjectProvider<DataSourceAdapter<?>> a,ObjectProvider<IdentityResolver> i,ObjectProvider<HmacKeyReferenceResolver> k,ObjectProvider<AuditSink> au,ObjectProvider<PrivacyMetrics> m,
+    public DataPrismContractValidator(DataPrismProperties p,ObjectProvider<DataSourceAdapter<?>> a,ObjectProvider<IdentityResolver> i,ObjectProvider<HmacKeyReferenceResolver> k,ObjectProvider<AuditSink> au,ObjectProvider<PrivacyMetrics> m,
             @Qualifier(CONFIGURED_JSON_SOURCE_NAMES_BEAN) ObjectProvider<Set<String>> j){properties=p;adapters=a;identities=i;keys=k;audit=au;metrics=m;configuredJsonSourceNames=j;}
     @Override public void afterPropertiesSet() {
         properties.validate();
@@ -37,7 +40,7 @@ final class DataPrismContractValidator implements InitializingBean {
      * under that name without ever naming that module's class here.
      */
     private static final String CONFIGURED_JSON_SOURCE_NAMES_BEAN = "dataPrismConfiguredJsonSourceNames";
-    static void validateIntegrations(DataPrismProperties properties, java.util.List<DataSourceAdapter<?>> adapterList,
+    public static void validateIntegrations(DataPrismProperties properties, java.util.List<DataSourceAdapter<?>> adapterList,
             ObjectProvider<IdentityResolver> identities, ObjectProvider<HmacKeyReferenceResolver> keys,
             ObjectProvider<AuditSink> audit, ObjectProvider<PrivacyMetrics> metrics,
             ObjectProvider<Set<String>> configuredJsonSourceNames) {
