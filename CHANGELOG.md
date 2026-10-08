@@ -94,8 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not parse it. Directory mode uses the same terminator. The rule that an
   over-count line with a parseable version is a break is unchanged. One live
   writer per file or segment directory is assumed.
-- The outbound correlation header is stripped when no validated id is present,
-  so a value already on the request cannot be sent as the correlation id.
+- The configured outbound correlation header (including `traceparent`) is now
+  removed from every outbound REST request, so a client-level default or preset
+  header can no longer send an unvalidated value when no valid id is present.
 
 ### Upgrade notes
 
