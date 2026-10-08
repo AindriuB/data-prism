@@ -35,6 +35,11 @@ public final class TeeAuditSink implements AuditSink {
         } catch (RuntimeException e) {
             poisonedBy = e;
             throw new ProjectionFailedException(e);
+        } catch (Error e) {
+            // an Error (OOM, assertion, linkage) after the primary write leaves the same sequence-reuse
+            // hazard; poison, then let the original Error propagate unchanged
+            poisonedBy = e;
+            throw e;
         }
     }
 

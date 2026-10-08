@@ -36,10 +36,16 @@ public final class FileAuditCheckpointSink implements AuditCheckpointSink, Close
                     SAME_AS_AUDIT_FILE + ": checkpoint file " + checkpointPath
                             + " is the audit file; they must be separate files", null);
         }
+        FileChannel opened = null;
         try {
-            this.channel = FileChannel.open(checkpointPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
+            opened = FileChannel.open(checkpointPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
                     StandardOpenOption.APPEND);
+            // a torn final line is terminated and fsynced before any append (D-153-A, D-0.6-7); if that
+            // fails the open fails and nothing is appended
+            FileAuditSink.terminateTornTail(checkpointPath, opened);
+            this.channel = opened;
         } catch (IOException e) {
+            FileAuditSink.closeQuietly(opened);
             throw new CheckpointSinkException("AUDIT_CHECKPOINT_OPEN_FAILED",
                     "AUDIT_CHECKPOINT_OPEN_FAILED: could not open checkpoint file at " + checkpointPath, e);
         }
@@ -78,8 +84,9 @@ public final class FileAuditCheckpointSink implements AuditCheckpointSink, Close
     public synchronized java.util.List<AuditCheckpoint> retentionAnchors() {
         java.util.List<AuditCheckpoint> anchors = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
-                if (line.isBlank()) {
+            for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
+                if (line.isBlank() || line.endsWith("\r")) {
+                    // a torn line terminated by a resumed writer; never an anchor, reported by the verifier
                     continue;
                 }
                 AuditCheckpoint cp = AuditCheckpoint.fromJsonLine(line);
