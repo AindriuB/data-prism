@@ -51,7 +51,7 @@ public final class JwtDecoderSupport {
      * audience.
      */
     public static JwtDecoder buildJwtDecoder(DataPrismProperties properties) {
-        DataPrismProperties.Security.Jwt jwt = properties.getSecurity().getJwt();
+        SecurityProperties.Jwt jwt = properties.getSecurity().getJwt();
         String jwkSetUri = jwt.getJwkSetUri() == null || jwt.getJwkSetUri().isBlank()
                 ? discoverJwkSetUri(jwt)
                 : jwt.getJwkSetUri();
@@ -63,7 +63,7 @@ public final class JwtDecoderSupport {
         return decoder;
     }
 
-    private static String discoverJwkSetUri(DataPrismProperties.Security.Jwt jwt) {
+    private static String discoverJwkSetUri(SecurityProperties.Jwt jwt) {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) URI.create(jwt.getIssuerDiscoveryUri()).toURL().openConnection();

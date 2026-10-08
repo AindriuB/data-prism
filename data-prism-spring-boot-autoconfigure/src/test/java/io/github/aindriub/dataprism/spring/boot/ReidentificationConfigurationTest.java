@@ -89,7 +89,7 @@ class ReidentificationConfigurationTest {
     @Test void four_eyes_defaults_to_true_and_the_documented_defaults_hold() {
         runner("single-node").run(result -> {
             assertThat(result).hasNotFailed();
-            DataPrismProperties.Reidentification r = result.getBean(DataPrismProperties.class).getReidentification();
+            ReidentificationProperties r = result.getBean(DataPrismProperties.class).getReidentification();
             assertThat(r.isEnabled()).isFalse();
             assertThat(r.isFourEyes()).isTrue();
             assertThat(r.getApprovalTtl()).isEqualTo(java.time.Duration.ofMinutes(15));

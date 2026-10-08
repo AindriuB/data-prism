@@ -1,5 +1,17 @@
 package io.github.aindriub.dataprism.spring.boot.validation;
 
+import io.github.aindriub.dataprism.spring.boot.AuditProperties;
+import io.github.aindriub.dataprism.spring.boot.CorrelationProperties;
+import io.github.aindriub.dataprism.spring.boot.HazelcastProperties;
+import io.github.aindriub.dataprism.spring.boot.MetricsProperties;
+import io.github.aindriub.dataprism.spring.boot.OperatorProperties;
+import io.github.aindriub.dataprism.spring.boot.OversightProperties;
+import io.github.aindriub.dataprism.spring.boot.PrivacyProperties;
+import io.github.aindriub.dataprism.spring.boot.ReidentificationProperties;
+import io.github.aindriub.dataprism.spring.boot.SecurityProperties;
+import io.github.aindriub.dataprism.spring.boot.SecurityPolicyProperties;
+import io.github.aindriub.dataprism.spring.boot.SourceProperties;
+import io.github.aindriub.dataprism.spring.boot.TransportProperties;
 import io.github.aindriub.dataprism.core.model.Capability;
 import io.github.aindriub.dataprism.security.ReservedArguments;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
@@ -16,18 +28,18 @@ import java.util.Set;
  * could be personal data or a credential.
  */
 public final class DataPrismPropertiesValidator {
-    private final DataPrismProperties.Transport transport;
-    private final DataPrismProperties.Security security;
-    private final DataPrismProperties.SecurityPolicy securityPolicy;
-    private final DataPrismProperties.Privacy privacy;
-    private final DataPrismProperties.Audit audit;
-    private final DataPrismProperties.Correlation correlation;
-    private final DataPrismProperties.Metrics metrics;
-    private final DataPrismProperties.Hazelcast hazelcast;
-    private final Map<String, DataPrismProperties.Source> sources;
-    private final DataPrismProperties.Oversight oversight;
-    private final DataPrismProperties.Reidentification reidentification;
-    private final DataPrismProperties.Operator operator;
+    private final TransportProperties transport;
+    private final SecurityProperties security;
+    private final SecurityPolicyProperties securityPolicy;
+    private final PrivacyProperties privacy;
+    private final AuditProperties audit;
+    private final CorrelationProperties correlation;
+    private final MetricsProperties metrics;
+    private final HazelcastProperties hazelcast;
+    private final Map<String, SourceProperties> sources;
+    private final OversightProperties oversight;
+    private final ReidentificationProperties reidentification;
+    private final OperatorProperties operator;
 
     public DataPrismPropertiesValidator(DataPrismProperties p) {
         transport = p.getTransport();
@@ -49,18 +61,18 @@ public final class DataPrismPropertiesValidator {
         // STDIO_DEVELOPMENT_ONLY is one of four codes meaning "this deployment has
         // no usable MCP transport"; see the Javadoc on DataPrismAutoConfiguration
         // #dataPrismMcpTransportPreflight for the full map and why they are not one.
-        if (transport.getMode() == DataPrismProperties.Transport.Mode.STDIO && !fixture) {
+        if (transport.getMode() == TransportProperties.Mode.STDIO && !fixture) {
             refuse("STDIO_DEVELOPMENT_ONLY", "dataprism.transport.stdio requires fixture-development=true");
         }
         if (transport.getMode() == null) {
             refuse("INVALID_TRANSPORT", "dataprism.transport.mode must be http or stdio");
         }
         rootedPath(transport.getHttp().getPath(), "dataprism.transport.http.path");
-        boolean stdioFixture = fixture && transport.getMode() == DataPrismProperties.Transport.Mode.STDIO;
+        boolean stdioFixture = fixture && transport.getMode() == TransportProperties.Mode.STDIO;
         if (!stdioFixture) {
             protectedDeployment();
         }
-        if (fixture && transport.getMode() != DataPrismProperties.Transport.Mode.STDIO) {
+        if (fixture && transport.getMode() != TransportProperties.Mode.STDIO) {
             refuse("FIXTURE_DEVELOPMENT_STDIO_ONLY",
                     "dataprism.transport.fixture-development requires dataprism.transport.mode=stdio");
         }
@@ -82,7 +94,7 @@ public final class DataPrismPropertiesValidator {
     }
 
     private void validateCorrelation() {
-        DataPrismProperties.Correlation.Inbound inbound = correlation.getInbound();
+        CorrelationProperties.Inbound inbound = correlation.getInbound();
         if (!blank(inbound.getHeader()) && !usableHeaderName(inbound.getHeader())) {
             refuse("INVALID_CORRELATION_HEADER",
                     "dataprism.correlation.inbound.header must be an HTTP header name other than a credential header");
@@ -111,7 +123,7 @@ public final class DataPrismPropertiesValidator {
                 refuse("CORRELATION_REQUIRED_WITHOUT_HEADER",
                         "dataprism.correlation.inbound.required needs dataprism.correlation.inbound.header");
             }
-            if (transport.getMode() != DataPrismProperties.Transport.Mode.HTTP) {
+            if (transport.getMode() != TransportProperties.Mode.HTTP) {
                 refuse("CORRELATION_REQUIRES_HTTP_TRANSPORT",
                         "dataprism.correlation.inbound.required needs the HTTP transport");
             }
@@ -149,7 +161,7 @@ public final class DataPrismPropertiesValidator {
     }
 
     private void validateAuditOutput() {
-        DataPrismProperties.Audit.Output output = audit.getOutput();
+        AuditProperties.Output output = audit.getOutput();
         try {
             output.mapping();
             output.getRouting().toRouting().checkAgainst(output.mapping());
@@ -225,13 +237,13 @@ public final class DataPrismPropertiesValidator {
             }
             return;
         }
-        DataPrismProperties.Hazelcast h = hazelcast;
+        HazelcastProperties h = hazelcast;
         required(h.getClusterName(), "MISSING_CLUSTER_NAME", "dataprism.hazelcast.cluster-name");
         if ("dev".equalsIgnoreCase(h.getClusterName().strip())) {
             refuse("RESERVED_CLUSTER_NAME", "dataprism.hazelcast.cluster-name must not be the Hazelcast default");
         }
         required(h.getJoin().getMode(), "MISSING_CLUSTER_JOIN", "dataprism.hazelcast.join.mode");
-        DataPrismProperties.Hazelcast.Kubernetes k = h.getJoin().getKubernetes();
+        HazelcastProperties.Kubernetes k = h.getJoin().getKubernetes();
         boolean kubernetesSet = !blank(k.getNamespace()) || !blank(k.getServiceName()) || !blank(k.getServiceDns());
         switch (h.getJoin().getMode().strip()) {
             case "tcp-ip" -> {
@@ -319,7 +331,7 @@ public final class DataPrismPropertiesValidator {
                         "dataprism.reidentification.purposes must name at least one non-blank purpose");
             }
             if (reidentification.isFourEyes() && reidentification.getRoles().values().stream()
-                    .noneMatch(p -> p != null && p.contains(DataPrismProperties.Reidentification.Permission.APPROVE))) {
+                    .noneMatch(p -> p != null && p.contains(ReidentificationProperties.Permission.APPROVE))) {
                 refuse("NO_REIDENTIFICATION_APPROVER",
                         "four-eyes re-identification requires a role holding APPROVE in dataprism.reidentification.roles");
             }

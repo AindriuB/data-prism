@@ -198,7 +198,7 @@ public class DataPrismAutoConfiguration {
         @ConditionalOnMissingBean(AuditSink.class)
         @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "slf4j")
         AuditSink dataPrismSlf4jAuditSink(DataPrismProperties properties) {
-            DataPrismProperties.Audit.Output output = properties.getAudit().getOutput();
+            AuditProperties.Output output = properties.getAudit().getOutput();
             // Nothing configured keeps the message-only form; any output setting adds the mapped pairs.
             return output.isDefault() ? new Slf4jAuditSink()
                     : new Slf4jAuditSink(output.mapping(), output.getRouting().toRouting());
@@ -255,7 +255,7 @@ public class DataPrismAutoConfiguration {
         AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties, ObjectProvider<Clock> clock,
                 org.springframework.beans.factory.config.ConfigurableListableBeanFactory beanFactory) {
             AuditSink primary = openPrimary(properties);
-            DataPrismProperties.Audit.Output output = properties.getAudit().getOutput();
+            AuditProperties.Output output = properties.getAudit().getOutput();
             if (output.getJsonDirectory() == null || output.getJsonDirectory().isBlank()) {
                 return primary;
             }
@@ -586,7 +586,7 @@ public class DataPrismAutoConfiguration {
         // containment check compare real paths: on a case-insensitive filesystem a not-yet-created
         // FRESH directory and a checkpoint under fresh/ look unrelated until the directory exists.
         auditSink.getIfAvailable();
-        DataPrismProperties.Audit audit = properties.getAudit();
+        AuditProperties audit = properties.getAudit();
         String auditLocation = audit.getDirectory() != null && !audit.getDirectory().isBlank()
                 ? audit.getDirectory() : audit.getFilePath();
         if (auditLocation != null && !auditLocation.isBlank()
@@ -612,7 +612,7 @@ public class DataPrismAutoConfiguration {
     @ConditionalOnProperty(prefix = "dataprism.audit", name = "directory")
     AuditRetention dataPrismAuditRetention(DataPrismProperties properties, Clock clock,
             ObjectProvider<AuditCheckpointSink> checkpoints) {
-        DataPrismProperties.Audit audit = properties.getAudit();
+        AuditProperties audit = properties.getAudit();
         return new AuditRetention(Path.of(audit.getDirectory()), audit.getRetention(),
                 checkpoints.getObject(), clock, audit.isRetentionOverride());
     }
@@ -711,7 +711,7 @@ public class DataPrismAutoConfiguration {
          */
         @Bean @ConditionalOnMissingBean @DependsOn("dataPrismPropertiesValidated")
         PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties) {
-            DataPrismProperties.Hazelcast h = properties.getHazelcast();
+            HazelcastProperties h = properties.getHazelcast();
             try {
                 ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                         h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
@@ -723,8 +723,8 @@ public class DataPrismAutoConfiguration {
             }
         }
 
-        private static ClusterMembership.Join join(DataPrismProperties.Hazelcast.Join join) {
-            DataPrismProperties.Hazelcast.Kubernetes k = join.getKubernetes();
+        private static ClusterMembership.Join join(HazelcastProperties.Join join) {
+            HazelcastProperties.Kubernetes k = join.getKubernetes();
             return switch (join.getMode().strip()) {
                 case "tcp-ip" -> new ClusterMembership.TcpIp(join.getMembers());
                 case "kubernetes" -> new ClusterMembership.Kubernetes(k.getNamespace(), k.getServiceName(),
@@ -777,7 +777,7 @@ public class DataPrismAutoConfiguration {
     CallerRateLimiter dataPrismCallerRateLimiter() { return new InMemoryCallerRateLimiter(); }
     @Bean
     OversightPolicy dataPrismOversightPolicy(DataPrismProperties properties) {
-        DataPrismProperties.Oversight o = properties.getOversight();
+        OversightProperties o = properties.getOversight();
         Integer requests = o.getCallerRateLimit().getRequests();
         return new OversightPolicy(Set.copyOf(o.getApprovalRequiredTools()),
                 requests == null ? OptionalInt.empty() : OptionalInt.of(requests),
@@ -808,7 +808,7 @@ public class DataPrismAutoConfiguration {
     static class ReidentificationWiring {
         @Bean
         ReidentificationPolicy dataPrismReidentificationPolicy(DataPrismProperties properties) {
-            DataPrismProperties.Reidentification r = properties.getReidentification();
+            ReidentificationProperties r = properties.getReidentification();
             Map<String, Set<Permission>> roles = new java.util.HashMap<>();
             r.getRoles().forEach((role, permissions) -> roles.put(role, permissions.stream()
                     .map(p -> Permission.valueOf(p.name())).collect(java.util.stream.Collectors.toSet())));
@@ -930,7 +930,7 @@ public class DataPrismAutoConfiguration {
      */
     @Bean
     Object dataPrismStdioTransportRefused(DataPrismProperties properties) {
-        if (properties.getTransport().getMode() == DataPrismProperties.Transport.Mode.STDIO) {
+        if (properties.getTransport().getMode() == TransportProperties.Mode.STDIO) {
             throw new DataPrismConfigurationException("STDIO_TRANSPORT_UNSUPPORTED",
                     "the stdio transport has no Spring auto-configuration; dataprism.transport.mode=stdio is refused here");
         }
@@ -971,7 +971,7 @@ public class DataPrismAutoConfiguration {
         return factory -> {
             String mode = environment.getProperty("dataprism.transport.mode");
             boolean stdio = mode != null
-                    && DataPrismProperties.Transport.Mode.STDIO.name().equalsIgnoreCase(mode.trim());
+                    && TransportProperties.Mode.STDIO.name().equalsIgnoreCase(mode.trim());
             if (stdio) {
                 return;
             }

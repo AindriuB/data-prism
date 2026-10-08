@@ -395,8 +395,8 @@ class ClusterConfigurationTest {
                 "DATAPRISM_HAZELCAST_JOIN_KUBERNETES_SERVICEDNS=svc.ns.svc.cluster.local",
                 "DATAPRISM_HAZELCAST_JOIN_KUBERNETES_SERVICENAME=svc")
                 .applyTo(env, TestPropertyValues.Type.SYSTEM_ENVIRONMENT);
-        DataPrismProperties.Hazelcast h = org.springframework.boot.context.properties.bind.Binder.get(env)
-                .bind("dataprism.hazelcast", DataPrismProperties.Hazelcast.class).get();
+        HazelcastProperties h = org.springframework.boot.context.properties.bind.Binder.get(env)
+                .bind("dataprism.hazelcast", HazelcastProperties.class).get();
         assertThat(h.getClusterName()).isEqualTo("prism-env");
         assertThat(h.getJoin().getMode()).isEqualTo("kubernetes");
         assertThat(h.getJoin().getMembers()).containsExactly("10.0.0.1", "10.0.0.2:5702");
