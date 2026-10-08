@@ -62,11 +62,11 @@ import java.util.Optional;
  *   <li>a torn trailing record with no newline — an in-progress write, per
  *       {@link AuditRecordFormat}'s class javadoc — reported as the
  *       possibly-in-flight {@link VerificationReport#tail()};
- *   <li>a mid-file field-count error — the shape an operator restart after a
- *       torn write produces when the new {@link FileAuditSink} opens append
- *       on the same path, landing its first record directly after the
- *       surviving fragment — reported as an {@link
- *       AnomalyType#INTERRUPTED_WRITE_FRAGMENT} anomaly, not a break;
+ *   <li>a line ending in a raw carriage return — the {@code "\r\n"} a resumed {@link
+ *       FileAuditSink} writes after a torn fragment, before its first record — reported as an {@link
+ *       AnomalyType#INTERRUPTED_WRITE_FRAGMENT} anomaly, not a break, and never parsed. A fragment
+ *       fused with a restarted writer's first record (logs written before 0.5.0) has more fields
+ *       than its version allows and is a {@link AnomalyType#FIELD_COUNT_MISMATCH} break;
  *   <li>a duplicate sequence number within one writer — the shape a sink
  *       produces if it violates {@link AuditSink}'s all-or-nothing contract
  *       by writing durably and then throwing — reported as an {@link
