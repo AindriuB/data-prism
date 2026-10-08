@@ -1,0 +1,19 @@
+# category|key|reason. See ConfigurationMetadataDocumentedTest. An entry that suppresses nothing fails the test.
+#
+# outside-binding: documented, bound outside @ConfigurationProperties, so absent from the generated metadata.
+outside-binding|dataprism.sources.*.base-url|dataprism.sources.<name> is bound through Binder in ConfiguredJsonSourcesInitializer, not a @ConfigurationProperties map value the processor expands
+outside-binding|dataprism.sources.*.timeout|bound through Binder, as above
+outside-binding|dataprism.sources.*.service-credential-reference|bound through Binder, as above
+outside-binding|dataprism.sources.*.mtls.key-reference|bound through Binder, as above
+outside-binding|dataprism.sources.*.mtls.trust-reference|bound through Binder, as above
+outside-binding|dataprism.json-sources.config-location|read by ConfiguredJsonSources in the connectors module, not by DataPrismProperties
+#
+# not-a-property: a backticked dataprism.* name in the docs that is not a configuration key.
+not-a-property|dataprism.audit.retention.unverified|names a metric (core Metric), not a property
+not-a-property|dataprism.audit.retention.failed|names a metric (core Metric), not a property
+#
+# default-not-inferred: the documented default is prose or computed, so it cannot be compared with a metadata value.
+default-not-inferred|dataprism.correlation.inbound.pattern|the default is a strict built-in expression held in code, documented as prose
+default-not-inferred|dataprism.operator.address|unset follows server.address, a computed value with no metadata default
+#
+# internal: in the metadata, deliberately undocumented. None.
