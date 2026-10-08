@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 7: DataPrismProperties split by concern (158)
+
+Task 158 merged onto `release/0.6.0-spring`. `DataPrismProperties` is now a 182-line root plus 12 other top-level `*Properties` classes, one per concern. Validation lives in `spring.boot.validation` (`DataPrismPropertiesValidator`, `DataPrismContractValidator`). `PropertyNamesFrozenTest` freezes 110 `dataprism.*` paths, types and defaults, there are still 103 + 8 refusal codes in the same order and 55 `@Bean` methods, and the FQCN, prefix and imports files are unchanged. ArchUnit now says `validation` must not depend on `spring.boot.jwt` (with `allowEmptyShould` until 159 creates the package) and nothing outside `spring.boot` depends on `validation`.
+
+**Cost:** One deliberate behaviour change: `INVALID_MODEL_DESCRIPTOR_FILE` chains a fresh, value-free cause, but only for coded (`UPPER_SNAKE: `) reader messages, never for uncoded, enum or IO messages. The package move forced visibility widenings (`sameOrInside`, `clusterSettingsSet`, `effectivePattern`, and the contract validator's class, constructor and `validateIntegrations`), and `JwtCallerContextExtractor` and `JwtDecoderSupport` needed type-reference edits (scope waiver). The frozen-names test has known blind spots: constructor binding, unit annotations, and mutable versus immutable collection defaults; none changed, but the test would not notice. Review found a vacuous case-sensitive leak assertion, an unneeded public `usableHeaderName`, unused imports and a stale line reference; the leak test was proven non-vacuous by temporarily chaining every exception (it failed) and reverting.
+
 ## 2026-10-08 — 0.6.0 wave 6 addendum: interface and abstract map key types (175)
 
 Task 175 merged onto `release/0.6.0-jackson3`. A record with a `Map<CharSequence|Comparable|Serializable, V>` component now works: a declared interface or abstract key type is deferred to `CheckedKey`'s per-key check at write time, so JDK key classes on the allowlist are written as in Jackson 2 and user classes are refused at any depth. Concrete user key classes are still refused at startup, and `CheckedKey` now forwards `resolve`, `createContextual` and `handledType`.
