@@ -439,6 +439,46 @@ lower than one the same writer already wrote is reported as
 break (exit code 2), because a downgrade is the way to forge a record that
 avoids a field the newer version hashes. Retention does not purge past it.
 
+### Interrupted writes and the restart terminator
+
+A process that dies mid-write leaves a line with no newline. A writer that
+resumes on that file (`FileAuditSink`, or a segment opened by
+`SegmentedFileAuditSink`) checks the last byte before its first record. If the
+file is non-empty and does not end in `\n`, it writes `\r\n`, fsyncs, and only
+then appends. An empty, absent or newline-terminated file is not touched.
+Existing bytes are never truncated or rewritten. If the tail cannot be read or
+the terminator cannot be written and fsynced, opening fails with
+`AUDIT_SINK_OPEN_FAILED` and nothing is appended.
+
+A serialized record never contains a raw `\r` (it is escaped), so the verifier
+reads any line that ends in one as a writer-terminated torn fragment: an
+`INTERRUPTED_WRITE_FRAGMENT`, exit code 4, never parsed as a record. This
+holds wherever the write was torn, including inside the event hash or the
+external correlation id, and when the record was complete except for its
+newline. The resumed writer's first record is on its own line and verifies as
+the `GENESIS` head of its own chain. Directory mode adds the same `\r\n` to a
+non-final segment that ends torn. The over-count rule above is unchanged: an
+over-long line with a parseable version is still `FIELD_COUNT_MISMATCH`.
+
+An attacker who appends `\r` to a valid line hides that record, which has the
+same power as deleting it. In the middle of a writer's chain the next record
+then fails its `previousHash` check, a break (exit code 2). If it was the
+writer's last record, the effect is tail truncation, which
+[`--checkpoints`](#external-checkpoints) reports as `TRUNCATED_BEFORE_CHECKPOINT`
+(exit code 5). The marker cannot inject a field, because the line is never
+parsed.
+
+Logs written before 0.5.0 may already hold a fragment fused with a restarted
+writer's first record, with no terminator between them. That is still
+`FIELD_COUNT_MISMATCH`, a break, and retention stops there. One known cause is a
+legacy interrupted write followed by a restart. To check, see whether the
+trailing 20, 24 or 25 fields of the line parse as a `GENESIS` record of a new
+`instanceId`, and whether the record after the line continues that writer.
+
+One live writer process is assumed to append to a given file or segment
+directory. A second live writer opening the same file could terminate the first
+writer's in-flight line.
+
 ## External correlation id
 
 An organisation's own transaction id can be recorded on the audit event as
@@ -668,7 +708,8 @@ call `checkpoint()` on its own schedule.
 
 Given a directory instead of a file, the verifier reads every
 `audit-YYYY-MM-DD.log` segment in date order as one stream and replays it as
-usual. A non-final segment ending in a torn write is reported as an
+usual. A non-final segment ending in a torn write is given the same `\r\n`
+terminator a resumed writer writes, and is reported as an
 interrupted-write fragment rather than fused with the next segment's first
 record. Byte offsets in a directory report are offsets into that concatenation.
 
