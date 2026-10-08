@@ -748,7 +748,7 @@ $ java -Dloader.path=$EXTENSION_JAR -jar $SERVER_JAR \
     [... rest of the required dataprism.* configuration, see docs/configuration.md ...]
 ...
 Caused by: io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException: UNRESOLVED_SOURCE_ADAPTER: configured sources and DataSourceAdapter beans differ
-	at io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator.validateIntegrations(DataPrismContractValidator.java:29)
+	at io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator.validateIntegrations(DataPrismContractValidator.java)
 	at io.github.aindriub.dataprism.spring.boot.DataPrismAutoConfiguration.dataPrismPropertiesValidated(DataPrismAutoConfiguration.java:98)
 ```
 

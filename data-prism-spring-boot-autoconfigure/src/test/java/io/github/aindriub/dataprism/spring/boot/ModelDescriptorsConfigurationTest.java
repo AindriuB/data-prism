@@ -171,7 +171,7 @@ class ModelDescriptorsConfigurationTest {
         context.withPropertyValues("dataprism.privacy.descriptor-file=" + file).run(result -> {
             assertThat(result).hasFailed();
             for (Throwable t = result.getStartupFailure(); t != null; t = t.getCause()) {
-                assertThat(String.valueOf(t.getMessage())).doesNotContain("hunter2");
+                assertThat(String.valueOf(t.getMessage()).toLowerCase(java.util.Locale.ROOT)).doesNotContain("hunter2");
             }
         });
     }

@@ -88,7 +88,7 @@ public final class DataPrismPropertiesValidator {
     private static final Set<String> CREDENTIAL_HEADERS = Set.of("authorization", "cookie", "proxy-authorization");
 
     /** True if the value is an RFC 9110 token and not a header that carries a credential. */
-    public static boolean usableHeaderName(String name) {
+    private static boolean usableHeaderName(String name) {
         return name != null && HEADER_TOKEN.matcher(name).matches()
                 && !CREDENTIAL_HEADERS.contains(name.toLowerCase(java.util.Locale.ROOT));
     }
