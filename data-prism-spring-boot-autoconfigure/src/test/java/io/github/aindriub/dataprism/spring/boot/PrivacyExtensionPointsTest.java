@@ -137,11 +137,11 @@ class PrivacyExtensionPointsTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedIntegrations {
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 public String sourceName() { return "customer"; }
-                public Class<String> responseType() { return String.class; }
-                public String fetch(DataRequest request) { return null; }
+                public Class<TestPayload> responseType() { return TestPayload.class; }
+                public TestPayload fetch(DataRequest request) { return null; }
             };
         }
         @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }

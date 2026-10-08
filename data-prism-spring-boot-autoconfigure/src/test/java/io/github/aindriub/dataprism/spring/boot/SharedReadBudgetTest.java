@@ -136,11 +136,11 @@ class SharedReadBudgetTest {
 
     @Configuration(proxyBeanMethods = false)
     static class ReviewedHttpIntegrationsWithoutAudit {
-        @Bean DataSourceAdapter<String> customerAdapter() {
+        @Bean DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 @Override public String sourceName() { return "customer"; }
-                @Override public Class<String> responseType() { return String.class; }
-                @Override public String fetch(DataRequest request) { throw new UnsupportedOperationException(); }
+                @Override public Class<TestPayload> responseType() { return TestPayload.class; }
+                @Override public TestPayload fetch(DataRequest request) { throw new UnsupportedOperationException(); }
             };
         }
         @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }

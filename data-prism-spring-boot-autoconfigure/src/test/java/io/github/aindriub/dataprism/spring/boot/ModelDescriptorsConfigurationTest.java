@@ -171,17 +171,17 @@ class ModelDescriptorsConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedIntegrations {
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 public String sourceName() {
                     return "customer";
                 }
 
-                public Class<String> responseType() {
-                    return String.class;
+                public Class<TestPayload> responseType() {
+                    return TestPayload.class;
                 }
 
-                public String fetch(DataRequest request) {
+                public TestPayload fetch(DataRequest request) {
                     return null;
                 }
             };

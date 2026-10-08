@@ -56,10 +56,14 @@ class SourceModelsTest {
     }
 
     private static void assertRefused(Runnable action) {
+        assertRefused(action, "Bean");
+    }
+
+    private static void assertRefused(Runnable action, String name) {
         assertThatThrownBy(action::run)
                 .isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {
                     assertThat(e.code()).isEqualTo("SOURCE_MODEL_NOT_A_RECORD");
-                    assertThat(e.getMessage()).contains("Bean").doesNotContain("value-that-must-not-appear");
+                    assertThat(e.getMessage()).contains(name).doesNotContain("value-that-must-not-appear");
                 });
     }
 
@@ -73,6 +77,12 @@ class SourceModelsTest {
     void aBeanAtTopLevelIsRefusedAtStartupAndAtRuntime() {
         assertRefused(() -> SourceModels.require(Bean.class));
         assertRefused(() -> SourceTree.of(new Bean()));
+    }
+
+    @Test
+    void aTopLevelTypeThatIsNotARecordIsRefusedAtStartupJdkTypesIncluded() {
+        assertRefused(() -> SourceModels.require(String.class), "String");
+        assertRefused(() -> SourceModels.require(Tier.class), "Tier");
     }
 
     @Test

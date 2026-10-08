@@ -127,11 +127,11 @@ class ConfiguredIdentityResolverTest {
     @Configuration(proxyBeanMethods = false)
     static class IntegrationsWithoutIdentity {
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 public String sourceName() { return "customer"; }
-                public Class<String> responseType() { return String.class; }
-                public String fetch(DataRequest request) { return null; }
+                public Class<TestPayload> responseType() { return TestPayload.class; }
+                public TestPayload fetch(DataRequest request) { return null; }
             };
         }
         @Bean HmacKeyReferenceResolver keys() { return (id, reference) -> (reference + ":" + id + ":resolved-key-material").getBytes(); }

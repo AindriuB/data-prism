@@ -325,11 +325,11 @@ class ServerSecurityBoundaryTest {
                 .run(validApplicationArguments());
     }
 
-    private static DataSourceAdapter<String> adapter() {
+    private static DataSourceAdapter<TestPayload> adapter() {
         return new DataSourceAdapter<>() {
             @Override public String sourceName() { return "customer"; }
-            @Override public Class<String> responseType() { return String.class; }
-            @Override public String fetch(DataRequest request) { return null; }
+            @Override public Class<TestPayload> responseType() { return TestPayload.class; }
+            @Override public TestPayload fetch(DataRequest request) { return null; }
         };
     }
 

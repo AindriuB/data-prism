@@ -349,6 +349,7 @@ class ServerPackagingIT {
             output.closeEntry();
             addClass(output, configuration);
             addClass(output, configuration.getName() + "$1");
+            addClass(output, TestPayload.class);
         }
     }
 
@@ -543,12 +544,12 @@ class ServerPackagingIT {
         }
 
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             System.out.println(ADAPTER_LOADED_MARKER);
             return new DataSourceAdapter<>() {
                 @Override public String sourceName() { return "customer"; }
-                @Override public Class<String> responseType() { return String.class; }
-                @Override public String fetch(DataRequest request) { return null; }
+                @Override public Class<TestPayload> responseType() { return TestPayload.class; }
+                @Override public TestPayload fetch(DataRequest request) { return null; }
             };
         }
     }
@@ -556,11 +557,11 @@ class ServerPackagingIT {
     @AutoConfiguration
     public static class AdapterOnlyExtension {
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 @Override public String sourceName() { return "customer"; }
-                @Override public Class<String> responseType() { return String.class; }
-                @Override public String fetch(DataRequest request) { return null; }
+                @Override public Class<TestPayload> responseType() { return TestPayload.class; }
+                @Override public TestPayload fetch(DataRequest request) { return null; }
             };
         }
     }

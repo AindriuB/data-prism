@@ -188,6 +188,20 @@ class DataPrismContractValidatorTest {
                 .hasMessageContaining("BeanPayload");
     }
 
+    @Test
+    void aJdkResponseTypeSuchAsStringIsRefusedAtStartup() {
+        DataPrismProperties properties = new DataPrismProperties();
+
+        assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(adapterOf("customer-api", String.class)),
+                availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none()),
+                availableProvider(Set.of("customer-api"))))
+                .isInstanceOfSatisfying(DataPrismConfigurationException.class,
+                        e -> org.assertj.core.api.Assertions.assertThat(e.code())
+                                .isEqualTo("SOURCE_MODEL_NOT_A_RECORD"));
+    }
+
     private static DataSourceAdapter<Payload> fakeAdapter(String name) {
         return adapterOf(name, Payload.class);
     }

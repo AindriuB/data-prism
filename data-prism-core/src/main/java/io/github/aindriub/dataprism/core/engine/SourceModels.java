@@ -32,11 +32,14 @@ public final class SourceModels {
     }
 
     /**
-     * Refuses {@code type} if it is a user class that is not a record, or a record with such a class
-     * among its declared component types. A JDK type passes here (it cannot be exposed, so
-     * {@link SourceTree#of} refuses it when an object of it is actually read).
+     * Refuses {@code type} unless it is a record whose declared component types are all allowed (a
+     * response type that is not a record, a JDK type such as {@code String} included, could never be
+     * exposed, so it fails at startup rather than on the first request).
      */
     public static void require(Class<?> type) {
+        if (!type.isRecord()) {
+            throw refusal(type);
+        }
         walk(type, new HashSet<>());
     }
 
