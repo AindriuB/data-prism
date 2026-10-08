@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.spring.boot.validation.DataPrismPropertiesValidator;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import jakarta.annotation.PostConstruct;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -18,17 +19,29 @@ public class DataPrismProperties {
      */
     public static final String APPROVED_SINK = "approved-sink";
 
+    @NestedConfigurationProperty
     private TransportProperties transport = new TransportProperties();
+    @NestedConfigurationProperty
     private SecurityProperties security = new SecurityProperties();
+    @NestedConfigurationProperty
     private SecurityPolicyProperties securityPolicy = new SecurityPolicyProperties();
+    @NestedConfigurationProperty
     private PrivacyProperties privacy = new PrivacyProperties();
+    @NestedConfigurationProperty
     private AuditProperties audit = new AuditProperties();
+    @NestedConfigurationProperty
     private CorrelationProperties correlation = new CorrelationProperties();
+    @NestedConfigurationProperty
     private MetricsProperties metrics = new MetricsProperties();
+    @NestedConfigurationProperty
     private HazelcastProperties hazelcast = new HazelcastProperties();
+    @NestedConfigurationProperty
     private IdentityProperties identity = new IdentityProperties();
+    @NestedConfigurationProperty
     private OversightProperties oversight = new OversightProperties();
+    @NestedConfigurationProperty
     private ReidentificationProperties reidentification = new ReidentificationProperties();
+    @NestedConfigurationProperty
     private OperatorProperties operator = new OperatorProperties();
     private Map<String, SourceProperties> sources = new LinkedHashMap<>();
 
