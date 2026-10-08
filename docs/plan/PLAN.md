@@ -448,6 +448,21 @@ Follow-ups from the 0.5.0 cut (task 151), not yet tasks:
 - (ai) `docs/audit.md:77` (81 characters, old text) and the short orphan line at :584 are cosmetic.
 - (aj) Process: the AI tooling's auto-mode classifier denied the `-Prelease` build, mkdocs and a `bash -c` script locally during the cut. Release checks now rely on CI.
 
+External review of PR #117 (2026-10-08) found two P2 defects. Both are fixed and merged on the PR branch (tasks 152 and 153). The container-smoke SIGPIPE fix (e23de419, merged as fix/smoke-sigpipe) also landed on PR #117 after CI caught exit 141.
+
+Decisions recorded for task 153 (2026-10-08):
+
+- D-153-A: A2. A resumed writer terminates a torn tail with `"\r\n"` and fsyncs before appending. The verifier reports any line ending in a raw `\r` as INTERRUPTED_WRITE_FRAGMENT without parsing it. Directory mode uses the same terminator.
+- D-153-B: B1. A fused line already present in a pre-0.5.0 log stays a break (exit 2), and the FIELD_COUNT_MISMATCH text, `docs/audit.md` and the CHANGELOG name the legacy cause.
+
+Follow-ups from tasks 152 and 153, not yet tasks:
+
+- (ak) 153: assert "carriage return" in the anomaly message, so that mutation 2 kills all five tear points.
+- (al) 153, post-0.5.0: when a CR-ended line hash-verifies as a complete record with the CR stripped, word it as "a complete record hidden behind the restart marker".
+- (am) `FileAuditCheckpointSink` has the same append-after-torn-tail hazard as the audit sink had.
+- (an) 152: the rejected-id test should pass the `validate()` result through `SourceCallContext`.
+- (ao) 152, known limit to document: the interceptor is installed only when a correlation header is configured, so a client default header on a source with no correlation header is untouched.
+
 ### 0.5.0 release-cut checklist (owner go-ahead required)
 
 Task 151 did the local cut on 2026-10-07 (merge 98b42144). Nothing has been pushed. Every outward action needs the owner's go-ahead.
@@ -462,6 +477,7 @@ Done by task 151:
 
 Still open, owner-gated:
 
+- Re-run CI on PR #117 after the 152/153 push, and check it is green on JDK 21 and 25 plus `container-smoke`.
 - Push and open the PR.
 - CI PR run green on JDK 21 and 25, plus `container-smoke` (task 144 acceptance).
 - Linux CI evidence for 149 (D-149-B): the Linux legs pass without a rerun.

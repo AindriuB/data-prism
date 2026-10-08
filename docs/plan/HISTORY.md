@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — External review of PR #117: correlation header stripped unconditionally, torn audit tail terminated on resume
+
+An external review of PR #117 found two P2 defects. Task 152: the outbound interceptor now removes the configured correlation header unconditionally and sets it only from a validated id, so a client default header can no longer leak a stale or unvalidated id. Task 153: a resumed `FileAuditSink` terminates a torn tail with `"\r\n"` and fsyncs (failing closed with AUDIT_SINK_OPEN_FAILED), and the verifier reports any CR-ended line as INTERRUPTED_WRITE_FRAGMENT without parsing it. A legacy fused line stays FIELD_COUNT_MISMATCH and the message names the pre-0.5.0 cause. The container-smoke exit 141 (SIGPIPE under pipefail, fix e23de419) was caught by CI on the same PR.
+
+**Cost:** 152: mutation proof, putting the remove back inside the `if` fails 4 of 5 new tests. 153: the implementer blocked once on Owns, because two existing tests built a fused line by restarting a sink on a torn file and the new writer removes that premise; the Owns amendment let them be re-expressed with the same intent. A CRLF-rewritten file reports exit 4 (5 with `--checkpoints`); this gives an attacker nothing new, since deleting the same lines gives exit 0, and counting heuristics were rejected because they would raise false breaks on a crash loop. The CR-rule mutation is caught by 4 tests, but not at all five tear points (follow-up ak). `FileAuditCheckpointSink` still has the same hazard (am). Do not retry a line-count heuristic for torn tails.
+
 ## 2026-10-07 — 0.5.0 cut done locally: version 0.5.0, changelog, cut-time docs fixes
 
 Task 151 bumps every pom, `server.json`, the Dockerfile `ARG VERSION`, the Kubernetes image tag, the publish-image default and the docs version literals from 0.4.1 to 0.5.0. It adds a dated `[0.5.0] - 2026-10-07` CHANGELOG section listing all 18 startup refusal codes, which the reviewer matched to the code. It also fixes the stale `docs/audit.md` record-version text and hashed-field list, `README.md:203`, the `docs/extending.md` snippet and evidence paragraph, and the (ae) line wraps. A non-release `mvn clean verify` ran 1350 tests with 0 failures, errors and skips. On 2026-10-08 the owner ran `check-class-version.sh 65` over the 19 `data-prism-*-0.5.0.jar` files and all passed at major 65. Nothing is pushed, tagged or published.

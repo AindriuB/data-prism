@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-08 | 152, 153 | External review of PR #117: correlation header stripped unconditionally; torn audit tail terminated with CRLF on resume; smoke SIGPIPE fix. | `## 2026-10-08 — External review of PR #117: correlation header stripped unconditionally, torn audit tail terminated on resume` |
 | 2026-10-07 | 151 | 0.5.0 cut done locally: version 0.5.0, dated changelog, cut-time docs fixes; release checks deferred to CI. | `## 2026-10-07 — 0.5.0 cut done locally: version 0.5.0, changelog, cut-time docs fixes` |
 | 2026-10-07 | 116, 150 | 0.5.0 wave 6: audit v3 and log-shipping docs; entityType audited only when registered or upper-case-shaped, else `<unregistered>` (D-150-A). | `## 2026-10-07 — 0.5.0 wave 6: audit and log-shipping docs, entityType audited only when registered or shaped` |
 | 2026-10-07 | 115, 148 | Correlation client snippets and log-shipping recipes; validated id into the SLF4J MDC | `## 2026-10-07 — 0.5.0 wave 5: correlation examples and MDC logging` |
