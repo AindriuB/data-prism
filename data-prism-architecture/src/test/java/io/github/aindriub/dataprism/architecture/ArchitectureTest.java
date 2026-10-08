@@ -10,10 +10,11 @@ import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.aindriub.dataprism.audit.fixture.AuditDependsOnMcpFixture;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
-import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
 import io.github.aindriub.dataprism.oversight.fixture.OversightDependsOnMcpFixture;
+import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
 import io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -154,16 +155,26 @@ class ArchitectureTest {
 
     @Test
     void outerLayerRuleCatchesAuditDependingOnMcp() {
-        JavaClasses fixture = new ClassFileImporter().importClasses(AuditDependsOnMcpFixture.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> CORE_DOES_NOT_DEPEND_ON_OUTER_LAYERS.check(fixture))
-                .isInstanceOf(AssertionError.class);
+        assertViolationNaming(AuditDependsOnMcpFixture.class);
     }
 
     @Test
     void outerLayerRuleCatchesOversightDependingOnMcp() {
-        JavaClasses fixture = new ClassFileImporter().importClasses(OversightDependsOnMcpFixture.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> CORE_DOES_NOT_DEPEND_ON_OUTER_LAYERS.check(fixture))
-                .isInstanceOf(AssertionError.class);
+        assertViolationNaming(OversightDependsOnMcpFixture.class);
+    }
+
+    /**
+     * Asserts on the violation itself, not on {@code check} throwing: a rule
+     * that matched no subject also fails {@code check}, which would pass these
+     * tests even with the package dropped from the subjects.
+     */
+    private static void assertViolationNaming(Class<?> fixtureClass) {
+        EvaluationResult result = CORE_DOES_NOT_DEPEND_ON_OUTER_LAYERS
+                .evaluate(new ClassFileImporter().importClasses(fixtureClass));
+        org.assertj.core.api.Assertions.assertThat(result.hasViolation()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(String.join("\n", result.getFailureReport().getDetails()))
+                .contains(fixtureClass.getName())
+                .contains("dataprism.mcp.CorrelationRequirement");
     }
 
     /** The annotation library is what applications take on. It stays standalone. */

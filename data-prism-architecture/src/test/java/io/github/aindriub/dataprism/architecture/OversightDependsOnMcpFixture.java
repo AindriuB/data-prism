@@ -4,8 +4,9 @@ import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 
 /**
  * Negative fixture: resides in a {@code ..dataprism.oversight..} package and depends on
- * an {@code mcp} type. The package declaration deliberately does not match this
- * file's directory, so the class is never part of {@code CLASSES}.
+ * an {@code mcp} type. It is excluded from {@code CLASSES} because that import
+ * reads only the other modules' main {@code target/classes} with {@code
+ * DO_NOT_INCLUDE_TESTS}, so this test class is never in the graph.
  */
 public final class OversightDependsOnMcpFixture {
 
