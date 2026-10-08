@@ -92,7 +92,7 @@ public final class DataPrismContractValidator implements InitializingBean {
             // Task 69: this arm is unreachable through the wiring this module ships.
             // DataPrismProperties.validate() admits exactly three dataprism.audit.sink
             // values -- approved-sink (handled above), slf4j and hash-chained -- and
-            // DataPrismAutoConfiguration.AuditSinkSelection declares both slf4j's and
+            // AuditSinkSelection (imported by DataPrismAutoConfiguration) declares both slf4j's and
             // hash-chained's AuditSink beans @ConditionalOnMissingBean, so one of them
             // always supplies a bean unless an application-supplied AuditSink bean
             // already won, in which case a bean exists either way. It is kept only as

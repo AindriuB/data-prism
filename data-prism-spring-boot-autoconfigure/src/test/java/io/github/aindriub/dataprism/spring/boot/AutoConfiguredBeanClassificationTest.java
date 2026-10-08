@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and every class it {@code @Import}s (recursively, so a nested class of an
  * imported class is swept too). That is what stops a bean placed on a nested,
  * {@code @Import}ed configuration class — such as {@code
- * DataPrismAutoConfiguration.IdentityResolverSelection}'s {@code
+ * IdentityResolverSelection}'s {@code
  * dataPrismPassThroughIdentityResolver} — from dodging classification by
  * sitting outside a sweep of {@link DataPrismAutoConfiguration#getDeclaredMethods()}
  * alone. {@link #the_sweep_collects_bean_methods_from_nested_and_imported_configuration_classes()}
