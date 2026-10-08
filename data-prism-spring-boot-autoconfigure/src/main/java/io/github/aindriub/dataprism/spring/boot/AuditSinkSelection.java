@@ -173,7 +173,15 @@ class AuditSinkSelection {
     @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
     @ConditionalOnExpression("T(org.springframework.util.StringUtils)"
             + ".hasText('${dataprism.audit.output.json-directory:}')")
-    JsonProjection dataPrismJsonAuditProjection(DataPrismProperties properties, ObjectProvider<Clock> clock) {
+    JsonProjection dataPrismJsonAuditProjection(DataPrismProperties properties, ObjectProvider<Clock> clock,
+            ConfigurableListableBeanFactory beanFactory) {
+        // Needs no type resolution, so it catches every replacement of the built-in sink, however typed.
+        if (!beanFactory.containsBeanDefinition("dataPrismHashChainedAuditSink")
+                || !isBuiltInSink(beanFactory, "dataPrismHashChainedAuditSink")) {
+            throw new DataPrismConfigurationException("AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK",
+                    "dataprism.audit.output.json-directory needs the built-in hash-chained sink;"
+                            + " an application AuditSink bean replaces it");
+        }
         AuditProperties.Output output = properties.getAudit().getOutput();
         SegmentedJsonAuditSink json;
         try {

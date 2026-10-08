@@ -259,6 +259,24 @@ class AuditOutputConfigurationTest {
                         bd -> bd.setLazyInit(true)));
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    static final class UntypedSinkFactory implements org.springframework.beans.factory.FactoryBean {
+        @Override public Object getObject() { return (AuditSink) event -> { }; }
+        @Override public Class<?> getObjectType() { return null; }
+    }
+
+    @Test
+    void an_untyped_factory_bean_does_not_replace_the_built_in_sink_so_the_projection_stays_wired(@TempDir Path dir) {
+        // The framework cannot see this factory as an AuditSink, so the built-in sink (and tee) stays in
+        // force and writes the directory; the guard in the projection bean fires only on a real replacement.
+        segmented(dir).withBean("untypedSinkFactory", UntypedSinkFactory.class)
+                .withPropertyValues("dataprism.audit.output.json-directory=" + dir.resolve("json"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean("dataPrismHashChainedAuditSink")).isInstanceOf(TeeAuditSink.class);
+                });
+    }
+
     @Test
     void an_application_sink_overriding_the_built_in_sinks_name_is_refused(@TempDir Path dir) throws Exception {
         assertSinkRefusedAndDirectoryUntouched(dir,
