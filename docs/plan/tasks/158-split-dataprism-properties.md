@@ -48,6 +48,8 @@ property name, prefix, default and refusal stays exactly as it is.
 - [ ] The last commit's body carries the old → new type-name table; task 162 builds the migration page from it.
 - [ ] `mvn -B verify` over the full reactor exits 0.
 
+- [ ] (Added 2026-10-08, from task 170.) Chain the cause on `INVALID_MODEL_DESCRIPTOR_FILE` (`DataPrismAutoConfiguration` about :486-488) so that 170's inner codes (for example `UNKNOWN_CONFIG_KEY`, `DUPLICATE_CONFIG_KEY`) reach the operator, and update the wording in `docs/configuration.md` (about :103, which says the refusal does not repeat the file's content) to match. The cause carries codes and key paths only, never values. This is the one deliberate behaviour change in an otherwise pure move; make it in its own commit after the move.
+
 ## Out of scope
 - Splitting `DataPrismAutoConfiguration` and the `spring.boot.jwt` package (task 159).
 - Adding `spring-boot-configuration-processor`. Owner decision pending (D-0.6-9).

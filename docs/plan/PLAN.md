@@ -463,7 +463,7 @@ Follow-ups from tasks 152 and 153, not yet tasks:
 - (an) 152: the rejected-id test should pass the `validate()` result through `SourceCallContext`.
 - (ao) 152, known limit to document: the interceptor is installed only when a correlation header is configured, so a client default header on a source with no correlation header is untouched.
 
-- (ap) `release.yml` runs plain `mvn verify`, not the release profile, so it never builds Javadoc. A Javadoc error was caught only by publish-central's stage after `release.yml` had already created a GitHub Release (v0.5.0, first tag). Make `release.yml` build with the same profile, or make it depend on the stage.
+- (ap) **Closed 2026-10-08 as "Javadoc gated in `build.yml` on every PR" (task 171).** Finding: `release.yml` runs plain `mvn verify`, and the release profile runs only in `publish-central.yml`; `release.yml` itself is unchanged. Original note: `release.yml` runs plain `mvn verify`, not the release profile, so it never builds Javadoc. A Javadoc error was caught only by publish-central's stage after `release.yml` had already created a GitHub Release (v0.5.0, first tag). Make `release.yml` build with the same profile, or make it depend on the stage.
 - (aq) Branch protection on `main` required a check named `build`, which `pages.yml` also produced. After task 144's matrix it silently gated on the docs build. The owner switched it on 2026-10-08 to require `build (21)`, `build (25)` and `container-smoke`. Task 165 fixes this properly with a `ci-gate` job (D-165-A).
 
 Follow-ups from task 156 (2026-10-08), not yet tasks:
@@ -509,10 +509,11 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160. **Done 2026-10-08** |
 | 4 | 166 | Pin Jackson 2 output and YAML behaviour with characterisation tests before the port | 157. **Done 2026-10-08** |
 | 5 | 167 | Port the reactor to Jackson 3 in one step (code, mappers, MCP binding, Spring converters, enforcer) | 155, 156, 157, 166. **Done 2026-10-08** |
-| 6 | 168 | Stop exposing data-prism's `ObjectMapper` in public API; ArchUnit guard; signature inventory | 167 (D-J3-1 decided) |
-| 6 | 169 | Record the Jackson 3 decision and the mapper invariant in architecture, conventions, README | 167 |
-| 6 | 170 | All five YAML readers (and `ConfiguredJsonSources`) refuse duplicate keys, unknown keys, trailing documents, unquoted non-string scalars in string fields, non-`true`/`false` booleans and leading-zero numbers at startup | 166, 167 |
-| 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169, 170 |
+| 6 | 168 | Stop exposing data-prism's `ObjectMapper` in public API; ArchUnit guard; signature inventory | 167 (D-J3-1 decided). **Done 2026-10-08** |
+| 6 | 169 | Record the Jackson 3 decision and the mapper invariant in architecture, conventions, README | 167. **Done 2026-10-08** |
+| 6 | 170 | All five YAML readers (and `ConfiguredJsonSources`) refuse duplicate keys, unknown keys, trailing documents, unquoted non-string scalars in string fields, non-`true`/`false` booleans and leading-zero numbers at startup | 166, 167. **Done 2026-10-08** |
+| 6 | 171 | Fix two unresolvable Javadoc links; gate Javadoc (release profile) in `build.yml` | unplanned, found in 168. **Done 2026-10-08** |
+| 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169, 170. **Next** |
 | 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt` | 158 |
 | 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
 | 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159 |
@@ -526,6 +527,12 @@ Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iterat
 **Wave 4 done 2026-10-08:** 166 merged onto `release/0.6.0-jackson3` (branched from main c6b6b8bd).
 
 **Wave 5 done 2026-10-08:** 167 merged onto `release/0.6.0-jackson3` (Jackson 3.1.5; 1455 tests, 0 failed on JDK 21; JDK 25 and container-smoke run in CI on the PR). Wave 6 is next: 168, 169 and 170 in parallel. Accepted or noted behaviour changes, signature changes and the pinned Jackson defaults are in the retired 167 task file's Outcome.
+
+**Wave 6 done 2026-10-08:** 168, 169, 170 and the unplanned 171 merged onto `release/0.6.0-jackson3` (tester PASS 1467 for 168; clean full reactor 1592 for 170). Wave 7 is next: 158. Details are in the retired task files' Outcomes. Notes carried forward:
+
+- 158 now chains the cause on `INVALID_MODEL_DESCRIPTOR_FILE` so 170's inner codes reach the operator, and updates `docs/configuration.md`. 159 folds in `JwtDecoderSupport.parseDiscoveryMetadata`'s stale `throws IOException`. 162's acceptance now lists 170's nine codes, the YAML 1.2 changes, the credential-echo removals, 168's inventory and 171's CI step.
+- Follow-ups from wave 6, not yet tasks: the `ToolResultCharacterisationTest` Javadoc says "whatever Jackson 2 does" and should be reworded now the port is done; the `serverUsesTheSharedMapper` comment should name the MCP SDK version whose private fields it reads; a Pillow bump (docs-site) is offered as a separate session.
+- Correction to D-J3-2 below: the checkpoint writer on the allowlist is `audit.AuditCheckpoint`, not `FileAuditCheckpointSink`.
 
 - **D-167-1: DECIDED 2026-10-08, option (b)** (170; owner had no opinion, chosen on correctness). 167 accepts YAML 1.2 parsing (`yes`/`no`/`on`/`off` are text; leading-zero numbers are decimal). 170 additionally refuses at startup any boolean-typed field value other than exactly `true`/`false`, and any numeric-typed field written with a leading zero (for example `010`), with stable codes. 170's file now carries the acceptance items and the list of characterisation tests that flip to refusal.
 - Scope added to 170 (fail-closed, owner told and did not object): the readers also refuse multi-document files and trailing content with a stable code.
@@ -553,7 +560,7 @@ Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iterat
 - **D-170-1: DECIDED 2026-10-08, option (b)** (170). A string-typed field refuses any non-string scalar with `NON_STRING_CONFIG_SCALAR`, so values must be quoted. Rejected: (a) deferring it, (c) documenting only. 170's conditional acceptance items are now unconditional.
 - **D-170-2: DECIDED 2026-10-08, option (a)** (170). Refusal messages name the offending key and its path, never the value, with the key truncated to 64 characters. 162's migration page and `[Unreleased]` Breaking entry record the three codes, that 0.5.x configs may now refuse to start, and the quoting rule.
 - **D-J3-1: DECIDED 2026-10-08, option (a)** (168). The two tool constructors lose their `ObjectMapper` parameter; the tools take the mapper from package-private `DataPrismObjectMapper.create()`, and `DataPrismMcpServer` passes one shared instance through a package-private constructor so tools and transport still share it. Rejected: (b) package-private constructors, which rewrites 10 integration-test files for no extra protection; (c) an opaque data-prism-owned type, which adds a public type to carry one already hidden. 168 is no longer blocked.
-- **D-J3-2: DECIDED 2026-10-08, option (b), in 0.6.0, folded into task 168** (owner delegated the call). 168 adds an ArchUnit allowlist rule for streaming JSON factory and generator construction (allowed: `DataPrismObjectMapper`, `AuditJsonRenderer`, the checkpoint writer `audit.checkpoint.FileAuditCheckpointSink`, `JwtDecoderSupport`) with its own negative-test fixture. Not in 167, whose port stays behaviour-neutral.
+- **D-J3-2: DECIDED 2026-10-08, option (b), in 0.6.0, folded into task 168** (owner delegated the call). 168 adds an ArchUnit allowlist rule for streaming JSON factory and generator construction (allowed: `DataPrismObjectMapper`, `AuditJsonRenderer`, the checkpoint writer `audit.AuditCheckpoint`, `JwtDecoderSupport`) with its own negative-test fixture. Not in 167, whose port stays behaviour-neutral.
 
 Owner decisions, all decided 2026-10-08:
 

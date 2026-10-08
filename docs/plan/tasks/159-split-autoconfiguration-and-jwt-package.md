@@ -44,6 +44,8 @@ effective registration order stay as they are.
 - [ ] The last commit's body carries the old → new FQCN table; task 162 builds the migration page from it.
 - [ ] `mvn -B verify` over the full reactor exits 0.
 
+- [ ] (Added 2026-10-08, from task 167's review.) `JwtDecoderSupport.parseDiscoveryMetadata` loses its stale `throws IOException`, since Jackson 3 exceptions are unchecked; callers' catch blocks adjust accordingly and the JWT tests still pass.
+
 ## Out of scope
 - (t), the JSON projection as its own bean (task 161). Move `JsonProjection` and the `registerDisposableBean` wiring as they are.
 - Adding, removing, renaming or reclassifying any bean.

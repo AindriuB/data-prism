@@ -86,3 +86,26 @@ Dependency changes for consumers (from 167): `mcp-json-jackson2` → `mcp-json-j
 - docs/migration-0.6.md and CHANGELOG.md (162 writes them from this hand-back).
 - docs/architecture.md and docs/conventions.md (169).
 - An `ObjectMapper` that an adapter author creates in their own code. J3-2 permits it, and this rule covers only `io.github.aindriub.dataprism..`.
+
+## Outcome (2026-10-08, wave 6)
+Merged onto `release/0.6.0-jackson3` (task branch head c6b218bb). D-J3-1 (a) is implemented: `DataPrismObjectMapper` and `create()` are package-private, the two tool constructors lose their `ObjectMapper` parameter, and a package-private `DataPrismMcpServer.Wiring` carries one mapper to the MCP server and both tools. Tester PASS (1467 tests, 0 failed). The first review asked for changes: the Spring rule missed unannotated Spring-dependent classes, the server was built without the shared mapper, the structured golden had lost its production pin, and `McpJsonMapper` was not covered. All four were fixed and the re-review was APPROVE.
+
+Rules, all in `ArchitectureTest`, each with negative fixtures:
+- `noPublicApiExposesAnObjectMapper`, including the MCP SDK's `McpJsonMapper`.
+- `onlyDesignatedClassesConstructJsonFactories`, allowing `DataPrismObjectMapper`, `AuditJsonRenderer`, `audit.AuditCheckpoint` and `JwtDecoderSupport`.
+- `springManagedClassesDoNotInjectAMapper`, treating any class that depends on `org.springframework..` as Spring-managed.
+- `onlyDesignatedClassesCreateMappers` gained a static shared-accessor clause that catches `JsonMapper.shared()`.
+
+Public signature inventory for 162 (verified against the diff):
+- `ScrubResult`: component, accessor and constructor `ObjectNode` moved to `tools.jackson.databind`.
+- `SourceTree`: `of`, `newObject`, `newArray` return Jackson 3 types, and `text` now returns `StringNode`.
+- `Generalizer.generalise(JsonNode, ...)`.
+- Validators and scanner: `LlmResponseValidator.validate`, `RawValueLeakValidator.validate`, `SensitivePatternValidator.validate`, `SensitiveDataScanner.scan`.
+- `ContextResponse.entity()` and its constructors.
+- `ComparisonResponse.identity()`.
+- No `throws JsonProcessingException` was found to remove.
+- `DataPrismObjectMapper` and `create()` are no longer public.
+- The two tool constructors lose the `ObjectMapper` parameter.
+- Dependency swaps: `mcp-json-jackson2` to `mcp-json-jackson3`, and `spring-boot-jackson2` to `spring-boot-starter-jackson`.
+
+Known limit: ArchUnit cannot see a class-literal `getBean(JsonMapper.class)` in a class with no Spring dependency. None can exist, because obtaining a context is itself a Spring dependency. Follow-ups are in PLAN.md.

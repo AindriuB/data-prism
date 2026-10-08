@@ -37,3 +37,8 @@ state what 167 built and the owner decided.
 - The components table and boundary or ArchitectureTest prose that 162 rewrites for the package moves. Edit boundary 1 only.
 - docs/pack.md, docs/design-review.md and docs/development-plan.md. They are historical specifications and stay as written.
 - `.github/workflows/build.yml`'s comment, which is still accurate.
+
+## Outcome (2026-10-08, wave 6)
+Merged onto `release/0.6.0-jackson3` (task branch head 8af419fc). Docs only: `docs/architecture.md`, `docs/conventions.md` and `README.md` record the Jackson 3 decision and the one-mapper invariant. The first review asked for changes because the text overclaimed enforcement that 168 would provide, invented "Rejected" alternatives and rewrote D-139-A; all three were fixed and the coordinator verified the diff. After 168 merged, the scribe updated `docs/architecture.md` to say what is enforced.
+
+Accepted deviation: acceptance item 1's grep is not literally empty. The restored, verbatim D-139-A text still contains "is a Jackson module", and the decision log must stay a faithful record.
