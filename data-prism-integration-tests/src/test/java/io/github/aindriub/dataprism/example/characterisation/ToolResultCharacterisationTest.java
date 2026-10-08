@@ -38,8 +38,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pins a whole tool result as serialised by the production mapper
  * ({@link DataPrismObjectMapper#create()}, Jackson 2 defaults plus dates-as-text and
  * fail-on-empty-beans), for a fixed synthetic subject, a fixed clock and the shipped scope
- * rules. The compared text is the tool's text content; the structured content is serialised
- * through the same mapper and pinned separately.
+ * rules. The compared text is the tool's text content. The structured-content golden pins the
+ * convertValue-to-Map conversion of the result, re-serialised through {@link DataPrismObjectMapper};
+ * it is not the MCP SDK's wire bytes.
+ *
+ * <p>Neither tool result contains a null or a date, so null inclusion and date format are NOT
+ * pinned here. Dates are pinned only through the audit {@code timestamp} and the checkpoint
+ * {@code recordedAt} and {@code segmentDate}.
  *
  * <p>One normalisation applies to get_entity_context: the entries of its {@code sources} object
  * are sorted before comparing (see {@link #sortSourcesObject}); their order varies between JVM runs.

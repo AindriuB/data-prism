@@ -48,7 +48,7 @@ class PrivacyProfilesYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("as the override flag, yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms); override is true only for the ones that read as true")
+    @DisplayName("as the override flag, yes, on and True read as true; no, off and FALSE read as false; y and n are read as text, so the flag is false (YAML 1.1 booleans, but only the long forms); override is true only for the ones that read as true")
     void booleanSpellings() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
                 s -> profile("    classifications:\n      PII:\n        action: REDACT\n        override: " + s + "\n"),

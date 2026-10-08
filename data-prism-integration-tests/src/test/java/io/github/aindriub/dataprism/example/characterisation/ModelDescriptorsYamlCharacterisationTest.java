@@ -48,7 +48,7 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("as exposed, yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms); exposed is true only for the ones that read as true")
+    @DisplayName("as exposed, yes, on and True read as true; no, off and FALSE read as false; y and n are read as text, so the flag is false (YAML 1.1 booleans, but only the long forms); exposed is true only for the ones that read as true")
     void booleanSpellings() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> model("    exposed: " + s + "\n"),
                 ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=true descendable=null undeclaredFields=null\n"
