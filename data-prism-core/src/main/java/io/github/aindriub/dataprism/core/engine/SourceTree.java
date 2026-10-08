@@ -1,6 +1,11 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.module.SimpleModule;
+import java.util.Date;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.SerializationFeature;
@@ -45,9 +50,23 @@ public final class SourceTree {
             // hashes and tokenises the converted scalar, so an overridden toString() would silently
             // change what is emitted and what a subject is derived from.
             .disable(EnumFeature.WRITE_ENUMS_USING_TO_STRING)
-            // Jackson 2 wrote a java.util.Date as epoch millis; Jackson 3 writes an ISO string.
-            .enable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+            // java.time types are ISO-8601 text. A java.util.Date stays epoch millis, as in Jackson 2,
+            // through the serializer registered below; the flags are pinned so a default cannot move them.
+            .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .disable(DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
+            .disable(DateTimeFeature.WRITE_DATES_WITH_ZONE_ID)
+            // A Date used as a map key is still text; Jackson 2 wrote its UTC offset as +00:00, Jackson 3 as Z.
+            .enable(DateTimeFeature.WRITE_UTC_AS_OFFSET)
+            .addModule(new SimpleModule().addSerializer(Date.class, new EpochMillisDate()))
             .build();
+
+    /** A legacy Date as epoch millis, which is what Jackson 2 produced for it. */
+    private static final class EpochMillisDate extends ValueSerializer<Date> {
+        @Override
+        public void serialize(Date value, JsonGenerator gen, SerializationContext ctxt) {
+            gen.writeNumber(value.getTime());
+        }
+    }
 
     private SourceTree() {
     }

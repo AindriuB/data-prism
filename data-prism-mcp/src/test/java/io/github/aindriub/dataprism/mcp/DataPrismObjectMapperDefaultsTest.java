@@ -47,9 +47,10 @@ class DataPrismObjectMapperDefaultsTest {
     /**
      * The source reader and this mapper cannot share one pin list (the reader is in core and keeps no public
      * configuration), so this asserts they agree on every pinned feature that is observable in a tree: if one
-     * drifts back to a Jackson 3 default, the two stop describing the same value. The date setting is the one
-     * deliberate difference: the reader keeps Jackson 2's epoch millis for a legacy Date, the output mapper
-     * writes ISO text, and each matches what Jackson 2 did on its side.
+     * drifts back to a Jackson 3 default, the two stop describing the same value. A legacy
+     * java.util.Date is the one deliberate difference: the reader writes epoch millis through a Date-only
+     * serializer (D-173-1, Jackson 2 parity), the output mapper writes ISO text, and java.time types are
+     * ISO-8601 text on both.
      */
     @Test
     void sourceReaderAndOutputMapperAgreeOnWhatTheyPin() {

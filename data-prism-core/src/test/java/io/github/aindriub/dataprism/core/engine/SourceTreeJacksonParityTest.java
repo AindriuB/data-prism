@@ -5,7 +5,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.exc.InvalidDefinitionException;
 
 import java.math.BigDecimal;
+import java.time.*;
 import java.util.Date;
+import java.util.Optional;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -34,6 +36,13 @@ class SourceTreeJacksonParityTest {
     }
 
     public record Stamp(Date at) {
+    }
+
+    public record Moments(LocalDate day, LocalDateTime local, Instant instant, OffsetDateTime offset,
+                          ZonedDateTime zoned, Duration duration) {
+    }
+
+    public record Maybe(Optional<String> present, Optional<String> absent) {
     }
 
     public static final class Empty {
@@ -76,5 +85,31 @@ class SourceTreeJacksonParityTest {
         JsonNode tree = SourceTree.of(new Stamp(new Date(1_700_000_000_123L)));
         assertThat(tree.get("at").isNumber()).isTrue();
         assertThat(tree.get("at").longValue()).isEqualTo(1_700_000_000_123L);
+    }
+
+    @Test
+    void javaTimeTypesAreIsoText() {
+        JsonNode t = SourceTree.of(new Moments(LocalDate.of(1980, 4, 12), LocalDateTime.of(1980, 4, 12, 6, 30),
+                Instant.parse("2026-10-08T12:00:00Z"), OffsetDateTime.parse("2026-10-08T12:00:00+02:00"),
+                ZonedDateTime.parse("2026-10-08T12:00:00+02:00[Europe/Paris]"), Duration.ofMinutes(90)));
+        assertThat(t.get("day").asString()).isEqualTo("1980-04-12");
+        assertThat(t.get("local").asString()).isEqualTo("1980-04-12T06:30:00");
+        assertThat(t.get("instant").asString()).isEqualTo("2026-10-08T12:00:00Z");
+        assertThat(t.get("offset").asString()).isEqualTo("2026-10-08T12:00:00+02:00");
+        assertThat(t.get("zoned").asString()).isEqualTo("2026-10-08T12:00:00+02:00");
+        assertThat(t.get("duration").asString()).isEqualTo("PT1H30M");
+    }
+
+    @Test
+    void aDateMapKeyIsWrittenAsInJackson2() {
+        JsonNode t = SourceTree.of(Map.of(new Date(0L), 1));
+        assertThat(t.propertyNames()).containsExactly("1970-01-01T00:00:00.000+00:00");
+    }
+
+    @Test
+    void anOptionalIsUnwrappedAndAnEmptyOneIsNull() {
+        JsonNode t = SourceTree.of(new Maybe(Optional.of("x"), Optional.empty()));
+        assertThat(t.get("present").asString()).isEqualTo("x");
+        assertThat(t.get("absent").isNull()).isTrue();
     }
 }
