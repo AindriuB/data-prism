@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.core.engine;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.BeanDescription;
+import tools.jackson.databind.BeanProperty;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.SerializationContext;
@@ -168,21 +169,42 @@ public final class SourceTree {
         public ValueSerializer<?> modifyKeySerializer(SerializationConfig config, JavaType type,
                                                       BeanDescription.Supplier beanDesc,
                                                       ValueSerializer<?> serializer) {
-            SourceModels.refuseKey(type.getRawClass());
+            SourceModels.refuseDeclaredKey(type.getRawClass());
             return new CheckedKey(serializer);
         }
     }
 
     /**
      * A key serializer chosen for a declared type such as Number or Object writes whatever class the
-     * key turns out to be, so the actual class is checked as well.
+     * key turns out to be, so the actual class is checked as well. The lifecycle hooks are forwarded so
+     * a contextual key serializer keeps its configuration.
      */
-    private static final class CheckedKey extends ValueSerializer<Object> {
+    static final class CheckedKey extends ValueSerializer<Object> {
         private final ValueSerializer<Object> delegate;
 
         @SuppressWarnings("unchecked")
         CheckedKey(ValueSerializer<?> delegate) {
             this.delegate = (ValueSerializer<Object>) delegate;
+        }
+
+        ValueSerializer<?> delegate() {
+            return delegate;
+        }
+
+        @Override
+        public void resolve(SerializationContext ctxt) {
+            delegate.resolve(ctxt);
+        }
+
+        @Override
+        public ValueSerializer<?> createContextual(SerializationContext ctxt, BeanProperty property) {
+            ValueSerializer<?> contextual = delegate.createContextual(ctxt, property);
+            return contextual == delegate ? this : new CheckedKey(contextual);
+        }
+
+        @Override
+        public Class<?> handledType() {
+            return delegate.handledType();
         }
 
         @Override

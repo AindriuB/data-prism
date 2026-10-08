@@ -528,4 +528,88 @@ class SourceModelsTest {
 
     public record Tree(String name, List<Tree> children) {
     }
+
+    public record CsKeyed(Map<CharSequence, String> m) {
+    }
+
+    public record CmpKeyed(Map<Comparable<?>, String> m, Map<Comparable, String> raw) {
+    }
+
+    public record SerKeyed(Map<java.io.Serializable, String> m) {
+    }
+
+    public static final class CsKey implements CharSequence, Comparable<CsKey>, java.io.Serializable {
+        @Override public int length() { return 1; }
+        @Override public char charAt(int i) { return 'x'; }
+        @Override public CharSequence subSequence(int a, int b) { return "x"; }
+        @Override public int compareTo(CsKey o) { return 0; }
+        @Override public String toString() { return "personal-data"; }
+    }
+
+    public static final class CtxKeySer extends ValueSerializer<Object> {
+        final String prefix;
+        boolean resolved;
+
+        public CtxKeySer() {
+            this("plain:");
+        }
+
+        private CtxKeySer(String prefix) {
+            this.prefix = prefix;
+        }
+
+        @Override
+        public void resolve(SerializationContext ctxt) {
+            resolved = true;
+        }
+
+        @Override
+        public ValueSerializer<?> createContextual(SerializationContext ctxt, tools.jackson.databind.BeanProperty p) {
+            return new CtxKeySer("contextual:");
+        }
+
+        @Override
+        public void serialize(Object value, JsonGenerator gen, SerializationContext ctxt) {
+            gen.writeName(prefix + value);
+        }
+    }
+
+    @Test
+    void anInterfaceDeclaredKeyHoldingJdkKeysIsWrittenAsJackson2DidAtStartupAndRuntime() {
+        Class<?>[] types = {CsKeyed.class, CmpKeyed.class, SerKeyed.class};
+        for (Class<?> t : types) {
+            assertThatCode(() -> SourceModels.require(t)).doesNotThrowAnyException();
+        }
+        assertThat(SourceTree.of(new CsKeyed(Map.of("s", "v"))).get("m").toString()).isEqualTo("{\"s\":\"v\"}");
+        assertThat(SourceTree.of(new CmpKeyed(Map.of("s", "v"), Map.of("s", "v"))).toString())
+                .isEqualTo("{\"m\":{\"s\":\"v\"},\"raw\":{\"s\":\"v\"}}");
+        assertThat(SourceTree.of(new SerKeyed(Map.of("s", "v"))).get("m").toString()).isEqualTo("{\"s\":\"v\"}");
+        assertThat(SourceTree.of(new CmpKeyed(Map.of(Tier.GOLD, "v"), Map.of())).get("m").toString())
+                .isEqualTo("{\"GOLD\":\"v\"}");
+    }
+
+    @Test
+    void anInterfaceDeclaredKeyHoldingAUserClassIsRefused() {
+        assertRefused(() -> SourceTree.of(new CsKeyed(Map.of(new CsKey(), "v"))), "CsKey");
+        assertRefused(() -> SourceTree.of(new CmpKeyed(Map.of(new CsKey(), "v"), Map.of())), "CsKey");
+        assertRefused(() -> SourceTree.of(new CmpKeyed(Map.of(), Map.of(new CsKey(), "v"))), "CsKey");
+        assertRefused(() -> SourceTree.of(new SerKeyed(Map.of(new CsKey(), "v"))), "CsKey");
+        Map<CharSequence, String> mixed = new java.util.LinkedHashMap<>();
+        mixed.put("ok", "v");
+        mixed.put(new CsKey(), "v");
+        assertRefused(() -> SourceTree.of(new CsKeyed(mixed)), "CsKey");
+    }
+
+    @Test
+    void aWrappedKeySerializerKeepsItsContextualConfiguration() {
+        // No built-in key serializer in Jackson 3.1.5 is contextual, so the hooks are checked directly.
+        CtxKeySer inner = new CtxKeySer();
+        SourceTree.CheckedKey wrapped = new SourceTree.CheckedKey(inner);
+        wrapped.resolve(null);
+        assertThat(inner.resolved).isTrue();
+        assertThat(wrapped.handledType()).isEqualTo(inner.handledType());
+        ValueSerializer<?> contextual = wrapped.createContextual(null, null);
+        assertThat(contextual).isInstanceOf(SourceTree.CheckedKey.class).isNotSameAs(wrapped);
+        assertThat(((CtxKeySer) ((SourceTree.CheckedKey) contextual).delegate()).prefix).isEqualTo("contextual:");
+    }
 }
