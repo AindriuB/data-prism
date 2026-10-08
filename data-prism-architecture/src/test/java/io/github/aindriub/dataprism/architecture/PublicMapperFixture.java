@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.mapper.fixture;
 
 import java.util.function.Supplier;
 
+import io.modelcontextprotocol.json.McpJsonMapper;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.ObjectWriter;
 import tools.jackson.databind.cfg.MapperBuilder;
@@ -35,6 +36,10 @@ public class PublicMapperFixture {
     }
 
     public ObjectWriter exposedWriter() {
+        return null;
+    }
+
+    public McpJsonMapper exposedMcpMapper() {
         return null;
     }
 

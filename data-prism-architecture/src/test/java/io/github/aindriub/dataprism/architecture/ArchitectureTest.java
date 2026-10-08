@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.architecture;
 
+import io.modelcontextprotocol.json.McpJsonMapper;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.TSFBuilder;
 import tools.jackson.core.TokenStreamFactory;
@@ -25,6 +26,7 @@ import io.github.aindriub.dataprism.audit.fixture.AuditDependsOnMcpFixture;
 import io.github.aindriub.dataprism.mapper.fixture.BuildOnlyMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.BuilderMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.ConstructorMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.ContextLookupObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.InjectedObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.JsonFactoryFixture;
 import io.github.aindriub.dataprism.mapper.fixture.ProviderInjectedObtainedMapperFixture;
@@ -199,9 +201,12 @@ class ArchitectureTest {
     /**
      * A data-prism class managed by Spring must not take Spring Boot's auto-configured mapper:
      * that bean is configured by the application and the Boot properties, not by the engine, so
-     * using it would write output the engine does not govern. "Managed by Spring" means the class
-     * carries a Spring annotation, or any of its members does ({@code @Bean}, {@code @Autowired}
-     * and so on). Any dependency on an {@code ObjectMapper} subtype counts, including a type
+     * using it would write output the engine does not govern. "Managed by Spring" is deliberately
+     * broad: any class that depends on {@code org.springframework..}, by annotation, interface,
+     * {@code ApplicationContext}, {@code BeanFactory} or {@code ObjectProvider}. An unannotated
+     * initializer or post-processor registered through {@code spring.factories} can look the
+     * mapper up with {@code getBean(JsonMapper.class)}, so annotations alone are not enough.
+     * Any dependency on an {@code ObjectMapper} subtype counts, including a type
      * argument such as {@code ObjectProvider<JsonMapper>}.
      */
     private static final ArchRule SPRING_MANAGED_CLASSES_DO_NOT_INJECT_A_MAPPER = noClasses()
@@ -221,6 +226,11 @@ class ArchitectureTest {
     }
 
     @Test
+    void injectionRuleCatchesAnUnannotatedContextLookup() {
+        assertInjectionViolation(ContextLookupObtainedMapperFixture.class, "JsonMapper");
+    }
+
+    @Test
     void injectionRuleCatchesAMapperProvider() {
         assertInjectionViolation(ProviderInjectedObtainedMapperFixture.class, "ObjectMapper");
     }
@@ -235,14 +245,10 @@ class ArchitectureTest {
     }
 
     private static DescribedPredicate<JavaClass> isManagedBySpring() {
-        return DescribedPredicate.describe("is managed by Spring", javaClass ->
-                isSpringAnnotated(javaClass.getAnnotations())
-                        || javaClass.getMembers().stream().anyMatch(member -> isSpringAnnotated(member.getAnnotations())));
-    }
-
-    private static boolean isSpringAnnotated(Set<? extends com.tngtech.archunit.core.domain.JavaAnnotation<?>> annotations) {
-        return annotations.stream().anyMatch(annotation ->
-                annotation.getRawType().getPackageName().startsWith("org.springframework."));
+        return DescribedPredicate.describe("depends on Spring", javaClass ->
+                javaClass.getDirectDependenciesFromSelf().stream()
+                        .anyMatch(dependency -> dependency.getTargetClass().getPackageName()
+                                .startsWith("org.springframework")));
     }
 
     /**
@@ -250,7 +256,9 @@ class ArchitectureTest {
      * builder or an object writer in its signature or type. An adapter author can bring a mapper
      * of their own but must never be able to obtain or substitute data-prism's. Generic type
      * arguments count ({@code Supplier<ObjectMapper>} exposes one), and the check is by
-     * assignability, so a {@code JsonMapper} is caught as an {@code ObjectMapper}.
+     * assignability, so a {@code JsonMapper} is caught as an {@code ObjectMapper}. The MCP SDK's
+     * {@code McpJsonMapper} is included because {@code JacksonMcpJsonMapper#getJsonMapper()}
+     * hands the wrapped mapper back.
      */
     private static final ArchRule NO_PUBLIC_API_EXPOSES_AN_OBJECT_MAPPER = classes()
             .that().resideInAPackage("io.github.aindriub.dataprism..")
@@ -275,13 +283,14 @@ class ArchitectureTest {
                 .contains("exposedParameter")
                 .contains("exposedBuilder")
                 .contains("exposedWriter")
+                .contains("exposedMcpMapper")
                 .contains("exposedField")
                 .contains("PublicMapperFixture.<init>")
                 .doesNotContain("hiddenMapper");
     }
 
     private static ArchCondition<JavaClass> notExposeAMapper() {
-        return new ArchCondition<>("not expose an ObjectMapper, MapperBuilder or ObjectWriter") {
+        return new ArchCondition<>("not expose an ObjectMapper, MapperBuilder, ObjectWriter or McpJsonMapper") {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 javaClass.getMethods().forEach(method -> {
@@ -316,7 +325,8 @@ class ArchitectureTest {
 
     private static boolean involvesAMapper(Set<JavaClass> rawTypes) {
         return rawTypes.stream().anyMatch(type -> type.isAssignableTo(ObjectMapper.class)
-                || type.isAssignableTo(MapperBuilder.class) || type.isAssignableTo(ObjectWriter.class));
+                || type.isAssignableTo(MapperBuilder.class) || type.isAssignableTo(ObjectWriter.class)
+                || type.isAssignableTo(McpJsonMapper.class));
     }
 
     /**
