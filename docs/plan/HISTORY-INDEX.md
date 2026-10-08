@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-08 | 174 | Source-model record properties must come from record components (structural check, startup and runtime) | ## 2026-10-08 — 0.6.0 wave 6 addendum: record properties must match components (174) |
 | 2026-10-08 | 173 | SourceTree Jackson 2 parity (enums, dates, records) and record-only source models | ## 2026-10-08 — 0.6.0 wave 6 addendum: SourceTree Jackson 2 parity and record-only source models (173) |
 | 2026-10-08 | 168, 169, 170, 171, 172 | 0.6.0 wave 6: data-prism's mapper hidden and guarded by four ArchUnit rules, Jackson 3 decision documented, YAML readers refuse nine kinds of bad input and stop echoing URLs, Javadoc gated in build.yml; 172 lets StrictYaml pass the factory rule and prunes stale allowlist entries. | `## 2026-10-08 — 0.6.0 wave 6: Jackson mapper hidden and guarded (168), docs (169), strict YAML readers (170), Javadoc gate (171)` |
 | 2026-10-08 | 167 | 0.6.0 wave 5: reactor on Jackson 3.1.5 with private builder-made mappers, Jackson 2 banned except annotations, defaults pinned to Jackson 2 behaviour, goldens unchanged; D-167-1 (b) adds YAML look-alike and trailing-document refusals to 170. | `## 2026-10-08 — 0.6.0 wave 5: reactor ported to Jackson 3 (task 167) and D-167-1 decided` |

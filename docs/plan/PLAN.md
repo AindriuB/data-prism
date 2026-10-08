@@ -515,6 +515,7 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 6 | 171 | Fix two unresolvable Javadoc links; gate Javadoc (release profile) in `build.yml` | unplanned, found in 168. **Done 2026-10-08** |
 | 6 | 172 | Allow `StrictYaml` on the factory ArchUnit rule; narrow and extend the YAML read-only rule; prune four stale mapper-allowlist entries | unplanned, found testing merged wave 6. **Done 2026-10-08** |
 | 6 | 173 | `SourceTree` Jackson 2 parity (enums by name, legacy dates, records by components) and record-only source models (`SOURCE_MODEL_NOT_A_RECORD`) | unplanned, external review P2 on 167. **Done 2026-10-08** |
+| 6 | 174 | Record source models: every emitted property must come from a record component (closes interface-default `@JsonProperty` rename bypass) | unplanned, external review P2 on 173. **Done 2026-10-08** |
 | 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169, 170. **Next** |
 | 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt` | 158 |
 | 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
@@ -530,7 +531,7 @@ Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iterat
 
 **Wave 5 done 2026-10-08:** 167 merged onto `release/0.6.0-jackson3` (Jackson 3.1.5; 1455 tests, 0 failed on JDK 21; JDK 25 and container-smoke run in CI on the PR). Wave 6 is next: 168, 169 and 170 in parallel. Accepted or noted behaviour changes, signature changes and the pinned Jackson defaults are in the retired 167 task file's Outcome.
 
-**Wave 6 done 2026-10-08:** 168, 169, 170 and the unplanned 171, 172 and 173 merged onto `release/0.6.0-jackson3` (tester PASS 1467 for 168; clean full reactor 1592 for 170). Wave 7 is next: 158. Details are in the retired task files' Outcomes. Notes carried forward:
+**Wave 6 done 2026-10-08:** 168, 169, 170 and the unplanned 171, 172, 173 and 174 merged onto `release/0.6.0-jackson3` (tester PASS 1467 for 168; clean full reactor 1592 for 170). Wave 7 is next: 158. Details are in the retired task files' Outcomes. Notes carried forward:
 
 - 158 now chains the cause on `INVALID_MODEL_DESCRIPTOR_FILE` so 170's inner codes reach the operator, and updates `docs/configuration.md`. 159 folds in `JwtDecoderSupport.parseDiscoveryMetadata`'s stale `throws IOException`. 162's acceptance now lists 170's nine codes, the YAML 1.2 changes, the credential-echo removals, 168's inventory and 171's CI step.
 - 162 follow-up: a grep of `docs/` (outside `docs/plan`, `pack.md`, `design-review.md`) and `README.md` for "five YAML readers" and "seven designated classes" found no stale wording; `docs/architecture.md` was updated by 172. 162 should re-grep before release.

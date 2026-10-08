@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 6 addendum: record properties must match components (174)
+
+Task 174 merged onto `release/0.6.0-jackson3`. Source-model validation now checks structurally that every property the bean serializer emits for a record comes from a real record component field or 0-arg accessor; only real any-getter properties are exempt. It runs at startup and at runtime and refuses with `SOURCE_MODEL_NOT_A_RECORD` (simple class name only). Renames via `@JsonProperty`/`@JsonGetter` (including through interfaces), `@JsonValue`, `@JsonUnwrapped`, `@JsonNaming` and class-level `@JsonSerialize` still work as in Jackson 2.
+
+**Cost:** 173's reflective `getDeclaredMethods()` scan missed annotations on interface default methods, so `@JsonProperty default String getURL()` emitted "getURL" instead of "url" and strict requests failed `UNKNOWN_FIELD`; do not go back to scanning methods, ask the serializer what it emits. Review found two bypasses (any-getter with `enabled=false`; a `@JsonAppend` virtual property named like a component). `@JsonAppend` naming a component is deliberately refused although Jackson 2 printed it. Two test runs (170, 174) were invalidated because fixes were sent to a worktree while a tester was building in it; never do that.
+
 ## 2026-10-08 — 0.6.0 wave 6 addendum: SourceTree Jackson 2 parity and record-only source models (173)
 
 Task 173 merged onto `release/0.6.0-jackson3`. `SourceTree` now starts from `configureForJackson2()` with explicit pins, so enums serialise by `name()` (values and keys), `Month` by name, legacy `Date`/`Timestamp`/`sql.Date`/`Calendar` as epoch millis, records by components only, and `@JsonFormat` is honoured. Source models must be records: startup refuses others with `SOURCE_MODEL_NOT_A_RECORD` (`DataPrismContractValidator`, via new `SourceModels`) and `SourceTree` refuses beans at runtime. A Jackson 2 versus Jackson 3 probe over the full matrix leaves only D-173-1 and D-173-2 as differences.
