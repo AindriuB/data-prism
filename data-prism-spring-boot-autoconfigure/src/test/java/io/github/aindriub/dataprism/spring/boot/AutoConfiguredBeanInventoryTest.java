@@ -37,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two views. The static one lists every {@code @Bean} method reachable from the auto-configuration
  * (name, declared return type, whether static, every {@code @Conditional*}/{@code @Primary}/
- * {@code @DependsOn} annotation, and the {@link PrivacyExtensionPoints} row), never the declaring
+ * {@code @DependsOn} annotation, the declaring class's own {@code @Conditional*} annotations, and the
+ * {@link PrivacyExtensionPoints} row), never the declaring
  * class. The runtime one lists, per scenario, the sorted {@code (bean name, declared type)} pairs of
  * a running context, leaving out configuration-class beans, whose names carry their class name.
  * The expected lists are checked in under {@code src/test/resources/bean-inventory}; regenerate with
@@ -74,10 +75,19 @@ class AutoConfiguredBeanInventoryTest {
                     }
                 }
                 annotations.sort(null);
+                // The declaring class's own conditions gate every bean on it, so they are part of the bean's.
+                List<String> classConditions = new ArrayList<>();
+                for (Annotation annotation : declaring.getDeclaredAnnotations()) {
+                    if (annotation.annotationType().getSimpleName().startsWith("Conditional")) {
+                        classConditions.add(annotation.toString());
+                    }
+                }
+                classConditions.sort(null);
                 lines.add(method.getName() + " | " + method.getGenericReturnType().getTypeName()
                         + (Modifier.isStatic(method.getModifiers()) ? " | static" : " | instance")
                         + " | " + PrivacyExtensionPoints.contractOf(method.getName())
-                        + " | " + String.join(" ", annotations));
+                        + " | " + String.join(" ", annotations)
+                        + " | class: " + String.join(" ", classConditions));
             }
         }
         lines.sort(null);
