@@ -216,10 +216,10 @@ class UnregisteredEntityTypeAuditTest {
         ObjectMapper mapper = DataPrismObjectMapper.create();
         var handler = tool == 0
                 ? new GetEntityContextTool(orchestrator, authz, scopes, mapper, PrivacyMetrics.none(), audit, FIXED,
-                        null, admission, fingerprinter, requirement, CorrelationMdc.off(), types)
+                        null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).mdc(CorrelationMdc.off()).entityTypes(types).build())
                         .specification().callHandler()
                 : new CompareEntitySourcesTool(orchestrator, authz, scopes, mapper, PrivacyMetrics.none(), audit,
-                        FIXED, null, admission, fingerprinter, requirement, CorrelationMdc.off(), types)
+                        FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).mdc(CorrelationMdc.off()).entityTypes(types).build())
                         .specification().callHandler();
 
         Map<String, Object> entries = new HashMap<>();
@@ -409,8 +409,7 @@ class UnregisteredEntityTypeAuditTest {
             System.setIn(new java.io.PipedInputStream(feed));
             System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
             server = DataPrismMcpServer.stdio(orchestrator(audit, new Thing("1", "raw")), authz, scopes, CALLER,
-                    true, false, PrivacyMetrics.none(), audit, FIXED, CorrelationRequirement.OPTIONAL,
-                    AuditedEntityTypes.of(List.of("CUSTOMER")));
+                    true, false, PrivacyMetrics.none(), audit, FIXED, ToolOptions.defaults().noAdmission().correlationRequirement(CorrelationRequirement.OPTIONAL).entityTypes(AuditedEntityTypes.of(List.of("CUSTOMER"))).build());
             feed.write(init.getBytes(StandardCharsets.UTF_8));
             for (String tool : TOOLS) {
                 feed.write(("{\"jsonrpc\":\"2.0\",\"id\":\"" + tool + "\",\"method\":\"tools/call\",\"params\":{"

@@ -66,6 +66,7 @@ import java.util.Set;
 import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Both tools read the external correlation id from the transport context only, and never from arguments. */
 class ExternalCorrelationToolTest {
@@ -154,9 +155,9 @@ class ExternalCorrelationToolTest {
                 new PurposeValidator(Set.of("demonstration")));
         ParameterFingerprinter fingerprinter = new ParameterFingerprinter(KEYS);
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, admission, fingerprinter, requirement);
+                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, admission, fingerprinter, requirement);
+                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).correlationRequirement(requirement).build());
         return List.of(get.specification().callHandler(), compare.specification().callHandler());
     }
 
@@ -390,12 +391,25 @@ class ExternalCorrelationToolTest {
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
                 new PurposeValidator(Set.of("demonstration")));
         McpSyncServer optional = DataPrismMcpServer.stdio(recording, authz, scopes, CALLER, true, false,
-                PrivacyMetrics.none(), audit, FIXED);
+                PrivacyMetrics.none(), audit, FIXED, ToolOptions.defaults().noAdmission().build());
         McpSyncServer required = DataPrismMcpServer.stdio(recording, authz, scopes, CALLER, true, false,
-                PrivacyMetrics.none(), audit, FIXED, CorrelationRequirement.REQUIRED);
+                PrivacyMetrics.none(), audit, FIXED, ToolOptions.defaults().noAdmission().correlationRequirement(CorrelationRequirement.REQUIRED).build());
+        DataPrismMcpServer.HttpTransport httpOptional = DataPrismMcpServer.streamableHttp(recording, authz, scopes,
+                request -> McpTransportContext.EMPTY, "/mcp", PrivacyMetrics.none(), audit, FIXED,
+                ToolOptions.defaults().noAdmission().build());
+        DataPrismMcpServer.HttpTransport httpRequired = DataPrismMcpServer.streamableHttp(recording, authz, scopes,
+                request -> McpTransportContext.EMPTY, "/mcp", PrivacyMetrics.none(), audit, FIXED,
+                ToolOptions.defaults().noAdmission().correlationRequirement(CorrelationRequirement.REQUIRED).build());
         try {
             assertThat(required.listTools()).isEqualTo(optional.listTools());
+            assertThat(httpRequired.server().listTools()).isEqualTo(httpOptional.server().listTools());
+            assertThat(httpRequired.server().listTools()).isEqualTo(optional.listTools());
             for (McpSchema.Tool tool : required.listTools()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> properties = (Map<String, Object>) tool.inputSchema().get("properties");
+                assertThat(properties).doesNotContainKeys("correlationId", "externalCorrelationId", "traceparent");
+            }
+            for (McpSchema.Tool tool : httpRequired.server().listTools()) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> properties = (Map<String, Object>) tool.inputSchema().get("properties");
                 assertThat(properties).doesNotContainKeys("correlationId", "externalCorrelationId", "traceparent");
@@ -403,11 +417,13 @@ class ExternalCorrelationToolTest {
         } finally {
             optional.closeGracefully();
             required.closeGracefully();
+            httpOptional.server().closeGracefully();
+            httpRequired.server().closeGracefully();
         }
     }
 
     @Test
-    @DisplayName("a real admission with a null fingerprinter is refused at construction, on every public overload")
+    @DisplayName("a real admission with a null fingerprinter is refused, naming the fingerprinter, on both tools and both factories")
     void nullFingerprinterWithAdmissionIsRefused() {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"), Map.of());
         AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
@@ -419,14 +435,19 @@ class ExternalCorrelationToolTest {
                 FIXED);
         ObjectMapper mapper = DataPrismObjectMapper.create();
         for (CorrelationRequirement requirement : CorrelationRequirement.values()) {
-            org.assertj.core.api.Assertions.assertThatThrownBy(() -> new GetEntityContextTool(recording, authz, scopes,
-                    mapper, metrics, audit, FIXED, null, real, null, requirement))
-                    .isInstanceOf(NullPointerException.class);
-            org.assertj.core.api.Assertions.assertThatThrownBy(() -> new CompareEntitySourcesTool(recording, authz,
-                    scopes, mapper, metrics, audit, FIXED, null, real, null, requirement))
-                    .isInstanceOf(NullPointerException.class);
+            assertThatThrownBy(() -> new GetEntityContextTool(recording, authz, scopes, mapper, metrics, audit,
+                    FIXED, null, ToolOptions.defaults().admission(real, null).correlationRequirement(requirement).build()))
+                    .isInstanceOf(NullPointerException.class).hasMessageContaining("fingerprinter");
+            assertThatThrownBy(() -> new CompareEntitySourcesTool(recording, authz, scopes, mapper, metrics, audit,
+                    FIXED, null, ToolOptions.defaults().admission(real, null).correlationRequirement(requirement).build()))
+                    .isInstanceOf(NullPointerException.class).hasMessageContaining("fingerprinter");
         }
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new GetEntityContextTool(recording, authz, scopes,
-                mapper, metrics, audit, FIXED, null, real, null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> DataPrismMcpServer.stdio(recording, authz, scopes, CALLER, true, false,
+                PrivacyMetrics.none(), audit, FIXED, ToolOptions.defaults().admission(real, null).build()))
+                .isInstanceOf(NullPointerException.class).hasMessageContaining("fingerprinter");
+        assertThatThrownBy(() -> DataPrismMcpServer.streamableHttp(recording, authz, scopes,
+                request -> McpTransportContext.EMPTY, "/mcp", PrivacyMetrics.none(), audit, FIXED,
+                ToolOptions.defaults().admission(real, null).build()))
+                .isInstanceOf(NullPointerException.class).hasMessageContaining("fingerprinter");
     }
 }

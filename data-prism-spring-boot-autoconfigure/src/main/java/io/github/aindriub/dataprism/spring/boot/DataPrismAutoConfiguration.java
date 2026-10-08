@@ -38,6 +38,7 @@ import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
 import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
+import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
@@ -1010,10 +1011,15 @@ public class DataPrismAutoConfiguration {
                     + "dataprism.audit.entity-types to the exact entity types in use.",
                     AuditedEntityTypes.UNREGISTERED);
         }
+        ToolOptions options = ToolOptions.defaults()
+                .admission(admission, fingerprinter)
+                .correlationRequirement(properties.getCorrelation().getInbound().isRequired()
+                        ? CorrelationRequirement.REQUIRED : CorrelationRequirement.OPTIONAL)
+                .mdc(correlationMdc)
+                .entityTypes(entityTypes)
+                .build();
         return DataPrismMcpServer.streamableHttp(orchestrator, authorization, scopeResolver, extractor,
-                properties.getTransport().getHttp().getPath(), metrics, audit, clock, admission, fingerprinter,
-                properties.getCorrelation().getInbound().isRequired() ? CorrelationRequirement.REQUIRED
-                        : CorrelationRequirement.OPTIONAL, correlationMdc, entityTypes);
+                properties.getTransport().getHttp().getPath(), metrics, audit, clock, options);
     }
 
     @Bean(destroyMethod = "closeGracefully")

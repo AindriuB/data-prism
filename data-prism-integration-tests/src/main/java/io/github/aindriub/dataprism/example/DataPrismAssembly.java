@@ -71,6 +71,7 @@ public final class DataPrismAssembly {
     private final InvestigationContext investigationContext;
     private final PseudonymisationVersion pseudonymisationVersion;
     private final Clock clock;
+    private final ParameterFingerprinter fingerprinter;
 
     public DataPrismAssembly(List<DataSourceAdapter<?>> adapters, Clock clock, AuditSink sink) {
         this(adapters, clock, sink, "DEFAULT", "en");
@@ -115,9 +116,11 @@ public final class DataPrismAssembly {
         ScrubbingEngine scrubber = new JsonTreeScrubbingEngine(resolver, policies, synthetics, tokens);
         LlmResponseValidator validator = new RawValueLeakValidator();
 
+        this.fingerprinter = new ParameterFingerprinter(keys);
+
         // The standard pipeline, spelled out so the fan-out can carry the MDC.
         this.orchestrator = new DefaultContextOrchestrator(adapters, scrubber, resolver,
-                List.of(validator, new SensitivePatternValidator()), synthetics, new ParameterFingerprinter(keys),
+                List.of(validator, new SensitivePatternValidator()), synthetics, fingerprinter,
                 new AuditRecorder(sink, clock, "example-1"), new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults().withMdc(mdc)),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
@@ -187,5 +190,10 @@ public final class DataPrismAssembly {
 
     public Clock clock() {
         return clock;
+    }
+
+    /** The fingerprinter the orchestrator uses; a tool's approval binding must use the same key. */
+    public ParameterFingerprinter parameterFingerprinter() {
+        return fingerprinter;
     }
 }

@@ -106,9 +106,9 @@ class ToolAdmissionEnforcementTest {
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
                 new PurposeValidator(Set.of("demonstration", "marketing")));
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, admission, fingerprinter);
+                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, admission, fingerprinter);
+                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).build());
         return List.of(
                 new Tool(GetEntityContextTool.NAME, get.specification().callHandler()),
                 new Tool(CompareEntitySourcesTool.NAME, compare.specification().callHandler()));
@@ -397,9 +397,9 @@ class ToolAdmissionEnforcementTest {
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
                 new PurposeValidator(Set.of("demonstration")));
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         for (Tool tool : List.of(new Tool(GetEntityContextTool.NAME, get.specification().callHandler()),
                 new Tool(CompareEntitySourcesTool.NAME, compare.specification().callHandler()))) {
             audited.clear();

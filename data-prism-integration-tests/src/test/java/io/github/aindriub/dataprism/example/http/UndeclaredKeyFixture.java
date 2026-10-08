@@ -22,6 +22,7 @@ import io.github.aindriub.dataprism.example.DataPrismAssembly;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
+import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
@@ -160,10 +161,10 @@ final class UndeclaredKeyFixture {
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                 new PurposeValidator(Set.of(purpose)));
         GetEntityContextTool get = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock);
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(assembly.orchestrator(),
                 authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
-                toolAudit, clock);
+                toolAudit, clock, null, ToolOptions.defaults().noAdmission().build());
         AuthenticatedCaller caller = new AuthenticatedCaller(
                 "undeclared-key-principal", "undeclared-key-client", Set.of(role), purpose, "CASE-UK-1", null);
         McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(
@@ -193,10 +194,10 @@ final class UndeclaredKeyFixture {
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                 new PurposeValidator(Set.of(purpose)));
         GetEntityContextTool get = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock);
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(assembly.orchestrator(),
                 authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
-                toolAudit, clock);
+                toolAudit, clock, null, ToolOptions.defaults().noAdmission().build());
         AuthenticatedCaller caller = new AuthenticatedCaller(
                 "result-key-principal", "result-key-client", Set.of(role), purpose, "CASE-RK-1", null);
         McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(

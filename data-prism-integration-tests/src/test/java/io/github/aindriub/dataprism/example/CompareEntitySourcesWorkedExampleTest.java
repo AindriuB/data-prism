@@ -11,6 +11,7 @@ import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
+import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
@@ -109,10 +110,10 @@ class CompareEntitySourcesWorkedExampleTest {
         ScopeResolver scopeResolver = scopeResolverFor(assembly);
 
         GetEntityContextTool contextTool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED);
+                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
                 authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
-                toolAudit, FIXED);
+                toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         // get_entity_context, in the same scope, only to read off the
         // scope-local alias set compare_entity_sources' own agreement groups
@@ -219,7 +220,7 @@ class CompareEntitySourcesWorkedExampleTest {
                 authorizationServiceGranting(Set.of(Capability.COMPARE_ENTITY_SOURCES));
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(localAssembly.orchestrator(),
                 authorizationService, scopeResolverFor(localAssembly), DataPrismObjectMapper.create(),
-                PrivacyMetrics.none(), toolAudit, FIXED);
+                PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = compareTool.specification().callHandler().apply(
                 exchangeFor(caller()), new McpSchema.CallToolRequest(
@@ -247,7 +248,7 @@ class CompareEntitySourcesWorkedExampleTest {
                 authorizationServiceGranting(Set.of(Capability.GET_ENTITY_CONTEXT));
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(localAssembly.orchestrator(),
                 authorizationService, scopeResolverFor(localAssembly), DataPrismObjectMapper.create(),
-                PrivacyMetrics.none(), toolAudit, FIXED);
+                PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = compareTool.specification().callHandler().apply(
                 exchangeFor(caller()), new McpSchema.CallToolRequest(
