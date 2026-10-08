@@ -394,13 +394,13 @@ Follow-ups from wave 2, not yet tasks:
 - (a) Audit verifier wording. An unterminated last line ("POSSIBLY IN FLIGHT, not a break", exit 3), and the truncation-equivalent residuals (21-23 fields with field 20 = "2"/"3", and more than 25 fields with an unparseable field 20, both reported as "INTERRUPTED WRITE, not tampering"), should read "unverified, tampering not ruled out". Consider covering a writer's tail with `--checkpoints`.
 - (b) `AuditRecordFormat:113` relies on an NPE for a null field-20 token. It fails closed, but make it a deliberate check.
 - (c) The CLI help and runbook should say that an interrupted write joined to a restarted writer can surface as exit 2, which is a safe false positive.
-- (d) Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
+- (d) **Done 2026-10-08 by task 155 (with PR #118 folded in; plugin now 3.11.0 in root `pluginManagement`).** Move the maven-dependency-plugin version (3.8.1, pinned in data-prism-mcp's pom) into root `pluginManagement`, and check for a newer release.
 - (e) Record surefire and failsafe counts separately in future JDK runs.
 - (f) Task 149 merged: the port races are addressed (ports are now claimed with an OS file lock, probes run one after the other). The three end-to-end symptoms below are **cause unproven; mechanisms reproduced**, not fixed, so watch CI and the next full runs and treat a recurrence as new information. Original observations: `ReidentificationEndToEndTest` failed once with a `ConnectException` in a full `mvn clean verify` on the merged head and passed on an unchanged rerun. Watch for a recurrence; do not treat it as a regression without one. A second flake appeared in wave 3: `ConfiguredJsonReidentificationEndToEndTest` failed with "Runtime Client failed to initialize" (31s timeout) and passed on rerun. A third, in task 144's run: `ReidentificationConfigurationTest.the_service_exists_when_enabled_and_the_tool_list_is_unchanged` failed once in the full reactor, then passed on a module rerun and on a full rerun.
 
 Follow-ups from wave 3 (tasks 110, 111, 112), not yet tasks:
 
-- (g) `TeeAuditSink` catches only `RuntimeException`. An `Error` from the projection after the primary write leaves the tee unpoisoned, so a sequence number could be reused. Catch `Throwable`, poison, and rethrow.
+- (g) **Done 2026-10-08 by task 160.** `TeeAuditSink` catches only `RuntimeException`. An `Error` from the projection after the primary write leaves the tee unpoisoned, so a sequence number could be reused. Catch `Throwable`, poison, and rethrow.
 - (h) For task 116: `fieldDispositions` keys can contain dots, which Elasticsearch expands into nested objects. Document this and recommend a flattened or disabled mapping for `dataprism.field_dispositions`. Also check how Boot's ECS formatter renders dotted key-value names.
 - (i) `PiiLogScanTest`'s full-run projection scan covers only the assembly recorder. The tool-level `toolAudit` recorder's events are not scanned as JSON or key-value pairs.
 - (j) `OutboundCorrelationHeader` should also forbid hop-by-hop and framing names: Connection, Upgrade, TE, Keep-Alive, Content-Type, Expect.
@@ -459,7 +459,7 @@ Follow-ups from tasks 152 and 153, not yet tasks:
 
 - (ak) 153: assert "carriage return" in the anomaly message, so that mutation 2 kills all five tear points.
 - (al) 153, post-0.5.0: when a CR-ended line hash-verifies as a complete record with the CR stripped, word it as "a complete record hidden behind the restart marker".
-- (am) `FileAuditCheckpointSink` has the same append-after-torn-tail hazard as the audit sink had.
+- (am) **Done 2026-10-08 by task 160.** `FileAuditCheckpointSink` has the same append-after-torn-tail hazard as the audit sink had.
 - (an) 152: the rejected-id test should pass the `validate()` result through `SourceCallContext`.
 - (ao) 152, known limit to document: the interceptor is installed only when a correlation header is configured, so a client default header on a source with no correlation header is untouched.
 
@@ -484,13 +484,13 @@ Still open, owner-gated:
 
 - Dispatch `publish-central`, then `publish-image` (`version=0.5.0`), then `publish-mcp`, following the 0.4.1 steps 1 to 8 pattern.
 - Close Dependabot PRs #102 and #99 (Pillow, already at 12.3.0). #114, #115 and #116 were closed by Dependabot itself after the merge.
-- After publication, rebuild the `docs/extending.md` extension snippet against Central 0.5.0 with `mvn package` (D-151-A fallback), and amend the doc if needed.
-- PR #118 (maven-dependency-plugin 3.11.0) is open. Follow-up (d) should move that plugin version into root `pluginManagement`; do it with or after merging #118.
+- **Done 2026-10-08:** rebuild of the `docs/extending.md` extension snippet against Central 0.5.0 with `mvn package` (D-151-A fallback). It resolved and built; the doc's "verified" paragraph records the result.
+- PR #118 (maven-dependency-plugin 3.11.0) was folded into task 155 on 2026-10-08, which also did follow-up (d). Original note: follow-up (d) should move that plugin version into root `pluginManagement`; do it with or after merging #118.
 - Follow-up (ap): `release.yml` should build with the release profile.
 
 ### 0.6.0 — package structure, API and style cleanup
 
-Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c3e2). Tasks 154 to 165, task files in `docs/plan/tasks/`. Nothing is started. The owner states there are no external users, so every change is a clean break with no deprecation cycle and no forwarding types, and the 0.6.0 CHANGELOG and migration page (162) say so. Every task branches from `origin/main` once the tasks in its Depends on line have merged.
+Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c3e2). Tasks 154 to 165, task files in `docs/plan/tasks/`. Wave 1 is done (see below); the rest is not started. The owner states there are no external users, so every change is a clean break with no deprecation cycle and no forwarding types, and the 0.6.0 CHANGELOG and migration page (162) say so. Every task branches from `origin/main` once the tasks in its Depends on line have merged.
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
@@ -506,6 +506,22 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 6 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159 |
 | 7 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164 |
 | 8 | 162 | 0.6.0 CHANGELOG Breaking section and old to new FQCN migration page | 154-161, 163, 164, 165 |
+
+**Wave 1 done 2026-10-08** (tasks 154, 155, 160, 165, integrated on `release/0.6.0-wave1`; task files retired to `docs/plan/tasks/retired/`). Owner decisions and notes:
+
+- 154: `audit` and `oversight` are under the core outer-layer ArchUnit rule with a baseline of 0 violations. Owner decided NOT to add a Jackson databind ban for `audit`; the existing output-shape tests cover it. Follow-up: move the fixtures into package-matching directories.
+- 155: `ToolOptions` and `SourceFanOutOptions` replace the overloads, one entry point each. D-0.6-6 applied as `.noAdmission()` / `.admission(policy, fingerprinter)`. `ContextRequest.of`/`comparison` audit `<unregistered>`. Owner amendment: Dependabot PR #118 folded in (follow-up (d) done). Follow-up: an optional `ToolAdmission.isNone()`/singleton in `security`.
+- 160: `TeeAuditSink` poisons on any `Throwable`; the checkpoint writer terminates a torn tail with `\r\n`; the verifier reports `TORN_CHECKPOINT_LINE`. Owner decisions: (a) the Owns list widened by one line in `AuditChainVerifierCli.header(AnomalyType)`; (b) the NARROW torn rule, where only `\r`-ended lines and a final unterminated unparseable chunk are torn and other garbage stays exit 1. This narrows D-0.6-7's "or otherwise unparseable" wording. Residual risk, to document: an attacker who can write the checkpoint file can label a deletion as "not tampering", which is still noisier than an outright delete; a CRLF-converted checkpoint file reports every line torn (exit 4).
+- 165: `ci-gate` job in build.yml; pages.yml's job renamed `docs-site` (D-165-A). Owner post-merge step: once `ci-gate` has reported on main, switch main's required checks from `build (21)`, `build (25)` and `container-smoke` to `ci-gate` alone.
+
+**Jackson 3 port is now IN 0.6.0.** Owner decisions J3-0 to J3-5, dated 2026-10-08. Task files are being written separately on branch `plan/jackson3`. The wave table above will be re-sequenced when they land: package moves (156, 157), then Jackson 3, then the Spring splits (158, 159).
+
+- J3-0: Jackson 3 port is IN 0.6.0 (owner: "let that shape everything").
+- J3-1: B, after the package moves (156, 157) and after 155; before the Spring splits (158, 159). Strictly separate tasks from the moves.
+- J3-2: A. Data-prism keeps its own fixed, private Jackson 3 mappers: the single JSON writer (`DataPrismObjectMapper`), the `SourceTree` reader and the five YAML readers, built with Jackson 3 builders. They are not Spring beans and cannot be customised by application configuration. Owner's reason: adapter authors may bring their own `ObjectMapper` for their APIs, and must never be able to reconfigure data-prism's mapper for core behaviour. The ArchUnit "only `DataPrismObjectMapper` writes" rule must be rewritten for builders, with a negative test proving it still catches a violation.
+- J3-3: C. Expose Jackson 3 tree types (`tools.jackson.databind.JsonNode`/`ObjectNode`) where they are the real data: `ScrubResult`, `SourceTree`, `Generalizer`, the validators, `ContextResponse` and `ComparisonResponse`. Narrow the accidental surface: `DataPrismObjectMapper.create()` and any public method that hands out or accepts data-prism's `ObjectMapper` stop being public, which reinforces J3-2. List every public signature change for the 162 migration page.
+- J3-4: A. A small characterisation task runs first, on Jackson 2, before the port. Golden-byte tests for the audit JSON projection (non-ASCII, U+2028/2029, control characters, surrogate pairs, escape casing), checkpoint lines, and a full tool-result response. YAML characterisation tests for duplicate keys, YAML 1.1 booleans no/yes/on/off, unknown keys, enum case and whitespace, octal-looking scalars. The port must keep all of them green, or list each difference for owner acceptance.
+- J3-5: A, a full flip. Enforcer: ban the Jackson 2 artifacts (`com.fasterxml.jackson.core:jackson-databind`, `jackson-core`, the `jackson-dataformat-*` and `jackson-datatype-*` artifacts), `io.modelcontextprotocol.sdk:mcp-json-jackson2` and `org.springframework.boot:spring-boot-jackson2`. CARVE-OUT: allow `com.fasterxml.jackson.core:jackson-annotations`, which Jackson 3 still uses and mcp-core needs. Lift the `tools.jackson`, mcp aggregate and `mcp-json-jackson3` bans. Spring: re-adopt `spring-boot-starter-jackson`, removing the exclusions and `spring-boot-jackson2` in the server, starter, quickstart-fixtures and quickstart-issuer poms. Task 142's `Boot4RegressionGuardsTest`: invert it to assert Jackson 3 converters and no Jackson 2. Docs: update the D-139-A decision in architecture.md (:284-290), and fix the stale "scrubbing engine is a Jackson module" wording at architecture.md:152 and conventions.md:36. The real invariant is "only `DataPrismObjectMapper` writes".
 
 Owner decisions, all decided 2026-10-08:
 

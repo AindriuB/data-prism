@@ -73,7 +73,7 @@ class DataPrismMcpServerTest {
     void stdioRefusesWithoutExplicitDevelopmentMode() {
         assertThatThrownBy(() -> DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
-                developmentCaller(Set.of()), false, false, PrivacyMetrics.none(), audit(), FIXED))
+                developmentCaller(Set.of()), false, false, PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().noAdmission().build()))
                 .isInstanceOf(SecurityRefusedException.class)
                 .satisfies(e -> assertThat(((SecurityRefusedException) e).code())
                         .isEqualTo("STDIO_DEVELOPMENT_ONLY"));
@@ -84,7 +84,7 @@ class DataPrismMcpServerTest {
     void stdioRefusesWhenProductionIsSet() {
         assertThatThrownBy(() -> DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
-                developmentCaller(Set.of()), true, true, PrivacyMetrics.none(), audit(), FIXED))
+                developmentCaller(Set.of()), true, true, PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().noAdmission().build()))
                 .isInstanceOf(SecurityRefusedException.class)
                 .satisfies(e -> assertThat(((SecurityRefusedException) e).code())
                         .isEqualTo("STDIO_DEVELOPMENT_ONLY"));
@@ -95,7 +95,7 @@ class DataPrismMcpServerTest {
     void stdioStartsWithExplicitDevelopmentMode() {
         McpSyncServer server = DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
-                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED);
+                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().noAdmission().build());
         try {
             assertThat(server.listTools()).extracting(McpSchema.Tool::name)
                     .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
@@ -114,7 +114,7 @@ class DataPrismMcpServerTest {
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
                 DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit(), FIXED,
-                developmentCaller(Set.of()));
+                developmentCaller(Set.of()), ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 emptyExchange(), new McpSchema.CallToolRequest(
@@ -133,7 +133,7 @@ class DataPrismMcpServerTest {
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT", Capability.EXPOSE_SOURCE_NAMES)),
                 scopeResolver(), DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit(), FIXED,
-                developmentCaller(Set.of()));
+                developmentCaller(Set.of()), ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 emptyExchange(), new McpSchema.CallToolRequest(
@@ -151,7 +151,7 @@ class DataPrismMcpServerTest {
         DataPrismMcpServer.HttpTransport transport = DataPrismMcpServer.streamableHttp(
                 new NeverCalledOrchestrator(), authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")),
                 scopeResolver(), request -> McpTransportContext.EMPTY, "/mcp",
-                PrivacyMetrics.none(), audit(), FIXED);
+                PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().noAdmission().build());
 
         assertThat(transport.server()).isNotNull();
         assertThat(transport.transportProvider()).isNotNull();
@@ -166,7 +166,7 @@ class DataPrismMcpServerTest {
         assertThat(expected).isNotBlank();
         McpSyncServer stdio = DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
-                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED);
+                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().noAdmission().build());
         try {
             assertThat(stdio.getServerInfo().version()).isEqualTo(expected);
         } finally {
@@ -175,7 +175,7 @@ class DataPrismMcpServerTest {
         DataPrismMcpServer.HttpTransport http = DataPrismMcpServer.streamableHttp(
                 new NeverCalledOrchestrator(), authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")),
                 scopeResolver(), request -> McpTransportContext.EMPTY, "/mcp",
-                PrivacyMetrics.none(), audit(), FIXED);
+                PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().noAdmission().build());
         assertThat(http.server().getServerInfo().version()).isEqualTo(expected);
     }
 
@@ -188,8 +188,7 @@ class DataPrismMcpServerTest {
                                 "task-101-test-key-not-for-any-real-data-32b"));
         McpSyncServer stdio = DataPrismMcpServer.stdio(new NeverCalledOrchestrator(),
                 authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")), scopeResolver(),
-                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED,
-                io.github.aindriub.dataprism.security.ToolAdmission.none(), fingerprinter);
+                developmentCaller(Set.of()), true, false, PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().admission(io.github.aindriub.dataprism.security.ToolAdmission.none(), fingerprinter).build());
         try {
             assertThat(stdio.listTools()).extracting(McpSchema.Tool::name)
                     .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
@@ -199,8 +198,7 @@ class DataPrismMcpServerTest {
         DataPrismMcpServer.HttpTransport http = DataPrismMcpServer.streamableHttp(
                 new NeverCalledOrchestrator(), authorizationServiceGranting(Set.of("GET_ENTITY_CONTEXT")),
                 scopeResolver(), request -> McpTransportContext.EMPTY, "/mcp",
-                PrivacyMetrics.none(), audit(), FIXED,
-                io.github.aindriub.dataprism.security.ToolAdmission.none(), fingerprinter);
+                PrivacyMetrics.none(), audit(), FIXED, ToolOptions.defaults().admission(io.github.aindriub.dataprism.security.ToolAdmission.none(), fingerprinter).build());
         assertThat(http.server().listTools()).extracting(McpSchema.Tool::name)
                 .containsExactly(GetEntityContextTool.NAME, CompareEntitySourcesTool.NAME);
     }

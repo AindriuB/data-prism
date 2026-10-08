@@ -80,7 +80,7 @@ class AuditedEntityTypeOrchestratorTest {
                 (subjectId, namespace, ctx) -> "SUBJ-1", new ParameterFingerprinter(KEYS),
                 new AuditRecorder(audited::add, CLOCK, "test-150"),
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
     }
@@ -95,23 +95,15 @@ class AuditedEntityTypeOrchestratorTest {
     }
 
     @Test
-    @DisplayName("a legacy constructor applies the shape fallback: ACC-1 is audited as the sentinel")
-    void legacyConstructorAuditsTheSentinel() {
+    @DisplayName("a request built without an audited entity type audits the sentinel: CUSTOMER is audited as UNREGISTERED")
+    void requestWithoutAuditedTypeAuditsTheSentinel() {
         ContextResponse response = orchestrator().buildContext(
-                new ContextRequest("ACC-1", "1", Set.of()), context(), caller());
+                ContextRequest.of("CUSTOMER", "1"), context(), caller());
 
         assertThat(audited).singleElement().satisfies(e ->
                 assertThat(e.entityType()).isEqualTo(AuditedEntityTypes.UNREGISTERED));
-        assertThat(response.entityType()).isEqualTo("ACC-1");
-        assertThat(sourceSaw).containsExactly("ACC-1");
-    }
-
-    @Test
-    @DisplayName("a legacy constructor audits a conventional upper-case type verbatim")
-    void legacyConstructorAuditsShapedTypeVerbatim() {
-        orchestrator().buildContext(ContextRequest.of("CUSTOMER", "1"), context(), caller());
-
-        assertThat(audited).singleElement().satisfies(e -> assertThat(e.entityType()).isEqualTo("CUSTOMER"));
+        assertThat(response.entityType()).isEqualTo("CUSTOMER");
+        assertThat(sourceSaw).containsExactly("CUSTOMER");
     }
 
     @Test
@@ -131,7 +123,7 @@ class AuditedEntityTypeOrchestratorTest {
     @DisplayName("an orchestrator DENY audits the audited value, not the raw one")
     void denyAuditsTheAuditedValue() {
         DefaultContextOrchestrator noData = noDataOrchestrator();
-        assertThatThrownBy(() -> noData.buildContext(new ContextRequest("ACC-1", "1", Set.of()), context(), caller()))
+        assertThatThrownBy(() -> noData.buildContext(ContextRequest.of("ACC-1", "1"), context(), caller()))
                 .isInstanceOf(PrivacyRefusedException.class);
 
         assertThat(audited).singleElement().satisfies(e -> {
@@ -167,7 +159,7 @@ class AuditedEntityTypeOrchestratorTest {
                 (subjectId, namespace, ctx) -> "SUBJ-1", new ParameterFingerprinter(KEYS),
                 new AuditRecorder(audited::add, CLOCK, "test-150"),
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
     }

@@ -51,3 +51,6 @@ same append-after-torn-tail hazard task 153 fixed in the audit sink.
 Acceptance adds:
 - a test that the torn-checkpoint restart produces exactly one `TORN_CHECKPOINT_LINE` and that the later checkpoints still verify;
 - a mutation proof.
+
+## Outcome (2026-10-08, wave 1)
+Attempt 1 failed review: TeeAuditSink did not catch Throwable. Fixed. Owner decisions 2026-10-08: (a) Owns widened by one line in AuditChainVerifierCli.header(AnomalyType); (b) NARROW torn rule: only \r-ended lines and a final unterminated unparseable chunk are torn, other garbage stays exit 1 (narrows D-0.6-7). Tester PASS 1386/0/0/0, both mutations caught. Reviewer APPROVE. Residual risk: an attacker who can write the checkpoint can label a deletion as not tampering; a CRLF-converted checkpoint reports every line torn (exit 4).

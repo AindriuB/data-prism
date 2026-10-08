@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 1: ArchUnit audit/oversight, tool options records, tee/checkpoint hardening, ci-gate
+
+Tasks 154, 155, 160 and 165 merged onto `release/0.6.0-wave1`. `audit` and `oversight` are now under the core outer-layer ArchUnit rule (baseline 0 violations). `ToolOptions` and `SourceFanOutOptions` replace the MCP and orchestration overloads, with admission named explicitly through `.noAdmission()` or `.admission(policy, fingerprinter)`. `TeeAuditSink` poisons on any `Throwable`, the checkpoint writer terminates a torn tail with `\r\n`, and the verifier reports `TORN_CHECKPOINT_LINE`. build.yml has a `ci-gate` summary job and pages.yml's job is `docs-site`. Tester counts were about 1,380 to 1,386 tests per branch with no failures; Dependabot PR #118 (maven-dependency-plugin 3.11.0) was folded into 155.
+
+**Cost:** 154 failed review once: the fixture tests asserted `check()` throws, which also happens when the rule is empty, so they were vacuous; the fix uses `evaluate()`/`hasViolation()` plus a named violation, and removing `audit` from the subjects now fails the test. Do not assert on a thrown exception to prove an ArchUnit rule is non-empty. 160 failed review once for catching `RuntimeException` rather than `Throwable`. The owner chose the narrow torn rule (only `\r`-ended lines and a final unterminated unparseable chunk), which narrows D-0.6-7's "or otherwise unparseable"; other garbage stays exit 1. Residual risk: someone who can write the checkpoint file can label a deletion "not tampering", and a CRLF-converted checkpoint file reports every line torn (exit 4). The owner declined a Jackson databind ban for `audit`. The owner must switch main's required checks to `ci-gate` alone after it first reports on main.
+
 ## 2026-10-08 — 0.5.0 released in git: PR #117 merged, v0.5.0 tagged at c850c3e2
 
 PR #117 merged to `main`, the Javadoc fix merged through PR #119, and `v0.5.0` is tagged at c850c3e2. An external review of #117 found two P2 defects, fixed by tasks 152 and 153, and the container-smoke SIGPIPE fix (exit 141 under pipefail) went in on the same PR. Branch protection now requires `build (21)`, `build (25)` and `container-smoke`. Dependabot closed #114, #115 and #116 automatically after the merge, and its docker run proposed no Java 26 tags, which is the proof task 145's ignore rules work. Nothing is published to Central, GHCR or the MCP Registry yet.

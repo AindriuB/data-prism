@@ -17,6 +17,7 @@ import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
+import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
@@ -77,7 +78,7 @@ class AuditFieldDispositionTest {
             ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(),
                     Duration.ofHours(8), new PurposeValidator(Set.of(purpose)));
             GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                    scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED_CLOCK);
+                    scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
             AuthenticatedCaller caller = new AuthenticatedCaller(
                     "disposition-principal", "disposition-client", Set.of(role), purpose, "CASE-DISP-1", null);
             McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(
@@ -151,7 +152,7 @@ class AuditFieldDispositionTest {
             ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(),
                     Duration.ofHours(8), new PurposeValidator(Set.of(purpose)));
             GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                    scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED_CLOCK);
+                    scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
             AuthenticatedCaller caller = new AuthenticatedCaller(
                     "disposition-principal", "disposition-client", Set.of(role), purpose, "CASE-DISP-2", null);
             McpSyncServerExchange exchange = new McpSyncServerExchange(new McpAsyncServerExchange(

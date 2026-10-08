@@ -208,7 +208,8 @@ the boundary is crossed; catching a violation depends on review.
    package (hosted in `data-prism-integration-tests`; task 49 renamed the
    module but deliberately left this package name unchanged).
    **Partially enforced** — `ArchitectureTest.coreDoesNotDependOnOuterLayers`
-   checks the dependency direction (core cannot depend on `mcp`,
+   checks the dependency direction (`core`, and the `audit` and `oversight`
+   packages that live in `data-prism-core` beside it, cannot depend on `mcp`,
    `orchestration`, the `example` package or `pseudonymisation`), but nothing
    scans `core` for a business-domain type directly; a domain type added to
    `core` that no outer module happened to import would pass this rule.

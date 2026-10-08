@@ -37,6 +37,7 @@ import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
+import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.pseudonymisation.HmacSyntheticGenerator;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
@@ -161,7 +162,7 @@ class ConfiguredJsonSourceEndToEndTest {
         return new DefaultContextOrchestrator(adapters, engine, javaFirstResolver, validators,
                 synthetics, new ParameterFingerprinter(KEYS), new AuditRecorder(event -> { }, CLOCK, "test-20"),
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), CLOCK, PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), CLOCK, SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(javaFirstResolver), new SourceAliasing(tokens), PrivacyMetrics.none());
     }

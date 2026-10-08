@@ -32,3 +32,6 @@ are made under the guard rather than before it.
 - Widening the forbidden target list (for example adding `security`, `hazelcast`, `spring.boot`). Raise it in the hand-back if the scan suggests it.
 - Any source change in `data-prism-core`. If the scan finds a violation, allow-list it; do not fix it here.
 - Package moves (tasks 156, 157).
+
+## Outcome (2026-10-08, wave 1)
+Attempt 1 failed review: the fixture tests asserted that check() throws, which also happens when the rule is empty, so they were vacuous. Attempt 2 uses evaluate()/hasViolation() plus a named violation; removing audit from the subjects now fails the test. Tester PASS 1380/0/0/0, reviewer APPROVE. Owner decision: no Jackson databind ban for audit (output-shape tests cover it). Follow-up: move the fixtures into package-matching directories.

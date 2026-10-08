@@ -72,8 +72,13 @@ ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion
 AuthenticatedCaller caller = new AuthenticatedCaller("harness-principal", "harness-client",
         Set.of("harness-role"), "demonstration", /* caseId from argv[0] */, null);
 McpSyncServer server = DataPrismMcpServer.stdio(assembly.orchestrator(), authorizationService,
-        scopeResolver, caller, true, false, PrivacyMetrics.none(), toolAudit, assembly.clock());
+        scopeResolver, caller, true, false, PrivacyMetrics.none(), toolAudit, assembly.clock(),
+        ToolOptions.defaults().admission(ToolAdmission.none(), assembly.parameterFingerprinter()).build());
 ```
+
+`ToolOptions` has no default admission: the caller names one, so approvals are never switched
+off by leaving something out. `ToolAdmission.none()` still needs a fingerprinter when passed
+through `.admission(...)`; `ToolOptions.defaults().noAdmission()` is the way to omit one.
 
 Every type it uses is a public class already in this repository
 (`data-prism-mcp`, `data-prism-security`, `data-prism-core`, and the same

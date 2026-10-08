@@ -107,6 +107,43 @@ class TeeAuditSinkTest {
         assertThat(sequences).doesNotHaveDuplicates().containsExactly(1L, 2L);
     }
 
+    @Test
+    void anErrorFromTheProjectionPoisonsTheTeeAndPropagatesUnchanged() {
+        Recording primary = new Recording();
+        AssertionError error = new AssertionError("projection linkage");
+        TeeAuditSink tee = new TeeAuditSink(primary, e -> {
+            throw error;
+        });
+
+        assertThatThrownBy(() -> tee.record(event(1))).isSameAs(error);
+        assertThat(primary.events).hasSize(1);
+
+        assertThatThrownBy(() -> tee.record(event(2)))
+                .isInstanceOf(TeeAuditSink.ProjectionFailedException.class)
+                .hasMessage("AUDIT_PROJECTION_FAILED");
+        assertThat(primary.events).as("refused before the primary is written").hasSize(1);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable t) throws T {
+        throw (T) t;
+    }
+
+    @Test
+    void aSneakilyThrownCheckedExceptionPoisonsTheTeeAndPropagatesUnchanged() {
+        Recording primary = new Recording();
+        IOException checked = new IOException("projection disk gone");
+        TeeAuditSink tee = new TeeAuditSink(primary, e -> TeeAuditSinkTest.<RuntimeException>sneakyThrow(checked));
+
+        assertThatThrownBy(() -> tee.record(event(1))).isSameAs(checked);
+        assertThat(primary.events).hasSize(1);
+
+        assertThatThrownBy(() -> tee.record(event(2)))
+                .isInstanceOf(TeeAuditSink.ProjectionFailedException.class)
+                .hasMessage("AUDIT_PROJECTION_FAILED");
+        assertThat(primary.events).as("refused before the primary is written").hasSize(1);
+    }
+
     private static AuditEntry entry() {
         return new AuditEntry("p", "c", "t", "CUSTOMER", "s", "f", "DEFAULT", "scope", "purpose", "CASE", "ALLOW",
                 Set.of(), Set.of(), "corr", java.util.Map.of(), "", "");

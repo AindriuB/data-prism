@@ -36,6 +36,7 @@ import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.orchestration.SourceAliasing;
 import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
+import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.pseudonymisation.HmacValueTokenSource;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -156,7 +157,7 @@ class CompareEntitySourcesToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -176,7 +177,7 @@ class CompareEntitySourcesToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("GET_ENTITY_CONTEXT"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -198,7 +199,7 @@ class CompareEntitySourcesToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(null), request(Map.of("entityType", "CUSTOMER", "subjectId", "123")));
@@ -220,7 +221,7 @@ class CompareEntitySourcesToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         assertThatThrownBy(() -> tool.specification().callHandler().apply(
                 exchangeFor(null), request(Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
@@ -242,7 +243,7 @@ class CompareEntitySourcesToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("GET_ENTITY_CONTEXT"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         assertThatThrownBy(() -> tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -271,14 +272,14 @@ class CompareEntitySourcesToolTest {
                 (subjectId, namespace, ctx) -> "SUBJ-1",
                 new ParameterFingerprinter(KEYS), audit,
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
                 PrivacyMetrics.none());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult withoutReservedArgument = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -305,7 +306,7 @@ class CompareEntitySourcesToolTest {
     void schemaDeclaresExactlyTwoProperties() {
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(new RecordingOrchestrator(),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         Map<String, Object> schema = tool.specification().tool().inputSchema();
 
@@ -330,7 +331,7 @@ class CompareEntitySourcesToolTest {
                 mapper.createObjectNode());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(new FixedResponseOrchestrator(response),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), mapper, metrics, audit, FIXED);
+                scopeResolver(), mapper, metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -370,7 +371,7 @@ class CompareEntitySourcesToolTest {
                 entity);
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(new FixedResponseOrchestrator(response),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), mapper, metrics, audit, FIXED);
+                scopeResolver(), mapper, metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -407,7 +408,7 @@ class CompareEntitySourcesToolTest {
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(
                 new ThrowingOrchestrator(new PrivacyRefusedException("SCOPE_READ_BUDGET", "CUSTOMER", secret)),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -425,7 +426,7 @@ class CompareEntitySourcesToolTest {
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(
                 new ThrowingOrchestrator(new RuntimeException(secret)),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -464,14 +465,14 @@ class CompareEntitySourcesToolTest {
                 (subjectId, namespace, ctx) -> "SUBJ-1",
                 new ParameterFingerprinter(KEYS), audit,
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
                 PrivacyMetrics.none());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
@@ -523,14 +524,14 @@ class CompareEntitySourcesToolTest {
                 (subjectId, namespace, ctx) -> "SUBJ-1",
                 new ParameterFingerprinter(KEYS), audit,
                 new PassThroughIdentityResolver(),
-                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), PrivacyMetrics.none()),
+                new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT,
                 new NamespaceCorrelationService(resolver),
                 new SourceAliasing(new HmacValueTokenSource(KEYS)),
                 PrivacyMetrics.none());
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(orchestrator,
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
-                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED);
+                scopeResolver(), DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),

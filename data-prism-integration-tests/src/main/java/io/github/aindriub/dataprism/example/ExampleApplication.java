@@ -8,11 +8,13 @@ import io.github.aindriub.dataprism.core.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.PrivacyScopeType;
 import io.github.aindriub.dataprism.mcp.CorrelationRequirement;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
+import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
+import io.github.aindriub.dataprism.security.ToolAdmission;
 import io.modelcontextprotocol.server.McpSyncServer;
 
 import java.time.Duration;
@@ -88,8 +90,11 @@ public final class ExampleApplication {
 
         return DataPrismMcpServer.stdio(assembly.orchestrator(), authorizationService,
                 scopeResolver, developmentCaller, true, isProductionProfile(activeProfiles),
-                PrivacyMetrics.none(), toolAudit, assembly.clock(), CorrelationRequirement.OPTIONAL,
-                AuditedEntityTypes.of(List.of("CUSTOMER")));
+                PrivacyMetrics.none(), toolAudit, assembly.clock(), ToolOptions.defaults()
+                        .admission(ToolAdmission.none(), assembly.parameterFingerprinter())
+                        .correlationRequirement(CorrelationRequirement.OPTIONAL)
+                        .entityTypes(AuditedEntityTypes.of(List.of("CUSTOMER")))
+                        .build());
     }
 
     /**
