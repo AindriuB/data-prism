@@ -35,12 +35,13 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pins a whole tool result as serialised by the production mapper
- * ({@code JsonMapper.builder().build()}, Jackson 2 defaults plus dates-as-text and
- * fail-on-empty-beans), for a fixed synthetic subject, a fixed clock and the shipped scope
- * rules. The compared text is the tool's text content. The structured-content golden pins the
- * convertValue-to-Map conversion of the result, re-serialised through {@code DataPrismObjectMapper};
- * it is not the MCP SDK's wire bytes.
+ * Pins a whole tool result for a fixed synthetic subject, a fixed clock and the shipped scope
+ * rules. The compared text is the tool's text content, which the tool writes with the production
+ * mapper ({@code DataPrismObjectMapper}), so the text goldens pin that mapper's configuration.
+ * The structured-content golden pins the convertValue-to-Map conversion the tool performs with the
+ * same mapper. That map holds only plain JSON values (see
+ * {@link #structuredContentIsPlainJsonAndAgreesWithTheText}), so the test-local mapper that
+ * writes it out adds no configuration of its own; it is not the MCP SDK's wire bytes.
  *
  * <p>Neither tool result contains a null or a date, so null inclusion and date format are NOT
  * pinned here. Dates are pinned only through the audit {@code timestamp} and the checkpoint
@@ -119,6 +120,31 @@ class ToolResultCharacterisationTest {
 
     private static String structured(McpSchema.CallToolResult result) throws Exception {
         return JsonMapper.builder().build().writeValueAsString(result.structuredContent());
+    }
+
+    @Test
+    @DisplayName("structured content holds only plain JSON values and is the same document as the text content")
+    void structuredContentIsPlainJsonAndAgreesWithTheText() throws Exception {
+        for (McpSchema.CallToolResult result : List.of(getEntityContext(), compareEntitySources())) {
+            assertPlainJson(result.structuredContent());
+            var mapper = JsonMapper.builder().build();
+            tools.jackson.databind.JsonNode structured = mapper.valueToTree(result.structuredContent());
+            assertThat((Object) structured).isEqualTo(mapper.readTree(text(result)));
+        }
+    }
+
+    private static void assertPlainJson(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            map.forEach((k, v) -> {
+                assertThat((Object) k).isInstanceOf(String.class);
+                assertPlainJson(v);
+            });
+        } else if (value instanceof List<?> list) {
+            list.forEach(ToolResultCharacterisationTest::assertPlainJson);
+        } else {
+            assertThat(value == null || value instanceof String || value instanceof Number
+                    || value instanceof Boolean).as("plain JSON value: %s", value).isTrue();
+        }
     }
 
     @Test
