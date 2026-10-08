@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Wires an optional {@code dataprism.privacy.descriptor-file} into the
  * {@link FieldMetadataResolver} bean. Unset, nothing changes; set, it must load
  * and validate eagerly, and any bad input refuses startup rather than silently
- * keeping the annotation-only resolver — see {@code DataPrismAutoConfiguration
+ * keeping the annotation-only resolver — see {@code PrivacyEngineWiring
  * #dataPrismFieldMetadataResolver}.
  */
 class ModelDescriptorsConfigurationTest {

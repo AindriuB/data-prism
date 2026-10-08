@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.example.http;
 
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
-import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
-import io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport;
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtCallerContextExtractor;
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtDecoderSupport;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;

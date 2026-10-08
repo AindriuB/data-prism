@@ -47,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Non-vacuity for the resolver refusal (task 22, acceptance item 3) was
  * checked by hand rather than shipped as a test: with the guard in
- * {@code DataPrismAutoConfiguration#dataPrismPrivacyPolicyResolverPreflight}
+ * {@code Preflights#dataPrismPrivacyPolicyResolverPreflight}
  * removed, {@link #application_privacy_policy_resolver_cannot_override_the_profile_backed_resolver()}
  * fails — the context in {@link IntegrationsWithPassThroughEverythingResolver}
  * boots successfully and the application's {@code PASS_THROUGH}-for-everything

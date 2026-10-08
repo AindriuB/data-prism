@@ -1,5 +1,8 @@
-package io.github.aindriub.dataprism.spring.boot;
+package io.github.aindriub.dataprism.spring.boot.jwt;
 
+import io.github.aindriub.dataprism.spring.boot.CorrelationProperties;
+import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
+import io.github.aindriub.dataprism.spring.boot.SecurityProperties;
 import io.github.aindriub.dataprism.core.correlation.CorrelationIdPolicy;
 import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;

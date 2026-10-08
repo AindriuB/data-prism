@@ -284,7 +284,7 @@ class DataPrismAutoConfigurationTest {
     /**
      * {@link ReviewedHttpIntegrations} minus its {@code AuditSink} bean, so
      * {@code dataprism.audit.sink}'s own conditional beans in {@link
-     * DataPrismAutoConfiguration.AuditSinkSelection} are the ones actually
+     * AuditSinkSelection} are the ones actually
      * exercised, rather than being suppressed by an application-supplied bean
      * via {@code @ConditionalOnMissingBean}.
      */

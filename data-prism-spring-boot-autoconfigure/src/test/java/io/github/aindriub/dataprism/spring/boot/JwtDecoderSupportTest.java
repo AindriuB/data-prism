@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtDecoderSupport;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 

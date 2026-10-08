@@ -24,9 +24,9 @@ class ServerArchitectureTest {
                 .that().doNotHaveFullyQualifiedName(
                         "io.github.aindriub.dataprism.server.ServerSecurityConfiguration")
                 .and().doNotHaveFullyQualifiedName(
-                        "io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport")
+                        "io.github.aindriub.dataprism.spring.boot.jwt.JwtDecoderSupport")
                 .and().doNotHaveFullyQualifiedName(
-                        "io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor")
+                        "io.github.aindriub.dataprism.spring.boot.jwt.JwtCallerContextExtractor")
                 .should().dependOnClassesThat().resideInAnyPackage("org.springframework.security..")
                 .check(classes);
     }

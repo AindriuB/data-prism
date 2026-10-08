@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @ConditionalOnMissingBean} default deterministically.
  *
  * <p>{@link SingleIdentityResolverConsumer} stands in for {@code
- * DataPrismAutoConfiguration.dataPrismContextOrchestrator}: the same shape —
+ * OrchestrationWiring.dataPrismContextOrchestrator}: the same shape —
  * a {@code @Bean} method with exactly one {@link IdentityResolver} parameter
  * — is what actually fails when two candidates exist, not the preflight
  * (which only counts bean names and does not require uniqueness). This
@@ -95,7 +95,7 @@ class IdentityResolverOrderingTest {
     }
 
     /**
-     * Stands in for {@code DataPrismAutoConfiguration.dataPrismContextOrchestrator}
+     * Stands in for {@code OrchestrationWiring.dataPrismContextOrchestrator}
      * — see the class Javadoc above for why the real class is not used directly.
      */
     @Configuration(proxyBeanMethods = false)

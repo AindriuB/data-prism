@@ -143,7 +143,7 @@ class AuditRetentionConfigurationTest {
         // the sink then creates the directory
         Files.createDirectory(dir.resolve("FRESH"));
         org.assertj.core.api.Assertions.assertThatThrownBy(
-                () -> new DataPrismAutoConfiguration().dataPrismAuditCheckpointSink(properties,
+                () -> new AuditWiring().dataPrismAuditCheckpointSink(properties,
                         new org.springframework.beans.factory.support.StaticListableBeanFactory()
                                 .getBeanProvider(AuditSink.class)))
                 .isInstanceOfSatisfying(DataPrismConfigurationException.class,

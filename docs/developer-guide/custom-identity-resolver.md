@@ -206,8 +206,8 @@ already supplies a default for this deployment, which is already registered
 by then and does not step aside for a later, unconditional bean. The result
 is two `IdentityResolver` beans in the same context, and startup fails
 wherever something asks for exactly one —
-`DataPrismAutoConfiguration.dataPrismContextOrchestrator` does
-(`DataPrismAutoConfiguration.java:446`).
+`OrchestrationWiring.dataPrismContextOrchestrator` (imported by
+`DataPrismAutoConfiguration`) does (`OrchestrationWiring.java:42`).
 
 The general rule: order your own `@AutoConfiguration` *before* whichever
 class supplies the `@ConditionalOnMissingBean` default in your deployment —
@@ -216,9 +216,9 @@ quickstart, that default-supplying class is `QuickstartExtensionAutoConfiguratio
 itself. It is a different class if you instead rely on
 `dataprism.identity.resolver: pass-through` (below) with no
 `QuickstartExtensionAutoConfiguration` involved at all: that setting's
-default comes from `DataPrismAutoConfiguration`'s own nested
-`IdentityResolverSelection` (`@Import`-ed by it —
-`DataPrismAutoConfiguration.java:128-135`), so the class to order before is
+default comes from the package-private `IdentityResolverSelection`
+configuration class that `DataPrismAutoConfiguration` `@Import`s first
+(`IdentityResolverSelection.java:30-37`), so the class to order before is
 `DataPrismAutoConfiguration`, not `QuickstartExtensionAutoConfiguration`.
 `ExampleOrderedIdentityResolverAutoConfiguration` names
 `QuickstartExtensionAutoConfiguration` directly with
@@ -253,12 +253,12 @@ Hazelcast-topology configuration this module does not own, so this is a
 faithful minimal reproduction of the ambiguity, not a boot of production
 wiring; see the test's own Javadoc.
 
-Either way, `DataPrismAutoConfiguration.dataPrismIdentityResolverPreflight`
+Either way, `Preflights.dataPrismIdentityResolverPreflight` (imported by `DataPrismAutoConfiguration`)
 refuses to start with no `IdentityResolver` bean in the context at all, from
 any source — registering one, whichever way, is not optional. A resolver can
 also be supplied with no application code at all, by setting
 `dataprism.identity.resolver: pass-through`
-(`DataPrismAutoConfiguration.java:128-135`) — a separate, built-in
+(`IdentityResolverSelection.java:30-37`) — a separate, built-in
 `PassThroughIdentityResolver` registration from `DataPrismAutoConfiguration`
 itself, not from the quickstart's own `@AutoConfiguration` class. Pair that
 setting with an extension's own unconditional `IdentityResolver` bean and the
