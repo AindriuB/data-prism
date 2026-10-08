@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -91,9 +91,9 @@ class NestedScrubbingTest {
         assertThat(out.toString())
                 .doesNotContain("Patrick Murphy")
                 .doesNotContain("Pat Murphy");
-        assertThat(out.get("details").get("innerName").asText()).startsWith("synthetic:");
-        assertThat(out.get("details").get("innerState").asText()).isEqualTo("ACTIVE");
-        assertThat(out.get("history").get(0).get("innerName").asText()).startsWith("synthetic:");
+        assertThat(out.get("details").get("innerName").asString()).startsWith("synthetic:");
+        assertThat(out.get("details").get("innerState").asString()).isEqualTo("ACTIVE");
+        assertThat(out.get("history").get(0).get("innerName").asString()).startsWith("synthetic:");
     }
 
     @Test
@@ -135,7 +135,7 @@ class NestedScrubbingTest {
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN)
                 .scrub(source, context()).tree();
 
-        assertThat(out.get("details").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+        assertThat(out.get("details").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
         assertThat(out.toString()).doesNotContain("Patrick Murphy");
     }
 
@@ -163,8 +163,8 @@ class NestedScrubbingTest {
 
         // Documented rather than prevented. This is what the setting is for, and
         // what it costs: the subtree goes out exactly as the source held it.
-        assertThat(out.get("details").get("secretName").asText()).isEqualTo("Patrick Murphy");
-        assertThat(out.get("details").get("secretEmail").asText())
+        assertThat(out.get("details").get("secretName").asString()).isEqualTo("Patrick Murphy");
+        assertThat(out.get("details").get("secretEmail").asString())
                 .isEqualTo("patrick@example.invalid");
     }
 
@@ -179,7 +179,7 @@ class NestedScrubbingTest {
         ObjectNode out = engine(PrivacyProfile.UnclassifiedBehaviour.PASS_THROUGH_UNSAFE)
                 .scrub(source, context()).tree();
 
-        assertThat(out.get("details").get("innerName").asText()).startsWith("synthetic:");
+        assertThat(out.get("details").get("innerName").asString()).startsWith("synthetic:");
         assertThat(out.toString()).doesNotContain("Patrick Murphy");
     }
 

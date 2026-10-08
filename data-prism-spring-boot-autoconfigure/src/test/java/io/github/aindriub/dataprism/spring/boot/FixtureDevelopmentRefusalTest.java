@@ -108,11 +108,11 @@ class FixtureDevelopmentRefusalTest {
                 .hasMessageContaining("dataprism.audit.sink=approved-sink");
     }
 
-    private static DataSourceAdapter<String> fakeCustomerAdapter() {
+    private static DataSourceAdapter<TestPayload> fakeCustomerAdapter() {
         return new DataSourceAdapter<>() {
             @Override public String sourceName() { return "customer"; }
-            @Override public Class<String> responseType() { return String.class; }
-            @Override public String fetch(DataRequest request) { throw new UnsupportedOperationException(); }
+            @Override public Class<TestPayload> responseType() { return TestPayload.class; }
+            @Override public TestPayload fetch(DataRequest request) { throw new UnsupportedOperationException(); }
         };
     }
 

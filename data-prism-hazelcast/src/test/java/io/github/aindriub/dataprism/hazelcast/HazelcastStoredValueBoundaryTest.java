@@ -63,7 +63,7 @@ class HazelcastStoredValueBoundaryTest {
 
         String synthetic = scrubber(cached).scrub(
                 new SourceRecord(SUBJECT_ID, RAW_SENSITIVE_VALUE), context).tree()
-                .get("fullName").asText();
+                .get("fullName").asString();
         assertThat(new ScopeIdentityIndex(cluster)
                 .subjectFor(SCOPE_ID, PrivacyNamespace.PERSON_NAME, synthetic))
                 .contains(SUBJECT_ID);

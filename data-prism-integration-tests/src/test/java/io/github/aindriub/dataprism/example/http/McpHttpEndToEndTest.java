@@ -12,7 +12,7 @@ import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -312,16 +312,16 @@ class McpHttpEndToEndTest {
         McpSyncClient client = clientWithToken(token);
         try {
             String body = text(callGetEntityContext(client, "123"));
-            var response = DataPrismObjectMapper.create().readTree(body);
+            var response = JsonMapper.builder().build().readTree(body);
 
             assertThat(body).doesNotContain("Patrick Murphy").doesNotContain("Pat Murphy")
                     .doesNotContain("P. Murphy").doesNotContain("patrick.murphy@example.invalid")
                     .doesNotContain("4200.55").doesNotContain("\"123\"");
-            assertThat(response.path("subject").asText()).startsWith("SUBJ-").isNotEqualTo("123");
-            assertThat(response.path("entity").path("customerName").asText())
+            assertThat(response.path("subject").asString()).startsWith("SUBJ-").isNotEqualTo("123");
+            assertThat(response.path("entity").path("customerName").asString())
                     .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
-            assertThat(response.path("entity").path("email").asText()).isEqualTo("[REDACTED]");
-            assertThat(response.path("entity").path("status").asText()).isEqualTo("ACTIVE");
+            assertThat(response.path("entity").path("email").asString()).isEqualTo("[REDACTED]");
+            assertThat(response.path("entity").path("status").asString()).isEqualTo("ACTIVE");
         } finally {
             client.closeGracefully();
         }

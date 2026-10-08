@@ -100,9 +100,9 @@ class MalformedRefusalCodeTest {
         ParameterFingerprinter fingerprinter =
                 new ParameterFingerprinter(StaticSecretKeyProvider.of("task-128-test-key-not-for-any-real-data-32b"));
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).build());
         return Map.of(
                 GetEntityContextTool.NAME, get.specification().callHandler(),
                 CompareEntitySourcesTool.NAME, compare.specification().callHandler());

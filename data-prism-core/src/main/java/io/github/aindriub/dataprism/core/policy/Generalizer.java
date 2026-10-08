@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.policy;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 
 import java.math.BigDecimal;
@@ -31,7 +31,7 @@ public final class Generalizer {
     private static String band(JsonNode value, GeneralizationRule rule, String path) {
         BigDecimal amount;
         try {
-            amount = value.isNumber() ? value.decimalValue() : new BigDecimal(value.asText().trim());
+            amount = value.isNumber() ? value.decimalValue() : new BigDecimal(value.asString().trim());
         } catch (NumberFormatException e) {
             throw new PrivacyRefusedException("GENERALIZE_TYPE_MISMATCH", path,
                     "a numeric band rule applies to this field but the value is not a number");
@@ -56,7 +56,7 @@ public final class Generalizer {
     }
 
     private static String truncate(JsonNode value, GeneralizationRule rule, String path) {
-        String text = value.asText();
+        String text = value.asString();
         LocalDate date;
         try {
             // Take the date part of an ISO timestamp; anything else must be a date.

@@ -1,14 +1,15 @@
 package io.github.aindriub.dataprism.server.boot;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.server.operator.OperatorHarness;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter;
 
 import java.net.http.HttpResponse;
@@ -19,12 +20,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Task 142: what Spring Boot 4 moved (Jackson 2 converters, actuator JSON, the error path) still
+ * Task 142: what Spring Boot 4 moved (Jackson 3 converters, actuator JSON, the error path) still
  * behaves as before, on the real server. Boot 4 would otherwise let each of these change silently.
+ * The server is on a single Jackson major, Jackson 3 (J3-5): the Jackson 3 converter is the one in
+ * use, and no Jackson 2 databind is on the classpath.
  */
 class Boot4RegressionGuardsTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     @TempDir
     static Path tempDir;
@@ -54,26 +57,19 @@ class Boot4RegressionGuardsTest {
     }
 
     @Test
-    void mvcJsonRunsOnTheJackson2Converter() {
+    void mvcJsonRunsOnTheJackson3Converter() {
         var converters = app.context.getBean(RequestMappingHandlerAdapter.class).getMessageConverters();
 
-        assertThat(converters).anyMatch(MappingJackson2HttpMessageConverter.class::isInstance);
-        // Boot's Jackson 2 auto-configuration (spring-boot-jackson2) supplies the mapper the converter
-        // uses; without it MVC falls back to a mapper of its own that no Boot property reaches.
-        var mappers = app.context.getBeansOfType(ObjectMapper.class).values();
-        assertThat(mappers).isNotEmpty();
-        assertThat(converters).filteredOn(MappingJackson2HttpMessageConverter.class::isInstance)
-                .anySatisfy(converter -> assertThat(mappers).anyMatch(mapper ->
-                        mapper == ((MappingJackson2HttpMessageConverter) converter).getObjectMapper()));
+        assertThat(converters).anyMatch(JacksonJsonHttpMessageConverter.class::isInstance);
         for (HttpMessageConverter<?> converter : converters) {
-            assertThat(converter.getClass().getName()).doesNotStartWith("tools.jackson");
-            assertThat(converter.getClass().getSimpleName()).isNotEqualTo("JacksonJsonHttpMessageConverter");
+            assertThat(converter.getClass().getSimpleName()).isNotEqualTo("MappingJackson2HttpMessageConverter");
+            assertThat(converter.getClass().getName()).doesNotStartWith("org.springframework.http.converter.json.MappingJackson2");
         }
     }
 
     @Test
-    void jackson3IsNotOnTheClasspath() {
-        assertThatThrownBy(() -> Class.forName("tools.jackson.databind.ObjectMapper"))
+    void jackson2DatabindIsNotOnTheClasspath() {
+        assertThatThrownBy(() -> Class.forName("com.fasterxml.jackson.databind.ObjectMapper"))
                 .isInstanceOf(ClassNotFoundException.class);
     }
 
@@ -85,7 +81,7 @@ class Boot4RegressionGuardsTest {
         assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(type ->
                 assertThat(type).containsIgnoringCase("json"));
         JsonNode body = JSON.readTree(response.body());
-        assertThat(body.path("components").path("auditIntegrity").path("status").asText()).isEqualTo("UP");
+        assertThat(body.path("components").path("auditIntegrity").path("status").asString()).isEqualTo("UP");
     }
 
     @Test
@@ -98,7 +94,7 @@ class Boot4RegressionGuardsTest {
         JsonNode mcpBody = JSON.readTree(mcp.body());
         assertThat(mcp.statusCode()).as(mcp.body()).isEqualTo(500);
         assertThat(mcpBody.path("status").asInt()).as(mcp.body()).isEqualTo(500);
-        assertThat(mcpBody.path("path").asText()).isEqualTo("/health");
+        assertThat(mcpBody.path("path").asString()).isEqualTo("/health");
 
         HttpResponse<String> operator = server.operator("GET", "/operator/fail", server.operatorToken("guard-op"),
                 null);

@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
 import io.github.aindriub.dataprism.audit.AuditEvent;
@@ -82,7 +83,7 @@ class DenyDecisionCodeTest {
     }
 
     private static final ScrubbingEngine OK = (source, ctx) ->
-            new ScrubResult(new ObjectMapper().createObjectNode().put("value", "ok"), Set.of());
+            new ScrubResult(JsonMapper.builder().build().createObjectNode().put("value", "ok"), Set.of());
 
     private static DefaultContextOrchestrator orchestrator(boolean failingSource, ScrubbingEngine scrubber,
                                                             LlmResponseValidator validator, RequestLimits limits,

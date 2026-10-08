@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -55,7 +57,7 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
 
     private static final StaticSecretKeyProvider KEYS =
             StaticSecretKeyProvider.of("task-60-nested-catalogue-test-key-not-for-any-real-data-32b");
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     private static PrivacyPolicyResolver defaultProfilePolicy() {
         try (var input = ConfiguredJsonNestedCatalogueScrubbingTest.class
@@ -110,7 +112,7 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
     private static ObjectNode body(String json) {
         try {
             return (ObjectNode) JSON.readTree(json);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException(e);
         }
     }
@@ -129,11 +131,11 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
 
         // Same treatment a top-level PII/SYNTHESIZE field would get: not the raw
         // value, not passed through, not redacted -- synthesised.
-        String synthesised = result.tree().at("/address/ssn").asText();
+        String synthesised = result.tree().at("/address/ssn").asString();
         assertThat(synthesised).isNotBlank().isNotEqualTo("123-45-6789");
 
         // Non-sensitive passthrough, exactly as at the root.
-        assertThat(result.tree().at("/address/line1").asText()).isEqualTo("123 Main St");
+        assertThat(result.tree().at("/address/line1").asString()).isEqualTo("123 Main St");
 
         // No raw value anywhere in the emitted tree.
         assertThat(result.tree().toString()).doesNotContain("123-45-6789");
@@ -154,10 +156,10 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
                 """);
         ScrubResult result = engine.scrub(new ConfiguredJsonPayload("customer-with-address", body), context(vocabulary));
 
-        assertThat(result.tree().at("/address/0/line1").asText()).isEqualTo("123 Main St");
-        assertThat(result.tree().at("/address/1/line1").asText()).isEqualTo("456 Oak Ave");
-        assertThat(result.tree().at("/address/0/ssn").asText()).isNotEqualTo("111-11-1111");
-        assertThat(result.tree().at("/address/1/ssn").asText()).isNotEqualTo("222-22-2222");
+        assertThat(result.tree().at("/address/0/line1").asString()).isEqualTo("123 Main St");
+        assertThat(result.tree().at("/address/1/line1").asString()).isEqualTo("456 Oak Ave");
+        assertThat(result.tree().at("/address/0/ssn").asString()).isNotEqualTo("111-11-1111");
+        assertThat(result.tree().at("/address/1/ssn").asString()).isNotEqualTo("222-22-2222");
         assertThat(result.tree().toString()).doesNotContain("111-11-1111", "222-22-2222");
     }
 
@@ -412,14 +414,14 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
         ScrubResult addressResult = engine.scrub(new ConfiguredJsonPayload("customer-with-address", body("""
                 {"id":"CUST-1","address":{"line1":"123 Main St","ssn":"123-45-6789"}}
                 """)), context(vocabulary));
-        assertThat(addressResult.tree().at("/address/line1").asText()).isEqualTo("123 Main St");
-        assertThat(addressResult.tree().at("/address/ssn").asText()).isNotEqualTo("123-45-6789");
+        assertThat(addressResult.tree().at("/address/line1").asString()).isEqualTo("123 Main St");
+        assertThat(addressResult.tree().at("/address/ssn").asString()).isNotEqualTo("123-45-6789");
 
         ScrubResult supplierResult = engine.scrub(new ConfiguredJsonPayload("supplier-with-address", body("""
                 {"id":"SUP-1","address":{"city":"Springfield","taxId":"98-7654321"}}
                 """)), context(vocabulary));
-        assertThat(supplierResult.tree().at("/address/city").asText()).isEqualTo("Springfield");
-        assertThat(supplierResult.tree().at("/address/taxId").asText()).isNotEqualTo("98-7654321");
+        assertThat(supplierResult.tree().at("/address/city").asString()).isEqualTo("Springfield");
+        assertThat(supplierResult.tree().at("/address/taxId").asString()).isNotEqualTo("98-7654321");
     }
 
     @Test

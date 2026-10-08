@@ -169,11 +169,48 @@ class DataPrismContractValidatorTest {
                 .hasMessageStartingWith("MISSING_AUDIT_SINK:");
     }
 
-    private static DataSourceAdapter<String> fakeAdapter(String name) {
+    record Payload(String name) { }
+
+    public static class BeanPayload { public String name; }
+
+    @Test
+    void aResponseTypeThatIsNotARecordIsRefusedAtStartupWithItsCode() {
+        DataPrismProperties properties = new DataPrismProperties();
+
+        assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(adapterOf("customer-api", BeanPayload.class)),
+                availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none()),
+                availableProvider(Set.of("customer-api"))))
+                .isInstanceOfSatisfying(DataPrismConfigurationException.class,
+                        e -> org.assertj.core.api.Assertions.assertThat(e.code())
+                                .isEqualTo("SOURCE_MODEL_NOT_A_RECORD"))
+                .hasMessageContaining("BeanPayload");
+    }
+
+    @Test
+    void aJdkResponseTypeSuchAsStringIsRefusedAtStartup() {
+        DataPrismProperties properties = new DataPrismProperties();
+
+        assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
+                List.of(adapterOf("customer-api", String.class)),
+                availableProvider(new IdentityResolverStub()), availableProvider((k, r) -> new byte[0]),
+                availableProvider(event -> { }), availableProvider(PrivacyMetrics.none()),
+                availableProvider(Set.of("customer-api"))))
+                .isInstanceOfSatisfying(DataPrismConfigurationException.class,
+                        e -> org.assertj.core.api.Assertions.assertThat(e.code())
+                                .isEqualTo("SOURCE_MODEL_NOT_A_RECORD"));
+    }
+
+    private static DataSourceAdapter<Payload> fakeAdapter(String name) {
+        return adapterOf(name, Payload.class);
+    }
+
+    private static <T> DataSourceAdapter<T> adapterOf(String name, Class<T> type) {
         return new DataSourceAdapter<>() {
             @Override public String sourceName() { return name; }
-            @Override public Class<String> responseType() { return String.class; }
-            @Override public String fetch(DataRequest request) { throw new UnsupportedOperationException(); }
+            @Override public Class<T> responseType() { return type; }
+            @Override public T fetch(DataRequest request) { throw new UnsupportedOperationException(); }
         };
     }
 

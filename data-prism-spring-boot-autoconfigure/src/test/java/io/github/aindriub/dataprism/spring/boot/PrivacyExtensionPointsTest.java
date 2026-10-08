@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditSink;
@@ -93,7 +94,7 @@ class PrivacyExtensionPointsTest {
             // The wired list is exactly what the orchestrator would evaluate:
             // aggregate every validator's result, the same as buildContext does,
             // and confirm a raw source value still fails it.
-            ObjectNode response = new ObjectMapper().createObjectNode();
+            ObjectNode response = JsonMapper.builder().build().createObjectNode();
             response.put("fullName", "Patrick Murphy");
             PrivacyContext privacyContext = new PrivacyContext("SCOPE-1", PrivacyScopeType.INVESTIGATION,
                     "DEFAULT", "test", Instant.parse("2030-01-01T00:00:00Z"), PseudonymisationVersion.HMAC_SHA256_V1);
@@ -136,11 +137,11 @@ class PrivacyExtensionPointsTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedIntegrations {
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 public String sourceName() { return "customer"; }
-                public Class<String> responseType() { return String.class; }
-                public String fetch(DataRequest request) { return null; }
+                public Class<TestPayload> responseType() { return TestPayload.class; }
+                public TestPayload fetch(DataRequest request) { return null; }
             };
         }
         @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }

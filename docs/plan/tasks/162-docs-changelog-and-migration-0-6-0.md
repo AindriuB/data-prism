@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Base:** branch from `origin/main` (0.5.0 released at v0.5.0 / c850c3e2) after 154-161 have merged into it.
-**Depends on:** 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 169
+**Depends on:** 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167, 168, 169, 170
 **Owns:**
 - CHANGELOG.md (the `[Unreleased]` section only)
 - docs/migration-0.6.md (new)
@@ -36,6 +36,14 @@ check). Each is copied from that task's hand-back.
 - [ ] `grep -rnE 'dataprism\.(core\.[A-Z]|audit\.[A-Z]|spring\.boot\.Jwt)' docs README.md` (excluding `docs/plan/`, `docs/pack.md`, `docs/design-review.md`) finds only new-location names.
 - [ ] `mkdocs build --strict` exits 0 (or, if the local environment refuses it as in the 0.5.0 cut, the CI docs job on the PR is green, linked in the hand-back).
 - [ ] `mvn -B verify` over the full reactor exits 0.
+
+- [ ] (Task 170, owner decisions D-166-1, D-170-1, D-170-2.) The `[Unreleased]` `### Breaking` section and `docs/migration-0.6.md` record that the five YAML readers (and `ConfiguredJsonSources`) now refuse, at startup, a duplicate key (`DUPLICATE_CONFIG_KEY`), an unknown key (`UNKNOWN_CONFIG_KEY`) and a non-string scalar in a string-typed field (`NON_STRING_CONFIG_SCALAR`). They state that a configuration which loaded on 0.5.x may now refuse to start, and the quoting rule: values such as `010`, `yes` or `1e3` in string-typed fields must be quoted. Messages name the key and its path (key truncated to 64 characters), never the value. Take the exact list of changed files and fields from 170's hand-back.
+
+- [ ] (Task 167, owner decision D-167-1 (b), 2026-10-08.) `docs/migration-0.6.md` notes that octal-looking band bounds and vocabulary versions, and `yes`/`no`/`on`/`off` values, changed meaning under YAML 1.2 (Jackson 3) and are now refused at startup by task 170. It also lists these public signature changes from 167, completed by 168's inventory: `DataPrismObjectMapper.create()` returning `JsonMapper` (then narrowed by 168); `SourceTree.text` returning `StringNode`; the `com.fasterxml.jackson.databind` to `tools.jackson.databind` identity moves on `SourceTree`, `ScrubResult`, `Generalizer`, `ContextResponse`, `ComparisonResponse.identity`, the `ObjectMapper` parameter of the two tool constructors, `LlmResponseValidator.validate`, `RawValueLeakValidator.validate`, `SensitivePatternValidator.validate` and `SensitiveDataScanner.scan`. It also records the YAML 1.2 change, the native serialisation of `java.time` and `Optional` in `SourceTree`, and the new tool message "the response could not be serialised".
+
+- [ ] (Task 170, final scope, added 2026-10-08.) The CHANGELOG `### Breaking` section and `docs/migration-0.6.md` list all nine refusal codes: `DUPLICATE_CONFIG_KEY`, `UNKNOWN_CONFIG_KEY`, `NON_STRING_CONFIG_SCALAR`, `INVALID_CONFIG_BOOLEAN`, `LEADING_ZERO_CONFIG_NUMBER`, `TRAILING_CONFIG_CONTENT`, `UNSUPPORTED_CONFIG_YAML` (aliases, anchors, tags), `INVALID_CONFIG_SHAPE` and `NULL_LIKE_CONFIG_SCALAR`. They state the YAML 1.2 meaning changes (`yes`/`no`/`on`/`off` are text, leading-zero numbers are decimal and refused in numeric fields), that a present-but-null value is refused, and that an empty `tls:` is now refused where it used to disable `requireHttps`. They also record that error messages no longer echo configured URLs or credentials (`ConfiguredJsonSources`, `RestSources`, `RestSource`, the initializer), and that config locations are shown as a placeholder, a cut local path or `scheme://host[:port]`. The retired 170 task file's Outcome has the detail.
+- [ ] (Task 168.) `docs/migration-0.6.md` carries 168's signature inventory from the retired 168 task file's Outcome, including the dependency swaps (`mcp-json-jackson2` to `mcp-json-jackson3`, `spring-boot-jackson2` to `spring-boot-starter-jackson`) and `DataPrismObjectMapper`/`create()` no longer being public.
+- [ ] (Task 171.) The CHANGELOG notes, under a CI or build heading, that `build.yml` now builds the Javadoc with the release profile (unsigned) on every PR.
 
 ## Out of scope
 - The 0.6.0 release cut: version bump, `server.json`, image tags, tagging and publishing. A separate task, filed when the owner calls the cut.

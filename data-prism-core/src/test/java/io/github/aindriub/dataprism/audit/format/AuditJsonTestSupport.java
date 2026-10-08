@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.audit.format;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
 
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditEventHash;
@@ -21,7 +21,7 @@ import java.util.TreeSet;
 /** Streaming JSON reader and event generator for the projection tests; no ObjectMapper. */
 public final class AuditJsonTestSupport {
 
-    private static final JsonFactory JSON = new JsonFactory();
+    private static final JsonFactory JSON = JsonFactory.builder().build();
 
     private AuditJsonTestSupport() {
     }

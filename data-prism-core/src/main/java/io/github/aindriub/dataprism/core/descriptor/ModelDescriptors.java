@@ -1,20 +1,17 @@
 package io.github.aindriub.dataprism.core.descriptor;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.annotations.UndeclaredFields;
 import io.github.aindriub.dataprism.core.model.StrictYaml;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Loads model descriptors from YAML.
@@ -27,19 +24,22 @@ import java.util.Map;
  */
 public final class ModelDescriptors {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final String KIND = "model descriptors";
+    private static final Set<String> ROOT_KEYS = Set.of("models");
+    private static final Set<String> MODEL_KEYS = Set.of("exposed", "descendable", "undeclaredFields", "fields");
+    private static final Set<String> FIELD_KEYS =
+            Set.of("classifications", "namespace", "action", "subject", "nonSensitive", "identifier");
 
     private ModelDescriptors() {
     }
 
     @SuppressWarnings("unchecked")
     public static Map<String, ModelDescriptor> fromYaml(InputStream in) {
-        Map<String, Object> root;
-        try {
-            root = YAML.readValue(in, Map.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException("model descriptors could not be read", e);
+        Map<String, Object> root = StrictYaml.readMapping(in, KIND);
+        if (root == null) {
+            throw new IllegalArgumentException("descriptor file has no `models` section");
         }
+        StrictYaml.requireOnlyKeys(root.keySet(), ROOT_KEYS, KIND);
 
         Object models = root.get("models");
         if (!(models instanceof Map<?, ?> map) || map.isEmpty()) {
@@ -52,6 +52,7 @@ public final class ModelDescriptors {
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
                 throw new IllegalArgumentException("model " + typeName + " is not a mapping");
             }
+            StrictYaml.requireOnlyKeys(body.keySet(), MODEL_KEYS, KIND + " models." + StrictYaml.shown(typeName));
             out.put(typeName, model(typeName, (Map<String, Object>) body));
         }
         return Map.copyOf(out);
@@ -59,33 +60,35 @@ public final class ModelDescriptors {
 
     @SuppressWarnings("unchecked")
     private static ModelDescriptor model(String typeName, Map<String, Object> body) {
+        String modelWhere = KIND + " models." + StrictYaml.shown(typeName);
         Map<String, ModelDescriptor.FieldDescriptor> fields = new LinkedHashMap<>();
-        Object fieldsNode = body.get("fields");
-        if (fieldsNode instanceof Map<?, ?> map) {
+        Map<String, Object> map = StrictYaml.optionalMapping(body, "fields", modelWhere);
+        if (map != null) {
             for (Map.Entry<?, ?> e : map.entrySet()) {
                 String name = String.valueOf(e.getKey());
                 if (!(e.getValue() instanceof Map<?, ?> fieldBody)) {
                     throw new IllegalArgumentException(
                             "field " + typeName + "." + name + " is not a mapping");
                 }
+                StrictYaml.requireOnlyKeys(fieldBody.keySet(), FIELD_KEYS,
+                        KIND + " models." + StrictYaml.shown(typeName) + ".fields." + StrictYaml.shown(name));
                 fields.put(name, field(typeName, name, (Map<String, Object>) fieldBody));
             }
         }
 
         return new ModelDescriptor(
                 typeName,
-                bool(body.get("exposed")),
-                bool(body.get("descendable")),
-                body.get("undeclaredFields") == null
-                        ? null
-                        : StrictYaml.enumValue(UndeclaredFields.class, body.get("undeclaredFields"),
-                                typeName + ".undeclaredFields"),
+                StrictYaml.optionalBoolean(body, "exposed", modelWhere),
+                StrictYaml.optionalBoolean(body, "descendable", modelWhere),
+                StrictYaml.optionalEnum(UndeclaredFields.class, body, "undeclaredFields",
+                        typeName + ".undeclaredFields"),
                 fields);
     }
 
     private static ModelDescriptor.FieldDescriptor field(String typeName, String name,
                                                          Map<String, Object> body) {
         String where = typeName + "." + name;
+        String fieldWhere = KIND + " models." + StrictYaml.shown(typeName) + ".fields." + StrictYaml.shown(name);
 
         List<DataClassification> classifications = new ArrayList<>();
         Object raw = body.get("classifications");
@@ -96,9 +99,12 @@ public final class ModelDescriptors {
             }
         } else if (raw != null) {
             classifications.add(StrictYaml.enumValue(DataClassification.class, raw, where + ".classifications"));
+        } else if (body.containsKey("classifications")) {
+            throw new IllegalArgumentException(StrictYaml.NON_STRING_SCALAR + ": " + fieldWhere
+                    + ".classifications must be a quoted string");
         }
 
-        Object nonSensitive = body.get("nonSensitive");
+        String nonSensitive = StrictYaml.optionalString(body, "nonSensitive", fieldWhere);
         if (nonSensitive != null && !classifications.isEmpty()) {
             throw new IllegalArgumentException(
                     where + " states both classifications and nonSensitive");
@@ -106,16 +112,10 @@ public final class ModelDescriptors {
 
         return new ModelDescriptor.FieldDescriptor(
                 classifications,
-                body.get("namespace") == null ? null
-                        : StrictYaml.enumValue(PrivacyNamespace.class, body.get("namespace"), where + ".namespace"),
-                body.get("action") == null ? null
-                        : StrictYaml.enumValue(PrivacyAction.class, body.get("action"), where + ".action"),
-                body.get("subject") == null ? null : String.valueOf(body.get("subject")),
-                nonSensitive == null ? null : String.valueOf(nonSensitive),
-                body.get("identifier") == null ? null : String.valueOf(body.get("identifier")));
-    }
-
-    private static Boolean bool(Object raw) {
-        return raw == null ? null : Boolean.parseBoolean(String.valueOf(raw));
+                StrictYaml.optionalEnum(PrivacyNamespace.class, body, "namespace", where + ".namespace"),
+                StrictYaml.optionalEnum(PrivacyAction.class, body, "action", where + ".action"),
+                StrictYaml.optionalString(body, "subject", fieldWhere),
+                nonSensitive,
+                StrictYaml.optionalString(body, "identifier", fieldWhere));
     }
 }

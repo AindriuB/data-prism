@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -38,7 +40,7 @@ class ConfiguredJsonUndeclaredKeyRefusalTest {
     private static final String TOKEN = "zzUndeclaredKeyQx7";
     private static final StaticSecretKeyProvider KEYS =
             StaticSecretKeyProvider.of("task-118-undeclared-key-test-key-not-for-any-real-data");
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
     private static final Vocabulary VOCABULARY = VocabularyRegistry.withBuiltIns().resolve("und");
     private static final ScrubbingEngine UNREACHABLE_JAVA_FIRST = (source, context) -> {
         throw new AssertionError("java-first delegate should never be reached in this test");
@@ -82,7 +84,7 @@ class ConfiguredJsonUndeclaredKeyRefusalTest {
     private static ConfiguredJsonPayload payload(String json) {
         try {
             return new ConfiguredJsonPayload("customer-with-address", (ObjectNode) JSON.readTree(json));
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException(e);
         }
     }
@@ -141,7 +143,7 @@ class ConfiguredJsonUndeclaredKeyRefusalTest {
                 payload("{\"id\":\"C-1\",\"ssn\":\"123-45-6789\",\"" + KEY + "\":\"x\"}"), context());
 
         assertThat(result.tree().has("<undeclared-1>")).isTrue();
-        assertThat(result.tree().get("<undeclared-1>").asText()).isEqualTo("[REDACTED]");
+        assertThat(result.tree().get("<undeclared-1>").asString()).isEqualTo("[REDACTED]");
         assertThat(result.tree().toString()).doesNotContain(TOKEN);
     }
 }

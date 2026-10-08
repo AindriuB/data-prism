@@ -95,7 +95,7 @@ class GetEntityContextToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyGrantingGetEntityContext()), scopeResolver(Set.of("demonstration")),
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller("case-1", "demonstration")),
@@ -114,7 +114,7 @@ class GetEntityContextToolTest {
                 Map.of("investigator", Set.of("COMPARE_ENTITY_SOURCES")));
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyMissingCapability), scopeResolver(Set.of("demonstration")),
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller("case-1", "demonstration")),
@@ -136,7 +136,7 @@ class GetEntityContextToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyGrantingGetEntityContext()), scopeResolver(Set.of("demonstration")),
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(null), request(Map.of("entityType", "CUSTOMER", "subjectId", "123")));
@@ -152,7 +152,7 @@ class GetEntityContextToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyGrantingGetEntityContext()), scopeResolver(Set.of("demonstration")),
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller("case-1", "not-an-allowed-purpose")),
@@ -173,7 +173,7 @@ class GetEntityContextToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyGrantingGetEntityContext()), scopeResolver(Set.of("demonstration")),
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller("case-1", "demonstration")),
@@ -203,7 +203,7 @@ class GetEntityContextToolTest {
                 Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyGrantingGetEntityContext()), resolverPinnedToVocabulary,
-                DataPrismObjectMapper.create(), metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         McpSchema.CallToolResult first = tool.specification().callHandler().apply(
                 exchangeFor(caller("case-1", "demonstration")),
@@ -229,7 +229,7 @@ class GetEntityContextToolTest {
         RecordingOrchestrator orchestrator = new RecordingOrchestrator();
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyGrantingGetEntityContext()), scopeResolver(Set.of("demonstration")),
-                DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         assertThatThrownBy(() -> tool.specification().callHandler().apply(
                 exchangeFor(null), request(Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
@@ -253,7 +253,7 @@ class GetEntityContextToolTest {
                 Map.of("investigator", Set.of("COMPARE_ENTITY_SOURCES")));
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyMissingCapability), scopeResolver(Set.of("demonstration")),
-                DataPrismObjectMapper.create(), metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
         assertThatThrownBy(() -> tool.specification().callHandler().apply(
                 exchangeFor(caller("case-1", "demonstration")),

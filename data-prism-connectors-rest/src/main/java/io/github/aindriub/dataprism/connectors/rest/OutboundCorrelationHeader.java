@@ -1,10 +1,10 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonStreamContext;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.TokenStreamContext;
 
-import java.io.IOException;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -55,21 +55,21 @@ final class OutboundCorrelationHeader {
 
     /** Line of {@code correlation-header} under {@code root.source}, or 0 when it cannot be found. */
     static int lineOf(byte[] yaml, String rootKey, String source) {
-        try (JsonParser parser = RestSources.YAML.getFactory().createParser(yaml)) {
+        try (JsonParser parser = RestSources.YAML.tokenStreamFactory().createParser(yaml)) {
             JsonToken token;
             while ((token = parser.nextToken()) != null) {
-                if (token == JsonToken.FIELD_NAME && KEY.equals(parser.currentName())) {
-                    JsonStreamContext in = parser.getParsingContext();
-                    JsonStreamContext sourceCtx = in.getParent();
-                    JsonStreamContext rootCtx = sourceCtx == null ? null : sourceCtx.getParent();
+                if (token == JsonToken.PROPERTY_NAME && KEY.equals(parser.currentName())) {
+                    TokenStreamContext in = parser.streamReadContext();
+                    TokenStreamContext sourceCtx = in.getParent();
+                    TokenStreamContext rootCtx = sourceCtx == null ? null : sourceCtx.getParent();
                     if (sourceCtx != null && rootCtx != null
-                            && source.equals(sourceCtx.getCurrentName())
-                            && rootKey.equals(rootCtx.getCurrentName())) {
+                            && source.equals(sourceCtx.currentName())
+                            && rootKey.equals(rootCtx.currentName())) {
                         return parser.currentTokenLocation().getLineNr();
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             return 0;
         }
         return 0;

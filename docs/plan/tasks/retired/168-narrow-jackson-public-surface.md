@@ -12,6 +12,9 @@ decided (option (a), 2026-10-08), so nothing blocks this task but 167.
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ArchitectureTest.java (insertions only: two rules, their tests and their negative tests)
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/*PublicMapperFixture.java (new)
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/*JsonFactoryFixture.java (new; the negative-test fixture for the factory rule)
+- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/*ObtainedMapperFixture.java (new; negative fixtures for obtained mappers)
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceTree.java (the allowlist Javadoc sentence only)
+- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/SourceTreeJacksonParityTest.java (the asserted exception type only)
 
 ## Goal
 Owner decision J3-3 (C). Jackson 3 tree types stay public where they carry real data; 167 already
@@ -57,6 +60,8 @@ streaming JSON factories and generators (`tools.jackson.core.json.JsonFactory`, 
 - [ ] Neither `GetEntityContextTool` nor `CompareEntitySourcesTool` has a public or protected constructor or method with a `tools.jackson.databind.ObjectMapper` parameter. `DataPrismMcpServer` still hands one mapper instance to `JacksonMcpJsonMapper` and both tools. A test in `data-prism-mcp/src/test` asserts that sharing by reflection or by a package-private accessor.
 - [ ] New ArchUnit rule `noPublicApiExposesAnObjectMapper`: no public or protected method, constructor or field of a public class in `io.github.aindriub.dataprism..` has a parameter, return or field type assignable to `tools.jackson.databind.ObjectMapper`, `tools.jackson.databind.cfg.MapperBuilder` or `tools.jackson.databind.ObjectWriter`. A fixture `*PublicMapperFixture.java` with a public method returning a `JsonMapper` makes the rule's negative test report a violation naming the fixture.
 - [ ] New ArchUnit rule `onlyDesignatedClassesConstructJsonFactories` (D-J3-2 (b)): only the four classes named in Goal construct a streaming JSON factory or generator. A fixture `*JsonFactoryFixture.java` outside the allowlist makes the rule's negative test report a violation naming the fixture. The hand-back lists the construction sites found, confirming each is in the allowlist.
+- [ ] (Added 2026-10-08, fail-closed.) The ArchUnit mapper rule also catches OBTAINED mappers outside the allowlist, not only constructed ones: `JsonMapper.shared()` and any similar static shared accessor, and any data-prism class that injects or uses Spring Boot's auto-configured `JsonMapper` or `ObjectMapper` bean (present now that `spring-boot-starter-jackson` is re-adopted). Each has a negative fixture that makes the rule report a violation naming the fixture. The hand-back lists the accessors the rule matches.
+- [ ] (Added 2026-10-08, folded in from 167's review.) `SourceTree`'s Javadoc no longer says "two names on the allowlist"; it describes the allowlist as it stands. `SourceTreeJacksonParityTest` (about :39) asserts the specific Jackson empty-bean exception type, not `RuntimeException`. `JwtDecoderSupport.parseDiscoveryMetadata` loses its stale `throws IOException` only if the file is within this task's Owns. It is not today, so this item is a PLAN.md follow-up unless the Owns list is widened by the owner.
 - [ ] `mvn -B --no-transfer-progress verify` is green, and the 166 characterisation tests pass with unchanged expected bytes.
 - [ ] Hand-back: the inventory below checked against `git diff <pre-167 sha>..HEAD` over `data-prism-*/src/main`, restricted to public and protected declarations. It has one row per change (old → new, final FQCN after 156/157), corrected and completed where the planner's list is wrong. 162 copies it into docs/migration-0.6.md.
 
@@ -81,3 +86,26 @@ Dependency changes for consumers (from 167): `mcp-json-jackson2` → `mcp-json-j
 - docs/migration-0.6.md and CHANGELOG.md (162 writes them from this hand-back).
 - docs/architecture.md and docs/conventions.md (169).
 - An `ObjectMapper` that an adapter author creates in their own code. J3-2 permits it, and this rule covers only `io.github.aindriub.dataprism..`.
+
+## Outcome (2026-10-08, wave 6)
+Merged onto `release/0.6.0-jackson3` (task branch head c6b218bb). D-J3-1 (a) is implemented: `DataPrismObjectMapper` and `create()` are package-private, the two tool constructors lose their `ObjectMapper` parameter, and a package-private `DataPrismMcpServer.Wiring` carries one mapper to the MCP server and both tools. Tester PASS (1467 tests, 0 failed). The first review asked for changes: the Spring rule missed unannotated Spring-dependent classes, the server was built without the shared mapper, the structured golden had lost its production pin, and `McpJsonMapper` was not covered. All four were fixed and the re-review was APPROVE.
+
+Rules, all in `ArchitectureTest`, each with negative fixtures:
+- `noPublicApiExposesAnObjectMapper`, including the MCP SDK's `McpJsonMapper`.
+- `onlyDesignatedClassesConstructJsonFactories`, allowing `DataPrismObjectMapper`, `AuditJsonRenderer`, `audit.AuditCheckpoint` and `JwtDecoderSupport`.
+- `springManagedClassesDoNotInjectAMapper`, treating any class that depends on `org.springframework..` as Spring-managed.
+- `onlyDesignatedClassesCreateMappers` gained a static shared-accessor clause that catches `JsonMapper.shared()`.
+
+Public signature inventory for 162 (verified against the diff):
+- `ScrubResult`: component, accessor and constructor `ObjectNode` moved to `tools.jackson.databind`.
+- `SourceTree`: `of`, `newObject`, `newArray` return Jackson 3 types, and `text` now returns `StringNode`.
+- `Generalizer.generalise(JsonNode, ...)`.
+- Validators and scanner: `LlmResponseValidator.validate`, `RawValueLeakValidator.validate`, `SensitivePatternValidator.validate`, `SensitiveDataScanner.scan`.
+- `ContextResponse.entity()` and its constructors.
+- `ComparisonResponse.identity()`.
+- No `throws JsonProcessingException` was found to remove.
+- `DataPrismObjectMapper` and `create()` are no longer public.
+- The two tool constructors lose the `ObjectMapper` parameter.
+- Dependency swaps: `mcp-json-jackson2` to `mcp-json-jackson3`, and `spring-boot-jackson2` to `spring-boot-starter-jackson`.
+
+Known limit: ArchUnit cannot see a class-literal `getBean(JsonMapper.class)` in a class with no Spring dependency. None can exist, because obtaining a context is itself a Spring dependency. Follow-ups are in PLAN.md.

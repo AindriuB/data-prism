@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Base:** branch from `origin/main` (0.5.0 released at v0.5.0 / c850c3e2) after 157 has merged into it.
-**Depends on:** 157, 167, 168, 169
+**Depends on:** 157, 167, 168, 169, 170
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/*Properties.java (new)
@@ -11,7 +11,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java (type references and validator wiring only)
 - data-prism-spring-boot-autoconfigure/src/test/**
 - data-prism-server/src/** (type references only)
-- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java and data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesTest.java (type references only)
+- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java and data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesTest.java (type references only; 170 also edits `rejectUnknownKeys` and the read path in `ConfiguredJsonSources.java`, so 158 branches after 170 has merged)
 - data-prism-integration-tests/src/**/{SecurityConfig,SecurityConfigTest,ShippedDefaultsTest,ConfiguredJsonNestedHttpTest}.java (type references only)
 - data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartExtensionAutoConfiguration.java (type references only)
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ArchitectureTest.java
@@ -47,6 +47,8 @@ property name, prefix, default and refusal stays exactly as it is.
 - [ ] String sweep: no file outside `target/`, `docs/plan/`, `docs/pack.md`, `docs/design-review.md` and `CHANGELOG.md` names a removed nested type (`DataPrismProperties.Audit` and the like).
 - [ ] The last commit's body carries the old → new type-name table; task 162 builds the migration page from it.
 - [ ] `mvn -B verify` over the full reactor exits 0.
+
+- [ ] (Added 2026-10-08, from task 170.) Chain the cause on `INVALID_MODEL_DESCRIPTOR_FILE` (`DataPrismAutoConfiguration` about :486-488) so that 170's inner codes (for example `UNKNOWN_CONFIG_KEY`, `DUPLICATE_CONFIG_KEY`) reach the operator, and update the wording in `docs/configuration.md` (about :103, which says the refusal does not repeat the file's content) to match. The cause carries codes and key paths only, never values. This is the one deliberate behaviour change in an otherwise pure move; make it in its own commit after the move.
 
 ## Out of scope
 - Splitting `DataPrismAutoConfiguration` and the `spring.boot.jwt` package (task 159).

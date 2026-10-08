@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
@@ -105,7 +106,7 @@ class OrchestratorRefusalCorrelationTest {
     }
 
     private static final ScrubbingEngine OK_SCRUBBER = (source, ctx) ->
-            new ScrubResult(new ObjectMapper().createObjectNode().put("value", "ok"), Set.of());
+            new ScrubResult(JsonMapper.builder().build().createObjectNode().put("value", "ok"), Set.of());
     private static final LlmResponseValidator OK = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
 
     private List<BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult>> handlers(
@@ -117,9 +118,9 @@ class OrchestratorRefusalCorrelationTest {
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
                 Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
-                DataPrismObjectMapper.create(), PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         return List.of(get.specification().callHandler(), compare.specification().callHandler());
     }
 

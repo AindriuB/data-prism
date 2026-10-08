@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLMapper;
+import io.github.aindriub.dataprism.core.model.StrictYaml;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,6 +16,7 @@ import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Loads source definitions, and the optional outbound TLS configuration, from
@@ -27,15 +30,25 @@ import java.util.Map;
  */
 public final class RestSources {
 
+    private static final String KIND = "source configuration";
+    private static final Set<String> ROOT_KEYS = Set.of("sources", "tls");
+    private static final Set<String> SOURCE_KEYS =
+            Set.of("base-url", "path", "timeout", OutboundCorrelationHeader.KEY);
+    static final Set<String> TLS_KEYS = Set.of("key-store", "key-store-password-env", "trust-store",
+            "trust-store-password-env", "store-type");
+
     /**
-     * Package-private: {@link ConfiguredJsonSources} parses its own, differently
-     * shaped YAML from this same mapper rather than constructing a second one.
-     * Architecture rule {@code onlyDesignatedClassesCreateMappers} allowlists this
-     * class by name as one of the few permitted to call an {@code ObjectMapper}
-     * constructor at all; sharing the instance is what lets a sibling loader in
-     * this module avoid needing its own entry on that list.
+     * Package-private, and no longer what the readers parse with: both readers go
+     * through {@link StrictYaml#readMapping}, which refuses duplicate keys and
+     * trailing content. What is left is a token-stream factory for {@code
+     * OutboundCorrelationHeader.lineOf}. Architecture rule {@code
+     * onlyDesignatedClassesCreateMappers} allowlists this class by name, so the
+     * instance stays here rather than needing an entry for a sibling.
      */
-    static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    static final ObjectMapper YAML = YAMLMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .build();
 
     private RestSources() {
     }
@@ -54,13 +67,16 @@ public final class RestSources {
     public static RestSourcesConfig fromYaml(InputStream in, String defaultCorrelationHeader) {
         OutboundCorrelationHeader.validate(defaultCorrelationHeader, "the global outbound header default", 0);
         byte[] bytes;
-        Map<String, Object> root;
         try {
             bytes = in.readAllBytes();
-            root = YAML.readValue(bytes, Map.class);
         } catch (IOException e) {
             throw new UncheckedIOException("source configuration could not be read", e);
         }
+        Map<String, Object> root = StrictYaml.readMapping(bytes, KIND);
+        if (root == null) {
+            throw new IllegalArgumentException("source configuration has no `sources` section");
+        }
+        StrictYaml.requireOnlyKeys(root.keySet(), ROOT_KEYS, KIND);
 
         Object sources = root.get("sources");
         if (!(sources instanceof Map<?, ?> map) || map.isEmpty()) {
@@ -74,8 +90,9 @@ public final class RestSources {
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             String name = String.valueOf(entry.getKey());
             if (!(entry.getValue() instanceof Map<?, ?> body)) {
-                throw new IllegalArgumentException("source " + name + " is not a mapping");
+                throw new IllegalArgumentException("source " + StrictYaml.shown(name) + " is not a mapping");
             }
+            StrictYaml.requireOnlyKeys(body.keySet(), SOURCE_KEYS, KIND + " sources." + StrictYaml.shown(name));
             out.put(name, source(name, (Map<String, Object>) body, requireHttps,
                     defaultCorrelationHeader, bytes));
         }
@@ -84,20 +101,21 @@ public final class RestSources {
 
     private static RestSource source(String name, Map<String, Object> body, boolean requireHttps,
                                      String defaultCorrelationHeader, byte[] yaml) {
-        String baseUrl = required(body, "base-url", "source " + name);
-        String path = required(body, "path", "source " + name);
-        Object timeout = body.get("timeout");
+        String baseUrl = required(body, "base-url", "source " + StrictYaml.shown(name));
+        String path = required(body, "path", "source " + StrictYaml.shown(name));
+        String timeout = StrictYaml.optionalString(body, "timeout",
+                "source configuration sources." + StrictYaml.shown(name));
 
         String header = correlationHeader(name, body, defaultCorrelationHeader, "sources", yaml);
         try {
             return new RestSource(name, new URI(baseUrl), path,
-                    timeout == null ? Duration.ofSeconds(3) : Duration.parse(String.valueOf(timeout)),
+                    timeout == null ? Duration.ofSeconds(3) : Duration.parse(timeout),
                     requireHttps, header);
         } catch (URISyntaxException e) {
-            throw new IllegalArgumentException(
-                    "source " + name + " has an unparseable base-url", e);
+            // No cause: URISyntaxException's message repeats the whole input, user-info included.
+            throw new IllegalArgumentException("source " + StrictYaml.shown(name) + " has an unparseable base-url");
         } catch (DateTimeParseException e) {
-            throw new IllegalArgumentException("source " + name
+            throw new IllegalArgumentException("source " + StrictYaml.shown(name)
                     + " has an unparseable timeout; use ISO-8601, e.g. PT2S", e);
         }
     }
@@ -109,22 +127,22 @@ public final class RestSources {
             return defaultHeader;
         }
         Object raw = body.get(OutboundCorrelationHeader.KEY);
-        String where = "source " + name;
-        return OutboundCorrelationHeader.validate(raw == null ? "" : String.valueOf(raw), where,
+        String where = "source " + StrictYaml.shown(name);
+        return OutboundCorrelationHeader.validate(
+                raw == null ? "" : StrictYaml.text(raw, rootKey + "." + StrictYaml.shown(name) + "."
+                        + OutboundCorrelationHeader.KEY),
+                where,
                 OutboundCorrelationHeader.lineOf(yaml, rootKey, name));
     }
 
     /** Package-private: {@link ConfiguredJsonSources} parses the same {@code tls:} shape. */
     @SuppressWarnings("unchecked")
     static TlsSettings tls(Map<String, Object> root) {
-        Object node = root.get("tls");
-        if (node == null) {
+        Map<String, Object> tlsBody = StrictYaml.optionalMapping(root, "tls", "tls configuration", true);
+        if (tlsBody == null) {
             return null;
         }
-        if (!(node instanceof Map<?, ?> body)) {
-            throw new IllegalArgumentException("tls configuration is not a mapping");
-        }
-        Map<String, Object> tlsBody = (Map<String, Object>) body;
+        StrictYaml.requireOnlyKeys(tlsBody.keySet(), TLS_KEYS, "tls configuration");
 
         String keyStore = required(tlsBody, "key-store", "tls configuration");
         String keyStorePasswordEnv = required(tlsBody, "key-store-password-env", "tls configuration");
@@ -144,9 +162,13 @@ public final class RestSources {
     /** Package-private: {@link ConfiguredJsonSources} reuses the same required-key check. */
     static String required(Map<String, Object> body, String key, String context) {
         Object value = body.get(key);
-        if (value == null || String.valueOf(value).isBlank()) {
+        if (value == null) {
             throw new IllegalArgumentException(context + " has no " + key);
         }
-        return String.valueOf(value);
+        String text = StrictYaml.text(value, context + " " + key);
+        if (text.isBlank()) {
+            throw new IllegalArgumentException(context + " has no " + key);
+        }
+        return text;
     }
 }

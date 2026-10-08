@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.server.operator;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.modelcontextprotocol.client.McpSyncClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ReidentificationEndToEndTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
     private static final String SUBJECT = "subject-4711";
     private static final String CASE = "CASE-E2E";
 
@@ -30,7 +31,7 @@ class ReidentificationEndToEndTest {
              McpSyncClient client = app.mcpClient(app.mcpToken("analyst-e2e", CASE))) {
             JsonNode entity = JSON.readTree(OperatorHarness.text(app.getEntityContext(client, SUBJECT)))
                     .path("entity");
-            String synthetic = entity.path("customerName").asText();
+            String synthetic = entity.path("customerName").asString();
             assertThat(synthetic).isNotBlank().isNotEqualTo("Fixture Person");
 
             String requester = app.operatorToken("requester-e2e", "requester");
@@ -39,7 +40,7 @@ class ReidentificationEndToEndTest {
                     "{\"scopeId\":\"case:" + CASE + "\",\"namespace\":\"PERSON_NAME\",\"syntheticValue\":\""
                             + synthetic + "\",\"purpose\":\"fraud-review\",\"caseId\":\"" + CASE + "\"}");
             assertThat(requested.statusCode()).isEqualTo(202);
-            String approvalId = JSON.readTree(requested.body()).path("approvalId").asText();
+            String approvalId = JSON.readTree(requested.body()).path("approvalId").asString();
             assertThat(approvalId).isNotBlank();
 
             assertThat(app.operator("POST", "/operator/reidentifications/" + approvalId + "/approve", approver,
@@ -49,8 +50,8 @@ class ReidentificationEndToEndTest {
                     requester, null);
             assertThat(collected.statusCode()).isEqualTo(200);
             JsonNode body = JSON.readTree(collected.body());
-            assertThat(body.path("status").asText()).isEqualTo("RESOLVED");
-            assertThat(body.path("subjectId").asText()).isEqualTo(SUBJECT);
+            assertThat(body.path("status").asString()).isEqualTo("RESOLVED");
+            assertThat(body.path("subjectId").asString()).isEqualTo(SUBJECT);
         }
     }
 }

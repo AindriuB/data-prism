@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
@@ -54,7 +55,7 @@ class AuditedEntityTypeOrchestratorTest {
 
     private DefaultContextOrchestrator orchestrator() {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         ScrubbingEngine scrubber = (source, ctx) ->
                 new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of());
         LlmResponseValidator ok = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
@@ -134,7 +135,7 @@ class AuditedEntityTypeOrchestratorTest {
 
     private DefaultContextOrchestrator noDataOrchestrator() {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         ScrubbingEngine scrubber = (source, ctx) ->
                 new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of());
         LlmResponseValidator ok = (response, prohibited, emitted, ctx) -> ValidationResult.ok();

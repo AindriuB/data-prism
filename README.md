@@ -208,8 +208,8 @@ mvn -B --no-transfer-progress verify
 
 This is the same command CI runs (`.github/workflows/build.yml`). It builds all
 18 submodules plus the root aggregator, runs the full test suite, the
-ArchUnit boundary rules, and the enforcer rule that keeps the classpath on a
-single Jackson major.
+ArchUnit boundary rules, and the enforcer rule that keeps the classpath on
+Jackson 3, with Jackson 2 banned apart from `jackson-annotations`.
 
 `data-prism-server` is the primary executable distribution. Its `/health`
 liveness probe is public and carries no deployment detail; its configured MCP

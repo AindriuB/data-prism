@@ -1,12 +1,9 @@
 package io.github.aindriub.dataprism.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.github.aindriub.dataprism.core.model.Capability;
+import io.github.aindriub.dataprism.core.model.StrictYaml;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -25,7 +22,7 @@ import java.util.Set;
  */
 public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String>> roleCapabilities) {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final String KIND = "security policy";
     private static final Set<String> TOP_LEVEL_KEYS = Set.of("purposes", "roles");
 
     public SecurityPolicy {
@@ -51,24 +48,15 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
         return Set.copyOf(out);
     }
 
-    @SuppressWarnings("unchecked")
     public static SecurityPolicy fromYaml(InputStream in) {
-        Map<String, Object> root;
-        try {
-            root = YAML.readValue(in, Map.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException("security policy could not be read", e);
-        }
+        Map<String, Object> root = StrictYaml.readMapping(in, KIND);
         if (root == null) {
             throw new IllegalArgumentException("security policy file is empty");
         }
-        for (String key : root.keySet()) {
-            if (!TOP_LEVEL_KEYS.contains(key)) {
-                throw new IllegalArgumentException("unknown security policy key '" + key + "'");
-            }
-        }
+        StrictYaml.requireOnlyKeys(root.keySet(), TOP_LEVEL_KEYS, KIND);
 
-        return new SecurityPolicy(purposes(root.get("purposes")), roles(root.get("roles")));
+        return new SecurityPolicy(purposes(root.get("purposes")),
+                root.containsKey("roles") ? roles(root.get("roles")) : Map.of());
     }
 
     private static Set<String> purposes(Object node) {
@@ -76,8 +64,8 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
             throw new IllegalArgumentException("security policy has no purposes");
         }
         Set<String> out = new LinkedHashSet<>();
-        for (Object item : list) {
-            String purpose = String.valueOf(item).trim();
+        for (int i = 0; i < list.size(); i++) {
+            String purpose = StrictYaml.text(list.get(i), KIND + " purposes[" + i + "]").trim();
             if (purpose.isBlank()) {
                 throw new IllegalArgumentException("security policy has a blank purpose");
             }
@@ -87,11 +75,8 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
     }
 
     private static Map<String, Set<String>> roles(Object node) {
-        if (node == null) {
-            return Map.of();
-        }
         if (!(node instanceof Map<?, ?> map)) {
-            throw new IllegalArgumentException("security policy 'roles' is not a mapping");
+            throw new IllegalArgumentException(StrictYaml.INVALID_SHAPE + ": " + KIND + " roles must be a mapping");
         }
         Map<String, Set<String>> out = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
@@ -100,8 +85,9 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
                 throw new IllegalArgumentException("role '" + role + "' capabilities must be a list");
             }
             Set<String> capabilities = new LinkedHashSet<>();
-            for (Object item : list) {
-                String capability = String.valueOf(item).trim();
+            for (int i = 0; i < list.size(); i++) {
+                String capability = StrictYaml.text(list.get(i),
+                        KIND + " roles." + StrictYaml.shown(role) + "[" + i + "]").trim();
                 if (!Capability.KNOWN.contains(capability)) {
                     throw new IllegalArgumentException(
                             "role '" + role + "' names unknown capability '" + capability + "'");

@@ -6,7 +6,6 @@ import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -78,7 +77,7 @@ class EndToEndTest {
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                 new PurposeValidator(Set.of(PURPOSE)));
         var tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService(privacyProfile),
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+                scopeResolver, PrivacyMetrics.none(), toolAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         return tool.specification().callHandler()
                 .apply(exchangeFor(caller), new McpSchema.CallToolRequest(GetEntityContextTool.NAME, arguments));
     }

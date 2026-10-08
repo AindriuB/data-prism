@@ -79,7 +79,7 @@ class ConfiguredJsonDataSourceAdapterHttpTest {
         ConfiguredJsonPayload payload = adapter().fetch(DataRequest.of("CUSTOMER", "123"));
 
         assertThat(payload.sourceName()).isEqualTo("customer-api");
-        assertThat(payload.body().get("status").asText()).isEqualTo("ACTIVE");
+        assertThat(payload.body().get("status").asString()).isEqualTo("ACTIVE");
     }
 
     @Test

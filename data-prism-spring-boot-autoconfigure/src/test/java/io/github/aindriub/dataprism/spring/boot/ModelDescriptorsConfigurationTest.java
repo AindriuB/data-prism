@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
@@ -95,8 +95,8 @@ class ModelDescriptorsConfigurationTest {
                             new PrivacyContext("C-1", PrivacyScopeType.CASE, "DEFAULT", "test",
                                     Instant.parse("2030-01-01T00:00:00Z"), version)).tree();
 
-                    assertThat(out.get("name").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
-                    assertThat(out.get("status").asText()).isEqualTo("ACTIVE");
+                    assertThat(out.get("name").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+                    assertThat(out.get("status").asString()).isEqualTo("ACTIVE");
                     assertThat(out.has("id")).isFalse();
                     assertThat(out.toString()).doesNotContain("confidential-name");
                 });
@@ -171,17 +171,17 @@ class ModelDescriptorsConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedIntegrations {
         @Bean
-        DataSourceAdapter<String> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 public String sourceName() {
                     return "customer";
                 }
 
-                public Class<String> responseType() {
-                    return String.class;
+                public Class<TestPayload> responseType() {
+                    return TestPayload.class;
                 }
 
-                public String fetch(DataRequest request) {
+                public TestPayload fetch(DataRequest request) {
                     return null;
                 }
             };

@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.core.engine;
 
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -81,7 +81,7 @@ class UndeclaredPropertyNameTest {
 
     private static List<String> names(ObjectNode node) {
         List<String> out = new ArrayList<>();
-        node.fieldNames().forEachRemaining(out::add);
+        out.addAll(node.propertyNames());
         return out;
     }
 
@@ -95,10 +95,10 @@ class UndeclaredPropertyNameTest {
         ObjectNode out = engine(UnclassifiedBehaviour.REDACT_AND_WARN).scrub(source, context()).tree();
 
         assertThat(names(out)).containsExactly("status", "child", "<undeclared-3>", "<undeclared-1>", "<undeclared-2>");
-        assertThat(out.get("<undeclared-3>").asText()).isEqualTo("[REDACTED]");
-        assertThat(out.get("<undeclared-1>").asText()).isEqualTo("[REDACTED]");
-        assertThat(out.get("<undeclared-2>").asText()).isEqualTo("[REDACTED]");
-        assertThat(out.get("status").asText()).isEqualTo("ACTIVE");
+        assertThat(out.get("<undeclared-3>").asString()).isEqualTo("[REDACTED]");
+        assertThat(out.get("<undeclared-1>").asString()).isEqualTo("[REDACTED]");
+        assertThat(out.get("<undeclared-2>").asString()).isEqualTo("[REDACTED]");
+        assertThat(out.get("status").asString()).isEqualTo("ACTIVE");
         ObjectNode child = (ObjectNode) out.get("child");
         assertThat(names(child)).containsExactly("state", "<undeclared-2>", "<undeclared-1>");
         assertThat(out.toString()).doesNotContain("example.com").doesNotContain("mid");
@@ -151,9 +151,9 @@ class UndeclaredPropertyNameTest {
 
         ObjectNode out = engine.scrub(new Mixed("1", extra), context()).tree();
 
-        assertThat(out.get("<undeclared-1>").asText()).isEqualTo("declared-value");
-        assertThat(out.get("<undeclared-2>").asText()).isEqualTo("[REDACTED]");
-        assertThat(out.get("<undeclared-3>").asText()).isEqualTo("[REDACTED]");
+        assertThat(out.get("<undeclared-1>").asString()).isEqualTo("declared-value");
+        assertThat(out.get("<undeclared-2>").asString()).isEqualTo("[REDACTED]");
+        assertThat(out.get("<undeclared-3>").asString()).isEqualTo("[REDACTED]");
         assertThat(out.size()).isEqualTo(3);
     }
 
@@ -178,7 +178,7 @@ class UndeclaredPropertyNameTest {
         ObjectNode out = engine(UnclassifiedBehaviour.PASS_THROUGH_UNSAFE).scrub(source, context()).tree();
 
         assertThat(names(out)).containsExactly("status", "child", ZETA);
-        assertThat(out.get(ZETA).asText()).isEqualTo("z");
+        assertThat(out.get(ZETA).asString()).isEqualTo("z");
     }
 
     @Test

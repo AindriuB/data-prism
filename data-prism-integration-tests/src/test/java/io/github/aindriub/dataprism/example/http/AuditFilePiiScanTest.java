@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.example.http;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.format.AuditFieldMapping;
 import io.github.aindriub.dataprism.audit.format.AuditRouting;
@@ -23,7 +24,6 @@ import io.github.aindriub.dataprism.example.StubCustomerAdapter;
 import io.github.aindriub.dataprism.example.StubOrderAdapter;
 import io.github.aindriub.dataprism.mcp.CompareEntitySourcesTool;
 import io.github.aindriub.dataprism.mcp.DataPrismMcpServer;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -505,7 +505,7 @@ class AuditFilePiiScanTest {
     private static final AuditRouting PROJECTION_ROUTING =
             new AuditRouting("dataprism.audit", "logs", "dataprism.audit", "prod");
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     private static InboundCorrelation inboundCorrelation(String value) {
         InboundCorrelation inbound =
@@ -545,7 +545,7 @@ class AuditFilePiiScanTest {
 
     private static void walk(JsonNode node, String path, AuditFieldMapping mapping, List<String[]> out) {
         if (node.isObject()) {
-            node.fields().forEachRemaining(entry -> {
+            node.properties().forEach(entry -> {
                 String child = path.isEmpty() ? entry.getKey() : path + "." + entry.getKey();
                 String canonical = canonicalOf(child, mapping);
                 if (!canonical.equals(child)) {
@@ -556,7 +556,7 @@ class AuditFilePiiScanTest {
         } else if (node.isArray()) {
             node.forEach(element -> walk(element, path, mapping, out));
         } else if (!node.isNull()) {
-            out.add(new String[] {canonicalOf(path, mapping), node.asText()});
+            out.add(new String[] {canonicalOf(path, mapping), node.asString()});
         }
     }
 
@@ -605,7 +605,7 @@ class AuditFilePiiScanTest {
                 .hasSameSizeAs(out.nativeLines());
         long withTraceId = 0;
         for (String line : out.ndjsonLines()) {
-            if (SYNTHETIC_CLID.equals(JSON.readTree(line).path("trace").path("id").asText())) {
+            if (SYNTHETIC_CLID.equals(JSON.readTree(line).path("trace").path("id").asString())) {
                 withTraceId++;
             }
         }
@@ -685,9 +685,9 @@ class AuditFilePiiScanTest {
             ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
                     new PurposeValidator(Set.of(purpose)));
             GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                    scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
+                    scopeResolver, PrivacyMetrics.none(), toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
             CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
-                    authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
+                    authorizationService, scopeResolver, PrivacyMetrics.none(),
                     toolAudit, FIXED_CLOCK, null, ToolOptions.defaults().noAdmission().build());
 
             AuthenticatedCaller caller = new AuthenticatedCaller(

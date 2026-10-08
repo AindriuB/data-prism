@@ -9,7 +9,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.spring.boot.HmacKeyReferenceResolver;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -377,12 +377,12 @@ class ConfiguredJsonNestedHttpTest {
             String body = text(result);
             assertThat(body).doesNotContain("Raw Full Name").doesNotContain("111-22-3333");
 
-            var response = DataPrismObjectMapper.create().readTree(body);
+            var response = JsonMapper.builder().build().readTree(body);
             var entity = response.path("entity");
-            assertThat(entity.path("address").path("line1").asText()).isEqualTo("123 Main St");
-            assertThat(entity.path("address").path("ssn").asText())
+            assertThat(entity.path("address").path("line1").asString()).isEqualTo("123 Main St");
+            assertThat(entity.path("address").path("ssn").asString())
                     .isNotBlank().isNotEqualTo("111-22-3333");
-            assertThat(entity.path("name").asText()).isNotBlank().isNotEqualTo("Raw Full Name");
+            assertThat(entity.path("name").asString()).isNotBlank().isNotEqualTo("Raw Full Name");
         } finally {
             client.closeGracefully();
         }

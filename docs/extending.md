@@ -143,8 +143,9 @@ public interface DataSourceAdapter<T> {
   `dataprism.sources.<name>` configuration entry — see the binding section
   below; nothing else about this class name, package or bean name matters
   for that.
-- `responseType()` returns the `@LlmExposedModel`-annotated class this
-  adapter produces.
+- `responseType()` returns the `@LlmExposedModel`-annotated record this
+  adapter produces. It, and every user type nested in it, must be a record:
+  any other class is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`.
 - `fetch(DataRequest request)` does the actual call. `DataRequest` carries
   only `entityType`, `subjectId` and a parameters map your adapter chooses to
   read — never a caller-supplied URL, path or query
@@ -305,6 +306,21 @@ fixture source shares a single id:
 `data-prism-quickstart-extension/src/main/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartExtensionAutoConfiguration.java:36-43`
 
 ## Classify the model with `@LlmExposedModel`
+
+!!! warning "A response type must be a record"
+    The response type, and every user type nested inside it, must be a Java
+    `record`. Enums, JDK types (`String`, numbers, `Instant`, `UUID`, ...),
+    `JsonNode`, and collections, maps (with String, enum, number, UUID, date or
+    similar keys), `Optional`s and arrays of those are also fine. A record is read
+    by its components only; an extra `getX()` on it is not emitted. Any other
+    class (a bean or POJO, a subclass of a collection, a `Throwable`), at any
+    depth, is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`, and again at
+    runtime if one turns up behind an `Object`- or interface-typed component.
+    A `@JsonSerialize(using=...)` on a record or its components, `@JsonAnyGetter`
+    and `@JsonValue` are the model author's explicit choice and stay allowed (the
+    engine still classifies what they produce); `@JsonProperty` or `@JsonGetter` on
+    a method that is not a record component is refused. The message names the class's
+    simple name only, never a value.
 
 A response type is never exposed through MCP unless it carries
 `@LlmExposedModel`, and every field of an annotated type must then carry one

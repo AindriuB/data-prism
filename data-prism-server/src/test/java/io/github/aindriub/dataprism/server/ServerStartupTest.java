@@ -236,11 +236,11 @@ class ServerStartupTest {
         return application.run(configuration);
     }
 
-    private static DataSourceAdapter<String> testAdapter() {
+    private static DataSourceAdapter<TestPayload> testAdapter() {
         return new DataSourceAdapter<>() {
             @Override public String sourceName() { return "customer"; }
-            @Override public Class<String> responseType() { return String.class; }
-            @Override public String fetch(DataRequest request) { return null; }
+            @Override public Class<TestPayload> responseType() { return TestPayload.class; }
+            @Override public TestPayload fetch(DataRequest request) { return null; }
         };
     }
 

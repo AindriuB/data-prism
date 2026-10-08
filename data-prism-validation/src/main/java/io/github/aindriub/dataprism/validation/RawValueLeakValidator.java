@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.validation;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.engine.Text;
 
@@ -65,7 +65,7 @@ public final class RawValueLeakValidator implements LlmResponseValidator {
             }
             return;
         }
-        String text = node.asText();
+        String text = node.asString();
         if (text != null && !text.isBlank() && prohibited.contains(Text.canonical(text))) {
             out.add(new Violation(path, "RAW_SOURCE_VALUE", "exact-match"));
         }

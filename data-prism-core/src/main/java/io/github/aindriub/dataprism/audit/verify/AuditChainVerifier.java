@@ -199,7 +199,7 @@ public final class AuditChainVerifier {
     /**
      * As {@link #verify(Path, Path)}, with the shortest retention a {@link
      * AuditCheckpoint.Kind#RETENTION_ANCHOR} may stand for. A deployment that runs {@link
-     * AuditRetention} with the below-minimum override passes its own period here; an anchor whose
+     * io.github.aindriub.dataprism.audit.retention.AuditRetention} with the below-minimum override passes its own period here; an anchor whose
      * segment date is not at least this long before its {@code recordedAt} is reported as {@link
      * AnomalyType#RETENTION_ANCHOR_REJECTED} and explains nothing.
      */

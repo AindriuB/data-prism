@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.core.model.Capability;
@@ -113,6 +114,17 @@ public final class GetEntityContextTool {
      *                          enforced by {@link ToolOptions} itself
      */
     public GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
+            ScopeResolver scopeResolver, PrivacyMetrics metrics, AuditRecorder audit,
+            Clock clock, AuthenticatedCaller developmentCaller, ToolOptions options) {
+        this(orchestrator, authorizationService, scopeResolver, DataPrismObjectMapper.create(), metrics, audit,
+                clock, developmentCaller, options);
+    }
+
+    /**
+     * The constructor {@link DataPrismMcpServer} uses so that both tools and the transport share
+     * one mapper instance. Package-private on purpose: no public signature accepts a mapper.
+     */
+    GetEntityContextTool(ContextOrchestrator orchestrator, AuthorizationService authorizationService,
             ScopeResolver scopeResolver, ObjectMapper mapper, PrivacyMetrics metrics, AuditRecorder audit,
             Clock clock, AuthenticatedCaller developmentCaller, ToolOptions options) {
         Objects.requireNonNull(options, "options");
@@ -229,7 +241,7 @@ public final class GetEntityContextTool {
                     .structuredContent(mapper.convertValue(response, Map.class))
                     .addTextContent(mapper.writeValueAsString(response)), response.correlationId())
                     .build();
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (JacksonException e) {
             // The tree is already scrubbed, so this is a serialisation fault
             // rather than a privacy one — but it still must not return a partial
             // body, so it is refused like any other failure.

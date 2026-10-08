@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.example.http;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.format.AuditFieldMapping;
@@ -32,7 +32,6 @@ import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.ToolAdmission;
 import org.slf4j.spi.MDCAdapter;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
@@ -740,7 +739,7 @@ class PiiLogScanTest {
     private static final AuditRouting PROJECTION_ROUTING =
             new AuditRouting("dataprism.audit", "logs", "dataprism.audit", "prod");
 
-    private static final JsonFactory JSON = new JsonFactory();
+    private static final JsonFactory JSON = JsonFactory.builder().build();
 
     private static final Pattern DIGITS_SHAPE = Pattern.compile("\\d+");
 
@@ -1094,9 +1093,9 @@ class PiiLogScanTest {
         ParameterFingerprinter fingerprinter =
                 new ParameterFingerprinter(StaticSecretKeyProvider.of("pii-scan-test-key-not-for-any-real-data-32b"));
         GetEntityContextTool tool = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
-                scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(), toolAudit, clock, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build());
+                scopeResolver, PrivacyMetrics.none(), toolAudit, clock, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build());
         CompareEntitySourcesTool compareTool = new CompareEntitySourcesTool(assembly.orchestrator(),
-                authorizationService, scopeResolver, DataPrismObjectMapper.create(), PrivacyMetrics.none(),
+                authorizationService, scopeResolver, PrivacyMetrics.none(),
                 toolAudit, clock, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build());
 
         AuthenticatedCaller caller = new AuthenticatedCaller(

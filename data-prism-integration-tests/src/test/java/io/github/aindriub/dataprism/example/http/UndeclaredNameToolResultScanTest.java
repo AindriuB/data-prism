@@ -4,7 +4,7 @@ import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.sink.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour;
-import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,7 +38,7 @@ class UndeclaredNameToolResultScanTest {
             List<String> out = new ArrayList<>();
             for (McpSchema.CallToolResult result : results) {
                 try {
-                    out.add(DataPrismObjectMapper.create().writeValueAsString(result.structuredContent()));
+                    out.add(JsonMapper.builder().build().writeValueAsString(result.structuredContent()));
                 } catch (Exception e) {
                     throw new IllegalStateException(e);
                 }

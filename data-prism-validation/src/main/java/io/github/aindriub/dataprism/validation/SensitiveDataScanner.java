@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.validation;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 
 import java.util.ArrayList;
@@ -107,7 +107,7 @@ public final class SensitiveDataScanner {
                 }
                 return;
             }
-            scalar(node.asText(), path);
+            scalar(node.asString(), path);
         }
 
         private void scalar(String text, String path) {
