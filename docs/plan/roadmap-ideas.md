@@ -12,6 +12,10 @@ This is a proposed path from 0.5.0 to 1.0.0. It lives under `docs/plan/`, which 
 - **Load and soak testing.** Measure throughput, the read budget, and the cluster under load.
 - **Supply chain.** SBOM, signed images and provenance, plus a dependency review.
 
+## Later release, audit extensions
+
+- **Application-supplied audit events written into the hash-chained trail (D-0.6-8 D2).** Needs a custom event schema, field limits so personal data cannot be logged raw, and verifier support.
+
 ## 0.9.0, release candidate
 
 - Freeze the public API and the config properties.

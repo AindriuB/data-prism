@@ -325,7 +325,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 | Done | 116 | **Done** (2026-10-07, attempt 2). Document audit record v3, the JSON projection and log shipping | 106, 113, 114, 115, 135, 148 |
 | Done | 150 | **Done** (2026-10-07, attempt 2, D-150-A decided). Audit `entityType` verbatim only when registered or upper-case-identifier-shaped, otherwise `<unregistered>` | 148 |
 
-**Every planned 0.5.0 task is done (waves 1 to 6).** The next step is the 0.5.0 release cut, which needs the owner's go-ahead. The pause stays in force: do not push, tag, publish or open a PR on the strength of this file alone. The consolidated checklist is below, under "0.5.0 release-cut checklist".
+**Every planned 0.5.0 task is done (waves 1 to 6), and 0.5.0 is released in git (v0.5.0, 2026-10-08; publication steps remain, see its checklist).** Historical note from before the cut: the next step was the release cut, which needed the owner's go-ahead. The pause stays in force: do not push, tag, publish or open a PR on the strength of this file alone. The consolidated checklist is below, under "0.5.0 release-cut checklist".
 
 **Baseline after waves 1 to 3** (merged head a2c6bdf7, 2026-10-07). `mvn -Prelease -Dgpg.skip=true clean verify` on the full reactor: BUILD SUCCESS, 20 of 20 modules, about 1,220 tests, 0 failures, no flakes on this run. `check-class-version.sh 65` over the 19 built jars: exit 0. actionlint: clean. The reactor version is still 0.4.1; the bump to 0.5.0 is a release-cut item. Every task worktree is removed and every task branch deleted; only the main checkout and the session worktree remain.
 
@@ -463,7 +463,10 @@ Follow-ups from tasks 152 and 153, not yet tasks:
 - (an) 152: the rejected-id test should pass the `validate()` result through `SourceCallContext`.
 - (ao) 152, known limit to document: the interceptor is installed only when a correlation header is configured, so a client default header on a source with no correlation header is untouched.
 
-### 0.5.0 release-cut checklist (owner go-ahead required)
+- (ap) `release.yml` runs plain `mvn verify`, not the release profile, so it never builds Javadoc. A Javadoc error was caught only by publish-central's stage after `release.yml` had already created a GitHub Release (v0.5.0, first tag). Make `release.yml` build with the same profile, or make it depend on the stage.
+- (aq) Branch protection on `main` required a check named `build`, which `pages.yml` also produced. After task 144's matrix it silently gated on the docs build. The owner switched it on 2026-10-08 to require `build (21)`, `build (25)` and `container-smoke`. Task 165 fixes this properly with a `ci-gate` job (D-165-A).
+
+### 0.5.0 release checklist (0.5.0 released 2026-10-08; owner steps remain)
 
 Task 151 did the local cut on 2026-10-07 (merge 98b42144). Nothing has been pushed. Every outward action needs the owner's go-ahead.
 
@@ -475,20 +478,53 @@ Done by task 151:
 - The 0.4.1 step 9 re-verify: the consumer snippet passed against Central on 2026-10-07.
 - Class-version check: the owner ran `check-class-version.sh 65` over the 19 `data-prism-*-0.5.0.jar` files on 2026-10-08. All passed at major 65.
 
+**0.5.0 is released in git.** PR #117 merged to `main` on 2026-10-08, the Javadoc fix merged through PR #119, and `v0.5.0` is tagged at c850c3e2. CI was green on JDK 21 and 25 plus `container-smoke`, the `-Prelease` build and class-version gate ran in `release.yml` and publish-central's stage, and Dependabot's docker run proposed no Java 26 tags (task 145's proof). Nothing is published yet.
+
 Still open, owner-gated:
 
-- Re-run CI on PR #117 after the 152/153 push, and check it is green on JDK 21 and 25 plus `container-smoke`.
-- Push and open the PR.
-- CI PR run green on JDK 21 and 25, plus `container-smoke` (task 144 acceptance).
-- Linux CI evidence for 149 (D-149-B): the Linux legs pass without a rerun.
-- The amd64 Docker smoke (`docker/smoke/java-runtime-smoke.sh`) on CI or a Linux host; only arm64 has run.
-- Dependabot ignore-condition proof (task 145): post `@dependabot show maven ignore conditions` and `@dependabot show eclipse-temurin ignore conditions` on a docker PR, or confirm the next docker group run proposes no 26 tags.
-- Close Dependabot PR #116 (143 and 145 supersede it) and #114 (141 supersedes its Spring Boot bump).
-- The `-Prelease` build and gate, run by `release.yml` on the tag and by publish-central's stage job. It was denied locally.
-- The docs checks (`mkdocs --strict`, `check_site`, `check_snippet_markers`, `check_changelog`), run by the pages workflow or by the owner. Denied locally.
-- Annotated tag `v0.5.0`. If it is tagged after 2026-10-07, re-date the CHANGELOG first (D-151-C).
-- `publish-central`, `publish-image` and `publish-mcp`, following the 0.4.1 steps 1 to 8 pattern.
-- After publication, rebuild the `docs/extending.md` extension pom with `mvn package` against Central 0.5.0 (D-151-A fallback).
+- Dispatch `publish-central`, then `publish-image` (`version=0.5.0`), then `publish-mcp`, following the 0.4.1 steps 1 to 8 pattern.
+- Close Dependabot PRs #102 and #99 (Pillow, already at 12.3.0). #114, #115 and #116 were closed by Dependabot itself after the merge.
+- After publication, rebuild the `docs/extending.md` extension snippet against Central 0.5.0 with `mvn package` (D-151-A fallback), and amend the doc if needed.
+- PR #118 (maven-dependency-plugin 3.11.0) is open. Follow-up (d) should move that plugin version into root `pluginManagement`; do it with or after merging #118.
+- Follow-up (ap): `release.yml` should build with the release profile.
+
+### 0.6.0 — package structure, API and style cleanup
+
+Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c3e2). Tasks 154 to 165, task files in `docs/plan/tasks/`. Nothing is started. The owner states there are no external users, so every change is a clean break with no deprecation cycle and no forwarding types, and the 0.6.0 CHANGELOG and migration page (162) say so. Every task branches from `origin/main` once the tasks in its Depends on line have merged.
+
+| Wave | Task | What | Depends on |
+|---|---|---|---|
+| 1 | 154 | Bring `audit` and `oversight` under the core outer-layer ArchUnit rule | none |
+| 1 | 155 | Replace MCP tool, server-factory and orchestration overloads with validated options records | none |
+| 1 | 160 | Poison `TeeAuditSink` on any `Throwable`; terminate a torn checkpoint tail; `TORN_CHECKPOINT_LINE` | none |
+| 1 | 165 | Single `ci-gate` summary check; rename pages.yml's `build` job | none |
+| 2 | 156 | Split the `core` root package into `spi`, `model`, `engine`, `refusal`, `limits`, `metrics` (pure move) | 154, 155, 160 |
+| 3 | 157 | Split `audit` into contract, `format`, `sink`, `checkpoint`, `retention`, `verify`; move the verifier CLI | 156, 160 |
+| 4 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157 |
+| 5 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt` | 158 |
+| 6 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160 |
+| 6 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159 |
+| 7 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164 |
+| 8 | 162 | 0.6.0 CHANGELOG Breaking section and old to new FQCN migration page | 154-161, 163, 164, 165 |
+
+Owner decisions, all decided 2026-10-08:
+
+- **D-0.6-1:** `core` root package split with a clean break; no forwarding types at the old FQCNs (156).
+- **D-0.6-2:** `audit` and `oversight` come under the `core` outer-layer ArchUnit rule (154).
+- **D-0.6-3:** `DataPrismProperties` and `DataPrismAutoConfiguration` are split by concern. Property names and the `DataPrismAutoConfiguration` FQCN (it is named in `AutoConfiguration.imports`) are frozen (158, 159).
+- **D-0.6-4:** the verifier CLI moves to `audit.verify` with no forwarding class at the old FQCN (157).
+- **D-0.6-5:** an options record replaces the MCP overloads; the old constructors and factories are removed (155).
+- **D-0.6-6:** `ToolAdmission.none()` is kept, but the options record has no default for admission, so every caller names `none()` or a real policy and approvals are never turned off silently (155).
+- **D-0.6-7:** a resumed checkpoint sink terminates a torn tail with `"\r\n"` and fsyncs, failing closed; the verifier reports a damaged checkpoint line as `TORN_CHECKPOINT_LINE`, never a break, and still uses the intact checkpoints (160).
+- **D-0.6-8:** the JSON projection bean is `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL` (161). D1, a read-only audit event listener SPI, becomes task 163. D2, application-written events in the hash-chained trail, is roadmap only.
+- **D-0.6-9:** add `spring-boot-configuration-processor` for IDE completion of `dataprism.*` keys; 158 stays a pure move and 164 adds the processor.
+- **D-163-A:** listeners run on one dispatcher thread behind a bounded queue with a capacity property; overflow drops for listeners only and is logged as `AUDIT_LISTENER_DROPPED`; a shutdown drain policy is required; the feed is best-effort.
+- **D-163-B:** listeners are called after whichever sink accepted the event; durability holds only for `hash-chained`, and the docs say so.
+- **D-163-C:** the dispatcher is its own `PRIVACY_CRITICAL` bean with `COMPETING_BEAN_REFUSAL`; applications add listeners but cannot replace it.
+- **D-163-D:** a listener failure logs one WARN `AUDIT_LISTENER_FAILED` to the application log with the listener class, event id, sequence and exception class name only, never the message or stack trace.
+- **D-164-A:** the processor is listed in the compiler plugin's `annotationProcessorPaths` with its version from the Spring Boot BOM, and must not appear in any published module's dependency tree.
+- **D-164-B:** the docs-to-metadata check is exact in both directions, with exceptions only in the checked-in `configuration-metadata-gaps.txt`, one reason per line.
+- **D-165-A:** add the `ci-gate` job (needs every matrix leg and `container-smoke`, `if: always()`) and rename pages.yml's `build` job to `docs-site`. After `ci-gate` reports on main once, the owner switches the required checks to `ci-gate` alone; the implementer changes no settings.
 
 **Owner decision, 2026-10-06:** Dependabot stays on, with version updates
 grouped into one PR per ecosystem per week (`.github/dependabot.yml`).

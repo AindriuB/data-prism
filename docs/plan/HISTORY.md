@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.5.0 released in git: PR #117 merged, v0.5.0 tagged at c850c3e2
+
+PR #117 merged to `main`, the Javadoc fix merged through PR #119, and `v0.5.0` is tagged at c850c3e2. An external review of #117 found two P2 defects, fixed by tasks 152 and 153, and the container-smoke SIGPIPE fix (exit 141 under pipefail) went in on the same PR. Branch protection now requires `build (21)`, `build (25)` and `container-smoke`. Dependabot closed #114, #115 and #116 automatically after the merge, and its docker run proposed no Java 26 tags, which is the proof task 145's ignore rules work. Nothing is published to Central, GHCR or the MCP Registry yet.
+
+**Cost:** v0.5.0 was first tagged at 05bbd00b. `release.yml` created a GitHub Release from it while publish-central's stage failed on a Javadoc error, because `release.yml` runs plain `mvn verify` and never builds Javadoc (follow-up ap). Nothing was published. With the owner's approval the release was deleted, the Javadoc fix (PR #119, 85d7b88f) merged, and the tag moved to c850c3e2. Do not tag before publish-central's stage has passed on the candidate commit. Separately, the branch-protection check named `build` was also produced by `pages.yml`, so after task 144's matrix it silently gated on the docs build; the owner switched the required checks on 2026-10-08 and task 165 fixes it properly (aq).
+
 ## 2026-10-08 — External review of PR #117: correlation header stripped unconditionally, torn audit tail terminated on resume
 
 An external review of PR #117 found two P2 defects. Task 152: the outbound interceptor now removes the configured correlation header unconditionally and sets it only from a validated id, so a client default header can no longer leak a stale or unvalidated id. Task 153: a resumed `FileAuditSink` terminates a torn tail with `"\r\n"` and fsyncs (failing closed with AUDIT_SINK_OPEN_FAILED), and the verifier reports any CR-ended line as INTERRUPTED_WRITE_FRAGMENT without parsing it. A legacy fused line stays FIELD_COUNT_MISMATCH and the message names the pre-0.5.0 cause. The container-smoke exit 141 (SIGPIPE under pipefail, fix e23de419) was caught by CI on the same PR.
