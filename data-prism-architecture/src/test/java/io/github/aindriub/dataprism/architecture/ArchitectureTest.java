@@ -13,6 +13,7 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.aindriub.dataprism.audit.fixture.AuditDependsOnMcpFixture;
+import io.github.aindriub.dataprism.mapper.fixture.BuildOnlyMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.BuilderMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.ConstructorMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.RebuildMapperFixture;
@@ -114,6 +115,11 @@ class ArchitectureTest {
     @Test
     void mapperRuleCatchesABuilder() {
         assertMapperViolation(BuilderMapperFixture.class, "JsonMapper.builder");
+    }
+
+    @Test
+    void mapperRuleCatchesBuildOnAPassedInBuilder() {
+        assertMapperViolation(BuildOnlyMapperFixture.class, "MapperBuilder.build");
     }
 
     @Test
