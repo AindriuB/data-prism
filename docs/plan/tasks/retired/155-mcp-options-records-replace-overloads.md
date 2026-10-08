@@ -62,3 +62,6 @@ checks tasks 110 and 150 added must hold on every remaining public path.
 Acceptance:
 - A test shows that building the options without naming an admission fails at construction.
 - Runtime approval behaviour is unchanged. This includes per-tool `approval-required-tools`, single-use approvals for the identical call, and the TTL.
+
+## Outcome (2026-10-08, wave 1)
+Merged. Owner amendment: Dependabot PR #118 folded in; maven-dependency-plugin at 3.11.0 in root pluginManagement (follow-up (d) done). Tester PASS 1383/0/0/0, javap shows one entry point each. Reviewer APPROVE plus a polish round. Follow-up: optional ToolAdmission.isNone()/singleton in security.

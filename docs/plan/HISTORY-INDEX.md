@@ -20,7 +20,8 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
-| 2026-10-08 | 151, 152, 153 | 0.5.0 released in git: PR #117 and Javadoc fix #119 merged, v0.5.0 moved from 05bbd00b to c850c3e2, branch-protection checks corrected; publication pending. | `## 2026-10-08 — 0.5.0 released in git: PR #117 merged, v0.5.0 tagged at c850c3e2` |
+| 2026-10-08 | 154, 155, 160, 165 | 0.6.0 wave 1: audit/oversight under ArchUnit outer-layer rule, ToolOptions/SourceFanOutOptions replace overloads, tee poisons on Throwable and torn checkpoint tail reported, `ci-gate` job. | `## 2026-10-08 — 0.6.0 wave 1: ArchUnit audit/oversight, tool options records, tee/checkpoint hardening, ci-gate` |
+| 2026-10-08 | 152, 153 | 0.5.0 released in git: PR #117 and Javadoc fix #119 merged, v0.5.0 moved from 05bbd00b to c850c3e2, branch-protection checks corrected; publication pending. | `## 2026-10-08 — 0.5.0 released in git: PR #117 merged, v0.5.0 tagged at c850c3e2` |
 | 2026-10-08 | 152, 153 | External review of PR #117: correlation header stripped unconditionally; torn audit tail terminated with CRLF on resume; smoke SIGPIPE fix. | `## 2026-10-08 — External review of PR #117: correlation header stripped unconditionally, torn audit tail terminated on resume` |
 | 2026-10-07 | 151 | 0.5.0 cut done locally: version 0.5.0, dated changelog, cut-time docs fixes; release checks deferred to CI. | `## 2026-10-07 — 0.5.0 cut done locally: version 0.5.0, changelog, cut-time docs fixes` |
 | 2026-10-07 | 116, 150 | 0.5.0 wave 6: audit v3 and log-shipping docs; entityType audited only when registered or upper-case-shaped, else `<unregistered>` (D-150-A). | `## 2026-10-07 — 0.5.0 wave 6: audit and log-shipping docs, entityType audited only when registered or shaped` |

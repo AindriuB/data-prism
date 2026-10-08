@@ -75,3 +75,6 @@ Do both:
 - rename pages.yml's `build` job to a distinct id and name, for example `docs-site`, so that no workflow job is named a bare `build`.
 
 The owner's post-merge step is unchanged. After `ci-gate` reports on main once, switch main's required checks to `ci-gate` alone. The implementer changes no repository settings.
+
+## Outcome (2026-10-08, wave 1)
+Merged (4c9d7c79). ci-gate summary job in build.yml; pages.yml job renamed docs-site (D-165-A = C). actionlint clean; reviewed directly by the owner's delegate (two-file workflow change). Owner post-merge step: once ci-gate has reported on main, switch required checks from build (21), build (25) and container-smoke to ci-gate alone.

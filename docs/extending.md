@@ -571,11 +571,13 @@ produced a jar. The `0.5.0` form of the snippet differs only in
 `data-prism.version`. The snippet's Spring dependencies were re-resolved
 against Spring Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1
 migration, at `data-prism.version` `0.4.1`; those Spring versions come from the
-imported BOM and do not depend on `data-prism.version`. A
-full `mvn package` of the `0.5.0` form against the published `0.5.0` artifacts
-has not been run, because they were not on Maven Central when this was
-written. It is repeated after publication, and this paragraph is amended if
-the result differs. Nothing here has been shown for any other version.
+imported BOM and do not depend on `data-prism.version`. On 2026-10-08, after publication, a full `mvn package` of the `0.5.0` form
+of the snippet against the published `0.5.0` artifacts, with an empty local
+repository, resolved `data-prism-core`, `data-prism-annotations` and
+`data-prism-processor` `0.5.0`, `spring-web` `7.0.9` and
+`spring-boot-autoconfigure` `4.1.1`, and produced a jar. The annotation
+processor ran and rejected an unclassified `@LlmExposedModel` field at compile
+time. Nothing here has been shown for any other version.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above. If your
