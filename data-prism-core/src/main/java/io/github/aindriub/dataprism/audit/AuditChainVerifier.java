@@ -191,20 +191,51 @@ public final class AuditChainVerifier {
         java.util.Objects.requireNonNull(minimumRetention, "minimumRetention");
         byte[] content = readAudit(auditFile);
         List<AuditCheckpoint> checkpoints = new ArrayList<>();
-        int lineNo = 0;
-        for (String line : Files.readAllLines(checkpointFile, StandardCharsets.UTF_8)) {
-            lineNo++;
+        List<StructuralAnomaly> torn = new ArrayList<>();
+        // Split on '\n' only: Files.readAllLines would swallow the '\r' of a terminated torn line.
+        String[] lines = Files.readString(checkpointFile, StandardCharsets.UTF_8).split("\n", -1);
+        long offset = 0;
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            long lineOffset = offset;
+            offset += line.getBytes(StandardCharsets.UTF_8).length + 1;
             if (line.isBlank()) {
+                continue;
+            }
+            boolean unterminatedFinal = i == lines.length - 1;
+            if (line.endsWith("\r")) {
+                torn.add(tornCheckpointLine(checkpointFile, i + 1, lineOffset,
+                        "it ends in a raw carriage return, so a resumed writer terminated a torn write"));
                 continue;
             }
             try {
                 checkpoints.add(AuditCheckpoint.fromJsonLine(line));
             } catch (IllegalArgumentException e) {
-                throw new IOException("checkpoint file " + checkpointFile + " line " + lineNo
+                if (unterminatedFinal) {
+                    torn.add(tornCheckpointLine(checkpointFile, i + 1, lineOffset,
+                            "it is the final line, has no terminating newline and is not a valid checkpoint"));
+                    continue;
+                }
+                throw new IOException("checkpoint file " + checkpointFile + " line " + (i + 1)
                         + " is not a valid checkpoint: " + e.getMessage(), e);
             }
         }
-        return verify(content, checkpoints, minimumRetention, false);
+        VerificationReport report = verify(content, checkpoints, minimumRetention, false);
+        if (torn.isEmpty()) {
+            return report;
+        }
+        List<StructuralAnomaly> anomalies = new ArrayList<>(report.anomalies());
+        anomalies.addAll(torn);
+        return new VerificationReport(report.writers(), anomalies, report.tail(), report.checkpointFindings());
+    }
+
+    private static StructuralAnomaly tornCheckpointLine(Path file, int lineNo, long byteOffset, String why) {
+        return new StructuralAnomaly(AnomalyType.TORN_CHECKPOINT_LINE,
+                "TORN_CHECKPOINT_LINE: checkpoint file " + file + " line " + lineNo + " (byte offset " + byteOffset
+                        + ") is a damaged checkpoint: " + why + ". It was not parsed and not counted as a checkpoint. "
+                        + "A crash during a checkpoint write leaves this; it is not reported as tampering, but the "
+                        + "writer's tail-truncation coverage falls back to its previous checkpoint.",
+                byteOffset, -1);
     }
 
     private static VerificationReport verify(byte[] content, List<AuditCheckpoint> checkpoints,
@@ -663,7 +694,9 @@ public final class AuditChainVerifier {
         /** A writer's {@code recordVersion} decreased within its chain: a downgrade, never a normal upgrade. */
         VERSION_REGRESSION(true),
         /** A line whose field count contradicts its declared {@code recordVersion}: tampering, never a torn write. */
-        FIELD_COUNT_MISMATCH(true);
+        FIELD_COUNT_MISMATCH(true),
+        /** A damaged checkpoint-file line left by a crash mid-write: not parsed, not a break, never skipped silently. */
+        TORN_CHECKPOINT_LINE(false);
 
         private final boolean counted;
 

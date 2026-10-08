@@ -707,6 +707,12 @@ fsyncs before its first append, and fails the open if it cannot. The torn line
 is never edited and is never read back as a checkpoint. A writer whose last
 checkpoint was torn is therefore verified against its previous checkpoint, so
 tail-truncation coverage for that writer is reduced to that earlier point.
+With `--checkpoints`, the verifier reports a checkpoint line that ends in a raw
+`\r`, or a final unterminated line that is not a valid checkpoint, as the
+anomaly `TORN_CHECKPOINT_LINE`: never parsed as a checkpoint, never skipped
+silently, and never a break. The intact checkpoints are still used, and the
+anomaly exits 4 under the existing precedence. Any other unparseable
+checkpoint line is still unreadable input (exit 1).
 `RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
 [Retention](#retention).
 
