@@ -149,11 +149,24 @@ as of 2026-09-09. Where the mark is *prose only*, nothing fails the build if
 the boundary is crossed; catching a violation depends on review.
 
 1. **No source data reaches `mcp` without passing the privacy engine.** The
-   engine is installed as a Jackson module on the `ObjectMapper` the MCP layer
-   uses, so bypassing it means constructing a different mapper — which is the
-   thing to look for in review. **Enforced** — `ArchitectureTest
-   .onlyDesignatedClassesCreateMappers` forbids any class other than
-   `DataPrismObjectMapper` and `SourceTree` from constructing an `ObjectMapper`.
+   engine walks a data tree (§A4) and is not registered on any mapper. The
+   invariant is that only `DataPrismObjectMapper` writes what a model sees, and
+   only seven designated classes build a Jackson mapper, so bypassing the engine
+   means building a different mapper, which is the thing to look for in review.
+   **Enforced, for building** — `ArchitectureTest
+   .onlyDesignatedClassesCreateMappers` forbids any class in
+   `io.github.aindriub.dataprism..` other than `DataPrismObjectMapper`,
+   `SourceTree`, `RestSources`, `SecurityPolicy`, `PrivacyProfiles`,
+   `ModelDescriptors` and `VocabularyRegistry` from constructing a mapper, calling
+   a static `builder(..)`, calling `build()` on a mapper builder, or calling
+   `ObjectMapper#rebuild()`. `ArchitectureTest.designatedYamlReadersDoNotWrite`
+   keeps the five YAML readers read-only: they may not call `write*` or
+   `writer*`. Negative fixtures prove the first rule still catches a constructor,
+   a builder, a `build()` on a passed-in builder and a `rebuild()`. **Not yet
+   enforced** — obtaining a mapper rather than building one (for example
+   `JsonMapper.shared()`, or injecting Spring Boot's auto-configured mapper) is
+   not caught at this point, and neither is the streaming-factory allowlist.
+   Task 168 adds both and is not yet merged.
 2. **The privacy engine operates on a data tree, not on the Java object graph.**
    Records are immutable and their constructors validate; reflective field
    mutation is not an option and `Unsafe` is not acceptable in a security
@@ -291,6 +304,30 @@ all of these is in `design-review.md` under the section named.
   permanent position. Rejected: moving to Jackson 3 now, which rewrites the
   engine for no privacy gain, and carrying both Boot lines, which doubles the
   support surface; Boot 3 consumers stay on 0.4.x.
+  *Superseded by J3-5 (2026-10-08) for D-139-A; D-139-B stands.*
+- **2026-10-08 — Jackson 3 throughout (J3-0 to J3-5); supersedes D-139-A.** The
+  port is in 0.6.0 and the classpath is Jackson 3 (`tools.jackson`). The engine
+  was never a registered module (§A4: it walks a tree), so nothing in it needed a
+  second major to be split; the real invariant is that only
+  `DataPrismObjectMapper` writes and only the designated classes build mappers.
+  Data-prism keeps its own private, fixed mappers (`DataPrismObjectMapper`, the
+  `SourceTree` reader and the five YAML readers), built with Jackson 3 builders.
+  They are not Spring beans and cannot be customised by application
+  configuration, because an adapter author may bring their own `ObjectMapper`
+  for their APIs and must never be able to reconfigure data-prism's mapper for
+  core behaviour. Spring's own Jackson 3 mapper belongs to the application, not
+  to data-prism. The Jackson 3 tree types (`JsonNode`, `ObjectNode`) are public
+  where they are the real data (J3-3). J3-3 also decided that the mapper
+  is not public: `DataPrismObjectMapper.create()` and any public method that
+  hands out or accepts data-prism's mapper are to stop being public, which task
+  168 carries out and has not yet merged. The enforcer bans the Jackson
+  2 artifacts (`jackson-databind`, `jackson-core`, `jackson-dataformat-*`,
+  `jackson-datatype-*`), `mcp-json-jackson2` and `spring-boot-jackson2`, with one
+  carve-out: `com.fasterxml.jackson.core:jackson-annotations`, which Jackson 3
+  still uses and `mcp-core` needs. Jackson 3 defaults that would change output
+  bytes are pinned back to the Jackson 2 values on data-prism's builders. One
+  accepted difference: YAML is now parsed as YAML 1.2 (D-167-1), so
+  `yes`/`no`/`on`/`off` are text and leading-zero numbers are decimal.
 - **2026-10-07 — Images run Java 25; library bytecode stays Java 21.** The build
   uses `--release 21` and a gate checks class major 65, so the jars run on Java
   21 or newer while the published images run Java 25. Rejected: Java 25

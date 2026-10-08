@@ -32,9 +32,10 @@ on the default branch.
 These are the checkable form of the boundaries in `architecture.md`. A reviewer
 rejects a diff that breaks one, whatever else it does.
 
-- **No new `ObjectMapper` in or below `mcp`.** The privacy engine is installed as
-  a Jackson module on one mapper; a second mapper is a bypass. If a diff
-  constructs one, that is the finding.
+- **No new Jackson mapper outside the designated classes.** Only
+  `DataPrismObjectMapper` writes what a model sees, and only the designated
+  classes build a Jackson mapper. A new mapper, builder or `rebuild()` in
+  data-prism code is the finding.
 - **No source DTO type appears in an `mcp` signature.** Only canonical types and
   tool response records cross that boundary.
 - **Every field of an `@LlmExposedModel` carries `@SensitiveData` or
