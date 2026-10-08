@@ -10,8 +10,10 @@ import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
+import io.github.aindriub.dataprism.audit.fixture.AuditDependsOnMcpFixture;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
+import io.github.aindriub.dataprism.oversight.fixture.OversightDependsOnMcpFixture;
 import io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -132,9 +134,15 @@ class ArchitectureTest {
                         && call.getTarget().getName().startsWith("write"));
     }
 
-    /** Dependencies point inward. Core must not know what is built on top of it. */
+    /**
+     * Dependencies point inward. Core must not know what is built on top of it.
+     * {@code audit} and {@code oversight} live in {@code data-prism-core} but
+     * sit outside the {@code ..core..} package, so they are named as subjects
+     * explicitly and held to the same direction. No allow-list: a scan of the
+     * bytecode at the base commit found no violations.
+     */
     private static final ArchRule CORE_DOES_NOT_DEPEND_ON_OUTER_LAYERS = noClasses()
-            .that().resideInAPackage("..dataprism.core..")
+            .that().resideInAnyPackage("..dataprism.core..", "..dataprism.audit..", "..dataprism.oversight..")
             .should().dependOnClassesThat()
             .resideInAnyPackage("..dataprism.mcp..", "..dataprism.orchestration..",
                     "..dataprism.example..", "..dataprism.pseudonymisation..");
@@ -142,6 +150,20 @@ class ArchitectureTest {
     @Test
     void coreDoesNotDependOnOuterLayers() {
         CORE_DOES_NOT_DEPEND_ON_OUTER_LAYERS.check(CLASSES);
+    }
+
+    @Test
+    void outerLayerRuleCatchesAuditDependingOnMcp() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(AuditDependsOnMcpFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> CORE_DOES_NOT_DEPEND_ON_OUTER_LAYERS.check(fixture))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    void outerLayerRuleCatchesOversightDependingOnMcp() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(OversightDependsOnMcpFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> CORE_DOES_NOT_DEPEND_ON_OUTER_LAYERS.check(fixture))
+                .isInstanceOf(AssertionError.class);
     }
 
     /** The annotation library is what applications take on. It stays standalone. */
