@@ -2,7 +2,7 @@ package io.github.aindriub.dataprism.example.http;
 
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
+import io.github.aindriub.dataprism.audit.sink.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour;
 import io.github.aindriub.dataprism.mcp.DataPrismObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;

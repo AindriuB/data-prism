@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.core.refusal;
 
-import io.github.aindriub.dataprism.core.model.ScrubResult;
 import java.util.Set;
 
 /**
@@ -12,7 +11,7 @@ import java.util.Set;
  * checked against what the reviewed model or catalogue actually declared
  * before it goes into an exception, a log line or a tool error.
  *
- * <p>The declared set is the pointers {@link ScrubResult#dispositions()}
+ * <p>The declared set is the pointers {@link io.github.aindriub.dataprism.core.model.ScrubResult#dispositions()}
  * already reports, which are built from declared names only. A segment that
  * does not resolve to one of them is undeclared, and so is everything after
  * it, so the path stops there. Anything that cannot be parsed is treated the
@@ -33,7 +32,7 @@ public final class RefusalPaths {
     /**
      * @param path     a dotted path from a scanned tree, such as {@code $.a.b[0].c}
      * @param declared JSON pointers of every declared field, array indices
-     *                 collapsed to {@code *}, as in {@link ScrubResult#dispositions()}
+     *                 collapsed to {@code *}, as in {@link io.github.aindriub.dataprism.core.model.ScrubResult#dispositions()}
      * @return {@code path}, indices collapsed to {@code [*]}, up to the first segment that is not declared, with that
      *         segment (and what follows it) rendered as {@link #UNDECLARED}
      */

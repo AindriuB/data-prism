@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.audit.AuditRecorder;
-import io.github.aindriub.dataprism.audit.SegmentedFileAuditSink;
+import io.github.aindriub.dataprism.audit.sink.SegmentedFileAuditSink;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.metrics.Metric;

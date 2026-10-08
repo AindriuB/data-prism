@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.example.http;
 
 import io.github.aindriub.dataprism.audit.AuditSink;
-import io.github.aindriub.dataprism.audit.Slf4jAuditSink;
+import io.github.aindriub.dataprism.audit.sink.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
 import io.github.aindriub.dataprism.core.spi.PassThroughIdentityResolver;

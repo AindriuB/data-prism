@@ -1,5 +1,8 @@
 package io.github.aindriub.dataprism.audit;
 
+import io.github.aindriub.dataprism.audit.checkpoint.FileAuditCheckpointSink;
+import io.github.aindriub.dataprism.audit.sink.FileAuditSink;
+import io.github.aindriub.dataprism.audit.verify.AuditChainVerifierCli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.audit.AuditRecorder;
-import io.github.aindriub.dataprism.audit.AuditRetention;
+import io.github.aindriub.dataprism.audit.retention.AuditRetention;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 

@@ -442,4 +442,70 @@ class ArchitectureTest {
     void coreSubpackagesAreFreeOfCycles() {
         CORE_SUBPACKAGES_ARE_FREE_OF_CYCLES.check(CLASSES);
     }
+
+    private static final String AUDIT = "io.github.aindriub.dataprism.audit";
+    private static final String[] AUDIT_SUBPACKAGES = {
+        AUDIT + ".format..", AUDIT + ".sink..", AUDIT + ".checkpoint..", AUDIT + ".retention..", AUDIT + ".verify.."};
+
+    /** The {@code audit} contract package (exactly, not {@code ..audit..}) never reaches into its subpackages. */
+    private static final ArchRule AUDIT_CONTRACT_DOES_NOT_DEPEND_ON_SUBPACKAGES = noClasses()
+            .that().resideInAPackage(AUDIT)
+            .should().dependOnClassesThat().resideInAnyPackage(AUDIT_SUBPACKAGES);
+
+    @Test
+    void auditContractDoesNotDependOnItsSubpackages() {
+        AUDIT_CONTRACT_DOES_NOT_DEPEND_ON_SUBPACKAGES.check(CLASSES);
+    }
+
+    /** Writers of the record never depend on the offline verifier. */
+    private static final ArchRule AUDIT_WRITERS_DO_NOT_DEPEND_ON_VERIFY = noClasses()
+            .that().resideInAnyPackage(AUDIT + ".format..", AUDIT + ".sink..", AUDIT + ".checkpoint..")
+            .should().dependOnClassesThat().resideInAPackage(AUDIT + ".verify..");
+
+    @Test
+    void auditWritersDoNotDependOnVerify() {
+        AUDIT_WRITERS_DO_NOT_DEPEND_ON_VERIFY.check(CLASSES);
+    }
+
+    /**
+     * Retention replays the chain with the verifier before it deletes a segment, so that one
+     * edge cannot be removed by placement. It is allow-listed at class level: only
+     * {@code AuditRetention} (and its nested types), only {@code AuditChainVerifier} (and its
+     * nested types) -- not the CLI, and not any other retention class.
+     */
+    private static final DescribedPredicate<JavaClass> AUDIT_RETENTION_CORE = DescribedPredicate.describe(
+            "AuditRetention or a type nested in it",
+            c -> c.getName().equals(AUDIT + ".retention.AuditRetention")
+                    || c.getName().startsWith(AUDIT + ".retention.AuditRetention$"));
+
+    private static final DescribedPredicate<JavaClass> AUDIT_CHAIN_VERIFIER_CORE = DescribedPredicate.describe(
+            "AuditChainVerifier or a type nested in it",
+            c -> c.getName().equals(AUDIT + ".verify.AuditChainVerifier")
+                    || c.getName().startsWith(AUDIT + ".verify.AuditChainVerifier$"));
+
+    private static final ArchRule AUDIT_RETENTION_VERIFY_EDGE_IS_ALLOW_LISTED = noClasses()
+            .that().resideInAPackage(AUDIT + ".retention..").and(DescribedPredicate.not(AUDIT_RETENTION_CORE))
+            .should().dependOnClassesThat().resideInAPackage(AUDIT + ".verify..");
+
+    private static final ArchRule AUDIT_RETENTION_USES_ONLY_THE_VERIFIER = noClasses()
+            .that(AUDIT_RETENTION_CORE)
+            .should().dependOnClassesThat(
+                    DescribedPredicate.and(JavaClass.Predicates.resideInAPackage(AUDIT + ".verify.."),
+                            DescribedPredicate.not(AUDIT_CHAIN_VERIFIER_CORE)));
+
+    @Test
+    void auditRetentionDependsOnVerifyOnlyThroughTheAllowList() {
+        AUDIT_RETENTION_VERIFY_EDGE_IS_ALLOW_LISTED.check(CLASSES);
+        AUDIT_RETENTION_USES_ONLY_THE_VERIFIER.check(CLASSES);
+    }
+
+    /** The {@code audit} subpackages form a directed acyclic graph. */
+    private static final ArchRule AUDIT_SUBPACKAGES_ARE_FREE_OF_CYCLES = slices()
+            .matching("..dataprism.audit.(*)..")
+            .should().beFreeOfCycles();
+
+    @Test
+    void auditSubpackagesAreFreeOfCycles() {
+        AUDIT_SUBPACKAGES_ARE_FREE_OF_CYCLES.check(CLASSES);
+    }
 }
