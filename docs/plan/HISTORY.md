@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-08 — 0.6.0 wave 6 addendum: interface and abstract map key types (175)
+
+Task 175 merged onto `release/0.6.0-jackson3`. A record with a `Map<CharSequence|Comparable|Serializable, V>` component now works: a declared interface or abstract key type is deferred to `CheckedKey`'s per-key check at write time, so JDK key classes on the allowlist are written as in Jackson 2 and user classes are refused at any depth. Concrete user key classes are still refused at startup, and `CheckedKey` now forwards `resolve`, `createContextual` and `handledType`.
+
+**Cost:** The key modifier rejected the declared interface before the per-key check, so such records passed startup and failed every request with `SOURCE_MODEL_NOT_A_RECORD`; do not decide on declared key types alone, decide on the runtime key. JDK `StringBuilder` and `CharBuffer` keys are refused where Jackson 2 wrote their text. Open: a component-level `@JsonSerialize(keyUsing=...)` can write a user key by `toString()` as a field name, which is not classified like a value (see PLAN).
+
 ## 2026-10-08 — 0.6.0 wave 6 addendum: record properties must match components (174)
 
 Task 174 merged onto `release/0.6.0-jackson3`. Source-model validation now checks structurally that every property the bean serializer emits for a record comes from a real record component field or 0-arg accessor; only real any-getter properties are exempt. It runs at startup and at runtime and refuses with `SOURCE_MODEL_NOT_A_RECORD` (simple class name only). Renames via `@JsonProperty`/`@JsonGetter` (including through interfaces), `@JsonValue`, `@JsonUnwrapped`, `@JsonNaming` and class-level `@JsonSerialize` still work as in Jackson 2.
