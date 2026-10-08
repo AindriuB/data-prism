@@ -358,6 +358,76 @@ class SourceModelsTest {
         assertThat(SourceTree.of(new WithAny("a")).propertyNames()).containsExactlyInAnyOrder("a", "extra");
     }
 
+    public interface AnnotatedUrled {
+        @JsonProperty
+        default String getURL() {
+            return "x";
+        }
+    }
+
+    public interface GetterUrled {
+        @JsonGetter("url")
+        default String computed() {
+            return "x";
+        }
+    }
+
+    public interface SuperUrled extends AnnotatedUrled {
+    }
+
+    public interface NamedAccessor {
+        @JsonProperty("renamed")
+        String name();
+    }
+
+    public record ViaInterfaceProperty(String name) implements AnnotatedUrled {
+    }
+
+    public record ViaInterfaceGetter(String name) implements GetterUrled {
+    }
+
+    public record ViaSuperInterface(String name) implements SuperUrled {
+    }
+
+    public record RenamedViaInterface(String name) implements NamedAccessor {
+    }
+
+    @Test
+    void anAnnotatedMethodInheritedFromAnInterfaceIsRefusedAtStartupAndRuntime() {
+        assertRefused(() -> SourceTree.of(new ViaInterfaceProperty("n")), "ViaInterfaceProperty");
+        assertRefused(() -> SourceModels.require(ViaInterfaceProperty.class), "ViaInterfaceProperty");
+        assertRefused(() -> SourceTree.of(new ViaInterfaceGetter("n")), "ViaInterfaceGetter");
+        assertRefused(() -> SourceModels.require(ViaInterfaceGetter.class), "ViaInterfaceGetter");
+        assertRefused(() -> SourceTree.of(new ViaSuperInterface("n")), "ViaSuperInterface");
+        assertRefused(() -> SourceModels.require(ViaSuperInterface.class), "ViaSuperInterface");
+    }
+
+    @Test
+    void aComponentAccessorRenamedOnTheInterfaceItImplementsKeepsTheName() {
+        assertThat(SourceTree.of(new RenamedViaInterface("n")).propertyNames()).containsExactly("renamed");
+        assertThatCode(() -> SourceModels.require(RenamedViaInterface.class)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void theAllowedExplicitChoicesStillPassAtStartup() {
+        assertThatCode(() -> SourceModels.require(Annotated.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(WithAny.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(Valued.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(WithExtraGetters.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(WithInterfaceGetter.class)).doesNotThrowAnyException();
+    }
+
+    public record ComponentSerialized(@JsonSerialize(using = Custom.class) String secret, @JsonIgnore String hidden) {
+    }
+
+    @Test
+    void aComponentSerializerAndAnIgnoredComponentStillPass() {
+        assertThatCode(() -> SourceModels.require(ComponentSerialized.class)).doesNotThrowAnyException();
+        JsonNode tree = SourceTree.of(new ComponentSerialized("s", "h"));
+        assertThat(tree.propertyNames()).containsExactly("secret");
+        assertThat(tree.get("secret").asString()).isEqualTo("custom");
+    }
+
     @Test
     void aJdkClassReadByGettersIsRefusedAtStartup() {
         assertRefused(() -> SourceModels.require(WithPoint.class), "Point");

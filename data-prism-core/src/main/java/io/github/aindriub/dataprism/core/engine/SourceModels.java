@@ -1,16 +1,17 @@
 package io.github.aindriub.dataprism.core.engine;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonGetter;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.introspect.AnnotatedMember;
+import tools.jackson.databind.introspect.AnnotatedMethod;
+import tools.jackson.databind.ser.PropertyWriter;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.ser.impl.UnknownSerializer;
 
 import java.lang.reflect.GenericArrayType;
-import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.TypeVariable;
@@ -25,6 +26,7 @@ import java.util.Calendar;
 import java.util.Currency;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.UUID;
@@ -41,9 +43,10 @@ import java.util.Set;
  *
  * <p>A model author's explicit choices stay allowed: a {@code @JsonSerialize(using/keyUsing)} on a record
  * component or record class, {@code @JsonAnyGetter} and {@code @JsonValue}. The engine still classifies
- * what they produce, and any bean looked up through them is refused. {@code @JsonProperty} or
- * {@code @JsonGetter} on a method that is not a record component is refused, since the property name it
- * implies depends on the Jackson major.
+ * what they produce, and any bean looked up through them is refused. A property the
+ * serializer emits that is not backed by a record component (an annotated method on the record or on an
+ * interface it implements, however inherited) is refused, since the property name it implies depends on
+ * the Jackson major.
  *
  * <p>{@link #require(Class)} checks the declared types at startup. A component declared as
  * {@code Object} or an interface can hold a bean at runtime, so {@link SourceTree#of} checks the
@@ -87,7 +90,7 @@ public final class SourceModels {
      */
     static void refuseSerializer(Class<?> type, ValueSerializer<?> serializer) {
         if (type.isRecord()) {
-            refuseNamingAnnotations(type);
+            refuseForeignProperties(type, serializer);
             return;
         }
         if (JsonNode.class.isAssignableFrom(type) || type.getName().startsWith("tools.jackson.")) {
@@ -100,21 +103,33 @@ public final class SourceModels {
     }
 
     /**
-     * {@code @JsonProperty} or {@code @JsonGetter} on a record method that is not a component accessor
-     * adds a property whose name depends on the Jackson major (getURL is "URL" or "url"). {@code
-     * @JsonAnyGetter} and {@code @JsonValue} are explicit and stable, so they stay allowed.
+     * A record is read by its components only. Whatever route adds another property (an annotated
+     * method on the record, on an interface or a super-interface it implements, or a mix-in), the
+     * serializer then emits a property whose backing member is not a component accessor, and its name
+     * would depend on the Jackson major (getURL is "URL" or "url"). Every property the bean serializer
+     * emits is therefore compared with the record's components; a component renamed with
+     * {@code @JsonProperty}, or left out with {@code @JsonIgnore}, is still its component. {@code
+     * @JsonAnyGetter} output is not a bean property and {@code @JsonValue} replaces the bean shape, so
+     * both stay allowed.
      */
-    static void refuseNamingAnnotations(Class<?> record) {
+    static void refuseForeignProperties(Class<?> record, ValueSerializer<?> serializer) {
+        if (!(serializer instanceof BeanSerializerBase bean)) {
+            return;
+        }
         Set<String> components = new HashSet<>();
         for (RecordComponent component : record.getRecordComponents()) {
             components.add(component.getName());
         }
-        for (Method method : record.getDeclaredMethods()) {
-            boolean accessor = method.getParameterCount() == 0 && components.contains(method.getName());
-            if (!accessor && (method.isAnnotationPresent(JsonProperty.class)
-                    || method.isAnnotationPresent(JsonGetter.class))) {
+        for (Iterator<PropertyWriter> properties = bean.properties(); properties.hasNext(); ) {
+            AnnotatedMember member = properties.next().getMember();
+            if (member != null && member.hasAnnotation(JsonAnyGetter.class)) {
+                continue;
+            }
+            boolean backed = member != null && components.contains(member.getName())
+                    && !(member instanceof AnnotatedMethod method && method.getParameterCount() != 0);
+            if (!backed) {
                 throw new PrivacyRefusedException(CODE, "$", simpleName(record)
-                        + " names a property on a method that is not a record component");
+                        + " has a property that is not a record component");
             }
         }
     }
@@ -178,7 +193,8 @@ public final class SourceModels {
                 walk(c.getComponentType(), seen);
             } else if (c.isRecord()) {
                 if (seen.add(c)) {
-                    refuseNamingAnnotations(c);
+                    // Ask the reader to build it: the serializer modifier compares its properties.
+                    SourceTree.refuseIfReadByGetters(c);
                     for (RecordComponent component : c.getRecordComponents()) {
                         walk(component.getGenericType(), seen);
                     }
