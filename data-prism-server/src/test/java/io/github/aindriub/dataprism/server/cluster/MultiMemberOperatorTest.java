@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.server.cluster;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.server.operator.OperatorHarness;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -22,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MultiMemberOperatorTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
     private static final String PRINCIPAL = "analyst-cluster";
     private static final String CASE = "CASE-CLUSTER";
     private static final String SUBJECT = "subject-4711";
@@ -154,7 +155,7 @@ class MultiMemberOperatorTest {
                         "{\"scopeId\":\"case:" + CASE + "\",\"namespace\":\"PERSON_NAME\",\"syntheticValue\":\""
                                 + synthetic + "\",\"purpose\":\"fraud-review\",\"caseId\":\"" + CASE + "\"}");
                 assertThat(requested.statusCode()).as(requested.body()).isEqualTo(202);
-                String approvalId = JSON.readTree(requested.body()).path("approvalId").asText();
+                String approvalId = JSON.readTree(requested.body()).path("approvalId").asString();
 
                 assertThat(a.operator("POST", "/operator/reidentifications/" + approvalId + "/approve",
                         a.operatorToken("approver-cluster", "approver"), null).statusCode()).isEqualTo(200);
@@ -163,8 +164,8 @@ class MultiMemberOperatorTest {
                         b.operatorToken("requester-cluster", "requester"), null);
                 assertThat(collected.statusCode()).as(collected.body()).isEqualTo(200);
                 JsonNode body = JSON.readTree(collected.body());
-                assertThat(body.path("status").asText()).isEqualTo("RESOLVED");
-                assertThat(body.path("subjectId").asText()).isEqualTo(SUBJECT);
+                assertThat(body.path("status").asString()).isEqualTo("RESOLVED");
+                assertThat(body.path("subjectId").asString()).isEqualTo(SUBJECT);
 
                 assertThat(customerName(b, onB)).isEqualTo(synthetic);
             }
@@ -208,6 +209,6 @@ class MultiMemberOperatorTest {
     private static String customerName(OperatorHarness member, McpSyncClient client) throws Exception {
         McpSchema.CallToolResult result = member.getEntityContext(client, SUBJECT);
         assertThat(result.isError()).as(OperatorHarness.text(result)).isNotEqualTo(Boolean.TRUE);
-        return JSON.readTree(OperatorHarness.text(result)).path("entity").path("customerName").asText();
+        return JSON.readTree(OperatorHarness.text(result)).path("entity").path("customerName").asString();
     }
 }

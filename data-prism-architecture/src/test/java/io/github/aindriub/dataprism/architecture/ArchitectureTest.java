@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.architecture;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.MapperBuilder;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -12,6 +13,10 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
 import io.github.aindriub.dataprism.audit.fixture.AuditDependsOnMcpFixture;
+import io.github.aindriub.dataprism.mapper.fixture.BuildOnlyMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.BuilderMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.ConstructorMapperFixture;
+import io.github.aindriub.dataprism.mapper.fixture.RebuildMapperFixture;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.oversight.fixture.OversightDependsOnMcpFixture;
 import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
@@ -61,19 +66,24 @@ class ArchitectureTest {
      * a route from source data to the transport that never passes through the
      * privacy engine, and it would look completely normal in review.
      *
-     * <p>The allowlist also names five classes that construct an {@code
-     * ObjectMapper} over a {@code YAMLFactory} to hand-parse a configuration
-     * file read once at startup: {@code RestSources} (source definitions),
-     * {@code SecurityPolicy} (the role-to-capability map), {@code
-     * PrivacyProfiles}, {@code ModelDescriptors} and {@code
-     * VocabularyRegistry}. None of them ever sees a source record — each
-     * reads a file the operator wrote before the process started, and none of
-     * their output reaches a transport. A YAML configuration reader is not a
-     * route from source data to transport, which is what this rule actually
-     * guards against; matching every {@code ObjectMapper} constructor rather
-     * than only the no-argument one is what makes that distinction visible in
-     * the first place — before, the argument-taking constructor these five
-     * call evaded the rule entirely.
+     * <p>The allowlist also names five classes that build a YAML mapper
+     * ({@code YAMLMapper.builder()}) to hand-parse a configuration file read
+     * once at startup: {@code RestSources} (source definitions), {@code
+     * SecurityPolicy} (the role-to-capability map), {@code PrivacyProfiles},
+     * {@code ModelDescriptors} and {@code VocabularyRegistry}. None of them
+     * ever sees a source record: each reads a file the operator wrote before
+     * the process started, and none of their output reaches a transport.
+     *
+     * <p>Jackson 3 mappers are immutable and built from a builder, so a rule
+     * that matched only {@code ObjectMapper} constructors would no longer see
+     * most of them. This rule matches every way a mapper comes into being: a
+     * constructor of {@code ObjectMapper} or a subtype, a static {@code
+     * builder(..)} on one, {@code build()} on a {@code MapperBuilder} or a
+     * subtype, and {@code ObjectMapper#rebuild()}, which derives a new mapper
+     * from an existing one. The last matters because a reconfigured copy of
+     * data-prism's own mapper is exactly as much a second mapper as a fresh one.
+     * It is checked against negative fixtures below, so it cannot quietly go
+     * blind to one of the four.
      */
     private static final ArchRule ONLY_DESIGNATED_CLASSES_CREATE_MAPPERS = noClasses()
             .that().resideInAPackage("io.github.aindriub.dataprism..")
@@ -85,7 +95,10 @@ class ArchitectureTest {
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.descriptor.ModelDescriptors")
             .and().doNotHaveFullyQualifiedName(
                     "io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry")
-            .should().callConstructorWhere(constructsAnObjectMapper())
+            .should().callConstructorWhere(constructsAMapper())
+            .orShould().callMethodWhere(callsAMapperBuilderFactory())
+            .orShould().callMethodWhere(buildsAMapper())
+            .orShould().callMethodWhere(rebuildsAMapper())
             .because("output is serialised by one mapper, which is what makes the engine unbypassable");
 
     @Test
@@ -93,26 +106,74 @@ class ArchitectureTest {
         ONLY_DESIGNATED_CLASSES_CREATE_MAPPERS.check(CLASSES);
     }
 
-    private static DescribedPredicate<JavaConstructorCall> constructsAnObjectMapper() {
-        return DescribedPredicate.describe("call any ObjectMapper constructor",
-                call -> call.getTarget().getOwner().isEquivalentTo(ObjectMapper.class));
+    /** A class outside the allowlist that builds a mapper is reported, whichever way it does it. */
+    @Test
+    void mapperRuleCatchesAConstructor() {
+        assertMapperViolation(ConstructorMapperFixture.class, "ObjectMapper.<init>");
+    }
+
+    @Test
+    void mapperRuleCatchesABuilder() {
+        assertMapperViolation(BuilderMapperFixture.class, "JsonMapper.builder");
+    }
+
+    @Test
+    void mapperRuleCatchesBuildOnAPassedInBuilder() {
+        assertMapperViolation(BuildOnlyMapperFixture.class, "MapperBuilder.build");
+    }
+
+    @Test
+    void mapperRuleCatchesARebuiltMapper() {
+        assertMapperViolation(RebuildMapperFixture.class, "ObjectMapper.rebuild");
+    }
+
+    private static void assertMapperViolation(Class<?> fixtureClass, String call) {
+        EvaluationResult result = ONLY_DESIGNATED_CLASSES_CREATE_MAPPERS
+                .evaluate(new ClassFileImporter().importClasses(fixtureClass));
+        org.assertj.core.api.Assertions.assertThat(result.hasViolation()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(String.join("\n", result.getFailureReport().getDetails()))
+                .contains(fixtureClass.getName())
+                .contains(call);
+    }
+
+    private static DescribedPredicate<JavaConstructorCall> constructsAMapper() {
+        return DescribedPredicate.describe("call a constructor of ObjectMapper or a subtype",
+                call -> call.getTargetOwner().isAssignableTo(ObjectMapper.class));
+    }
+
+    private static DescribedPredicate<JavaMethodCall> callsAMapperBuilderFactory() {
+        return DescribedPredicate.describe("call a static builder(..) on ObjectMapper or a subtype", call ->
+                call.getTarget().getName().equals("builder")
+                        && call.getTargetOwner().isAssignableTo(ObjectMapper.class));
+    }
+
+    private static DescribedPredicate<JavaMethodCall> buildsAMapper() {
+        return DescribedPredicate.describe("call build() on a MapperBuilder or a subtype", call ->
+                call.getTarget().getName().equals("build")
+                        && call.getTargetOwner().isAssignableTo(MapperBuilder.class));
+    }
+
+    private static DescribedPredicate<JavaMethodCall> rebuildsAMapper() {
+        return DescribedPredicate.describe("call ObjectMapper#rebuild()", call ->
+                call.getTarget().getName().equals("rebuild")
+                        && call.getTargetOwner().isAssignableTo(ObjectMapper.class));
     }
 
     /**
      * The allowlist above only holds "a YAML configuration reader is not a
      * route from source data to transport" for as long as these five classes
      * actually only read. Nothing stops a later edit from also calling
-     * {@code objectMapper.writeValue(...)} on the same instance — the mapper
-     * constructor rule above would stay silent, because it is not about
-     * what the mapper is used for once built. This rule is: none of the five
-     * designated YAML readers may call any {@code ObjectMapper#write*}
-     * method, so the exemption cannot quietly widen from "parses a
-     * configuration file" to "also serialises something" without failing
-     * here first.
+     * {@code mapper.writeValue(...)} on the same instance: the mapper-creation
+     * rule above would stay silent, because it is not about what the mapper
+     * is used for once built. This rule is: none of the five designated YAML
+     * readers may call any {@code ObjectMapper#write*} or {@code
+     * ObjectMapper#writer*} method, so the exemption cannot quietly widen from
+     * "parses a configuration file" to "also serialises something" without
+     * failing here first.
      */
     private static final ArchRule DESIGNATED_YAML_READERS_DO_NOT_WRITE = noClasses()
             .that(isADesignatedYamlReader())
-            .should().callMethodWhere(callsAnObjectMapperWriteMethod());
+            .should().callMethodWhere(callsAMapperWriteMethod());
 
     @Test
     void designatedYamlReadersDoNotWrite() {
@@ -130,10 +191,11 @@ class ArchitectureTest {
                 javaClass -> designatedYamlReaders.contains(javaClass.getFullName()));
     }
 
-    private static DescribedPredicate<JavaMethodCall> callsAnObjectMapperWriteMethod() {
-        return DescribedPredicate.describe("call ObjectMapper#write*", call ->
-                call.getTarget().getOwner().isEquivalentTo(ObjectMapper.class)
-                        && call.getTarget().getName().startsWith("write"));
+    private static DescribedPredicate<JavaMethodCall> callsAMapperWriteMethod() {
+        return DescribedPredicate.describe("call ObjectMapper#write* or ObjectMapper#writer*", call ->
+                call.getTargetOwner().isAssignableTo(ObjectMapper.class)
+                        && (call.getTarget().getName().startsWith("write")
+                        || call.getTarget().getName().startsWith("writer")));
     }
 
     /**
@@ -415,8 +477,7 @@ class ArchitectureTest {
      * exactly, not as {@code ..core..}, so the subpackages are not flagged.
      */
     private static final ArchRule CORE_ROOT_PACKAGE_IS_EMPTY = noClasses()
-            .should().resideInAPackage("io.github.aindriub.dataprism.core")
-            .allowEmptyShould(true);
+            .should().resideInAPackage("io.github.aindriub.dataprism.core");
 
     @Test
     void coreRootPackageIsEmpty() {

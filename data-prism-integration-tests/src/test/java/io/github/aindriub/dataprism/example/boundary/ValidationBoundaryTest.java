@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.example.boundary;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
@@ -62,7 +63,7 @@ class ValidationBoundaryTest {
 
     private static DefaultContextOrchestrator orchestrator(LlmResponseValidator validator,
                                                             List<AuditEvent> audited) {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         ScrubbingEngine scrubber = (source, context) ->
                 new ScrubResult(mapper.createObjectNode().put("value", "safe"), Set.of());
 

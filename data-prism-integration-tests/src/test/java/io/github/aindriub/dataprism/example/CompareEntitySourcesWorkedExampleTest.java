@@ -104,7 +104,7 @@ class CompareEntitySourcesWorkedExampleTest {
     @Test
     @DisplayName("compare_entity_sources reports the disputed name, keyed by the real field names, "
             + "without leaking any raw fixture value")
-    void comparesCustomer123WithoutLeakingRawValues() throws com.fasterxml.jackson.core.JsonProcessingException {
+    void comparesCustomer123WithoutLeakingRawValues() throws tools.jackson.core.JacksonException {
         Set<String> capabilities = Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES);
         AuthorizationService authorizationService = authorizationServiceGranting(capabilities);
         ScopeResolver scopeResolver = scopeResolverFor(assembly);

@@ -317,11 +317,11 @@ class McpHttpEndToEndTest {
             assertThat(body).doesNotContain("Patrick Murphy").doesNotContain("Pat Murphy")
                     .doesNotContain("P. Murphy").doesNotContain("patrick.murphy@example.invalid")
                     .doesNotContain("4200.55").doesNotContain("\"123\"");
-            assertThat(response.path("subject").asText()).startsWith("SUBJ-").isNotEqualTo("123");
-            assertThat(response.path("entity").path("customerName").asText())
+            assertThat(response.path("subject").asString()).startsWith("SUBJ-").isNotEqualTo("123");
+            assertThat(response.path("entity").path("customerName").asString())
                     .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
-            assertThat(response.path("entity").path("email").asText()).isEqualTo("[REDACTED]");
-            assertThat(response.path("entity").path("status").asText()).isEqualTo("ACTIVE");
+            assertThat(response.path("entity").path("email").asString()).isEqualTo("[REDACTED]");
+            assertThat(response.path("entity").path("status").asString()).isEqualTo("ACTIVE");
         } finally {
             client.closeGracefully();
         }

@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.server.operator;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.modelcontextprotocol.client.McpSyncClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ConfiguredJsonReidentificationEndToEndTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
     private static final String SUBJECT = "subject-4712";
     private static final String CASE = "CASE-CFG";
     private static final String RECORD = "{\"id\":\"" + SUBJECT + "\",\"contactEmail\":\"fixture.person@example.invalid\"}";
@@ -44,19 +45,19 @@ class ConfiguredJsonReidentificationEndToEndTest {
                     "{\"scopeId\":\"case:" + CASE + "\",\"namespace\":\"EMAIL\",\"syntheticValue\":\""
                             + synthetic + "\",\"purpose\":\"fraud-review\",\"caseId\":\"" + CASE + "\"}");
             assertThat(requested.statusCode()).isEqualTo(202);
-            String approvalId = JSON.readTree(requested.body()).path("approvalId").asText();
+            String approvalId = JSON.readTree(requested.body()).path("approvalId").asString();
             assertThat(app.operator("POST", "/operator/reidentifications/" + approvalId + "/approve", approver,
                     null).statusCode()).isEqualTo(200);
 
             JsonNode body = JSON.readTree(app.operator("GET", "/operator/reidentifications/" + approvalId,
                     requester, null).body());
-            assertThat(body.path("status").asText()).isEqualTo("RESOLVED");
-            assertThat(body.path("subjectId").asText()).isEqualTo(SUBJECT);
+            assertThat(body.path("status").asString()).isEqualTo("RESOLVED");
+            assertThat(body.path("subjectId").asString()).isEqualTo(SUBJECT);
         }
     }
 
     private static String firstEmail(JsonNode node) {
-        if (node.has("contactEmail")) return node.get("contactEmail").asText();
+        if (node.has("contactEmail")) return node.get("contactEmail").asString();
         for (JsonNode child : node) {
             String found = firstEmail(child);
             if (found != null) return found;

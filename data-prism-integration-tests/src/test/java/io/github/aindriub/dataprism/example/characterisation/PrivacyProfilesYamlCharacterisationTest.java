@@ -13,8 +13,8 @@ import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link PrivacyProfiles#fromYaml} does today (Jackson 2 YAML, SnakeYAML, YAML 1.1 reading
- * rules). The expected text is what the current code printed.
+ * What {@link PrivacyProfiles#fromYaml} does today (Jackson 3 YAML, YAML 1.2 reading rules; decision D-167-1 accepted
+ * the change from Jackson 2 and YAML 1.1). The expected text is what the current code printed.
  */
 class PrivacyProfilesYamlCharacterisationTest {
 
@@ -48,13 +48,13 @@ class PrivacyProfilesYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("as the override flag, yes, on and True read as true; no, off and FALSE read as false; y and n are read as text, so the flag is false (YAML 1.1 booleans, but only the long forms); override is true only for the ones that read as true")
+    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
     void booleanSpellings() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
                 s -> profile("    classifications:\n      PII:\n        action: REDACT\n        override: " + s + "\n"),
-                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("yes => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=true\n"
+                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("yes => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
                 + "no => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
-                + "on => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=true\n"
+                + "on => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
                 + "off => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
                 + "y => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
                 + "n => ok p: unclassified=FAIL_REQUEST PII->REDACT/override=false\n"
@@ -63,14 +63,14 @@ class PrivacyProfilesYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("as a band bound and the unit, 010 reads as decimal 8 and 0777 as decimal 511 (YAML 1.1 octal); 0o10 stays the text 0o10; a bound 0o10 is refused as non-numeric")
+    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
     void octalLookingScalars() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
                 s -> profile("    generalization:\n      FINANCIAL_VALUE:\n        bounds: [0, " + s + "]\n"
                         + "        unit: " + s + "\n"),
-                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("010 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 8]/unit=8/precision=null\n"
+                PrivacyProfilesYamlCharacterisationTest::render)).isEqualTo("010 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 10]/unit=010/precision=null\n"
                 + "0o10 => refused IllegalArgumentException \"p.generalization.FINANCIAL_VALUE has a non-numeric bound '0o10'\" caused by NumberFormatException\n"
-                + "0777 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 511]/unit=511/precision=null\n");
+                + "0777 => ok p: unclassified=FAIL_REQUEST FINANCIAL_VALUE->NUMERIC_BAND[0, 777]/unit=0777/precision=null\n");
     }
 
     @Test

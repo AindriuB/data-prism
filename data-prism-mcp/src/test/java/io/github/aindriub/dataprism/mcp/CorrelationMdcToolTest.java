@@ -3,7 +3,8 @@ package io.github.aindriub.dataprism.mcp;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
@@ -126,7 +127,7 @@ class CorrelationMdcToolTest {
     private static ContextOrchestrator orchestrator(AuditRecorder audit, CorrelationMdc mdc, boolean overlap) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         ScrubbingEngine scrubber = (src, ctx) ->
-                new ScrubResult(new ObjectMapper().createObjectNode().put("value", "ok"), Set.of());
+                new ScrubResult(JsonMapper.builder().build().createObjectNode().put("value", "ok"), Set.of());
         LlmResponseValidator ok = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
         List<DataSourceAdapter<?>> sources = new ArrayList<>();
         for (String name : List.of("src-a", "src-b", "src-c")) {

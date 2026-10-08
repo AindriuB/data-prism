@@ -379,10 +379,10 @@ class ConfiguredJsonNestedHttpTest {
 
             var response = DataPrismObjectMapper.create().readTree(body);
             var entity = response.path("entity");
-            assertThat(entity.path("address").path("line1").asText()).isEqualTo("123 Main St");
-            assertThat(entity.path("address").path("ssn").asText())
+            assertThat(entity.path("address").path("line1").asString()).isEqualTo("123 Main St");
+            assertThat(entity.path("address").path("ssn").asString())
                     .isNotBlank().isNotEqualTo("111-22-3333");
-            assertThat(entity.path("name").asText()).isNotBlank().isNotEqualTo("Raw Full Name");
+            assertThat(entity.path("name").asString()).isNotBlank().isNotEqualTo("Raw Full Name");
         } finally {
             client.closeGracefully();
         }

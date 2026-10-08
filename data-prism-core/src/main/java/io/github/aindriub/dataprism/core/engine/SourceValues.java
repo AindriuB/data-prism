@@ -1,7 +1,7 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
@@ -82,7 +82,7 @@ public final class SourceValues {
     /** Every scalar under this node, so a sensitive collection contributes each element. */
     private static void addScalars(JsonNode node, Set<String> out) {
         if (node.isValueNode()) {
-            String text = node.asText();
+            String text = node.asString();
             if (text != null && !text.isBlank()) {
                 out.add(text);
             }

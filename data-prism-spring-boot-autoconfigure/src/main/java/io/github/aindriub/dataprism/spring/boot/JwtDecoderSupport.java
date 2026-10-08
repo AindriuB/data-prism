@@ -1,8 +1,9 @@
 package io.github.aindriub.dataprism.spring.boot;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.core.StreamReadConstraints;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.StreamReadConstraints;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -91,7 +92,7 @@ public final class JwtDecoderSupport {
             }
         } catch (DataPrismConfigurationException exception) {
             throw exception;
-        } catch (IOException | IllegalArgumentException exception) {
+        } catch (IOException | JacksonException | IllegalArgumentException exception) {
             throw discoveryFailure("metadata could not be retrieved or parsed");
         } finally {
             if (connection != null) {

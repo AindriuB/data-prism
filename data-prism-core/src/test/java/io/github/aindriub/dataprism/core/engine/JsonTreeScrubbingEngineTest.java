@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -55,11 +55,11 @@ class JsonTreeScrubbingEngineTest {
 
         ObjectNode out = engine.scrub(source, context).tree();
 
-        assertThat(out.get("fullName").asText())
+        assertThat(out.get("fullName").asString())
                 .isEqualTo(FAKE_SYNTHETICS.syntheticValue("subject-1", PrivacyNamespace.PERSON_NAME, context));
-        assertThat(out.get("contact").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+        assertThat(out.get("contact").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
         assertThat(out.has("note")).as("REMOVE drops the field entirely").isFalse();
-        assertThat(out.get("state").asText()).as("declared non-sensitive passes through").isEqualTo("ACTIVE");
+        assertThat(out.get("state").asString()).as("declared non-sensitive passes through").isEqualTo("ACTIVE");
         assertThat(out.toString())
                 .doesNotContain("Patrick Murphy")
                 .doesNotContain("patrick@example.invalid")
@@ -111,8 +111,8 @@ class JsonTreeScrubbingEngineTest {
 
         // The failure this guards against is not a leak: it is the model being
         // told two people are one person. See docs/design-review.md A1.
-        assertThat(out.get("applicantName").asText()).isNotEqualTo(out.get("guarantorName").asText());
-        assertThat(out.get("guarantorName").asText()).isEqualTo(
+        assertThat(out.get("applicantName").asString()).isNotEqualTo(out.get("guarantorName").asString());
+        assertThat(out.get("guarantorName").asString()).isEqualTo(
                 FAKE_SYNTHETICS.syntheticValue("guarantor-9", PrivacyNamespace.PERSON_NAME, context));
     }
 
@@ -128,7 +128,7 @@ class JsonTreeScrubbingEngineTest {
 
         ObjectNode out = engine.scrub(source, context).tree();
 
-        assertThat(out.get("guarantorName").asText()).isEqualTo(
+        assertThat(out.get("guarantorName").asString()).isEqualTo(
                 FAKE_SYNTHETICS.syntheticValue("guarantor-9", PrivacyNamespace.PERSON_NAME, context));
     }
 

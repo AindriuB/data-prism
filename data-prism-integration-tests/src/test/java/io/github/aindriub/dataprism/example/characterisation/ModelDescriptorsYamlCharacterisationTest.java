@@ -13,8 +13,8 @@ import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link ModelDescriptors#fromYaml} does today (Jackson 2 YAML, SnakeYAML, YAML 1.1 reading
- * rules). The expected text is what the current code printed.
+ * What {@link ModelDescriptors#fromYaml} does today (Jackson 3 YAML, YAML 1.2 reading rules; decision D-167-1 accepted
+ * the change from Jackson 2 and YAML 1.1). The expected text is what the current code printed.
  */
 class ModelDescriptorsYamlCharacterisationTest {
 
@@ -48,12 +48,12 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("as exposed, yes, on and True read as true; no, off and FALSE read as false; y and n are read as text, so the flag is false (YAML 1.1 booleans, but only the long forms); exposed is true only for the ones that read as true")
+    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
     void booleanSpellings() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> model("    exposed: " + s + "\n"),
-                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=true descendable=null undeclaredFields=null\n"
+                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=false descendable=null undeclaredFields=null\n"
                 + "no => ok M: exposed=false descendable=null undeclaredFields=null\n"
-                + "on => ok M: exposed=true descendable=null undeclaredFields=null\n"
+                + "on => ok M: exposed=false descendable=null undeclaredFields=null\n"
                 + "off => ok M: exposed=false descendable=null undeclaredFields=null\n"
                 + "y => ok M: exposed=false descendable=null undeclaredFields=null\n"
                 + "n => ok M: exposed=false descendable=null undeclaredFields=null\n"
@@ -62,29 +62,29 @@ class ModelDescriptorsYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("as a field's subject, identifier and nonSensitive text, 010 reads as decimal 8 and 0777 as decimal 511 (YAML 1.1 octal); 0o10 stays the text 0o10")
+    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
     void octalLookingScalars() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS,
                 s -> model("    fields:\n      f:\n        nonSensitive: " + s + "\n        subject: " + s
                         + "\n        identifier: " + s + "\n"),
-                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("010 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=8 nonSensitive=8 identifier=8}\n"
+                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("010 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=010 nonSensitive=010 identifier=010}\n"
                 + "0o10 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=0o10 nonSensitive=0o10 identifier=0o10}\n"
-                + "0777 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=511 nonSensitive=511 identifier=511}\n");
+                + "0777 => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=0777 nonSensitive=0777 identifier=0777}\n");
     }
 
     @Test
-    @DisplayName("as a field's subject text, yes/no/on/off arrive as true/false text; yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms)")
+    @DisplayName("yes, no, on and off arrive as the text yes, no, on and off (YAML 1.2)")
     void booleanSpellingsAsText() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS,
                 s -> model("    fields:\n      f:\n        subject: " + s + "\n"),
-                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=true nonSensitive=null identifier=null}\n"
-                + "no => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=false nonSensitive=null identifier=null}\n"
-                + "on => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=true nonSensitive=null identifier=null}\n"
-                + "off => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=false nonSensitive=null identifier=null}\n"
+                ModelDescriptorsYamlCharacterisationTest::render)).isEqualTo("yes => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=yes nonSensitive=null identifier=null}\n"
+                + "no => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=no nonSensitive=null identifier=null}\n"
+                + "on => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=on nonSensitive=null identifier=null}\n"
+                + "off => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=off nonSensitive=null identifier=null}\n"
                 + "y => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=y nonSensitive=null identifier=null}\n"
                 + "n => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=n nonSensitive=null identifier=null}\n"
-                + "True => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=true nonSensitive=null identifier=null}\n"
-                + "FALSE => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=false nonSensitive=null identifier=null}\n");
+                + "True => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=True nonSensitive=null identifier=null}\n"
+                + "FALSE => ok M: exposed=null descendable=null undeclaredFields=null f={classifications=[] namespace=null action=null subject=FALSE nonSensitive=null identifier=null}\n");
     }
 
     @Test

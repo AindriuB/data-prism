@@ -12,8 +12,8 @@ import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@link RestSources#fromYaml} does today (Jackson 2 YAML, SnakeYAML, YAML 1.1 reading
- * rules). The expected text is what the current code printed. The scalar probes use the TLS
+ * What {@link RestSources#fromYaml} does today (Jackson 3 YAML, YAML 1.2 reading rules; decision D-167-1 accepted
+ * the change from Jackson 2 and YAML 1.1). The expected text is what the current code printed. The scalar probes use the TLS
  * {@code key-store} path, the one place a plain scalar's text is observable in the result.
  */
 class RestSourcesYamlCharacterisationTest {
@@ -52,26 +52,26 @@ class RestSourcesYamlCharacterisationTest {
     }
 
     @Test
-    @DisplayName("as the key-store path text, yes, on and True read as true; no, off and FALSE read as false; y and n stay the text y and n (YAML 1.1 booleans, but only the long forms); yes/no/on/off arrive as true/false text")
+    @DisplayName("yes, no, on and off are read as text, not booleans (YAML 1.2); only true and false, in any case, are booleans")
     void booleanSpellings() {
         assertThat(Observe.table(Observe.BOOLEAN_SPELLINGS, s -> SOURCE + tls(s),
-                RestSourcesYamlCharacterisationTest::render)).isEqualTo("yes => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=true tls.trustStore=ts.p12\n"
-                + "no => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=false tls.trustStore=ts.p12\n"
-                + "on => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=true tls.trustStore=ts.p12\n"
-                + "off => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=false tls.trustStore=ts.p12\n"
+                RestSourcesYamlCharacterisationTest::render)).isEqualTo("yes => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=yes tls.trustStore=ts.p12\n"
+                + "no => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=no tls.trustStore=ts.p12\n"
+                + "on => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=on tls.trustStore=ts.p12\n"
+                + "off => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=off tls.trustStore=ts.p12\n"
                 + "y => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=y tls.trustStore=ts.p12\n"
                 + "n => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=n tls.trustStore=ts.p12\n"
-                + "True => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=true tls.trustStore=ts.p12\n"
-                + "FALSE => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=false tls.trustStore=ts.p12\n");
+                + "True => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=True tls.trustStore=ts.p12\n"
+                + "FALSE => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=FALSE tls.trustStore=ts.p12\n");
     }
 
     @Test
-    @DisplayName("as the key-store path text, 010 reads as decimal 8 and 0777 as decimal 511 (YAML 1.1 octal); 0o10 stays the text 0o10")
+    @DisplayName("a leading-zero number such as 010 or 0777 is read as written, not as octal (YAML 1.2)")
     void octalLookingScalars() {
         assertThat(Observe.table(Observe.OCTAL_SPELLINGS, s -> SOURCE + tls(s),
-                RestSourcesYamlCharacterisationTest::render)).isEqualTo("010 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=8 tls.trustStore=ts.p12\n"
+                RestSourcesYamlCharacterisationTest::render)).isEqualTo("010 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=010 tls.trustStore=ts.p12\n"
                 + "0o10 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=0o10 tls.trustStore=ts.p12\n"
-                + "0777 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=511 tls.trustStore=ts.p12\n");
+                + "0777 => ok s: baseUrl=https://source.example.invalid path=/things/{subject} timeout=PT3S requireHttps=true header=null tls.keyStore=0777 tls.trustStore=ts.p12\n");
     }
 
     @Test

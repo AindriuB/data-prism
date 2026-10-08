@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.quickstart.extension;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
@@ -69,7 +70,7 @@ class QuickstartSmokeIT {
     private static final String AUDIENCE = "data-prism-quickstart-mcp";
     private static final String STORE_PASSWORD = "quickstart-smoke-test-only";
     private static final String HMAC_ENVIRONMENT_VARIABLE = "DATAPRISM_QUICKSTART_SMOKE_HMAC_KEY";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMapper.builder().build();
 
     @TempDir
     static Path tempDir;
@@ -172,11 +173,11 @@ class QuickstartSmokeIT {
                     .doesNotContain("\"1001\"");
 
             JsonNode response = MAPPER.readTree(body);
-            assertThat(response.path("subject").asText()).startsWith("SUBJ-").isNotEqualTo("1001");
-            assertThat(response.path("entity").path("customerName").asText())
+            assertThat(response.path("subject").asString()).startsWith("SUBJ-").isNotEqualTo("1001");
+            assertThat(response.path("entity").path("customerName").asString())
                     .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
-            assertThat(response.path("entity").path("email").asText()).isEqualTo("[REDACTED]");
-            assertThat(response.path("entity").path("status").asText()).isEqualTo("ACTIVE");
+            assertThat(response.path("entity").path("email").asString()).isEqualTo("[REDACTED]");
+            assertThat(response.path("entity").path("status").asString()).isEqualTo("ACTIVE");
         } finally {
             client.closeGracefully();
         }
@@ -228,7 +229,7 @@ class QuickstartSmokeIT {
         if (response.statusCode() != 200) {
             throw new IllegalStateException("issuer refused to mint a token: " + response.body());
         }
-        return MAPPER.readTree(response.body()).path("access_token").asText();
+        return MAPPER.readTree(response.body()).path("access_token").asString();
     }
 
     private static McpSyncClient clientWithToken(String token) {

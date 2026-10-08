@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 import io.github.aindriub.dataprism.core.model.Capability;
 
 import java.io.IOException;
@@ -25,7 +27,10 @@ import java.util.Set;
  */
 public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String>> roleCapabilities) {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper YAML = YAMLMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .build();
     private static final Set<String> TOP_LEVEL_KEYS = Set.of("purposes", "roles");
 
     public SecurityPolicy {
@@ -56,8 +61,8 @@ public record SecurityPolicy(Set<String> allowedPurposes, Map<String, Set<String
         Map<String, Object> root;
         try {
             root = YAML.readValue(in, Map.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException("security policy could not be read", e);
+        } catch (JacksonException e) {
+            throw new UncheckedIOException("security policy could not be read", new IOException(e.getMessage(), e));
         }
         if (root == null) {
             throw new IllegalArgumentException("security policy file is empty");

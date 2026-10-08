@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
@@ -105,7 +106,7 @@ class OrchestratorRefusalCorrelationTest {
     }
 
     private static final ScrubbingEngine OK_SCRUBBER = (source, ctx) ->
-            new ScrubResult(new ObjectMapper().createObjectNode().put("value", "ok"), Set.of());
+            new ScrubResult(JsonMapper.builder().build().createObjectNode().put("value", "ok"), Set.of());
     private static final LlmResponseValidator OK = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
 
     private List<BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult>> handlers(

@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.connectors.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -63,7 +64,7 @@ class ConfiguredJsonSpecialCategoryTest {
                 "investigation", Instant.parse("2030-01-01T00:00:00Z"),
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("v1").withVocabulary(vocabulary.id()));
 
-        ObjectNode body = (ObjectNode) new ObjectMapper().readTree(
+        ObjectNode body = (ObjectNode) JsonMapper.builder().build().readTree(
                 "{\"id\":\"CUST-1\",\"template\":\"" + SYNTHETIC_TEMPLATE + "\"}");
         ScrubResult result = engine.scrub(new ConfiguredJsonPayload("customer-biometric", body), context);
 

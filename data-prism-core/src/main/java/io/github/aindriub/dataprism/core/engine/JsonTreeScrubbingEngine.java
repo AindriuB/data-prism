@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.core.engine;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
@@ -335,9 +335,9 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             // equality, and for a small value space it discloses the value --
             // see ValueTokenSource.
             case HASH -> SourceTree.text(run.emit(
-                    tokens.hash(value.asText(), policy.namespace(), run.context())));
+                    tokens.hash(value.asString(), policy.namespace(), run.context())));
             case TOKENIZE -> SourceTree.text(run.emit(
-                    tokens.token(value.asText(), policy.namespace(), run.context())));
+                    tokens.token(value.asString(), policy.namespace(), run.context())));
             case GENERALIZE -> SourceTree.text(run.emit(
                     Generalizer.generalise(value, policy.generalization(), path)));
         };
@@ -364,7 +364,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                     "subject field named on " + type.getName() + " does not exist");
         }
         JsonNode node = in.get(field);
-        return node == null || node.isNull() ? null : node.asText();
+        return node == null || node.isNull() ? null : node.asString();
     }
 
     private static List<String> fieldNames(ObjectNode node) {

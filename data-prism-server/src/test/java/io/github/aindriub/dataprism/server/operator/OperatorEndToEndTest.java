@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.server.operator;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class OperatorEndToEndTest {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     @TempDir
     Path tempDir;
@@ -41,7 +42,7 @@ class OperatorEndToEndTest {
                     "{\"target\":\"TOOL\",\"name\":\"get_entity_context\"}").statusCode()).isEqualTo(200);
             McpSchema.CallToolResult resumed = app.getEntityContext(client, "123");
             assertThat(resumed.isError()).isNotEqualTo(Boolean.TRUE);
-            assertThat(JSON.readTree(OperatorHarness.text(resumed)).path("entity").path("status").asText())
+            assertThat(JSON.readTree(OperatorHarness.text(resumed)).path("entity").path("status").asString())
                     .isEqualTo("ACTIVE");
         }
     }
@@ -65,7 +66,7 @@ class OperatorEndToEndTest {
 
             McpSchema.CallToolResult retry = app.getEntityContext(client, "123");
             assertThat(retry.isError()).isNotEqualTo(Boolean.TRUE);
-            assertThat(JSON.readTree(OperatorHarness.text(retry)).path("entity").path("status").asText())
+            assertThat(JSON.readTree(OperatorHarness.text(retry)).path("entity").path("status").asString())
                     .isEqualTo("ACTIVE");
 
             McpSchema.CallToolResult third = app.getEntityContext(client, "123");

@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -257,7 +258,7 @@ class CompareEntitySourcesToolTest {
     @Test
     @DisplayName("a reserved argument is never read for its value, and its name reaches the audit event")
     void reservedArgumentsAreIgnoredAndReported() {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         ScrubbingEngine scrubber = (source, ctx) -> new ScrubResult(
                 mapper.createObjectNode().put("PERSON_NAME", "PSEUDONYM-FOR-" + ((NamedThing) source).id()),
@@ -351,7 +352,7 @@ class CompareEntitySourcesToolTest {
             + "and a field no source pair compared appears in none of them")
     void threeStatesAreDistinguishableWithoutInference() {
         ObjectMapper mapper = DataPrismObjectMapper.create();
-        com.fasterxml.jackson.databind.node.ObjectNode entity = mapper.createObjectNode();
+        tools.jackson.databind.node.ObjectNode entity = mapper.createObjectNode();
         entity.put("AGREED_FIELD", "PSEUDO-AGREED");
         entity.put("DISAGREED_FIELD", "PSEUDO-DISAGREED");
         entity.put("PARTIAL_FIELD", "PSEUDO-PARTIAL");
@@ -449,7 +450,7 @@ class CompareEntitySourcesToolTest {
     @Test
     @DisplayName("a genuine cross-source disagreement in raw, pre-scrub values never reaches this tool's output")
     void neverLeaksARawDisagreeingValue() {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         // A real scrubbing engine: it never sees, and could not repeat, the raw
         // name -- only the subject id decides the pseudonym it emits.
@@ -504,7 +505,7 @@ class CompareEntitySourcesToolTest {
     @Test
     @DisplayName("identity resolves the model's own field name, not the namespace name a finding carries")
     void identityResolvesFieldNamesThatDifferFromTheNamespace() {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         // A real scrubbing engine, keyed by each source's own field name --
         // exactly what JsonTreeScrubbingEngine does, and exactly why

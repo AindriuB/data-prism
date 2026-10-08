@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
 import io.github.aindriub.dataprism.core.model.Capability;
@@ -229,7 +230,7 @@ public final class GetEntityContextTool {
                     .structuredContent(mapper.convertValue(response, Map.class))
                     .addTextContent(mapper.writeValueAsString(response)), response.correlationId())
                     .build();
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (JacksonException e) {
             // The tree is already scrubbed, so this is a serialisation fault
             // rather than a privacy one — but it still must not return a partial
             // body, so it is refused like any other failure.

@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
@@ -99,7 +100,7 @@ class DefaultContextOrchestratorTest {
     private static DefaultContextOrchestrator orchestrator(LlmResponseValidator validator,
                                                             PrivacyMetrics metrics) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         ScrubbingEngine scrubber = (source, ctx) ->
                 new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of());
 
@@ -143,7 +144,7 @@ class DefaultContextOrchestratorTest {
      */
     private static DefaultContextOrchestrator orchestratorWithAgreeingSources(AuditRecorder audit) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         ScrubbingEngine scrubber = (source, ctx) ->
                 new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of());
         LlmResponseValidator alwaysOk = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
@@ -221,7 +222,7 @@ class DefaultContextOrchestratorTest {
     @DisplayName("the 8-argument constructor still refuses a value never in a classified field")
     void eightArgumentConstructorStillRunsThePatternScan() {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         // Nothing here is drawn from a classified field, so no comparison
         // check could ever catch it — only the pattern scan can.
         ScrubbingEngine scrubber = (source, ctx) ->
@@ -280,7 +281,7 @@ class DefaultContextOrchestratorTest {
     private static DefaultContextOrchestrator dispositionOrchestrator(
             List<AuditEvent> sink, LlmResponseValidator validator, PrivacyMetrics metrics) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         ScrubbingEngine scrubber = (source, ctx) -> {
             return new ScrubResult(mapper.createObjectNode().put("value", "ok"), Set.of(),
                     Map.of("/name", PrivacyAction.SYNTHESIZE,
@@ -337,7 +338,7 @@ class DefaultContextOrchestratorTest {
     @Test
     @DisplayName("correlationId is not serialised; the 5-argument constructor still compiles")
     void correlationIdIsNotSerialised() throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builder().build();
         ContextResponse response = new ContextResponse("THING", "S", Map.of(), List.of(),
                 mapper.createObjectNode(), Map.of(), "corr-id-123");
 

@@ -1,8 +1,9 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditedEntityTypes;
@@ -230,7 +231,7 @@ public final class CompareEntitySourcesTool {
                     .structuredContent(mapper.convertValue(comparison, Map.class))
                     .addTextContent(mapper.writeValueAsString(comparison)), response.correlationId())
                     .build();
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (JacksonException e) {
             // The tree is already scrubbed, so this is a serialisation fault
             // rather than a privacy one — but it still must not return a partial
             // body, so it is refused like any other failure.

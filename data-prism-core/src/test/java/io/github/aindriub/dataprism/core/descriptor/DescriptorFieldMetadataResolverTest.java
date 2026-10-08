@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.core.descriptor;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
 import io.github.aindriub.dataprism.annotations.NonSensitive;
@@ -117,9 +117,9 @@ class DescriptorFieldMetadataResolverTest {
                         Instant.parse("2030-01-01T00:00:00Z"),
                         PseudonymisationVersion.HMAC_SHA256_V1)).tree();
 
-        assertThat(out.get("fullName").asText()).startsWith("synthetic:");
-        assertThat(out.get("email").asText()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
-        assertThat(out.get("status").asText()).isEqualTo("ACTIVE");
+        assertThat(out.get("fullName").asString()).startsWith("synthetic:");
+        assertThat(out.get("email").asString()).isEqualTo(JsonTreeScrubbingEngine.REDACTED);
+        assertThat(out.get("status").asString()).isEqualTo("ACTIVE");
         assertThat(out.has("id")).isFalse();
         assertThat(out.toString()).doesNotContain("Patrick Murphy").doesNotContain("c-1");
     }

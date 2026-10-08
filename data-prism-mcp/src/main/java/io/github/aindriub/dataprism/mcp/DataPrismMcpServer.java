@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.mcp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
@@ -9,7 +9,7 @@ import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
 import io.modelcontextprotocol.json.McpJsonMapper;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
@@ -29,7 +29,7 @@ import java.util.Objects;
  *
  * <p>Both factories below build their transport's {@link McpJsonMapper} by
  * wrapping a {@link JacksonMcpJsonMapper} around {@link DataPrismObjectMapper},
- * this module's single {@link ObjectMapper}. So everything the SDK writes goes
+ * this module's single {@link JsonMapper}. So everything the SDK writes goes
  * through the mapper the scrubbing engine is installed on; a second mapper
  * anywhere on this path would be a way for source data to reach a client
  * without passing through it, and it would fail silently. See
@@ -109,7 +109,7 @@ public final class DataPrismMcpServer {
         }
         Objects.requireNonNull(developmentCaller, "developmentCaller");
 
-        ObjectMapper mapper = DataPrismObjectMapper.create();
+        JsonMapper mapper = DataPrismObjectMapper.create();
         McpJsonMapper json = new JacksonMcpJsonMapper(mapper);
         var transport = new StdioServerTransportProvider(json);
 
@@ -161,7 +161,7 @@ public final class DataPrismMcpServer {
         Objects.requireNonNull(contextExtractor, "contextExtractor");
         Objects.requireNonNull(endpointPath, "endpointPath");
 
-        ObjectMapper mapper = DataPrismObjectMapper.create();
+        JsonMapper mapper = DataPrismObjectMapper.create();
         McpJsonMapper json = new JacksonMcpJsonMapper(mapper);
         HttpServletStreamableServerTransportProvider transport = HttpServletStreamableServerTransportProvider
                 .builder()

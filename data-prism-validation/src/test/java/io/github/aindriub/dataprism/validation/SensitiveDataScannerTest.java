@@ -1,7 +1,8 @@
 package io.github.aindriub.dataprism.validation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SensitiveDataScannerTest {
 
     private final SensitiveDataScanner scanner = new SensitiveDataScanner();
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = JsonMapper.builder().build();
 
     /** IBAN shape, invented bank identifier, mod-97 remainder 69 rather than 1. */
     private static final String INVALID_IBAN = "IE00TEST99999999999999";

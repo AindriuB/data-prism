@@ -204,8 +204,8 @@ class ConfiguredJsonSourceEndToEndTest {
         // is that these two independently-classified fields resolve to the exact
         // same synthetic string despite different field names and different raw
         // values, in different shapes of response.
-        assertThat(response.entity().get("customerName").asText())
-                .isEqualTo(response.entity().get("name").asText())
+        assertThat(response.entity().get("customerName").asString())
+                .isEqualTo(response.entity().get("name").asString())
                 .doesNotContain("Alice Raw", "Bob Raw");
 
         // Raw values are absent, from both sources.
@@ -213,16 +213,16 @@ class ConfiguredJsonSourceEndToEndTest {
                 .doesNotContain("Alice Raw", "Bob Raw", "alice@raw.example", "bob@raw.example");
 
         // Redacted, not passed through, for both.
-        assertThat(response.entity().get("email").asText()).isEqualTo("[REDACTED]");
-        assertThat(response.entity().get("emailAddress").asText()).isEqualTo("[REDACTED]");
+        assertThat(response.entity().get("email").asString()).isEqualTo("[REDACTED]");
+        assertThat(response.entity().get("emailAddress").asString()).isEqualTo("[REDACTED]");
 
         // The internal identifier is dropped for both, never emitted.
         assertThat(response.entity().has("customerId")).isFalse();
         assertThat(response.entity().has("id")).isFalse();
 
         // Non-sensitive passthrough, for both.
-        assertThat(response.entity().get("status").asText()).isEqualTo("ACTIVE");
-        assertThat(response.entity().get("state").asText()).isEqualTo("ACTIVE");
+        assertThat(response.entity().get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(response.entity().get("state").asString()).isEqualTo("ACTIVE");
     }
 
     @Test

@@ -1,6 +1,6 @@
 package io.github.aindriub.dataprism.orchestration;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.spi.EntityCorrelationService;
@@ -61,7 +61,7 @@ public final class NamespaceCorrelationService implements EntityCorrelationServi
             for (FieldMetadata field : resolver.resolve(source.record().getClass())) {
                 JsonNode value = tree.get(field.fieldName());
                 if (value == null || value.isNull() || !value.isTextual()
-                        || value.asText().isBlank()) {
+                        || value.asString().isBlank()) {
                     continue;
                 }
 
@@ -69,7 +69,7 @@ public final class NamespaceCorrelationService implements EntityCorrelationServi
                 // nothing to be compared against.
                 if (field.namespace() != PrivacyNamespace.NONE && !field.identifier()) {
                     byNamespace.computeIfAbsent(field.namespace(), n -> new LinkedHashMap<>())
-                            .put(alias, value.asText());
+                            .put(alias, value.asString());
                 }
 
                 // The injection check is not correlation and does not share its
@@ -77,7 +77,7 @@ public final class NamespaceCorrelationService implements EntityCorrelationServi
                 // which are precisely the fields that carry no namespace — a
                 // heuristic that only looked at namespaced fields would miss the
                 // place the problem actually occurs.
-                instructions.suspect(value.asText())
+                instructions.suspect(value.asString())
                         .map(reason -> new ConsistencyFinding(field.fieldName(), field.namespace(),
                                 ConsistencyFinding.Kind.SUSPECTED_INSTRUCTION_CONTENT,
                                 List.of(List.of(alias)), 1, reason))

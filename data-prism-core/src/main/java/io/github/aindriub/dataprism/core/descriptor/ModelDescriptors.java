@@ -1,7 +1,9 @@
 package io.github.aindriub.dataprism.core.descriptor;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
@@ -27,7 +29,10 @@ import java.util.Map;
  */
 public final class ModelDescriptors {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper YAML = YAMLMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .build();
 
     private ModelDescriptors() {
     }
@@ -37,8 +42,8 @@ public final class ModelDescriptors {
         Map<String, Object> root;
         try {
             root = YAML.readValue(in, Map.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException("model descriptors could not be read", e);
+        } catch (JacksonException e) {
+            throw new UncheckedIOException("model descriptors could not be read", new IOException(e.getMessage(), e));
         }
 
         Object models = root.get("models");

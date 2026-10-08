@@ -3,7 +3,8 @@ package io.github.aindriub.dataprism.mcp;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.audit.verify.AuditChainVerifier;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.format.AuditFieldMapping;
@@ -131,7 +132,7 @@ class UnregisteredEntityTypeAuditTest {
     private static DefaultContextOrchestrator orchestrator(AuditRecorder audit, Thing thing) {
         FieldMetadataResolver resolver = new DefaultFieldMetadataResolver();
         ScrubbingEngine scrubber = (source, ctx) ->
-                new ScrubResult(new ObjectMapper().createObjectNode().put("value", "ok"), Set.of());
+                new ScrubResult(JsonMapper.builder().build().createObjectNode().put("value", "ok"), Set.of());
         LlmResponseValidator ok = (response, prohibited, emitted, ctx) -> ValidationResult.ok();
         DataSourceAdapter<Thing> source = new DataSourceAdapter<>() {
             @Override

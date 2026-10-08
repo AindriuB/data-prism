@@ -1,13 +1,11 @@
 package io.github.aindriub.dataprism.audit.format;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.json.JsonWriteFeature;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.json.JsonWriteFeature;
 
 import io.github.aindriub.dataprism.audit.AuditEvent;
-import java.io.IOException;
 import java.io.StringWriter;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -25,8 +23,8 @@ import java.util.Objects;
  * timestamp as {@code Instant.toString()}, the form the hash is computed over.
  *
  * <p>Output is ASCII (non-ASCII characters are written as unicode escapes), so no character that
- * any reader treats as a line break can occur inside a line. Streaming API only:
- * {@code ArchitectureTest} allows exactly one {@code ObjectMapper} in the build.
+ * any reader treats as a line break can occur inside a line. Streaming API only: no
+ * mapper is built here ({@code ArchitectureTest} allows only the designated mapper classes).
  */
 public final class AuditJsonRenderer {
 
@@ -60,8 +58,6 @@ public final class AuditJsonRenderer {
         StringWriter out = new StringWriter();
         try (JsonGenerator g = JSON.createGenerator(out)) {
             writeNode(g, root);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
         }
         return out.toString();
     }
@@ -140,16 +136,16 @@ public final class AuditJsonRenderer {
         node.put(segments[segments.length - 1], value);
     }
 
-    private static void writeNode(JsonGenerator g, Node node) throws IOException {
+    private static void writeNode(JsonGenerator g, Node node) {
         g.writeStartObject();
         for (Map.Entry<String, Object> entry : node.entrySet()) {
-            g.writeFieldName(entry.getKey());
+            g.writeName(entry.getKey());
             writeValue(g, entry.getValue());
         }
         g.writeEndObject();
     }
 
-    private static void writeValue(JsonGenerator g, Object value) throws IOException {
+    private static void writeValue(JsonGenerator g, Object value) {
         if (value == null) {
             g.writeNull();
         } else if (value instanceof Node n) {
@@ -169,7 +165,7 @@ public final class AuditJsonRenderer {
         } else if (value instanceof Map<?, ?> m) {
             g.writeStartObject();
             for (Map.Entry<?, ?> entry : m.entrySet()) {
-                g.writeFieldName(String.valueOf(entry.getKey()));
+                g.writeName(String.valueOf(entry.getKey()));
                 writeValue(g, entry.getValue());
             }
             g.writeEndObject();

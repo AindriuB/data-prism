@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.example.http;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.format.AuditFieldMapping;
@@ -740,7 +740,7 @@ class PiiLogScanTest {
     private static final AuditRouting PROJECTION_ROUTING =
             new AuditRouting("dataprism.audit", "logs", "dataprism.audit", "prod");
 
-    private static final JsonFactory JSON = new JsonFactory();
+    private static final JsonFactory JSON = JsonFactory.builder().build();
 
     private static final Pattern DIGITS_SHAPE = Pattern.compile("\\d+");
 
