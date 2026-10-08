@@ -95,15 +95,15 @@ class AuditedEntityTypeOrchestratorTest {
     }
 
     @Test
-    @DisplayName("a request built without an audited entity type audits the sentinel: ACC-1 is audited as UNREGISTERED")
+    @DisplayName("a request built without an audited entity type audits the sentinel: CUSTOMER is audited as UNREGISTERED")
     void requestWithoutAuditedTypeAuditsTheSentinel() {
         ContextResponse response = orchestrator().buildContext(
-                ContextRequest.of("ACC-1", "1"), context(), caller());
+                ContextRequest.of("CUSTOMER", "1"), context(), caller());
 
         assertThat(audited).singleElement().satisfies(e ->
                 assertThat(e.entityType()).isEqualTo(AuditedEntityTypes.UNREGISTERED));
-        assertThat(response.entityType()).isEqualTo("ACC-1");
-        assertThat(sourceSaw).containsExactly("ACC-1");
+        assertThat(response.entityType()).isEqualTo("CUSTOMER");
+        assertThat(sourceSaw).containsExactly("CUSTOMER");
     }
 
     @Test

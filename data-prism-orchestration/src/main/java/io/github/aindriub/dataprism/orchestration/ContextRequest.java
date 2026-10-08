@@ -55,7 +55,7 @@ public record ContextRequest(String entityType, String subjectId, Set<String> re
                              Optional<ExternalCorrelationId> externalCorrelationId,
                              String auditedEntityType) {
 
-    /** The tool every pre-task-42 constructor and factory audits a request under. */
+    /** The tool every {@link #of} and {@link #comparison} factory audits a request under. */
     public static final String DEFAULT_TOOL_NAME = "get_entity_context";
 
     public ContextRequest {

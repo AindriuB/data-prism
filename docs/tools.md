@@ -76,8 +76,9 @@ McpSyncServer server = DataPrismMcpServer.stdio(assembly.orchestrator(), authori
         ToolOptions.defaults().admission(ToolAdmission.none(), assembly.parameterFingerprinter()).build());
 ```
 
-`ToolOptions` has no default admission: the caller names `ToolAdmission.none()` or a real
-policy, so approvals are never switched off by leaving something out.
+`ToolOptions` has no default admission: the caller names one, so approvals are never switched
+off by leaving something out. `ToolAdmission.none()` still needs a fingerprinter when passed
+through `.admission(...)`; `ToolOptions.defaults().noAdmission()` is the way to omit one.
 
 Every type it uses is a public class already in this repository
 (`data-prism-mcp`, `data-prism-security`, `data-prism-core`, and the same
