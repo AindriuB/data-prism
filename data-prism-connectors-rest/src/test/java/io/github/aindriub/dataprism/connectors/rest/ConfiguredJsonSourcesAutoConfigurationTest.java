@@ -182,6 +182,35 @@ class ConfiguredJsonSourcesAutoConfigurationTest {
     }
 
     @Test
+    @DisplayName("an unreadable config-location names the plain location, with no cause")
+    void unreadableLocationIsNamed() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", Map.of(
+                    "dataprism.json-sources.config-location", "classpath:/does-not-exist.yaml")));
+            assertThatThrownBy(() -> new ConfiguredJsonSourcesInitializer().initialize(context))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("dataprism.json-sources.config-location 'classpath:/does-not-exist.yaml' could not be read")
+                    .hasNoCause();
+        }
+    }
+
+    @Test
+    @DisplayName("an unreadable config-location URL is named without its user-info, query or fragment")
+    void unreadableLocationUrlHidesCredentials() {
+        assertThat(ConfiguredJsonSourcesInitializer.describe("https://svc:s3cr3t@cfg.example.invalid/a.yaml?t=s3cr3t#f"))
+                .isEqualTo("https://cfg.example.invalid/a.yaml");
+        assertThat(ConfiguredJsonSourcesInitializer.describe("file:/etc/dataprism/a.yaml")).isEqualTo("file:/etc/dataprism/a.yaml");
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", Map.of(
+                    "dataprism.json-sources.config-location", "http://svc:s3cr3t@127.0.0.1:1/a.yaml?k=s3cr3t")));
+            assertThatThrownBy(() -> new ConfiguredJsonSourcesInitializer().initialize(context))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("dataprism.json-sources.config-location 'http://127.0.0.1:1/a.yaml' could not be read")
+                    .hasNoCause();
+        }
+    }
+
+    @Test
     @DisplayName("the disagreement refusal repeats neither URL, so user-info in either is not leaked")
     void disagreementMessageDoesNotEchoEitherUrl() {
         runner.withPropertyValues(

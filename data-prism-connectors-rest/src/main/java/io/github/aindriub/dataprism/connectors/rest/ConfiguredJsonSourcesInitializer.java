@@ -73,10 +73,24 @@ public final class ConfiguredJsonSourcesInitializer
             String outboundHeader = bindString(environment, OUTBOUND_HEADER_PROPERTY);
             return ConfiguredJsonSources.fromYaml(in, fixtureDevelopment, outboundHeader);
         } catch (IOException e) {
-            // Neither the location nor the cause is repeated: a location can be a URL with user-info.
+            // The cause is not chained (its message repeats the raw location) and the location is
+            // shown without user-info, query string or fragment.
             throw new IllegalStateException(ConfiguredJsonSourcesAutoConfiguration.CONFIG_LOCATION_PROPERTY
-                    + " does not name a readable file or resource");
+                    + " '" + describe(location) + "' could not be read");
         }
+    }
+
+    /** A config location safe to name in a message: no user-info, query or fragment, cut to 64 characters. */
+    static String describe(String location) {
+        String stripped = location.replaceFirst("(?<=//)[^/@?#]*@", "");
+        int cut = indexOfAny(stripped, '?', '#');
+        return io.github.aindriub.dataprism.core.model.StrictYaml.shown(cut < 0 ? stripped : stripped.substring(0, cut));
+    }
+
+    private static int indexOfAny(String text, char first, char second) {
+        int a = text.indexOf(first);
+        int b = text.indexOf(second);
+        return a < 0 ? b : b < 0 ? a : Math.min(a, b);
     }
 
     /**
