@@ -59,3 +59,23 @@ jobs:
           name: container-smoke
           path: docker/smoke/target/
           if-no-files-found: ignore
+
+  # The single required check for this workflow. It must list every job in
+  # this file: a `needs:` on the matrix job waits for every leg and reports one
+  # result for the whole matrix. `if: always()` is essential, because without
+  # it a failed need makes this job skipped, and branch protection treats a
+  # skipped required check as passing. Every result must be exactly `success`,
+  # so failure, cancelled and skipped all fail the gate.
+  ci-gate:
+    name: ci-gate
+    needs: [build, container-smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Every needed job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq .
+          echo "$NEEDS" | jq -e 'length > 0 and ([.[].result] | all(. == "success"))' > /dev/null
