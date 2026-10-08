@@ -428,6 +428,75 @@ class SourceModelsTest {
         assertThat(tree.get("secret").asString()).isEqualTo("custom");
     }
 
+    public interface AnyOff {
+        @JsonAnyGetter(enabled = false)
+        @JsonProperty
+        default String getURL() {
+            return "leak";
+        }
+    }
+
+    public interface AnyOffMap {
+        @JsonAnyGetter(enabled = false)
+        @JsonProperty
+        default Map<String, Object> getURL() {
+            return Map.of("k", "v");
+        }
+    }
+
+    public record ViaAnyOff(String name) implements AnyOff {
+    }
+
+    public record ViaAnyOffMap(String name) implements AnyOffMap {
+    }
+
+    public record AnyOffDirect(String name) {
+        @JsonAnyGetter(enabled = false)
+        @JsonProperty
+        public String getURL() {
+            return "leak";
+        }
+    }
+
+    @tools.jackson.databind.annotation.JsonAppend(props = @tools.jackson.databind.annotation.JsonAppend.Prop(
+            value = Appender.class, name = "name"))
+    public record Appended(String name) {
+    }
+
+    public static class Appender extends tools.jackson.databind.ser.VirtualBeanPropertyWriter {
+        public Appender() {
+        }
+
+        protected Appender(tools.jackson.databind.introspect.BeanPropertyDefinition propDef,
+                           tools.jackson.databind.util.Annotations ctxtAnn, tools.jackson.databind.JavaType type) {
+            super(propDef, ctxtAnn, type);
+        }
+
+        @Override
+        protected Object value(Object bean, JsonGenerator g, SerializationContext prov) {
+            return "replaced";
+        }
+
+        @Override
+        public tools.jackson.databind.ser.VirtualBeanPropertyWriter withConfig(
+                tools.jackson.databind.cfg.MapperConfig<?> config, tools.jackson.databind.introspect.AnnotatedClass declaringClass,
+                tools.jackson.databind.introspect.BeanPropertyDefinition propDef, tools.jackson.databind.JavaType type) {
+            return new Appender(propDef, declaringClass.getAnnotations(), type);
+        }
+    }
+
+    @Test
+    void aDisabledAnyGetterIsAnOrdinaryPropertyAndAVirtualPropertyIsNotAComponent() {
+        assertRefused(() -> SourceTree.of(new ViaAnyOff("n")), "ViaAnyOff");
+        assertRefused(() -> SourceModels.require(ViaAnyOff.class), "ViaAnyOff");
+        assertRefused(() -> SourceTree.of(new ViaAnyOffMap("n")), "ViaAnyOffMap");
+        assertRefused(() -> SourceModels.require(ViaAnyOffMap.class), "ViaAnyOffMap");
+        assertRefused(() -> SourceTree.of(new AnyOffDirect("n")), "AnyOffDirect");
+        assertRefused(() -> SourceModels.require(AnyOffDirect.class), "AnyOffDirect");
+        assertRefused(() -> SourceTree.of(new Appended("n")), "Appended");
+        assertRefused(() -> SourceModels.require(Appended.class), "Appended");
+    }
+
     @Test
     void aJdkClassReadByGettersIsRefusedAtStartup() {
         assertRefused(() -> SourceModels.require(WithPoint.class), "Point");

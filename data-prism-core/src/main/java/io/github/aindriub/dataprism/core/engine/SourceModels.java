@@ -1,12 +1,13 @@
 package io.github.aindriub.dataprism.core.engine;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.introspect.AnnotatedField;
 import tools.jackson.databind.introspect.AnnotatedMember;
 import tools.jackson.databind.introspect.AnnotatedMethod;
+import tools.jackson.databind.ser.AnyGetterWriter;
 import tools.jackson.databind.ser.PropertyWriter;
 import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.ser.impl.UnknownSerializer;
@@ -109,7 +110,8 @@ public final class SourceModels {
      * would depend on the Jackson major (getURL is "URL" or "url"). Every property the bean serializer
      * emits is therefore compared with the record's components; a component renamed with
      * {@code @JsonProperty}, or left out with {@code @JsonIgnore}, is still its component. {@code
-     * @JsonAnyGetter} output is not a bean property and {@code @JsonValue} replaces the bean shape, so
+     * @JsonAnyGetter} output (a real any-getter writer; {@code enabled=false} makes it an ordinary
+     * property) is not a bean property and {@code @JsonValue} replaces the bean shape, so
      * both stay allowed.
      */
     static void refuseForeignProperties(Class<?> record, ValueSerializer<?> serializer) {
@@ -121,12 +123,16 @@ public final class SourceModels {
             components.add(component.getName());
         }
         for (Iterator<PropertyWriter> properties = bean.properties(); properties.hasNext(); ) {
-            AnnotatedMember member = properties.next().getMember();
-            if (member != null && member.hasAnnotation(JsonAnyGetter.class)) {
+            PropertyWriter writer = properties.next();
+            if (writer instanceof AnyGetterWriter) {
                 continue;
             }
-            boolean backed = member != null && components.contains(member.getName())
-                    && !(member instanceof AnnotatedMethod method && method.getParameterCount() != 0);
+            AnnotatedMember member = writer.getMember();
+            // A real field or method of the record: a virtual property (@JsonAppend) is neither, even
+            // when it is named like a component.
+            boolean real = member instanceof AnnotatedField
+                    || (member instanceof AnnotatedMethod method && method.getParameterCount() == 0);
+            boolean backed = real && components.contains(member.getName());
             if (!backed) {
                 throw new PrivacyRefusedException(CODE, "$", simpleName(record)
                         + " has a property that is not a record component");
