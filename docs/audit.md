@@ -271,11 +271,11 @@ Run it against a copy of the file:
 java -cp <classpath> io.github.aindriub.dataprism.audit.verify.AuditChainVerifierCli /path/to/audit.log
 ```
 
+or `--help` for a shorter summary.
+
 The verifier class moved in 0.6.0: before that release it sat directly in the
 `audit` package (the class name is unchanged), and the old name no longer
 exists (no forwarding class).
-
-or `--help` for a shorter summary.
 
 ### Exit codes
 

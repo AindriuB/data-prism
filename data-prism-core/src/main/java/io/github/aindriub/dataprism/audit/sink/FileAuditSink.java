@@ -3,7 +3,6 @@ package io.github.aindriub.dataprism.audit.sink;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.format.AuditRecordFormat;
-import io.github.aindriub.dataprism.audit.verify.AuditChainVerifier;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -54,7 +53,7 @@ import java.nio.file.StandardOpenOption;
  * opened on an existing file whose last byte is not {@code '\n'}, it first
  * writes {@link #TORN_TAIL_TERMINATOR} ({@code "\r\n"}) and fsyncs, before any
  * record. A raw {@code \r} never occurs in a serialized record (it is
- * escaped), so {@link AuditChainVerifier} reads a line ending in one as a
+ * escaped), so {@link io.github.aindriub.dataprism.audit.verify.AuditChainVerifier} reads a line ending in one as a
  * writer-terminated interrupted write, never as a record. If the tail cannot
  * be read or the terminator cannot be written and fsynced, opening fails with
  * {@link OpenFailedException} and nothing is appended. A file that is empty,

@@ -121,8 +121,13 @@ public final class AuditChainVerifier {
     }
 
     /**
-     * Verifies {@code segments} (already in date order) as one concatenation, for {@link
-     * AuditRetention}'s pre-purge check. The first record of each writer is not required to chain
+     * <strong>NOT a full verification.</strong> Verifies {@code segments} (already in date order)
+     * as one concatenation, for {@link io.github.aindriub.dataprism.audit.retention.AuditRetention}'s
+     * pre-purge check. It skips the GENESIS anchor on each writer's first record and the checkpoint
+     * comparison (no checkpoint file is read), so a file whose head was truncated can look intact. Use {@link #verify(Path, Path)} (or
+     * {@link #verify(Path)}) to verify an audit file in full.
+     *
+     * <p>The first record of each writer is not required to chain
      * from GENESIS, because an earlier purge may have removed its predecessors; every later link
      * and every recomputed hash is still checked. Returns the byte offset at which each segment
      * starts in the concatenation through {@code starts}.

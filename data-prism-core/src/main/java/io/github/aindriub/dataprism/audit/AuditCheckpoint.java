@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 
-import io.github.aindriub.dataprism.audit.retention.AuditRetention;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
@@ -21,7 +20,7 @@ import java.util.Objects;
  * {@link AuditCheckpointSink} held apart from the audit file, so that deleting
  * the audit file's tail or a whole boot can be noticed by comparing the two.
  *
- * <p>{@link Kind#RETENTION_ANCHOR} is written by {@link AuditRetention} for each
+ * <p>{@link Kind#RETENTION_ANCHOR} is written by {@link io.github.aindriub.dataprism.audit.retention.AuditRetention} for each
  * writer's last record in a segment it is about to delete; the verifier accepts
  * a chain that starts right after one. An anchor also carries {@code segmentDate}, the UTC
  * date of the purged segment it covers, so the verifier can refuse an anchor that claims to

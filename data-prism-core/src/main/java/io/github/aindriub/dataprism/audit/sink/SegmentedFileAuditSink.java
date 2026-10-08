@@ -3,7 +3,6 @@ package io.github.aindriub.dataprism.audit.sink;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.format.AuditRecordFormat;
-import io.github.aindriub.dataprism.audit.retention.AuditRetention;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -18,7 +17,7 @@ import java.util.regex.Pattern;
 /**
  * Appends each event to {@code directory/audit-YYYY-MM-DD.log}, the date
  * being the UTC date of {@link AuditEvent#timestamp()}. One day, one file:
- * that is what lets {@link AuditRetention} delete a whole expired day without
+ * that is what lets {@link io.github.aindriub.dataprism.audit.retention.AuditRetention} delete a whole expired day without
  * rewriting any file that survives.
  *
  * <p>The segment date never goes backwards within one sink: if the clock steps back
