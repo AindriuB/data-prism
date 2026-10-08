@@ -115,6 +115,14 @@ class FileAuditCheckpointSinkTest {
         assertThat(report.checkpointFindings()).isEmpty();
         assertThat(report.hasStructuralAnomaly()).isTrue();
 
+        // the restarted writer is covered by an intact checkpoint: deleting its last record is caught
+        List<String> auditLines = Files.readAllLines(audit);
+        Files.write(audit, auditLines.subList(0, auditLines.size() - 1));
+        AuditChainVerifier.VerificationReport truncated = AuditChainVerifier.verify(audit, cp);
+        assertThat(truncated.checkpointFindings()).isNotEmpty();
+        assertThat(torn(truncated)).hasSize(1);
+        Files.write(audit, auditLines);
+
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         int exit = AuditChainVerifierCli.run(new String[] {audit.toString(), "--checkpoints", cp.toString()},
                 new PrintStream(out, true, StandardCharsets.UTF_8),

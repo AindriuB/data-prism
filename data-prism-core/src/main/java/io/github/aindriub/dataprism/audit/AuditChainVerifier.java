@@ -171,9 +171,12 @@ public final class AuditChainVerifier {
     /**
      * As {@link #verify(Path)}, additionally comparing every writer against the
      * checkpoints in {@code checkpointFile} (one {@link AuditCheckpoint} JSON
-     * line each, as written by {@link FileAuditCheckpointSink}). A malformed
-     * checkpoint line fails with {@link IOException}: an unreadable checkpoint
-     * file must not silently verify as "no checkpoints".
+     * line each, as written by {@link FileAuditCheckpointSink}). A checkpoint
+     * line ending in a raw {@code \r}, or a final unterminated line that is not a valid
+     * checkpoint, is what a crash leaves; it is reported as {@link AnomalyType#TORN_CHECKPOINT_LINE},
+     * never parsed, never a break, and the intact checkpoints are still used. Any other malformed
+     * checkpoint line fails with {@link IOException}: an unreadable checkpoint file must not
+     * silently verify as "no checkpoints".
      */
     public static VerificationReport verify(Path auditFile, Path checkpointFile) throws IOException {
         return verify(auditFile, checkpointFile, DEFAULT_MINIMUM_RETENTION);

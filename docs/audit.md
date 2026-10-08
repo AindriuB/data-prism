@@ -713,6 +713,9 @@ anomaly `TORN_CHECKPOINT_LINE`: never parsed as a checkpoint, never skipped
 silently, and never a break. The intact checkpoints are still used, and the
 anomaly exits 4 under the existing precedence. Any other unparseable
 checkpoint line is still unreadable input (exit 1).
+A checkpoint file converted to CRLF line endings (git autocrlf, a copy made on
+Windows) reports every line as `TORN_CHECKPOINT_LINE` and uses no checkpoints. It
+exits 4, not 0, but restore LF line endings before relying on it.
 `RETENTION_ANCHOR` checkpoints are written by `AuditRetention`; see
 [Retention](#retention).
 
