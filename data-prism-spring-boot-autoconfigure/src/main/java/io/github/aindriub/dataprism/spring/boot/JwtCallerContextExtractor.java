@@ -49,10 +49,10 @@ public final class JwtCallerContextExtractor implements McpTransportContextExtra
     private final CorrelationIdPolicy correlationPolicy;
 
     public JwtCallerContextExtractor(DataPrismProperties properties) {
-        DataPrismProperties.Security.CallerClaims configured = properties.getSecurity().getCallerClaims();
+        SecurityProperties.CallerClaims configured = properties.getSecurity().getCallerClaims();
         this.claimNames = new ClaimNames(configured.getPrincipal(), List.of("azp", "client_id"),
                 configured.getRoles(), "purpose", configured.getInvestigation());
-        DataPrismProperties.Correlation.Inbound inbound = properties.getCorrelation().getInbound();
+        CorrelationProperties.Inbound inbound = properties.getCorrelation().getInbound();
         boolean enabled = inbound.getHeader() != null && !inbound.getHeader().isBlank();
         this.correlationHeader = enabled ? inbound.getHeader() : null;
         this.correlationPolicy = enabled ? inbound.policy() : null;

@@ -101,9 +101,10 @@ intended: each of these used to change what the file meant without any error.
 
 The Spring path reports a refusal from the descriptor file as
 `INVALID_MODEL_DESCRIPTOR_FILE` and does not repeat the file's content. The
-inner code above is currently not carried over, so the operator learns that
-the file was refused, not which rule; the reader's own message is visible only
-when `ModelDescriptors.fromYaml` is called directly.
+reader's inner code (for example `UNKNOWN_CONFIG_KEY` or `DUPLICATE_CONFIG_KEY`)
+is chained as the cause, so the operator learns which rule the file broke. The
+cause carries the code, the document path and the key name only, never a value;
+a reader message that has no code is not chained.
 
 **Quoting rule.** A value that must be text and could be read as something
 else has to be quoted. `timeout: PT2S` and `model-version: customer-v1` are

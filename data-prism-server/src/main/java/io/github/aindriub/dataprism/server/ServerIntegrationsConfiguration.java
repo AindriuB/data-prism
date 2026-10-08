@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.server;
 
+import io.github.aindriub.dataprism.spring.boot.TransportProperties;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.sink.Slf4jAuditSink;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
@@ -26,7 +27,7 @@ class ServerIntegrationsConfiguration {
     @Bean
     Object standaloneTransportValidated(DataPrismProperties properties) {
         if (properties.getTransport().isFixtureDevelopment()
-                || properties.getTransport().getMode() != DataPrismProperties.Transport.Mode.HTTP) {
+                || properties.getTransport().getMode() != TransportProperties.Mode.HTTP) {
             throw new DataPrismConfigurationException("STANDALONE_HTTP_ONLY",
                     "data-prism-server supports protected HTTP deployments only");
         }

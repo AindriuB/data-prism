@@ -67,7 +67,7 @@ class AuditOutputConfigurationTest {
     @Test
     void the_defaults_are_bound() {
         runner().run(context -> {
-            DataPrismProperties.Audit.Output output = context.getBean(DataPrismProperties.class).getAudit().getOutput();
+            AuditProperties.Output output = context.getBean(DataPrismProperties.class).getAudit().getOutput();
             assertThat(output.getFieldPreset()).isEqualTo("canonical");
             assertThat(output.getFieldNames()).isEmpty();
             assertThat(output.getJsonDirectory()).isNull();
@@ -86,7 +86,7 @@ class AuditOutputConfigurationTest {
                 "dataprism.audit.output.routing.data-stream-namespace=prod",
                 "dataprism.audit.output.json-directory=" + dir.resolve("json")).run(context -> {
             assertThat(context).hasNotFailed();
-            DataPrismProperties.Audit.Output o = context.getBean(DataPrismProperties.class).getAudit().getOutput();
+            AuditProperties.Output o = context.getBean(DataPrismProperties.class).getAudit().getOutput();
             assertThat(o.getFieldPreset()).isEqualTo("ecs");
             assertThat(o.getFieldNames()).containsEntry("tool", "custom.action");
             assertThat(o.getRouting().getEventDataset()).isEqualTo("dataprism.audit");

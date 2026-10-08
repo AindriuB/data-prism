@@ -724,7 +724,7 @@ returns, and refuses startup unless the two sets are identical:
         if(!configured.equals(supplied)) throw new DataPrismConfigurationException("UNRESOLVED_SOURCE_ADAPTER","configured sources and DataSourceAdapter beans differ");
 ```
 
-`data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismContractValidator.java:27-29`
+`data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismContractValidator.java`
 
 The Spring bean method name (`quickstartCustomerAdapter`, above) and the
 class name (`QuickstartCustomerAdapter`) are never consulted for this check —
@@ -748,7 +748,7 @@ $ java -Dloader.path=$EXTENSION_JAR -jar $SERVER_JAR \
     [... rest of the required dataprism.* configuration, see docs/configuration.md ...]
 ...
 Caused by: io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException: UNRESOLVED_SOURCE_ADAPTER: configured sources and DataSourceAdapter beans differ
-	at io.github.aindriub.dataprism.spring.boot.DataPrismContractValidator.validateIntegrations(DataPrismContractValidator.java:29)
+	at io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator.validateIntegrations(DataPrismContractValidator.java)
 	at io.github.aindriub.dataprism.spring.boot.DataPrismAutoConfiguration.dataPrismPropertiesValidated(DataPrismAutoConfiguration.java:98)
 ```
 

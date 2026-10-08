@@ -825,4 +825,24 @@ class ArchitectureTest {
     void auditSubpackagesAreFreeOfCycles() {
         AUDIT_SUBPACKAGES_ARE_FREE_OF_CYCLES.check(CLASSES);
     }
+
+    /**
+     * The cross-property validation package stays free of the JWT code. Vacuous until task 159
+     * creates {@code spring.boot.jwt}, hence {@code allowEmptyShould(true)}.
+     */
+    private static final ArchRule VALIDATION_DOES_NOT_DEPEND_ON_JWT = noClasses()
+            .that().resideInAPackage("..spring.boot.validation..")
+            .should().dependOnClassesThat().resideInAPackage("..spring.boot.jwt..")
+            .allowEmptyShould(true);
+
+    /** Only the Spring Boot auto-configuration itself reaches into its validation package. */
+    private static final ArchRule VALIDATION_IS_INTERNAL_TO_SPRING_BOOT = noClasses()
+            .that().resideOutsideOfPackage("..spring.boot..")
+            .should().dependOnClassesThat().resideInAPackage("..spring.boot.validation..");
+
+    @Test
+    void springBootValidationIsInternalAndIndependentOfJwt() {
+        VALIDATION_DOES_NOT_DEPEND_ON_JWT.check(CLASSES);
+        VALIDATION_IS_INTERNAL_TO_SPRING_BOOT.check(CLASSES);
+    }
 }
