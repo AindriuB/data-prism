@@ -28,6 +28,8 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.bind.BindException;
+import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
@@ -151,16 +153,14 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         return STANDALONE_LIMITS;
     }
 
-    private static final List<String> LIMIT_KEYS = List.of("max-sources", "max-records", "max-response-size",
-            "per-source-timeout", "max-concurrency", "scope-read-budget");
-
-    /** Whether the prefix itself or any limit key is set, in any relaxed form (kebab, camelCase, environment variable). */
+    /** Whether anything at all is set under {@code dataprism.limits}: a scalar, a known key, or an unknown or misspelt one. */
     private static boolean limitsConfigured(Environment environment) {
         Binder binder = Binder.get(environment);
-        if (binder.bind("dataprism.limits", String.class).isBound()) {
+        try {
+            return binder.bind("dataprism.limits", Bindable.mapOf(String.class, String.class)).isBound();
+        } catch (BindException scalarOnThePrefix) {
             return true;
         }
-        return LIMIT_KEYS.stream().anyMatch(key -> binder.bind("dataprism.limits." + key, String.class).isBound());
     }
 
     @Bean

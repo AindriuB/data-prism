@@ -163,4 +163,15 @@ class ConfiguredJsonSourcesLimitsTest {
                                 java.util.Map.of("DATAPRISM_LIMITS_MAXSOURCES", "4711"))))
                 .run(context -> assertThat(context).hasFailed());
     }
+
+    @Test
+    @DisplayName("a misspelt limits key, in kebab or environment-variable form, is refused rather than ignored")
+    void misspeltKeysAreRefused() {
+        runner.withPropertyValues("dataprism.limits.max-sorces=1")
+                .run(context -> assertThat(context).hasFailed());
+        runner.withInitializer(ctx -> ctx.getEnvironment().getPropertySources().addFirst(
+                        new org.springframework.core.env.SystemEnvironmentPropertySource("test-systemEnvironment",
+                                java.util.Map.of("DATAPRISM_LIMITS_MAXSORCES", "1"))))
+                .run(context -> assertThat(context).hasFailed());
+    }
 }
