@@ -7,9 +7,14 @@ import com.hazelcast.config.IndexConfig;
 import com.hazelcast.config.IndexType;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.MaxSizePolicy;
+import com.hazelcast.config.MergePolicyConfig;
+import com.hazelcast.config.SplitBrainProtectionConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.splitbrainprotection.SplitBrainProtectionOn;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
+
+import java.util.OptionalInt;
 
 /**
  * The embedded member and the maps it holds.
@@ -66,6 +71,9 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Per-caller fixed-window request counts. */
     public static final String CALLER_RATE_MAP = "dataprism.callerrate";
 
+    /** The split-brain protection on the approval map: writes only, so a minority can still read. */
+    static final String APPROVAL_PROTECTION = "dataprism.approval.quorum";
+
     private final HazelcastInstance instance;
     private final boolean reidentificationEnabled;
 
@@ -76,22 +84,34 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /** Starts a member from an explicit, already validated membership description. */
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled) {
-        return embedded(membership.toConfig(), reidentificationEnabled);
+        return embedded(membership, reidentificationEnabled, OptionalInt.empty());
     }
 
+    /**
+     * As above, with the fewest members that must see each other for the approval map to accept a write.
+     * Empty uses {@link ClusterMembership#defaultApprovalMinimumMembers()}.
+     */
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
-                                          java.util.OptionalInt approvalMinimumMembers) {
-        return embedded(membership.toConfig(), reidentificationEnabled);
-    }
-
-    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
-                                          java.util.OptionalInt approvalMinimumMembers) {
-        return embedded(config, reidentificationEnabled);
+                                          OptionalInt approvalMinimumMembers) {
+        return embedded(membership.toConfig(), reidentificationEnabled,
+                approvalMinimumMembers.isPresent() ? approvalMinimumMembers
+                        : membership.defaultApprovalMinimumMembers());
     }
 
     /** Validates and hardens the config, then starts a member. Refuses before anything starts. */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled) {
-        return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config)),
+        return embedded(config, reidentificationEnabled, OptionalInt.empty());
+    }
+
+    /**
+     * As above, and when {@code approvalMinimumMembers} is present, writes to the approval map (create, approve,
+     * reject, consume) throw on a member that sees fewer members than that. Empty applies no such protection.
+     *
+     * @throws IllegalArgumentException if the minimum is below 1
+     */
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers) {
+        return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config, approvalMinimumMembers)),
                 reidentificationEnabled);
     }
 
@@ -139,6 +159,13 @@ public final class PrivacyCluster implements AutoCloseable {
      * still the caller's, but nothing is discovered implicitly.
      */
     static Config configure(Config config) {
+        return configure(config, OptionalInt.empty());
+    }
+
+    static Config configure(Config config, OptionalInt approvalMinimumMembers) {
+        if (approvalMinimumMembers.isPresent() && approvalMinimumMembers.getAsInt() < 1) {
+            throw new IllegalArgumentException("approvalMinimumMembers must be at least 1");
+        }
         checkClusterName(config);
         checkNoAdvancedNetwork(config);
         var ssl = config.getNetworkConfig().getSSLConfig();
@@ -156,7 +183,16 @@ public final class PrivacyCluster implements AutoCloseable {
         // An evicted pause flag is a path silently reopened.
         oversight.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
         config.addMapConfig(oversight);
-        config.addMapConfig(privacyMap(new MapConfig(APPROVAL_MAP)));
+        MapConfig approval = privacyMap(new MapConfig(APPROVAL_MAP));
+        // After a heal an approval either side used stays used; the default keeps the larger side's copy.
+        approval.setMergePolicyConfig(new MergePolicyConfig(ApprovalMergePolicy.class.getName(),
+                MergePolicyConfig.DEFAULT_BATCH_SIZE));
+        if (approvalMinimumMembers.isPresent()) {
+            config.addSplitBrainProtectionConfig(new SplitBrainProtectionConfig(APPROVAL_PROTECTION, true,
+                    approvalMinimumMembers.getAsInt()).setProtectOn(SplitBrainProtectionOn.WRITE));
+            approval.setSplitBrainProtectionName(APPROVAL_PROTECTION);
+        }
+        config.addMapConfig(approval);
         MapConfig callerRate = privacyMap(new MapConfig(CALLER_RATE_MAP));
         // An evicted counter resets a caller's window; the 2-window TTL bounds size.
         callerRate.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
