@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Branch:** from `main` after tasks 189, 190, 191, 192, 193, 197 and 198 have merged
-**Depends on:** 189, 190, 191, 192, 193, 197, 198
+**Depends on:** 189, 190, 191, 192, 193, 197, 198, 202
 **Kind:** design, docs only. No code.
 **Owns:**
 - docs/plan/design/contract-register.md (new)

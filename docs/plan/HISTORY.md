@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Mutation testing on the privacy modules (195)
+
+A `mutation` Maven profile runs PIT 1.30.0 over core, pseudonymisation, validation and orchestration, and `mutation.yml` runs it weekly and on manual dispatch, publishing the report as an artifact without ever failing a build. First scores: core 81%, pseudonymisation 86%, validation 68%, orchestration 79%, so the 0.9 gate can set thresholds from a measurement.
+
+**Cost:** One core mutant is timing-sensitive, so core is 81% plus or minus a mutant, and core alone takes about three minutes. These are local numbers, not CI numbers; re-run the workflow after 0.7.0 reaches `main` before pinning anything. A PIT run writes `target/`, so never run it beside another build in the same worktree.
+
 ## 2026-10-09 — Sealed-link, key-resolver and cluster-security designs (191, 192)
 
 Three internal design documents under `docs/plan/design/` now fix how sealed links, key resolvers and open-source Hazelcast cluster security will be built in 0.8, each approved by security review. Links carry the real key AEAD-sealed under a short-lived link key in padded buckets, bound to the caller and off by default; clusters seal what they store, refuse isolation-only multi-member setups, and refuse every call when the signed pause document is stale or absent. The owner delegated all open decisions to the recommendations, so the documents record each as "Decided (owner delegated)".

@@ -49,7 +49,7 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 ### 0.7.0 state (updated 2026-10-09)
 
-Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design) and task 192 (cluster-security design). Open: tasks 190 and 193-201.
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only). Open: tasks 190, 193, 194, 196-202. Task 202 is wave 2, and tasks 200 and 201 now depend on it.
 
 Design outcomes (documents in `docs/plan/design/`: `sealed-links.md`, `key-resolvers.md`, `cluster-security.md`; both approved by security review; the owner delegated every open decision to the recommendation on 2026-10-09, recorded in the documents as "Decided (owner delegated)"):
 
@@ -75,6 +75,10 @@ Owner decisions for 0.7 (2026-10-09):
 - D-070-11 (a): baseline at 8, 32 and 100 sources (300 optional), three runs each, one named machine; internal in `docs/plan/perf/`, published from 0.9.
 - D-070-12 (a): design documents and the contract register are internal, under `docs/plan/design/`.
 - D-070-13 (a): the audit value for a refused source is `REFUSED:<code>` with the code sanitised. Record fields, hash-chain encoding and the `merged:<refused>` key are unchanged. 0.7 logs are not readable by a pre-0.7 verifier; old logs verify with the new one.
+- D-070-14 (a): fix the approval double-consume and the locks-without-timeout bugs in 0.7, as task 202 (wave 2).
+- D-070-15 (b): approval consume becomes conditional, the approval map merges consumed-wins, and split-brain protection is configured by `dataprism.hazelcast.approval-minimum-members`. Default for tcp-ip is a majority of the listed members; for none, 1; for kubernetes, required whenever approval-gated tools are configured. Refusals: `MISSING_APPROVAL_QUORUM` and `INVALID_APPROVAL_QUORUM`. Cost: in a two-member cluster, losing either member stops approval-gated tools.
+- D-070-16 (a): a lock that cannot be taken in time fails with the new code `CLUSTER_LOCK_TIMEOUT`.
+- D-070-17: `dataprism.hazelcast.lock-timeout`, default `PT2S`, range `PT100MS` to `PT30S`, refusal `INVALID_LOCK_TIMEOUT`.
 
 ### 0.7.0 release checklist additions (from task 188; CI-only paths, none exercised yet)
 
@@ -87,11 +91,13 @@ Owner decisions for 0.7 (2026-10-09):
 ### 0.7.0 follow-ups found in review
 
 - A raw `FactoryBean` (no generic type) with `allowEagerInit=false` escapes both the `RequestLimits` preflight and the `PrivacyPolicyResolver` guard (`Preflights.java:50-56`). Fix both together.
-- Existing Hazelcast defects confirmed by the review of task 192, to become fix tasks. Recommendation: fix the approval double-consume under split brain and the locks without timeout in 0.7, because they are correctness bugs in a released feature (owner to confirm):
-  - approval consumption relies on `IMap.lock`, which is unsafe under split brain (`HazelcastApprovalStore.java:151-165`, `:193`);
-  - locks have no timeout (`HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`);
+- Existing Hazelcast defects confirmed by the review of task 192. The first two are decided (D-070-14 to D-070-17) and scheduled as task 202; the last two remain unscheduled:
+  - approval consumption relies on `IMap.lock`, which is unsafe under split brain (`HazelcastApprovalStore.java:151-165`, `:193`), in task 202;
+  - locks have no timeout (`HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`), in task 202;
   - Jet and phone-home are not forced off for a supplied `Config` or instance (`PrivacyCluster.java:83-102`, `:131-152` against `ClusterMembership.java:91`);
   - Hazelcast is pinned to 5.7.0 while the docs list 5.7.2 (`pom.xml:74`).
+- Mutation survivors (task 195): strengthen tests before the 0.9 gate turns on. Validation is weakest at 68%, mostly the sensitive-data scanner's check-character functions (`ibanChecksumValid`, `luhnValid`) and its tree walk; core's `JsonTreeScrubbingEngine` survivors (`scrubObject` 155 and 189, `scrubNestedObject` 286 and 302) come next. Candidate 0.8 task. The ranked list is in the retired task 195 outcome.
+- After 0.7.0 reaches `main`, re-run `mutation.yml` through `workflow_dispatch` to pin the 0.9 baseline; the first local scores (core 81%, pseudonymisation 86%, validation 68%, orchestration 79%) are not CI numbers.
 - Test environment: `SourceTreeJacksonParityTest` depended on whether `/tmp/x` existed; fixed on `plan/0.7.0`. Check other tests for reliance on scratch paths.
 
 ---

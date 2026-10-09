@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Branch:** from `main` after tasks 188, 189, 190, 193, 194, 195 and 196 have merged
-**Depends on:** 188, 189, 190, 193, 194, 195, 196
+**Depends on:** 188, 189, 190, 193, 194, 195, 196, 202
 **Owns:**
 - CHANGELOG.md (the `## [Unreleased]` section only)
 - docs/migration-0.7.md (new)
