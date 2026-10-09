@@ -59,7 +59,7 @@ public final class DataPrismPropertiesValidator {
     public void validate() {
         boolean fixture = transport.isFixtureDevelopment();
         // STDIO_DEVELOPMENT_ONLY is one of four codes meaning "this deployment has
-        // no usable MCP transport"; see the Javadoc on DataPrismAutoConfiguration
+        // no usable MCP transport"; see the Javadoc on Preflights
         // #dataPrismMcpTransportPreflight for the full map and why they are not one.
         if (transport.getMode() == TransportProperties.Mode.STDIO && !fixture) {
             refuse("STDIO_DEVELOPMENT_ONLY", "dataprism.transport.stdio requires fixture-development=true");
@@ -416,7 +416,7 @@ public final class DataPrismPropertiesValidator {
             refuse("UNKNOWN_AUDIT_SINK", audit.getSink());
         }
         // Only hash-chained resolves to a bean that needs a file: see
-        // DataPrismAutoConfiguration#dataPrismHashChainedAuditSink. Refusing here,
+        // AuditSinkSelection#dataPrismHashChainedAuditSink. Refusing here,
         // at property-validation time, means a missing path is a startup refusal
         // with a stable code rather than a NullPointerException once that bean is
         // actually constructed.
@@ -439,7 +439,7 @@ public final class DataPrismPropertiesValidator {
         if (!blank(audit.getCheckpoint().getFilePath())) {
             // An unparseable path is not waved through here: canonical() maps it to a path that never
             // matches, and it is then refused as AUDIT_CHECKPOINT_FILE_UNUSABLE when the checkpoint
-            // sink tries to open it (DataPrismAutoConfiguration#dataPrismAuditCheckpointSink).
+            // sink tries to open it (AuditWiring#dataPrismAuditCheckpointSink).
             String checkpoint = audit.getCheckpoint().getFilePath();
             if ((!blank(audit.getDirectory()) && (sameOrInside(checkpoint, audit.getDirectory())))
                     || (!blank(audit.getFilePath()) && sameOrInside(checkpoint, audit.getFilePath()))) {

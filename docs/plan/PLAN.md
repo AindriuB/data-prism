@@ -497,7 +497,7 @@ Still open, owner-gated:
 
 ### 0.6.0 — package structure, API and style cleanup
 
-Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c3e2). Tasks 154 to 165, task files in `docs/plan/tasks/`. Wave 1 is done (see below); the rest is not started. The owner states there are no external users, so every change is a clean break with no deprecation cycle and no forwarding types, and the 0.6.0 CHANGELOG and migration page (162) say so. Every task branches from `origin/main` once the tasks in its Depends on line have merged.
+Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c3e2). Tasks 154 to 165, task files in `docs/plan/tasks/`. All tasks are done (see the table and notes below). The owner states there are no external users, so every change is a clean break with no deprecation cycle and no forwarding types, and the 0.6.0 CHANGELOG and migration page (162) say so. Every task branches from `origin/main` once the tasks in its Depends on line have merged.
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
@@ -522,7 +522,13 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160. **Done 2026-10-08** |
 | 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159. **Done 2026-10-09** |
 | 10 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164. **Done 2026-10-09** |
-| 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-170. **Next** (last before the release, which waits for the owner) |
+| 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-170. **Done 2026-10-09** |
+| 11 | 177 | Bean inventory test uses a canonical annotation renderer | unplanned, PR #124 CI. **Done 2026-10-09** |
+| 11 | 178 | Bounded `AuditEventListeners.close()`; json-directory via a Condition | unplanned, review findings. **Done 2026-10-09** |
+| 12 | 180 | Drop dead FactoryBean loop in `AuditSinkSelection`; final drop line survives an interrupted `close()`; thread-count tests compare identities | unplanned, follow-ups from 161 and 163. **Done 2026-10-09** |
+| 12 | 181 | Move 13 architecture fixtures into package-matching directories; sweep documented counts | follow-up from 154. **Done 2026-10-09** |
+| 12 | 179 | Deterministic `sources` order in `get_entity_context`; `ToolAdmission.none()` shared instance; stale MCP test comments | unplanned follow-ups from 155 and 166. **Done 2026-10-09** (D-179-1 a, D-179-2 b) |
+| 12 | 182 | `AuditEventListeners.close()` on an interrupted thread drains within the timeout and joins the reporter; durations saturate | found in 180 review. **Done 2026-10-09** (D-180-1 b) |
 
 Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169, 170) and 9 (161, 164) are parallel; 170 was added 2026-10-08 (D-166-1) and 158 waits for it because both edit `ConfiguredJsonSources`; 161 and 164 touch different files.
 
@@ -557,6 +563,15 @@ Follow-ups from 161 (not yet tasks): (i) `AuditSinkSelection` FactoryBean loop (
 **Wave 10 done 2026-10-09:** 163 merged onto `release/0.6.0-spring` (tester PASS at 8c5242b9). 162 is next and last before the release, which waits for the owner. Details are in the retired 163 task file's Outcome. 162 gained the CHANGELOG `Added` line for the listener SPI. Follow-ups (not tasks): a theoretical flake at `AuditEventListenerTest` about line 77; `close()` on an already-interrupted thread skips the final drop line.
 
 **Wave 9 done 2026-10-09:** 164 merged onto `release/0.6.0-spring` (tester PASS 1670 at 383ba6ed). Wave 10 is next: 163, then 162. Details are in the retired 164 task file's Outcome. 162 gained the CHANGELOG `Added` line for the configuration metadata. 163 must satisfy `ConfigurationMetadataDocumentedTest` for any property it adds (document it in `docs/configuration.md` and keep the gaps file honest).
+
+**0.6.0 tasks are all done (2026-10-09), including unplanned 177 and 178.** The release cut is next and waits on the owner's go (owner instruction 2026-10-09): version bump to 0.6.0, release PR, tag, publish to Central, GHCR and the MCP registry, then the after-action report. PR #124 (`release/0.6.0-spring`) carries waves 7 to 11. Consolidated 0.6.0 follow-ups, none yet tasks:
+- DONE in 180: the dead `AuditSinkSelection` FactoryBean loop is gone (the AOT limitation of `isBuiltInSink` is now in its Javadoc, unsupported); the listener thread-count flake is fixed.
+- DONE in 182 (D-180-1 b): `close()` on an interrupted thread drains queued events within the drain timeout, joins the reporter and restores the interrupt in a `finally`; every wait is elapsed-time bounded and durations saturate (huge to `Long.MAX_VALUE`, negative to 0, drop interval minimum 1 ms), which also fixed a thread leak when a huge `dropLogInterval` threw in the constructor after the dispatcher started.
+- DONE in 179 (D-179-1 a): `get_entity_context` `sources` is sorted by emitted key (alias, or real name when exposed), so the order no longer varies between JVM runs.
+- DONE in 179: the stale `ToolResultCharacterisationTest` and `serverUsesTheSharedMapper` comments are fixed. Still open and not a task: Pillow bump (docs-site), offered separately (wave 6).
+- Roadmap candidate, not 0.6.0: key-shape scan in the leak validators under `PASS_THROUGH_UNSAFE` only.
+- DONE in 179 (D-179-2 b): `ToolAdmission.none()` is one shared instance recognised by identity in `ToolOptions`, with no `isNone()`; `.admission(ToolAdmission.none(), null)` is accepted, while real policies and subclasses still need a fingerprinter. Fixture move DONE in 181.
+- DONE in 181: every counted doc claim was checked against code and none needed changing.
 
 **Owner instruction (2026-10-09): pause before any release step after 162.** No tag, release PR or publish without the owner's explicit go.
 

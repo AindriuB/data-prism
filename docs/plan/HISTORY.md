@@ -17,6 +17,36 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 wave 12: deterministic sources order, shared ToolAdmission.none() and interrupted-close drain (179, 182)
+
+Tasks 179 and 182 merged onto `release/0.6.0`. `get_entity_context` now emits `sources` sorted by emitted key (the alias, or the real name when exposed), so the order is stable across JVMs (D-179-1 a). `ToolAdmission.none()` is one shared instance recognised by identity in `ToolOptions`, with no `isNone()`; `.admission(ToolAdmission.none(), null)` is accepted, and real policies and subclasses still need a fingerprinter (D-179-2 b). `AuditEventListeners.close()` on an interrupted thread now drains queued events within the drain timeout, joins the reporter and restores the interrupt in a `finally` (D-180-1 b). Full reactor 1717 tests green at 179.
+
+**Cost:** 182's waits are all elapsed-time bounded and durations saturate (huge to `Long.MAX_VALUE`, negative to 0, drop interval minimum 1 ms); the first version overflowed on a huge `dropLogInterval`, which threw in the constructor after the dispatcher thread had started and leaked it. Do not log on the closing thread (the 178 hung-shutdown bug). `AuditEventListenerTest` was run 10 times at each stage. 179 needed `ToolResultCharacterisationTest` run on 3 JVMs to prove the order stable; goldens stayed byte-identical, so the old normalisation was not needed for ordering. An identity check on a shared `none()` means a subclass or copy is not "none" and must supply a fingerprinter; do not add `isNone()`.
+
+## 2026-10-09 — 0.6.0 wave 12: audit follow-ups and architecture fixture move (180, 181)
+
+Tasks 180 and 181 merged onto `release/0.6.0`. The `AuditSinkSelection` JSON-projection preflight no longer has its unreachable FactoryBean loop (`getBeanNamesForType` already finds typed FactoryBeans; the Spring AOT limitation of `isBuiltInSink` is now in its Javadoc). `AuditEventListeners.close()` on an interrupted thread still writes the final drop line, bounded, and restores the interrupt flag, and the thread-count tests compare thread identities rather than counts. Thirteen architecture fixtures moved as pure renames into `audit/fixture`, `oversight/fixture` and `mapper/fixture`; full reactor 1711 tests, 0 failed.
+
+**Cost:** The interrupted-close fix is partial. `thread.join(drainTimeout)` throws at once on an interrupted thread, so the drain is skipped: queued events are dropped and counted and the reporter thread is not joined (`AuditEventListeners.java` about lines 232-266); left open in PLAN.md. A plain `tryLock()` plus inline `log.warn` would bring back the hung-shutdown bug from 178, so do not log on the closing thread. The doc-count sweep in 181 changed nothing: every counted claim already matched the code. `AuditEventListenerTest` ran 10 times green, plus 5 more after the last test-tightening commit.
+
+## 2026-10-09 — 0.6.0 wave 11: CHANGELOG, migration page and architecture records (162)
+
+Task 162 merged onto `release/0.6.0-spring`. `CHANGELOG.md` `[Unreleased]` carries the Breaking, Added, Changed, Fixed and Build entries, and `docs/migration-0.6.md` lists every moved type (51 rows), removed constructor, refusal code, the YAML 1.2 changes and the logger renames, grouped by audience. `docs/architecture.md` records the new layout, D-0.6-1 to D-0.6-5 and the map-key decision; `docs/conventions.md` and the stale references were corrected. Full reactor 1708 tests, 0 failed.
+
+**Cost:** Seven planning claims were false and the implementer corrected them: string-field refusals apply only in boolean and numeric fields (in string fields the change is silent), the "could not be serialised" message pre-existed, the `extending.md` section moved to about line 426, "34 root types" was core only (git shows 50 renames plus 2 delete/add), `$JsonProjection` was a helper so bean counts went 50 to 53, 160's torn-checkpoint rule is narrow, and there are six YAML readers, not five. Review asked for changes (capitalised booleans, the `TransportProperties.Http` row, the constructor count). `mkdocs` is unavailable locally, so the CI docs-site job is the only check; count rows against `git diff -M`, not against hand-backs.
+
+## 2026-10-09 — 0.6.0 unplanned fix: bounded close() and json-directory Condition (178)
+
+Owner-relayed review findings on PR #124. `AuditEventListeners.close()` now writes its final drop report on a short-lived named daemon thread joined for at most 1 s, so a blocked appender cannot hang shutdown. The projection and its preflight read `dataprism.audit.json-directory` through the Binder-based `AuditSinkSelection.JsonDirectoryConfigured` condition instead of `@ConditionalOnExpression`.
+
+**Cost:** The SpEL string literal made a valid path with an apostrophe prevent startup, a regression introduced by 161. Do not interpolate configured values into expression strings. The new tests (hanging appender; apostrophe, spaces, `#{`, `${`, backslash paths) failed first. Tester PASS 1711/0, 10 repeat runs, inventory on JDK 25.
+
+## 2026-10-09 — 0.6.0 unplanned fix: canonical annotation rendering in the bean inventory (177)
+
+PR #124 CI failed on build (21) and (25) because `AutoConfiguredBeanInventoryTest` compared `Annotation.toString()`, whose attribute order differs between JDK vendors. The test now uses a canonical renderer (attributes sorted by name, deterministic values, recursive) and `bean-methods.txt` was regenerated.
+
+**Cost:** The regeneration was proven a pure format change for all 53 beans. It passes on Oracle JDK 21 and OpenJDK 25 and the mutation proof is retained. Snapshot tests must not depend on unspecified `toString` formats.
+
 ## 2026-10-09 — 0.6.0 wave 10: read-only AuditEventListener SPI (163)
 
 Task 163 merged onto `release/0.6.0-spring`. Applications can register `AuditEventListener` beans that receive a read-only `AuditEvent` after the configured audit sink accepted it. A single `AuditEventListeners` dispatcher (bean `dataPrismAuditEventListeners`, `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL`) delivers on one daemon thread behind a bounded queue (`dataprism.audit.listeners.queue-capacity`, default 1024), so a slow or hung listener cannot delay audit calls. Drops are reported content-free as `AUDIT_LISTENER_DROPPED`, failures as `AUDIT_LISTENER_FAILED` with the exception class name only. There are now 53 `@Bean` methods (the task said 56/57).

@@ -7,6 +7,176 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+0.6.0 is a clean break. There are no deprecated overloads and no forwarding
+types at the old names, because there are no external users to carry through a
+deprecation cycle. Every consumer recompiles and changes imports. The full
+old-to-new tables, grouped by who has to act, are in `docs/migration-0.6.md`.
+
+- The `core` package split. The root package
+  `io.github.aindriub.dataprism.core` is now empty and its 34 types moved to
+  `core.spi`, `core.model`, `core.engine`, `core.refusal`, `core.limits` and
+  `core.metrics`. `core.spi` is the extension-facing package: it holds the
+  interfaces an adapter or integration implements (`DataSourceAdapter`,
+  `IdentityResolver`, `FieldMetadataResolver`, `ScrubbingEngine`,
+  `SecretKeyProvider`, `SyntheticValueSource`, `ValueTokenSource`,
+  `EntityCorrelationService`) and the request types they exchange
+  (`DataRequest`, `SourceCallContext`), plus `PassThroughIdentityResolver`.
+- The `audit` package split. The contract stays in
+  `io.github.aindriub.dataprism.audit`, and 15 types moved to `audit.format`,
+  `audit.sink`, `audit.checkpoint`, `audit.retention` and `audit.verify`.
+- **Operator-visible: the verifier command changed.** The main class is now
+  `io.github.aindriub.dataprism.audit.verify.AuditChainVerifierCli`. The old
+  name `io.github.aindriub.dataprism.audit.AuditChainVerifierCli` no longer
+  exists, so any script, cron job or runbook that runs
+  `java -cp <classpath> io.github.aindriub.dataprism.audit.AuditChainVerifierCli`
+  fails until the name is changed. Arguments and exit codes are unchanged.
+- The MCP tool constructors, the `DataPrismMcpServer` factories, `ContextRequest`
+  and `SourceFanOut` lose their overloads. `GetEntityContextTool` and
+  `CompareEntitySourcesTool` have one constructor each, `DataPrismMcpServer.stdio`
+  and `streamableHttp` have one method each, and they take a `ToolOptions`
+  record (admission, fingerprinter, correlation requirement, MDC, audited entity
+  types). There is no default admission: name `noAdmission()` or a real policy.
+  `SourceFanOut` takes a `SourceFanOutOptions`, and `ContextRequest` keeps its
+  canonical constructor, `of` and `comparison`. A request built through the
+  removed shorter constructors used to derive its audited entity type from the
+  shape fallback; `of` and `comparison` audit `<unregistered>`.
+- The nested `DataPrismProperties` types are now 13 top-level classes in
+  `io.github.aindriub.dataprism.spring.boot` (`TransportProperties`,
+  `SecurityProperties`, `AuditProperties` and so on). `DataPrismContractValidator`
+  is now public in `spring.boot.validation`, beside the new
+  `DataPrismPropertiesValidator`.
+- `JwtDecoderSupport` and `JwtCallerContextExtractor` moved to
+  `io.github.aindriub.dataprism.spring.boot.jwt`.
+- `DataPrismAutoConfiguration` keeps its FQCN but no longer declares beans. It
+  imports 14 package-private configuration classes. Operators who set log levels
+  on `...DataPrismAutoConfiguration$AuditSinkSelection` or
+  `...DataPrismAutoConfiguration$JsonProjection` must use
+  `io.github.aindriub.dataprism.spring.boot.AuditSinkSelection` and
+  `io.github.aindriub.dataprism.spring.boot.JsonProjection`, and the logger of
+  `JwtCallerContextExtractor` moved with its package. The bean names of the
+  configuration classes themselves changed with their class names.
+- Jackson 3. The classpath is Jackson 3 (`tools.jackson`) and the Jackson 2
+  artifacts are banned in this build; `jackson-annotations` stays. The MCP SDK
+  binding is `mcp-json-jackson3` (was `mcp-json-jackson2`) and the Spring side is
+  `spring-boot-starter-jackson` (was `spring-boot-jackson2`). Public signatures
+  that carried Jackson 2 types now carry Jackson 3 ones: `SourceTree` (and
+  `SourceTree.text` now returns `StringNode`), `ScrubResult`, `Generalizer`,
+  `ContextResponse`, `ComparisonResponse.identity`,
+  `LlmResponseValidator.validate`, `RawValueLeakValidator.validate`,
+  `SensitivePatternValidator.validate` and `SensitiveDataScanner.scan`.
+  `DataPrismObjectMapper` and its `create()` are no longer public, and the two
+  tool constructors no longer take an `ObjectMapper`.
+- Source models must be records. A `DataSourceAdapter` response type that is not
+  a record, or that holds a bean, a user collection or map subclass, or a
+  class-level serializer on a non-record at any depth, is refused with
+  `SOURCE_MODEL_NOT_A_RECORD` (at startup for declared types, at request time
+  for the actual object graph). Records are read by their components only.
+  `java.time` values and `Optional` are now accepted: `java.time` is written as
+  ISO-8601 text and an `Optional` is unwrapped. Jackson 2 refused both.
+- The YAML configuration readers (`SecurityPolicy`, `PrivacyProfiles`,
+  `ModelDescriptors`, `RestSources`, `VocabularyRegistry` and
+  `ConfiguredJsonSources`) refuse at startup what 0.5.x accepted, so a
+  configuration that loaded on 0.5.x may now refuse to start. The nine codes are
+  `DUPLICATE_CONFIG_KEY`, `UNKNOWN_CONFIG_KEY`, `NON_STRING_CONFIG_SCALAR`,
+  `INVALID_CONFIG_BOOLEAN`, `LEADING_ZERO_CONFIG_NUMBER`,
+  `TRAILING_CONFIG_CONTENT`, `UNSUPPORTED_CONFIG_YAML` (aliases, anchors and
+  tags), `INVALID_CONFIG_SHAPE` and `NULL_LIKE_CONFIG_SCALAR`. A present but
+  null value is refused, and an empty `tls:` is refused where it used to
+  disable `requireHttps`. Quoting rule: a value in a string-typed field that
+  YAML reads as a number or boolean, such as `1.0`, `1e3`, `42` or `true`, must
+  be quoted.
+  Messages name the key and its path (a key is cut to 64 characters) and never
+  the value.
+- YAML is now parsed as YAML 1.2 (Jackson 3). `yes`, `no`, `on`, `off`, `True`, `FALSE` and any
+  other spelling than lower-case `true`/`false` are text, not booleans: in a boolean-typed field they are refused as
+  `INVALID_CONFIG_BOOLEAN`, and in a string-typed field they now load as the
+  text you wrote, where 0.5.x loaded `true` or `false`. Leading-zero numbers
+  are no longer octal: they are refused in numeric fields (band bounds,
+  vocabulary versions) as `LEADING_ZERO_CONFIG_NUMBER`, and in a string-typed
+  field `010` now loads as the text `010`, where 0.5.x loaded `8`. Neither
+  string-field change is refused, so check string fields that held such a value.
+- Error messages no longer echo configured URLs or credentials
+  (`ConfiguredJsonSources`, `RestSources`, `RestSource` and the json-sources
+  initializer). A config location in a message is shown as a placeholder, a
+  local path cut at `?` or `#`, or `scheme://host[:port]`.
+- A JSON audit projection (`dataprism.audit.output.json-directory`) now needs
+  the built-in hash-chained sink. An application `AuditSink` bean combined with
+  `dataprism.audit.sink=hash-chained` and a `json-directory` refuses to start with
+  `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK`, and a `json-directory` with no
+  registered projection refuses with `AUDIT_JSON_PROJECTION_MISSING`.
+- A tool call whose response cannot be converted for the MCP result now returns
+  "the response could not be serialised"; on 0.5.x a failed conversion fell
+  through to "the request could not be completed".
+
+Not changed: the `dataprism.*` property names, the
+`io.github.aindriub.dataprism.spring.boot.DataPrismAutoConfiguration` FQCN and
+its entry in `AutoConfiguration.imports`, the existing refusal codes, the audit
+record format (`recordVersion` 3) and the `dataprism.audit` logger name.
+
+### Added
+
+- Added AuditEventListener, a read-only SPI called after the configured audit sink accepted each event, on one bounded asynchronous dispatcher (dataprism.audit.listeners.queue-capacity, default 1024). It is best effort: events are dropped for listeners only when the queue is full, and the audit log is unaffected. Failures are logged by class name only as AUDIT_LISTENER_FAILED, and drops as AUDIT_LISTENER_DROPPED.
+- The data-prism-spring-boot-autoconfigure jar now ships Spring configuration metadata (META-INF/spring-configuration-metadata.json), so IDEs complete and describe dataprism.* keys in YAML. The processor runs only at build time and is not a dependency, and a build test keeps the metadata and docs/configuration.md in step.
+- New startup refusal codes, each failing closed: `INVALID_AUDIT_LISTENER_QUEUE_CAPACITY`
+  (`dataprism.audit.listeners.queue-capacity` below 1),
+  `AUDIT_EVENT_LISTENERS_NOT_REPLACEABLE` (a second dispatcher bean),
+  `SOURCE_MODEL_NOT_A_RECORD`, `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK`,
+  `AUDIT_JSON_PROJECTION_MISSING` and the nine YAML codes listed under Breaking.
+- The offline verifier reports a damaged checkpoint line as the anomaly
+  `TORN_CHECKPOINT_LINE` (exit code 4), never as a break.
+- `TeeAuditSink` is `Closeable`. It closes the JSON projection and then the
+  primary sink, and closes the primary even if the projection close throws.
+
+### Changed
+
+- `get_entity_context`'s `sources` entries are now in ascending key order (the
+  alias, or the real name for a caller holding `EXPOSE_SOURCE_NAMES`), where before
+  the order varied between JVM runs.
+- `ToolAdmission.none()` returns one shared instance, and
+  `ToolOptions.defaults().admission(ToolAdmission.none(), null)` is accepted
+  without a fingerprinter. Any other admission still needs one.
+- The JSON audit projection is its own bean, `dataPrismJsonAuditProjection`,
+  classified `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`. It is deliberately not an `AuditSink`, because that made
+  injecting an `AuditRecorder` ambiguous. The hash-chained sink bean resolves
+  the projection before it opens the authoritative file, and closes the
+  authoritative file again if the tee cannot be built.
+- `INVALID_MODEL_DESCRIPTOR_FILE` now chains a value-free cause when the reader's
+  message carries its own code (for example `UNKNOWN_CONFIG_KEY`), so the
+  operator learns which rule the file broke. Uncoded, enum and I/O messages are
+  not chained.
+
+### Fixed
+
+- `TeeAuditSink` now poisons itself on any `Throwable` thrown by the JSON
+  projection after the primary write, including an `Error` and a sneakily
+  thrown checked exception, and rethrows the original unchanged. Before, only
+  a `RuntimeException` from the projection did.
+- A resumed checkpoint writer now terminates a torn tail (a checkpoint file not
+  ending in a newline) with `\r\n` and fsyncs before its first append, and fails
+  the open if it cannot. The verifier reads such a line, or a final unterminated
+  chunk that is not a checkpoint, as `TORN_CHECKPOINT_LINE` rather than
+  failing, and still uses the intact checkpoints. Any other unparseable
+  checkpoint line is still unreadable input (exit code 1).
+
+### Build
+
+- `ci-gate` is a single summary check in `build.yml` that is green only when the
+  build matrix and `container-smoke` all succeeded. The Pages build job is
+  renamed `docs-site`.
+- `build.yml` now builds the Javadoc with the release profile (unsigned, no
+  secrets) on every pull request, on the JDK 21 leg. 0.5.0 would otherwise have
+  found a Javadoc error only at publish time, because `release.yml` runs a plain
+  `mvn verify`.
+- `spring-boot-configuration-processor` runs on the autoconfigure module's
+  annotation-processor path only. `maven-dependency-plugin` is managed at 3.11.0.
+- ArchUnit now locks the new layout: an empty `core` root, `core.spi` not
+  depending on `core.engine`, acyclic `core` and `audit` subpackages,
+  `audit` and `oversight` under the core outer-layer rule, `validation` and
+  `jwt` independent of each other, and rules for obtained mappers and streaming
+  JSON factories.
+
 ## [0.5.0] - 2026-10-08
 
 ### Breaking

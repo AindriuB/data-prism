@@ -48,7 +48,7 @@ public class PrivacyProperties {
     /**
      * Optional path to a YAML model-descriptor file. Unset by default, in which
      * case no descriptor file is ever read and classification comes only from
-     * annotations. See {@code DataPrismAutoConfiguration#dataPrismFieldMetadataResolver}
+     * annotations. See {@code PrivacyEngineWiring#dataPrismFieldMetadataResolver}
      * for how it is loaded and why every failure mode refuses startup.
      */
     public String getDescriptorFile() {

@@ -62,7 +62,7 @@ Nothing on a `-Dloader.path` jar is component-scanned, so Spring Boot has to
 be told which `@AutoConfiguration` class to load. That class supplies the
 `DataSourceAdapter` bean the platform refuses to start without, plus a
 fallback `IdentityResolver` bean — one is only mandatory because
-`DataPrismAutoConfiguration.dataPrismIdentityResolverPreflight` refuses to
+the auto-configuration's `dataPrismIdentityResolverPreflight` refuses to
 start without some `IdentityResolver` bean, which `dataprism.identity.resolver:
 pass-through` or an application-supplied bean can equally satisfy:
 

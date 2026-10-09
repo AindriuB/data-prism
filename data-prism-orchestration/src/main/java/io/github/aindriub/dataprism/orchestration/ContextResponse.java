@@ -6,9 +6,11 @@ import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * A privacy-safe view of one entity.
@@ -21,7 +23,10 @@ import java.util.Map;
  * including the ones that did not. A response assembled from four systems out of
  * five is a real answer with a stated gap, and a reader who cannot see the gap
  * will read absence as evidence. Same principle as the consistency findings:
- * never let the data look better than it is.
+ * never let the data look better than it is. The entries are in ascending key order,
+ * the same on every run. Declared (fan-out) order is not used: under aliasing the
+ * position of a key would then name the same system in every scope, which links
+ * aliases across scopes and defeats {@code SourceAliasing}.
  *
  * <p>Statuses only, and deliberately not the timings. How long a source took is
  * operational telemetry that belongs in audit and metrics; putting it here would
@@ -58,7 +63,8 @@ public record ContextResponse(
         @JsonIgnore String correlationId) {
 
     public ContextResponse {
-        sources = Map.copyOf(sources);
+        Map.copyOf(sources); // null keys and values still throw, as before
+        sources = Collections.unmodifiableMap(new TreeMap<>(sources));
         findings = List.copyOf(findings);
         Map<PrivacyNamespace, List<String>> copy = new LinkedHashMap<>();
         fieldsByNamespace.forEach((namespace, names) -> copy.put(namespace, List.copyOf(names)));

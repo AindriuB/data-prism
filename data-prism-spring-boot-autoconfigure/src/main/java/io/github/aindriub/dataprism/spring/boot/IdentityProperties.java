@@ -5,7 +5,7 @@ package io.github.aindriub.dataprism.spring.boot;
  * Java to write, rather than one being inferred from other configuration.
  * Absent (the default), nothing is selected here: an {@code IdentityResolver}
  * bean must still come from the application, or
- * {@code DataPrismAutoConfiguration#dataPrismIdentityResolverPreflight}
+ * {@code Preflights#dataPrismIdentityResolverPreflight}
  * refuses startup with {@code MISSING_IDENTITY_RESOLVER}, exactly as before
  * this property existed.
  */
