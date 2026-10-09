@@ -85,3 +85,69 @@ a consumer how to verify each one.
 - The mutation-testing profile in `pom.xml` (task 195, which depends on this one).
 - Cutting, tagging or publishing a release. The first end-to-end proof is the
   0.7.0 release itself; note it as a release checklist item, do not run it.
+
+## Outcome
+
+**SBOMs.** `cyclonedx-maven-plugin` 2.9.3 (`cyclonedx-plugin.version`) in the
+`release` profile only, goal `makeBom` bound to `package` (so before the
+`verify`-phase GPG signing), JSON output. `./mvnw -B -Prelease -Dgpg.skip=true
+-DskipTests package` writes `target/bom.json` in 14 modules: the parent
+`data-prism`, annotations, processor, core, pseudonymisation, validation,
+security, orchestration, mcp, connectors-rest, hazelcast, reidentification,
+spring-boot-autoconfigure, spring-boot-starter. Deliberately excluded: server,
+integration-tests, architecture and the three quickstart modules, which are not
+deployed to Central (the plugin's `skipNotDeployed` default skips them via
+`maven.deploy.skip`); the server's SBOM is the image SBOM instead.
+
+**Bundle check** (dummy `central` server in a throwaway settings file outside the
+repo, `-Dgpg.skip=true -DcentralBaseUrl=http://127.0.0.1:9 deploy`):
+`unzip -l target/central-publishing/central-bundle.zip` lists 14
+`<artifactId>-0.6.0-cyclonedx.json` files, each with .md5/.sha1/.sha256/.sha512
+(335 files in the bundle). With GPG enabled each also gets `.asc`.
+
+**Images** (`publish-image.yml`): all five pushes add `--sbom=true
+--provenance=mode=max`. Each matrix leg then, behind the same dispatch + `v*`
+tag-ref `if:` and after the version-guard step, signs each per-arch digest
+with keyless cosign and runs `actions/attest-build-provenance@v4` on it (5
+images). `publish` signs and attests the five manifest-list digests (read back
+via `imagetools inspect`), behind its job-level `if:` and version guard.
+`id-token: write` and `attestations: write` are job-level on those two jobs
+only. A plain tag push reaches none of it.
+
+**Release assets** (`release.yml`): build now `-Prelease -Dgpg.skip=true
+verify`; SBOMs are collected as `sbom/<module>-<version>-cyclonedx.json`,
+attested (`attest-build-provenance@v4`) and attached by `gh release create`.
+Job-level `id-token`/`attestations`. **Jars** (`publish-central.yml`, `publish`
+job): after `deploy`, the jars and SBOMs are extracted from the uploaded
+`central-bundle.zip` and attested, so the subjects are exactly the published files.
+
+**actionlint** (`actionlint .github/workflows/publish-image.yml
+.github/workflows/publish-central.yml .github/workflows/release.yml`, Homebrew
+build): no output, exit 0. `mkdocs build --strict` (pinned requirements, Python
+3.12 venv): exit 0. `docs/verifying-releases.md` added; nav entry under
+Reference; pointer in `SECURITY.md`.
+
+**Release checklist for 0.7.0 (first end-to-end proof; none of this was run):**
+1. After the dispatch of `publish-image.yml`, confirm `cosign verify` and
+   `gh attestation verify` from `docs/verifying-releases.md` pass on the
+   manifest list and one per-arch digest of every image.
+2. Confirm `docker buildx imagetools create` of the two per-arch indexes (now
+   carrying attestation manifests) yields a manifest list that still lists
+   amd64 and arm64 (the existing verify step checks this) and that
+   `imagetools inspect --format '{{json .SBOM}}'` returns an SBOM.
+3. Confirm the Central bundle lists `*-cyclonedx.json` with `.asc` files, and
+   that `publish-central.yml`'s attest step finds `central-bundle.zip` after
+   a real deploy.
+4. Confirm the GitHub Release shows the SBOM assets and
+   `gh attestation verify` passes on them.
+
+**Proposed CHANGELOG `[Unreleased]` lines (task 201):**
+
+```
+### Build
+- Release builds attach a CycloneDX SBOM to every module published to Maven Central and to the GitHub Release.
+- Images are pushed with BuildKit SBOM and provenance attestations.
+
+### Security
+- Every pushed image digest (including the manifest lists and the four quickstart images) is signed keylessly with cosign, and images, jars and release assets carry GitHub build-provenance attestations. See `docs/verifying-releases.md`.
+```
