@@ -95,6 +95,13 @@ final class PerSourceHarness {
                     suggestedAction = PrivacyAction.SYNTHESIZE) String badName) {
     }
 
+    /** Carries another source's sensitive raw value in a field declared non-sensitive. */
+    @LlmExposedModel
+    public record Leaky(
+            @InternalIdentifier String id,
+            @NonSensitive(reason = "Test field") String note) {
+    }
+
     static final String BAD_NAME = "Zelda Quigley";
     static final String BAD_FIELD = "badName";
     static final String STRAY_KEY = "stray.key@example.invalid";
@@ -136,6 +143,11 @@ final class PerSourceHarness {
         return source(name, Shaped.class, new Shaped("1", BAD_NAME, NOTE_VALUE));
     }
 
+    /** An otherwise valid source whose note repeats the refused sources' raw name. */
+    static DataSourceAdapter<?> leaky(String name) {
+        return source(name, Leaky.class, new Leaky("1", BAD_NAME));
+    }
+
     static DataSourceAdapter<?> clean(String name) {
         return source(name, Clean.class, new Clean("1", BAD_NAME));
     }
@@ -145,6 +157,11 @@ final class PerSourceHarness {
 
         String text() {
             return ((McpSchema.TextContent) result.content().get(0)).text();
+        }
+
+        /** The structured content as the client receives it. */
+        String structured() {
+            return JSON.writeValueAsString(result.structuredContent());
         }
 
         JsonNode json() {

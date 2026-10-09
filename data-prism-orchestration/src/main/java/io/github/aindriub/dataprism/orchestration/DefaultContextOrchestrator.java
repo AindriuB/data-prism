@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.orchestration;
 
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEntry;
@@ -219,13 +221,18 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                         "no source returned a record for this subject");
             }
 
-            // The final check, over everything that is about to leave. Each source's tree
-            // is checked as it is, so a path names a payload property and never a source.
+            // The final check, over everything that is about to leave, as ONE tree: an array of
+            // the returned sources' trees in the response's own key order. A validator that refuses a
+            // combination across sources sees it, and no source name or alias is a key it can see or
+            // report in a path. The union of every returned source's emitted values applies.
+            ArrayNode assembled = JsonNodeFactory.instance.arrayNode();
+            trees.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
+                            (String name) -> aliasing.nameFor(name, investigationContext, context))))
+                    .forEach(entry -> assembled.add(entry.getValue()));
             List<Violation> violations = new ArrayList<>();
-            for (ObjectNode tree : trees.values()) {
-                for (LlmResponseValidator validator : validators) {
-                    violations.addAll(validator.validate(tree, prohibited, emitted, context).violations());
-                }
+            for (LlmResponseValidator validator : validators) {
+                violations.addAll(validator.validate(assembled, prohibited, emitted, context).violations());
             }
             if (!violations.isEmpty()) {
                 violations.forEach(v -> metrics.increment(Metric.PRIVACY_VALIDATION_FAILURES));
@@ -256,6 +263,10 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             throw new AuditedRefusalException(failure, request.entityType(), correlationId);
         }
 
+        // A withheld source is a fail-closed decision too, and a call that goes on to succeed would
+        // otherwise leave no trace of it on a dashboard. Calls that are refused count themselves above.
+        sources.stream().filter(o -> o.status() == SourceOutcome.Status.REFUSED)
+                .forEach(o -> metrics.increment(Metric.PRIVACY_FAILCLOSED));
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
                 correlationId, dispositions);
         return ContextResponse.of(request.entityType(), subjectToken, sources,

@@ -68,6 +68,11 @@ class PerSourceValidationTest {
 
     private static DefaultContextOrchestrator orchestrator(List<AuditEvent> sink, LlmResponseValidator validator,
                                                             DataSourceAdapter<?>... adapters) {
+        return orchestrator(sink, validator, PrivacyMetrics.none(), adapters);
+    }
+
+    private static DefaultContextOrchestrator orchestrator(List<AuditEvent> sink, LlmResponseValidator validator,
+                                                            PrivacyMetrics metrics, DataSourceAdapter<?>... adapters) {
         // Each source's scrubbed tree is {"value": <its value>} and it emits "synthetic-<value>".
         ScrubbingEngine scrubber = (record, ctx) -> {
             String value = ((Thing) record).value();
@@ -79,7 +84,7 @@ class PerSourceValidationTest {
                 new AuditRecorder(sink::add, CLOCK, "test-1"), new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), Clock.systemUTC(), SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), RequestLimits.DEFAULT, new NamespaceCorrelationService(resolver),
-                new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
+                new SourceAliasing(new HmacValueTokenSource(KEYS)), metrics);
     }
 
     private static PrivacyContext context() {
@@ -164,5 +169,38 @@ class PerSourceValidationTest {
             assertThat(e.fieldDispositions().keySet()).noneMatch(k -> k.contains("alpha-api:<refused>"));
         });
         assertThat(seenKeys).containsExactly("value");
+    }
+
+    @Test
+    @DisplayName("a withheld source is counted as a fail-closed decision even though the call succeeds")
+    void aWithheldSourceIsCounted() {
+        java.util.concurrent.atomic.AtomicInteger failClosed = new java.util.concurrent.atomic.AtomicInteger();
+        PrivacyMetrics counting = new PrivacyMetrics() {
+            @Override
+            public void increment(io.github.aindriub.dataprism.core.metrics.Metric metric) {
+                if (metric == io.github.aindriub.dataprism.core.metrics.Metric.PRIVACY_FAILCLOSED) {
+                    failClosed.incrementAndGet();
+                }
+            }
+
+            @Override
+            public void increment(io.github.aindriub.dataprism.core.metrics.Metric metric, String sourceName) {
+            }
+
+            @Override
+            public void record(io.github.aindriub.dataprism.core.metrics.Metric metric, String sourceName,
+                               java.time.Duration duration) {
+            }
+        };
+        LlmResponseValidator refusesBad = (tree, prohibited, emitted, ctx) -> tree.toString().contains("bad")
+                ? ValidationResult.failed(List.of(new Violation("$.value", "X", "TEST"))) : ValidationResult.ok();
+
+        ContextResponse response = orchestrator(new ArrayList<>(), refusesBad, counting,
+                source("alpha-api", "good"), source("beta-api", "bad"))
+                .buildContext(ContextRequest.of("THING", "1"), context(), caller());
+
+        assertThat(response.sources().values()).extracting(SourceResult::status)
+                .containsExactlyInAnyOrder("ANSWERED", "REFUSED");
+        assertThat(failClosed).hasValue(1);
     }
 }

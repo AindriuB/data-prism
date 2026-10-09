@@ -95,6 +95,7 @@ class PerSourceResultsTest {
 
         // Byte-identical to the run where that source had no data, apart from its status string.
         assertThat(text.replace("\"REFUSED\"", "\"NO_DATA\"")).isEqualTo(noData.text());
+        assertThat(refused.structured().replace("\"REFUSED\"", "\"NO_DATA\"")).isEqualTo(noData.structured());
 
         AuditEvent event = refused.event();
         assertThat(event.policyDecision()).isEqualTo("ALLOW");
@@ -102,5 +103,26 @@ class PerSourceResultsTest {
         assertThat(event.fieldDispositions()).containsEntry("bad-api:<refused>", "REFUSED:" + code);
         assertThat(event.fieldDispositions().keySet()).noneMatch(k -> k.startsWith("bad-api:/"))
                 .doesNotContain("merged:<refused>");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"scrub", "validation"})
+    @DisplayName("a refused source's raw value is still prohibited: another source repeating it is refused too, whatever the order")
+    void aRefusedSourcesRawValueStaysProhibited(String kind) {
+        DataSourceAdapter<?> bad = "scrub".equals(kind) ? scrubRefusing("bad-api") : validationRefusing("bad-api");
+        DataSourceAdapter<?> fine = plain("alpha-api", "ACTIVE", "Aoife Byrne");
+
+        for (List<DataSourceAdapter<?>> order : List.of(List.of(bad, leaky("leaky-api"), fine),
+                List.of(leaky("leaky-api"), fine, bad))) {
+            Call call = call(order);
+
+            assertThat(call.result().isError()).isFalse();
+            JsonNode sources = call.json().get("sources");
+            assertThat(sources.get("alpha-api").get("status").asString()).isEqualTo("ANSWERED");
+            assertThat(sources.get("bad-api").get("status").asString()).isEqualTo("REFUSED");
+            assertThat(sources.get("leaky-api").get("status").asString()).isEqualTo("REFUSED");
+            assertThat(call.text()).doesNotContain(BAD_NAME);
+            assertThat(call.event().fieldDispositions()).containsEntry("leaky-api:<refused>", "REFUSED:VALIDATION_FAILED");
+        }
     }
 }
