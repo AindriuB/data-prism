@@ -74,7 +74,7 @@ description SPI so 0.8 implements, and 0.9 freezes, a reviewed design.
 
 ## Outcome
 
-Written: `docs/plan/design/catalog.md` (sections 1 to 6 are the six numbered items; 7 Boundaries, 8 Test obligations, 9 Open decisions OD-C1 to OD-C18, 10 closing names table). Nothing in it is decided; every product choice is an open decision with options and a recommendation.
+Written: `docs/plan/design/catalog.md` (sections 1 to 6 are the six numbered items; 7 Boundaries, 8 Test obligations, 9 Open decisions OD-C1 to OD-C18, 10 closing names table). Every product choice is an open decision with options and a recommendation; the owner decided OD-C2 explicitly and delegated the rest on 2026-10-09 (recorded in section 9).
 
 Schema validation (draft 2020-12), run with the `jsonschema` package installed in a throwaway virtual environment outside the repository:
 
