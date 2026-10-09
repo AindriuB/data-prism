@@ -12,6 +12,11 @@
   is refused, the whole call is refused exactly as today.
 - D-070-3 (a): the contract is today's six codes plus `REFUSED`; clients treat any
   unknown code as "not answered"; future codes go into task 200's register.
+- D-070-13 (a): the audit value for a refused source is `REFUSED:<code>`, the code
+  passed through `RefusalCodes.sanitise`. The audit record's fields, the hash-chain
+  encoding and the `merged:<refused>` key are unchanged, so existing logs still
+  verify (a test pins a log written before the change). Needs `AuditEvent`'s
+  disposition check widened to accept `REFUSED:<code>`; see the Owns note below.
 
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java
