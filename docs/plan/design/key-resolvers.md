@@ -34,9 +34,16 @@ public interface KeyResolver {
     /**
      * Translate one key. Returns zero or more keys (one-to-many). An empty list means
      * "no translation known"; it is not an error. Throws {@link KeyResolutionException}
-     * on any failure; never returns null; never returns more than maxResults.
+     * on any failure; never returns null; never returns more than maxResults keys.
+     * If further keys exist beyond those returned, the result says so (more = true);
+     * truncating without saying so is a contract violation.
      */
-    List<String> resolve(String key, ResolutionContext context, int maxResults);
+    Resolution resolve(String key, ResolutionContext context, int maxResults);
+
+    /** The translated keys, in the resolver's own stable order, and whether more exist. */
+    record Resolution(List<String> keys, boolean more) {
+        // keys is immutable and non-null; more must be false when keys is empty
+    }
 
     /** Never null; never a real name or key. */
     record KeyNamespace(String value) {
@@ -66,25 +73,28 @@ Declaration uniqueness: at most one resolver per `(from, to)` pair; startup refu
 
 `resolve` may return several keys (one parcel, many depots on its route). The contract:
 
-- the resolver is asked for at most `dataprism.key-resolvers.max-targets` results (default 5); asking implies the cap, and returning more is a violation treated as `TOO_MANY` (fail closed, whole translation refused, not truncated silently);
-- the server reads the target source once per returned key, in ascending key order, each read charged and subject to the per-source deadline;
-- a `follow` over a translated link therefore returns `items` (sealed-links.md section 5): one entry per key with its own status and `entity`, `itemsOmitted` when the resolver reported more than it returned. Keys themselves are never shown; items are in the resolver's order after sorting by synthetic key so the output is deterministic and discloses no ordering of real keys.
+- the server asks for at most `dataprism.key-resolvers.max-targets` keys (default 5), passing the cap as `maxResults`. The resolver returns up to that many and sets `more` when it knows there are others. A resolver that cannot tell cheaply must ask its backing store for `maxResults + 1` and report `more` from the extra row; this is how a resolver avoids silent truncation (D-RM-12). Returning more keys than `maxResults` is a violation treated as `TOO_MANY` (fail closed, whole translation refused);
+- the server sorts the returned keys ascending by their keyed fingerprint (the `dataprism/link/v1/fingerprint` label of `sealed-links.md`). This single rule fixes the read order and the order of `items`, so output order is deterministic and reveals nothing about the order of real keys. Which keys are in the returned prefix is the resolver's choice: it must return a stable prefix in its own order, because a different prefix on a later call causes `ORIGIN_DRIFT` under option (b);
+- the server reads the target source once per key, each read charged and subject to the per-source deadline;
+- a `follow` over a translated link returns `items` (`sealed-links.md` section 5): one entry per key with its own status and `entity`. `itemsTruncated: true` is set when the resolver reported `more`, and also when the budget or the deadline stopped the reads before every returned key was read. It is a flag, not a count, because a resolver cannot always say how many remain.
 
-Truncation is by design visible (a marker), consistent with D-RM-12.
+The outer status of the source and the handling of refused items and of budget exhaustion part-way are defined in `sealed-links.md` section 5 and are OD-9 there. Truncation is by design visible, consistent with D-RM-12.
 
 ### Failure semantics (fail closed)
 
 | Event | Result |
 |---|---|
 | Resolver throws `UNAVAILABLE`, `TIMEOUT`, `REJECTED` | The translated follow returns the target source with a per-source status `KEY_UNRESOLVED` and no `entity`; audit `resolver:<name>` = `FAILED:<REASON>` |
-| Resolver returns more than `maxResults` | Treated as `TOO_MANY`; no entities returned; status `KEY_UNRESOLVED` |
+| Resolver returns more than `maxResults` keys | Treated as `TOO_MANY`; no entities returned; status `KEY_UNRESOLVED` |
+| Resolver returns `more = true` | Not a failure: the keys returned are read and `itemsTruncated` is set |
+| Resolver returns `more = true` with no keys | Contract violation; `INVALID_OUTPUT`, status `KEY_UNRESOLVED` |
 | Resolver returns an empty list | Status `NO_DATA` (a truthful "nothing known"), audit `resolver:<name>` = `EMPTY` |
-| Resolver returns a blank or over-long key (over 256 characters) | `KEY_UNRESOLVED`; audit `INVALID_OUTPUT` |
+| Resolver returns a blank or over-long key (over 256 bytes) | `KEY_UNRESOLVED`; audit `INVALID_OUTPUT` |
 | Resolver runtime exception of any other type | Same as `UNAVAILABLE`, never propagated with its message |
 | Resolver exceeds `dataprism.key-resolvers.timeout` (default `PT2S`) | `TIMEOUT` |
 | Resolver bean missing at follow time (configuration changed since issue) | The link is `LINK_INVALID`, audit reason `RELATION_UNDECLARED` |
 
-A resolver failure never falls back to a direct read, to a different resolver, or to the untranslated key. `KEY_UNRESOLVED` is a new per-source status code and must be entered in task 200's register before 0.8; clients treat an unknown status as "not answered" (D-070-3).
+A resolver failure never falls back to a direct read, to a different resolver, or to the untranslated key. `KEY_UNRESOLVED` is a new per-source status code and must be entered in task 200's register before 0.8 (its spelling is close to the existing startup code `HMAC_KEY_UNRESOLVED`; they are different kinds, but task 200 should record both together or rename this one); clients treat an unknown status as "not answered" (D-070-3).
 
 The status is returned only to a holder of a valid, authenticated link, so it opens no oracle for a forger.
 
@@ -184,7 +194,7 @@ Mutation-testable; PIT gates link checks in 0.9.
 5. A chainable field's value is never in output: with the flag set the disposition is unchanged (existing scrubbing tests are re-run with the flag set and produce identical output).
 6. Fail closed: for each exception type, timeout, blank key, over-long key, over-count result and missing bean, the outcome is `KEY_UNRESOLVED` or `LINK_INVALID` as the table says and no target read happens. Mutants: catch and continue with the untranslated key; truncate over-count instead of refusing.
 7. Budget: a resolver call and each target read are charged on both budget implementations; an unaffordable call is not made. Mutant: charge after the call, or not at all.
-8. One-to-many: the number of target reads never exceeds `max-targets`; order is deterministic; `itemsOmitted` is correct.
+8. One-to-many: a stub resolver with 12 keys and `maxResults` 5 returns 5 keys with `more = true`, and the response has 5 items and `itemsTruncated: true`; a stub that returns 5 keys with `more = false` has no flag; a stub returning 6 keys for `maxResults` 5 is `TOO_MANY`; a stub with `more = true` and no keys is `INVALID_OUTPUT`. The number of target reads never exceeds `max-targets`. Order is ascending keyed fingerprint regardless of the order the resolver used. Mutants: ignore `more`; truncate an over-long result silently; sort by the real key.
 9. Leak tests: resolver input and output values do not appear in any audit record, log line, metric, exception message or response (plaintext and encoded forms), including on failure. A resolver that throws an exception whose message contains the key must not leak it.
 10. Architecture rules: `mcp` and `connectors` do not depend on `KeyResolver`; no resolver depends on `data-prism-reidentification`.
 11. `IdentityResolver` implementations from the existing test suites run unchanged; the adapter returns exactly the keys `expand` returns for the pair.
@@ -199,6 +209,9 @@ Mutation-testable; PIT gates link checks in 0.9.
 | OD-R3 | New per-source status for resolver failure | New `KEY_UNRESOLVED`; or reuse `FAILED` | New code, entered in task 200's register, because "the target failed" and "we could not form the key" differ for the agent's next step |
 | OD-R4 | Where the namespace vocabulary lives | Free-form validated labels (proposed); or a registry declared once per deployment | Free-form with a startup check that every namespace used appears on at least one field and one input key. A typo otherwise silently yields no link |
 | OD-R5 | Opt-in adapter from `IdentityResolver` | Provide it; or require a hand-written `KeyResolver` | Provide it, opt-in per pair, so no existing mapping is written twice |
+| OD-R7 | Direct link wins over a translated link to the same source | Issue only the direct link (as drafted); or issue both | Only the direct link. A translated link to a source that already accepts the key directly adds a path that may disagree with the direct one and costs a resolver call |
+| OD-R8 | Fate of `IdentityResolver` in 0.8 | Leave it unchanged and undeprecated (as drafted); or deprecate it in favour of `KeyResolver` | Leave it unchanged. It serves fan-out, which `KeyResolver` does not replace; revisit when the surface freezes at 0.9 |
+| OD-R9 | Partial and outer-status rules of a one-to-many follow | Defined in `sealed-links.md` OD-9 | See there |
 | OD-R6 | Should resolvers be configured (a YAML list) or only beans | Beans only; or YAML with class names | Beans only. Class names in configuration widen the reviewed surface, which is the opposite of the project's reviewed-extension rule |
 
 ## 10. Proposed names (closing table)
@@ -210,6 +223,7 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `KeyResolver` | SPI interface (core) | 0.8 |
 | `KeyResolutionException` | SPI exception | 0.8 |
 | `ResolutionContext` | SPI record | 0.8 |
+| `Resolution` | SPI record (`keys`, `more`) | 0.8 |
 | `@Chainable` | annotation | 0.8 |
 | `chainable`, `keyNamespace` | model descriptor keys | 0.8 |
 | `IdentityResolverKeyResolvers` | adapter class | 0.8 |
