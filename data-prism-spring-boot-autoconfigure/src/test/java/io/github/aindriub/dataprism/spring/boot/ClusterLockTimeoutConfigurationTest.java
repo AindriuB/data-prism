@@ -174,7 +174,7 @@ class ClusterLockTimeoutConfigurationTest {
                 "dataprism.hazelcast.join.members[0]=10.0.0.1,10.0.0.2,10.0.0.3", "dataprism.hazelcast.approval-minimum-members=4");
         refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=10.0.0.1:5701",
-                "dataprism.hazelcast.approval-minimum-members=2");
+                "dataprism.hazelcast.member.port=5701", "dataprism.hazelcast.approval-minimum-members=2");
     }
     @Test void refuses_a_member_form_it_cannot_expand_reliably() {
         refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",

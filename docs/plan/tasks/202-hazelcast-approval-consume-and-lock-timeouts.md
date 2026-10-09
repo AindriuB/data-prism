@@ -356,6 +356,11 @@ The 192 design's `dataprism.hazelcast.security.lock-timeout` is superseded by `d
 - Member counting is `PrivacyCluster.countTcpIpMembers(List<String>)` (public static; new name for task 200's register),
   used by the startup default and by the validator. It expands commas, semicolons, spaces and last-octet IPv4 ranges,
   treats `a` and `a:5701` as one, and throws for forms it cannot expand reliably (validator: `INVALID_APPROVAL_QUORUM`).
+  Second review: `countTcpIpMembers(entries, memberPort)` now takes the member port (portless = that port) and splits on
+  `[,; ]+`; `PrivacyCluster.hasHostname` makes a hostname entry require an explicit minimum (`MISSING_APPROVAL_QUORUM`),
+  and the validator checks countability for every `tcp-ip` configuration. `PrivacyClusterRefusal.Code` gained
+  `INVALID_APPROVAL_QUORUM` and `MISSING_APPROVAL_QUORUM` (file outside Owns, added at the coordinator's instruction).
+  `countTcpIpMembers` is for the starter, not applications.
   `ClusterMembership` is back to its original state; the default lives in package-private
   `PrivacyCluster.defaultApprovalMinimumMembers`. No coordinator grant was needed.
 - A crash between `replace` and `setTtl` leaves an entry with no expiry until LRU eviction. The stored `expiresAt`

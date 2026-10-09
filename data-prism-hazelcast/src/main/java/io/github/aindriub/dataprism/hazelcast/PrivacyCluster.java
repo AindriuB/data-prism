@@ -108,60 +108,112 @@ public final class PrivacyCluster implements AutoCloseable {
      * The fewest members that may see each other for approvals to change: a majority of the distinct
      * {@code tcp-ip} members (see {@link #countTcpIpMembers}), which therefore must name every member including
      * this one, and {@code 1} for {@code none}. Empty for {@code kubernetes}, whose member count is not known here.
+     *
+     * @throws PrivacyClusterRefusal {@code MISSING_APPROVAL_QUORUM} if a {@code tcp-ip} entry is a hostname, whose
+     *                               address count only Hazelcast's resolver knows, or {@code INVALID_APPROVAL_QUORUM}
+     *                               if an entry cannot be counted; neither message names the entry
      */
     static OptionalInt defaultApprovalMinimumMembers(ClusterMembership membership) {
         return switch (membership.join()) {
-            case ClusterMembership.TcpIp tcp -> OptionalInt.of(countTcpIpMembers(tcp.members()) / 2 + 1);
+            case ClusterMembership.TcpIp tcp -> {
+                int count;
+                try {
+                    count = countTcpIpMembers(tcp.members(), membership.port());
+                } catch (IllegalArgumentException uncountable) {
+                    throw new PrivacyClusterRefusal(Code.INVALID_APPROVAL_QUORUM,
+                            "a tcp-ip member entry cannot be expanded reliably to a member count");
+                }
+                if (hasHostname(tcp.members())) {
+                    throw new PrivacyClusterRefusal(Code.MISSING_APPROVAL_QUORUM,
+                            "a tcp-ip member entry is a hostname, so the member count is not known; "
+                                    + "give the approval minimum explicitly");
+                }
+                yield OptionalInt.of(count / 2 + 1);
+            }
             case ClusterMembership.None none -> OptionalInt.of(1);
             case ClusterMembership.Kubernetes k -> OptionalInt.empty();
         };
     }
 
-    private static final Pattern MEMBER_SEPARATOR = Pattern.compile("[,;\\s]+");
+    private static final Pattern MEMBER_SEPARATOR = Pattern.compile("[,; ]+");
     private static final Pattern OCTET_OR_RANGE = Pattern.compile("(\\d{1,3})(?:-(\\d{1,3}))?");
-    private static final int DEFAULT_MEMBER_PORT = ClusterMembership.DEFAULT_PORT;
 
     /**
      * How many distinct members a {@code tcp-ip} list names, after expanding what Hazelcast accepts: entries joined
-     * by commas, semicolons or spaces, an IPv4 range in the last octet such as {@code 10.0.0.1-3}, and a host with
-     * and without the default port, which is one member. This is the one count the startup default and the
-     * configuration check share.
+     * by commas, semicolons or spaces, an IPv4 range in the last octet such as {@code 10.0.0.1-3}, and an entry
+     * without a port, which is one member with {@code memberPort}, the port this member listens on. A hostname counts
+     * as one, which can undercount (see {@link #hasHostname}).
      *
-     * @throws IllegalArgumentException for a form that cannot be expanded reliably (a wildcard, a bracketed host
-     *                                  other than IPv6, a range outside the last octet or reversed, a bad port),
-     *                                  so a quorum is never computed from an undercount
+     * <p>This exists for the starter's startup checks and the default above. It is not an API for applications and
+     * may change without notice.
+     *
+     * @throws IllegalArgumentException for a form that cannot be expanded reliably (a wildcard, a range outside the
+     *                                  last octet or reversed, a bad port); the message names no entry
      */
-    public static int countTcpIpMembers(List<String> entries) {
+    public static int countTcpIpMembers(List<String> entries, int memberPort) {
         Set<String> distinct = new HashSet<>();
         for (String entry : entries) {
             for (String token : MEMBER_SEPARATOR.split(entry.strip())) {
                 if (!token.isEmpty()) {
-                    expand(token, distinct);
+                    expand(token, memberPort, distinct);
                 }
             }
         }
         return distinct.size();
     }
 
-    private static void expand(String token, Set<String> into) {
+    /**
+     * Whether any entry is not an IPv4 or IPv6 literal. Hazelcast resolves a hostname to every address it has (all
+     * that match the member interface, when one is set), so how many members it names is not known statically.
+     * Same exclusions as {@link #countTcpIpMembers}; an entry it would refuse is not reported here.
+     */
+    public static boolean hasHostname(List<String> entries) {
+        for (String entry : entries) {
+            for (String token : MEMBER_SEPARATOR.split(entry.strip())) {
+                if (!token.isEmpty() && !isLiteral(hostOf(token))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String hostOf(String token) {
+        if (token.startsWith("[")) {
+            int close = token.indexOf(']');
+            return close < 0 ? token : token.substring(0, close + 1);
+        }
+        int colon = token.indexOf(':');
+        return colon >= 0 && colon == token.lastIndexOf(':') ? token.substring(0, colon) : token;
+    }
+
+    private static boolean isLiteral(String host) {
+        if (host.startsWith("[") || host.indexOf(':') >= 0) {
+            return true;
+        }
+        String[] labels = host.split("\\.", -1);
+        return labels.length == 4 && host.chars().allMatch(c -> c == '.' || c == '-' || Character.isDigit(c));
+    }
+
+    private static void expand(String token, int memberPort, Set<String> into) {
         String host = token;
-        int port = DEFAULT_MEMBER_PORT;
+        int port = memberPort;
         if (token.startsWith("[")) {
             int close = token.indexOf(']');
             if (close < 0) {
-                throw unexpandable(token);
+                throw unexpandable();
             }
             host = token.substring(0, close + 1);
             String rest = token.substring(close + 1);
             if (!rest.isEmpty()) {
-                port = port(token, rest.startsWith(":") ? rest.substring(1) : "x");
+                port = port(rest.startsWith(":") ? rest.substring(1) : "x");
             }
         } else if (token.indexOf(':') >= 0 && token.indexOf(':') == token.lastIndexOf(':')) {
             host = token.substring(0, token.indexOf(':'));
-            port = port(token, token.substring(token.indexOf(':') + 1));
+            port = port(token.substring(token.indexOf(':') + 1));
         }
         if (host.isEmpty() || host.indexOf('*') >= 0 || (!host.startsWith("[") && host.indexOf('[') >= 0)) {
-            throw unexpandable(token);
+            throw unexpandable();
         }
         String[] labels = host.split("\\.", -1);
         if (labels.length == 4 && host.chars().allMatch(c -> c == '.' || c == '-' || Character.isDigit(c))) {
@@ -169,13 +221,13 @@ public final class PrivacyCluster implements AutoCloseable {
             for (int i = 0; i < 4; i++) {
                 octets[i] = OCTET_OR_RANGE.matcher(labels[i]);
                 if (!octets[i].matches() || (i < 3 && octets[i].group(2) != null)) {
-                    throw unexpandable(token);
+                    throw unexpandable();
                 }
             }
             int low = Integer.parseInt(octets[3].group(1));
             int high = octets[3].group(2) == null ? low : Integer.parseInt(octets[3].group(2));
             if (high < low || high > 255) {
-                throw unexpandable(token);
+                throw unexpandable();
             }
             for (int last = low; last <= high; last++) {
                 into.add(Integer.parseInt(octets[0].group(1)) + "." + Integer.parseInt(octets[1].group(1)) + "."
@@ -186,7 +238,7 @@ public final class PrivacyCluster implements AutoCloseable {
         into.add(host.toLowerCase(Locale.ROOT) + ":" + port);
     }
 
-    private static int port(String token, String text) {
+    private static int port(String text) {
         try {
             int port = Integer.parseInt(text);
             if (port >= 1 && port <= 65535) {
@@ -195,11 +247,11 @@ public final class PrivacyCluster implements AutoCloseable {
         } catch (NumberFormatException notANumber) {
             // fall through
         }
-        throw unexpandable(token);
+        throw unexpandable();
     }
 
-    private static IllegalArgumentException unexpandable(String token) {
-        return new IllegalArgumentException("tcp-ip member entry cannot be expanded reliably to a member count: " + token);
+    private static IllegalArgumentException unexpandable() {
+        return new IllegalArgumentException("a tcp-ip member entry cannot be expanded reliably to a member count");
     }
 
     /** Validates and hardens the config, then starts a member. Refuses before anything starts. */
