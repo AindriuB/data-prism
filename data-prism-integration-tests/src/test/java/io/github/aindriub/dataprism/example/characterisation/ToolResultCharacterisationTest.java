@@ -47,11 +47,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * pinned here. Dates are pinned only through the audit {@code timestamp} and the checkpoint
  * {@code recordedAt} and {@code segmentDate}.
  *
- * <p>One normalisation applies to get_entity_context: the entries of its {@code sources} object
- * are sorted before comparing (see {@link #sortSourcesObject}); their order varies between JVM runs.
+ * <p>The {@code sources} entries of get_entity_context are pinned in ascending key order (the
+ * order {@code ContextResponse} guarantees), which is the same on every JVM run.
  *
- * <p>The goldens record whatever Jackson 2 does for property order, null handling and instants;
- * the notes on each test say what that is.
+ * <p>The goldens record what the production mapper does for property order, null handling and
+ * instants; the notes on each test say what that is.
  */
 class ToolResultCharacterisationTest {
 
@@ -96,22 +96,6 @@ class ToolResultCharacterisationTest {
                         Map.of("entityType", "CUSTOMER", "subjectId", "123")));
     }
 
-    /**
-     * Sorts the entries of the {@code "sources"} object. The aliases and their values are
-     * deterministic, but the order the tool writes them in differs from one JVM run to the
-     * next (an immutable-map iteration order), so it cannot be pinned byte for byte. This is the
-     * only normalisation; everything else is compared exactly. Aliases contain no comma or brace.
-     */
-    private static String sortSourcesObject(String json) {
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"sources\":\\{([^}]*)\\}").matcher(json);
-        if (!m.find()) {
-            return json;
-        }
-        String sorted = java.util.Arrays.stream(m.group(1).split(",")).sorted()
-                .collect(java.util.stream.Collectors.joining(","));
-        return json.substring(0, m.start(1)) + sorted + json.substring(m.end(1));
-    }
-
     private static String text(McpSchema.CallToolResult result) {
         assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
         assertThat(result.content()).hasSize(1);
@@ -150,13 +134,13 @@ class ToolResultCharacterisationTest {
     @Test
     @DisplayName("get_entity_context text content, byte for byte")
     void getEntityContextText() {
-        Golden.assertMatches("get-entity-context.text.json", sortSourcesObject(text(getEntityContext())));
+        Golden.assertMatches("get-entity-context.text.json", text(getEntityContext()));
     }
 
     @Test
     @DisplayName("get_entity_context structured content through the production mapper, byte for byte")
     void getEntityContextStructured() throws Exception {
-        Golden.assertMatches("get-entity-context.structured.json", sortSourcesObject(structured(getEntityContext())));
+        Golden.assertMatches("get-entity-context.structured.json", structured(getEntityContext()));
     }
 
     @Test

@@ -145,6 +145,12 @@ class DataPrismMcpServerTest {
                 ToolOptions.defaults().noAdmission().build());
     }
 
+    /**
+     * Reads private fields of the MCP Java SDK as of {@code mcp.version} 2.0.1:
+     * {@code McpSyncServer.asyncServer}, then the {@code jsonMapper} field of that async server.
+     * The SDK exposes no accessor for the mapper. Revisit this test whenever {@code mcp.version}
+     * changes; a renamed field fails here with {@code NoSuchFieldException}.
+     */
     private static Object serverMapper(McpSyncServer server) throws Exception {
         var sync = McpSyncServer.class.getDeclaredField("asyncServer");
         sync.setAccessible(true);
