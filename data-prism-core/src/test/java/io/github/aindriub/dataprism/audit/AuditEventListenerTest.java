@@ -578,12 +578,15 @@ class AuditEventListenerTest {
         Set<Thread> seenThreads = new java.util.HashSet<>();
         for (int i = 0; i < 25; i++) {
             AuditEventListeners listeners = dispatcher(new Lines(), 4, e -> { });
-            seenThreads.addAll(startedSince(before));
+            Set<Thread> started = startedSince(before);
+            started.removeAll(seenThreads);
+            assertThat(started).hasSize(2);
+            seenThreads.addAll(started);
             recorder(e -> { }, listeners).record(entry());
             listeners.close();
             listeners.close(); // idempotent
         }
-        assertThat(seenThreads).isNotEmpty();
+        assertThat(seenThreads).hasSize(50);
         assertAllStopped(seenThreads);
     }
 
