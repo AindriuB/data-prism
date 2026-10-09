@@ -247,11 +247,15 @@ first for when they are called, what they can lose, and who owns the
 destination.
 
 ```java
-import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditEventListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+
+/** Your own client for wherever the events go; a placeholder so this example compiles. */
+interface SiemClient {
+    void send(long sequence, String eventId, String tool, String policyDecision);
+}
 
 @Configuration(proxyBeanMethods = false)
 class AuditForwarding {

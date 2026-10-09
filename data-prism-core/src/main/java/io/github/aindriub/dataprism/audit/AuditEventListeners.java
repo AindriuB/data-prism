@@ -46,10 +46,13 @@ public final class AuditEventListeners implements AutoCloseable {
     private final BlockingQueue<Object> queue;
     private final Thread thread;
 
+    /** Events not delivered to listeners. The recording thread only increments this. */
     private final AtomicLong dropped = new AtomicLong();
-    private final AtomicLong droppedUnreported = new AtomicLong();
-    private final AtomicLong lastDropLogNanos;
-    private final AtomicLong firstDropLogged = new AtomicLong();
+    /** The value of {@link #dropped} already reported in a log line. Touched by the reporting threads only. */
+    private final AtomicLong reported = new AtomicLong();
+    /** Dispatcher-thread state for the rate limit. */
+    private long lastReportNanos;
+    private boolean reportedOnce;
     private volatile boolean closed;
     private volatile boolean abandoned;
 
@@ -68,7 +71,6 @@ public final class AuditEventListeners implements AutoCloseable {
         this.dropLogIntervalNanos = dropLogInterval.toNanos();
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         this.log = Objects.requireNonNull(log, "log");
-        this.lastDropLogNanos = new AtomicLong(nanoTime.getAsLong());
         // One slot beyond the capacity is reserved for STOP, so close() never competes with events.
         this.queue = new ArrayBlockingQueue<>(queueCapacity + 1);
         if (this.listeners.isEmpty()) {
@@ -93,34 +95,38 @@ public final class AuditEventListeners implements AutoCloseable {
     }
 
     /**
-     * O(1) and non-blocking; never throws. Package-private: only the recorder, after a successful
-     * write, hands events over.
+     * O(1), non-blocking, allocation-free and never throws. It does not log: the recorder calls this inside
+     * its lock, and a slow appender must not stall recording. Drops are counted here and reported by the
+     * dispatcher thread (rate limited) and by {@link #close()}. Package-private: only the recorder, after a
+     * successful write, hands events over.
      */
     void publish(AuditEvent event) {
         if (thread == null) {
             return;
         }
         if (closed || queue.size() >= capacity || !queue.offer(event)) {
-            noteDrop(1);
+            dropped.incrementAndGet();
         }
     }
 
-    private void noteDrop(long count) {
-        dropped.addAndGet(count);
-        droppedUnreported.addAndGet(count);
-        long now = nanoTime.getAsLong();
-        long last = lastDropLogNanos.get();
-        boolean first = firstDropLogged.compareAndSet(0, 1);
-        if ((first || now - last >= dropLogIntervalNanos) && lastDropLogNanos.compareAndSet(last, now)) {
-            reportDrops();
+    /** Called from the dispatcher after each delivery, and from {@link #close()} for the remainder. */
+    private void reportDrops(boolean force) {
+        long total = dropped.get();
+        if (total == reported.get()) {
+            return;
         }
-    }
-
-    private void reportDrops() {
-        long since = droppedUnreported.getAndSet(0);
+        if (!force) {
+            long now = nanoTime.getAsLong();
+            if (reportedOnce && now - lastReportNanos < dropLogIntervalNanos) {
+                return;
+            }
+            reportedOnce = true;
+            lastReportNanos = now;
+        }
+        long since = total - reported.getAndSet(total);
         if (since > 0) {
             log.warn("AUDIT_LISTENER_DROPPED: " + since + " audit events not delivered to listeners since the"
-                    + " last report (" + dropped.get() + " in total; queue capacity " + capacity
+                    + " last report (" + total + " in total; queue capacity " + capacity
                     + "); the audit log is unaffected");
         }
     }
@@ -133,6 +139,7 @@ public final class AuditEventListeners implements AutoCloseable {
                     return;
                 }
                 deliver((AuditEvent) next);
+                reportDrops(false);
             }
         } catch (InterruptedException e) {
             // close() abandons a dispatcher that outlived the drain timeout; the thread ends here.
@@ -154,6 +161,10 @@ public final class AuditEventListeners implements AutoCloseable {
                         + " eventId=" + event.eventId() + " sequence=" + event.sequence()
                         + " exception=" + t.getClass().getName());
             }
+            // A listener may leave the interrupt flag set (re-interrupting after catching
+            // InterruptedException). Clear it, or the next take() would end the dispatcher for good.
+            // close() sets abandoned before it interrupts, and the loops re-check that flag.
+            Thread.interrupted();
         }
     }
 
@@ -190,8 +201,7 @@ public final class AuditEventListeners implements AutoCloseable {
         queue.clear();
         if (left > 0) {
             dropped.addAndGet(left);
-            droppedUnreported.addAndGet(left);
         }
-        reportDrops();
+        reportDrops(true);
     }
 }

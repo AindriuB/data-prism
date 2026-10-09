@@ -18,10 +18,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -38,14 +41,18 @@ class AuditEventListenerTest {
     private static final int BOUND_SECONDS = 20;
 
     /** No SLF4J provider is on this module's test classpath, so a proxy stands in for the appender. */
-    private static final class Lines {
+    private static class Lines {
         final List<String> warnings = Collections.synchronizedList(new ArrayList<>());
+
+        void onWarn(String line) {
+            warnings.add(line);
+        }
 
         Logger logger() {
             return (Logger) Proxy.newProxyInstance(Logger.class.getClassLoader(), new Class<?>[] {Logger.class},
                     (proxy, method, a) -> {
                         if (method.getName().equals("warn") && a.length == 1) {
-                            warnings.add((String) a[0]);
+                            onWarn((String) a[0]);
                         }
                         return null;
                     });
@@ -180,20 +187,23 @@ class AuditEventListenerTest {
             AuditRecorder recorder = recorder(sink, listeners);
             // The listener cannot return until release is counted down below, so these records
             // finishing at all proves recording does not wait for it.
+            recorder.record(entry());
+            awaitStarted(started); // the dispatcher holds event 1, so the drop counts below are exact
             Future<?> all = pool.submit(() -> {
-                for (int i = 0; i < total; i++) {
+                for (int i = 1; i < total; i++) {
                     recorder.record(entry());
                 }
             });
             all.get(BOUND_SECONDS, TimeUnit.SECONDS);
-            assertThat(started.getCount()).isZero();
             assertThat(listeners.droppedCount()).isEqualTo(total - 1 - capacity);
-            // the flood produced one rate-limited line, with counts and no event content
+            // nothing is logged on the recording thread
+            assertThat(lines.warnings).isEmpty();
+            release.countDown();
+            listeners.close();
+            // the flood produced one line, with counts and no event content
             assertThat(lines.warnings).hasSize(1);
             assertThat(lines.warnings.get(0)).startsWith("AUDIT_LISTENER_DROPPED")
                     .doesNotContain("SUBJ-1").doesNotContain("CASE-1").doesNotContain("customer-api");
-            release.countDown();
-            listeners.close();
         } finally {
             pool.shutdownNow();
         }
@@ -308,34 +318,105 @@ class AuditEventListenerTest {
     }
 
     @Test
-    void drop_log_lines_are_rate_limited_and_carry_counts_only() {
-        Lines lines = new Lines();
-        AtomicLong now = new AtomicLong();
-        CountDownLatch release = new CountDownLatch(1);
-        CountDownLatch started = new CountDownLatch(1);
-        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
-            started.countDown();
-            try {
-                release.await();
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
+    void drop_log_lines_are_rate_limited_and_carry_counts_only() throws Exception {
+        BlockingQueue<String> logged = new LinkedBlockingQueue<>();
+        Lines lines = new Lines() {
+            @Override void onWarn(String line) {
+                logged.add(line);
             }
+        };
+        AtomicLong now = new AtomicLong();
+        Semaphore gate = new Semaphore(0);
+        BlockingQueue<Long> entered = new LinkedBlockingQueue<>();
+        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
+            entered.add(e.sequence());
+            gate.acquireUninterruptibly();
         }), 1, Duration.ofSeconds(BOUND_SECONDS), Duration.ofSeconds(10), now::get, lines.logger());
         AuditRecorder recorder = recorder(e -> { }, listeners);
         recorder.record(entry());
-        awaitStarted(started);
+        assertThat(entered.poll(BOUND_SECONDS, TimeUnit.SECONDS)).isEqualTo(1L);
         recorder.record(entry()); // fills the queue
         for (int i = 0; i < 100; i++) {
-            recorder.record(entry()); // 100 drops, first one logged
+            recorder.record(entry()); // 100 drops
         }
-        assertThat(lines.warnings).hasSize(1);
-        assertThat(lines.warnings.get(0)).contains("1 audit events");
+        gate.release(); // event 1 done: the dispatcher reports the first drops at once
+        String first = logged.poll(BOUND_SECONDS, TimeUnit.SECONDS);
+        assertThat(first).startsWith("AUDIT_LISTENER_DROPPED").contains("100 audit events");
+        assertThat(entered.poll(BOUND_SECONDS, TimeUnit.SECONDS)).isEqualTo(2L);
+        recorder.record(entry()); // fills the queue again
+        for (int i = 0; i < 50; i++) {
+            recorder.record(entry()); // 50 more drops
+        }
+        gate.release(); // event 2 done, clock unmoved: no line
+        assertThat(entered.poll(BOUND_SECONDS, TimeUnit.SECONDS)).isEqualTo(103L);
+        assertThat(logged).isEmpty();
         now.addAndGet(Duration.ofSeconds(11).toNanos());
-        recorder.record(entry());
-        assertThat(lines.warnings).hasSize(2);
-        assertThat(lines.warnings.get(1)).contains("100 audit events").contains("101 in total");
-        release.countDown();
+        gate.release(); // event 3 done after the interval: second line
+        String second = logged.poll(BOUND_SECONDS, TimeUnit.SECONDS);
+        assertThat(second).contains("50 audit events").contains("150 in total");
         listeners.close();
+        assertThat(logged).isEmpty();
+    }
+
+    @Test
+    void a_blocking_log_appender_never_stalls_recording() throws Exception {
+        CountDownLatch inLogger = new CountDownLatch(1);
+        CountDownLatch releaseLogger = new CountDownLatch(1);
+        Semaphore gate = new Semaphore(0);
+        CountDownLatch started = new CountDownLatch(1);
+        Lines lines = new Lines() {
+            @Override void onWarn(String line) {
+                inLogger.countDown();
+                try {
+                    releaseLogger.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
+            started.countDown();
+            gate.acquireUninterruptibly();
+        }), 1, Duration.ofSeconds(BOUND_SECONDS), Duration.ofHours(1), System::nanoTime, lines.logger());
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            AuditRecorder recorder = recorder(e -> { }, listeners);
+            recorder.record(entry());
+            awaitStarted(started);
+            recorder.record(entry());
+            recorder.record(entry()); // one drop
+            gate.release(); // the dispatcher now reports the drop and blocks inside the logger
+            assertThat(inLogger.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+            pool.submit(() -> {
+                for (int i = 0; i < 200; i++) {
+                    recorder.record(entry());
+                }
+            }).get(BOUND_SECONDS, TimeUnit.SECONDS);
+            assertThat(listeners.droppedCount()).isGreaterThan(100);
+        } finally {
+            releaseLogger.countDown();
+            gate.release(1000);
+            listeners.close();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void a_listener_that_leaves_its_interrupt_flag_set_does_not_end_delivery() {
+        List<Long> reinterrupting = Collections.synchronizedList(new ArrayList<>());
+        List<Long> after = Collections.synchronizedList(new ArrayList<>());
+        try (AuditEventListeners listeners = dispatcher(new Lines(), 100, e -> {
+            reinterrupting.add(e.sequence());
+            Thread.currentThread().interrupt();
+        }, e -> after.add(e.sequence()))) {
+            AuditRecorder recorder = recorder(e -> { }, listeners);
+            for (int i = 0; i < 20; i++) {
+                recorder.record(entry());
+            }
+            listeners.close();
+        }
+        assertThat(reinterrupting).hasSize(20);
+        assertThat(after).hasSize(20);
     }
 
     private static void awaitStarted(CountDownLatch started) {
