@@ -609,7 +609,7 @@ module's own smoke test starts as subprocesses and drives, and
 `spring-boot-test` for its `ApplicationContextRunner` test. A consumer's
 extension pom has no reason to carry the first five.)
 
-What has been checked, and what has not (recorded 2026-10-07). The two XML
+What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-09). The two XML
 blocks in this section were extracted programmatically and pasted unmodified
 into a pom whose only other content is `modelVersion`, `groupId`,
 `artifactId`, `version` and `packaging`. Alongside a minimal
@@ -632,7 +632,7 @@ time. On 2026-10-09, before publication, a full `mvn package` of the `0.6.0`
 form of the snippet, with the same minimal `DataSourceAdapter` (importing
 `core.spi`) and an `@LlmExposedModel` record, was built with an empty local
 repository against a scratch file repository holding the `0.6.0` reactor build
-of this branch, not against Maven Central. It resolved `data-prism-core`,
+of this repository before the tag, not against Maven Central. It resolved `data-prism-core`,
 `data-prism-annotations` and `data-prism-processor` `0.6.0`, `spring-web`
 `7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. That run
 shows the snippet and the reactor's POMs agree; it is not evidence about the
