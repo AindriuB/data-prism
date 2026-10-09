@@ -626,6 +626,69 @@ class AuditEventListenerTest {
         }
     }
 
+    /** Runs on a helper thread: waits until {@code target} is in a timed wait, optionally interrupts it, opens the gate. */
+    private static Thread opensGateOnceWaiting(Thread target, Semaphore gate, boolean interruptFirst) {
+        Thread helper = new Thread(() -> {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BOUND_SECONDS);
+            while (target.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+                Thread.yield();
+            }
+            if (interruptFirst) {
+                target.interrupt();
+            }
+            gate.release(1000);
+        }, "test-opens-gate");
+        helper.setDaemon(true);
+        return helper;
+    }
+
+    private void closeDrainsAllQueuedEvents(boolean interruptBeforeClose) throws Exception {
+        Lines lines = new Lines();
+        Semaphore gate = new Semaphore(0);
+        CountDownLatch started = new CountDownLatch(1);
+        List<Long> seen = Collections.synchronizedList(new ArrayList<>());
+        Set<Thread> before = dispatcherThreads();
+        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
+            started.countDown();
+            gate.acquireUninterruptibly();
+            seen.add(e.sequence());
+        }), 100, Duration.ofSeconds(BOUND_SECONDS), Duration.ofHours(1), lines.logger());
+        Set<Thread> started2 = startedSince(before);
+        Thread helper = opensGateOnceWaiting(Thread.currentThread(), gate, !interruptBeforeClose);
+        try {
+            AuditRecorder recorder = recorder(e -> { }, listeners);
+            recorder.record(entry());
+            awaitStarted(started);
+            for (int i = 0; i < 3; i++) {
+                recorder.record(entry()); // queued behind the gated listener
+            }
+            if (interruptBeforeClose) {
+                Thread.currentThread().interrupt();
+            }
+            helper.start();
+            listeners.close();
+            assertThat(seen).hasSize(4).isSorted();
+            assertThat(listeners.droppedCount()).isZero();
+            assertThat(lines.warnings).isEmpty();
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            assertAllStopped(started2);
+        } finally {
+            Thread.interrupted();
+            gate.release(1000);
+            listeners.close();
+        }
+    }
+
+    @Test
+    void close_on_an_interrupted_thread_still_drains_the_queue_and_joins_both_threads() throws Exception {
+        closeDrainsAllQueuedEvents(true);
+    }
+
+    @Test
+    void an_interrupt_while_close_waits_in_the_drain_does_not_shorten_it() throws Exception {
+        closeDrainsAllQueuedEvents(false);
+    }
+
     @Test
     void close_abandons_a_hung_listener_after_the_drain_timeout_and_logs_the_remainder_as_dropped() throws Exception {
         Lines lines = new Lines();
