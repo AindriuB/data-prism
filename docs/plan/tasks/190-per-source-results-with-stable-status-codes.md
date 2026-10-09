@@ -310,3 +310,5 @@ Not run by the implementer. The `reviewer` verdict on refusal isolation (archite
   from a returned response; `dataprism.privacy.failclosed` is back to refused calls only. Add to the
   CHANGELOG `### Changed` list in task 201.
 - A final-pass violation path loses its `[n]` source index before redaction (test added).
+
+Review gate: APPROVE — privacy-boundary re-review of 171647fe (after two CHANGES rounds)
