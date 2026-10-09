@@ -86,7 +86,11 @@ class PerSourceResultsTest {
                 .doesNotContain(STRAY_VALUE).doesNotContain(NOTE_VALUE).doesNotContain("note\"");
         Set<String> pseudonyms = entityStrings(sibling.json());
         assertThat(pseudonyms).as("the sibling run produced the refused source's pseudonym").isNotEmpty();
-        pseudonyms.stream().filter(s -> s.length() > 3).forEach(s -> assertThat(text).doesNotContain(s));
+        // A name pseudonym is keyed on the subject, so the answering sources legitimately carry the same string;
+        // what must not appear is any pseudonym only the refused source would have produced.
+        Set<String> onlyTheRefusedSource = new java.util.LinkedHashSet<>(pseudonyms);
+        onlyTheRefusedSource.removeAll(entityStrings(noData.json()));
+        onlyTheRefusedSource.forEach(s -> assertThat(text).doesNotContain(s));
         assertThat(json.get("findings").toString()).doesNotContain("bad-api");
 
         // Byte-identical to the run where that source had no data, apart from its status string.
