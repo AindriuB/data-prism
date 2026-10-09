@@ -137,4 +137,32 @@ class PerSourceValidationTest {
             assertThat(e.fieldDispositions()).containsEntry("merged:<refused>", "REFUSED");
         });
     }
+
+    @Test
+    @DisplayName("a validator that refuses a combination across two sources still refuses it, with no source name in its input")
+    void crossSourceCombinationIsStillRefused() {
+        // Sees the final pass only: one array of the returned trees. A single tree never holds both values.
+        Set<String> seenKeys = new LinkedHashSet<>();
+        LlmResponseValidator combination = (tree, prohibited, emitted, ctx) -> {
+            keys(tree, seenKeys);
+            String text = tree.toString();
+            return text.contains("\"a\"") && text.contains("\"b\"")
+                    ? ValidationResult.failed(List.of(new Violation("$[0].value", "COMBINATION", "TEST")))
+                    : ValidationResult.ok();
+        };
+        List<AuditEvent> events = new ArrayList<>();
+
+        assertThatThrownBy(() -> orchestrator(events, combination, source("alpha-api", "a"), source("beta-api", "b"))
+                .buildContext(ContextRequest.of("THING", "1"), context(), caller()))
+                .isInstanceOf(PrivacyRefusedException.class)
+                .satisfies(e -> assertThat(((PrivacyRefusedException) e).path())
+                        .doesNotContain("alpha-api").doesNotContain("beta-api"));
+
+        assertThat(events).singleElement().satisfies(e -> {
+            assertThat(e.policyDecision()).isEqualTo("DENY:VALIDATION_FAILED");
+            assertThat(e.fieldDispositions()).containsEntry("merged:<refused>", "REFUSED");
+            assertThat(e.fieldDispositions().keySet()).noneMatch(k -> k.contains("alpha-api:<refused>"));
+        });
+        assertThat(seenKeys).containsExactly("value");
+    }
 }
