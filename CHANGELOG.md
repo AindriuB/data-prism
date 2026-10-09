@@ -89,8 +89,8 @@ old-to-new tables, grouped by who has to act, are in `docs/migration-0.6.md`.
   be quoted.
   Messages name the key and its path (a key is cut to 64 characters) and never
   the value.
-- YAML is now parsed as YAML 1.2 (Jackson 3). `yes`, `no`, `on` and `off` are
-  text, not booleans: in a boolean-typed field they are refused as
+- YAML is now parsed as YAML 1.2 (Jackson 3). `yes`, `no`, `on`, `off`, `True`, `FALSE` and any
+  other spelling than lower-case `true`/`false` are text, not booleans: in a boolean-typed field they are refused as
   `INVALID_CONFIG_BOOLEAN`, and in a string-typed field they now load as the
   text you wrote, where 0.5.x loaded `true` or `false`. Leading-zero numbers
   are no longer octal: they are refused in numeric fields (band bounds,
@@ -154,7 +154,7 @@ record format (`recordVersion` 3) and the `dataprism.audit` logger name.
   failing, and still uses the intact checkpoints. Any other unparseable
   checkpoint line is still unreadable input (exit code 1).
 
-### CI and build
+### Build
 
 - `ci-gate` is a single summary check in `build.yml` that is green only when the
   build matrix and `container-smoke` all succeeded. The Pages build job is

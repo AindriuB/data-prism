@@ -99,7 +99,7 @@ path, a pool entry) that held one of these.
 | Written in the file | 0.5.x | 0.6.0 |
 |---|---|---|
 | `yes`, `no`, `on`, `off` in a boolean field | a boolean | refused, `INVALID_CONFIG_BOOLEAN` |
-| `yes`, `no`, `on`, `off` in a string field | the text `true` or `false` | the text as written. **Not refused** |
+| `yes`, `no`, `on`, `off`, `True`, `FALSE` (any spelling other than lower-case `true` or `false`) in a string field | the text `true` or `false` | the text as written. **Not refused** |
 | `010` or `0777` in a numeric field (a band bound, a vocabulary version) | octal (8, 511) | refused, `LEADING_ZERO_CONFIG_NUMBER` |
 | `010` or `0777` in a string field | the text `8` or `511` | the text as written. **Not refused** |
 | `1e3`, `1.0`, `42`, `true` in a string field | not characterised | refused, `NON_STRING_CONFIG_SCALAR`; quote it |
@@ -232,7 +232,7 @@ there. A type not listed did not move.
 | `spring.boot.JwtCallerContextExtractor` | `spring.boot.jwt.JwtCallerContextExtractor` |
 | `spring.boot.JwtDecoderSupport` | `spring.boot.jwt.JwtDecoderSupport` |
 
-`core.model.StrictYaml` already existed in 0.5.x with one public helper
+`core.model.StrictYaml` already existed in 0.5.x (as `core.StrictYaml`) with one public helper
 (`enumValue`). It now carries the readers' shared contract (the nine codes,
 `readMapping`, `requireOnlyKeys` and typed accessors); only code that wrote its
 own YAML configuration reader on top of it is affected.
@@ -343,8 +343,8 @@ SourceFanOutOptions fanOut = SourceFanOutOptions.defaults()
 
 | Removed | Replacement |
 |---|---|
-| `GetEntityContextTool`: 8 public constructors in 0.5.x, all but the one below removed (including those taking an `ObjectMapper`) | `GetEntityContextTool(ContextOrchestrator, AuthorizationService, ScopeResolver, PrivacyMetrics, AuditRecorder, Clock, AuthenticatedCaller developmentCaller, ToolOptions)` |
-| `CompareEntitySourcesTool`: 8 public constructors in 0.5.x, all but the one below removed | `CompareEntitySourcesTool(ContextOrchestrator, AuthorizationService, ScopeResolver, PrivacyMetrics, AuditRecorder, Clock, AuthenticatedCaller developmentCaller, ToolOptions)` |
+| `GetEntityContextTool`: all 8 public constructors of 0.5.x removed (including those taking an `ObjectMapper`); replaced by | `GetEntityContextTool(ContextOrchestrator, AuthorizationService, ScopeResolver, PrivacyMetrics, AuditRecorder, Clock, AuthenticatedCaller developmentCaller, ToolOptions)` |
+| `CompareEntitySourcesTool`: all 8 public constructors of 0.5.x removed; replaced by | `CompareEntitySourcesTool(ContextOrchestrator, AuthorizationService, ScopeResolver, PrivacyMetrics, AuditRecorder, Clock, AuthenticatedCaller developmentCaller, ToolOptions)` |
 | `DataPrismMcpServer.stdio(...)`: 6 overloads in 0.5.x | `stdio(ContextOrchestrator, AuthorizationService, ScopeResolver, AuthenticatedCaller developmentCaller, boolean singlePrincipalDevelopmentMode, boolean productionDeployment, PrivacyMetrics, AuditRecorder, Clock, ToolOptions)` |
 | `DataPrismMcpServer.streamableHttp(...)`: 6 overloads in 0.5.x | `streamableHttp(ContextOrchestrator, AuthorizationService, ScopeResolver, McpTransportContextExtractor<HttpServletRequest>, String endpointPath, PrivacyMetrics, AuditRecorder, Clock, ToolOptions)` |
 | `SourceFanOut(SourceCircuitBreaker, Clock)`, `(…, PrivacyMetrics)`, `(…, PrivacyMetrics, CorrelationMdc)` | `SourceFanOut(SourceCircuitBreaker, Clock, SourceFanOutOptions)`; `SourceFanOutOptions.defaults()` is no metrics and no MDC |
@@ -368,7 +368,7 @@ property paths, types and defaults; only the Java types of its accessors changed
 
 | 0.5.x | 0.6.0 |
 |---|---|
-| `spring.boot.DataPrismProperties.Transport` | `spring.boot.TransportProperties` (`Mode` stays nested: `TransportProperties.Mode`) |
+| `spring.boot.DataPrismProperties.Transport` | `spring.boot.TransportProperties` (`Mode` and `Http` stay nested) |
 | `spring.boot.DataPrismProperties.Security` | `spring.boot.SecurityProperties` (`Jwt` and `CallerClaims` nested) |
 | `spring.boot.DataPrismProperties.SecurityPolicy` | `spring.boot.SecurityPolicyProperties` |
 | `spring.boot.DataPrismProperties.Privacy` | `spring.boot.PrivacyProperties` (`HmacKey` nested) |
@@ -489,5 +489,6 @@ the projection close throws. It poisons on any `Throwable` from the projection.
 
 These changes make the configuration stricter and the extension surface smaller.
 They do not make an unreviewed adapter safe, and the verifier still cannot detect
-an operator who rewrites the whole audit file. See the [audit chain](audit.md) for
+an operator who rewrites the whole audit file, unless external checkpoints are kept
+where that operator cannot write. See the [audit chain](audit.md) for
 what the verifier does and does not show.
