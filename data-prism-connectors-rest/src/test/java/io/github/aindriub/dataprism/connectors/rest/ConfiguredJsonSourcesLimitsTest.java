@@ -125,4 +125,23 @@ class ConfiguredJsonSourcesLimitsTest {
     void withoutABeanTheDocumentedDefaultsApply() {
         assertThat(ConfiguredJsonSourcesAutoConfiguration.STANDALONE_LIMITS).isEqualTo(RequestLimits.DEFAULT);
     }
+
+    @Test
+    @DisplayName("a dataprism.limits property with no RequestLimits bean refuses startup, naming no value")
+    void limitsPropertyWithoutABeanRefusesStartup() {
+        runner.withPropertyValues("dataprism.limits.max-sources=4711").run(context -> {
+            assertThat(context).hasFailed();
+            Throwable root = context.getStartupFailure();
+            while (root.getCause() != null) {
+                root = root.getCause();
+            }
+            assertThat(root.getMessage()).contains("INVALID_REQUEST_LIMITS").doesNotContain("4711");
+        });
+    }
+
+    @Test
+    @DisplayName("with no dataprism.limits property and no bean, the context starts on the documented defaults")
+    void noLimitsPropertyAndNoBeanStarts() {
+        runner.run(context -> assertThat(context).hasNotFailed());
+    }
 }
