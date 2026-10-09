@@ -202,6 +202,11 @@ class ToolAdmissionTest {
         assertTrue(ToolAdmission.none().admit(CALLER, "t", "s", "f").admitted());
     }
 
+    @Test
+    void noneIsOneSharedInstance() {
+        org.assertj.core.api.Assertions.assertThat(ToolAdmission.none()).isSameAs(ToolAdmission.none());
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T proxy(Class<T> type) {
         return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (p, m, args) -> {
