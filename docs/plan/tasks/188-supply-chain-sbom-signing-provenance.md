@@ -138,7 +138,10 @@ Reference; pointer in `SECURITY.md`.
 3. Confirm the Central bundle lists `*-cyclonedx.json` with `.asc` files, and
    that `publish-central.yml`'s attest step finds `central-bundle.zip` after
    a real deploy.
-4. Confirm the GitHub Release shows the SBOM assets and
+4. Confirm `gh attestation verify oci://ghcr.io/aindriub/<image>@<digest>`
+   passes against both the manifest list and a per-arch digest (per-arch
+   digests are now indexes).
+5. Confirm the GitHub Release shows the SBOM assets and
    `gh attestation verify` passes on them.
 
 **Proposed CHANGELOG `[Unreleased]` lines (task 201):**

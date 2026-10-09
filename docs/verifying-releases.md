@@ -107,14 +107,20 @@ the BuildKit provenance attestation (SLSA, `mode=max`) described below.
 
 ### SBOM
 
-The build attaches an SBOM attestation to every image. To list and extract it:
+The build attaches an SBOM attestation to every image. For a multi-platform
+image, `.SBOM` is keyed by platform, so index it by platform; run this against
+the manifest list digest to show both:
 
 ```bash
-docker buildx imagetools inspect "$image@$digest" --format '{{json .SBOM}}' | jq '.SPDX.packages | length'
+for platform in linux/amd64 linux/arm64; do
+  echo "$platform: $(docker buildx imagetools inspect "$image@$digest" \
+    --format "{{json (index .SBOM \"$platform\")}}" | jq '.SPDX.packages | length') packages"
+done
 ```
 
-(`.SBOM` is the SPDX document BuildKit generated for the platform image; to
-see the provenance use `--format '{{json .Provenance}}'`.) Both are
+Expected: a non-zero package count for each platform. Running the same
+inspect on a per-architecture digest works too, but you still index by that
+digest's platform. For the provenance use `.Provenance` the same way. Both are
 attestation manifests stored in the registry next to the image, and the
 manifest list's signature covers them.
 

@@ -500,6 +500,16 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
+          for f in "/tmp/digest/${ARCH}" \
+                   "/tmp/digest-quickstart/server-${ARCH}" \
+                   "/tmp/digest-quickstart/fixtures-${ARCH}" \
+                   "/tmp/digest-quickstart/issuer-${ARCH}" \
+                   "/tmp/digest-quickstart/certs-init-${ARCH}"; do
+            if ! test -s "$f"; then
+              echo "::error::digest file ${f} is missing or empty; its push step did not record a digest"
+              exit 1
+            fi
+          done
           {
             echo "dist=$(cat "/tmp/digest/${ARCH}")"
             echo "server=$(cat "/tmp/digest-quickstart/server-${ARCH}")"
