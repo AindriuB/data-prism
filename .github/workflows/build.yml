@@ -32,7 +32,7 @@ jobs:
       # fail-closed tests, and the enforcer rule that keeps the classpath on a
       # single Jackson major. None of them are optional.
       - name: Build and test
-        run: mvn -B --no-transfer-progress verify
+        run: ./mvnw -B --no-transfer-progress verify
 
       # The release profile builds the javadoc jars, and a Javadoc error
       # (typically a {@link} left unresolvable by a package move) fails the
@@ -42,7 +42,7 @@ jobs:
       # depend on the JDK that runs the tests.
       - name: Javadoc (release profile, unsigned)
         if: matrix.java == '21'
-        run: mvn -B --no-transfer-progress -Prelease -DskipTests -Dgpg.skip package
+        run: ./mvnw -B --no-transfer-progress -Prelease -DskipTests -Dgpg.skip package
 
       - name: Publish test results
         if: always()

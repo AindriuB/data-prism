@@ -276,7 +276,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          reactor_version="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
           if [ "$VERSION" != "$reactor_version" ]; then
             echo "::error::dispatch version ${VERSION} does not match reactor version ${reactor_version}"
             exit 1
@@ -510,7 +510,7 @@ jobs:
       # the digests underneath it do not match.
       - name: Guard dispatch version matches reactor version
         run: |
-          reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          reactor_version="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
           if [ "$VERSION" != "$reactor_version" ]; then
             echo "::error::dispatch version ${VERSION} does not match reactor version ${reactor_version}"
             exit 1

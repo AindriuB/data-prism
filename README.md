@@ -200,10 +200,12 @@ package root `io.github.aindriub.dataprism`.
 ## Building and running
 
 Building needs JDK 21 or newer (the build compiles with `--release 21`, so a
-newer local JDK is fine; CI builds on 21 and 25) and Maven >= 3.6.3 (`pom.xml:296-298` enforces this).
+newer local JDK is fine; CI builds on 21 and 25) and Maven >= 3.6.3 (`pom.xml:296-298` enforces this) if you use your own `mvn`.
+The repository ships the Maven Wrapper, which downloads the pinned Maven 3.9.16
+(checksum-verified) on first use, so you need no local Maven install.
 
 ```bash
-mvn -B --no-transfer-progress verify
+./mvnw -B --no-transfer-progress verify     # Windows: mvnw.cmd -B --no-transfer-progress verify
 ```
 
 This is the same command CI runs (`.github/workflows/build.yml`). It builds all
