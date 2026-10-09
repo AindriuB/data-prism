@@ -22,6 +22,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * {@code embedded}: the one {@link PrivacyCluster} member, and everything built on it, so the
@@ -49,7 +50,9 @@ class ClusterBackedState {
             ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
                     Optional.ofNullable(h.getMember().getInterface()));
-            return PrivacyCluster.embedded(membership, h.isReidentificationEnabled());
+            return PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
+                    h.getApprovalMinimumMembers() == null ? OptionalInt.empty()
+                            : OptionalInt.of(h.getApprovalMinimumMembers()));
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
             throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
@@ -79,7 +82,8 @@ class ClusterBackedState {
         for (String name : beanFactory.getBeanNamesForType(PrivacyCluster.class, true, false)) {
             beanFactory.registerDependentBean(name, budgetBeanName);
         }
-        return new HazelcastScopeBudget(resolved);
+        return new HazelcastScopeBudget(resolved,
+                beanFactory.getBean(DataPrismProperties.class).getHazelcast().getLockTimeout());
     }
 
     @Bean @ConditionalOnMissingBean
@@ -88,12 +92,12 @@ class ClusterBackedState {
     }
 
     @Bean @ConditionalOnMissingBean
-    ApprovalStore dataPrismClusterApprovalStore(PrivacyCluster cluster) {
-        return new HazelcastApprovalStore(cluster);
+    ApprovalStore dataPrismClusterApprovalStore(PrivacyCluster cluster, DataPrismProperties properties) {
+        return new HazelcastApprovalStore(cluster, properties.getHazelcast().getLockTimeout());
     }
 
     @Bean @ConditionalOnMissingBean
-    CallerRateLimiter dataPrismClusterCallerRateLimiter(PrivacyCluster cluster) {
-        return new HazelcastCallerRateLimiter(cluster);
+    CallerRateLimiter dataPrismClusterCallerRateLimiter(PrivacyCluster cluster, DataPrismProperties properties) {
+        return new HazelcastCallerRateLimiter(cluster, properties.getHazelcast().getLockTimeout());
     }
 }

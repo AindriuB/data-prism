@@ -105,7 +105,8 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /**
      * As above, and when {@code approvalMinimumMembers} is present, writes to the approval map (create, approve,
-     * reject, consume) throw on a member that sees fewer members than that. Empty applies no such protection.
+     * reject, consume) throw on a member that sees fewer members than that. Empty, or 1, applies no such protection:
+     * any running member meets a minimum of 1.
      *
      * @throws IllegalArgumentException if the minimum is below 1
      */
@@ -187,7 +188,9 @@ public final class PrivacyCluster implements AutoCloseable {
         // After a heal an approval either side used stays used; the default keeps the larger side's copy.
         approval.setMergePolicyConfig(new MergePolicyConfig(ApprovalMergePolicy.class.getName(),
                 MergePolicyConfig.DEFAULT_BATCH_SIZE));
-        if (approvalMinimumMembers.isPresent()) {
+        // A minimum of 1 is met by any member that is running, so it needs no protection. Configuring it would
+        // only refuse approvals for the first seconds after start, until Hazelcast first evaluates the members.
+        if (approvalMinimumMembers.isPresent() && approvalMinimumMembers.getAsInt() > 1) {
             config.addSplitBrainProtectionConfig(new SplitBrainProtectionConfig(APPROVAL_PROTECTION, true,
                     approvalMinimumMembers.getAsInt()).setProtectOn(SplitBrainProtectionOn.WRITE));
             approval.setSplitBrainProtectionName(APPROVAL_PROTECTION);
