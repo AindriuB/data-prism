@@ -8,9 +8,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.LongSupplier;
 
 /**
  * Delivers logged audit events to {@link AuditEventListener}s on one daemon dispatcher thread behind a
@@ -20,7 +21,8 @@ import java.util.function.LongSupplier;
  * made after the authoritative write returned. A full queue drops the event for listeners only and counts
  * it; the count is logged, rate limited, as {@code AUDIT_LISTENER_DROPPED} (code and counts, never event
  * content). Order is the recorder's sequence order, because publication happens inside the recorder's
- * lock and one thread consumes. With no listeners no thread is started.
+ * lock and one thread consumes. A second daemon thread reports drops once per interval, so a hung
+ * listener cannot hide them. With no listeners no thread is started.
  *
  * <p>{@link #close()} drains what is queued for at most the drain timeout, then abandons the rest and
  * logs the count as dropped. A listener that ignores interruption can outlive the drain; the thread is a
@@ -35,13 +37,13 @@ public final class AuditEventListeners implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(AuditEventListeners.class);
     /** Queued after the last event so the dispatcher stops once it has delivered everything before it. */
+    static final String REPORTER_THREAD = "data-prism-audit-listeners-drops";
     private static final Object STOP = new Object();
 
     private final List<AuditEventListener> listeners;
     private final int capacity;
     private final Duration drainTimeout;
-    private final long dropLogIntervalNanos;
-    private final LongSupplier nanoTime;
+    private final ScheduledExecutorService reporter;
     private final Logger log;
     private final BlockingQueue<Object> queue;
     private final Thread thread;
@@ -50,35 +52,42 @@ public final class AuditEventListeners implements AutoCloseable {
     private final AtomicLong dropped = new AtomicLong();
     /** The value of {@link #dropped} already reported in a log line. Touched by the reporting threads only. */
     private final AtomicLong reported = new AtomicLong();
-    /** Dispatcher-thread state for the rate limit. */
-    private long lastReportNanos;
-    private boolean reportedOnce;
     private volatile boolean closed;
     private volatile boolean abandoned;
 
     public AuditEventListeners(List<AuditEventListener> listeners, int queueCapacity) {
-        this(listeners, queueCapacity, DEFAULT_DRAIN_TIMEOUT, DEFAULT_DROP_LOG_INTERVAL, System::nanoTime, LOG);
+        this(listeners, queueCapacity, DEFAULT_DRAIN_TIMEOUT, DEFAULT_DROP_LOG_INTERVAL, LOG);
     }
 
     AuditEventListeners(List<AuditEventListener> listeners, int queueCapacity, Duration drainTimeout,
-                        Duration dropLogInterval, LongSupplier nanoTime, Logger log) {
+                        Duration dropLogInterval, Logger log) {
         this.listeners = List.copyOf(Objects.requireNonNull(listeners, "listeners"));
         if (queueCapacity < 1) {
             throw new IllegalArgumentException("queueCapacity must be positive");
         }
         this.capacity = queueCapacity;
         this.drainTimeout = Objects.requireNonNull(drainTimeout, "drainTimeout");
-        this.dropLogIntervalNanos = dropLogInterval.toNanos();
-        this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         this.log = Objects.requireNonNull(log, "log");
         // One slot beyond the capacity is reserved for STOP, so close() never competes with events.
         this.queue = new ArrayBlockingQueue<>(queueCapacity + 1);
         if (this.listeners.isEmpty()) {
             this.thread = null;
+            this.reporter = null;
         } else {
             this.thread = new Thread(this::run, "data-prism-audit-listeners");
             this.thread.setDaemon(true);
             this.thread.start();
+            // Drops are reported from here, not from the recording thread and not from the dispatcher:
+            // a hung listener blocks the dispatcher, and a drop flood must still be visible. One tick per
+            // interval is the rate limit.
+            this.reporter = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, REPORTER_THREAD);
+                t.setDaemon(true);
+                return t;
+            });
+            long period = Math.max(1, dropLogInterval.toMillis());
+            this.reporter.scheduleWithFixedDelay(this::reportDrops, period, period,
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
         }
     }
 
@@ -109,19 +118,11 @@ public final class AuditEventListeners implements AutoCloseable {
         }
     }
 
-    /** Called from the dispatcher after each delivery, and from {@link #close()} for the remainder. */
-    private void reportDrops(boolean force) {
+    /** One report tick: logs the drops since the last tick, if any. Never called on the recording thread. */
+    synchronized void reportDrops() {
         long total = dropped.get();
         if (total == reported.get()) {
             return;
-        }
-        if (!force) {
-            long now = nanoTime.getAsLong();
-            if (reportedOnce && now - lastReportNanos < dropLogIntervalNanos) {
-                return;
-            }
-            reportedOnce = true;
-            lastReportNanos = now;
         }
         long since = total - reported.getAndSet(total);
         if (since > 0) {
@@ -139,7 +140,6 @@ public final class AuditEventListeners implements AutoCloseable {
                     return;
                 }
                 deliver((AuditEvent) next);
-                reportDrops(false);
             }
         } catch (InterruptedException e) {
             // close() abandons a dispatcher that outlived the drain timeout; the thread ends here.
@@ -202,6 +202,14 @@ public final class AuditEventListeners implements AutoCloseable {
         if (left > 0) {
             dropped.addAndGet(left);
         }
-        reportDrops(true);
+        if (reporter != null) {
+            reporter.shutdownNow();
+            try {
+                reporter.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        reportDrops();
     }
 }

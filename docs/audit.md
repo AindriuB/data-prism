@@ -660,7 +660,7 @@ minimal example.
   a listener. A slow listener delays the listeners after it, and when the queue
   (`dataprism.audit.listeners.queue-capacity`, default 1024) is full the event
   is dropped for listeners only. Drops are counted and logged as
-  `AUDIT_LISTENER_DROPPED`, at most one line per ten seconds, with counts and
+  `AUDIT_LISTENER_DROPPED`, at most one line per ten seconds from a separate reporter thread (so a hung listener cannot hide drops), with counts and
   no event content. Events are also lost if the process dies, and on shutdown
   the queue is drained for at most five seconds before the remainder is dropped
   and counted. The audit log is the complete record; reconcile against it by
