@@ -286,3 +286,20 @@ other than `ANSWERED` as "not answered".
 ### Review gate
 Not run by the implementer. The `reviewer` verdict on refusal isolation (architecture boundaries 1, 3 and 7,
 "fail closed") is still to be recorded here.
+
+### Review follow-up (after the tester and privacy review)
+- The final pass now validates one JSON array of the returned sources' trees in response order, with the
+  union prohibited and emitted sets, so a validator refusing a combination across sources refuses again
+  (`PerSourceValidationTest.crossSourceCombinationIsStillRefused`). Source names and aliases are still never
+  keys. `LlmResponseValidator`'s Javadoc states the two calls.
+- `dataprism.privacy.failclosed` also counts each source withheld from a call that succeeds (no new metric;
+  documented in `docs/tools.md`).
+- Added tests: a refused source's raw value stays prohibited in either source order; the byte-identity check
+  with `NO_DATA` also covers `structuredContent`.
+- Docs: the index card, `docs/tools.md` and `docs/audit.md` now say a mixed refusal reports the first
+  scrub code, then the first validation code.
+- FOLLOW-UP before the 0.7.0 release: re-capture the two single-source HTTP blocks in
+  `docs/agents/remote-http.md` and `docs/protect-your-own-api.md` against the Compose quickstart built from
+  source (`docker compose -f compose.yaml -f compose.build.yaml up --build`). Both are marked in the docs
+  as converted from an earlier 0.6 capture, not re-captured. Not attempted here: the from-source build needs
+  network image and dependency pulls.

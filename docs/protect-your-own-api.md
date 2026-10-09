@@ -406,6 +406,12 @@ has real name `Fixture Person One` and real email
 bare JSON — one `id:`/`event:`/`data:` frame, the JSON-RPC response inside
 `data:`:
 
+!!! note "Not re-captured for 0.7"
+    The response below was converted by script from an earlier 0.6 capture to the 0.7 shape
+    (each `sources` entry is now `{status, entity}`; there is no top-level `entity`). It was not
+    re-run against a live stack. Values are unchanged by the shape change, but re-capture it
+    before the 0.7.0 release.
+
 ```
 id: 903eface-c8a4-4845-9631-aaa8fea1dc5d
 event: message

@@ -96,6 +96,12 @@ fixture record `docs/quickstart.md` walks through by hand, captured the same
 way, values are stable for this quickstart's fixed fixture key but will
 differ against a real deployment's own data:
 
+!!! note "Not re-captured for 0.7"
+    The response below was converted by script from an earlier 0.6 capture to the 0.7 shape
+    (each `sources` entry is now `{status, entity}`; there is no top-level `entity`). It was not
+    re-run against a live stack. Values are unchanged by the shape change, but re-capture it
+    before the 0.7.0 release.
+
 ```json
 {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-KNSYWNZ9\",\"sources\":{\"ORGANISATION_IDENTITY-SH48CYDX\":{\"status\":\"ANSWERED\",\"entity\":{\"customerName\":\"Rowan Okafor (D1B5CR19)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}},\"findings\":[]}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-KNSYWNZ9","sources":{"ORGANISATION_IDENTITY-SH48CYDX":{"status":"ANSWERED","entity":{"customerName":"Rowan Okafor (D1B5CR19)","email":"[REDACTED]","status":"ACTIVE"}}},"findings":[]}}}
 ```
