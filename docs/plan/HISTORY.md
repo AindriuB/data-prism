@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Maven 3.10 release guards and Central plugin investigation (185, 186)
+
+Task 185 added a "Guard Maven is 3.9.x" step to both jobs of `publish-central.yml`, directly after `actions/setup-java`, which fails unless the first line of `./mvnw -v` matches `Apache Maven 3.9.N`. It also added a Dependabot ignore for `org.apache.maven:apache-maven` >= 3.10. Task 186 (investigation only) found no fixed plugin: `org.sonatype.central` is at 0.11.0 and the `io.github.mavenplugins` fork 1.3.1 has the same bug. The cause is a Maven 3.10.0 change in `LegacyLocalRepositoryManager.overlay`, which now writes `maven-metadata-local.xml`, `_remote.repositories` and `.locks/` instead of `maven-metadata-central-staging.xml`. Upstream: apache/maven #13388 (issue) and #13389 (PR against maven-3.10.x), mavenplugins #78 and #79.
+
+**Cost:** The Dependabot ignore may be only a safeguard, because Dependabot updates the wrapper only when its `maven_wrapper_updater` experiment is on, and that was not verifiable. Do not use `-DskipPublishing=true` to check a bundle: in 0.11.0 it filters out every artifact and builds none. Use `-DcentralBaseUrl=http://127.0.0.1:9`, which needs a `central` server entry, so run it in CI only. There is no public tracker for the Sonatype plugin; an issue text is drafted for the owner in the retired 186 task file. Keep the 3.9.16 pin until a fixed Maven or plugin passes that check.
+
 ## 2026-10-09 — 0.6.0 publication complete and repository housekeeping (187)
 
 The re-run of `publish-central` on the pinned wrapper validated on Central with 14 "Pre Bundling - deleted" lines, one per module. The owner published deployment `aca7186a`, and Central was live at about 12:20Z on 2026-10-09. The other channels had completed earlier or followed: the GHCR image at 08:39Z, the MCP registry at 11:55Z, and the GitHub Release published. The after-action report for 0.6.0 was presented to the owner in chat as a private Artifact and is not in the repository. The owner delegated D-184-A, B and C and they were decided: D-184-A (b), a release-path step that fails unless `./mvnw -v` reports 3.9.16 (task 185); D-184-B, a Dependabot ignore for `org.apache.maven:apache-maven` >= 3.10 (task 185); D-184-C, investigate only with no unpinning (task 186). Remote branches `task/55` and `task/67` were deleted and kept locally as tags `archive/task-55` and `archive/task-67`. The owner's main checkout was fast-forwarded to `87a2a720`.

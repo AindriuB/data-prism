@@ -497,7 +497,7 @@ Still open, owner-gated:
 
 ### 0.6.0 — package structure, API and style cleanup
 
-Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c3e2). Tasks 154 to 165, task files in `docs/plan/tasks/`. 0.6.0 is released; the table and notes below record the work, and 185 and 186 are the open follow-ups. The owner states there are no external users, so every change is a clean break with no deprecation cycle and no forwarding types, and the 0.6.0 CHANGELOG and migration page (162) say so. Every task branches from `origin/main` once the tasks in its Depends on line have merged.
+Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c3e2). Tasks 154 to 165, task files in `docs/plan/tasks/`. 0.6.0 is released; the table and notes below record the work. The follow-ups 185 and 186 are done. The owner states there are no external users, so every change is a clean break with no deprecation cycle and no forwarding types, and the 0.6.0 CHANGELOG and migration page (162) say so. Every task branches from `origin/main` once the tasks in its Depends on line have merged.
 
 | Wave | Task | What | Depends on |
 |---|---|---|---|
@@ -531,8 +531,8 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 12 | 182 | `AuditEventListeners.close()` on an interrupted thread drains within the timeout and joins the reporter; durations saturate | found in 180 review. **Done 2026-10-09** (D-180-1 b) |
 | 13 | 183 | Cut 0.6.0 locally: version, dated CHANGELOG, cut-time doc fixes | all of the above. **Done 2026-10-09** on `release/0.6.0-cut` (D-183-A to D all a) |
 | 14 | 184 | Pin Maven 3.9.16 with the Maven Wrapper; every workflow Maven call goes through `./mvnw` | unplanned, Central rejected the first bundle. **Done 2026-10-09** (PR #127, `87a2a720`) |
-| 15 | 185 | Guard the Central release path against Maven 3.10; Dependabot ignore for `apache-maven` >= 3.10 | 184. **Open** |
-| 15 | 186 | Investigate a newer central-publishing-maven-plugin under Maven 3.10 | 184. **Open** |
+| 15 | 185 | Guard the Central release path against Maven 3.10; Dependabot ignore for `apache-maven` >= 3.10 | 184. **Done** |
+| 15 | 186 | Investigate a newer central-publishing-maven-plugin under Maven 3.10 | 184. **Done** |
 
 Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169, 170) and 9 (161, 164) are parallel; 170 was added 2026-10-08 (D-166-1) and 158 waits for it because both edit `ConfiguredJsonSources`; 161 and 164 touch different files.
 
@@ -570,10 +570,10 @@ Follow-ups from 161 (not yet tasks): (i) `AuditSinkSelection` FactoryBean loop (
 
 **0.6.0 is complete and published (2026-10-09).** Tasks 154 to 183 are done, and so is the unplanned 184 (Maven Wrapper pin, PR #127, merge commit `87a2a720`). `v0.6.0` was moved to `87a2a720` (D-REL-1 a). It is live on Maven Central (deployment `aca7186a`), GHCR, the GitHub Release and the MCP registry. The after-action report was presented to the owner in chat and is not in the repository. Still open from the release:
 - Run the amd64 Docker smoke on CI or a Linux host.
-- Task 185 (open): Guard the Central release path against Maven 3.10 and stop Dependabot reintroducing it (D-184-A b, D-184-B).
-- Task 186 (open): Investigate whether a newer central-publishing-maven-plugin works under Maven 3.10 (D-184-C, investigate only; no unpinning).
+- Tasks 185 and 186 are done (2026-10-09, merged on `chore/post-0.6.0`). 185 added a Maven 3.9.x guard step to both `publish-central.yml` jobs and a Dependabot ignore for `org.apache.maven:apache-maven` >= 3.10. 186 found no fixed plugin and recommends keeping the 3.9.16 pin and the guards.
 - Owner action: dismiss the 36 stale Dependabot alerts on Pillow in the GitHub UI. `requirements.txt` pins 12.3.0 and every alert's vulnerable range is `< 12.3.0`.
-- Owner action: if task 186 finds no fix, file the upstream issue against central-publishing-maven-plugin.
+- Owner action: decide whether to send the Sonatype Central support issue drafted in `docs/plan/tasks/retired/186-investigate-central-plugin-maven-310.md` section 6.
+- Watch apache/maven #13389 (open, against maven-3.10.x) and Maven 3.10.1 before unpinning. Verify with `-DcentralBaseUrl=http://127.0.0.1:9` in CI (not `-DskipPublishing=true`, which builds no bundle in 0.11.0), then `unzip -l` the bundle: no `maven-metadata*.xml`, `_remote.repositories` or `.locks/`, and 14 "Pre Bundling - deleted" lines.
 
 Superseded context: PR #124 carried waves 7 to 11. PR #124 (`release/0.6.0-spring`) carries waves 7 to 11. Consolidated 0.6.0 follow-ups, none yet tasks:
 - DONE in 180: the dead `AuditSinkSelection` FactoryBean loop is gone (the AOT limitation of `isBuiltInSink` is now in its Javadoc, unsupported); the listener thread-count flake is fixed.
