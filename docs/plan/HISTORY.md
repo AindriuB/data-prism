@@ -17,6 +17,24 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 wave 11: CHANGELOG, migration page and architecture records (162)
+
+Task 162 merged onto `release/0.6.0-spring`. `CHANGELOG.md` `[Unreleased]` carries the Breaking, Added, Changed, Fixed and Build entries, and `docs/migration-0.6.md` lists every moved type (51 rows), removed constructor, refusal code, the YAML 1.2 changes and the logger renames, grouped by audience. `docs/architecture.md` records the new layout, D-0.6-1 to D-0.6-5 and the map-key decision; `docs/conventions.md` and the stale references were corrected. Full reactor 1708 tests, 0 failed.
+
+**Cost:** Seven planning claims were false and the implementer corrected them: string-field refusals apply only in boolean and numeric fields (in string fields the change is silent), the "could not be serialised" message pre-existed, the `extending.md` section moved to about line 426, "34 root types" was core only (git shows 50 renames plus 2 delete/add), `$JsonProjection` was a helper so bean counts went 50 to 53, 160's torn-checkpoint rule is narrow, and there are six YAML readers, not five. Review asked for changes (capitalised booleans, the `TransportProperties.Http` row, the constructor count). `mkdocs` is unavailable locally, so the CI docs-site job is the only check; count rows against `git diff -M`, not against hand-backs.
+
+## 2026-10-09 — 0.6.0 unplanned fix: bounded close() and json-directory Condition (178)
+
+Owner-relayed review findings on PR #124. `AuditEventListeners.close()` now writes its final drop report on a short-lived named daemon thread joined for at most 1 s, so a blocked appender cannot hang shutdown. The projection and its preflight read `dataprism.audit.json-directory` through the Binder-based `AuditSinkSelection.JsonDirectoryConfigured` condition instead of `@ConditionalOnExpression`.
+
+**Cost:** The SpEL string literal made a valid path with an apostrophe prevent startup, a regression introduced by 161. Do not interpolate configured values into expression strings. The new tests (hanging appender; apostrophe, spaces, `#{`, `${`, backslash paths) failed first. Tester PASS 1711/0, 10 repeat runs, inventory on JDK 25.
+
+## 2026-10-09 — 0.6.0 unplanned fix: canonical annotation rendering in the bean inventory (177)
+
+PR #124 CI failed on build (21) and (25) because `AutoConfiguredBeanInventoryTest` compared `Annotation.toString()`, whose attribute order differs between JDK vendors. The test now uses a canonical renderer (attributes sorted by name, deterministic values, recursive) and `bean-methods.txt` was regenerated.
+
+**Cost:** The regeneration was proven a pure format change for all 53 beans. It passes on Oracle JDK 21 and OpenJDK 25 and the mutation proof is retained. Snapshot tests must not depend on unspecified `toString` formats.
+
 ## 2026-10-09 — 0.6.0 wave 10: read-only AuditEventListener SPI (163)
 
 Task 163 merged onto `release/0.6.0-spring`. Applications can register `AuditEventListener` beans that receive a read-only `AuditEvent` after the configured audit sink accepted it. A single `AuditEventListeners` dispatcher (bean `dataPrismAuditEventListeners`, `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL`) delivers on one daemon thread behind a bounded queue (`dataprism.audit.listeners.queue-capacity`, default 1024), so a slow or hung listener cannot delay audit calls. Drops are reported content-free as `AUDIT_LISTENER_DROPPED`, failures as `AUDIT_LISTENER_FAILED` with the exception class name only. There are now 53 `@Bean` methods (the task said 56/57).

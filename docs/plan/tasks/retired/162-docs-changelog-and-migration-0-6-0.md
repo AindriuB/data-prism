@@ -62,3 +62,17 @@ The CHANGELOG and migration page list the two new refusal codes `AUDIT_JSON_PROJ
 - The 0.6.0 release cut: version bump, `server.json`, image tags, tagging and publishing. A separate task, filed when the owner calls the cut.
 - Rewriting historical CHANGELOG entries or anything under `docs/plan/`.
 - Any source change.
+
+## Outcome
+- `CHANGELOG.md` `[Unreleased]` now has Breaking, Added, Changed, Fixed and Build sections covering every item in Acceptance.
+- `docs/migration-0.6.md` is grouped by audience: a 51-row moved-type table, a removed-constructor table, the refusal codes with their triggers, the YAML 1.2 changes (including the silent change for `yes`/`no`/`on`/`off`/`True`/`FALSE` and `010` in string fields), records-only source models, and the logger renames.
+- `docs/architecture.md` has the new `core` and `audit` layout, D-0.6-1 to D-0.6-5 and the map-key decision. `docs/conventions.md` names `AuditSinkSelection`. Stale references were fixed in the files listed in Owns.
+- Verified: implementer full reactor 1708 tests, 0 failed on a8800b7f (later commits were docs only plus a clean merge of 80c9f00f). Review CHANGES (capitalised booleans missing from the string-field text; `TransportProperties.Http` row; constructor count; wording), fixed in a5de811d. Every FQCN, code sample and property name was grep-verified. `mkdocs` is not available locally, so the CI docs-site job on PR #124 is the check.
+- Seven planning claims the implementer found false:
+  1. YAML string-field refusals apply only in boolean and numeric fields; in string fields the change is silent.
+  2. The "response could not be serialised" message already existed.
+  3. The `docs/extending.md` section moved to about line 426.
+  4. "34 root types" counted core only; git shows 50 renames plus 2 delete/add.
+  5. `$JsonProjection` was a helper, not a configuration class; bean counts went 50 to 53.
+  6. 160's torn-checkpoint rule is narrow.
+  7. There are six YAML readers, not five.

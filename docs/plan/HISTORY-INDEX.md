@@ -20,6 +20,9 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 162 | 0.6.0 CHANGELOG, migration page (51 moved types, refusal codes, YAML 1.2), architecture D-0.6-1..5 and map-key decision; seven false planning claims recorded | ## 2026-10-09 — 0.6.0 wave 11: CHANGELOG, migration page and architecture records (162) |
+| 2026-10-09 | 178 | `AuditEventListeners.close()` bounded final report; json-directory read via Binder `SpringBootCondition`, not SpEL | ## 2026-10-09 — 0.6.0 unplanned fix: bounded close() and json-directory Condition (178) |
+| 2026-10-09 | 177 | Bean inventory test uses a canonical annotation renderer, not `Annotation.toString()` | ## 2026-10-09 — 0.6.0 unplanned fix: canonical annotation rendering in the bean inventory (177) |
 | 2026-10-09 | 163 | Read-only `AuditEventListener` SPI on one bounded async dispatcher (`PRIVACY_CRITICAL` bean, queue-capacity property); content-free drop and failure logging; bounded `close()`; 53 beans | ## 2026-10-09 — 0.6.0 wave 10: read-only AuditEventListener SPI (163) |
 | 2026-10-09 | 164 | Spring configuration metadata generated at build time (processor not a dependency); exact two-way test against docs/configuration.md with a self-checking gaps file | ## 2026-10-09 — 0.6.0 wave 9: Spring configuration metadata (164) |
 | 2026-10-09 | 161 | JSON audit projection is its own `PRIVACY_CRITICAL`/`COMPETING_BEAN_REFUSAL` bean; `TeeAuditSink` `Closeable`; refusals `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`; 52 beans | ## 2026-10-09 — 0.6.0 wave 9: JSON audit projection as its own classified bean (161) |
