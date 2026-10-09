@@ -46,6 +46,45 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 - `SecurityPolicy` holds only `allowedPurposes` and `roleCapabilities` (`SecurityPolicy.java:23`); there is no per-source authorisation.
 - `DataSourceAdapter` declares only `sourceName()`, `responseType()` and `fetch()` (`DataSourceAdapter.java:12-16`); there is no description or input-key declaration.
 
+
+### 0.7.0 state (updated 2026-10-09)
+
+Landed on `plan/0.7.0`: task 188 (supply chain) and task 189 (limits from configuration). Open: tasks 190-201.
+
+Owner decisions for 0.7 (2026-10-09):
+
+- D-070-1 (b): each `sources` entry becomes `{status, entity}`, `entity` only for `ANSWERED`; the top-level `entity` is removed. The one shape break before 1.0.
+- D-070-2 (b): a source whose scrub or validation refuses is marked `REFUSED` and omitted; the others are returned. If every answered source is refused, the whole call is refused as today.
+- D-070-3 (a): seven status codes (today's six plus `REFUSED`); clients treat an unknown code as an error.
+- D-070-4 (a): prefix `dataprism.limits`; keys `max-sources`, `max-records`, `max-response-size`, `per-source-timeout`, `max-concurrency`, `scope-read-budget`; defaults unchanged; positive only; `INVALID_REQUEST_LIMITS`; one `PRIVACY_CRITICAL` bean `dataPrismRequestLimits`.
+- D-070-5 (a): a record is a source's top-level record plus each object in an array; exceeding `max-records` refuses (truncation is 0.9).
+- D-070-6 (a): size is a conservative upper bound computed in the orchestrator before the audit event, no mapper; one `DENY:RESPONSE_TOO_LARGE`.
+- D-070-7 (a): the key-shape scan is always on under every profile, no SPI change.
+- D-070-8 (a): CycloneDX SBOMs, buildx SBOM and provenance, keyless cosign on every pushed digest, `attest-build-provenance` on release assets.
+- D-070-9 (a): PIT on core, pseudonymisation, validation and orchestration; weekly plus manual; report only.
+- D-070-10 (a): load driver is a Java client on the MCP Java SDK with HdrHistogram, standalone `load-test/` outside the reactor.
+- D-070-11 (a): baseline at 8, 32 and 100 sources (300 optional), three runs each, one named machine; internal in `docs/plan/perf/`, published from 0.9.
+- D-070-12 (a): design documents and the contract register are internal, under `docs/plan/design/`.
+- D-070-13 (a): the audit value for a refused source is `REFUSED:<code>` with the code sanitised. Record fields, hash-chain encoding and the `merged:<refused>` key are unchanged. 0.7 logs are not readable by a pre-0.7 verifier; old logs verify with the new one.
+
+### 0.7.0 release checklist additions (from task 188; CI-only paths, none exercised yet)
+
+1. After dispatching `publish-image.yml`, confirm `cosign verify` and `gh attestation verify` from `docs/verifying-releases.md` pass on the manifest list and one per-arch digest of every image.
+2. Confirm the manifest list assembled from the two per-arch indexes (which now carry attestation manifests) still lists amd64 and arm64, and that `imagetools inspect --format '{{json .SBOM}}'` returns an SBOM.
+3. Confirm the Central bundle lists `*-cyclonedx.json` with `.asc` files, and that `publish-central.yml`'s attest step finds `central-bundle.zip` after a real deploy.
+4. Confirm `gh attestation verify oci://ghcr.io/aindriub/<image>@<digest>` passes on both the manifest list and a per-arch digest (per-arch digests are now indexes).
+5. Confirm the GitHub Release shows the SBOM assets and `gh attestation verify` passes on them.
+
+### 0.7.0 follow-ups found in review
+
+- A raw `FactoryBean` (no generic type) with `allowEagerInit=false` escapes both the `RequestLimits` preflight and the `PrivacyPolicyResolver` guard (`Preflights.java:50-56`). Fix both together.
+- Existing Hazelcast defects confirmed by the review of task 192, to become fix tasks:
+  - approval consumption relies on `IMap.lock`, which is unsafe under split brain (`HazelcastApprovalStore.java:151-165`, `:193`);
+  - locks have no timeout (`HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`);
+  - Jet and phone-home are not forced off for a supplied `Config` or instance (`PrivacyCluster.java:83-102`, `:131-152` against `ClusterMembership.java:91`);
+  - Hazelcast is pinned to 5.7.0 while the docs list 5.7.2 (`pom.xml:74`).
+- Test environment: `SourceTreeJacksonParityTest` depended on whether `/tmp/x` existed; fixed on `plan/0.7.0`. Check other tests for reliance on scratch paths.
+
 ---
 
 ## Decided

@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Supply chain attestations and configurable request limits (188, 189)
+
+Release builds now attach a CycloneDX SBOM to each of the 14 modules deployed to Central and to the GitHub Release, push images with buildx SBOM and provenance, sign every pushed image digest keylessly with cosign, and attest jars, images and release assets; `docs/verifying-releases.md` tells a consumer how to check each. Separately, `dataprism.limits.*` binds all six request limits into one `PRIVACY_CRITICAL` bean used by both orchestrator wiring sites, with `INVALID_REQUEST_LIMITS` on bad values and refusal of an application-supplied `RequestLimits` bean.
+
+**Cost:** None of the signing and attestation steps run outside a real release, so they are unproven until 0.7.0; the five-item checklist is in `PLAN.md`. Task 188 needed two review rounds. For 189, `data-prism-connectors-rest` cannot see the bean without the autoconfigure module; a standalone copy of the defaults was the first answer, and review made it fail closed when any `dataprism.limits.*` key is set with no bean. The hard-coded bean count in `AutoConfiguredBeanInventoryTest` (53 to 55) will conflict with any other task adding a bean. A raw `FactoryBean` with `allowEagerInit=false` still escapes the preflight; it is a follow-up, not fixed.
+
 ## 2026-10-09 — Road to 1.0 agreed
 
 The roadmap from 0.7 to 1.0 is now recorded in `docs/plan/roadmap.md`, replacing the draft ideas file, with the owner decisions and design-time code facts in `PLAN.md`. 1.0 is defined as a privacy layer an operations team can run against hundreds of services, where an LLM agent discovers sources, follows sealed one-step links between them and compares per-source results, never seeing a real identifier. The plan is 0.7 (foundations and design), 0.8 (many-source core), 0.9 (release candidate, API freeze at 0.9.0) and 1.0 (stability promise, no new features).
