@@ -82,3 +82,12 @@ Maven 3.10 or later.
 - Docker `maven:` base-image ignores in the `docker` Dependabot entry.
 - Dispatching any workflow, pushing, tagging or publishing.
 - `docs/plan/PLAN.md`, `HISTORY.md`, `HISTORY-INDEX.md` (task 187 / scribe).
+
+## Outcome
+- `publish-central.yml`: new step "Guard Maven is 3.9.x" in `stage` and `publish`, directly after `actions/setup-java` (in `stage`, before the tag guard; in `publish`, before the tag guard). It captures `./mvnw -v` (`|| { ::error::; exit 1; }`, so a wrapper failure fails the step), takes the first line and requires `^Apache Maven 3\.9\.[0-9]+( |$)`. Each has a comment citing 3.10.0 + central-publishing-maven-plugin 0.11.0 and task 184 / D-184-A.
+- Local run of the extracted step body (`bash -e -o pipefail`, fake `mvnw`): `Apache Maven 3.9.16 (abc)` exit 0; `Apache Maven 3.10.0 (abc)` exit 1; `Apache Maven 3.9` exit 1; `garbage` exit 1; `mvnw` exiting 1 gives exit 1. Real `./mvnw -v` in the repo: exit 0.
+- `pom.xml` untouched; no other workflow changed.
+- `dependabot.yml`: `maven` entry gains `dependency-name: "org.apache.maven:apache-maven"`, `versions: [">= 3.10"]`, with a reason comment; the Spring Boot ignore is unchanged.
+- Dependency name confirmed in dependabot-core source: https://github.com/dependabot/dependabot-core/blob/main/maven/lib/dependabot/maven/file_parser/wrapper_mojo.rb (header comment: tracked coordinates `org.apache.maven:apache-maven` and `org.apache.maven.wrapper:maven-wrapper`; `name: Distributions::MAVEN_DISTRIBUTION_PACKAGE`, property `distributionUrl`). `maven/lib/dependabot/maven/file_parser.rb` (`wrapper_properties_files` selects files ending `maven-wrapper.properties`) and `file_fetcher.rb` (`WRAPPER_PROPERTIES_RELATIVE = ".mvn/wrapper/maven-wrapper.properties"`) show the `directory: "/"` entry covers it. Caveat: `add_wrapper_dependencies` returns early unless the `maven_wrapper_updater` experiment is enabled, so if that is off for this repo Dependabot does not touch the wrapper at all and the ignore is merely a harmless safeguard. I did not verify the flag's state on GitHub's hosted service.
+- YAML: PyYAML is not installed here, so the `python3 -c 'import yaml...'` check could not run; both files parse with Ruby `YAML.safe_load`. `actionlint` (installed) passes on `publish-central.yml`.
+- `CHANGELOG.md`: two lines added under Unreleased / Build; nothing at or after `## [0.6.0]` touched.

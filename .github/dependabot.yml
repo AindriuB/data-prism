@@ -13,6 +13,12 @@ updates:
       # A Boot major is a migration (task 139), not a bump.
       - dependency-name: "org.springframework.boot:*"
         update-types: ["version-update:semver-major"]
+      # Maven 3.10.0 with central-publishing-maven-plugin 0.11.0 makes Central
+      # reject the release bundle (task 184). This is the wrapper's
+      # distributionUrl dependency. Lifted only after D-184-C (task 186)
+      # shows a fix.
+      - dependency-name: "org.apache.maven:apache-maven"
+        versions: [">= 3.10"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

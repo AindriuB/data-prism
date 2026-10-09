@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Build
 
 - Pin the build to Maven 3.9.16 through the Maven Wrapper; CI and release workflows now call `./mvnw`. Maven 3.10.0 on the runner image broke the Central bundle.
+- The Central publish workflow now fails unless Maven is 3.9.x, in both the `stage` and `publish` jobs.
+- Dependabot no longer proposes moving the Maven Wrapper to Maven 3.10 or later.
 
 ## [0.6.0] - 2026-10-09
 
