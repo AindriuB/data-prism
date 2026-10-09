@@ -95,7 +95,8 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /**
      * As above, with the fewest members that must see each other for the approval map to accept a write.
-     * Empty uses {@link ClusterMembership#defaultApprovalMinimumMembers()}.
+     * Empty uses the default: a majority of the listed {@code tcp-ip} members, after expanding comma lists and
+     * last-octet ranges; one member for {@code none}.
      */
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers) {
