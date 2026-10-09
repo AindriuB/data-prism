@@ -627,12 +627,14 @@ class AuditEventListenerTest {
     }
 
     /** Runs on a helper thread: waits until {@code target} is in a timed wait, optionally interrupts it, opens the gate. */
-    private static Thread opensGateOnceWaiting(Thread target, Semaphore gate, boolean interruptFirst) {
+    private static Thread opensGateOnceWaiting(Thread target, Semaphore gate, boolean interruptFirst,
+                                               java.util.concurrent.atomic.AtomicBoolean sawTimedWait) {
         Thread helper = new Thread(() -> {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BOUND_SECONDS);
             while (target.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
                 Thread.yield();
             }
+            sawTimedWait.set(target.getState() == Thread.State.TIMED_WAITING);
             if (interruptFirst) {
                 target.interrupt();
             }
@@ -654,7 +656,8 @@ class AuditEventListenerTest {
             seen.add(e.sequence());
         }), 100, Duration.ofSeconds(BOUND_SECONDS), Duration.ofHours(1), lines.logger());
         Set<Thread> started2 = startedSince(before);
-        Thread helper = opensGateOnceWaiting(Thread.currentThread(), gate, !interruptBeforeClose);
+        java.util.concurrent.atomic.AtomicBoolean sawTimedWait = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread helper = opensGateOnceWaiting(Thread.currentThread(), gate, !interruptBeforeClose, sawTimedWait);
         try {
             AuditRecorder recorder = recorder(e -> { }, listeners);
             recorder.record(entry());
@@ -667,6 +670,8 @@ class AuditEventListenerTest {
             }
             helper.start();
             listeners.close();
+            // the helper saw close() in its timed join, and (mid-drain case) interrupted it there
+            assertThat(sawTimedWait).isTrue();
             assertThat(seen).hasSize(4).isSorted();
             assertThat(listeners.droppedCount()).isZero();
             assertThat(lines.warnings).isEmpty();
