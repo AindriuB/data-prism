@@ -56,6 +56,21 @@ em-dashes as CP1252 and the script will not parse.
 None of this is required to contribute. It is how the maintainers split work; a
 plain clone, an editor and Maven are enough.
 
+## Mutation testing
+
+PIT measures how many deliberate faults in the privacy modules the tests
+notice. It is off in a normal build and report only: it sets no threshold and
+never fails on a score. Run it on the four privacy modules with:
+
+```bash
+./mvnw -B -Pmutation verify -pl data-prism-core,data-prism-pseudonymisation,data-prism-validation,data-prism-orchestration -am
+```
+
+Each module writes an HTML and an XML report to `target/pit-reports/`. It takes
+several minutes per module and writes `target/`, so do not run it beside
+another build in the same worktree. The `mutation` workflow runs the same
+command weekly and on manual dispatch and uploads the reports as an artifact.
+
 ## Docs site
 
 `https://aindriub.github.io/data-prism/` is built with MkDocs Material from

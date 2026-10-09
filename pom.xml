@@ -89,6 +89,8 @@
     <gpg-plugin.version>3.2.8</gpg-plugin.version>
     <central-publishing-plugin.version>0.11.0</central-publishing-plugin.version>
     <cyclonedx-plugin.version>2.9.3</cyclonedx-plugin.version>
+    <pitest-plugin.version>1.30.0</pitest-plugin.version>
+    <pitest-junit5-plugin.version>1.2.3</pitest-junit5-plugin.version>
   </properties>
 
   <dependencyManagement>
@@ -243,6 +245,13 @@
           <artifactId>maven-dependency-plugin</artifactId>
           <version>3.11.0</version>
         </plugin>
+        <plugin>
+          <!-- Used only by the `mutation` profile; declared here so the version
+               is pinned in one place. Not bound in the default build. -->
+          <groupId>org.pitest</groupId>
+          <artifactId>pitest-maven</artifactId>
+          <version>${pitest-plugin.version}</version>
+        </plugin>
       </plugins>
     </pluginManagement>
     <plugins>
@@ -388,6 +397,47 @@
               <publishingServerId>central</publishingServerId>
               <autoPublish>false</autoPublish>
             </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <!-- Mutation testing, report only. Off in the default build; mutation.yml
+           and the command in CONTRIBUTING.md activate it with `-Pmutation`.
+           PIT writes an HTML and an XML report to target/pit-reports in each
+           module that has tests. No mutationThreshold or coverageThreshold is
+           set on purpose: this profile measures and never fails a build on a
+           score. (The build still fails if the unmutated tests are red.) -->
+      <id>mutation</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>${pitest-plugin.version}</version>
+            <dependencies>
+              <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>${pitest-junit5-plugin.version}</version>
+              </dependency>
+            </dependencies>
+            <configuration>
+              <outputFormats>
+                <outputFormat>HTML</outputFormat>
+                <outputFormat>XML</outputFormat>
+              </outputFormats>
+              <failWhenNoMutations>false</failWhenNoMutations>
+              <timestampedReports>false</timestampedReports>
+              <threads>4</threads>
+            </configuration>
+            <executions>
+              <execution>
+                <id>mutation-coverage</id>
+                <phase>verify</phase>
+                <goals><goal>mutationCoverage</goal></goals>
+              </execution>
+            </executions>
           </plugin>
         </plugins>
       </build>
