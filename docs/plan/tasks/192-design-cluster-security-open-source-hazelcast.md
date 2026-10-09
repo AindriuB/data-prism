@@ -102,7 +102,7 @@ Findings the owner should know before reading the design:
 Existing defects found while reading the code, proposed as **separate fix tasks** (not fixed here; they stand without the design):
 
 1. **Approval can be consumed twice under a split brain.** Exactly-once consumption relies on `IMap.lock`, an AP lock with no consensus: `HazelcastApprovalStore.java:151` (`consumeApproved`), `:193` (`decide`), `:59` and `:90` (`create`). Fix options include a compare-and-set on the stored status instead of, or as well as, the lock.
-2. **Locks have no timeout, so a held lock hangs a request thread.** `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`; `HazelcastScopeBudget.java:44`; `HazelcastCallerRateLimiter.java:32`. The budget's fail-closed `catch` (`:46-48`, `:56-58`) only handles thrown exceptions. Fix: `tryLock` with a bounded wait and a lease, failing closed on timeout.
+2. **Locks have no timeout, so a held lock hangs a request thread.** `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`; `HazelcastScopeBudget.java:44`; `HazelcastCallerRateLimiter.java:32`. The budget's fail-closed `catch` (`:45-47`, `:58-60`) only handles thrown exceptions. Fix: `tryLock` with a bounded wait and a lease, failing closed on timeout.
 3. **Jet and phone-home are not forced off for a supplied config or instance.** `PrivacyCluster.using` (`:92-102`) forces and checks neither; `PrivacyCluster.configure` (`:134-141`) forces phone-home but not Jet; `ClusterMembership.java:91-92` does both but only on the `toConfig` path.
 4. **Pinned Hazelcast is 5.7.0; the 5.7 documentation lists 5.7.2.** `pom.xml:74` (`hazelcast.version`). The open-source line gets no emergency CVE patches (editions page), so bump to the latest 5.7.x patch and re-run the cluster tests.
 
