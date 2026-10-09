@@ -38,6 +38,8 @@ public final class AuditEventListeners implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(AuditEventListeners.class);
     static final String REPORTER_THREAD = "data-prism-audit-listeners-drops";
+    /** How long {@link #close()} waits for the final drop report before abandoning it. */
+    private static final long FINAL_REPORT_WAIT_MILLIS = 1000;
     /** Queued after the last event so the dispatcher stops once it has delivered everything before it. */
     private static final Object STOP = new Object();
 
@@ -136,25 +138,35 @@ public final class AuditEventListeners implements AutoCloseable {
     }
 
     /**
-     * The report {@link #close()} makes. It must never hang: if an appender is stuck inside a periodic tick
-     * holding the lock, the final line is skipped (the count stays available from {@link #droppedCount()}).
+     * The report {@link #close()} makes. It must never hang, so it is not made on the closing thread: a
+     * short-lived daemon thread takes the lock (skipping the line if a periodic tick holds it) and logs,
+     * and {@code close()} waits a bounded time for it. An appender that blocks leaves that thread
+     * abandoned and the line unwritten; the count stays available from {@link #droppedCount()}.
      */
     private void reportDropsWithoutBlocking() {
         if (dropped.get() == reported.get()) {
             return;
         }
-        try {
-            if (!reportLock.tryLock(200, TimeUnit.MILLISECONDS)) {
+        Thread t = new Thread(() -> {
+            try {
+                if (!reportLock.tryLock(200, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            } catch (InterruptedException e) {
                 return;
             }
+            try {
+                logDrops();
+            } finally {
+                reportLock.unlock();
+            }
+        }, "data-prism-audit-listeners-final-report");
+        t.setDaemon(true);
+        t.start();
+        try {
+            t.join(FINAL_REPORT_WAIT_MILLIS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return;
-        }
-        try {
-            logDrops();
-        } finally {
-            reportLock.unlock();
         }
     }
 

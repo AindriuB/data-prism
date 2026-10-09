@@ -475,6 +475,47 @@ class AuditEventListenerTest {
     }
 
     @Test
+    void close_returns_even_if_an_appender_hangs_forever_on_the_final_report() throws Exception {
+        CountDownLatch inLogger = new CountDownLatch(1);
+        CountDownLatch releaseLogger = new CountDownLatch(1);
+        Lines lines = new Lines() {
+            @Override void onWarn(String line) {
+                inLogger.countDown();
+                while (true) { // ignores interruption: only the test's release ends it
+                    try {
+                        releaseLogger.await();
+                        return;
+                    } catch (InterruptedException e) {
+                        // keep hanging
+                    }
+                }
+            }
+        };
+        Semaphore gate = new Semaphore(0);
+        CountDownLatch started = new CountDownLatch(1);
+        // the report interval is an hour: only close() reports, so the hang is on the closing path
+        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
+            started.countDown();
+            gate.acquireUninterruptibly();
+        }), 1, Duration.ofMillis(50), Duration.ofHours(1), lines.logger());
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            AuditRecorder recorder = recorder(e -> { }, listeners);
+            recorder.record(entry());
+            awaitStarted(started);
+            recorder.record(entry());
+            recorder.record(entry()); // dropped
+            pool.submit(listeners::close).get(BOUND_SECONDS, TimeUnit.SECONDS);
+            assertThat(inLogger.await(BOUND_SECONDS, TimeUnit.SECONDS)).isTrue();
+            assertThat(listeners.droppedCount()).isEqualTo(2);
+        } finally {
+            releaseLogger.countDown();
+            gate.release(1000);
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     void a_listener_that_leaves_its_interrupt_flag_set_does_not_end_delivery() {
         List<Long> reinterrupting = Collections.synchronizedList(new ArrayList<>());
         List<Long> after = Collections.synchronizedList(new ArrayList<>());
