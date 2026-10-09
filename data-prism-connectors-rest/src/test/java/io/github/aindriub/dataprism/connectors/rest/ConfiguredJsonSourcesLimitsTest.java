@@ -15,6 +15,7 @@ import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.orchestration.SourceOutcome;
+import io.github.aindriub.dataprism.orchestration.SourceResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -100,6 +101,7 @@ class ConfiguredJsonSourcesLimitsTest {
             ContextResponse response = context.getBean(ContextOrchestrator.class)
                     .buildContext(ContextRequest.of("CUSTOMER", "CUST-1"), context(), caller());
             assertThat(response.sources().values())
+                    .extracting(SourceResult::status)
                     .containsExactlyInAnyOrder(SourceOutcome.Status.ANSWERED.name(),
                             SourceOutcome.Status.SKIPPED_OVER_LIMIT.name());
         });
