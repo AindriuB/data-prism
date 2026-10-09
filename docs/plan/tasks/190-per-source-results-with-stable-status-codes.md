@@ -17,8 +17,18 @@
   encoding and the `merged:<refused>` key are unchanged, so existing logs still
   verify (a test pins a log written before the change). Needs `AuditEvent`'s
   disposition check widened to accept `REFUSED:<code>`; see the Owns note below.
+- Coordinator decisions (within D-070-13): `AuditEvent.java` (data-prism-core) is in
+  Owns and `isValidAction` also accepts `REFUSED:` + `[A-Z][A-Z0-9_]{0,63}` only;
+  `REFUSED:<code>` is recorded uniformly for per-source refusals, including the
+  single-source all-refused case; `merged:<refused>` stays for the final
+  whole-response validation; no legacy `ContextResponse` constructors (tests that
+  built the old shape are updated); the scrub code wins for mixed refusals.
+  Compatibility: logs written by 0.7 contain `REFUSED:<code>`, which a pre-0.7
+  reader or verifier rejects; old logs still verify with the new reader.
 
 **Owns:**
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditEvent.java
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/CorrelationConfigurationTest.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/ContextResponse.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceOutcome.java
