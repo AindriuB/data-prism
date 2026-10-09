@@ -3,6 +3,7 @@ auditIntegrityHealthIndicator | org.springframework.boot.health.contributor.Heal
 callerExtractor | io.modelcontextprotocol.server.McpTransportContextExtractor<jakarta.servlet.http.HttpServletRequest>
 customerAdapter | io.github.aindriub.dataprism.core.spi.DataSourceAdapter<io.github.aindriub.dataprism.spring.boot.TestPayload>
 dataPrismApprovalStore | io.github.aindriub.dataprism.oversight.ApprovalStore
+dataPrismAuditEventListeners | io.github.aindriub.dataprism.audit.AuditEventListeners
 dataPrismAuditMaintenance | io.github.aindriub.dataprism.spring.boot.AuditMaintenance
 dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
 dataPrismAuthorizationService | io.github.aindriub.dataprism.security.AuthorizationService

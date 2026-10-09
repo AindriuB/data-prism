@@ -238,6 +238,39 @@ correct under parallel fan-out. A source without the key sends nothing, unless
 applies to every source without its own key, and each such source is one more
 party that can join the id.
 
+## React to audit events with `AuditEventListener`
+
+Declare a bean to receive every audit event after it has been written, for
+example to forward it to a log pipeline. Listeners are read-only and
+best-effort; read [Audit event listeners](audit.md#audit-event-listeners)
+first for when they are called, what they can lose, and who owns the
+destination.
+
+```java
+import io.github.aindriub.dataprism.audit.AuditEventListener;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+
+/** Your own client for wherever the events go; a placeholder so this example compiles. */
+interface SiemClient {
+    void send(long sequence, String eventId, String tool, String policyDecision);
+}
+
+@Configuration(proxyBeanMethods = false)
+class AuditForwarding {
+    @Bean @Order(1)
+    AuditEventListener auditForwarder(SiemClient siem) {
+        // Runs on the shared listener thread: return promptly, and log your own failures.
+        return event -> siem.send(event.sequence(), event.eventId(), event.tool(), event.policyDecision());
+    }
+}
+```
+
+Beans are called in `@Order`. A listener that throws is isolated and logged by
+class name only; one that blocks delays the listeners after it, not the audited
+call.
+
 ## Implement `IdentityResolver`
 
 `IdentityResolver` is how a subject's per-source keys relate to one canonical

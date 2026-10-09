@@ -91,7 +91,7 @@ class AutoConfiguredBeanInventoryTest {
             }
         }
         lines.sort(null);
-        assertThat(lines).as("number of @Bean methods").hasSize(52);
+        assertThat(lines).as("number of @Bean methods").hasSize(53);
         compareOrWrite("bean-methods.txt", lines);
     }
 

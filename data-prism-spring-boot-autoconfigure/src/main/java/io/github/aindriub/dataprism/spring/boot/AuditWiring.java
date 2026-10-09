@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
+import io.github.aindriub.dataprism.audit.AuditEventListener;
+import io.github.aindriub.dataprism.audit.AuditEventListeners;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.audit.checkpoint.FileAuditCheckpointSink;
@@ -8,6 +10,7 @@ import io.github.aindriub.dataprism.audit.retention.AuditRetention;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.spring.boot.validation.DataPrismPropertiesValidator;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -23,10 +26,29 @@ import java.time.Clock;
 class AuditWiring {
     @Bean @ConditionalOnMissingBean @ConditionalOnBean(AuditSink.class)
     AuditRecorder dataPrismAuditRecorder(AuditSink sink, Clock clock, DataPrismProperties properties,
-            ObjectProvider<AuditCheckpointSink> checkpoints) {
+            ObjectProvider<AuditCheckpointSink> checkpoints,
+            @Qualifier("dataPrismAuditEventListeners") AuditEventListeners listeners) {
         AuditCheckpointSink checkpoint = checkpoints.getIfAvailable();
-        return checkpoint == null ? new AuditRecorder(sink, clock, properties.getAudit().getWriterId())
-                : new AuditRecorder(sink, clock, properties.getAudit().getWriterId(), checkpoint);
+        return new AuditRecorder(sink, clock, properties.getAudit().getWriterId(), checkpoint, listeners);
+    }
+
+    /**
+     * Delivers each logged audit event to the application's {@link AuditEventListener} beans (in {@code
+     * @Order}), after the configured sink accepted it, on one daemon thread behind a bounded queue.
+     * Unconditional and not replaceable: an application adds listeners, it cannot swap the dispatcher
+     * (a same-named bean is refused as a bean-definition override; a second bean of the type is refused
+     * here), so a replacement cannot run listeners before the write or in the call. It starts no thread
+     * when there are no listeners. The context drains it on close, after the recorder.
+     */
+    @Bean(destroyMethod = "close")
+    AuditEventListeners dataPrismAuditEventListeners(ObjectProvider<AuditEventListener> listeners,
+            DataPrismProperties properties, ConfigurableListableBeanFactory beanFactory) {
+        if (beanFactory.getBeanNamesForType(AuditEventListeners.class, true, false).length > 1) {
+            throw new DataPrismConfigurationException("AUDIT_EVENT_LISTENERS_NOT_REPLACEABLE",
+                    "the audit event listener dispatcher is built in; add AuditEventListener beans instead");
+        }
+        return new AuditEventListeners(listeners.orderedStream().toList(),
+                properties.getAudit().getListeners().getQueueCapacity());
     }
 
     private static final org.slf4j.Logger AUDIT_LOG = org.slf4j.LoggerFactory.getLogger(DataPrismAutoConfiguration.class);

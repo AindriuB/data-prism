@@ -316,6 +316,17 @@ still echoes the `entityType` that was sent.
   `ACC123` passes the shape and is recorded. Set `entity-types` to the exact
   types in use to close that gap.
 
+#### Audit event listeners
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.audit.listeners.queue-capacity` | `1024` | How many audit events may wait for the listener thread. When the queue is full, further events are dropped for listeners only and logged as `AUDIT_LISTENER_DROPPED`; the audit log is unaffected. Used only when an `AuditEventListener` bean exists. See [audit.md](audit.md#audit-event-listeners). |
+
+Refusal code, at startup:
+
+- `INVALID_AUDIT_LISTENER_QUEUE_CAPACITY` -- `listeners.queue-capacity` is zero or negative.
+- `AUDIT_EVENT_LISTENERS_NOT_REPLACEABLE` -- an application declares a second dispatcher bean (`AuditEventListeners`). Add `AuditEventListener` beans instead.
+
 #### Segmented files, checkpoints and retention
 
 | Property | Default | Meaning |

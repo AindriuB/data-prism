@@ -451,6 +451,9 @@ public final class DataPrismPropertiesValidator {
                 || audit.getCheckpoint().getInterval().isNegative()) {
             refuse("INVALID_AUDIT_CHECKPOINT_INTERVAL", "dataprism.audit.checkpoint.interval must be positive");
         }
+        if (audit.getListeners().getQueueCapacity() < 1) {
+            refuse("INVALID_AUDIT_LISTENER_QUEUE_CAPACITY", "dataprism.audit.listeners.queue-capacity must be positive");
+        }
         if (audit.getRetention() == null) {
             refuse("AUDIT_RETENTION_BELOW_MINIMUM", "dataprism.audit.retention must be set");
         }

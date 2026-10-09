@@ -3,6 +3,7 @@ callerExtractor | io.modelcontextprotocol.server.McpTransportContextExtractor<ja
 customerAdapter | io.github.aindriub.dataprism.core.spi.DataSourceAdapter<io.github.aindriub.dataprism.spring.boot.TestPayload>
 dataPrismApprovalStore | io.github.aindriub.dataprism.oversight.ApprovalStore
 dataPrismAuditCheckpointSink | io.github.aindriub.dataprism.audit.checkpoint.FileAuditCheckpointSink
+dataPrismAuditEventListeners | io.github.aindriub.dataprism.audit.AuditEventListeners
 dataPrismAuditMaintenance | io.github.aindriub.dataprism.spring.boot.AuditMaintenance
 dataPrismAuditRecorder | io.github.aindriub.dataprism.audit.AuditRecorder
 dataPrismAuditRetention | io.github.aindriub.dataprism.audit.retention.AuditRetention
