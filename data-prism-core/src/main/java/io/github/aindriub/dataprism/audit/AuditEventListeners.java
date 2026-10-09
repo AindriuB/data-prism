@@ -243,32 +243,35 @@ public final class AuditEventListeners implements AutoCloseable {
         queue.offer(STOP); // the reserved slot; cannot fail unless publish raced past the closed check
         // Interrupts never shorten a wait: each is recorded, the wait continues, and the flag is restored last.
         boolean interrupted = false;
-        interrupted |= joinUntilDeadline(thread, drainTimeout.toNanos());
-        if (thread.isAlive()) {
-            abandoned = true;
-            thread.interrupt();
-            interrupted |= joinUntilDeadline(thread, TimeUnit.MILLISECONDS.toNanos(1000));
-        }
-        long left = 0;
-        for (Object o : queue) {
-            if (o != STOP) {
-                left++;
+        try {
+            interrupted |= joinUntilDeadline(thread, drainTimeout.toNanos());
+            if (thread.isAlive()) {
+                abandoned = true;
+                thread.interrupt();
+                interrupted |= joinUntilDeadline(thread, TimeUnit.MILLISECONDS.toNanos(1000));
             }
-        }
-        queue.clear();
-        if (left > 0) {
-            dropped.addAndGet(left);
-        }
-        if (reporter != null) {
-            reporter.shutdownNow();
-            Thread rt = reporterThread;
-            // joined like the dispatcher, so no reporter thread outlives close() unless an appender hangs
-            if (rt != null) {
-                interrupted |= joinUntilDeadline(rt, TimeUnit.MILLISECONDS.toNanos(1000));
+            long left = 0;
+            for (Object o : queue) {
+                if (o != STOP) {
+                    left++;
+                }
             }
-        }
-        if (interrupted) {
-            Thread.currentThread().interrupt();
+            queue.clear();
+            if (left > 0) {
+                dropped.addAndGet(left);
+            }
+            if (reporter != null) {
+                reporter.shutdownNow();
+                Thread rt = reporterThread;
+                // joined like the dispatcher, so no reporter thread outlives close() unless an appender hangs
+                if (rt != null) {
+                    interrupted |= joinUntilDeadline(rt, TimeUnit.MILLISECONDS.toNanos(1000));
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
         reportDropsWithoutBlocking();
     }
