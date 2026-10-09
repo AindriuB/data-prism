@@ -84,7 +84,7 @@ Written 2026-10-09 on `task/192-cluster-design`. The design is
 Acceptance:
 
 - [x] The file exists and contains every numbered item as a heading (1 Inventory, 2 Options, 3 Recommendation, 4 Proposed configuration/codes/signals/mixed versions, 5 Soak and test obligations, 6 Boundaries and open decisions).
-- [x] Closing table is section 4.9 (39 names: 15 keys, 14 codes, 8 metrics, 1 audit event, 1 health contributor). Collision check, run from the worktree root:
+- [x] Closing table is section 4.9 (51 names after revision 2: 22 keys, 14 codes, 13 metrics, 1 audit event, 1 health contributor). Collision check, run from the worktree root:
   - Names extracted from the 4.9 table and each searched with `grep -rIn -F -- <name> docs/configuration.md docs/multiple-instances.md docs/tools.md data-prism-core data-prism-hazelcast data-prism-server data-prism-spring-boot-autoconfigure data-prism-mcp data-prism-security`.
   - Result: no hits for any key, code, metric or audit event. The only hit was the first draft's health name `cluster` (a common word that appears in unrelated prose), renamed `clusterSecurity`, matching the camelCase of the existing `auditIntegrity` contributor.
   - The build must repeat the search before adding anything: other 0.8 work adds codes.
@@ -99,8 +99,11 @@ Findings the owner should know before reading the design:
 - Approval forging, identity poisoning and re-identification index disclosure are closed by sealing. Re-identification index entries lost to deletion are lost for good.
 - Deserialisation of Java classes over the member protocol is a code-execution surface that no other option addresses. The OSS `java-serialization-filter` is proposed.
 
-Items for the owner/maintainer, not fixed here:
+Existing defects found while reading the code, proposed as **separate fix tasks** (not fixed here; they stand without the design):
 
-- `pom.xml` pins `hazelcast.version` 5.7.0; the 5.7 documentation lists 5.7.2 as current. The editions page lists "Emergency patches (CVEs)" as Enterprise only, so staying current on 5.7.x matters for the open-source line.
-- `HazelcastApprovalStore` and the rate limiter rely on `IMap.lock`, an AP lock, for exactly-once consumption. Under a network partition (split brain) both sides may consume the same approval. The design's soak (5.2) tests it; whether it needs its own task is for the owner. Also `IMap.lock` has no timeout today, so a held lock hangs a request thread. The design replaces it with `tryLock` and a lease (4.1 `lock-timeout`).
-- `PrivacyCluster.embedded(Config)` and `using(instance)` do not force Jet off for a supplied config; only `ClusterMembership.toConfig` does.
+1. **Approval can be consumed twice under a split brain.** Exactly-once consumption relies on `IMap.lock`, an AP lock with no consensus: `HazelcastApprovalStore.java:151` (`consumeApproved`), `:193` (`decide`), `:59` and `:90` (`create`). Fix options include a compare-and-set on the stored status instead of, or as well as, the lock.
+2. **Locks have no timeout, so a held lock hangs a request thread.** `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`; `HazelcastScopeBudget.java:44`; `HazelcastCallerRateLimiter.java:32`. The budget's fail-closed `catch` (`:46-48`, `:56-58`) only handles thrown exceptions. Fix: `tryLock` with a bounded wait and a lease, failing closed on timeout.
+3. **Jet and phone-home are not forced off for a supplied config or instance.** `PrivacyCluster.using` (`:92-102`) forces and checks neither; `PrivacyCluster.configure` (`:134-141`) forces phone-home but not Jet; `ClusterMembership.java:91-92` does both but only on the `toConfig` path.
+4. **Pinned Hazelcast is 5.7.0; the 5.7 documentation lists 5.7.2.** `pom.xml:74` (`hazelcast.version`). The open-source line gets no emergency CVE patches (editions page), so bump to the latest 5.7.x patch and re-run the cluster tests.
+
+Revision 2 (after review): rotation (4.6) is now a phased procedure with a separate name key; the pause document is compare-and-set with merge and rewrite rules; the 1.0 claim is OD-13; per-map subkeys are consistent between 2.3.1 and 6.1; 1.7 and 4.5 corrected against the code. Open decisions are OD-1 to OD-16. The reviewer verdict is still to be recorded in the review-gate item above.

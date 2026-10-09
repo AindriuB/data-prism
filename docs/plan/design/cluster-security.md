@@ -13,7 +13,7 @@ says "recommended" it means the author's recommendation, not a decision.
 Fixed inputs (not reopened here):
 
 - **D-0.4.1-A:** no Hazelcast Enterprise.
-- **D-RM-1:** 1.0 supports multiple instances, secured, on open-source Hazelcast.
+- **D-RM-1**, as `PLAN.md` records it: "1.0 supports multiple instances; cluster security designed in 0.7, built in 0.8." The decision does not say what "secured" means. The agreed roadmap (`roadmap.md`, "What 1.0 means") says "Multiple instances supported and secured on open-source Hazelcast (no Enterprise features)"; what that wording may claim is left to the owner in OD-13, and this document does not assume an answer.
 - Sealed links are stateless and never stored in Hazelcast (task 191). This
   design does not depend on them (section 4.7 says how link keys reach every
   member).
@@ -181,11 +181,11 @@ the requester principal. These lock keys are visible to the same attacker.
 
 ### 1.7 Not in the maps, but reachable by the same actor
 
-- **Locks.** `IMap.lock` entries on the keys above. Held forever by an attacker, they hang `HazelcastCallerRateLimiter.tryAcquire` and approval operations on a request thread (no timeout today) and make `HazelcastScopeBudget` fail closed.
+- **Locks.** `IMap.lock` entries on the keys above. Held forever by an attacker, they hang the calling request thread, because every call is `lock` with no timeout: `HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`. `HazelcastScopeBudget`'s fail-closed `catch` (`:46-48`, `:56-58`) only runs when Hazelcast throws; a blocked `lock` never throws, so it hangs rather than refuses. That is a thread-exhaustion route to denial of service, not a fail-closed path.
 - **Partitions.** A joined member is given partitions. If an attacker holds an owner and its backup of an entry, it controls that entry's availability.
 - **Cluster administration.** A joined member or client can attempt cluster-state change, member shutdown and other administrative operations. Not confirmed per operation for 5.7.0 OSS. **To verify in the 0.8 spike**, and treat as an availability risk regardless.
 - **Deserialisation.** The member protocol carries Java-serialised objects. Without a filter, a class on the member classpath that is exploitable on deserialisation is reachable by A2. This is a code-execution risk, not a data risk, and neither sealing nor isolation-by-attestation addresses it. See 2.3 and 4.5.
-- **Jet and user-code deployment.** `ClusterMembership.toConfig` disables Jet. `PrivacyCluster.embedded(Config)` and `using(instance)` do not force that for a supplied config.
+- **Jet, phone-home and user-code deployment.** Only `ClusterMembership.toConfig` (`ClusterMembership.java:91-92`) disables Jet and phone-home. `PrivacyCluster.configure` (the `embedded(Config)` path, `:134-141`) forces phone-home off but not Jet. `PrivacyCluster.using` (`:92-102`) forces neither and checks neither. Section 4.5 says what the design enforces on each path.
 
 ### 1.8 What an attacker gains, by category
 
@@ -302,14 +302,14 @@ serves both.
 
 - **Envelope** (a `String`, so no serialiser has to agree across members, the property `ScopeKeys` already protects): `dps1.<key id>.<salt>.<ciphertext+tag>`, URL-safe base64. `dps1` is the format version.
 - **Algorithm:** AES-256-GCM.
-- **Nonce uniqueness is by construction, not by luck.** A random 96-bit nonce under one long-lived key is limited to about 2^32 encryptions, and `budget` rewrites an entry on every counted read. Recommended: each process draws a random 128-bit **salt** at start, derives a per-process subkey `HKDF(clusterKey, salt, "dp/cluster/v1/aead")`, and uses a 96-bit counter as the nonce. The salt is in the envelope, so a reader derives the same subkey (cached, bounded, LRU). No nonce is ever reused under a subkey. The cost is one HKDF per distinct salt on the read side; an attacker spraying salts burns CPU, so the salt cache is bounded and failed authentications are rate-bounded and counted (section 4.4).
+- **Nonce uniqueness is by construction, not by luck.** A random 96-bit nonce under one long-lived key is limited to about 2^32 encryptions, and `budget` rewrites an entry on every counted read. Recommended: each process draws a random 128-bit **salt** at start and derives, per map, a subkey `HKDF(clusterKey, salt, info = "dp/cluster/v1/aead/" + mapName)`; it uses a 96-bit counter as the nonce under each subkey. The salt is in the envelope, so a reader derives the same subkey for the map it is reading (cached, bounded, LRU, keyed by salt and map). No nonce is ever reused under a subkey, and a ciphertext from one map is not decryptable as another map's even before the associated data is checked. The cost is one HKDF per distinct (salt, map) on the read side; an attacker spraying salts burns CPU, so the salt cache is bounded and failed authentications are rate-bounded and counted (section 4.4).
 - **Associated data** binds: format version, key id, map name, the (opaque) map key, and for entries with a lifetime, the `expiresAt`. A ciphertext copied to another key, another map, or with an extended lifetime fails to authenticate. The reader also enforces `expiresAt` itself and does not rely on the cluster TTL.
 - **Plaintext carries the canonical key parts** (scope, namespace, subject, principal and so on) so a holder of the key can decompose any entry. This keeps the boundary 6 test (`HazelcastStoredValueBoundaryTest`) able to recompute state from stored data, and lets scope clean-up scan values where keys are opaque.
 - **Failure behaviour.** A value that fails authentication is a **miss with a tamper signal**, never an exception that escapes and never a pass-through. Per structure: `identity` recomputes (the property boundary 6 already guarantees); `reidentification` returns empty; `budget` refuses the read (fail closed); `approval` reports not found; `callerrate` treats the window as unknown and refuses (fail closed); `oversight` per 2.3.3.
 
 #### 2.3.2 Keyed pseudonymous map keys
 
-- Key = `HMAC-SHA256(keymacSubkey(map), canonical key)`, URL-safe base64, so subject ids, principals, approval ids and pseudonyms no longer appear in any key.
+- Key = `HMAC-SHA256(nameSubkey(map), canonical key)`, URL-safe base64, so subject ids, principals, approval ids and pseudonyms no longer appear in any key. `nameSubkey` comes from a **name key** that is a separate secret from the cluster key and is **not rotated in the rolling procedure** (4.6). The reason is that an HMAC'd map key or lock key that changed with the encryption key would give two members different keys for the same entry during a rotation, so each would miss the other's entries and take different locks for the same logical lock.
 - **Scope prefix is kept as a token.** Scope end currently depends on `startsWith(scopePrefix)` (`ScopeIdentityIndex.endScope`, `HazelcastScopeBudget.forget`, `HazelcastApprovalStore.keysOf`). The new key is `scopeToken.keyedPart`, where `scopeToken = HMAC(subkey, scope id)` truncated to 128 bits. Prefix scans continue to work; the scope id itself is hidden.
 - **Approvals are found by approval id alone** (`locate` ignores scope today). The approval key is therefore `HMAC(approvalId)` with no scope token; scope end decrypts the (small, short-lived) approval map to find its entries.
 - **Lock keys are keyed too** (the bare approval id, the `\0requester\0...` key). Otherwise they leak principals and are guessable.
@@ -320,14 +320,18 @@ serves both.
 Sealing a `Boolean` does nothing for the dangerous attack, which is a **delete**.
 Recommended design (OD-3):
 
-- Pause state is **one sealed document**: the full set of pauses, a monotonically increasing **sequence number**, an **issued-at** time, and the issuing member. Pause and resume write a new document with the next sequence.
-- Each instance keeps the highest sequence it has accepted in memory and **never accepts a lower one**. A deleted entry cannot un-pause an instance that has already seen the pause. A replayed older document is rejected by every instance that saw a newer one.
-- The document has a **lease**. Any member refreshes it (re-seals the same content with a new issued-at) when it is half-spent. An instance treats a document that is **absent, unauthentic or older than the lease (plus a clock-skew tolerance) as "everything paused"**, and refuses to serve. A delete therefore becomes a denial of service, which is the safe direction, and it is visible (`pause.state` metric).
-- First start of a cluster: a member that finds no document and no other member writes the first one. A member that finds no document while other verified members exist stays not-ready until one appears or it is the only member.
+- Pause state is **one sealed document** under a fixed, keyed name: the full set of pauses, a **sequence** number, a **refresh** counter, an **issued-at** time and the issuing member. Pause and resume write a new document with `sequence + 1` and `refresh = 0`. A lease refresh re-seals the same pauses with `refresh + 1`. Documents are ordered by (sequence, refresh), compared lexicographically.
+- **Writes are compare-and-set.** Every write is `IMap.replace(name, oldSealedValue, newSealedValue)` (replace-if-equal on the exact sealed string the writer read), or `putIfAbsent` when it believes the document is absent. A lost race is re-read and retried, never overwritten, so two members cannot silently clobber each other's pause or resume. Each instance keeps the highest (sequence, refresh) it has accepted in memory and **never accepts a lower one**. A deleted entry cannot un-pause an instance that has already seen the pause. A replayed older document is rejected by every instance that saw a newer one.
+- **Equal (sequence, refresh) with different content** can only come from a split-brain merge or from a key holder behaving badly. The rule is fail closed: the instance adopts the **union** of the two pause sets, counts `pause.conflict`, and writes the union with `sequence + 1` by compare-and-set. This is the safe direction for a pause; the cost is that a resume made on one side of a partition can be undone by the merge, and the operator has to resume again (OD-14).
+- **Split-brain merge.** The map's Hazelcast merge policy cannot merge sealed payloads. The application reconciles after a merge: each instance's in-memory highest document is compared with the cluster document, and if the instance holds a pause the cluster document lacks, it writes the union (as above). "Highest sequence wins" is the alternative and is unsafe, because a pause issued on the smaller side is dropped (OD-14).
+- The document has a **lease**. Any member refreshes it (`refresh + 1`) when half of it is spent. Freshness is measured from the instance's **local monotonic receipt time**: an instance records `System.nanoTime()` when it accepts a document with a higher (sequence, refresh) than it held, and treats the document as fresh for one lease from then. The wall clock is used only to gate a **cold start**: an instance with no memory rejects a document whose `issued-at` is older than the lease plus `clock-skew-tolerance`, so a replayed old document is not accepted as fresh on a restart; after that first acceptance the wall clock is not consulted, so skew between members cannot make a healthy document look stale. An instance treats a document that is **absent, unauthentic or not fresh as "everything paused"**, and refuses to serve. A delete therefore becomes a denial of service, which is the safe direction, and it is visible (`dataprism.cluster.pause.fresh`).
+- **Missing document.** Whether a member re-writes a document it finds absent from its own memory is OD-15. Proposed: a member may do so only with `putIfAbsent`, only from a document it accepted within the last lease, and only if no verified member reports a higher sequence. Without that rule a member that missed a pause (partitioned) could re-write an older state and lift a pause that others hold.
+- First start of a cluster: a member that finds no document and no other member writes the first one by `putIfAbsent`. A member that finds no document while other verified members exist stays not-ready until one appears, or the OD-15 rule restores it, or it is the only member.
 
-Residual, stated plainly: a captured pre-pause document replayed to an instance
-that has not yet seen the pause (a fresh start) lifts the pause for at most the
-lease. The default lease is the knob that sets that window.
+Residual, stated plainly: a captured pre-pause document, replayed to an instance
+that has not yet seen the pause (a fresh start) and not older than the cold-start
+gate, lifts the pause for at most the lease. The default lease is the knob that
+sets that window.
 
 #### 2.3.4 Approvals and replay
 
@@ -383,7 +387,7 @@ Honest statement first: **OSS Hazelcast 5.7.0 has no member authentication and
 no inbound allowlist.** What remains is weak and is not a control against A2.
 
 - **(d1) A high-entropy cluster name used as a join secret.** It stops *blind* joiners (a scanner, an accidental peer) and nothing else: it is sent in the clear at join (A1 reads it), it appears in Hazelcast log lines (which operators ship and paste), and a client needs only it to connect. Treating it as a secret would require suppressing Hazelcast's own logging of it. Value: stops A3 and blind A2. Recommended at most as hygiene: reject guessable names. It must **not** be described as authentication.
-- **(d2) Verified-member detection at the application level.** After join, every member that holds the cluster key registers a sealed *member card* (its member UUID, key id, format version, a lease). A joined member with no valid card after a grace period is **unverified**. Data Prism can raise a health failure, a metric and an audit event, and (configurable) refuse to serve. It **cannot evict** the member (no supported OSS API), so it is *detection and fail-closed*, not prevention. An attacker's member keeps receiving ciphertext and can still delete, hold locks and deny service; the operator learns of it within the grace period. This also makes a mismatched key (A3) visible at runtime.
+- **(d2) Verified-member detection at the application level.** After join, every member that holds the cluster key registers a sealed *member card* (its member UUID, the cluster key ids it accepts, format version, a lease). The cards are also what the rotation procedure in 4.6 uses to decide which key is safe to write. A joined member with no valid card after a grace period is **unverified**. Data Prism can raise a health failure, a metric and an audit event, and (configurable) refuse to serve. It **cannot evict** the member (no supported OSS API), so it is *detection and fail-closed*, not prevention. An attacker's member keeps receiving ciphertext and can still delete, hold locks and deny service; the operator learns of it within the grace period. This also makes a mismatched key (A3) visible at runtime.
 - **(d3) Static `tcp-ip` member lists, `required-member`, Kubernetes API-mode discovery.** These steer *outbound discovery* and say nothing about who may connect inward. Not controls.
 - **(d4) `network/interfaces`.** Local bind selection (see 0.4). Part of option (a), not an allowlist.
 
@@ -427,7 +431,7 @@ fail closed on what we cannot trust, and be exact about what remains.
 
 Reasoning:
 
-1. **It is the only choice where Data Prism enforces and can verify something.** (a) and (b) are attestations. D-0.4.1-E showed that a platform can contradict an operator's belief about isolation. A claim of "secured" that rests only on an unverifiable claim is the weakest form of rule 2 (fail closed).
+1. **It is the only choice where Data Prism enforces and can verify something.** (a) and (b) are attestations. D-0.4.1-E showed that a platform can contradict an operator's belief about isolation. A claim of security that rests only on an unverifiable claim is the weakest form of rule 2 (fail closed).
 2. **It closes the most harmful attacks on the list in 0.3** (1, 3, 4, 6, and the confidentiality half of 2 and 5) and converts the pause delete (2) into a safe-direction denial of service. Those are the attacks that make the product's guarantees false, not merely degraded.
 3. **It is honest about the rest.** Deletion, replay and availability are listed (2.3.7), bounded where a bound exists (2.3.3, 2.3.4, 2.3.5), and left to the deployer's transport layer where none does. (b) is the only thing that addresses them at source, which is why it is recommended alongside rather than replaced.
 4. **It stays inside D-0.4.1-A.** Nothing Enterprise. No dependency added. Algorithms are JDK standard (AES-GCM, HMAC-SHA256); the one hand-written piece is HKDF over `Mac`, validated against the RFC vectors.
@@ -441,8 +445,8 @@ Costs to weigh against it, and what the owner is buying:
 
 If the owner prefers less build, E1 plus the serialisation filter is the smallest
 honest position, and the documentation must then say plainly that multi-instance
-is as secure as the network around it. That does not match the roadmap's
-"secured" wording for 1.0; see OD-1.
+is as secure as the network around it. Whether that is compatible with the
+roadmap's wording for 1.0 is the owner's call (OD-1, OD-13).
 
 ---
 
@@ -466,19 +470,26 @@ are references, never literals, matching `dataprism.privacy.hmac-key`.
 | `dataprism.hazelcast.security.cluster-key.environment-variable` | unset | Name of the variable holding the key |
 | `dataprism.hazelcast.security.cluster-key.provider-reference` | unset | A reference to a key provider |
 | `dataprism.hazelcast.security.cluster-key.value` | unset | Refused if set: a literal key is never accepted |
-| `dataprism.hazelcast.security.cluster-key.previous.key-id` | unset | Optional, for rotation (OD-6). Must differ from the current key id |
+| `dataprism.hazelcast.security.cluster-key.next.key-id` | unset | Optional, phase 1 of a rotation (4.6, OD-6). Read-only key. Must differ from `current` and `previous` |
+| `dataprism.hazelcast.security.cluster-key.next.environment-variable` | unset | As above, for the next key |
+| `dataprism.hazelcast.security.cluster-key.next.provider-reference` | unset | As above |
+| `dataprism.hazelcast.security.cluster-key.previous.key-id` | unset | Optional, phase 2 of a rotation (4.6, OD-6). Must differ from `current` and `next` |
 | `dataprism.hazelcast.security.cluster-key.previous.environment-variable` | unset | As above, for the previous key |
 | `dataprism.hazelcast.security.cluster-key.previous.provider-reference` | unset | As above |
+| `dataprism.hazelcast.security.name-key.key-id` | unset | Required with `sealed`. The separate, non-rolling key for map keys, lock keys and the scope token (4.6). Must differ from every cluster key and from the privacy HMAC key |
+| `dataprism.hazelcast.security.name-key.environment-variable` | unset | Name of the variable holding the name key |
+| `dataprism.hazelcast.security.name-key.provider-reference` | unset | A reference to a key provider |
+| `dataprism.hazelcast.security.name-key.value` | unset | Refused if set: a literal key is never accepted |
 | `dataprism.hazelcast.security.isolation.attestation` | unset | Required. One of `network-policy`, `private-network`, `mesh-mtls`, `wireguard`, `ipsec`, `none-acknowledged`. Recorded in the startup audit event and in health. An attestation, not a verification |
 | `dataprism.hazelcast.security.pause-lease` | `PT30S` | A duration from `PT5S` to `PT5M`. Sets the pause-replay window and the time to fail closed after the document is lost |
-| `dataprism.hazelcast.security.clock-skew-tolerance` | `PT5S` | A duration, at most half of `pause-lease` |
+| `dataprism.hazelcast.security.clock-skew-tolerance` | `PT5S` | A duration, at most half of `pause-lease`. Used only to gate the first acceptance of a pause document after a cold start (2.3.3); steady-state freshness uses local monotonic time |
 | `dataprism.hazelcast.security.lock-timeout` | `PT2S` | A duration from `PT100MS` to `PT30S`. Wait for a map lock before failing closed. The lease on a held lock is derived from it |
 | `dataprism.hazelcast.security.unverified-member.action` | `refuse` | `refuse` or `alert` (OD-8) |
 | `dataprism.hazelcast.security.unverified-member.grace` | `PT30S` | A duration from `PT0S` to `PT10M` |
 | `dataprism.hazelcast.security.local-floor.enabled` | `true` | Per-instance count enforced in addition to the shared count for budgets and caller rate limits (OD-7) |
 
 The existing `dataprism.hazelcast.member.interface` becomes required for
-`tcp-ip` and `kubernetes` (4.2), and the existing
+`tcp-ip` and `kubernetes` **only if OD-10 is decided that way** (4.2), and the existing
 `dataprism.hazelcast.tls-key-reference` and `tls-trust-reference` stay refused.
 
 ### 4.2 Startup refusal codes
@@ -490,17 +501,17 @@ Same style as the existing table: stop before a member starts, except for
 |---|---|
 | `MISSING_CLUSTER_SECURITY_MODE` | `security.mode` absent with `embedded` and `tcp-ip` or `kubernetes` |
 | `UNSUPPORTED_CLUSTER_SECURITY_MODE` | `security.mode` is not an allowed value |
-| `MISSING_CLUSTER_KEY` | `sealed` without a `cluster-key.key-id`, or without exactly one of environment variable and provider reference |
-| `INVALID_CLUSTER_KEY` | A literal `cluster-key.value`; a key that does not resolve; a key below the strength rule used for `dataprism.privacy.hmac-key`; the previous key id equal to the current one; or a cluster key that is the same key as the privacy HMAC key or a link key (OD-9) |
+| `MISSING_CLUSTER_KEY` | `sealed` without a `cluster-key.key-id` or a `name-key.key-id`, or either without exactly one of environment variable and provider reference |
+| `INVALID_CLUSTER_KEY` | A literal `cluster-key.value` or `name-key.value`; a key that does not resolve; a key below the strength rule used for `dataprism.privacy.hmac-key`; `current`, `next` and `previous` ids not pairwise distinct; the name key equal to a cluster key; or a cluster or name key that is the same key as the privacy HMAC key or a link key (OD-9) |
 | `MISSING_ISOLATION_ATTESTATION` | `security.isolation.attestation` absent |
 | `INVALID_ISOLATION_ATTESTATION` | An unknown attestation value |
-| `MISSING_MEMBER_INTERFACE` | `tcp-ip` or `kubernetes` without `member.interface` |
-| `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` matches every address |
-| `PUBLIC_MEMBER_INTERFACE` | The resolved bind address is globally routable and the attestation is not `mesh-mtls`, `wireguard` or `ipsec` |
+| `MISSING_MEMBER_INTERFACE` | `tcp-ip` or `kubernetes` without `member.interface`. Subject to OD-10 |
+| `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` matches every address. Subject to OD-10 |
+| `PUBLIC_MEMBER_INTERFACE` | The resolved bind address is globally routable and the attestation is not `mesh-mtls`, `wireguard` or `ipsec`. Subject to OD-10 |
 | `INVALID_PAUSE_LEASE` | `pause-lease`, `clock-skew-tolerance` or `lock-timeout` outside its range, or skew above half the lease |
 | `INVALID_UNVERIFIED_MEMBER_POLICY` | `unverified-member.action` or `.grace` outside its range |
 | `UNSAFE_HAZELCAST_SERIALIZATION` | A supplied `Config` or instance with no allowlisting `java-serialization-filter`, or with user-code deployment, Jet or SQL enabled |
-| `CLUSTER_KEY_MISMATCH` | At join, the key-check sentinel already in the cluster does not authenticate under this member's key (4.7). The member leaves without serving |
+| `CLUSTER_KEY_MISMATCH` | At join, the sentinel already in the cluster does not authenticate under any key this member holds (`current`, `next`, `previous`), or is sealed under a key id it does not hold (4.6, 4.7). A sentinel that authenticates under `previous` is not a mismatch: the member is behind and writes nothing sealed (`rotation.stale_key`). The member leaves without serving on a true mismatch |
 | `UNSEALED_CLUSTER_STATE` | The cluster holds entries in the pre-0.8 format in a map this release will not read, and the cutover rule chosen under OD-5 does not allow it |
 
 `HAZELCAST_TLS_UNSUPPORTED` and `UNSAFE_HAZELCAST_DISCOVERY` are unchanged.
@@ -527,7 +538,12 @@ map entry (boundary 7).
 | `dataprism.cluster.seal.salt_rejected` | counter | Salt-cache admissions refused under a spray of distinct salts |
 | `dataprism.cluster.members.unverified` | gauge | Joined members without a valid member card |
 | `dataprism.cluster.pause.fresh` | gauge | 1 when the pause document is present, authentic and inside its lease; else 0 |
-| `dataprism.cluster.pause.age_seconds` | gauge | Age of the accepted document |
+| `dataprism.cluster.pause.age_seconds` | gauge | Age of the accepted document, from local monotonic receipt |
+| `dataprism.cluster.pause.conflict` | counter | Equal-order documents with different content were merged by union (2.3.3) |
+| `dataprism.cluster.rotation.accepting_next` | gauge | Verified members whose card lists the `next` key (phase 1 gate) |
+| `dataprism.cluster.rotation.blocked` | counter | A write was refused because no held key is accepted by all verified members |
+| `dataprism.cluster.rotation.stale_key` | counter | This member joined holding only a key older than the cluster's |
+| `dataprism.cluster.seal.entries_under_previous` | gauge | Locally owned entries still sealed under the previous key (phase 2 gate) |
 | `dataprism.cluster.lock.timeout` | counter | A map lock wait ended in a fail-closed refusal |
 | `dataprism.cluster.floor.refusal` | counter | A local floor refused a request that the shared count would have allowed (evidence of reset or replay) |
 
@@ -540,22 +556,53 @@ content.
 
 ### 4.5 Hazelcast configuration the build forces
 
-On every path (`embedded(ClusterMembership)`, `embedded(Config)`, `using`):
-the serialisation allowlist; Jet, user-code deployment and SQL off; `lock`
-replaced by `tryLock`; no `MapStore`, no persistence (already); phone-home off
-(already). A supplied config that conflicts is refused with
-`UNSAFE_HAZELCAST_SERIALIZATION` rather than silently altered, except where the
-existing code already forces a value.
+Today (0.7), per path:
+
+| Path | Phone-home off | Jet off | Other checks |
+|---|---|---|---|
+| `embedded(ClusterMembership)` (`toConfig`, then `configure`) | Yes (`ClusterMembership.java:92`, `PrivacyCluster.java:141`) | Yes (`ClusterMembership.java:91`) | Cluster name, advanced network, TLS and security refused |
+| `embedded(Config)` (`configure`, `PrivacyCluster.java:134-141`) | Yes (`:141`) | **No** | Same refusals; auto-detection and multicast forced off |
+| `using(instance)` (`PrivacyCluster.java:92-102`) | **No** | **No** | Cluster name, advanced network, auto-detection and multicast checked. It cannot change a running instance, and it does not check anything else |
+
+The design enforces, on the two `embedded` paths, by **forcing**: phone-home off,
+Jet off, user-code deployment off, the Java serialisation allowlist set when none
+is present (a supplied non-allowlisting filter is refused), and `tryLock`
+replacing `lock` in the stores. SQL is to be disabled too if 5.7.0 exposes a
+supported switch (**to verify in the 0.8 spike**). On `using(instance)`, which
+Data Prism did not start and cannot reconfigure, the design can only **check**
+and then refuse, warn or accept: what it does for each failed check, above all
+a missing serialisation filter, which breaks existing integrators, is OD-16.
+Refusals use `UNSAFE_HAZELCAST_SERIALIZATION` (filter) or the existing
+`UNSAFE_HAZELCAST_DISCOVERY` family; a new code for Jet or phone-home is not
+proposed until OD-16 is decided.
 
 ### 4.6 Rotation
 
-With a previous key configured, writes use the current key id. Reads accept both.
-Opaque map keys are derived under a key id, so a read probes the current key's
-key and then the previous key's. Entries re-seal under the current key on read.
-The re-identification index is the one structure that cannot be recomputed, so
-it must be re-sealed rather than abandoned; this is why rotation is in scope at
-all (OD-6). After a rotation completes the previous key is removed on every
-instance, one at a time.
+**Two secrets, two lifecycles.** (OD-6)
+
+- The **cluster key** (AEAD, 2.3.1) rotates in the phased procedure below.
+- The **name key** (map keys, lock keys, scope token; 2.3.2) is configured separately and **does not rotate in the rolling procedure.** Changing it moves every entry to a different map key, so it is a planned full restart with state loss (which for the re-identification index is a loss of the store). Its compromise lets an attacker test guesses against known identifiers and target a delete or a lock; it does not reveal any value. That is why it can be the long-lived one.
+
+Because the name key does not change, two members can never derive different map keys or lock keys for the same entry during a cluster-key rotation. Only the envelope's encryption key varies, and the envelope carries its key id.
+
+**Configuration roles** (4.1): `cluster-key` is the **current** key. `cluster-key.next` is accepted for reading and never written. `cluster-key.previous` is accepted for reading and used for writing only in the fallback below.
+
+**Write-key rule.** A member writes with `current` only if the member cards (2.4, d2) of **all** verified members list it as accepted. Otherwise it writes with `previous` if configured and accepted by all. Otherwise it writes nothing sealed and raises `rotation.blocked`; every operation that needs a write fails closed. Reads accept every key the member holds. This rule is what keeps a key from being written before every member can read it, including a late-joining member that still has the old configuration.
+
+**Phases**, with K1 the old key and K2 the new:
+
+| Phase | Action on each member, one at a time (rolling restart) | Entry condition for the next phase |
+|---|---|---|
+| **0. Provision** | K2 is provisioned in the secret provider on every instance, referenced by nothing | None |
+| **1. Accept** | `current = K1`, `next = K2`. Every member now reads K1 and K2 and writes K1. Cards list K1 and K2 | The `rotation.accepting_next` gauge equals the member count, and no member is unverified |
+| **2. Switch** | `current = K2`, `previous = K1`. Members write K2 as soon as all cards list K2 (they do, by phase 1); until then, or while a stale member joins, they fall back to K1. Entries are re-sealed under K2 on read, and a sweeper re-seals the rest (below). A **pause document** sealed under K2 is written only after every member has accepted K2, by the write-key rule | `dataprism.cluster.seal.entries_under_previous` reads 0 on every member for one full pause lease and the longest approval lifetime, and a re-identification re-seal pass has finished |
+| **3. Retire** | `previous` removed, one member at a time. K1 is no longer held anywhere | Complete; remove K1 from the secret provider |
+
+**Sweeper.** In phase 2 each member walks the entries it owns locally (`IMap.localKeySet` or a partition-local entry iterator; **to verify** which is available in OSS 5.7.0), opens those sealed under `previous`, and re-seals them under `current` by compare-and-set. It reports the `entries_under_previous` gauge. Re-identification entries are the case that makes this necessary: they cannot be recomputed. Identity entries are skipped (a miss recomputes), approvals are short-lived, and the pause document is rewritten by the lease refresh.
+
+**Sentinel and mismatch (4.7) during rotation.** The sentinel is re-sealed whenever the write key advances. A joining member tries the sentinel against **every key it holds** (`current`, `next`, `previous`). Success under any of them is a pass, and if the key that succeeded is its `previous` the member also raises `rotation.stale_key` and writes nothing sealed until its configuration catches up (it is behind the cluster). A sentinel sealed under a key id the member does not hold, or that fails under all its keys, is `CLUSTER_KEY_MISMATCH`. A joining member whose `next` equals the sentinel's key id passes, because it is ahead, not wrong.
+
+**Failure behaviour.** Skipping phase 1, or retiring K1 early, produces misses and `seal.unsupported_format`, never a read of an unauthenticated value. The cost of getting it wrong is lost re-identification entries and a refused pause document (fail closed), so the phase gates above are metrics an operator or the soak can assert on.
 
 ### 4.7 Key agreement and how link keys reach every member
 
@@ -563,8 +610,8 @@ Data Prism never distributes a key through Hazelcast. Each instance resolves the
 same key id and reference from the deployment's secret provider, as it does
 today for the privacy HMAC key (`ConfiguredSecretKeyProvider`).
 
-- **Cluster key.** Derived subkeys (`dp/cluster/v1/aead`, `.../keymac`, `.../kcv`) come from labelled HKDF over the cluster key.
-- **Sentinel at join.** A member writes, if absent, or reads a sealed constant (`dp-sentinel`) carrying the key id. If an existing sentinel does not authenticate, the member refuses with `CLUSTER_KEY_MISMATCH` and leaves. This makes a misconfigured key visible at startup instead of as a stream of tamper counters. An attacker who plants a bogus sentinel before the first legitimate member can only cause that refusal (a denial of service), which is detected and visible.
+- **Cluster key.** Derived subkeys (`dp/cluster/v1/aead/<map>`, `dp/cluster/v1/kcv`) come from labelled HKDF over the cluster key. Map-key and lock-key HMACs come from the separate **name key** (2.3.2, 4.6): `dp/cluster/v1/name/<map>`, `dp/cluster/v1/lock/<map>`, `dp/cluster/v1/scope`.
+- **Sentinel at join.** A member writes, if absent, or reads a sealed constant (`dp-sentinel`) carrying the key id. If an existing sentinel does not authenticate, the member refuses with `CLUSTER_KEY_MISMATCH` and leaves. This makes a misconfigured key visible at startup instead of as a stream of tamper counters. An attacker who plants a bogus sentinel before the first legitimate member can only cause that refusal (a denial of service), which is detected and visible. Behaviour during a rotation, including a member whose `previous` or `next` matches the sentinel, is in 4.6.
 - **Sealed link keys (task 191).** Links do not use Hazelcast, so there is nothing to distribute: every instance derives the link key from the same configured link key id and reference, by labelled HKDF (`dp/link/v1/...`), exactly as the cluster key. A link issued by one instance is verified by any other that holds the same key. A mismatch would appear only as links being refused uniformly, which an operator cannot tell from an expired link. So the member card carries a **key check value** for each configured purpose key: `first 8 bytes of HMAC(subkey("kcv"), key id)`, sealed under the cluster key. A member that sees a card with a different check value for the same key id raises `dataprism.cluster.seal.tamper` and health `DOWN`. The check value is one-way and short; it adds no usable information about a key that meets the strength rule. Task 191's design should cite this section.
 - Whether the cluster key, the privacy HMAC key and the link key are separate secrets is OD-9.
 
@@ -601,6 +648,13 @@ cannot enforce it beyond Hazelcast's own join refusal.
 | key | `dataprism.hazelcast.security.cluster-key.environment-variable` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.provider-reference` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.value` (refused) | 4.1 |
+| key | `dataprism.hazelcast.security.cluster-key.next.key-id` | 4.1 |
+| key | `dataprism.hazelcast.security.cluster-key.next.environment-variable` | 4.1 |
+| key | `dataprism.hazelcast.security.cluster-key.next.provider-reference` | 4.1 |
+| key | `dataprism.hazelcast.security.name-key.key-id` | 4.1 |
+| key | `dataprism.hazelcast.security.name-key.environment-variable` | 4.1 |
+| key | `dataprism.hazelcast.security.name-key.provider-reference` | 4.1 |
+| key | `dataprism.hazelcast.security.name-key.value` (refused) | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.previous.key-id` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.previous.environment-variable` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.previous.provider-reference` | 4.1 |
@@ -631,6 +685,11 @@ cannot enforce it beyond Hazelcast's own join refusal.
 | metric | `dataprism.cluster.members.unverified` | 4.4 |
 | metric | `dataprism.cluster.pause.fresh` | 4.4 |
 | metric | `dataprism.cluster.pause.age_seconds` | 4.4 |
+| metric | `dataprism.cluster.pause.conflict` | 4.4 |
+| metric | `dataprism.cluster.rotation.accepting_next` | 4.4 |
+| metric | `dataprism.cluster.rotation.blocked` | 4.4 |
+| metric | `dataprism.cluster.rotation.stale_key` | 4.4 |
+| metric | `dataprism.cluster.seal.entries_under_previous` | 4.4 |
 | metric | `dataprism.cluster.lock.timeout` | 4.4 |
 | metric | `dataprism.cluster.floor.refusal` | 4.4 |
 | audit event | `CLUSTER_STATE_TAMPER` | 4.4 |
@@ -651,7 +710,7 @@ owner chooses otherwise, the unsealed rows fall away and the isolation rows stay
 | T1 | **A member without the cluster key cannot forge an approval.** A second embedded member (and separately a Hazelcast client) with the cluster name but no key writes a plausible plaintext entry, a legacy-format entry, and random ciphertext into `dataprism.approval`; `consumeApproved`, `approve`, `find` and `pending` never return it as usable, and `seal.tamper` increments. Also with a member holding a *different* key |
 | T2 | Splice tests: a valid ciphertext copied to another key, another map, another scope, with an extended `expiresAt`, and after expiry is rejected. Bit-flip, truncation, unknown format and unknown key id are rejected |
 | T3 | Identity poisoning: arbitrary data written into `dataprism.identity` never changes a returned value; output equals the generator (boundary 6) |
-| T4 | Pause: deleting the document makes every instance refuse and sets `pause.fresh` to 0; an older document is rejected by an instance that saw a newer one; an instance that restarts accepts a replayed older document **only inside the lease**, and a test asserts the window equals the configured lease |
+| T4 | Pause: deleting the document makes every instance refuse and sets `pause.fresh` to 0; an older document is rejected by an instance that saw a newer one; an instance that restarts accepts a replayed older document **only inside the lease and the cold-start gate**, and a test asserts the window equals the configured lease; two concurrent writers, one `replace` loses and retries, neither pause is lost; equal-order documents with different content merge by union (OD-14); a member with a skewed wall clock does not make a healthy document stale |
 | T5 | Approval replay: the tombstone and the in-memory consumed set bound reuse as stated in 2.3.4; the residual is asserted, not hidden |
 | T6 | Budget and rate limit: delete and replay of shared counts never allow more than the local floor permits per instance |
 | T7 | **`HazelcastStoredValueBoundaryTest` extended:** no key in any map contains a scope id, subject id, principal id, approval id, case id or pseudonym; every stored string matches the envelope grammar; unknown maps are still rejected; the test holds the key, opens every envelope and still recomputes allowed state from the decrypted canonical key parts and still rejects the distinctive raw-value fixture |
@@ -669,7 +728,7 @@ owner chooses otherwise, the unsealed rows fall away and the isolation rows stay
 
 - Three members, sealed mode, the load harness (task 196) driving budget, identity, approval and pause traffic. Measure **latency and CPU of sealing against the unsealed baseline** at 100 and 500 sources, and entry size against the 100,000-per-member cap. These are the numbers that decide whether the cost estimate in 2.3 holds.
 - Kill and restart a member; kill an owner and its backup together; roll all members. Checks: no unsealed leak, no stale pause accepted outside the lease, re-identification index loss behaves as documented.
-- Rotate the cluster key under load (OD-6): no refusals beyond the documented window, no re-identification entry lost.
+- **Rotate the cluster key under load (4.6), concretely.** Three members, the load harness (task 196) at a fixed rate that mixes budget reads, identity lookups, approval create/approve/consume, and re-identification lookups for a pre-created set of 10,000 pseudonyms, with a pause toggled every 5 seconds throughout. Steps: (1) phase 1 rolling restart with `next = K2`; assert `rotation.accepting_next` reaches 3 and no more than the restarting member's in-flight requests are refused. (2) Phase 2 rolling restart with `current = K2`, `previous = K1`; during it start a fourth member holding K1 only and assert the K2 writers fall back to K1, `rotation.stale_key` increments on the fourth, and no pause is missed by any member. (3) Wait for `entries_under_previous = 0` on every member. (4) Phase 3, retire K1 one member at a time. Pass criteria: `seal.tamper` stays 0 outside the stale-member step; pause propagation never exceeds the configured lease; every one of the 10,000 pseudonyms still resolves; an approval created before phase 2 and consumed after it succeeds exactly once. Negative run: retire K1 on one member while the gauge is non-zero and assert the loss is detected (`seal.unsupported_format`) and not served. Name-key change is exercised separately as a full restart.
 - A hostile member joins under load: tamper flood. Confirm CPU stays bounded (salt cache, failure counting), health goes `DOWN` per policy, and recovery after it leaves.
 - Network partition with a pause issued on one side: lease behaviour, split-brain approval consumption (see NOTED in the task file), and rejoin.
 - Clock skew injected on one member: pause lease and `expiresAt` behave per the tolerance.
@@ -683,7 +742,7 @@ owner chooses otherwise, the unsealed rows fall away and the isolation rows stay
 
 **Boundary 5 (re-identification is never an MCP tool).**
 - The cluster key is not an operator credential and not an MCP credential; a holder of one is not thereby authorised for the other.
-- Re-identification values are sealed with a subkey of their own (`dp/cluster/v1/aead` bound to the map name), and the keyed map key hides the pseudonym. A member without the key, and an MCP client, cannot read the index.
+- Re-identification values are sealed under a subkey of their own: the subkey for the `dataprism.reidentification` map is derived with `info = "dp/cluster/v1/aead/dataprism.reidentification"` (2.3.1), different from every other map's, and the keyed map key hides the pseudonym. A member without the key, and an MCP client, cannot read the index. Separation between maps here is cryptographic (distinct subkeys) and also bound in the associated data; it is not separation between members that hold the cluster key, who can derive every subkey (A4, 0.2).
 - The one decrypt-and-return site stays `ScopeIdentityIndex.subjectFor`, so `ArchitectureTest.onlyReidentificationCallsSubjectFor` keeps its meaning. T14 adds the rule that the sealing package is not reachable from `mcp`, `orchestration` or `connectors`.
 - Sealed links never use the index (task 191) and never touch Hazelcast. The only thing a link key shares with the cluster is a check value in the member card (4.7), which is one-way.
 
@@ -708,7 +767,7 @@ Each is the owner's to decide. Recommendations are the author's.
 - (i) **E2 with (b) advised**: seal what is stored, detect unverified members, fail closed, bound what cannot be sealed. Largest build.
 - (ii) E1 plus the serialisation filter: isolation attested and checked; no sealing. Smallest build; the product is exactly as secure as the network.
 - (iii) E3 as a requirement: refuse to start without an attested mesh or encrypted network. Not verifiable; adds a hard dependency on deployer infrastructure.
-- **Recommend (i).** It is the only one that can be verified, and it matches the roadmap's "secured" wording. (ii) would need the roadmap wording changed. (iii) makes a claim Data Prism cannot check.
+- **Recommend (i), on its merits and independent of the roadmap's wording.** It is the only option under which Data Prism itself enforces and can test something about cluster protection: it closes approval forging, identity poisoning and disclosure of the re-identification index and of subject identifiers, which are the attacks that make the product's central guarantees false. Rule 2 (fail closed) argues against shipping a multi-instance mode whose safety is an unverifiable attestation, which is what (ii) and (iii) are. The price is the largest build in 0.8, a new secret pair, new cryptography to review, and a state-format break from 0.7. What (i) does not buy is in 2.3.7 and in OD-13.
 
 **OD-2. Is an isolation-only mode (no cluster key) allowed for a multi-member cluster?**
 - (i) Not allowed: any cluster with more than one member requires `sealed`.
@@ -720,7 +779,7 @@ Each is the owner's to decide. Recommendations are the author's.
 - (i) The signed, sequenced, leased document in 2.3.3, with fail-closed on absence.
 - (ii) Seal each flag only. A delete still lifts a pause; documented as a known limit.
 - (iii) Keep plaintext flags and rely on isolation.
-- **Recommend (i).** A pause is a safety control, and a delete that silently lifts it is the worst result in the inventory. The cost is a design with a lease, a clock-skew tolerance and a bootstrap rule. Consequence to accept: while the cluster is unreachable beyond the lease, an instance refuses everything, which is consistent with how budget already fails closed.
+- **Recommend (i)**, with the compare-and-set, equal-order and monotonic-freshness rules in 2.3.3 (the merge and rewrite choices are OD-14 and OD-15). A pause is a safety control, and a delete that silently lifts it is the worst result in the inventory. The cost is a design with a lease, a clock-skew tolerance and a bootstrap rule. Consequence to accept: while the cluster is unreachable beyond the lease, an instance refuses everything, which is consistent with how budget already fails closed.
 
 **OD-4. What should an instance do when the pause document is stale or absent?**
 - (i) Refuse every call (equivalent to a global pause) until a fresh document is seen.
@@ -734,10 +793,11 @@ Each is the owner's to decide. Recommendations are the author's.
 - (iii) Rolling with a one-time migration that re-seals re-identification entries read from the old map.
 - **Recommend (ii).** Pauses cross the generations; forgeable structures do not. For deployments with re-identification on, (iii) is available as an explicit operator-run step, because migrating means trusting entries that could have been forged under 0.7; it should not be automatic. How many deployments run 0.7 clusters with re-identification on is a question for the owner, not an assumption made here.
 
-**OD-6. Is rolling rotation of the cluster key a 1.0 requirement?**
-- (i) Rolling rotation with a previous key (4.6).
-- (ii) Rotation requires a full restart; all state is lost; documented.
-- **Recommend (i)** if re-identification is supported in clusters at 1.0, since (ii) destroys a store. If it is not, (ii) is a defensible simplification. S2a's multi-key provider already exists.
+**OD-6. How must the cluster key rotate for 1.0?**
+- (i) Phased rolling rotation of the cluster key (4.6), with a separate, non-rolling name key. Changing the name key is a planned restart with state loss.
+- (ii) Both keys rotate in the rolling procedure, by dual-probing map and lock keys under the current and previous name keys. More code and more states in the lock path.
+- (iii) Rotation of either key requires a full restart and loses all state, documented.
+- **Recommend (i).** The only structure that cannot be recomputed is the re-identification index, and it needs the cluster key to rotate without loss. Splitting out the name key is what removes the one hazard that makes rolling rotation unsafe (members deriving different keys for one entry). (iii) is defensible if the owner decides clusters will not run re-identification at 1.0.
 
 **OD-7. Local floor for budgets and rate limits?**
 - (i) Enable by default (2.3.5): worst case equals `single-node` behaviour.
@@ -752,9 +812,9 @@ Each is the owner's to decide. Recommendations are the author's.
 **OD-9. One key or several?**
 - (i) Separate secrets for the cluster key, the privacy HMAC key and the link key, each with labelled subkeys.
 - (ii) One master secret with labelled derivation for every purpose.
-- **Recommend (i).** A leaked cluster key (which sits on every instance's configuration and is read by every member) should not expose the pseudonym key or the link key. The cost is three references to provision. This also needs task 191 to agree.
+- **Recommend (i)**, which here also means the name key (4.6) is a fourth secret. A leaked cluster key (which sits on every instance's configuration and is read by every member) should not expose the pseudonym key or the link key. The cost is three references to provision. This also needs task 191 to agree.
 
-**OD-10. Do the interface checks (required, unbounded, public) ship?**
+**OD-10. Do the interface checks (required, unbounded, public) ship? Also decides whether `member.interface` becomes required.**
 - (i) Yes: `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE`, `PUBLIC_MEMBER_INTERFACE`.
 - (ii) Only the first two; address classification is a heuristic.
 - (iii) None; documentation only.
@@ -770,3 +830,29 @@ Each is the owner's to decide. Recommendations are the author's.
 - (i) Include the sealing envelope, key derivation and the pause document in the 0.9 external security review alongside sealed links.
 - (ii) Review sealed links only.
 - **Recommend (i).** New cryptography in a privacy path; the same reasoning the roadmap applies to links.
+
+**OD-13. What may the documentation and the 1.0 release notes claim about clustering?**
+D-RM-1 as recorded in `PLAN.md` says only that 1.0 supports multiple instances, with the security designed in 0.7 and built in 0.8. It does not define "secured". The options:
+- (i) "Multiple instances are supported. Cluster state is sealed against reading and forging by anyone without the cluster key. Transport protection and network isolation are the deployer's responsibility and are not verified by Data Prism. A party that can reach the member port can still delete or replay entries, hold locks, join as an unverified member and deny service (budgets and rate limits are bounded by a per-instance floor; pauses fail closed; re-identification entries can be lost to deletion)".
+- (ii) "Multiple instances are secured" without qualification. Not supportable on open-source Hazelcast: it would overstate what 2.3.7 lists as not stopped.
+- (iii) "Multiple instances are supported; secure them with network controls" with no application-level claim (the OD-1 (ii) position).
+- **Recommend (i).** It states exactly what is enforced and what is not, in the same terms as 2.3.7, so a reader can check the claim against the tests in section 5. It requires the roadmap line "supported and secured" to be reworded by the owner.
+
+**OD-14. Pause document: split-brain merge and equal-order rule.**
+- (i) Union of the pause sets on any conflict or merge (2.3.3). Fails closed; a resume on one side of a partition may be undone and must be repeated.
+- (ii) Highest (sequence, refresh) wins. Simpler; a pause issued on the smaller side of a partition is silently dropped, which lifts a pause.
+- (iii) Refuse everything until an operator re-issues the state.
+- **Recommend (i).** Rule 2: when the state is in doubt, the safe direction for a pause is paused.
+
+**OD-15. May a member re-write a missing pause document from its own memory?**
+- (i) Yes, with `putIfAbsent`, only from a document accepted within the last lease, and only if no verified member reports a higher sequence (2.3.3).
+- (ii) No. An absent document stays a global pause until an operator issues a pause or resume, which writes a new one.
+- (iii) Yes, unconditionally.
+- **Recommend (i).** It heals a deletion without operator action, and the conditions prevent a partitioned member from re-writing an older state. (ii) is the more conservative choice; choose it if self-healing after a hostile delete is judged less valuable than having no automatic writer. (iii) is rejected because it lifts pauses.
+
+**OD-16. What does `PrivacyCluster.using(instance)` do about settings it cannot change?**
+`using` wraps an instance an integrator started. It cannot add a serialisation filter, turn off Jet, user-code deployment or phone-home (4.5).
+- (i) Refuse (`UNSAFE_HAZELCAST_SERIALIZATION` for a missing or non-allowlisting filter, an `UNSAFE_*` code for the rest). Breaks integrators who pass an unfiltered instance, and needs a release note.
+- (ii) Accept, log a warning and report `clusterSecurity` health as degraded.
+- (iii) Accept only with an explicit acknowledgement property naming the unmet settings.
+- **Recommend (i) in `sealed` mode.** An unfiltered member protocol is a code-execution surface that sealing does not address, and the integrator can set the filter on their own `Config` with one block. (iii) is the fallback if the owner wants the break softened.
