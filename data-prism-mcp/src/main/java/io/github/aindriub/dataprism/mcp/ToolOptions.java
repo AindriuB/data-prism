@@ -16,17 +16,18 @@ import java.util.Objects;
  * approvals are never turned off by omission: {@link #defaults()} returns a
  * {@link Builder} whose {@link Builder#build()} refuses until one of the two was called.
  *
- * <p>Any admission other than the one {@link Builder#noAdmission()} supplies needs a
+ * <p>Any admission other than the shared {@code ToolAdmission.none()} instance needs a
  * {@code fingerprinter}, or every approval would bind to the same empty fingerprint and
  * one approval would cover every call. The check is in the compact constructor, so it
- * holds on every public path that accepts the record. {@code ToolAdmission.none()} builds
- * a fresh, indistinguishable instance on each call, which is why the no-admission case has
- * its own entry point rather than being recognised by value.
+ * holds on every public path that accepts the record. {@code ToolAdmission.none()} returns
+ * one shared instance, recognised here by identity: {@link Builder#noAdmission()} and
+ * {@code .admission(ToolAdmission.none(), null)} are the same thing, and a subclass or any
+ * other instance can never match, so a real policy always needs a fingerprinter.
  *
  * @param admission              checked after scope resolution and before the orchestrator; any
  *                               failure to evaluate it refuses the call
  * @param fingerprinter          binds an approval to the call's arguments; {@code null} only for
- *                               the admission {@link Builder#noAdmission()} supplies
+ *                               {@code ToolAdmission.none()}
  * @param correlationRequirement what the transport context's external correlation id must satisfy
  * @param mdc                    opened around the whole call so every log line on the handler
  *                               thread, denials included, carries the validated external id
@@ -36,7 +37,7 @@ public record ToolOptions(ToolAdmission admission, ParameterFingerprinter finger
                           CorrelationRequirement correlationRequirement, CorrelationMdc mdc,
                           AuditedEntityTypes entityTypes) {
 
-    /** The admission {@link Builder#noAdmission()} supplies: no pause, no limit, no approval. */
+    /** The shared {@code ToolAdmission.none()}: no pause, no limit, no approval. */
     private static final ToolAdmission NO_ADMISSION = ToolAdmission.none();
 
     public ToolOptions {
@@ -46,7 +47,7 @@ public record ToolOptions(ToolAdmission admission, ParameterFingerprinter finger
         Objects.requireNonNull(entityTypes, "entityTypes");
         if (fingerprinter == null && admission != NO_ADMISSION) {
             throw new NullPointerException("fingerprinter is required with any admission other than "
-                    + "Builder.noAdmission(), or every approval binds to the same empty fingerprint");
+                    + "ToolAdmission.none(), or every approval binds to the same empty fingerprint");
         }
     }
 
