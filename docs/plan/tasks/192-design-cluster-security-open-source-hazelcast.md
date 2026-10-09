@@ -74,3 +74,33 @@ codes the build will add.
 - Any code or configuration change, and any edit to `docs/multiple-instances.md`
   (that is 0.8 build work).
 - Sealed links (task 191), read budget per source (0.8 fan-out work).
+
+## Outcome
+
+Written 2026-10-09 on `task/192-cluster-design`. The design is
+`docs/plan/design/cluster-security.md` (sections 0 to 6; 0 is the threat model,
+1 to 6 are the six required items as headings).
+
+Acceptance:
+
+- [x] The file exists and contains every numbered item as a heading (1 Inventory, 2 Options, 3 Recommendation, 4 Proposed configuration/codes/signals/mixed versions, 5 Soak and test obligations, 6 Boundaries and open decisions).
+- [x] Closing table is section 4.9 (39 names: 15 keys, 13 codes, 8 metrics, 1 audit event, 1 health contributor, plus the table itself). Collision check, run from the worktree root:
+  - Names extracted from the 4.9 table and each searched with `grep -rIn -F -- <name> docs/configuration.md docs/multiple-instances.md docs/tools.md data-prism-core data-prism-hazelcast data-prism-server data-prism-spring-boot-autoconfigure data-prism-mcp data-prism-security`.
+  - Result: no hits for any key, code, metric or audit event. The only hit was the first draft's health name `cluster` (a common word that appears in unrelated prose), renamed `clusterSecurity`, matching the camelCase of the existing `auditIntegrity` contributor.
+  - The build must repeat the search before adding anything: other 0.8 work adds codes.
+- [x] No Enterprise-only feature is recommended. Section 0.4 and 2.5 list what is excluded and the evidence (5.7.0 jar strings and the 5.7 editions page table); section 2.0 lists the documentation each option relies on. Hazelcast version is 5.7.0 throughout.
+- [ ] **Review gate: pending.** The implementer cannot run the `reviewer` agent. The caller runs `reviewer` against D-0.4.1-A, D-RM-1, boundaries 5, 6 and 7 in `docs/architecture.md`, and checks that no product decision is taken in the text (every choice is an OD-n in 6.2 with a recommendation). Verdict: _to be recorded here_.
+
+Findings the owner should know before reading the design:
+
+- OSS Hazelcast 5.7.0 has no inbound member allowlist that was found. `NetworkConfig.interfaces` selects the local bind address, and `trusted-interfaces` is multicast-only. Marked **to verify in the 0.8 spike**.
+- The cluster name cannot serve as a join secret: it is sent in the clear and (to verify on 5.7.0) is part of every Hazelcast log line.
+- Application-level sealing cannot stop deletion, replay or availability attacks. The design bounds budgets and rate limits with a per-instance floor, converts pause deletion into a fail-closed denial of service with a signed, leased pause document, and leaves the rest to transport protection (option (b)), which Data Prism cannot verify.
+- Approval forging, identity poisoning and re-identification index disclosure are closed by sealing. Re-identification index entries lost to deletion are lost for good.
+- Deserialisation of Java classes over the member protocol is a code-execution surface that no other option addresses. The OSS `java-serialization-filter` is proposed.
+
+Items for the owner/maintainer, not fixed here:
+
+- `pom.xml` pins `hazelcast.version` 5.7.0; the 5.7 documentation lists 5.7.2 as current. The editions page lists "Emergency patches (CVEs)" as Enterprise only, so staying current on 5.7.x matters for the open-source line.
+- `HazelcastApprovalStore` and the rate limiter rely on `IMap.lock`, an AP lock, for exactly-once consumption. Under a network partition (split brain) both sides may consume the same approval. The design's soak (5.2) tests it; whether it needs its own task is for the owner. Also `IMap.lock` has no timeout today, so a held lock hangs a request thread. The design replaces it with `tryLock` and a lease (4.1 `lock-timeout`).
+- `PrivacyCluster.embedded(Config)` and `using(instance)` do not force Jet off for a supplied config; only `ClusterMembership.toConfig` does.
