@@ -43,6 +43,8 @@ public class DataPrismProperties {
     private ReidentificationProperties reidentification = new ReidentificationProperties();
     @NestedConfigurationProperty
     private OperatorProperties operator = new OperatorProperties();
+    @NestedConfigurationProperty
+    private LimitsProperties limits = new LimitsProperties();
     /** Named source entries, one per configured Java-first REST adapter, each with base-url, timeout and mTLS or credential references. */
     private Map<String, SourceProperties> sources = new LinkedHashMap<>();
 
@@ -140,6 +142,14 @@ public class DataPrismProperties {
 
     public void setOperator(OperatorProperties v) {
         operator = v == null ? new OperatorProperties() : v;
+    }
+
+    public LimitsProperties getLimits() {
+        return limits;
+    }
+
+    public void setLimits(LimitsProperties v) {
+        limits = v == null ? new LimitsProperties() : v;
     }
 
     public Map<String, SourceProperties> getSources() {
