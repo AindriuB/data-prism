@@ -170,7 +170,7 @@ The real description is checked for structure only because it is allowed to name
 
 A source with no alias description gets a text generated from what it declared, never from its name, class or location:
 
-- with entity types and input keys: `Holds <T1>, <T2> records; accepts <K1>, <K2> keys.` for example `Holds PARCEL records; accepts parcel-ref keys.`;
+- with entity types and input keys: `Holds <T1>, <T2> records; accepts <K1>, <K2> keys.` for example `Holds PARCEL records; accepts parcel-ref keys.`; entity types and keys are each iterated in ascending byte order of their text, whatever order the adapter declared them in, so the text is the same on every run and on every member;
 - with entity types only: `Holds <T1>, <T2> records.`;
 - with neither (an undeclared adapter): `A data source.`
 
@@ -211,7 +211,7 @@ Which sources a caller may see is decided by a single predicate, `SourceVisibili
 
 ### Input schema
 
-Scope, principal, purpose and case come from the session (rule 4); the reserved argument names are stripped and audited as today (`ReservedArguments`). Paging arguments are task 198's and are optional, so adding them later is additive. At the 0.9 freeze they belong in this schema; until then they are absent and the schema below is complete for 0.8 (OD-C16 asks whether 0.8 needs them).
+Scope, principal, purpose and case come from the session (rule 4); the reserved argument names are stripped and audited as today (`ReservedArguments`). The input schemas in this document, like today's `get_entity_context` schema (which has `properties` and `required` and no `additionalProperties`), do not close the object: an unknown or reserved argument is ignored and audited, never read for its value, so closing the schema would change that behaviour and is not proposed. Paging arguments are task 198's and are optional, so adding them later is additive. At the 0.9 freeze they belong in this schema. Whether 0.8 ships them is OD-C16: under its option (a) the schema below gains them in 0.8, under (b) or (c) it is complete for 0.8 as written.
 
 ```json
 {
@@ -229,8 +229,7 @@ Scope, principal, purpose and case come from the session (rule 4); the reserved 
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,63}$"
     }
-  },
-  "additionalProperties": false
+  }
 }
 ```
 
@@ -309,7 +308,7 @@ An example, as an investigator whose role holds `LIST_SOURCES`, with aliases in 
     },
     {
       "source": "ORG-8RK2W9TE",
-      "description": "Holds PARCEL, DEPOT records; accepts depot-code, parcel-ref keys.",
+      "description": "Holds DEPOT, PARCEL records; accepts depot-code, parcel-ref keys.",
       "entityTypes": ["DEPOT", "PARCEL"],
       "inputKeys": ["depot-code", "parcel-ref"]
     },
@@ -338,7 +337,7 @@ One event per call, as every tool:
 | `policyDecision` | `ALLOW`, or `DENY:<code>` (for example `DENY:TOOL_NOT_PERMITTED`) |
 | `sourceSystems` | the real names of the sources returned (size handling in OD-C11) |
 | `fieldDispositions` | none on success. On refusal, the audit-only reason under shape C (section 6) |
-| effective setting | see OD-C2 |
+| effective setting | recorded as OD-C2 decides: the audit always records real names plus the effective setting (D-RM-10) |
 
 The `keyNamespace` filter is a label chosen by the caller and carries no personal data, but it is not audited as a field of its own, since the record has no field for it and shape C adds none; it is recoverable from the tool-call log of the client, not from the audit.
 
@@ -367,7 +366,7 @@ A closed set, mapped from the effective `PrivacyAction` after profile and descri
 | `BUCKET` | `GENERALIZE` | a coarser bucket of the value |
 | `ABSENT` | `REMOVE` | no value and no field in responses |
 
-Fields whose protection is `ABSENT` are not listed, with one exception: a chainable field is always listed, with `ABSENT` when it is removed, because a link names it (`field` in `_links`) and the agent must be able to find it here. OD-C9 compares listing every removed field with omitting them.
+Fields whose protection is `ABSENT` are not listed, with one exception that applies only while `dataprism.links.enabled` is `true`: a chainable field is then listed, with `ABSENT` when it is removed, because a link names it (`field` in `_links`) and the agent must be able to find it here. With links disabled no link names the field, so a removed chainable field is omitted like any other removed field. OD-C9 compares listing every removed field with omitting them.
 
 ### Chainable markers
 
@@ -402,8 +401,7 @@ Where `protection` is `SYNTHETIC` or `TOKEN`, the field also carries `valueNames
       "maxLength": 128
     }
   },
-  "required": ["source"],
-  "additionalProperties": false
+  "required": ["source"]
 }
 ```
 
@@ -498,7 +496,7 @@ Example:
 
 ### Audit
 
-`tool` is `describe_source`; `entityType` and `subjectPseudonym` empty; `sourceSystems` holds the real name of the described source (empty on a refusal before it was resolved); `policyDecision` is `ALLOW` or `DENY:<code>`. The requested label is a client string and is not recorded. Failure reasons are in section 6.
+`tool` is `describe_source`; `entityType` and `subjectPseudonym` empty; `sourceSystems` holds the real name of the described source (empty on a refusal before it was resolved); `policyDecision` is `ALLOW` or `DENY:<code>`; the effective naming setting is recorded as OD-C2 decides. The requested label is a client string and is not recorded. Failure reasons are in section 6.
 
 ## 5. `describe_entity_model` (0.9)
 
@@ -548,8 +546,7 @@ Threat note: an agent steered by injected text that calls `describe_entity_model
       "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
     }
   },
-  "required": ["entityType"],
-  "additionalProperties": false
+  "required": ["entityType"]
 }
 ```
 
@@ -680,7 +677,7 @@ Example, for the three-service estate:
 
 ### Audit
 
-`tool` is `describe_entity_model`; `entityType` is the requested type; `sourceSystems` holds the real names of the sources named in the response; `policyDecision` is `ALLOW` or `DENY:<code>`.
+`tool` is `describe_entity_model`; `entityType` is the requested type; `sourceSystems` holds the real names of the sources named in the response; `policyDecision` is `ALLOW` or `DENY:<code>`; the effective naming setting is recorded as OD-C2 decides.
 
 ## 6. Targeting chosen sources on `get_entity_context`, and the D-RM-9 refusal
 
@@ -703,22 +700,20 @@ Input schema change (the new property; `entityType` and `subjectId` are unchange
       "type": "array",
       "items": { "type": "string", "minLength": 1, "maxLength": 128 },
       "minItems": 1,
-      "maxItems": 64,
       "uniqueItems": true
     }
   },
-  "required": ["entityType", "subjectId"],
-  "additionalProperties": false
+  "required": ["entityType", "subjectId"]
 }
 ```
 
-The `maxItems` shown, 64, is a schema ceiling to keep the argument bounded; the effective limit is `dataprism.limits.max-sources` (rule 3). The schema ceiling is generated from configuration, as the `follow` schema is in `sealed-links.md`, so the served value tracks the setting.
+The schema has no `maxItems` on purpose: a schema ceiling would make an over-long selection a generic invalid-argument error and hide `SOURCE_SELECTION_TOO_LARGE` (rule 3), the documented refusal. The server enforces the limit itself.
 
 ### Behaviour
 
 1. **No `targetSources`.** The server counts the sources that serve `entityType` (or declare none) and that the caller may use. If the count is at most `dataprism.catalog.unselected-source-limit`, every one is asked, exactly as today: existing clients and small estates see no change. If the count is above it, the call is refused with `SOURCE_SELECTION_REQUIRED` (D-RM-9). The client sees the bare code, as for every refusal, and learns the next step from the name; it does not learn the count or the limit.
-2. **With `targetSources`.** Each label is resolved by the section 3 mechanism. Every label must resolve to a permitted source that serves the entity type. If any label does not, the call is refused with `SOURCE_NOT_AVAILABLE` and no source is called. An unknown label, a label of the wrong kind, a source the caller may not use and a source that does not serve the entity type are the same refusal, so the call cannot be used to probe the estate. Refusing the whole call, not dropping the bad label, is the fail-closed reading; a partial answer would hide a typo.
-3. **Too many chosen.** More labels than `dataprism.limits.max-sources` is refused with `SOURCE_SELECTION_TOO_LARGE`, not silently cut: the 0.8 fan-out rewrite removes the silent cut-off at `maxSources`. Whether the cap is `max-sources` or something else is OD-C8.
+2. **With `targetSources`.** Each label is resolved by the section 3 mechanism. Every label must resolve to a permitted source that serves the entity type. If any label does not, the call is refused with `SOURCE_NOT_AVAILABLE` and no source is called (whole-call refusal rather than dropping the label is OD-C19). An unknown label, a label of the wrong kind, a source the caller may not use and a source that does not serve the entity type are the same refusal, so the call cannot be used to probe the estate. The whole-call refusal is the recommendation of OD-C19, not a decision.
+3. **Too many chosen.** More labels than `dataprism.limits.max-sources` is refused (OD-C8) with `SOURCE_SELECTION_TOO_LARGE`, not silently cut: the 0.8 fan-out rewrite removes the silent cut-off at `maxSources`. Whether the cap is `max-sources` or something else is OD-C8.
 4. The chosen sources then run through the unchanged pipeline: authorisation, read budget, deadlines, scrub, validate, per-source status (D-070-1). A chosen source cannot bypass the privacy engine; targeting selects which adapters are called and changes nothing about what happens to their output (rule 1).
 5. Where the call is refused before any source is called, the audit decision is `DENY:<code>`, `sourceSystems` is empty, and, as in `sealed-links.md`, the real reason is an audit-only code under shape C:
 
@@ -734,7 +729,7 @@ The disposition key is `catalog`, the value has the `REFUSED:<code>` shape that 
 
 ### The estate-size limit
 
-A new configuration key, `dataprism.catalog.unselected-source-limit`, a positive integer. Its default and what it counts are OD-C7 (recommendation: default `8`, the current `dataprism.limits.max-sources` default, counting permitted sources that serve the entity type). A zero, negative or non-integer value refuses startup with `INVALID_CATALOG_SETTING`, in the style of `INVALID_REQUEST_LIMITS` (the message names the property, not the value).
+A new configuration key, `dataprism.catalog.unselected-source-limit`, a positive integer. Its default and what it counts are OD-C7 (recommendation: default `8`, the current `dataprism.limits.max-sources` default, counting permitted sources that serve the entity type). A zero, negative or non-integer value refuses startup with `INVALID_CATALOG_SETTING`, in the style of `INVALID_REQUEST_LIMITS` (the message names the property, not the value). The same refusal applies when the value is greater than `dataprism.limits.max-sources`, so an unselected call that passes the estate check can always be answered in full and the call limit never silently cuts it off (OD-C7 recommends this check).
 
 ### Schema change summary
 
@@ -764,16 +759,16 @@ Mutation-testable; the privacy modules are mutation-tested from 0.7 and gated in
 4. **Effective setting.** The label kind is REAL only when the scope setting and `EXPOSE_SOURCE_NAMES` both hold. The four combinations are tested. Mutant: `||` for `&&`; ignore the scope setting.
 5. **Description conforms to the scrubber.** For a set of models (annotated, descriptor-tightened, profile-tightened, nested, array), every path that appears in a scrubbed response is described with the protection it was scrubbed under, and no described `VERBATIM` field is ever scrubbed. A descriptor that tightens a field changes the description. Mutant: describe the annotation only.
 6. **`describe_source` leaks nothing.** The response contains none of: a value, the data classification names, the base-url, the model class name, a credential reference. Run the PII, key-shape and audit scans over it.
-7. **Chainable markers.** Shown only when links are enabled; always together with `keyNamespace`; a removed chainable field is listed as `ABSENT`; a removed non-chainable field is not listed. Chainable changes no protection (the scrub output is identical with the flag set).
+7. **Chainable markers.** Shown only when links are enabled; always together with `keyNamespace`; with links enabled a removed chainable field is listed as `ABSENT`; with links disabled it is not listed; a removed non-chainable field is never listed. Chainable changes no protection (the scrub output is identical with the flag set).
 8. **Labels.** The same source has the same label in all four tools and in `_links.target` within one scope; a different scope gives a different alias. A real name passed while aliases are in effect is `SOURCE_NOT_AVAILABLE`. A forced collision gives `SOURCE_LABEL_COLLISION`.
 9. **Uniform refusal.** Unknown label, wrong-kind label, unpermitted source and entity-type mismatch return the identical client response (same code, same text, same shape), and differ only in the audit-only reason. Mutant: distinct codes or distinct timing short-cuts.
 10. **Order and determinism.** Every array in all three outputs is in the ascending order stated, identical across runs and across the order adapters were registered.
 11. **D-RM-9.** At or below the limit, `get_entity_context` without `targetSources` behaves as today; one above it, it is refused with `SOURCE_SELECTION_REQUIRED` and no adapter is called (verified with a counting adapter). Boundary values at limit and limit plus one. Mutants: `>=` for `>`; count all sources instead of permitted ones.
-12. **Targeting.** Only the chosen adapters are called; a selection above `max-sources` is refused and nothing is called; a duplicate label is rejected by the schema; `compare_entity_sources` follows the same rules (OD-C6).
+12. **Targeting.** Only the chosen adapters are called; a selection above `max-sources` is refused and nothing is called; a startup check refuses `unselected-source-limit` above `max-sources`, and an unselected call at the limit is answered for every source (no `SKIPPED_OVER_LIMIT`); a duplicate label is rejected by the schema; `compare_entity_sources` follows the same rules (OD-C6).
 13. **Authorisation.** A source the caller may not use is absent from `list_sources`, and `describe_source`, targeting and `describe_entity_model` treat it as unknown. Mutant: filter the list but not the others.
 14. **`describe_entity_model` (0.9).** Relations equal those the link builder would issue for the same declarations, by a property test comparing the two on generated estates; direct preferred over translated; no two-resolver relation; resolver names never appear; with links off the tool omits `producedBy` and `reachesAs`; an unknown type and an empty type are indistinguishable; nothing about a source the caller cannot use appears.
 15. **Audit.** One event per call with the fields of sections 3 to 6; the effective setting is recorded as OD-C2 decides; no label sent by the client, no description text and no value appears in any audit record, log line, metric or exception (`PiiLogScanTest` and `AuditFilePiiScanTest` extended).
-16. **Configuration.** A non-positive or non-integer `unselected-source-limit` and an unknown purpose in `real-names-purposes` refuse startup with `INVALID_CATALOG_SETTING`; defaults match this document.
+16. **Configuration.** A non-positive or non-integer `unselected-source-limit` and an `unselected-source-limit` greater than `max-sources`, and an invalid entry in the real-names setting chosen by OD-C3 (an unknown purpose, or a malformed scope pattern) refuse startup with `INVALID_CATALOG_SETTING`; defaults match this document.
 17. **Schemas.** The three tool schemas in this document are valid JSON Schema draft 2020-12 and each example validates against its schema (the validation command is in the Outcome of the task file). The served schemas are generated from the same definitions, and a build test compares them with the checked-in copies.
 18. **Architecture rules.** `mcp` and `connectors` do not depend on adapter classes; `core` contains no business-domain type.
 
@@ -784,12 +779,12 @@ None of these is decided. Each has options and a recommendation.
 | # | Question | Options | Recommendation |
 |---|---|---|---|
 | OD-C1 | How an adapter describes itself | (a) a default method `description()` on `DataSourceAdapter`; (b) a separate optional interface that an adapter may also implement; (c) a separate bean (`SourceDescription` registered by source name) | (a). Source-compatible and binary-compatible, one place to look, and the description sits with the code that reviewers already read. (c) separates the text from the adapter and invites drift; (b) is more ceremony for the same result |
-| OD-C2 | Where the effective naming setting is recorded in the audit (D-RM-10). It is not a disposition, and shape C allows only `REFUSED:<code>`-shaped values, so it does not fit the grammar | (a) allow one reserved key, `names`, with the two values `REAL` and `ALIAS`: a small widening of OD-13; (b) a new record field in a version 4 audit record; (c) derive it from configuration and the caller's roles on read, recording nothing per event; (d) a metric only | (a), if the owner accepts the small widening. (b) is the cleanest and the most expensive (every verifier and the hash encoding). (c) and (d) do not meet D-RM-10's "audit always records" and are listed only to be rejected. This is a conflict with shape C, not a choice inside it |
-| OD-C3 | Where the per-scope real-names setting comes from. A scope is `case:<caseId>` with no stored record | (a) the scope's purpose is in a server-side list, `dataprism.catalog.real-names-purposes`, empty by default; (b) a trusted claim in the token, mapped like the investigation claim; (c) an allow-list of case-id patterns in configuration | (a). Purposes are a closed server-controlled set already in the audit record, the setting needs no new claim or per-case list, and it is off unless the operator names a purpose. (b) lets the issuer set it per token, so two tokens for one case may disagree. (c) puts case ids in configuration |
+| OD-C2 | Where the effective naming setting is recorded in the audit (D-RM-10). It is not a disposition, and shape C (the owner-delegated OD-13 of `sealed-links.md`, see also `key-resolvers.md` audit section) allows only `REFUSED:<code>`-shaped values | (a) one reserved key `names` with values `REAL` and `ALIAS`. Cost: these values fail `AuditEvent.isValidAction`, so this changes the published `docs/audit.md` contract and the offline verifier. It is shape A of OD-13 applied to one key, and reopens a decision the owner delegated; (b) a new record field in a version 4 audit record: cleanest, most expensive (every verifier, the hash encoding); (c) shape-C compatible, weaker: record the setting outside the dispositions, in a structured application log line and a metric, both joined to the audit event by `correlationId`; the setting is also reconstructable from `scopeId` and the server's scope setting (OD-C3) plus the caller's capability, but roles and capabilities are not in the audit record; (d) metric only | (a) is the only option that meets D-RM-10's "audit always records" inside the hash chain at low cost, and it is a deliberate, stated reopening of OD-13 for one key; the owner should say so explicitly. If the owner will not reopen OD-13, (c), with D-RM-10 amended to say the setting is recorded in the log and metrics rather than the chain. (d) is rejected. This is a conflict with shape C, not a choice inside it |
+| OD-C3 | Where the per-scope real-names setting comes from. A scope is `case:<caseId>` (`ScopeResolver.scopeId`) with no stored record; purpose is a separate session value, validated against the server's purposes, and not part of the scope id | (a) a server-side list of purposes, `dataprism.catalog.real-names-purposes`. Cost: it is a per-purpose setting, not a per-scope one; every case under that purpose gets it, and it shares the flaw counted against (b) that two callers in one scope can see different labels, since the caller condition is per caller anyway; (b) a trusted claim in the token, mapped like the investigation claim. Cost: set by the issuer per token, so two tokens for one case may disagree on the scope half too; (c) a list of scope patterns in configuration, `dataprism.catalog.real-names-scopes`, matched against the scope id (for example `case:ops-*`, with a single trailing `*` as the only wildcard). It is genuinely per scope and identical for every caller in the scope. Costs: case-id conventions in configuration, a restart to change it, and a pattern grammar to validate and test; (d) a scope class: the scope type from the authorisation decision (`PrivacyContext.scopeType`), listed in `dataprism.catalog.real-names-scope-types`. Cost: per class of scope, decided by the policy, not per scope; to be checked at build time what the scope type means in each policy | (c). D-RM-10 asks for a per-scope setting, and (c) is the only option that is one: all callers in a scope agree on the scope half, it needs no new claim, and it is off when the list is empty. (a) is the cheapest and is acceptable if the owner reads "scope" as "purpose" |
 | OD-C4 | A source the caller may not use, in `list_sources` | (a) hidden: absent from the list; (b) listed with a `permitted: false` marker | (a). It is the only form that adds no estate shape beyond what the caller can use, and it makes every other tool's uniform refusal consistent. (b) helps a human understand why a source is missing but tells an injected agent that more sources exist |
-| OD-C5 | Behaviour of per-source permission in 0.8, before the 0.9 policy | (a) allow every source to a caller that holds the tool capability (as today); once any role declares source patterns, unmatched sources are denied; (b) deny every source until patterns are configured; (c) delay the whole catalog to 0.9 | (a). It keeps 0.8 upgrades working and gives D-RM-11 its meaning exactly when an operator adopts it. The one-time change in behaviour at that point needs a line in the 0.9 upgrade guide. (b) breaks every upgrade |
+| OD-C5 | Behaviour of per-source permission in 0.8, before the 0.9 policy, and whether it narrows D-RM-11 | (a) in 0.8 only, allow every source to a caller that holds the tool capability (as today), with denial-by-default for unmatched sources from 0.9 as D-RM-11 says; the 0.9 upgrade guide states the change. This does not narrow D-RM-11 for the frozen surface, but it is a documented interim in which 0.8 differs from D-RM-11; (b) deny every source until patterns are configured, from 0.8: matches D-RM-11 from the start, and breaks every 0.8 upgrade that has no patterns; (c) delay the whole catalog to 0.9; (d) allow-all in 0.8 and in 0.9 until any role declares patterns, then deny unmatched: this narrows D-RM-11, because a deployment with no patterns keeps allow-all | (a), limited to 0.8 and consistent with D-RM-11 for 0.9 and the freeze. (d) is not recommended because it would freeze an allow-all mode that D-RM-11 rejects. If (a) is chosen the interim is stated in the 0.8 release notes |
 | OD-C6 | Name and reach of the targeting argument | (a) `targetSources`, on both `get_entity_context` and `compare_entity_sources`; (b) `sources`, which collides with the response object of the same tool; (c) `sourceLabels` | (a), on both tools |
-| OD-C7 | The estate-size limit: key, default and what it counts | (a) new key `dataprism.catalog.unselected-source-limit`, default `8`, counting permitted sources serving the entity type; (b) reuse `dataprism.limits.max-sources`; (c) a new key counting all registered sources | (a). Reusing `max-sources` couples "how many may I call" with "how many may be asked implicitly", which are different questions once selection exists. Counting only permitted sources avoids disclosing the estate size through the refusal. Default `8` leaves today's small estates unchanged |
+| OD-C7 | The estate-size limit: key, default, what it counts, and its relation to `dataprism.limits.max-sources` | (a) new key `dataprism.catalog.unselected-source-limit`, default `8`, counting permitted sources serving the entity type, with a startup check that it is not greater than `max-sources` (`INVALID_CATALOG_SETTING`); (b) reuse `dataprism.limits.max-sources`; (c) a new key counting all registered sources; (d) as (a) without the startup check, leaving an unselected call between the two values to be cut off by `max-sources` | (a). The check closes the gap: an unselected call that passes the estate check is always answerable in full, so there is no silent cut-off. Reusing `max-sources` couples two different questions; counting only permitted sources avoids disclosing the estate size through the refusal; default `8` leaves today's small estates unchanged. (d) is rejected: it is the silent cut-off the roadmap removes |
 | OD-C8 | A selection longer than the call limit | (a) refuse with `SOURCE_SELECTION_TOO_LARGE`, limit `dataprism.limits.max-sources`; (b) allow it and queue the rest; (c) allow up to a separate selection ceiling | (a). The roadmap removes the silent cut-off, and a refusal is the fail-closed form. (b) is the fan-out rewrite's concern, not this design's |
 | OD-C9 | Removed fields in `describe_source` | (a) omit them, except chainable ones; (b) list every removed field as `ABSENT`; (c) list them with names generalised for special-category fields | (a). The description then equals the set of fields a response can contain, which is testable, and it does not list the existence of fields that never appear |
 | OD-C10 | Show `valueNamespace` | (a) show it for `SYNTHETIC` and `TOKEN` fields; (b) never show it; (c) show it for every field | (a). It is what lets an agent trust that two pseudonyms are comparable, and it is bounded to fields that are replaced anyway |
@@ -801,6 +796,7 @@ None of these is decided. Each has options and a recommendation.
 | OD-C16 | Does `list_sources` need paging in 0.8 | (a) yes, and task 198 specifies the page for `list_sources` first so 0.8 can build it; (b) no: ship unpaged with the two filters and reconsider at 0.9; (c) refuse above a hard size | (a). At several hundred sources an unpaged list is about 100 to 200 KB, too large for a model context. This is a cross-task point to settle in task 200 |
 | OD-C17 | `describe_entity_model` with links disabled | (a) registered, reports `acceptedBy` only; (b) not registered while links are off; (c) always full | (a), because a deployment on option (c) of the link design (human-supplied keys) still benefits from knowing which sources accept which namespace |
 | OD-C18 | A grammar for source names | (a) none (today); (b) `[a-z][a-z0-9-]{0,63}` checked at startup | (b), with an `INVALID_SOURCE_NAME` code, because real names become labels and audit disposition keys. It can refuse an existing deployment's names, so it needs the migration note, and it is an owner choice for that reason |
+| OD-C19 | A selection containing a label that does not resolve (unknown, wrong kind, not permitted, wrong entity type) | (a) refuse the whole call with `SOURCE_NOT_AVAILABLE` and call nothing; (b) drop the bad labels and answer for the rest, reporting nothing; (c) answer for the rest and mark each bad label `NOT_AVAILABLE` in the result | (a). Fail closed, and a partial answer would hide a typo. (b) hides it; (c) lets the response distinguish bad labels from each other only if the markers differ, and if they do not it still tells the agent which labels were bad, which is acceptable but widens the result shape. Stated as a product choice, not a fact |
 
 ## 10. Proposed names (closing table)
 
@@ -841,5 +837,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `CATALOG_UNKNOWN_SOURCE`, `CATALOG_SOURCE_NOT_PERMITTED`, `CATALOG_ENTITY_TYPE_MISMATCH`, `CATALOG_UNKNOWN_ENTITY_TYPE`, `CATALOG_NO_PERMITTED_SOURCE` | audit-only reason codes (shape C) | 0.8; the last two 0.9 | `LINK_<REASON>` (task 191, sibling) |
 | `names` | reserved audit disposition key (values `REAL`, `ALIAS`) | 0.8, only if OD-C2 (a) | none |
 | `dataprism.catalog.unselected-source-limit` | configuration key (default `8`) | 0.8 | `dataprism.limits.max-sources` (OD-C7) |
-| `dataprism.catalog.real-names-purposes` | configuration key (default empty) | 0.8 | none |
+| `dataprism.catalog.real-names-scopes` | configuration key (default empty), if OD-C3 (c); the alternatives are `dataprism.catalog.real-names-purposes` (a) and `dataprism.catalog.real-names-scope-types` (d) | 0.8 | none |
+| `entityType`, `keyNamespace` | `list_sources` input arguments (`entityType` is the existing argument name, same meaning) | 0.8 | `entityType` of `get_entity_context`; `keyNamespace` from task 191 |
+| `source` | `describe_source` input argument | 0.8 | none |
 | `dataprism.catalog.descriptions.generated` | metric (gauge) | 0.8 | `dataprism.links.keys.loaded` (task 191, sibling) |

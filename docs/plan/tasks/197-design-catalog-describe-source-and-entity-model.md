@@ -92,3 +92,28 @@ Forbidden-word scan (a script holding the words reversed so they are not spelled
 Review gate: not run by the implementing agent. `reviewer` must return APPROVE against D-RM-8, 9, 10, 11, 13 and boundaries 1, 7, 8, and confirm no product decision is taken. Verdict to be recorded here by the caller.
 
 Points the reviewer should look at first: OD-C2 (D-RM-10 asks the audit to record the effective setting; shape C has no place for it, so this is a conflict with shape C and not a choice inside it), OD-C3 (where the per-scope real-names setting lives), and OD-C16 (list_sources size at hundreds of sources against paging that task 198 places in 0.9).
+
+### Revision after review
+
+Revised for the reviewer's requested changes (OD-C2, OD-C3, OD-C5, OD-C7 rewritten; OD-C19 added; removed chainable fields listed only with links enabled; fallback text iterated in byte order; input schemas no longer closed, no `maxItems` on `targetSources`). Schemas still valid: 7 schemas and 3 examples.
+
+Full content of `check_schemas.py` (kept outside the repository; run as `python -I check_schemas.py docs/plan/design/catalog.md` in an environment with `jsonschema` installed):
+
+```python
+import json, re, sys
+from jsonschema import Draft202012Validator
+text = open(sys.argv[1]).read()
+blocks = re.findall(r'(<!-- example-of: ([^>]*?) -->\n)?```json\n(.*?)```', text, re.S)
+schemas, examples = {}, []
+for marker, name, body in blocks:
+    d = json.loads(body)
+    if '$schema' in d:
+        Draft202012Validator.check_schema(d)
+        schemas[d['title']] = d
+        print('schema ok:', d['title'])
+    elif name:
+        examples.append((name.strip(), d))
+for name, ex in examples:
+    Draft202012Validator(schemas[name]).validate(ex)
+    print('example ok:', name)
+```
