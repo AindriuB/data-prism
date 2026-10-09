@@ -69,17 +69,49 @@ class ApprovalQuorumTest {
                 .isInstanceOf(SplitBrainProtectionException.class);
     }
 
+    private static OptionalInt defaultFor(String... members) {
+        return PrivacyCluster.defaultApprovalMinimumMembers(ClusterMembership.tcpIp("c", List.of(members)));
+    }
+
     @Test
     void theDefaultMinimumIsAMajorityOfTheListedMembersForTcpIpAndOneForNone() {
-        assertThat(ClusterMembership.tcpIp("c", List.of("a", "b")).defaultApprovalMinimumMembers())
-                .isEqualTo(OptionalInt.of(2));
-        assertThat(ClusterMembership.tcpIp("c", List.of("a", "b", "c")).defaultApprovalMinimumMembers())
-                .isEqualTo(OptionalInt.of(2));
-        assertThat(ClusterMembership.tcpIp("c", List.of("a", "b", "c", "d")).defaultApprovalMinimumMembers())
-                .isEqualTo(OptionalInt.of(3));
-        assertThat(ClusterMembership.tcpIp("c", List.of("a:5701", "a:5701", " a:5701 ")).defaultApprovalMinimumMembers())
+        assertThat(defaultFor("a", "b")).isEqualTo(OptionalInt.of(2));
+        assertThat(defaultFor("a", "b", "c")).isEqualTo(OptionalInt.of(2));
+        assertThat(defaultFor("a", "b", "c", "d")).isEqualTo(OptionalInt.of(3));
+        assertThat(PrivacyCluster.defaultApprovalMinimumMembers(ClusterMembership.none("c")))
                 .isEqualTo(OptionalInt.of(1));
-        assertThat(ClusterMembership.none("c").defaultApprovalMinimumMembers()).isEqualTo(OptionalInt.of(1));
-        assertThat(ClusterMembership.kubernetes("c", "ns", "svc", null).defaultApprovalMinimumMembers()).isEmpty();
+        assertThat(PrivacyCluster.defaultApprovalMinimumMembers(
+                ClusterMembership.kubernetes("c", "ns", "svc", null))).isEmpty();
+    }
+
+    @Test
+    void membersAreCountedAfterExpandingWhatHazelcastAccepts() {
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1-3"))).isEqualTo(3);
+        assertThat(defaultFor("10.0.0.1-3")).isEqualTo(OptionalInt.of(2));
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a,b,c"))).isEqualTo(3);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a, b;c d"))).isEqualTo(4);
+        assertThat(defaultFor("a,b,c")).isEqualTo(OptionalInt.of(2));
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1-3:5702", "10.0.0.2:5702"))).isEqualTo(3);
+    }
+
+    @Test
+    void aHostAndTheSameHostOnTheDefaultPortAreOneMember() {
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a", "a:5701"))).isEqualTo(1);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a:5701", " a "))).isEqualTo(1);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a", "a:5702"))).isEqualTo(2);
+        assertThat(defaultFor("a", "a:5701")).isEqualTo(OptionalInt.of(1));
+    }
+
+    @Test
+    void aFormThatCannotBeExpandedReliablyIsRefusedRatherThanUndercounted() {
+        for (String form : new String[]{"host-1-3", "10.0-2.0.1", "10.0.0.*", "10.0.0.3-1", "host[1-3]"}) {
+            if (form.equals("host-1-3")) {
+                // A hyphenated hostname is a plain hostname; only unambiguous ranges are expanded.
+                assertThat(PrivacyCluster.countTcpIpMembers(List.of(form))).isEqualTo(1);
+                continue;
+            }
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> PrivacyCluster.countTcpIpMembers(List.of(form)), form);
+        }
     }
 }

@@ -84,20 +84,6 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         return new ClusterMembership(clusterName, join, port, Optional.ofNullable(address));
     }
 
-    /**
-     * The fewest members that may see each other for approvals to change: a majority of the distinct
-     * {@code tcp-ip} entries, which therefore must name every member including this one, and {@code 1} for
-     * {@code none}. Empty for {@code kubernetes}, whose member count is not known here, so it must be given.
-     */
-    public java.util.OptionalInt defaultApprovalMinimumMembers() {
-        return switch (join) {
-            case TcpIp tcp -> java.util.OptionalInt.of(
-                    tcp.members().stream().map(String::strip).distinct().toList().size() / 2 + 1);
-            case None none -> java.util.OptionalInt.of(1);
-            case Kubernetes k -> java.util.OptionalInt.empty();
-        };
-    }
-
     /** Builds a fresh config. Nothing here starts a member. */
     public Config toConfig() {
         Config config = new Config();
