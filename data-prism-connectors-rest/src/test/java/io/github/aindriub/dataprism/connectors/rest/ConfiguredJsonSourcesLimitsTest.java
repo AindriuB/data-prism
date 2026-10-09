@@ -116,4 +116,10 @@ class ConfiguredJsonSourcesLimitsTest {
                             e -> assertThat(e.code()).isEqualTo("SCOPE_READ_BUDGET"));
         });
     }
+
+    @Test
+    @DisplayName("without a RequestLimits bean in the context, the documented defaults apply")
+    void withoutABeanTheDocumentedDefaultsApply() {
+        assertThat(ConfiguredJsonSourcesAutoConfiguration.STANDALONE_LIMITS).isEqualTo(RequestLimits.DEFAULT);
+    }
 }
