@@ -213,9 +213,10 @@ red tests (`PerSourceResultsTest`, `SourceStatusCodesTest`, the disposition-shap
   and record fields unchanged.
 - `CompareEntitySourcesTool.identity`: each field from the first `ANSWERED` source, ascending key order, that
   holds it; a refused source has no entity.
-- Final validation runs per returned tree (not over one merged tree), so a validator path is
-  `$.<payload key>` and no alias or source name is ever a property key a validator sees (pinned by
-  `PerSourceValidationTest`).
+- The final pass gets one JSON array of the returned sources' trees, in response order, so a path starts
+  `$[n]` before redaction; the index is stripped before the path is checked against the declared fields
+  (`$.<declared field>`, else `<undeclared>`). No alias or source name is ever a property key a validator
+  sees (pinned by `PerSourceValidationTest`).
 
 ### Mutation proofs (each run against `PerSourceResultsTest`, then reverted)
 - Keep a validation-refused source's tree in the response: fails `refusedSourceIsWithheldAndLeavesNoTrace[validation]`.
@@ -258,6 +259,9 @@ before 0.7 (plain `REFUSED`) still read and verify with the new reader
   merged, so two sources that use the same field name for different values are both returned.
   `ContextResponse.sources()` is `Map<String, SourceResult>`; `ContextResponse.entity()` and the
   constructors that took it are removed.
+- `LlmResponseValidator`: the final pass now receives a JSON array of the returned sources' trees, not an
+  object. A custom validator that assumes an object root will throw, and the call fails closed
+  (`DENY:REQUEST_FAILED`). Migration: handle an array root (walk it; per-source calls still pass one object).
 
 ### Changed
 - A source whose scrub or validation refuses is withheld and marked with the new status `REFUSED`; the
@@ -292,8 +296,7 @@ Not run by the implementer. The `reviewer` verdict on refusal isolation (archite
   union prohibited and emitted sets, so a validator refusing a combination across sources refuses again
   (`PerSourceValidationTest.crossSourceCombinationIsStillRefused`). Source names and aliases are still never
   keys. `LlmResponseValidator`'s Javadoc states the two calls.
-- `dataprism.privacy.failclosed` also counts each source withheld from a call that succeeds (no new metric;
-  documented in `docs/tools.md`).
+- `dataprism.privacy.failclosed` also counts each source withheld from a call that succeeds (superseded: see below).
 - Added tests: a refused source's raw value stays prohibited in either source order; the byte-identity check
   with `NO_DATA` also covers `structuredContent`.
 - Docs: the index card, `docs/tools.md` and `docs/audit.md` now say a mixed refusal reports the first
@@ -303,3 +306,7 @@ Not run by the implementer. The `reviewer` verdict on refusal isolation (archite
   source (`docker compose -f compose.yaml -f compose.build.yaml up --build`). Both are marked in the docs
   as converted from an earlier 0.6 capture, not re-captured. Not attempted here: the from-source build needs
   network image and dependency pulls.
+- Metric: `dataprism.privacy.source.withheld` (`Metric.PRIVACY_SOURCE_WITHHELD`) counts each source withheld
+  from a returned response; `dataprism.privacy.failclosed` is back to refused calls only. Add to the
+  CHANGELOG `### Changed` list in task 201.
+- A final-pass violation path loses its `[n]` source index before redaction (test added).

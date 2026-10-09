@@ -76,7 +76,8 @@ class PerSourceValidationTest {
         // Each source's scrubbed tree is {"value": <its value>} and it emits "synthetic-<value>".
         ScrubbingEngine scrubber = (record, ctx) -> {
             String value = ((Thing) record).value();
-            return new ScrubResult(MAPPER.createObjectNode().put("value", value), Set.of("synthetic-" + value));
+            return new ScrubResult(MAPPER.createObjectNode().put("value", value), Set.of("synthetic-" + value),
+                    java.util.Map.of("/value", io.github.aindriub.dataprism.annotations.PrivacyAction.PASS_THROUGH));
         };
         var resolver = new DefaultFieldMetadataResolver();
         return new DefaultContextOrchestrator(List.of(adapters), scrubber, resolver, List.of(validator),
@@ -172,14 +173,18 @@ class PerSourceValidationTest {
     }
 
     @Test
-    @DisplayName("a withheld source is counted as a fail-closed decision even though the call succeeds")
+    @DisplayName("a withheld source is counted under source.withheld, and the call is not counted as fail-closed")
     void aWithheldSourceIsCounted() {
+        java.util.concurrent.atomic.AtomicInteger withheld = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicInteger failClosed = new java.util.concurrent.atomic.AtomicInteger();
         PrivacyMetrics counting = new PrivacyMetrics() {
             @Override
             public void increment(io.github.aindriub.dataprism.core.metrics.Metric metric) {
                 if (metric == io.github.aindriub.dataprism.core.metrics.Metric.PRIVACY_FAILCLOSED) {
                     failClosed.incrementAndGet();
+                }
+                if (metric == io.github.aindriub.dataprism.core.metrics.Metric.PRIVACY_SOURCE_WITHHELD) {
+                    withheld.incrementAndGet();
                 }
             }
 
@@ -201,6 +206,19 @@ class PerSourceValidationTest {
 
         assertThat(response.sources().values()).extracting(SourceResult::status)
                 .containsExactlyInAnyOrder("ANSWERED", "REFUSED");
-        assertThat(failClosed).hasValue(1);
+        assertThat(withheld).hasValue(1);
+        assertThat(failClosed).as("failclosed counts refused calls only").hasValue(0);
+    }
+
+    @Test
+    @DisplayName("a final-pass violation path loses its source index, so a declared field is reported by name")
+    void finalPassPathDropsTheSourceIndex() {
+        LlmResponseValidator second = (tree, prohibited, emitted, ctx) -> tree.isArray()
+                ? ValidationResult.failed(List.of(new Violation("$[1].value", "X", "TEST"))) : ValidationResult.ok();
+
+        assertThatThrownBy(() -> orchestrator(new ArrayList<>(), second, source("alpha-api", "a"), source("beta-api", "b"))
+                .buildContext(ContextRequest.of("THING", "1"), context(), caller()))
+                .isInstanceOf(PrivacyRefusedException.class)
+                .satisfies(e -> assertThat(((PrivacyRefusedException) e).path()).isEqualTo("$.value"));
     }
 }

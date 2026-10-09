@@ -240,7 +240,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 // the withheld response, which no caller ever sees. The validators walk
                 // the trees, which can hold payload keys the model never declared.
                 throw new PrivacyRefusedException("VALIDATION_FAILED",
-                        RefusalPaths.redact(violations.get(0).path(), declared),
+                        RefusalPaths.redact(withoutSourceIndex(violations.get(0).path()), declared),
                         violations.size() + " violation(s), first " + violations.get(0).code()
                                 + " by " + violations.get(0).detectionMethod() + "; response withheld");
             }
@@ -263,15 +263,24 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             throw new AuditedRefusalException(failure, request.entityType(), correlationId);
         }
 
-        // A withheld source is a fail-closed decision too, and a call that goes on to succeed would
-        // otherwise leave no trace of it on a dashboard. Calls that are refused count themselves above.
+        // A withheld source leaves no other trace on a dashboard when the call goes on to succeed.
+        // failclosed counts refused calls only; this counts each source withheld from a returned response.
         sources.stream().filter(o -> o.status() == SourceOutcome.Status.REFUSED)
-                .forEach(o -> metrics.increment(Metric.PRIVACY_FAILCLOSED));
+                .forEach(o -> metrics.increment(Metric.PRIVACY_SOURCE_WITHHELD));
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
                 correlationId, dispositions);
         return ContextResponse.of(request.entityType(), subjectToken, sources,
                 findings, trees, fieldsByNamespace(raw), aliasing, investigationContext, context,
                 correlationId);
+    }
+
+    /**
+     * A final-pass path starts with the index of the source's tree in the assembled array
+     * ({@code $[1].name}). The index says which source, and says nothing a reader needs, so it is
+     * dropped before the path is checked against the declared fields: {@code $.name}.
+     */
+    private static String withoutSourceIndex(String path) {
+        return path != null && path.matches("\\$\\[\\d+\\].*") ? "$" + path.substring(path.indexOf(']') + 1) : path;
     }
 
     /**
