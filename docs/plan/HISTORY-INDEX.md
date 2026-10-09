@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 183 | 0.6.0 cut locally: version bump, dated CHANGELOG, cut-time doc fixes; release build green; main requires `ci-gate` alone | ## 2026-10-09 — 0.6.0 cut locally on release/0.6.0-cut (183) |
 | 2026-10-09 | 179 | `get_entity_context` `sources` sorted by emitted key; `ToolAdmission.none()` a shared instance checked by identity; stale test comments fixed | ## 2026-10-09 — 0.6.0 wave 12: deterministic sources order, shared ToolAdmission.none() and interrupted-close drain (179, 182) |
 | 2026-10-09 | 182 | `AuditEventListeners.close()` on an interrupted thread drains and joins the reporter; durations saturate; constructor thread leak fixed | ## 2026-10-09 — 0.6.0 wave 12: deterministic sources order, shared ToolAdmission.none() and interrupted-close drain (179, 182) |
 | 2026-10-09 | 180 | Dead FactoryBean loop removed from `AuditSinkSelection`; `close()` on an interrupted thread keeps the final drop line; thread-count tests compare identities | ## 2026-10-09 — 0.6.0 wave 12: audit follow-ups and architecture fixture move (180, 181) |
