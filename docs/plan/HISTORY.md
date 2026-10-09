@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Road to 1.0 agreed
+
+The roadmap from 0.7 to 1.0 is now recorded in `docs/plan/roadmap.md`, replacing the draft ideas file, with the owner decisions and design-time code facts in `PLAN.md`. 1.0 is defined as a privacy layer an operations team can run against hundreds of services, where an LLM agent discovers sources, follows sealed one-step links between them and compares per-source results, never seeing a real identifier. The plan is 0.7 (foundations and design), 0.8 (many-source core), 0.9 (release candidate, API freeze at 0.9.0) and 1.0 (stability promise, no new features).
+
+**Cost:** The first draft listed Hazelcast Enterprise as an option for cluster security; the owner ruled it out, so cluster security is designed on open-source Hazelcast only. Sealed links are new cryptography in a privacy path, which is why the roadmap schedules a threat model in 0.7 and an external review in 0.9, with a fallback of chaining only from human-supplied keys. Design-time checks of the code corrected one claim: sources past `maxSources` are already marked `SKIPPED_OVER_LIMIT` per source, so the problem is a partial answer, not an invisible one.
+
 ## 2026-10-09 — Maven 3.10 release guards and Central plugin investigation (185, 186)
 
 Task 185 added a "Guard Maven is 3.9.x" step to both jobs of `publish-central.yml`, directly after `actions/setup-java`, which fails unless the first line of `./mvnw -v` matches `Apache Maven 3.9.N`. It also added a Dependabot ignore for `org.apache.maven:apache-maven` >= 3.10. Task 186 (investigation only) found no fixed plugin: `org.sonatype.central` is at 0.11.0 and the `io.github.mavenplugins` fork 1.3.1 has the same bug. The cause is a Maven 3.10.0 change in `LegacyLocalRepositoryManager.overlay`, which now writes `maven-metadata-local.xml`, `_remote.repositories` and `.locks/` instead of `maven-metadata-central-staging.xml`. Upstream: apache/maven #13388 (issue) and #13389 (PR against maven-3.10.x), mavenplugins #78 and #79.

@@ -12,6 +12,42 @@ the sizing and the exit criteria. This file carries the order and the state.
 
 ---
 
+## Road to 1.0 (agreed 2026-10-09)
+
+Full roadmap in `roadmap.md` (this directory). It supersedes `roadmap-ideas.md`, which is removed. Releases 0.7 (foundations and design), 0.8 (many-source core), 0.9 (release candidate, freeze at 0.9.0), then 1.0.
+
+Owner decisions:
+
+- D-0.4.1-A: no Hazelcast Enterprise.
+- D-RM-1 (a): 1.0 supports multiple instances; cluster security designed in 0.7, built in 0.8. Owner-settled: generic tools only; the agent sequences its own calls; no application-specific traces or links on the server; per-source results are never merged; real names are opt-in per scope.
+- D-RM-2 (a): search comes after 1.0.
+- D-RM-3: folded into D-RM-14.
+- D-RM-4 (a): links only for fields marked `chainable: true`.
+- D-RM-5: exact namespace match; translation only via a declared key resolver.
+- D-RM-6: link lifetime configurable, default 30 min, may be set to the scope lifetime, never beyond the scope.
+- D-RM-7 (c): batch size configurable per scope, default 16, with a configured ceiling. The owner expects thousands of items per investigation.
+- D-RM-8 (a): separate alias description checked at startup, generated fallback.
+- D-RM-9 (a): refuse with a clear code when no source is chosen and the estate is too large.
+- D-RM-10 (a): real names only when the scope setting and the caller permission both allow; audit always records real names plus the effective setting.
+- D-RM-11 (a): role-to-source patterns in the security policy; unmatched sources denied.
+- D-RM-12 (a): per-source truncation at record boundaries with markers and next-page links; hard overall cap as backstop.
+- D-RM-13 (a): keep `compare_entity_sources`; review usage before the 0.9 freeze.
+- D-RM-14 (a): HATEOAS links: sealed, one-step, built from adapter and resolver declarations.
+- D-RM-15 (b): paging plus status-only bulk follow with drill-in links.
+
+Facts found during design, for the 0.7 planner (each checked against the code on 2026-10-09):
+
+- `RequestLimits.DEFAULT` (maxSources 8, maxRecords 500, maxResponseBytes 512 KiB, per-source timeout 3 s, concurrency 4, read budget 100) is hard-wired: `RequestLimits.java:41`, passed in `OrchestrationWiring.java:50` and also `ConfiguredJsonSourcesAutoConfiguration.java:145`. Nothing binds it from configuration.
+- The per-source timeout is measured from the start of the fan-out, not from each call: `SourceFanOut.java:102` and `:139`.
+- The read budget is charged once per request, not per source called: `DefaultContextOrchestrator.java:174`.
+- `maxRecords` and `maxResponseBytes` are validated in the `RequestLimits` constructor (`:47-48`) and read nowhere else in main code.
+- The merged tree overwrites same-named fields across sources: `merged.setAll(scrubbed.tree())`, `DefaultContextOrchestrator.java:343`.
+- `SourceFanOut` marks every source past `maxSources` as `SKIPPED_OVER_LIMIT` (`:84-90`). It is visible as a per-source status, but the call still succeeds with a partial answer.
+- `SecurityPolicy` holds only `allowedPurposes` and `roleCapabilities` (`SecurityPolicy.java:23`); there is no per-source authorisation.
+- `DataSourceAdapter` declares only `sourceName()`, `responseType()` and `fetch()` (`DataSourceAdapter.java:12-16`); there is no description or input-key declaration.
+
+---
+
 ## Decided
 
 The five choices that blocked S0 were settled on 2026-09-08. Recorded here in
@@ -331,7 +367,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 #### Open owner questions
 
-- 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
+- 1.0 roadmap: superseded. Agreed 2026-10-09; see "Road to 1.0" above and `roadmap.md`.
 - Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
 Release-cut items are consolidated in "0.5.0 release-cut checklist" below.
