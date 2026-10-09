@@ -86,7 +86,7 @@ applies, because the stores are built over that bean. Relaxed binding drops hyph
 | `dataprism.hazelcast.member.port` | Optional. Default 5701, never auto-incremented |
 | `dataprism.hazelcast.member.interface` | Optional. An IPv4 literal or wildcard such as `10.0.*.*` |
 | `dataprism.hazelcast.lock-timeout` | Optional. Default `PT2S`, from `PT100MS` to `PT30S`. How long a call waits for a cluster lock before it is refused. See [Failure behaviour](#failure-behaviour) |
-| `dataprism.hazelcast.approval-minimum-members` | Optional integer, at least 1. The fewest members that must see each other for approvals to be created, decided or consumed. `tcp-ip`: unset means a majority of the distinct `join.members` entries, so the list must name every member, this one included. `none`: 1, and the key is refused. `kubernetes`: required when `dataprism.oversight.approval-required-tools` is not empty. See [Failure behaviour](#failure-behaviour) |
+| `dataprism.hazelcast.approval-minimum-members` | Optional integer, at least 1. The fewest members that must see each other for approvals to be created, decided or consumed. `tcp-ip`: unset means a majority of the distinct `join.members` entries, so the list must name every member, this one included. Members are counted after expanding comma-separated entries and last-octet ranges such as `10.0.0.1-3`, and `a` and `a:5701` are one member. A form that cannot be expanded reliably (a wildcard, a range in another octet) is refused with `INVALID_APPROVAL_QUORUM` when you set the minimum. `none`: 1, and the key is refused. `kubernetes`: required when `dataprism.oversight.approval-required-tools` is not empty. See [Failure behaviour](#failure-behaviour) |
 
 `join.mode: none` is the explicit single-member choice: the member binds
 `127.0.0.1` only and neither discovers nor accepts other members. It refuses
@@ -334,6 +334,11 @@ deliberate. Where one member is enough, set `approval-minimum-members: 1`, which
 removes the protection and the cost, and accepts one use per side for the whole
 partition. A minimum of 1 applies no protection at all. A member also refuses
 approvals while it is the only one running of a cluster that needs more.
+
+Consuming, approving or rejecting changes the value and then restores the entry's
+expiry in a second step. A crash between the two leaves the entry without an
+expiry until it is evicted (least recently used), but the stored `expiresAt` is
+still checked on every use, so an expired approval is refused: it fails closed.
 
 A `PrivacyCluster` you build yourself with `PrivacyCluster.using(instance)` gets
 none of these map settings: not the merge policy and not the quorum. Configure

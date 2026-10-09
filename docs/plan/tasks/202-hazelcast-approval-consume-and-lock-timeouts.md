@@ -345,9 +345,18 @@ The 192 design's `dataprism.hazelcast.security.lock-timeout` is superseded by `d
 ### For 0.8
 - A Hazelcast merge policy cannot read sealed payloads, so once values are sealed the consumed-wins
   rule must move to the tombstone (design 2.3.4) or the application.
-- Writes in `HazelcastOversightState`, `CachingSyntheticValueSource` and `ScopeIdentityIndex` still
+- Writes in `HazelcastOversightState`, the `putIfAbsent` in `HazelcastApprovalStore.create` (it runs under the id lock, but not under a lock on its own entry key), `CachingSyntheticValueSource` and `ScopeIdentityIndex` still
   block on a lock someone else holds on their keys.
 - Budget and rate maps still have the default merge policy.
 - `data-prism-server` operator tests (task 190) that run an embedded cluster are unaffected by the
   quorum while the member is solo (minimum 1 configures nothing), but any test using `tcp-ip` lists
   will now meet the majority default.
+
+### Review changes
+- Member counting is `PrivacyCluster.countTcpIpMembers(List<String>)` (public static; new name for task 200's register),
+  used by the startup default and by the validator. It expands commas, semicolons, spaces and last-octet IPv4 ranges,
+  treats `a` and `a:5701` as one, and throws for forms it cannot expand reliably (validator: `INVALID_APPROVAL_QUORUM`).
+  `ClusterMembership` is back to its original state; the default lives in package-private
+  `PrivacyCluster.defaultApprovalMinimumMembers`. No coordinator grant was needed.
+- A crash between `replace` and `setTtl` leaves an entry with no expiry until LRU eviction. The stored `expiresAt`
+  still refuses it on every use, so this is not fail-open.

@@ -321,7 +321,17 @@ public final class DataPrismPropertiesValidator {
                     + "join.mode none, which is one member");
         }
         if ("tcp-ip".equals(mode)) {
-            long members = h.getJoin().getMembers().stream().map(String::strip).distinct().count();
+            int members;
+            try {
+                members = io.github.aindriub.dataprism.hazelcast.PrivacyCluster.countTcpIpMembers(
+                        h.getJoin().getMembers());
+            } catch (LinkageError hazelcastAbsent) {
+                return; // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
+            } catch (IllegalArgumentException unexpandable) {
+                refuse("INVALID_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members cannot be checked: "
+                        + "a join.members entry cannot be expanded reliably to a member count");
+                return;
+            }
             if (minimum > members) {
                 refuse("INVALID_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members is above the "
                         + "number of distinct join.members, so no partition could ever reach it");
