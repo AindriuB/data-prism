@@ -71,3 +71,49 @@ description SPI so 0.8 implements, and 0.9 freezes, a reviewed design.
 ## Out of scope
 - Code, SPI stubs or properties.
 - Batch, paging and bulk-follow schemas (task 198); link format (task 191).
+
+## Outcome
+
+Written: `docs/plan/design/catalog.md` (sections 1 to 6 are the six numbered items; 7 Boundaries, 8 Test obligations, 9 Open decisions OD-C1 to OD-C19, 10 closing names table). Every product choice is an open decision with options and a recommendation; the owner decided OD-C2 explicitly and delegated the rest on 2026-10-09 (recorded in section 9).
+
+Schema validation (draft 2020-12), run with the `jsonschema` package installed in a throwaway virtual environment outside the repository:
+
+```
+python3 -m venv <scratch>/venv && <scratch>/venv/bin/pip install jsonschema
+<scratch>/venv/bin/python -I check_schemas.py docs/plan/design/catalog.md
+```
+
+`check_schemas.py` extracts every fenced JSON block that has a `$schema`, runs `Draft202012Validator.check_schema` on it, then validates each block preceded by `<!-- example-of: <title> -->` against the schema of that title. Result: 7 schemas valid (`list_sources` input and output, `describe_source` input and output, `describe_entity_model` input and output, `get_entity_context` input) and 3 examples valid.
+
+Collision check: a script took every backticked name in the first column of the closing table and ran `grep -rIl -w <name>` over `docs/` (which includes `tools.md`, `audit.md`, `configuration.md`, the three design documents, tasks 190, 196, 198, 200, 201) and the main sources of core, orchestration, mcp, annotations, connectors-rest and server. All hits were reviewed. Real collisions: none. Close names, recorded in the table: `DESCRIBE_ENTITY_MODEL` (exists as a capability, not a tool), `UndeclaredFields.DROP`, `entityTypes()` and `dataprism.audit.entity-types` (audited types), `dataprism.limits.max-sources`. Words that merely appear in prose (`description`, `fields`, `source`, `path`, `labels`) are generic. Tasks 198 and 200 propose no names yet that overlap; reconcile in task 200 (OD-C13, OD-C16 are cross-task points).
+
+Forbidden-word scan (a script holding the words reversed so they are not spelled here) over the new file: no hits.
+
+Review gate: APPROVE — re-review of 998fa153 (after two CHANGES rounds).
+
+Points the reviewer should look at first: OD-C2 (D-RM-10 asks the audit to record the effective setting; shape C has no place for it, so this is a conflict with shape C and not a choice inside it), OD-C3 (where the per-scope real-names setting lives), and OD-C16 (list_sources size at hundreds of sources against paging that task 198 places in 0.9).
+
+### Revision after review
+
+Revised for the reviewer's requested changes (OD-C2, OD-C3, OD-C5, OD-C7 rewritten; OD-C19 added; removed chainable fields listed only with links enabled; fallback text iterated in byte order; input schemas no longer closed, no `maxItems` on `targetSources`). Schemas still valid: 7 schemas and 3 examples.
+
+Full content of `check_schemas.py` (kept outside the repository; run as `python -I check_schemas.py docs/plan/design/catalog.md` in an environment with `jsonschema` installed):
+
+```python
+import json, re, sys
+from jsonschema import Draft202012Validator
+text = open(sys.argv[1]).read()
+blocks = re.findall(r'(<!-- example-of: ([^>]*?) -->\n)?```json\n(.*?)```', text, re.S)
+schemas, examples = {}, []
+for marker, name, body in blocks:
+    d = json.loads(body)
+    if '$schema' in d:
+        Draft202012Validator.check_schema(d)
+        schemas[d['title']] = d
+        print('schema ok:', d['title'])
+    elif name:
+        examples.append((name.strip(), d))
+for name, ex in examples:
+    Draft202012Validator(schemas[name]).validate(ex)
+    print('example ok:', name)
+```
