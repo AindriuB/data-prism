@@ -11,7 +11,7 @@ recorded in this file.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditRecorder.java (the post-write hook and a constructor or factory that accepts listeners; no existing constructor removed)
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/AuditEventListener*Test.java (new)
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/AuditRecorderTest.java (insertions only)
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/*Audit*Configuration.java (the class that declares `dataPrismAuditRecorder` after 159; `DataPrismAutoConfiguration.java` instead if 159 left that bean there; the recorder bean method only)
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/AuditWiring.java (declares `dataPrismAuditRecorder` after 159; the recorder bean method only)
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java (only if D-163-C picks (b), (c) or (d): one row, plus one enum value for (c))
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanClassificationTest.java (insertions only, only if D-163-C adds a bean)
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanInventoryTest.java and its checked-in lists (only if D-163-C adds a bean)
@@ -150,3 +150,12 @@ A listener failure is logged to the general application log, never to the audit 
 
 Acceptance:
 - a test with a listener throwing an exception whose message contains a synthetic URL with credentials shows that the message text appears nowhere in the captured log output.
+
+## Outcome
+- `AuditEventListener` is the SPI (read-only `AuditEvent`). `AuditEventListeners` is the dispatcher: one daemon thread, a bounded queue of capacity+1 with a reserved STOP slot. Delivery happens after the configured sink accepts the event, and inside the recorder lock only as an O(1) offer.
+- Drops are counted lock-free and reported content-free as `AUDIT_LISTENER_DROPPED` by a separate daemon reporter thread (at most one line per 10 s, and it works while a listener hangs). Failures are logged as `AUDIT_LISTENER_FAILED` with the exception class name only (D-163-D). The interrupt flag is cleared after each delivery.
+- `close()` is bounded on every path: 5 s drain, reporter shutdown and join, `tryLock` 200 ms.
+- The dispatcher bean `dataPrismAuditEventListeners` is `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL` (D-163-C). Property `dataprism.audit.listeners.queue-capacity` (default 1024; `INVALID_AUDIT_LISTENER_QUEUE_CAPACITY`; `AUDIT_EVENT_LISTENERS_NOT_REPLACEABLE`). The frozen list and `docs/configuration.md` were updated deliberately.
+- Amendments: `@Bean` count is 53 (the task text said 56/57). `AuditWiring` gained the dispatcher `@Bean` (Owns named the recorder method only). The wiring test uses `WebApplicationContextRunner`.
+- Verified: final tester PASS at 8c5242b9 (full reactor JDK 21, 0 failures; release-profile package green; listener tests 10 repeat runs, no flake). Review CHANGES twice, all fixed, then APPROVE.
+- Follow-ups: a theoretical flake at `AuditEventListenerTest` about line 77 (threads exit asynchronously between tests); `close()` on an already-interrupted thread skips the final drop line (the count is still correct).

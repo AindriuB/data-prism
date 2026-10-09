@@ -51,3 +51,13 @@ effective registration order stay as they are.
 - Adding, removing, renaming or reclassifying any bean.
 - Any `spring.boot` subpackage other than `jwt` (`validation` is 158's).
 - `docs/conventions.md` (task 162).
+
+## Outcome
+- `DataPrismAutoConfiguration` (FQCN unchanged, about 45 lines, no beans) `@Import`s 14 package-private `@Configuration(proxyBeanMethods = false)` classes in an order that reproduces the old registration order: `IdentityResolverSelection`, `AuditSinkSelection`, `AuditIntegrityHealth`, `ClusterBackedState`, `ReidentificationWiring`, `Preflights`, `PropertiesValidation`, `PrivacyEngineWiring`, `SecurityWiring`, `AuditWiring`, `ScopeBudgetWiring`, `OversightWiring`, `OrchestrationWiring`, `McpTransportWiring`. A `JsonProjection` helper class is separate.
+- 50 `@Bean` methods. The task's "55" counted Javadoc mentions, not methods.
+- `AutoConfiguredBeanInventoryTest` has a static view (method- and class-level conditions and classifications) and runtime views for 8 scenarios. The lists were generated before the move and are unchanged after it. The polish commit added class-level `@Conditional*` to the static view, proven by mutation.
+- `JwtDecoderSupport` and `JwtCallerContextExtractor` moved to `spring.boot.jwt`. `parseDiscoveryMetadata` lost the stale `throws IOException`.
+- ArchUnit: `validation` and `jwt` must not depend on each other, both directions, non-vacuous (proven by mutations). 158's `allowEmptyShould(true)` is gone.
+- Scope waiver: a comment line in `validation/DataPrismContractValidator.java`.
+- Verification: tester PASS at 4a0764a3 (full reactor JDK 21, 1669 tests, 0 failed, HEAD unchanged during the run; release-profile package green). Review APPROVE.
+- Where things went: `dataPrismHashChainedAuditSink` and `JsonProjection` are in `AuditSinkSelection`; `dataPrismAuditRecorder` is in `AuditWiring`.

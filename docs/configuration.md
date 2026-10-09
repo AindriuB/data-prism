@@ -101,9 +101,10 @@ intended: each of these used to change what the file meant without any error.
 
 The Spring path reports a refusal from the descriptor file as
 `INVALID_MODEL_DESCRIPTOR_FILE` and does not repeat the file's content. The
-inner code above is currently not carried over, so the operator learns that
-the file was refused, not which rule; the reader's own message is visible only
-when `ModelDescriptors.fromYaml` is called directly.
+reader's inner code (for example `UNKNOWN_CONFIG_KEY` or `DUPLICATE_CONFIG_KEY`)
+is chained as the cause, so the operator learns which rule the file broke. The
+cause carries the code, the document path and the key name only, never a value;
+a reader message that has no code is not chained.
 
 **Quoting rule.** A value that must be text and could be read as something
 else has to be quoted. `timeout: PT2S` and `model-version: customer-v1` are
@@ -144,6 +145,63 @@ owned by a reviewed adapter: `base-url`, `timeout`, and approved mTLS/service
 credential references. It is not a generic request template. An adapter owns
 the endpoint path, response type, source-name aliasing, and conversion to an
 annotated LLM-exposed model.
+
+### Property reference for the keys the group table summarises
+
+The jar ships Spring configuration metadata (`META-INF/spring-configuration-metadata.json`), so
+an IDE completes and describes `dataprism.*` keys in YAML and properties files. This only
+concerns the keys above: your own `@ConfigurationProperties` classes are unaffected. Their binding
+happens at runtime and needs no processor; add `spring-boot-configuration-processor` to your own
+build only if you want IDE metadata for your own properties. A build test keeps this
+document and that metadata in step in both directions.
+
+Each key below is also described in the group table above. Defaults here are the values in code.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.transport.mode` | `http` | The inbound transport. `stdio` is refused |
+| `dataprism.transport.http.path` | `/mcp` | The rooted path of the MCP endpoint |
+| `dataprism.transport.fixture-development` | `false` | Local fixture development only; never for a protected deployment |
+| `dataprism.security.jwt.issuer` | unset | The trusted JWT issuer. Required for HTTP |
+| `dataprism.security.jwt.issuer-discovery-uri` | unset | Issuer-discovery location; exactly one of this and `jwk-set-uri` |
+| `dataprism.security.caller-claims.principal` | unset | The claim carrying the caller principal |
+| `dataprism.security.caller-claims.roles` | unset | The claim carrying the caller roles |
+| `dataprism.security.caller-claims.investigation` | unset | The trusted claim carrying the investigation or case attribute |
+| `dataprism.security-policy.purposes` | unset | The permitted purposes; at least one |
+| `dataprism.security-policy.roles` | unset | Map of role name to the capabilities it holds; at least one role |
+| `dataprism.privacy.profile` | unset | The privacy profile, `DEFAULT` or `STRICT`. Required |
+| `dataprism.privacy.locale` | `neutral` | The vocabulary locale; `neutral` selects the locale-neutral vocabulary |
+| `dataprism.privacy.scope-lifetime` | unset | The privacy scope lifetime. Required in production; positive |
+| `dataprism.privacy.hmac-key.key-id` | unset | The HMAC key pinned for each scope. Required |
+| `dataprism.privacy.hmac-key.environment-variable` | unset | The name of the environment variable holding the key |
+| `dataprism.privacy.hmac-key.provider-reference` | unset | A reference to a key provider |
+| `dataprism.privacy.hmac-key.value` | unset | Refused if set: a literal key is never accepted |
+| `dataprism.audit.sink` | unset | `approved-sink`, `slf4j` or `hash-chained`. Required in production |
+| `dataprism.audit.writer-id` | unset | The writer identity in the audit trail. Required for every sink |
+| `dataprism.audit.entity-types` | empty | Optional entity type names; each matches `[A-Za-z][A-Za-z0-9_-]{0,63}` |
+| `dataprism.metrics.sink` | unset | `micrometer`. Required in production |
+| `dataprism.metrics.registry-reference` | unset | A reference to the approved registry binding |
+| `dataprism.hazelcast.topology` | unset | `embedded` or `single-node`. Required for a protected deployment |
+| `dataprism.hazelcast.cluster-name` | unset | The cluster name for `embedded`; never `dev` |
+| `dataprism.hazelcast.identity-cache-ttl` | unset | The identity cache TTL; follows the privacy scope lifetime when unset |
+| `dataprism.hazelcast.join.mode` | unset | `tcp-ip`, `kubernetes` or `none` |
+| `dataprism.hazelcast.join.members` | empty | `host` or `host:port` entries for `tcp-ip` |
+| `dataprism.hazelcast.join.kubernetes.namespace` | unset | The Kubernetes namespace to join in |
+| `dataprism.hazelcast.join.kubernetes.service-name` | unset | The service name (API mode); exactly one of this and `service-dns` |
+| `dataprism.hazelcast.join.kubernetes.service-dns` | unset | The service DNS name (DNS mode) |
+| `dataprism.hazelcast.member.port` | unset | The member port; 5701 when unset |
+| `dataprism.hazelcast.member.interface` | unset | The network interface the member binds; every interface when unset |
+| `dataprism.hazelcast.reidentification-enabled` | `false` | Keeps the re-identification index in the cluster |
+| `dataprism.hazelcast.persistence-enabled` | `false` | Refused without an explicit reviewed configuration |
+| `dataprism.hazelcast.map-store-enabled` | `false` | Refused without an explicit reviewed configuration |
+| `dataprism.hazelcast.reidentification-controls-reference` | unset | A reference to the reviewed re-identification controls |
+| `dataprism.hazelcast.tls-key-reference` | unset | Refused if set: member TLS is not available in the open-source distribution |
+| `dataprism.hazelcast.tls-trust-reference` | unset | Refused if set: member TLS is not available in the open-source distribution |
+| `dataprism.sources.<name>.base-url` | unset | The server-controlled HTTPS base URL of one source |
+| `dataprism.sources.<name>.timeout` | unset | The positive request timeout of one source |
+| `dataprism.sources.<name>.service-credential-reference` | unset | A reference to the service credential of one source |
+| `dataprism.sources.<name>.mtls.key-reference` | unset | A reference to the mTLS client key material of one source |
+| `dataprism.sources.<name>.mtls.trust-reference` | unset | A reference to the mTLS trust material of one source |
 
 ### Representative protected deployment
 
@@ -257,6 +315,17 @@ still echoes the `entityType` that was sent.
 - Residual risk of the fallback: an upper-case token such as `MURPHY` or
   `ACC123` passes the shape and is recorded. Set `entity-types` to the exact
   types in use to close that gap.
+
+#### Audit event listeners
+
+| Property | Default | Meaning |
+|---|---|---|
+| `dataprism.audit.listeners.queue-capacity` | `1024` | How many audit events may wait for the listener thread. When the queue is full, further events are dropped for listeners only and logged as `AUDIT_LISTENER_DROPPED`; the audit log is unaffected. Used only when an `AuditEventListener` bean exists. See [audit.md](audit.md#audit-event-listeners). |
+
+Refusal code, at startup:
+
+- `INVALID_AUDIT_LISTENER_QUEUE_CAPACITY` -- `listeners.queue-capacity` is zero or negative.
+- `AUDIT_EVENT_LISTENERS_NOT_REPLACEABLE` -- an application declares a second dispatcher bean (`AuditEventListeners`). Add `AuditEventListener` beans instead.
 
 #### Segmented files, checkpoints and retention
 

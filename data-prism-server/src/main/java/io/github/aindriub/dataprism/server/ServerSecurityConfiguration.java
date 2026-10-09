@@ -1,11 +1,13 @@
 package io.github.aindriub.dataprism.server;
 
+import io.github.aindriub.dataprism.spring.boot.OperatorProperties;
+import io.github.aindriub.dataprism.spring.boot.SecurityProperties;
 import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.server.operator.OperatorCallers;
 import io.github.aindriub.dataprism.spring.boot.DataPrismProperties;
-import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
-import io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport;
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtCallerContextExtractor;
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtDecoderSupport;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
@@ -61,7 +63,7 @@ class ServerSecurityConfiguration {
     @DependsOn("dataPrismPropertiesValidated")
     @ConditionalOnProperty(prefix = "dataprism.operator", name = "enabled", havingValue = "true")
     SecurityFilterChain operatorFilterChain(HttpSecurity http, DataPrismProperties properties) throws Exception {
-        DataPrismProperties.Operator operator = properties.getOperator();
+        OperatorProperties operator = properties.getOperator();
         int port = operator.getPort();
         JwtDecoder decoder = JwtDecoderSupport.buildJwtDecoder(operatorTokenProperties(properties));
         http.securityMatcher(request -> request.getLocalPort() == port)
@@ -143,9 +145,9 @@ class ServerSecurityConfiguration {
 
     /** The MCP token settings with the operator audience: same issuer and keys, different audience. */
     private static DataPrismProperties operatorTokenProperties(DataPrismProperties properties) {
-        DataPrismProperties.Security.Jwt from = properties.getSecurity().getJwt();
+        SecurityProperties.Jwt from = properties.getSecurity().getJwt();
         DataPrismProperties view = new DataPrismProperties();
-        DataPrismProperties.Security.Jwt to = view.getSecurity().getJwt();
+        SecurityProperties.Jwt to = view.getSecurity().getJwt();
         to.setIssuer(from.getIssuer());
         to.setJwkSetUri(from.getJwkSetUri());
         to.setIssuerDiscoveryUri(from.getIssuerDiscoveryUri());

@@ -9,6 +9,7 @@
 - mkdocs.yml (one nav entry under "Reference")
 - docs/architecture.md (the components table, the boundary/ArchitectureTest prose, and one new entry in "Decisions worth knowing")
 - docs/conventions.md (the "Deliberate, reviewed exception" paragraph: class names only)
+- Comment- and doc-only stale-reference fixes from 159: AuditProperties.java (~211), IdentityProperties.java (~8), PrivacyProperties.java (~46), validation/DataPrismPropertiesValidator.java (~419, ~442), ServerIntegrationsConfiguration (stale `DataPrismAutoConfiguration#method` references), docs-site/diagrams/README.md (~278-288), docs/developer-guide/write-an-adapter.md (~65)
 - docs-site/diagrams/README.md (lines ~275-276 only: the two source-path links to `core/DataSourceAdapter.java` and `core/PassThroughIdentityResolver.java` must name `core/spi/`; found stale after 156 by the reviewer)
 
 ## Goal
@@ -44,6 +45,18 @@ check). Each is copied from that task's hand-back.
 - [ ] (Task 170, final scope, added 2026-10-08.) The CHANGELOG `### Breaking` section and `docs/migration-0.6.md` list all nine refusal codes: `DUPLICATE_CONFIG_KEY`, `UNKNOWN_CONFIG_KEY`, `NON_STRING_CONFIG_SCALAR`, `INVALID_CONFIG_BOOLEAN`, `LEADING_ZERO_CONFIG_NUMBER`, `TRAILING_CONFIG_CONTENT`, `UNSUPPORTED_CONFIG_YAML` (aliases, anchors, tags), `INVALID_CONFIG_SHAPE` and `NULL_LIKE_CONFIG_SCALAR`. They state the YAML 1.2 meaning changes (`yes`/`no`/`on`/`off` are text, leading-zero numbers are decimal and refused in numeric fields), that a present-but-null value is refused, and that an empty `tls:` is now refused where it used to disable `requireHttps`. They also record that error messages no longer echo configured URLs or credentials (`ConfiguredJsonSources`, `RestSources`, `RestSource`, the initializer), and that config locations are shown as a placeholder, a cut local path or `scheme://host[:port]`. The retired 170 task file's Outcome has the detail.
 - [ ] (Task 168.) `docs/migration-0.6.md` carries 168's signature inventory from the retired 168 task file's Outcome, including the dependency swaps (`mcp-json-jackson2` to `mcp-json-jackson3`, `spring-boot-jackson2` to `spring-boot-starter-jackson`) and `DataPrismObjectMapper`/`create()` no longer being public.
 - [ ] (Task 171.) The CHANGELOG notes, under a CI or build heading, that `build.yml` now builds the Javadoc with the release profile (unsigned) on every PR.
+- [ ] (Task 175 follow-up, resolved by architect review 2026-10-08.) `docs/architecture.md` "Decisions worth knowing" records the map-key decision: map keys and dynamic property names are treated as undeclared data; the profile's `unclassified` setting governs; kept names become `<undeclared-N>`; refusals, audit and logs carry only `<undeclared>`; only a Java-built `PASS_THROUGH_UNSAFE` profile emits keys verbatim. Point to `docs/extending.md` (the section around lines 391-416) and name the pinning tests: `UndeclaredPropertyNameTest`, `UndeclaredKeyRefusalTest`, `UndeclaredNameToolResultScanTest`.
+
+- [ ] (From task 159, merged 2026-10-08.) `docs/migration-0.6.md` records that the logger categories `DataPrismAutoConfiguration$AuditSinkSelection` and `DataPrismAutoConfiguration$JsonProjection` are now `AuditSinkSelection` and `JsonProjection` (package `io.github.aindriub.dataprism.spring.boot`), so operators who set levels on them must change them, and that the bean names of the configuration classes themselves changed. `docs/conventions.md` (~78) names `AuditSinkSelection` as the home of `dataPrismHashChainedAuditSink`. The stale `DataPrismAutoConfiguration#method` and line references in the files listed in Owns are corrected to the new classes (comment and doc changes only).
+
+## Added from 161
+The CHANGELOG and migration page list the two new refusal codes `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`, and state that an application `AuditSink` combined with `sink=hash-chained` and a json-directory now refuses to start.
+
+## Added from 163
+- [ ] `CHANGELOG.md` `[Unreleased]` `### Added` has: "Added AuditEventListener, a read-only SPI called after the configured audit sink accepted each event, on one bounded asynchronous dispatcher (dataprism.audit.listeners.queue-capacity, default 1024). It is best effort: events are dropped for listeners only when the queue is full, and the audit log is unaffected. Failures are logged by class name only as AUDIT_LISTENER_FAILED, and drops as AUDIT_LISTENER_DROPPED."
+
+## Added from 164
+- [ ] `CHANGELOG.md` `[Unreleased]` `### Added` has: "The data-prism-spring-boot-autoconfigure jar now ships Spring configuration metadata (META-INF/spring-configuration-metadata.json), so IDEs complete and describe dataprism.* keys in YAML. The processor runs only at build time and is not a dependency, and a build test keeps the metadata and docs/configuration.md in step."
 
 ## Out of scope
 - The 0.6.0 release cut: version bump, `server.json`, image tags, tagging and publishing. A separate task, filed when the owner calls the cut.

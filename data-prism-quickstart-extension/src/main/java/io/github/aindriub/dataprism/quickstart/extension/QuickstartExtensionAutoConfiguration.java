@@ -20,7 +20,7 @@ import java.time.Duration;
  * worked pattern this follows: an {@code IdentityResolver} bean plus a {@code
  * DataSourceAdapter} bean for every {@code dataprism.sources.*} entry the
  * deployment configures, both of which
- * {@code DataPrismAutoConfiguration.dataPrismIdentityResolverPreflight} and
+ * {@code Preflights.dataPrismIdentityResolverPreflight} and
  * {@code DataPrismContractValidator} refuse startup without.
  *
  * <p>Every source setting this reads — base URL, timeout — comes from {@code

@@ -1,0 +1,112 @@
+dataprism.audit | bean | rw
+dataprism.audit.checkpoint | bean | ro
+dataprism.audit.checkpoint.file-path | java.lang.String | rw | null
+dataprism.audit.checkpoint.interval | java.time.Duration | rw | PT5M
+dataprism.audit.credential-reference | java.lang.String | rw | null
+dataprism.audit.directory | java.lang.String | rw | null
+dataprism.audit.entity-types | java.util.List<java.lang.String> | rw | []
+dataprism.audit.file-path | java.lang.String | rw | null
+dataprism.audit.listeners | bean | ro
+dataprism.audit.listeners.queue-capacity | int | rw | 1024
+dataprism.audit.output | bean | ro
+dataprism.audit.output.field-names | java.util.Map<java.lang.String,java.lang.String> | rw | {}
+dataprism.audit.output.field-preset | java.lang.String | rw | canonical
+dataprism.audit.output.json-directory | java.lang.String | rw | null
+dataprism.audit.output.routing | bean | ro
+dataprism.audit.output.routing.data-stream-dataset | java.lang.String | rw | null
+dataprism.audit.output.routing.data-stream-namespace | java.lang.String | rw | null
+dataprism.audit.output.routing.data-stream-type | java.lang.String | rw | null
+dataprism.audit.output.routing.event-dataset | java.lang.String | rw | null
+dataprism.audit.retention | java.time.Period | rw | P6M
+dataprism.audit.retention-override | boolean | rw | false
+dataprism.audit.sink | java.lang.String | rw | null
+dataprism.audit.writer-id | java.lang.String | rw | null
+dataprism.correlation | bean | rw
+dataprism.correlation.inbound | bean | ro
+dataprism.correlation.inbound.format | java.lang.String | rw | opaque
+dataprism.correlation.inbound.header | java.lang.String | rw | null
+dataprism.correlation.inbound.pattern | java.lang.String | rw | null
+dataprism.correlation.inbound.required | boolean | rw | false
+dataprism.correlation.mdc-key | java.lang.String | rw | null
+dataprism.correlation.outbound | bean | ro
+dataprism.correlation.outbound.header | java.lang.String | rw | null
+dataprism.hazelcast | bean | rw
+dataprism.hazelcast.cluster-name | java.lang.String | rw | null
+dataprism.hazelcast.identity-cache-ttl | java.time.Duration | rw | null
+dataprism.hazelcast.join | bean | ro
+dataprism.hazelcast.join.kubernetes | bean | ro
+dataprism.hazelcast.join.kubernetes.namespace | java.lang.String | rw | null
+dataprism.hazelcast.join.kubernetes.service-dns | java.lang.String | rw | null
+dataprism.hazelcast.join.kubernetes.service-name | java.lang.String | rw | null
+dataprism.hazelcast.join.members | java.util.List<java.lang.String> | rw | []
+dataprism.hazelcast.join.mode | java.lang.String | rw | null
+dataprism.hazelcast.map-store-enabled | boolean | rw | false
+dataprism.hazelcast.member | bean | ro
+dataprism.hazelcast.member.interface | java.lang.String | rw | null
+dataprism.hazelcast.member.port | java.lang.Integer | rw | null
+dataprism.hazelcast.persistence-enabled | boolean | rw | false
+dataprism.hazelcast.reidentification-controls-reference | java.lang.String | rw | null
+dataprism.hazelcast.reidentification-enabled | boolean | rw | false
+dataprism.hazelcast.tls-key-reference | java.lang.String | rw | null
+dataprism.hazelcast.tls-trust-reference | java.lang.String | rw | null
+dataprism.hazelcast.topology | java.lang.String | rw | null
+dataprism.identity | bean | rw
+dataprism.identity.resolver | java.lang.String | rw | null
+dataprism.metrics | bean | rw
+dataprism.metrics.registry-reference | java.lang.String | rw | null
+dataprism.metrics.sink | java.lang.String | rw | null
+dataprism.operator | bean | rw
+dataprism.operator.address | java.lang.String | rw | null
+dataprism.operator.enabled | boolean | rw | false
+dataprism.operator.port | java.lang.Integer | rw | null
+dataprism.operator.required-audience | java.lang.String | rw | null
+dataprism.operator.required-scope | java.lang.String | rw | null
+dataprism.oversight | bean | rw
+dataprism.oversight.approval-required-tools | java.util.List<java.lang.String> | rw | []
+dataprism.oversight.approval-ttl | java.time.Duration | rw | PT15M
+dataprism.oversight.caller-rate-limit | bean | ro
+dataprism.oversight.caller-rate-limit.requests | java.lang.Integer | rw | null
+dataprism.oversight.caller-rate-limit.window | java.time.Duration | rw | PT1M
+dataprism.oversight.max-pending-per-requester | int | rw | 5
+dataprism.privacy | bean | rw
+dataprism.privacy.descriptor-file | java.lang.String | rw | null
+dataprism.privacy.hmac-key | bean | rw
+dataprism.privacy.hmac-key.environment-variable | java.lang.String | rw | null
+dataprism.privacy.hmac-key.key-id | java.lang.String | rw | null
+dataprism.privacy.hmac-key.provider-reference | java.lang.String | rw | null
+dataprism.privacy.hmac-key.value | java.lang.String | rw | null
+dataprism.privacy.locale | java.lang.String | rw | neutral
+dataprism.privacy.profile | java.lang.String | rw | null
+dataprism.privacy.scope-lifetime | java.time.Duration | rw | null
+dataprism.reidentification | bean | rw
+dataprism.reidentification.approval-ttl | java.time.Duration | rw | PT15M
+dataprism.reidentification.enabled | boolean | rw | false
+dataprism.reidentification.four-eyes | boolean | rw | true
+dataprism.reidentification.max-pending-per-requester | int | rw | 5
+dataprism.reidentification.purposes | java.util.List<java.lang.String> | rw | []
+dataprism.reidentification.roles | java.util.Map<java.lang.String,java.util.Set<enum[REQUEST, APPROVE]>> | rw | {}
+dataprism.security | bean | rw
+dataprism.security.caller-claims | bean | rw
+dataprism.security.caller-claims.investigation | java.lang.String | rw | null
+dataprism.security.caller-claims.principal | java.lang.String | rw | null
+dataprism.security.caller-claims.roles | java.lang.String | rw | null
+dataprism.security.jwt | bean | rw
+dataprism.security.jwt.audience | java.lang.String | rw | null
+dataprism.security.jwt.issuer | java.lang.String | rw | null
+dataprism.security.jwt.issuer-discovery-uri | java.lang.String | rw | null
+dataprism.security.jwt.jwk-set-uri | java.lang.String | rw | null
+dataprism.security-policy | bean | rw
+dataprism.security-policy.purposes | java.util.List<java.lang.String> | rw | []
+dataprism.security-policy.roles | java.util.Map<java.lang.String,java.util.List<java.lang.String>> | rw | {}
+dataprism.sources | java.util.Map<java.lang.String,bean> | rw | {}
+dataprism.sources.*.base-url | java.lang.String | rw | null
+dataprism.sources.*.mtls | bean | rw
+dataprism.sources.*.mtls.key-reference | java.lang.String | rw | null
+dataprism.sources.*.mtls.trust-reference | java.lang.String | rw | null
+dataprism.sources.*.service-credential-reference | java.lang.String | rw | null
+dataprism.sources.*.timeout | java.time.Duration | rw | null
+dataprism.transport | bean | rw
+dataprism.transport.fixture-development | boolean | rw | false
+dataprism.transport.http | bean | rw
+dataprism.transport.http.path | java.lang.String | rw | /mcp
+dataprism.transport.mode | enum[HTTP, STDIO] | rw | HTTP

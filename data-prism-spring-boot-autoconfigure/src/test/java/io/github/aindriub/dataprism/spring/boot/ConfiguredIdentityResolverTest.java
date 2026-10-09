@@ -51,7 +51,7 @@ class ConfiguredIdentityResolverTest {
     /**
      * Non-vacuity for this acceptance item was checked by hand rather than
      * shipped as an automated mutation test: with the new bean-registration
-     * condition in {@code DataPrismAutoConfiguration#dataPrismIdentityResolverPreflight}
+     * condition in {@code Preflights#dataPrismIdentityResolverPreflight}
      * relaxed so it registers the pass-through bean unconditionally instead of
      * only when {@code dataprism.identity.resolver=pass-through} is set, this
      * exact test — with the property left unset — starts successfully and
@@ -143,7 +143,7 @@ class ConfiguredIdentityResolverTest {
 
     /**
      * Captures {@link IdentityResolver} bean names before any plain (unordered)
-     * {@link BeanFactoryPostProcessor} — including {@code DataPrismAutoConfiguration
+     * {@link BeanFactoryPostProcessor} — including {@code Preflights
      * #dataPrismIdentityResolverPreflight}, which throws on this exact case — runs,
      * since a context whose refresh aborted mid-way cannot be inspected afterwards.
      */

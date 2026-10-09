@@ -43,6 +43,9 @@ public final class AuditRecorder implements AutoCloseable {
     /** Null for the constructors that write no checkpoints. */
     private final AuditCheckpointSink checkpointSink;
 
+    /** Null when no listeners are configured. Receives each event only after the sink accepted it. */
+    private final AuditEventListeners listeners;
+
     private volatile String previousHash = GENESIS;
 
     /**
@@ -62,7 +65,7 @@ public final class AuditRecorder implements AutoCloseable {
      * new writer starting at GENESIS instead of a false chain break.
      */
     public AuditRecorder(AuditSink sink, Clock clock, String writerId) {
-        this(sink, clock, writerId, null, false);
+        this(sink, clock, writerId, null, false, null);
     }
 
     /**
@@ -72,11 +75,22 @@ public final class AuditRecorder implements AutoCloseable {
      * not start.
      */
     public AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink) {
-        this(sink, clock, writerId, Objects.requireNonNull(checkpointSink, "checkpointSink"), true);
+        this(sink, clock, writerId, Objects.requireNonNull(checkpointSink, "checkpointSink"), true, null);
+    }
+
+    /**
+     * As above, and hands every event to {@code listeners} after {@code sink.record(event)} has returned.
+     * {@code checkpointSink} may be null (no checkpoints); {@code listeners} may be null (none). The
+     * hand-over is a non-blocking offer, so a listener can never delay, fail or reorder a recording.
+     */
+    public AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink,
+                         AuditEventListeners listeners) {
+        this(sink, clock, writerId, checkpointSink, checkpointSink != null, listeners);
     }
 
     private AuditRecorder(AuditSink sink, Clock clock, String writerId, AuditCheckpointSink checkpointSink,
-                          boolean writeBoot) {
+                          boolean writeBoot, AuditEventListeners listeners) {
+        this.listeners = listeners;
         this.checkpointSink = checkpointSink;
         this.sink = Objects.requireNonNull(sink, "sink");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -211,6 +225,11 @@ public final class AuditRecorder implements AutoCloseable {
             throw e;
         }
         previousHash = hash;
+        // After the authoritative write and after the chain head advanced, never before: a failed write
+        // is not delivered. A non-blocking, non-throwing offer; listeners run on their own thread.
+        if (listeners != null) {
+            listeners.publish(event);
+        }
         return event;
     }
 }

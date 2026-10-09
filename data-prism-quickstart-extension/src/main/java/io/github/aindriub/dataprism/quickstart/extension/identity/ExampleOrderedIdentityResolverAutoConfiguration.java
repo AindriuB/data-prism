@@ -20,7 +20,7 @@ import org.springframework.context.annotation.Bean;
  * QuickstartExtensionAutoConfiguration}'s own {@code @ConditionalOnMissingBean}
  * bean, the quickstart's default has already been registered by then, and this
  * class's unconditional {@code @Bean} adds a second {@link IdentityResolver}
- * — {@code DataPrismAutoConfiguration.dataPrismContextOrchestrator}'s single
+ * — {@code OrchestrationWiring.dataPrismContextOrchestrator}'s single
  * {@code IdentityResolver} parameter then fails to resolve, and startup fails
  * with {@code NoUniqueBeanDefinitionException}, not with a working override.
  *

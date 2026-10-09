@@ -20,6 +20,11 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 163 | Read-only `AuditEventListener` SPI on one bounded async dispatcher (`PRIVACY_CRITICAL` bean, queue-capacity property); content-free drop and failure logging; bounded `close()`; 53 beans | ## 2026-10-09 — 0.6.0 wave 10: read-only AuditEventListener SPI (163) |
+| 2026-10-09 | 164 | Spring configuration metadata generated at build time (processor not a dependency); exact two-way test against docs/configuration.md with a self-checking gaps file | ## 2026-10-09 — 0.6.0 wave 9: Spring configuration metadata (164) |
+| 2026-10-09 | 161 | JSON audit projection is its own `PRIVACY_CRITICAL`/`COMPETING_BEAN_REFUSAL` bean; `TeeAuditSink` `Closeable`; refusals `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`; 52 beans | ## 2026-10-09 — 0.6.0 wave 9: JSON audit projection as its own classified bean (161) |
+| 2026-10-08 | 159 | `DataPrismAutoConfiguration` split into 14 package-private configuration classes (50 beans, order preserved, inventory test); JWT classes into `spring.boot.jwt` | ## 2026-10-08 — 0.6.0 wave 8: DataPrismAutoConfiguration split by concern, JWT into spring.boot.jwt (159) |
+| 2026-10-08 | 158 | DataPrismProperties split into 13 top-level *Properties classes; validation moved to spring.boot.validation; property names frozen by test | ## 2026-10-08 — 0.6.0 wave 7: DataPrismProperties split by concern (158) |
 | 2026-10-08 | 175 | Interface and abstract map key types deferred to the per-key runtime check; CheckedKey forwards resolve/createContextual/handledType | ## 2026-10-08 — 0.6.0 wave 6 addendum: interface and abstract map key types (175) |
 | 2026-10-08 | 174 | Source-model record properties must come from record components (structural check, startup and runtime) | ## 2026-10-08 — 0.6.0 wave 6 addendum: record properties must match components (174) |
 | 2026-10-08 | 173 | SourceTree Jackson 2 parity (enums, dates, records) and record-only source models | ## 2026-10-08 — 0.6.0 wave 6 addendum: SourceTree Jackson 2 parity and record-only source models (173) |

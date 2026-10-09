@@ -238,6 +238,39 @@ correct under parallel fan-out. A source without the key sends nothing, unless
 applies to every source without its own key, and each such source is one more
 party that can join the id.
 
+## React to audit events with `AuditEventListener`
+
+Declare a bean to receive every audit event after it has been written, for
+example to forward it to a log pipeline. Listeners are read-only and
+best-effort; read [Audit event listeners](audit.md#audit-event-listeners)
+first for when they are called, what they can lose, and who owns the
+destination.
+
+```java
+import io.github.aindriub.dataprism.audit.AuditEventListener;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+
+/** Your own client for wherever the events go; a placeholder so this example compiles. */
+interface SiemClient {
+    void send(long sequence, String eventId, String tool, String policyDecision);
+}
+
+@Configuration(proxyBeanMethods = false)
+class AuditForwarding {
+    @Bean @Order(1)
+    AuditEventListener auditForwarder(SiemClient siem) {
+        // Runs on the shared listener thread: return promptly, and log your own failures.
+        return event -> siem.send(event.sequence(), event.eventId(), event.tool(), event.policyDecision());
+    }
+}
+```
+
+Beans are called in `@Order`. A listener that throws is isolated and logged by
+class name only; one that blocks delays the listeners after it, not the audited
+call.
+
 ## Implement `IdentityResolver`
 
 `IdentityResolver` is how a subject's per-source keys relate to one canonical
@@ -724,7 +757,7 @@ returns, and refuses startup unless the two sets are identical:
         if(!configured.equals(supplied)) throw new DataPrismConfigurationException("UNRESOLVED_SOURCE_ADAPTER","configured sources and DataSourceAdapter beans differ");
 ```
 
-`data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismContractValidator.java:27-29`
+`data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismContractValidator.java`
 
 The Spring bean method name (`quickstartCustomerAdapter`, above) and the
 class name (`QuickstartCustomerAdapter`) are never consulted for this check —
@@ -748,8 +781,8 @@ $ java -Dloader.path=$EXTENSION_JAR -jar $SERVER_JAR \
     [... rest of the required dataprism.* configuration, see docs/configuration.md ...]
 ...
 Caused by: io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException: UNRESOLVED_SOURCE_ADAPTER: configured sources and DataSourceAdapter beans differ
-	at io.github.aindriub.dataprism.spring.boot.DataPrismContractValidator.validateIntegrations(DataPrismContractValidator.java:29)
-	at io.github.aindriub.dataprism.spring.boot.DataPrismAutoConfiguration.dataPrismPropertiesValidated(DataPrismAutoConfiguration.java:98)
+	at io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator.validateIntegrations(DataPrismContractValidator.java)
+	at io.github.aindriub.dataprism.spring.boot.PropertiesValidation.dataPrismPropertiesValidated(PropertiesValidation.java:50)
 ```
 
 `$EXTENSION_JAR` and `$SERVER_JAR` were the built

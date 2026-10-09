@@ -46,6 +46,53 @@ class TeeAuditSinkTest {
                 "hash");
     }
 
+    private static final class CountingCloseable implements AuditSink, java.io.Closeable {
+        final String name;
+        final List<String> log;
+        int closes;
+
+        CountingCloseable(String name, List<String> log) {
+            this.name = name;
+            this.log = log;
+        }
+
+        @Override
+        public void record(AuditEvent event) {
+        }
+
+        @Override
+        public void close() {
+            closes++;
+            log.add(name);
+        }
+    }
+
+    @Test
+    void closeClosesTheProjectionThenThePrimaryExactlyOnceEvenWhenCalledTwice() throws IOException {
+        List<String> log = new ArrayList<>();
+        CountingCloseable primary = new CountingCloseable("primary", log);
+        CountingCloseable projection = new CountingCloseable("projection", log);
+        TeeAuditSink tee = new TeeAuditSink(primary, projection);
+        tee.close();
+        tee.close();
+        assertThat(projection.closes).isEqualTo(1);
+        assertThat(primary.closes).isEqualTo(1);
+        assertThat(log).containsExactly("projection", "primary");
+    }
+
+    @Test
+    void aFailingProjectionCloseStillClosesThePrimary() {
+        List<String> log = new ArrayList<>();
+        CountingCloseable primary = new CountingCloseable("primary", log);
+        class Failing implements AuditSink, java.io.Closeable {
+            @Override public void record(AuditEvent event) { }
+            @Override public void close() throws IOException { throw new IOException("boom"); }
+        }
+        TeeAuditSink tee = new TeeAuditSink(primary, new Failing());
+        assertThatThrownBy(tee::close).isInstanceOf(IOException.class);
+        assertThat(primary.closes).isEqualTo(1);
+    }
+
     @Test
     void writesPrimaryThenProjection() {
         List<String> order = new ArrayList<>();

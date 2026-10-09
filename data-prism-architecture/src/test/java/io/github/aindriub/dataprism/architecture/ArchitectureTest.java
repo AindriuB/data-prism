@@ -36,8 +36,8 @@ import io.github.aindriub.dataprism.mapper.fixture.SharedObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.RebuildMapperFixture;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.oversight.fixture.OversightDependsOnMcpFixture;
-import io.github.aindriub.dataprism.spring.boot.JwtCallerContextExtractor;
-import io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport;
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtCallerContextExtractor;
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtDecoderSupport;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -344,7 +344,7 @@ class ArchitectureTest {
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.mcp.DataPrismObjectMapper")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.audit.format.AuditJsonRenderer")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.audit.AuditCheckpoint")
-            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.spring.boot.JwtDecoderSupport")
+            .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.spring.boot.jwt.JwtDecoderSupport")
             .and().doNotHaveFullyQualifiedName("io.github.aindriub.dataprism.core.model.StrictYaml")
             .should().callConstructorWhere(constructsAFactoryOrGenerator())
             .orShould().callMethodWhere(obtainsAFactoryOrGenerator())
@@ -663,15 +663,11 @@ class ArchitectureTest {
      * the code it constrains.
      *
      * <p>{@link JwtDecoderSupport} and {@link JwtCallerContextExtractor} are
-     * exempt by fully qualified name rather than by their package: task 26
-     * collapsed the two edges' byte-for-byte duplicated decoder construction
-     * and caller extraction into these two classes in {@code
-     * ..dataprism.spring.boot..}, which also carries {@code
-     * DataPrismProperties} and other auto-configuration classes that must
-     * stay usable without a resource server on the classpath. Exempting the
-     * package would let any future class there depend on Spring Security
-     * unnoticed; naming these two keeps the exemption as narrow as what
-     * actually needs it.
+     * exempt by class: task 26 collapsed the two edges' byte-for-byte duplicated
+     * decoder construction and caller extraction into these two classes, and
+     * task 159 moved them into {@code ..dataprism.spring.boot.jwt..}. They are
+     * still named rather than exempted by package, so a future class added to
+     * that package cannot depend on Spring Security unnoticed.
      */
     private static final ArchRule ONLY_THE_EXAMPLE_DEPENDS_ON_SPRING_SECURITY = noClasses()
             .that(DescribedPredicate.not(JavaClass.Predicates.belongToAnyOf(
@@ -824,5 +820,27 @@ class ArchitectureTest {
     @Test
     void auditSubpackagesAreFreeOfCycles() {
         AUDIT_SUBPACKAGES_ARE_FREE_OF_CYCLES.check(CLASSES);
+    }
+
+    /** The cross-property validation package stays free of the JWT code. */
+    private static final ArchRule VALIDATION_DOES_NOT_DEPEND_ON_JWT = noClasses()
+            .that().resideInAPackage("..spring.boot.validation..")
+            .should().dependOnClassesThat().resideInAPackage("..spring.boot.jwt..");
+
+    /** ... and the JWT code stays free of the validation package. */
+    private static final ArchRule JWT_DOES_NOT_DEPEND_ON_VALIDATION = noClasses()
+            .that().resideInAPackage("..spring.boot.jwt..")
+            .should().dependOnClassesThat().resideInAPackage("..spring.boot.validation..");
+
+    /** Only the Spring Boot auto-configuration itself reaches into its validation package. */
+    private static final ArchRule VALIDATION_IS_INTERNAL_TO_SPRING_BOOT = noClasses()
+            .that().resideOutsideOfPackage("..spring.boot..")
+            .should().dependOnClassesThat().resideInAPackage("..spring.boot.validation..");
+
+    @Test
+    void springBootValidationIsInternalAndIndependentOfJwt() {
+        VALIDATION_DOES_NOT_DEPEND_ON_JWT.check(CLASSES);
+        JWT_DOES_NOT_DEPEND_ON_VALIDATION.check(CLASSES);
+        VALIDATION_IS_INTERNAL_TO_SPRING_BOOT.check(CLASSES);
     }
 }

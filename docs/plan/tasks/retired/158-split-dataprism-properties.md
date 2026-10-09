@@ -63,3 +63,14 @@ Add `spring-boot-configuration-processor` in 0.6.0, for IDE autocomplete and inl
 - the generated `META-INF/spring-configuration-metadata.json` must ship in the jar;
 - a check confirms that every key documented in docs/configuration.md appears in the metadata with the documented default;
 - property names do not change.
+
+## Outcome
+- 13 top-level `*Properties` classes; the root `DataPrismProperties` is 182 lines.
+- Validation is in `spring.boot.validation` (`DataPrismPropertiesValidator`, `DataPrismContractValidator`). 103 + 8 refusal codes, in identical order.
+- `PropertyNamesFrozenTest` freezes 110 `dataprism.*` paths, types and defaults. Known blind spots, none changed: constructor binding, unit annotations, mutable versus immutable collection defaults.
+- `@Bean` count 55. The FQCN, prefix and imports files are unchanged.
+- Deliberate behaviour change: `INVALID_MODEL_DESCRIPTOR_FILE` chains a fresh value-free cause only for coded (`UPPER_SNAKE: `) reader messages, never for uncoded, enum or IO messages.
+- Visibility widenings forced by the package move: `sameOrInside`, `clusterSettingsSet`, `effectivePattern`, and the contract validator's class, constructor and `validateIntegrations`.
+- ArchUnit: `validation` must not depend on `spring.boot.jwt` (`allowEmptyShould(true)` until 159 creates the package; 159 drops it) and nothing outside `spring.boot` depends on `validation`.
+- Scope waiver: type-reference edits in `JwtCallerContextExtractor.java` and `JwtDecoderSupport.java`.
+- Verification: tester PASS at 0ffef9cd (full reactor JDK 21, 1660 tests, 0 failed; release-profile package green). Review CHANGES (vacuous case-sensitive leak test, needlessly public `usableHeaderName`, unused imports, stale line number) fixed in 0ffef9cd.

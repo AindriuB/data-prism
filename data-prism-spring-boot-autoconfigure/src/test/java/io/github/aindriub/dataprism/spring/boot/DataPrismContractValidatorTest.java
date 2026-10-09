@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
@@ -65,7 +66,7 @@ class DataPrismContractValidatorTest {
     @Test
     void unresolvedSourceAdapterFiresWhenADataprismSourcesEntryNamesASourceNoAdapterSupplies() {
         DataPrismProperties properties = new DataPrismProperties();
-        properties.getSources().put("orphan", new DataPrismProperties.Source());
+        properties.getSources().put("orphan", new SourceProperties());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
                 emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
@@ -102,7 +103,7 @@ class DataPrismContractValidatorTest {
     @Test
     void unreviewedSourceAdapterDoesNotFireWhenADataprismSourcesEntryNamesTheSuppliedAdapter() {
         DataPrismProperties properties = new DataPrismProperties();
-        properties.getSources().put("customer-api", new DataPrismProperties.Source());
+        properties.getSources().put("customer-api", new SourceProperties());
 
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
@@ -121,7 +122,7 @@ class DataPrismContractValidatorTest {
     void approvedAuditSinkWithNoAuditSinkBeanFiresAuditSinkBeanRequired() {
         DataPrismProperties properties = new DataPrismProperties();
         properties.getAudit().setSink(DataPrismProperties.APPROVED_SINK);
-        properties.getSources().put("customer-api", new DataPrismProperties.Source());
+        properties.getSources().put("customer-api", new SourceProperties());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
@@ -141,7 +142,7 @@ class DataPrismContractValidatorTest {
     void approvedAuditSinkWithAnAuditSinkBeanPresentDoesNotThrow() {
         DataPrismProperties properties = new DataPrismProperties();
         properties.getAudit().setSink(DataPrismProperties.APPROVED_SINK);
-        properties.getSources().put("customer-api", new DataPrismProperties.Source());
+        properties.getSources().put("customer-api", new SourceProperties());
 
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),
@@ -159,7 +160,7 @@ class DataPrismContractValidatorTest {
     void nonApprovedSinkWithNoAuditSinkBeanStillFiresMissingAuditSink() {
         DataPrismProperties properties = new DataPrismProperties();
         properties.getAudit().setSink("slf4j");
-        properties.getSources().put("customer-api", new DataPrismProperties.Source());
+        properties.getSources().put("customer-api", new SourceProperties());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties,
                 List.of(fakeAdapter("customer-api")),

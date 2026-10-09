@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.spring.boot.jwt.JwtCallerContextExtractor;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -79,7 +80,7 @@ class CorrelationConfigurationTest {
     void the_feature_is_off_and_the_defaults_are_bound_when_nothing_is_set() {
         runner().run(context -> {
             assertThat(context).hasNotFailed();
-            DataPrismProperties.Correlation.Inbound inbound =
+            CorrelationProperties.Inbound inbound =
                     context.getBean(DataPrismProperties.class).getCorrelation().getInbound();
             assertThat(inbound.getHeader()).isNull();
             assertThat(inbound.getFormat()).isEqualTo("opaque");
@@ -98,7 +99,7 @@ class CorrelationConfigurationTest {
                 "dataprism.correlation.inbound.required=true",
                 "dataprism.correlation.outbound.header=X-Downstream-ID").run(context -> {
             assertThat(context).hasNotFailed();
-            DataPrismProperties.Correlation c = context.getBean(DataPrismProperties.class).getCorrelation();
+            CorrelationProperties c = context.getBean(DataPrismProperties.class).getCorrelation();
             assertThat(c.getInbound().getHeader()).isEqualTo("X-Correlation-ID");
             assertThat(c.getInbound().getPattern()).isEqualTo("[a-z]{4}");
             assertThat(c.getInbound().isRequired()).isTrue();

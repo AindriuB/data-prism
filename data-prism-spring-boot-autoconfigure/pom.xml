@@ -36,4 +36,27 @@
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework</groupId><artifactId>spring-web</artifactId><scope>test</scope></dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <!-- Generates META-INF/spring-configuration-metadata.json for IDE completion of
+               dataprism.* keys. Listed on the processor path, with its version from the Spring
+               Boot BOM, and deliberately NOT a dependency: it never appears in this module's
+               dependency tree or any consumer's. Setting annotationProcessorPaths switches off
+               classpath processor discovery for this module (none ran before). The plugin
+               configuration is build-time only and is not inherited by consumers. -->
+          <annotationProcessorPathsUseDepMgmt>true</annotationProcessorPathsUseDepMgmt>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.springframework.boot</groupId>
+              <artifactId>spring-boot-configuration-processor</artifactId>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

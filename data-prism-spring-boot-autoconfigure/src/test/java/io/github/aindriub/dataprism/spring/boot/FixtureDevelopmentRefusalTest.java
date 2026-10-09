@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.spring.boot;
 
+import io.github.aindriub.dataprism.spring.boot.validation.DataPrismContractValidator;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
@@ -23,7 +24,7 @@ class FixtureDevelopmentRefusalTest {
 
     @Test void httpFixtureDevelopmentRefusesEvenWhenOtherwiseValid() {
         DataPrismProperties properties = validProperties();
-        properties.getTransport().setMode(DataPrismProperties.Transport.Mode.HTTP);
+        properties.getTransport().setMode(TransportProperties.Mode.HTTP);
         properties.getTransport().setFixtureDevelopment(true);
 
         assertThatThrownBy(properties::validate)
@@ -49,7 +50,7 @@ class FixtureDevelopmentRefusalTest {
 
     @Test void httpFixtureDevelopmentWithABlankIssuerRefusesWithMissingJwtIssuer() {
         DataPrismProperties properties = validProperties();
-        properties.getTransport().setMode(DataPrismProperties.Transport.Mode.HTTP);
+        properties.getTransport().setMode(TransportProperties.Mode.HTTP);
         properties.getTransport().setFixtureDevelopment(true);
         properties.getSecurity().getJwt().setIssuer("");
 
@@ -60,7 +61,7 @@ class FixtureDevelopmentRefusalTest {
 
     @Test void stdioFixtureDevelopmentIsUnaffected() {
         DataPrismProperties properties = new DataPrismProperties();
-        properties.getTransport().setMode(DataPrismProperties.Transport.Mode.STDIO);
+        properties.getTransport().setMode(TransportProperties.Mode.STDIO);
         properties.getTransport().setFixtureDevelopment(true);
 
         assertThatCode(properties::validate).doesNotThrowAnyException();
@@ -68,9 +69,9 @@ class FixtureDevelopmentRefusalTest {
 
     @Test void contractValidatorEarlyReturnDoesNotApplyToHttpFixtureDevelopment() {
         DataPrismProperties properties = new DataPrismProperties();
-        properties.getTransport().setMode(DataPrismProperties.Transport.Mode.HTTP);
+        properties.getTransport().setMode(TransportProperties.Mode.HTTP);
         properties.getTransport().setFixtureDevelopment(true);
-        properties.getSources().put("customer", new DataPrismProperties.Source());
+        properties.getSources().put("customer", new SourceProperties());
 
         assertThatThrownBy(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
                 emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider(), emptyProvider()))
@@ -80,7 +81,7 @@ class FixtureDevelopmentRefusalTest {
 
     @Test void contractValidatorEarlyReturnAppliesOnlyToStdioFixtureDevelopment() {
         DataPrismProperties properties = new DataPrismProperties();
-        properties.getTransport().setMode(DataPrismProperties.Transport.Mode.STDIO);
+        properties.getTransport().setMode(TransportProperties.Mode.STDIO);
         properties.getTransport().setFixtureDevelopment(true);
 
         assertThatCode(() -> DataPrismContractValidator.validateIntegrations(properties, List.of(),
@@ -156,7 +157,7 @@ class FixtureDevelopmentRefusalTest {
         properties.getAudit().setWriterId("test");
         properties.getMetrics().setSink("micrometer");
         properties.getHazelcast().setTopology("single-node");
-        DataPrismProperties.Source source = new DataPrismProperties.Source();
+        SourceProperties source = new SourceProperties();
         source.setBaseUrl("https://customer.example");
         source.setTimeout(Duration.ofSeconds(2));
         properties.getSources().put("customer", source);

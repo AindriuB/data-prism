@@ -98,3 +98,10 @@ Defaults the processor cannot infer, such as Duration, Period and computed value
 Exceptions go in the checked-in allow-list (`configuration-metadata-gaps.txt`) with one reason per line. Binder-bound `dataprism.sources.<name>.*` is the expected main entry.
 
 Any undocumented keys or wrong defaults found on the first run are fixed in this task, or allow-listed with a reason. Each one is listed in the commit body.
+
+## Outcome
+- The processor is wired through maven-compiler-plugin `annotationProcessorPaths` plus `annotationProcessorPathsUseDepMgmt` only. It is not a dependency of any module (D-164-A); the starter's dependency tree does not contain it.
+- The jar ships `META-INF/spring-configuration-metadata.json`. All 79 `dataprism.*` leaf keys are described.
+- `ConfigurationMetadataDocumentedTest` is exact in both directions (D-164-B), compares defaults with their types (Duration and similar parsed), and uses a self-checking gaps file `configuration-metadata-gaps.txt` (10 entries; a stale entry fails the test). Value hints were checked against the code. Duplicate property-table rows in `docs/configuration.md` fail the test, proven with a scratch duplicate. The follow-up commit 16ca2c8f added the data-stream-type hint and corrected the `sources.*` gap reason.
+- Coordinator-approved deviations: `@NestedConfigurationProperty` (and its import) on 12 `DataPrismProperties` fields, needed because 158 made the nested classes top-level; and multi-name field declarations split one per field (semantics unchanged; `PropertyNamesFrozenTest` green).
+- Verified: tester PASS at 383ba6ed (full reactor JDK 21, 1670 tests, 0 failed; release-profile package green); review APPROVE; autoconfigure module tests 250/0 after the follow-up.
