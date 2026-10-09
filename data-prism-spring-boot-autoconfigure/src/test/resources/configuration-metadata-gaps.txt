@@ -1,11 +1,11 @@
 # category|key|reason. See ConfigurationMetadataDocumentedTest. An entry that suppresses nothing fails the test.
 #
-# outside-binding: documented, bound outside @ConfigurationProperties, so absent from the generated metadata.
-outside-binding|dataprism.sources.*.base-url|dataprism.sources.<name> is bound through Binder in ConfiguredJsonSourcesInitializer, not a @ConfigurationProperties map value the processor expands
-outside-binding|dataprism.sources.*.timeout|bound through Binder, as above
-outside-binding|dataprism.sources.*.service-credential-reference|bound through Binder, as above
-outside-binding|dataprism.sources.*.mtls.key-reference|bound through Binder, as above
-outside-binding|dataprism.sources.*.mtls.trust-reference|bound through Binder, as above
+# outside-binding: documented but absent from the generated metadata.
+outside-binding|dataprism.sources.*.base-url|bound by DataPrismProperties.sources (Map<String, SourceProperties>), but the processor does not expand map values into sub-keys; the Binder read in ConfiguredJsonSourcesInitializer is only a cross-check
+outside-binding|dataprism.sources.*.timeout|map value sub-key the processor does not expand, as above
+outside-binding|dataprism.sources.*.service-credential-reference|map value sub-key the processor does not expand, as above
+outside-binding|dataprism.sources.*.mtls.key-reference|map value sub-key the processor does not expand, as above
+outside-binding|dataprism.sources.*.mtls.trust-reference|map value sub-key the processor does not expand, as above
 outside-binding|dataprism.json-sources.config-location|read by ConfiguredJsonSources in the connectors module, not by DataPrismProperties
 #
 # not-a-property: a backticked dataprism.* name in the docs that is not a configuration key.

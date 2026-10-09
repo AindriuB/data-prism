@@ -29,6 +29,12 @@
       ]
     },
     {
+      "name": "dataprism.audit.output.routing.data-stream-type",
+      "values": [
+        { "value": "logs", "description": "The only accepted data stream type." }
+      ]
+    },
+    {
       "name": "dataprism.correlation.inbound.format",
       "values": [
         { "value": "opaque", "description": "Accept a value matching the configured pattern." },

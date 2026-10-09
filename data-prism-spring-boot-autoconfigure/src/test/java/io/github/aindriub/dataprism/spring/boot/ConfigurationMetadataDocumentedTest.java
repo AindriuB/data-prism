@@ -240,7 +240,9 @@ class ConfigurationMetadataDocumentedTest {
             }
             String key = normalise(full);
             String cell = defaultColumn >= 0 && defaultColumn < cells.size() ? cells.get(defaultColumn) : null;
-            out.put(key, new DocKey(key, true, cell != null, cell));
+            DocKey previous = out.put(key, new DocKey(key, true, cell != null, cell));
+            assertThat(previous == null || !previous.tableRow())
+                    .as("key documented in two property tables (keep one row): " + key).isTrue();
         }
         return out;
     }
