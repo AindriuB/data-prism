@@ -187,6 +187,31 @@ class AuditOutputConfigurationTest {
     }
 
     @Test
+    void a_json_directory_with_expression_hostile_characters_still_starts_and_receives_the_output(
+            @TempDir Path dir) throws Exception {
+        for (String name : new String[] {"o'brien", "a b", "x#{1+1}y", "d${z", "back\\slash", "it's #{ a ${ b \\ 'q'"}) {
+            Path root = Files.createDirectory(dir.resolve(Integer.toString(name.hashCode())));
+            Path json = root.resolve(name);
+            segmented(root).withPropertyValues("dataprism.audit.output.json-directory=" + json).run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context).hasBean("dataPrismJsonAuditProjection");
+                AuditEvent event = recordOne(context.getBean(AuditRecorder.class));
+                assertThat(Files.readString(json.resolve("audit-2026-10-06.ndjson"))).contains(event.eventHash());
+            });
+        }
+    }
+
+    @Test
+    void a_blank_json_directory_registers_no_projection(@TempDir Path dir) {
+        segmented(dir).withPropertyValues("dataprism.audit.output.json-directory=   ").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).doesNotHaveBean("dataPrismJsonAuditProjection");
+            assertThat(context.getBean(AuditSink.class)).isNotInstanceOf(TeeAuditSink.class);
+        });
+        segmented(dir).run(context -> assertThat(context).doesNotHaveBean("dataPrismJsonAuditProjection"));
+    }
+
+    @Test
     void the_json_projection_is_its_own_bean_and_closing_the_context_closes_both_sinks(@TempDir Path dir) {
         Path json = dir.resolve("json");
         List<String> destroyed = new java.util.concurrent.CopyOnWriteArrayList<>();

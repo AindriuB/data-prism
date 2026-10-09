@@ -10,7 +10,13 @@ import io.github.aindriub.dataprism.audit.sink.TeeAuditSink;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.condition.ConditionOutcome;
+import org.springframework.boot.autoconfigure.condition.SpringBootCondition;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
+import org.springframework.core.type.AnnotatedTypeMetadata;
+import org.springframework.util.StringUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -125,8 +131,7 @@ class AuditSinkSelection {
      */
     @Bean
     @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
-    @ConditionalOnExpression("T(org.springframework.util.StringUtils)"
-            + ".hasText('${dataprism.audit.output.json-directory:}')")
+    @Conditional(JsonDirectoryConfigured.class)
     static org.springframework.beans.factory.config.BeanFactoryPostProcessor dataPrismJsonAuditProjectionPreflight() {
         return factory -> {
             java.util.Set<String> sinks = new java.util.LinkedHashSet<>(
@@ -171,8 +176,7 @@ class AuditSinkSelection {
      */
     @Bean
     @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
-    @ConditionalOnExpression("T(org.springframework.util.StringUtils)"
-            + ".hasText('${dataprism.audit.output.json-directory:}')")
+    @Conditional(JsonDirectoryConfigured.class)
     JsonProjection dataPrismJsonAuditProjection(DataPrismProperties properties, ObjectProvider<Clock> clock,
             ConfigurableListableBeanFactory beanFactory) {
         // Needs no type resolution, so it catches every replacement of the built-in sink, however typed.
@@ -229,6 +233,21 @@ class AuditSinkSelection {
             } catch (java.io.IOException | RuntimeException ignored) {
                 // the startup refusal is the failure that matters
             }
+        }
+    }
+
+    /**
+     * True when {@code dataprism.audit.output.json-directory} has text. Read through the binder, not a
+     * SpEL string: a path containing a quote, {@code #{} or {@code ${} must not be parsed as code.
+     */
+    static final class JsonDirectoryConfigured extends SpringBootCondition {
+        @Override
+        public ConditionOutcome getMatchOutcome(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            String directory = Binder.get(context.getEnvironment())
+                    .bind("dataprism.audit.output.json-directory", String.class).orElse(null);
+            return StringUtils.hasText(directory)
+                    ? ConditionOutcome.match("dataprism.audit.output.json-directory has text")
+                    : ConditionOutcome.noMatch("dataprism.audit.output.json-directory is blank or absent");
         }
     }
 }
