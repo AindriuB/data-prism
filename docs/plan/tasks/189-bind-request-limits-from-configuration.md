@@ -16,6 +16,7 @@ one bean `dataPrismRequestLimits`, `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUS
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java (insertions only)
 - data-prism-spring-boot-autoconfigure/src/main/resources/META-INF/additional-spring-configuration-metadata.json
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/LimitsConfigurationTest.java (new)
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanInventoryTest.java (hasSize 53 to 55 only; coordinator grant)
 - data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/** (insertions only)
 - data-prism-spring-boot-autoconfigure/src/test/resources/io/github/aindriub/dataprism/spring/boot/frozen-property-names.txt (insertions only)
 - data-prism-spring-boot-autoconfigure/src/test/resources/configuration-metadata-gaps.txt (insertions only, if any)
@@ -128,3 +129,14 @@ Proposed CHANGELOG `[Unreleased]` `### Added` lines for task 201:
 
 Migration note: defaults unchanged; new startup refusal code `INVALID_REQUEST_LIMITS`. An application that supplied
 its own `RequestLimits` bean is now refused with `FORBIDDEN_PRIVACY_OVERRIDE`.
+
+Later changes (coordinator):
+- `AutoConfiguredBeanInventoryTest.java` is added to Owns by coordinator grant; `hasSize(53)` to `hasSize(55)` matches
+  the two new `@Bean` methods.
+- connectors-rest now fails closed: with any `dataprism.limits.*` property set and no `RequestLimits` bean (the
+  autoconfigure module excluded) startup is refused with `INVALID_REQUEST_LIMITS`, naming no value. The fallback
+  applies only when no such property is set.
+
+Follow-up, not fixed here: with `allowEagerInit=false`, an application-supplied raw `FactoryBean` (no generic type)
+producing `RequestLimits` is not counted by `dataPrismRequestLimitsPreflight`. The same gap exists in the
+`PrivacyPolicyResolver` guard (`Preflights.java:50-56`). Fix both together.

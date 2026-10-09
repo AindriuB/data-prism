@@ -134,6 +134,24 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         return ConfiguredJsonSourcesInitializer.loadConfig(environment).sources().keySet();
     }
 
+    /**
+     * The context's {@link RequestLimits} bean. Without one the deployment cannot be honouring
+     * {@code dataprism.limits.*}, so if any such property is set the answer is a refusal, never the defaults.
+     */
+    private static RequestLimits requestLimits(ObjectProvider<RequestLimits> limits, Environment environment) {
+        RequestLimits bean = limits.getIfAvailable();
+        if (bean != null) {
+            return bean;
+        }
+        if (org.springframework.boot.context.properties.bind.Binder.get(environment)
+                .bind("dataprism.limits", org.springframework.boot.context.properties.bind.Bindable
+                        .mapOf(String.class, String.class)).isBound()) {
+            throw new IllegalStateException("INVALID_REQUEST_LIMITS: dataprism.limits.* is set but no RequestLimits"
+                    + " bean is available; the data-prism auto-configuration that binds it is not active");
+        }
+        return STANDALONE_LIMITS;
+    }
+
     @Bean
     @ConditionalOnProperty(name = CONFIG_LOCATION_PROPERTY)
     @ConditionalOnMissingBean(ContextOrchestrator.class)
@@ -152,7 +170,7 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 new ParameterFingerprinter(keys), audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, new SourceFanOutOptions(metrics,
-                        correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, limits.getIfAvailable(() -> STANDALONE_LIMITS),
+                        correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, requestLimits(limits, environment),
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
 }
