@@ -527,7 +527,8 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 11 | 178 | Bounded `AuditEventListeners.close()`; json-directory via a Condition | unplanned, review findings. **Done 2026-10-09** |
 | 12 | 180 | Drop dead FactoryBean loop in `AuditSinkSelection`; final drop line survives an interrupted `close()`; thread-count tests compare identities | unplanned, follow-ups from 161 and 163. **Done 2026-10-09** |
 | 12 | 181 | Move 13 architecture fixtures into package-matching directories; sweep documented counts | follow-up from 154. **Done 2026-10-09** |
-| 12 | 179 | Deterministic `sources` order in `get_entity_context`; `ToolAdmission` none | awaiting owner decisions D-179-1 and D-179-2 |
+| 12 | 179 | Deterministic `sources` order in `get_entity_context`; `ToolAdmission.none()` shared instance; stale MCP test comments | unplanned follow-ups from 155 and 166. **Done 2026-10-09** (D-179-1 a, D-179-2 b) |
+| 12 | 182 | `AuditEventListeners.close()` on an interrupted thread drains within the timeout and joins the reporter; durations saturate | found in 180 review. **Done 2026-10-09** (D-180-1 b) |
 
 Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169, 170) and 9 (161, 164) are parallel; 170 was added 2026-10-08 (D-166-1) and 158 waits for it because both edit `ConfiguredJsonSources`; 161 and 164 touch different files.
 
@@ -565,11 +566,11 @@ Follow-ups from 161 (not yet tasks): (i) `AuditSinkSelection` FactoryBean loop (
 
 **0.6.0 tasks are all done (2026-10-09), including unplanned 177 and 178.** The release cut is next and waits on the owner's go (owner instruction 2026-10-09): version bump to 0.6.0, release PR, tag, publish to Central, GHCR and the MCP registry, then the after-action report. PR #124 (`release/0.6.0-spring`) carries waves 7 to 11. Consolidated 0.6.0 follow-ups, none yet tasks:
 - DONE in 180: the dead `AuditSinkSelection` FactoryBean loop is gone (the AOT limitation of `isBuiltInSink` is now in its Javadoc, unsupported); the listener thread-count flake is fixed.
-- OPEN (found in 180 review): `AuditEventListeners.close()` on an already-interrupted thread still writes the final drop line, but skips the drain because `thread.join(drainTimeout)` throws at once. Queued events are dropped and counted, and the reporter thread is not joined (`AuditEventListeners.java` about lines 232-266). Not fixed.
-- `get_entity_context` `sources` map order varies between JVM runs (166).
-- `ToolResultCharacterisationTest` Javadoc still says "whatever Jackson 2 does"; `serverUsesTheSharedMapper` comment should name the MCP SDK version; Pillow bump (docs-site) offered separately (wave 6).
+- DONE in 182 (D-180-1 b): `close()` on an interrupted thread drains queued events within the drain timeout, joins the reporter and restores the interrupt in a `finally`; every wait is elapsed-time bounded and durations saturate (huge to `Long.MAX_VALUE`, negative to 0, drop interval minimum 1 ms), which also fixed a thread leak when a huge `dropLogInterval` threw in the constructor after the dispatcher started.
+- DONE in 179 (D-179-1 a): `get_entity_context` `sources` is sorted by emitted key (alias, or real name when exposed), so the order no longer varies between JVM runs.
+- DONE in 179: the stale `ToolResultCharacterisationTest` and `serverUsesTheSharedMapper` comments are fixed. Still open and not a task: Pillow bump (docs-site), offered separately (wave 6).
 - Roadmap candidate, not 0.6.0: key-shape scan in the leak validators under `PASS_THROUGH_UNSAFE` only.
-- Optional `ToolAdmission.isNone()`/singleton in `security` (155). Fixture move DONE in 181.
+- DONE in 179 (D-179-2 b): `ToolAdmission.none()` is one shared instance recognised by identity in `ToolOptions`, with no `isNone()`; `.admission(ToolAdmission.none(), null)` is accepted, while real policies and subclasses still need a fingerprinter. Fixture move DONE in 181.
 - DONE in 181: every counted doc claim was checked against code and none needed changing.
 
 **Owner instruction (2026-10-09): pause before any release step after 162.** No tag, release PR or publish without the owner's explicit go.

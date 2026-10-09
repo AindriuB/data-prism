@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 wave 12: deterministic sources order, shared ToolAdmission.none() and interrupted-close drain (179, 182)
+
+Tasks 179 and 182 merged onto `release/0.6.0`. `get_entity_context` now emits `sources` sorted by emitted key (the alias, or the real name when exposed), so the order is stable across JVMs (D-179-1 a). `ToolAdmission.none()` is one shared instance recognised by identity in `ToolOptions`, with no `isNone()`; `.admission(ToolAdmission.none(), null)` is accepted, and real policies and subclasses still need a fingerprinter (D-179-2 b). `AuditEventListeners.close()` on an interrupted thread now drains queued events within the drain timeout, joins the reporter and restores the interrupt in a `finally` (D-180-1 b). Full reactor 1717 tests green at 179.
+
+**Cost:** 182's waits are all elapsed-time bounded and durations saturate (huge to `Long.MAX_VALUE`, negative to 0, drop interval minimum 1 ms); the first version overflowed on a huge `dropLogInterval`, which threw in the constructor after the dispatcher thread had started and leaked it. Do not log on the closing thread (the 178 hung-shutdown bug). `AuditEventListenerTest` was run 10 times at each stage. 179 needed `ToolResultCharacterisationTest` run on 3 JVMs to prove the order stable; goldens stayed byte-identical, so the old normalisation was not needed for ordering. An identity check on a shared `none()` means a subclass or copy is not "none" and must supply a fingerprinter; do not add `isNone()`.
+
 ## 2026-10-09 — 0.6.0 wave 12: audit follow-ups and architecture fixture move (180, 181)
 
 Tasks 180 and 181 merged onto `release/0.6.0`. The `AuditSinkSelection` JSON-projection preflight no longer has its unreachable FactoryBean loop (`getBeanNamesForType` already finds typed FactoryBeans; the Spring AOT limitation of `isBuiltInSink` is now in its Javadoc). `AuditEventListeners.close()` on an interrupted thread still writes the final drop line, bounded, and restores the interrupt flag, and the thread-count tests compare thread identities rather than counts. Thirteen architecture fixtures moved as pure renames into `audit/fixture`, `oversight/fixture` and `mapper/fixture`; full reactor 1711 tests, 0 failed.
