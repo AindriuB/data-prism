@@ -25,7 +25,10 @@ checklist exists before 0.8 starts building against it.
   fields), `docs/configuration.md` (keys including `dataprism.limits.*` from
   189), `frozen-property-names.txt`, `RefusalCodes` format.
 - D-RM-13: `compare_entity_sources` is kept and reviewed before the freeze.
-- Status-code forward-compatibility rule chosen in D-070-3.
+- D-070-3 (a): the status contract is seven codes (today's six plus `REFUSED`),
+  clients treat an unknown code as "not answered", and future codes are
+  registered here.
+- D-070-12 (a): this register is internal (`docs/plan/design/`).
 
 ## Required content
 1. One table per kind (tools and their arguments, status codes, refusal codes,

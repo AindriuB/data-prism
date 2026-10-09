@@ -3,7 +3,11 @@
 **Repo:** .
 **Branch:** from `main` at the commit that carries this task file
 **Depends on:** none
-**Blocked on owner decision:** D-070-4 (property names, types, bean classification)
+**Decided (owner, 2026-10-09):** D-070-4 (a): prefix `dataprism.limits`, keys
+`max-sources`, `max-records`, `max-response-size` (`DataSize`),
+`per-source-timeout` (`Duration`), `max-concurrency`, `scope-read-budget`;
+defaults unchanged; positive values only; `INVALID_REQUEST_LIMITS` at startup;
+one bean `dataPrismRequestLimits`, `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`.
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LimitsProperties.java (new)
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java
@@ -36,7 +40,7 @@ consequence.
   `ConfiguredJsonSourcesAutoConfiguration.java:128-147` — the two sites passing
   `RequestLimits.DEFAULT`. `data-prism-connectors-rest` does not depend on
   `data-prism-spring-boot-autoconfigure`, so it cannot read
-  `DataPrismProperties`; the recommended shape is one `RequestLimits` bean built
+  `DataPrismProperties`; the decided shape (D-070-4) is one `RequestLimits` bean built
   from properties in autoconfigure and injected at both sites.
 - `ScopeBudgetWiring.java` — both budget implementations take the limit per
   call through `ScopeBudget.tryRead(..., limit)`; no change needed there.
@@ -53,11 +57,10 @@ consequence.
 - The per-source timeout is measured from the start of the fan-out, not per call
   (`SourceFanOut.java:102,139`). The property documentation must say so
   honestly; changing it is 0.8 work.
-- D-070-4 recommendation: prefix `dataprism.limits`, keys `max-sources`,
-  `max-records`, `max-response-size` (`DataSize`), `per-source-timeout`
-  (`Duration`), `max-concurrency`, `scope-read-budget`; one bean
-  `dataPrismRequestLimits` classified `PRIVACY_CRITICAL` with
-  `COMPETING_BEAN_REFUSAL` because it carries the read budget.
+- D-070-4 (a), above. The bean is `PRIVACY_CRITICAL` because it carries the
+  read budget; see how `dataPrismPrivacyPolicyResolver` and
+  `dataPrismRawValueLeakValidator` declare `COMPETING_BEAN_REFUSAL` in
+  `PrivacyExtensionPoints.java:55-58`.
 
 ## Acceptance
 Write the tests first; each must fail on `main` before the change.
@@ -66,8 +69,8 @@ Write the tests first; each must fail on `main` before the change.
       to a non-default value, the orchestrator's limits carry that value
       (one test per property).
 - [ ] A zero or negative value for any of the six, and a response size that
-      does not fit in an `int`, refuses startup with one stable code (for
-      example `INVALID_REQUEST_LIMITS`) whose message names the property but no
+      does not fit in an `int`, refuses startup with the stable code
+      `INVALID_REQUEST_LIMITS`, whose message names the property but no
       other value; one test per property.
 - [ ] `ConfiguredJsonSourcesLimitsTest`: with `dataprism.json-sources.config-location`
       set, the orchestrator built by `ConfiguredJsonSourcesAutoConfiguration`
@@ -77,8 +80,10 @@ Write the tests first; each must fail on `main` before the change.
 - [ ] `grep -rn "RequestLimits.DEFAULT" --include='*.java' data-prism-*/src/main`
       lists no line in `data-prism-spring-boot-autoconfigure` or
       `data-prism-connectors-rest`.
-- [ ] A second application-supplied `RequestLimits` bean is handled per the
-      classification D-070-4 chose, proven by a test.
+- [ ] `PrivacyExtensionPoints` lists `dataPrismRequestLimits` as
+      `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL`, and an application that
+      supplies its own `RequestLimits` bean is refused at startup with the
+      competing-bean refusal used by the other such beans, proven by a test.
 - [ ] `docs/configuration.md` has a `dataprism.limits` section with a
       `Property | Default | ...` table covering all six keys, the per-source
       timeout's "from the start of the fan-out" semantics, and the refusal code.

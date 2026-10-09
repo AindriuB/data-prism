@@ -9,8 +9,9 @@
 - docs/plan/design/key-resolvers.md (new)
 - docs/plan/tasks/191-design-sealed-links-and-key-resolvers.md (Outcome section only)
 
-(Location per D-070-12; if the owner picks another directory, use it and keep
-the file names.)
+(Location decided by D-070-12 (a): `docs/plan/design/`, internal and not
+published. Contracts move into `docs/tools.md` and `docs/configuration.md` as
+each is built.)
 
 ## Goal
 0.8 builds sealed links, `_links`, `follow` and key resolvers. They are new
@@ -58,8 +59,8 @@ configuration keys are named here.
    record the real reason, and what the client never learns.
 5. `follow` tool: input and output JSON Schema; how `_links` appears on a
    per-source result (shape from task 190 / D-070-1); per-response link cap and
-   truncation marker (D-RM-12); configuration keys with defaults (lifetime per
-   D-RM-6, cap per response).
+   truncation marker (D-RM-12); that a `REFUSED` source (D-070-2) carries no
+   links; configuration keys with defaults (lifetime per D-RM-6, cap per response).
 `key-resolvers.md`:
 6. SPI signature, declaration of from/to namespaces, cardinality (one-to-many),
    failure semantics (fail closed), budget charging, audit, and how

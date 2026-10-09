@@ -3,7 +3,9 @@
 **Repo:** .
 **Branch:** from `main` after task 188 has merged
 **Depends on:** 188 (both edit `pom.xml`)
-**Blocked on owner decision:** D-070-9 (modules and cadence)
+**Decided (owner, 2026-10-09):** D-070-9 (a): PIT on `data-prism-core`,
+`data-prism-pseudonymisation`, `data-prism-validation` and
+`data-prism-orchestration`; weekly schedule plus manual dispatch; report only.
 **Owns:**
 - pom.xml (a `mutation` profile and a `pluginManagement` entry only)
 - .github/workflows/mutation.yml (new)
@@ -20,9 +22,6 @@ so 0.9 can set thresholds from a measurement, not a guess.
 ## Context
 - `pom.xml:44-62` modules, `:308-360` the `release` profile (task 188 adds an
   SBOM plugin there; do not touch it).
-- Recommended for D-070-9: `data-prism-core`, `data-prism-pseudonymisation`,
-  `data-prism-validation`, `data-prism-orchestration`; weekly schedule plus
-  `workflow_dispatch`, not per pull request.
 - Tests are JUnit 5 (PIT needs `pitest-junit5-plugin`). Bytecode is
   `--release 21`, the build JDK is 25: confirm the PIT version supports both.
 - `docs/conventions.md` "Concurrent Maven verification": a PIT run writes
@@ -36,11 +35,11 @@ so 0.9 can set thresholds from a measurement, not a guess.
 - [ ] `./mvnw -B verify` without the profile does not run PIT (show that the
       plugin is absent from `./mvnw help:effective-pom` output without
       `-Pmutation`, or equivalent).
-- [ ] `./mvnw -B -Pmutation verify -pl <the chosen modules> -am` (exact command
+- [ ] `./mvnw -B -Pmutation verify -pl data-prism-core,data-prism-pseudonymisation,data-prism-validation,data-prism-orchestration -am` (exact command
       in `CONTRIBUTING.md`) exits 0 and writes an HTML and XML PIT report per
-      chosen module; the build does not fail on low scores or surviving mutants
+      module; the build does not fail on low scores or surviving mutants
       (no `mutationThreshold`, `coverageThreshold` or equivalent set).
-- [ ] `mutation.yml` runs that command on the chosen cadence with
+- [ ] `mutation.yml` runs that command weekly (`schedule`) and on `workflow_dispatch`, not on pull requests, with
       `permissions: contents: read` and uploads the reports as artifacts;
       `actionlint` exits 0.
 - [ ] The Outcome records, per module, mutations generated, killed, survived,

@@ -8,6 +8,8 @@
 - docs/plan/design/catalog.md (new)
 - docs/plan/tasks/197-design-catalog-describe-source-and-entity-model.md (Outcome section only)
 
+(Location decided by D-070-12 (a): `docs/plan/design/`, internal.)
+
 ## Goal
 The agent-led design starts at a catalog: `list_sources` is the root resource,
 `describe_source` returns a source's output shape and per-field protection

@@ -3,9 +3,11 @@
 **Repo:** .
 **Branch:** from `main` after tasks 189, 190, 193 and 196 have merged
 **Depends on:** 189, 190, 193, 196
-**Blocked on owner decision:** D-070-11 (environment, scales, where the result lives)
+**Decided (owner, 2026-10-09):** D-070-11 (a): 8, 32 and 100 sources (300
+optional), three runs each, on one named machine; recorded internally in
+`docs/plan/perf/`; published from 0.9.
 **Owns:**
-- docs/plan/perf/baseline-0.7.md (new; path per D-070-11)
+- docs/plan/perf/baseline-0.7.md (new)
 - load-test/baselines/0.7/** (new; result files only)
 - docs/plan/tasks/199-first-load-test-baseline.md (Outcome section only)
 
@@ -27,8 +29,8 @@ in a form 0.8 and 0.9 can repeat.
   harness run on the same machine during a measurement; record contention.
 
 ## Acceptance
-- [ ] Scenarios at 8, 32 and 100 sources (and 300 if D-070-11 includes it) run
-      three times each on the environment D-070-11 names, with the limits set as
+- [ ] Scenarios at 8, 32 and 100 sources (300 optional) run three
+      times each on one named machine, with the limits set as
       the scenario files state; every raw result file is committed under
       `load-test/baselines/0.7/` and holds only synthetic data.
 - [ ] `baseline-0.7.md` states the commit, environment (CPU, memory, OS, JDK,

@@ -3,7 +3,8 @@
 **Repo:** .
 **Branch:** from `main` after tasks 189 and 190 have merged
 **Depends on:** 189 (limits raised through configuration), 190 (the per-source response shape it tallies)
-**Blocked on owner decision:** D-070-10 (harness technology and location)
+**Decided (owner, 2026-10-09):** D-070-10 (a): a Java driver on the MCP Java SDK
+client with HdrHistogram, in a standalone `load-test/` outside the reactor.
 **Owns:**
 - load-test/** (new, outside the Maven reactor; not listed in the root `pom.xml`)
 - .github/workflows/load-test.yml (new, `workflow_dispatch` only)
@@ -27,9 +28,9 @@ machine-readable result. Task 199 takes the first baseline with it.
 - `data-prism-architecture`'s `ArchitectureCoverageTest` requires every reactor
   module with main code to be on its dependency list; keeping the harness
   outside the reactor avoids that and keeps the release build unchanged.
-- Recommended for D-070-10: a Java driver using the MCP Java SDK client (the
-  real protocol path agents use) with HdrHistogram, built by its own
-  `load-test/pom.xml` against the reactor's installed snapshot.
+- D-070-10 (a): the driver uses the MCP Java SDK client (the real protocol
+  path agents use) and HdrHistogram, built by its own `load-test/pom.xml`
+  against the reactor's installed snapshot.
 - Fixtures use an invented neutral domain (for example parcels moving between
   depots); every value is obviously synthetic and identifier-shaped values use
   documented invalid check digits (`docs/conventions.md`, privacy rules).
@@ -39,7 +40,8 @@ Write the harness's own unit tests first.
 - [ ] Unit tests: the source generator produces exactly N source definitions
       with distinct names and a stated per-source latency distribution; the
       result aggregator computes p50/p95/p99/max from a known sample exactly;
-      per-source status counts and refusal codes are tallied from canned responses.
+      per-source status counts (all seven codes, including `REFUSED`) and refusal
+      codes are tallied from canned responses.
 - [ ] One documented command (in `load-test/README.md`) builds the server from
       the checkout, starts the stack, runs a scenario file and writes
       `results/<scenario>-<timestamp>.json` with: commit, JDK, host description,

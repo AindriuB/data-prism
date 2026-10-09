@@ -3,8 +3,15 @@
 **Repo:** .
 **Branch:** from `main` after task 190 has merged
 **Depends on:** 190
-**Blocked on owner decisions:** D-070-5 (what a record is), D-070-6 (where the
-response size is measured)
+**Decided (owner, 2026-10-09):**
+- D-070-5 (a): a record is each source's top-level record plus each object
+  inside an array; exceeding `max-records` refuses (truncation is 0.9).
+- D-070-6 (a): a conservative upper bound computed in the orchestrator before
+  the audit event, with no mapper; one `DENY:RESPONSE_TOO_LARGE`.
+- Reconciled with D-070-2 (per-source refusal, task 190): exceeding either cap
+  refuses the whole call. The caps are per response and are not privacy
+  refusals, so per-source isolation does not apply. Sources marked `REFUSED`
+  contribute nothing to the response and count zero toward either cap.
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/ResponseSize.java (new, name free)
@@ -29,13 +36,10 @@ the cap fails closed.
   `DENY:<code>` (see the catch block around `:219-238` on `main` today).
 - Architecture boundary 1 (`docs/architecture.md:146-185`): orchestration may
   not construct a Jackson mapper, call `JsonMapper.shared()` or construct a JSON
-  factory or generator. A size measured in orchestration must be computed
-  without one (recommended for D-070-6: a mapper-free walk that returns an upper
-  bound on the compact UTF-8 serialisation of what the tool will emit).
-- `RefusalCodes` — code format. Recommended codes: `RESPONSE_TOO_LARGE` and
-  `TOO_MANY_RECORDS` (check against D-070-5/6 and task 200's register).
-- Recommended for D-070-5: a record is each answered source's top-level record
-  plus each object element of any array within it.
+  factory or generator. Per D-070-6 the size is a mapper-free walk that returns
+  an upper bound on the compact UTF-8 serialisation of what the tool will emit.
+- `RefusalCodes` — code format. Codes: `RESPONSE_TOO_LARGE` (named by D-070-6)
+  and `TOO_MANY_RECORDS` (task 200 registers both).
 - Limits are bound from configuration by task 189; this task tests with
   `RequestLimits` constructed directly and does not depend on 189.
 
@@ -43,6 +47,8 @@ the cap fails closed.
 Write the tests first; each must fail on `main` before the change.
 - [ ] A response one record over `maxRecords` is refused with the record code;
       one at exactly `maxRecords` is returned. Same pair for `maxResponseBytes`.
+- [ ] A response whose `REFUSED` source would, if counted, exceed either cap
+      is returned: refused sources count zero (D-070-2 reconciliation).
 - [ ] Each refusal writes exactly one audit event, `DENY:<code>`, and no `ALLOW`;
       the client error carries the code and `correlationId` and no value or size
       derived from payload content beyond the configured limit.

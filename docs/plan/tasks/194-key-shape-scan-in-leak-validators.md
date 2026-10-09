@@ -3,7 +3,8 @@
 **Repo:** .
 **Branch:** from `main` after task 190 has merged
 **Depends on:** 190
-**Blocked on owner decision:** D-070-7 (always, or only under `PASS_THROUGH_UNSAFE`)
+**Decided (owner, 2026-10-09):** D-070-7 (a): the key scan is always on, under
+every profile, with no SPI change.
 **Owns:**
 - data-prism-validation/**
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/KeyShapeLeakScanTest.java (new)
@@ -28,11 +29,11 @@ names as well as values, so such a response is refused.
   `emitted` allowlist).
 - `UndeclaredPropertyNameTest`, `UndeclaredKeyRefusalTest`,
   `UndeclaredNameToolResultScanTest` — existing pins to keep green.
-- After task 190, validators see only payload-derived trees, never source
-  aliases as keys.
-- Recommended for D-070-7: scan keys always. Under every other profile a key
-  is a declared field name or `<undeclared-N>`, so a hit there is a real
-  finding, and no SPI change is needed.
+- After task 190 (D-070-2), validators run on each source's payload-derived
+  tree (a hit marks only that source `REFUSED`), then once more on the final
+  response (a hit refuses the whole call). They never see source aliases as keys.
+- Under profiles other than `PASS_THROUGH_UNSAFE` a key is a declared field
+  name or `<undeclared-N>`, so a hit there is a real finding.
 
 ## Acceptance
 Write the tests first; each must fail on `main` before the change.
@@ -45,11 +46,12 @@ Write the tests first; each must fail on `main` before the change.
       `<undeclared>` exactly as undeclared keys are today; a test asserts the
       refusal text, the audit record and captured logs hold no part of it.
 - [ ] `KeyShapeLeakScanTest`: end to end through `get_entity_context` with a
-      `PASS_THROUGH_UNSAFE` profile and a map-keyed fixture, the call is refused
-      `VALIDATION_FAILED`; proven non-vacuous by disabling the key scan and
-      watching it pass the key through (Outcome shows both runs).
-- [ ] If D-070-7 chooses "only under `PASS_THROUGH_UNSAFE`", the gating and its
-      SPI or context change are covered by a test for each profile behaviour.
+      `PASS_THROUGH_UNSAFE` profile: with one source and a map-keyed fixture,
+      the call is refused `VALIDATION_FAILED`; with two sources, the map-keyed
+      one is `REFUSED` and absent, and the other is returned. Proven
+      non-vacuous by disabling the key scan and watching the key pass through
+      (Outcome shows both runs).
+- [ ] `LlmResponseValidator` is unchanged (`git diff` shows no edit to it).
 - [ ] `docs/extending.md` and the architecture decision entry state the new
       behaviour and drop the "no validator checks key shapes" cost.
 - [ ] `./mvnw -B verify -pl data-prism-validation,data-prism-integration-tests -am`

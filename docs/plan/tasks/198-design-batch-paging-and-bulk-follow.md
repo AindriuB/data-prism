@@ -8,6 +8,8 @@
 - docs/plan/design/batch-and-bulk-follow.md (new)
 - docs/plan/tasks/198-design-batch-paging-and-bulk-follow.md (Outcome section only)
 
+(Location decided by D-070-12 (a): `docs/plan/design/`, internal.)
+
 ## Goal
 The owner expects thousands of items per investigation. 0.9 builds the batch
 tool, paged collections and a status-only bulk follow that returns counts plus
@@ -23,7 +25,9 @@ holds no surprises.
   budget charged once per request, `SKIPPED_OVER_LIMIT` silent partial answers).
 - `docs/plan/roadmap.md` 0.8 (read budget per source called plus per-scope
   total; fan-out deadlines) and 0.9 lists; "Risks" (link volume, scale per investigation).
-- Task 190's per-source result shape and status list in `docs/tools.md`;
+- Task 190's per-source result shape (D-070-1 b), its seven status codes
+  including `REFUSED` (D-070-3), per-source refusal isolation (D-070-2), and the
+  rule that clients treat an unknown code as "not answered";
   task 193's `TOO_MANY_RECORDS` / `RESPONSE_TOO_LARGE`.
 - `docs/plan/design/sealed-links.md` (task 191) for next and drill-in links.
 - `docs/audit.md` — one audit event per call today; audit volume at thousands
@@ -41,7 +45,7 @@ holds no surprises.
 4. Truncation markers (D-RM-12): shape, where they appear, the overall hard cap
    and its code.
 5. Status-only bulk follow: input and output JSON Schema, the counts it returns
-   (by status code), drill-in links for exceptions, their cap, and why it never
+   (by status code, `REFUSED` included), drill-in links for exceptions, their cap, and why it never
    returns entity data.
 6. Audit: one event per call or per item, the fields added, and an estimate of
    audit volume for a 5,000-item investigation.

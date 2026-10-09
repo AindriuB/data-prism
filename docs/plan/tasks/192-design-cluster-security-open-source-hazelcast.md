@@ -8,7 +8,7 @@
 - docs/plan/design/cluster-security.md (new)
 - docs/plan/tasks/192-design-cluster-security-open-source-hazelcast.md (Outcome section only)
 
-(Location per D-070-12.)
+(Location decided by D-070-12 (a): `docs/plan/design/`, internal.)
 
 ## Goal
 1.0 supports multiple instances, secured, on open-source Hazelcast with no

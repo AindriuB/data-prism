@@ -3,7 +3,10 @@
 **Repo:** .
 **Branch:** from `main` at the commit that carries this task file
 **Depends on:** none
-**Blocked on owner decision:** D-070-8 (signing and SBOM mechanisms)
+**Decided (owner, 2026-10-09):** D-070-8 (a): CycloneDX via `cyclonedx-maven-plugin`
+attached to the Central bundle; buildx SBOM and provenance attestations on
+images; keyless cosign on every pushed digest, including the four quickstart
+images; `actions/attest-build-provenance` on release assets.
 **Owns:**
 - .github/workflows/publish-image.yml
 - .github/workflows/publish-central.yml
@@ -38,21 +41,18 @@ a consumer how to verify each one.
 - `pom.xml:308-360` — the `release` profile (sources, javadoc, `sign-artifacts`).
 - `docs/plan/PLAN.md` "0.6.0 is complete and published" — the bundle check
   recipe (`-DcentralBaseUrl=http://127.0.0.1:9`, then `unzip -l` the bundle).
-- D-070-8 (in the 0.7 plan report and `PLAN.md` once recorded) fixes the tools;
-  the default recommendation is CycloneDX via `cyclonedx-maven-plugin`
-  attached to the Central bundle, buildx SBOM and provenance attestations on
-  images, `cosign sign` (keyless, GitHub OIDC) on each pushed digest including
-  the manifest list, and `actions/attest-build-provenance` for the release jars.
+- D-070-8 (a), above, fixes the tools. Keyless cosign uses GitHub OIDC and
+  writes public Rekor transparency-log entries naming the repository and workflow.
 - Never read `~/.m2/settings.xml`, `~/.gnupg/**` or any credential or token
   file, even to debug a failed build. Build locally with `-Dgpg.skip=true`.
 
 ## Acceptance
 - [ ] `./mvnw -B -Prelease -Dgpg.skip=true -DskipTests package` produces an SBOM
-      file (CycloneDX JSON unless D-070-8 says otherwise) in `target/` of every
+      file (CycloneDX JSON) in `target/` of every
       module that is deployed to Central; the Outcome lists the modules and the
       files, and names any module deliberately excluded and why.
-- [ ] The SBOM is attached to the deployed artifacts (a `<classifier>`/`<type>`
-      the Central bundle will carry); the Outcome shows the `unzip -l` of a
+- [ ] The SBOM is attached to the deployed artifacts (`cyclonedx-maven-plugin` attaches it
+      with its own classifier, so the Central bundle carries it); the Outcome shows the `unzip -l` of a
       bundle built with `-DcentralBaseUrl=http://127.0.0.1:9` listing it, or, if
       that run cannot be done locally without credentials, says so and adds the
       check to the release checklist note in the Outcome.
