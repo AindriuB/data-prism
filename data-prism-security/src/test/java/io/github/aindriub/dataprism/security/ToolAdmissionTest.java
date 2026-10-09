@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ToolAdmissionTest {
@@ -204,7 +205,7 @@ class ToolAdmissionTest {
 
     @Test
     void noneIsOneSharedInstance() {
-        org.assertj.core.api.Assertions.assertThat(ToolAdmission.none()).isSameAs(ToolAdmission.none());
+        assertSame(ToolAdmission.none(), ToolAdmission.none());
     }
 
     @SuppressWarnings("unchecked")

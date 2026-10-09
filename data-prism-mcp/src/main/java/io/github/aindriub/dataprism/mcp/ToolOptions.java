@@ -78,7 +78,10 @@ public record ToolOptions(ToolAdmission admission, ParameterFingerprinter finger
             return this;
         }
 
-        /** An admission; {@code fingerprinter} is required unless it is {@code ToolAdmission.none()}, checked by {@link #build()}. */
+        /**
+         * An admission; {@code fingerprinter} is required unless it is
+         * {@code ToolAdmission.none()}, and checked by {@link #build()}.
+         */
         public Builder admission(ToolAdmission admission, ParameterFingerprinter fingerprinter) {
             this.admission = admission;
             this.fingerprinter = fingerprinter;
