@@ -32,7 +32,7 @@ FactoryBean loop:
 
 `close()` on an interrupted thread:
 - [ ] A new test does the following. It gives the dispatcher a WARN sink that sleeps about 100 ms before recording the line. It produces at least one drop. It sets the calling thread's interrupt flag, then calls `close()`. It asserts that the `AUDIT_LISTENER_DROPPED` line, with the correct count, has been recorded by the time `close()` returns, and that `Thread.currentThread().isInterrupted()` is still `true` afterwards. It clears the flag in `finally`. Against the pre-change `AuditEventListeners` the test fails, because the line is written after `close()` returns. Show this by committing the test first or with a temporary WIP commit, and quote the failure in the hand-back.
-- [ ] `close()` still returns within `drainTimeout + 1 s + 1 s + FINAL_REPORT_WAIT_MILLIS` (plus a small margin) when an appender blocks forever. The existing hanging-appender test from 178 stays green, unmodified.
+- [ ] `close()` still returns within `drainTimeout + 1 s + 1 s + FINAL_REPORT_WAIT_MILLIS` (plus a small margin) when an appender blocks forever. The existing `close_returns_even_if_an_appender_hangs_forever_inside_a_report_tick` (AuditEventListenerTest.java:436) and `a_blocking_log_appender_never_stalls_recording` (:393) stay green and unmodified.
 - [ ] The final report is still logged only on the `data-prism-audit-listeners-final-report` thread. Recommended mechanism: wait for that thread in a bounded loop that tolerates interrupts. Clear the flag, join until a deadline of `FINAL_REPORT_WAIT_MILLIS`, then restore the flag.
 
 Thread-count flake:
