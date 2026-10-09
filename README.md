@@ -200,7 +200,7 @@ package root `io.github.aindriub.dataprism`.
 ## Building and running
 
 Building needs JDK 21 or newer (the build compiles with `--release 21`, so a
-newer local JDK is fine; CI builds on 21 and 25) and Maven >= 3.6.3 (`pom.xml:282-284` enforces this).
+newer local JDK is fine; CI builds on 21 and 25) and Maven >= 3.6.3 (`pom.xml:296-298` enforces this).
 
 ```bash
 mvn -B --no-transfer-progress verify

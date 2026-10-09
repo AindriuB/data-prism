@@ -520,7 +520,7 @@ names `${project.version}`:
     </dependency>
 ```
 
-`data-prism-quickstart-extension/pom.xml:38-58`
+`data-prism-quickstart-extension/pom.xml:39-59`
 
 That works inside this repository, and only inside it, because this module
 inherits from the reactor's own parent pom
@@ -528,7 +528,7 @@ inherits from the reactor's own parent pom
 `io.github.aindriub` artifact to `${project.version}`, imports
 `spring-boot-dependencies` to pin `spring-web` and
 `spring-boot-autoconfigure`, and sets `<maven.compiler.release>21</maven.compiler.release>`
-(`pom.xml:67`). A consumer project has no relationship to that parent, and
+(`pom.xml:68`). A consumer project has no relationship to that parent, and
 loses all three inherited settings, not just the versions: copying the
 dependency block above as shown gets a missing-version error for the two
 `io.github.aindriub` dependencies; copying `${project.version}` into
@@ -654,7 +654,7 @@ instead of duplicating the wrapper:
 ```
 
 The `<plugin>` itself is adapted from
-`data-prism-quickstart-extension/pom.xml:98-113`, which reads identically
+`data-prism-quickstart-extension/pom.xml:111-126`, which reads identically
 except for the version (the `<build><plugins>` wrapper around it is already
 present elsewhere in that module's pom, so its own citation does not include
 one). That module's own comment explains the placement:
@@ -663,7 +663,7 @@ one). That module's own comment explains the placement:
 > the `@LlmExposedModel` classification check running, not on the checker's
 > own classes.
 
-— `data-prism-quickstart-extension/pom.xml:102-104`
+— `data-prism-quickstart-extension/pom.xml:115-117`
 
 `data-prism-processor` must never appear as a `<dependency>` — only under
 `annotationProcessorPaths`, as above. It is a build-time tool that runs
