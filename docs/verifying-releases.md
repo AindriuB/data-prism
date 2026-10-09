@@ -113,16 +113,29 @@ the manifest list digest to show both:
 
 ```bash
 for platform in linux/amd64 linux/arm64; do
-  echo "$platform: $(docker buildx imagetools inspect "$image@$digest" \
-    --format "{{json (index .SBOM \"$platform\")}}" | jq '.SPDX.packages | length') packages"
+  count=$(docker buildx imagetools inspect "$image@$digest" \
+    --format "{{json (index .SBOM \"$platform\")}}" | jq -e '.SPDX.packages | length') \
+    || { echo "no SBOM for $platform"; exit 1; }
+  echo "$platform: $count packages"
 done
 ```
 
-Expected: a non-zero package count for each platform. Running the same
-inspect on a per-architecture digest works too, but you still index by that
-digest's platform. For the provenance use `.Provenance` the same way. Both are
-attestation manifests stored in the registry next to the image, and the
-manifest list's signature covers them.
+Expected: a non-zero package count for each platform; a missing platform key
+fails loudly. For the provenance use `.Provenance` the same way.
+
+On a per-architecture digest (an index holding one platform plus its
+attestation manifest) buildx prints `.SBOM` and `.Provenance` unkeyed, so drop
+the `index`:
+
+```bash
+docker buildx imagetools inspect "$image@<per-arch-digest>" \
+  --format '{{json .SBOM}}' | jq -e '.SPDX.packages | length'
+docker buildx imagetools inspect "$image@<per-arch-digest>" \
+  --format '{{json .Provenance}}'
+```
+
+Both are attestation manifests stored in the registry next to the image, and
+the manifest list's signature covers them.
 
 ## GitHub Release assets
 
