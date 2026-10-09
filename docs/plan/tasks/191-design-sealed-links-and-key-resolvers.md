@@ -90,3 +90,31 @@ decisions for the owner" section with options and a recommendation each.
 - Catalog, `describe_source`, batch and bulk-follow schemas (tasks 197, 198),
   which cite this document.
 - Cluster security (task 192).
+
+## Outcome
+
+Written: `docs/plan/design/sealed-links.md` (items 1 to 5, boundaries, test obligations, open decisions OD-1 to OD-8, closing name table) and `docs/plan/design/key-resolvers.md` (items 6 and 7, boundaries, test obligations, open decisions OD-R1 to OD-R6, closing name table). Each numbered item is a heading.
+
+Facts found while writing, for the 0.8 builder:
+
+- `ScopeResolver` computes a scope's expiry per request (`min(now + maxScopeLifetime, token expiry)`); a scope is `case:<caseId>` with no stored end. "Never beyond the scope" therefore cannot be a fixed end instant; the design takes the minimum at issue and records the case-id reuse residual as OD-4.
+- The JDK 21 baseline has no public HKDF; the design implements it over `HmacSHA256` (OD-6).
+- The existing `PrivacyNamespace` enum is a pseudonymisation kind, not a key namespace; the design uses a separate `KeyNamespace` and descriptor key `keyNamespace`.
+
+The owner's open question (real identifier as ciphertext, scope-local reference, or human-supplied keys) is compared in `sealed-links.md` section 2 with a recommendation and is recorded as OD-1; it is not decided.
+
+Collision check (all returned zero matches, except `resolver:` which matched only the substring in `IdentityResolver:` at `docs/configuration.md:729`):
+
+```
+for n in LINK_INVALID LINK_ATTEMPTS_EXHAUSTED LINK_KEY_SHARED LINKS_KEY_MISSING INVALID_LINK_LIFETIME \
+  INVALID_LINK_LIMIT KEY_UNRESOLVED INVALID_CHAINABLE_FIELD DUPLICATE_KEY_RESOLVER INVALID_KEY_RESOLVER \
+  dataprism.links dataprism.key-resolvers _links _linksOmitted itemsOmitted KeyResolver @Chainable \
+  chainable keyNamespace "resolver:" "links:issued" "link:id"; do
+  grep -rn -- "$n" docs/tools.md docs/audit.md docs/configuration.md; done
+grep -rn -w "follow\|links\|items" docs/tools.md docs/audit.md docs/configuration.md   # prose uses only
+grep -rn "KeyResolver\|chainable" --include='*.java' .                                  # none
+```
+
+Domain check: `grep -n -i -E "payroll|payslip|tax|revenue|RPN|PPSN|employ" docs/plan/design/*.md` returns nothing. Examples use parcels, depots and routes.
+
+Review gate: NOT YET RUN. The implementing agent has no reviewer to call; the `reviewer` verdict (APPROVE required, against D-RM-4, 5, 6, 10, 12, 14 and boundaries 1, 5, 6, 7, and confirming no product decision is taken in the text) must be recorded here by the caller.
