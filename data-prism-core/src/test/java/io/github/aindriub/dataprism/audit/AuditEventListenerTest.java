@@ -569,6 +569,42 @@ class AuditEventListenerTest {
     }
 
     @Test
+    void close_on_an_interrupted_thread_still_writes_the_final_drop_line_and_keeps_the_flag() {
+        Lines lines = new Lines() {
+            @Override void onWarn(String line) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                super.onWarn(line);
+            }
+        };
+        Semaphore gate = new Semaphore(0);
+        CountDownLatch started = new CountDownLatch(1);
+        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
+            started.countDown();
+            gate.acquireUninterruptibly();
+        }), 1, Duration.ofMillis(50), Duration.ofHours(1), lines.logger());
+        try {
+            AuditRecorder recorder = recorder(e -> { }, listeners);
+            recorder.record(entry());
+            awaitStarted(started);
+            recorder.record(entry()); // queued; abandoned by close()
+            recorder.record(entry()); // dropped
+            Thread.currentThread().interrupt();
+            listeners.close();
+            assertThat(lines.warnings).hasSize(1);
+            assertThat(lines.warnings.get(0)).startsWith("AUDIT_LISTENER_DROPPED").contains("2 audit events");
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+            gate.release(1000);
+            listeners.close();
+        }
+    }
+
+    @Test
     void close_abandons_a_hung_listener_after_the_drain_timeout_and_logs_the_remainder_as_dropped() {
         Lines lines = new Lines();
         CountDownLatch started = new CountDownLatch(1);
