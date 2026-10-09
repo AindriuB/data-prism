@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 wave 9: JSON audit projection as its own classified bean (161)
+
+Task 161 merged onto `release/0.6.0-spring`. `JsonProjection` is now the `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL` bean `dataPrismJsonAuditProjection`, and `TeeAuditSink` is `Closeable` (projection then primary, idempotent). Two new startup refusals, `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`, mean an application `AuditSink` with `sink=hash-chained` and a json-directory no longer starts. There are now 52 `@Bean` methods (the task said 51) and two new `PrivacyExtensionPoints` rows.
+
+**Cost:** Making the projection an `AuditSink` made `AuditRecorder` injection ambiguous, so it is a separate non-sink bean; do not retry that. Review found three defects: the primary `FileChannel` leaked when the projection was refused (the projection is now resolved before the authoritative file is opened, and the primary is closed if tee construction throws), the in-bean sink check missed FactoryBean/lazy sinks, and `COMPETING_BEAN_REFUSAL` was not real with overriding on (hence `AUDIT_JSON_PROJECTION_MISSING`). Follow-ups: the FactoryBean loop in `AuditSinkSelection` is dead code, and `isBuiltInSink` would misfire under Spring AOT (unsupported today). Tester PASS at 044b5d46 (1681 tests, 0 failed).
+
 ## 2026-10-08 — 0.6.0 wave 8: DataPrismAutoConfiguration split by concern, JWT into spring.boot.jwt (159)
 
 Task 159 merged onto `release/0.6.0-spring`. `DataPrismAutoConfiguration` keeps its FQCN but is about 45 lines with no beans; it imports 14 package-private configuration classes in the old registration order, one per concern, plus a `JsonProjection` helper. There are 50 `@Bean` methods (the task's 55 counted Javadoc mentions). `JwtDecoderSupport` and `JwtCallerContextExtractor` are in `spring.boot.jwt`, and ArchUnit forbids `validation` and `jwt` depending on each other in either direction.

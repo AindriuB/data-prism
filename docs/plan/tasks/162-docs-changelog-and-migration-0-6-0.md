@@ -49,6 +49,9 @@ check). Each is copied from that task's hand-back.
 
 - [ ] (From task 159, merged 2026-10-08.) `docs/migration-0.6.md` records that the logger categories `DataPrismAutoConfiguration$AuditSinkSelection` and `DataPrismAutoConfiguration$JsonProjection` are now `AuditSinkSelection` and `JsonProjection` (package `io.github.aindriub.dataprism.spring.boot`), so operators who set levels on them must change them, and that the bean names of the configuration classes themselves changed. `docs/conventions.md` (~78) names `AuditSinkSelection` as the home of `dataPrismHashChainedAuditSink`. The stale `DataPrismAutoConfiguration#method` and line references in the files listed in Owns are corrected to the new classes (comment and doc changes only).
 
+## Added from 161
+The CHANGELOG and migration page list the two new refusal codes `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`, and state that an application `AuditSink` combined with `sink=hash-chained` and a json-directory now refuses to start.
+
 ## Out of scope
 - The 0.6.0 release cut: version bump, `server.json`, image tags, tagging and publishing. A separate task, filed when the owner calls the cut.
 - Rewriting historical CHANGELOG entries or anything under `docs/plan/`.

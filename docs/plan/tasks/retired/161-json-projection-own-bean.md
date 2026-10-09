@@ -52,3 +52,11 @@ pure-move tasks.
   - Failures are isolated: they are logged and do not affect the call, the chain or the projection.
   - The docs state that the listener's destination is the operator's responsibility.
 - **D2 goes on the roadmap only, not 0.6.0.** It would let application code write its own events into the hash-chained trail, which needs its own design: a custom event schema, field limits so personal data cannot be logged raw, and verifier support.
+
+## Outcome
+- `JsonProjection` is its own `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL` bean, `dataPrismJsonAuditProjection` (package-private final). It is deliberately not an `AuditSink`: implementing `AuditSink` made `AuditRecorder` injection ambiguous.
+- `TeeAuditSink` is `Closeable`: closes the projection, then the primary; idempotent; the primary is closed even if the projection close throws. The record/close race is documented as fail-closed.
+- The sink bean resolves the projection BEFORE opening the authoritative file, and closes the primary if the tee construction throws.
+- New refusals: `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` (static BFPP `dataPrismJsonAuditProjectionPreflight`, REPLACEABLE like the other preflights, plus an in-bean guard requiring the built-in sink definition) and `AUDIT_JSON_PROJECTION_MISSING` (json-directory set but no projection resolves, for example with bean overriding on). No message contains a path.
+- DELIBERATE AMENDMENT to the task text: 52 `@Bean` methods (not 51), two `PrivacyExtensionPoints` rows, two inventory-list additions (projection and preflight).
+- Review: CHANGES (primary sink `FileChannel` leaked when the projection was refused; in-bean sink check missed FactoryBean/lazy sinks; `COMPETING_BEAN_REFUSAL` not real with overriding on), fixed, then APPROVE. Tester PASS at 044b5d46 (full reactor JDK 21, 1681 tests, 0 failed, HEAD unchanged; release-profile package green).
