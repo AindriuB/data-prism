@@ -17,6 +17,7 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -71,7 +73,7 @@ class AutoConfiguredBeanInventoryTest {
                     String name = annotation.annotationType().getSimpleName();
                     if (name.startsWith("Conditional") || name.equals("Primary") || name.equals("DependsOn")
                             || name.equals("Bean")) {
-                        annotations.add(annotation.toString());
+                        annotations.add(canonical(annotation));
                     }
                 }
                 annotations.sort(null);
@@ -79,7 +81,7 @@ class AutoConfiguredBeanInventoryTest {
                 List<String> classConditions = new ArrayList<>();
                 for (Annotation annotation : declaring.getDeclaredAnnotations()) {
                     if (annotation.annotationType().getSimpleName().startsWith("Conditional")) {
-                        classConditions.add(annotation.toString());
+                        classConditions.add(canonical(annotation));
                     }
                 }
                 classConditions.sort(null);
@@ -93,6 +95,49 @@ class AutoConfiguredBeanInventoryTest {
         lines.sort(null);
         assertThat(lines).as("number of @Bean methods").hasSize(53);
         compareOrWrite("bean-methods.txt", lines);
+    }
+
+    /**
+     * Renders an annotation independently of the JDK: {@code Annotation.toString()} orders attributes
+     * differently between JDK builds. Attributes are sorted by name, arrays keep declared order,
+     * classes print as {@code name.class}, enums by name, strings quoted and escaped.
+     */
+    private static String canonical(Annotation annotation) {
+        List<Method> attributes = new ArrayList<>(Arrays.asList(annotation.annotationType().getDeclaredMethods()));
+        attributes.sort(Comparator.comparing(Method::getName));
+        List<String> parts = new ArrayList<>();
+        for (Method attribute : attributes) {
+            try {
+                attribute.setAccessible(true);
+                parts.add(attribute.getName() + "=" + canonicalValue(attribute.invoke(annotation)));
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        return "@" + annotation.annotationType().getName() + "(" + String.join(", ", parts) + ")";
+    }
+
+    private static String canonicalValue(Object value) {
+        if (value instanceof Annotation nested) {
+            return canonical(nested);
+        }
+        if (value instanceof Class<?> type) {
+            return type.getCanonicalName() + ".class";
+        }
+        if (value instanceof Enum<?> constant) {
+            return constant.name();
+        }
+        if (value instanceof String text) {
+            return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
+        }
+        if (value.getClass().isArray()) {
+            List<String> elements = new ArrayList<>();
+            for (int i = 0; i < Array.getLength(value); i++) {
+                elements.add(canonicalValue(Array.get(value, i)));
+            }
+            return "{" + String.join(", ", elements) + "}";
+        }
+        return String.valueOf(value);
     }
 
     private static void collectClasses(Class<?> root, Set<Class<?>> collected) {
