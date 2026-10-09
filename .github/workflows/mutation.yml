@@ -39,5 +39,5 @@ jobs:
         with:
           name: pit-reports
           path: "**/target/pit-reports/"
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 30

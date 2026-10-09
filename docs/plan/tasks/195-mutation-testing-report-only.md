@@ -72,7 +72,8 @@ and `mutationCoverage` is bound to `verify` (one occurrence).
 
 Run: `./mvnw -B --no-transfer-progress -Pmutation verify -pl
 data-prism-core,data-prism-pseudonymisation,data-prism-validation,data-prism-orchestration -am`
-(the exact workflow command), commit 523fd730 plus the uncommitted profile,
+(the exact workflow command), measured on 523fd730 plus the then-uncommitted profile (the profile
+commit on this branch is the same code),
 JDK 25, 4 threads, bounded by `perl alarm 3600`. Exit 0, BUILD SUCCESS,
 4 min 8 s wall-clock. Score = (killed + timed out) / generated.
 
@@ -86,6 +87,31 @@ JDK 25, 4 threads, bounded by `perl alarm 3600`. Exit 0, BUILD SUCCESS,
 (An earlier core-only run gave 1264 killed, 182 survived: one mutant is
 timing-sensitive. Treat core as 81% plus or minus a mutant.) Reports are in
 `<module>/target/pit-reports/` (HTML and XML).
+
+Ten survivors most worth a test, ranked (privacy-path classes):
+
+1. `JsonTreeScrubbingEngine.scrubObject` 189, negated conditional: the main
+   scrub branch flips and no test notices, so a field could pass unscrubbed.
+2. `JsonTreeScrubbingEngine.scrubObject` 155, boundary: an off-by-one on an
+   engine limit or index that no test pins.
+3. `JsonTreeScrubbingEngine.scrubNestedObject` 286, addition to subtraction:
+   nesting-depth arithmetic is unchecked, so depth limits may not hold.
+4. `JsonTreeScrubbingEngine.scrubNestedObject` 302, removed void call: a
+   side effect of nested scrubbing is not asserted.
+5. `ProfilePrivacyPolicyResolver.resolve` 92, negated conditional: policy
+   selection can invert without a failing test.
+6. `PrivacyProfiles.rule` 135, negated conditional: the rule lookup for a
+   field can flip.
+7. `ActionStrictness.stricter` 51, boundary: which of two actions wins is the
+   fail-closed decision.
+8. `RefusalPaths.redact` 50, boundary: the refusal path's redaction edge.
+9. `SensitiveDataScanner` check-digit validators (IBAN `ibanChecksumValid`
+   246 to 249, `luhnValid` 261 to 268): a validator that wrongly accepts or
+   rejects changes what the leak scanner reports.
+10. `SourceCircuitBreaker.record` 68 to 75 and `DefaultContextOrchestrator.fieldsByNamespace`
+    262 to 271: orchestrator failure and grouping paths that are not asserted.
+
+The full per-module list follows.
 
 Survivor candidates by module (class, method, line; nothing fixed here).
 
@@ -123,6 +149,10 @@ orchestration:
 - `.../AuditedRefusalException.java` `getMessage` 47.
 - `.../InstructionContentHeuristic.java` `suspect` 46.
 - `.../ParameterFingerprinter.java` `fingerprint` 38.
+
+Follow-up: after this merges, re-run the `mutation` workflow with
+`workflow_dispatch` on the merge commit to pin the baseline from which the
+0.9 thresholds are set; the figures above were measured locally before merge.
 
 CHANGELOG line for task 201, under `### Build`:
 
