@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 wave 9: Spring configuration metadata (164)
+
+Task 164 merged onto `release/0.6.0-spring`. The autoconfigure jar now ships `META-INF/spring-configuration-metadata.json`, describing all 79 `dataprism.*` leaf keys, so IDEs complete and describe them in YAML. The processor runs only through `annotationProcessorPaths` and is in no dependency tree. `ConfigurationMetadataDocumentedTest` checks the metadata and `docs/configuration.md` against each other exactly, in both directions, including typed defaults; 10 known gaps (mainly binder-bound `sources.*`) sit in a self-checking gaps file.
+
+**Cost:** The processor lost the nested types once 158 made them top-level, so 12 `DataPrismProperties` fields needed `@NestedConfigurationProperty`, and multi-name field declarations had to be split one per field (both coordinator-approved; `PropertyNamesFrozenTest` still green). Review found the duplicate-row case undetected, a missing data-stream-type hint and a wrong reason on the `sources.*` gap, all fixed in 16ca2c8f. Do not put the processor on the dependency classpath: D-164-A forbids it, and classpath discovery was rejected. Tester PASS at 383ba6ed (1670 tests, 0 failed).
+
 ## 2026-10-09 — 0.6.0 wave 9: JSON audit projection as its own classified bean (161)
 
 Task 161 merged onto `release/0.6.0-spring`. `JsonProjection` is now the `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL` bean `dataPrismJsonAuditProjection`, and `TeeAuditSink` is `Closeable` (projection then primary, idempotent). Two new startup refusals, `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`, mean an application `AuditSink` with `sink=hash-chained` and a json-directory no longer starts. There are now 52 `@Bean` methods (the task said 51) and two new `PrivacyExtensionPoints` rows.

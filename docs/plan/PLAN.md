@@ -520,9 +520,9 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 7 | 158 | Split `DataPrismProperties` by concern; validation into `spring.boot.validation` | 157, 167, 168, 169, 170. **Done 2026-10-08** |
 | 8 | 159 | Split `DataPrismAutoConfiguration` by concern; JWT into `spring.boot.jwt`; drops `allowEmptyShould(true)` on 158's "validation must not depend on spring.boot.jwt" rule | 158. **Done 2026-10-08** |
 | 9 | 161 | JSON audit projection as its own classified bean; `TeeAuditSink` `Closeable` | 159, 160. **Done 2026-10-08** |
-| 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159. **Next** |
-| 10 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164 |
-| 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-170 |
+| 9 | 164 | Generate Spring configuration metadata and check it against docs/configuration.md | 158, 159. **Done 2026-10-09** |
+| 10 | 163 | Read-only `AuditEventListener` SPI called after the authoritative write | 157, 159, 161, 164. **Next** |
+| 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-170. After 163 |
 
 Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169, 170) and 9 (161, 164) are parallel; 170 was added 2026-10-08 (D-166-1) and 158 waits for it because both edit `ConfiguredJsonSources`; 161 and 164 touch different files.
 
@@ -553,6 +553,10 @@ Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iterat
 **Wave 9, task 161 done 2026-10-08:** merged onto `release/0.6.0-spring`; 164 is still open. Details are in the retired 161 task file's Outcome. 162 must list the two new refusal codes (`AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK`, `AUDIT_JSON_PROJECTION_MISSING`) in the CHANGELOG/migration, and that an application `AuditSink` combined with `sink=hash-chained` and a json-directory now refuses to start.
 
 Follow-ups from 161 (not yet tasks): (i) `AuditSinkSelection` FactoryBean loop (about lines 131-140) is effectively dead because `getType` returns the product type; remove it or comment it. (ii) `isBuiltInSink` relies on `AnnotatedBeanDefinition`, so hash-chained plus json-directory would be refused under Spring AOT/native images; AOT is unsupported today, note only.
+
+**Wave 9 done 2026-10-09:** 164 merged onto `release/0.6.0-spring` (tester PASS 1670 at 383ba6ed). Wave 10 is next: 163, then 162. Details are in the retired 164 task file's Outcome. 162 gained the CHANGELOG `Added` line for the configuration metadata. 163 must satisfy `ConfigurationMetadataDocumentedTest` for any property it adds (document it in `docs/configuration.md` and keep the gaps file honest).
+
+**Owner instruction (2026-10-09): pause before any release step after 162.** No tag, release PR or publish without the owner's explicit go.
 
 **Wave 8 done 2026-10-08:** 159 merged onto `release/0.6.0-spring`. Wave 9 is next: 161 and 164 in parallel. Details are in the retired 159 task file's Outcome. Notes carried forward: the audit wiring is now `AuditSinkSelection` (owns `dataPrismHashChainedAuditSink` and `JsonProjection`) and `AuditWiring` (owns `dataPrismAuditRecorder`); 161 and 163 Owns updated. 162 gained the logger-category rename, bean-name change and stale-reference fixes.
 

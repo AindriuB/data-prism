@@ -52,6 +52,9 @@ check). Each is copied from that task's hand-back.
 ## Added from 161
 The CHANGELOG and migration page list the two new refusal codes `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`, and state that an application `AuditSink` combined with `sink=hash-chained` and a json-directory now refuses to start.
 
+## Added from 164
+- [ ] `CHANGELOG.md` `[Unreleased]` `### Added` has: "The data-prism-spring-boot-autoconfigure jar now ships Spring configuration metadata (META-INF/spring-configuration-metadata.json), so IDEs complete and describe dataprism.* keys in YAML. The processor runs only at build time and is not a dependency, and a build test keeps the metadata and docs/configuration.md in step."
+
 ## Out of scope
 - The 0.6.0 release cut: version bump, `server.json`, image tags, tagging and publishing. A separate task, filed when the owner calls the cut.
 - Rewriting historical CHANGELOG entries or anything under `docs/plan/`.
