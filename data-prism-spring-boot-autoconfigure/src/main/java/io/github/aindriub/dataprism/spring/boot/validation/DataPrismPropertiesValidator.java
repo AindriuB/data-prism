@@ -305,10 +305,13 @@ public final class DataPrismPropertiesValidator {
     private void validateApprovalQuorum(HazelcastProperties h) {
         Integer minimum = h.getApprovalMinimumMembers();
         String mode = h.getJoin().getMode().strip();
+        // Approvals are in use through a gated tool or four-eyes re-identification, which share one approval store.
+        // Only then is a quorum computed or required.
+        boolean inUse = !oversight.getApprovalRequiredTools().isEmpty() || reidentification.isEnabled();
         int members = -1;
         boolean hostname = false;
+        boolean uncountable = false;
         if ("tcp-ip".equals(mode)) {
-            // Every tcp-ip configuration must be countable, with or without a minimum, because the default is a majority.
             try {
                 int port = h.getMember().getPort() == null ? 5701 : h.getMember().getPort();
                 members = io.github.aindriub.dataprism.hazelcast.PrivacyCluster.countTcpIpMembers(
@@ -317,19 +320,23 @@ public final class DataPrismPropertiesValidator {
             } catch (LinkageError hazelcastAbsent) {
                 return; // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
             } catch (IllegalArgumentException unexpandable) {
-                refuse("INVALID_APPROVAL_QUORUM", "a dataprism.hazelcast.join.members entry cannot be expanded "
-                        + "reliably to a member count (wildcard, range outside the last octet, bad port)");
+                uncountable = true;
+                if (inUse) {
+                    refuse("INVALID_APPROVAL_QUORUM", "a dataprism.hazelcast.join.members entry cannot be expanded "
+                            + "reliably to a member count (wildcard, range outside the last octet, bad port)");
+                }
             }
         }
         if (minimum == null) {
-            if ("kubernetes".equals(mode) && !oversight.getApprovalRequiredTools().isEmpty()) {
+            if (inUse && "kubernetes".equals(mode)) {
                 refuse("MISSING_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members is required with "
-                        + "join.mode kubernetes when dataprism.oversight.approval-required-tools is set, because the "
-                        + "member count is not known here");
+                        + "join.mode kubernetes when approvals are in use (dataprism.oversight.approval-required-tools "
+                        + "or dataprism.reidentification.enabled), because the member count is not known here");
             }
-            if (hostname) {
+            if (inUse && hostname) {
                 refuse("MISSING_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members is required when "
-                        + "a join.members entry is a hostname, because how many members it names is not known here");
+                        + "approvals are in use and a join.members entry is a hostname, because how many members it "
+                        + "names is not known here");
             }
             return;
         }
@@ -341,7 +348,7 @@ public final class DataPrismPropertiesValidator {
                     + "join.mode none, which is one member");
         }
         // A hostname may name several members, so the count is only a lower bound and proves nothing against a minimum.
-        if ("tcp-ip".equals(mode) && !hostname && minimum > members) {
+        if ("tcp-ip".equals(mode) && !hostname && !uncountable && minimum > members) {
             refuse("INVALID_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members is above the "
                     + "number of distinct join.members, so no partition could ever reach it");
         }

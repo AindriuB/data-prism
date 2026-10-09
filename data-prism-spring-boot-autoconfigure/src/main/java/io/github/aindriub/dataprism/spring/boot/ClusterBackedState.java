@@ -51,12 +51,25 @@ class ClusterBackedState {
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
                     Optional.ofNullable(h.getMember().getInterface()));
             return PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
-                    h.getApprovalMinimumMembers() == null ? OptionalInt.empty()
-                            : OptionalInt.of(h.getApprovalMinimumMembers()));
+                    approvalMinimum(h, properties));
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
             throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
         }
+    }
+
+    /**
+     * The explicit minimum if given. Otherwise, with approvals in use (a gated tool or re-identification), empty,
+     * which takes the default for the join mode. Without approvals in use, 1, which applies no protection, so no
+     * quorum is computed from a member list that may not be countable.
+     */
+    private static OptionalInt approvalMinimum(HazelcastProperties h, DataPrismProperties properties) {
+        if (h.getApprovalMinimumMembers() != null) {
+            return OptionalInt.of(h.getApprovalMinimumMembers());
+        }
+        boolean inUse = !properties.getOversight().getApprovalRequiredTools().isEmpty()
+                || properties.getReidentification().isEnabled();
+        return inUse ? OptionalInt.empty() : OptionalInt.of(1);
     }
 
     private static ClusterMembership.Join join(HazelcastProperties.Join join) {

@@ -329,7 +329,13 @@ Added:
 - With `join.mode: tcp-ip` the approval minimum defaults to a majority of the distinct `join.members`,
   so that list must name every member including this one, and a two-member cluster stops approval-gated
   tools while either member is down (fail closed). Set `approval-minimum-members: 1` to opt out.
-- `join.mode: kubernetes` with approval-required tools now refuses startup until the minimum is set.
+- New startup refusals apply only when approvals are in use (`dataprism.oversight.approval-required-tools` not empty OR
+  `dataprism.reidentification.enabled`, which uses the same approval store; coordinator decision, consistent with D-070-15).
+  When approvals are not in use no quorum is computed or required and the starter applies no protection. When in use:
+  - a `tcp-ip` hostname member without `approval-minimum-members`: `MISSING_APPROVAL_QUORUM`;
+  - a wildcard, other-octet range or bad-port `tcp-ip` member: `INVALID_APPROVAL_QUORUM`;
+  - `kubernetes` without `approval-minimum-members`: `MISSING_APPROVAL_QUORUM`.
+  A minimum that is below 1, above the countable members, or set with `none` is refused regardless.
 - A budget read blocked by a lock returns `CLUSTER_LOCK_TIMEOUT` where it would have hung.
 - A supplied `PrivacyCluster.using(instance)` gets neither the merge policy nor the quorum.
 
