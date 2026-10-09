@@ -149,60 +149,91 @@ Weak points of (b) beyond cost: the fingerprint is a guessing oracle for whoever
 
 ### Algorithm
 
-AES-256-GCM, from the JDK (`javax.crypto.Cipher`, `AES/GCM/NoPadding`), 96-bit random nonce, 128-bit tag. Reasons: authenticated encryption with associated data is exactly the required primitive; it is in the JDK 21 baseline, so no dependency is added; hardware support makes it cheap at thousands of links per investigation; ChaCha20-Poly1305 is also in the JDK and is the documented alternative if a target platform lacks AES acceleration. AES-GCM-SIV is not in the JDK and would add a dependency, so it is not proposed. Random 96-bit nonces are safe up to about 2^32 messages per key; the per-scope derived key (below) plus the rotation of the link key keeps the count per key far below that (1 link is at most one encryption; a response carries at most `max-per-response`).
+AES-256-GCM, from the JDK (`javax.crypto.Cipher`, `AES/GCM/NoPadding`), 96-bit random nonce, 128-bit tag. Reasons: authenticated encryption with associated data is exactly the required primitive; it is in the JDK 21 baseline, so no dependency is added; hardware support makes it cheap at thousands of links per investigation; ChaCha20-Poly1305 is also in the JDK and is the documented alternative if a platform lacks AES acceleration. AES-GCM-SIV is not in the JDK and would add a dependency, so it is not proposed. Random 96-bit nonces are safe up to about 2^32 messages per key; the per-scope derived key and the rotation of the link key keep the count per key far below that (a response carries at most `max-per-response` links).
 
-The "encryption" in option (b) protects structure and fingerprints rather than a real key; the AEAD is still required for integrity, so the choice does not depend on OD-1.
+Under option (b) the encryption protects structure and fingerprints rather than a real key; the AEAD is still required for integrity, so the choice of algorithm does not depend on OD-1.
 
 ### Key derivation
 
-The link key id is `dataprism.links.key-id` (a `SecretKeyProvider` id, distinct from `dataprism.privacy.hmac-key.key-id`; startup refuses a shared id). Derivation is HKDF-SHA-256 (RFC 5869) over `secret(linkKeyId)`, with an `info` field that is a length-prefixed concatenation of a purpose label, the format version and the scope id:
+The link key id is `dataprism.links.key-id` (a `SecretKeyProvider` id, distinct from `dataprism.privacy.hmac-key.key-id`; startup refuses a shared id). The key material must be at least 32 bytes; a shorter key refuses startup.
 
-| Purpose | `info` label | Used for |
+Derivation is HKDF-SHA-256 (RFC 5869), written out so there is nothing to interpret:
+
+1. Extract: `PRK = HMAC-SHA256(salt, secret(linkKeyId))`, with `salt` = 32 zero bytes (the RFC's default of HashLen zeros). A fixed salt is acceptable because the input is already a high-entropy key of at least 32 bytes, not a password; the salt adds nothing here, and the labels below give domain separation.
+2. Expand: `OKM = T(1) = HMAC-SHA256(PRK, info || 0x01)`, 32 bytes, one block, so no counter loop. `info` is the length-prefixed concatenation of the purpose label (which carries the format version) and the scope id.
+
+| Purpose | Label | Used for |
 |---|---|---|
 | Sealing | `dataprism/link/v1/seal` | AES-256 key for the AEAD |
-| Fingerprinting | `dataprism/link/v1/fingerprint` | HMAC key for the chained-value fingerprint (option b) |
+| Fingerprinting | `dataprism/link/v1/fingerprint` | HMAC key for the chained-value fingerprint (option b) and for the attempt-counter key (section 4) |
 | Caller binding | `dataprism/link/v1/caller` | HMAC key for the caller tag in the AAD |
 
-Different labels mean that the sealing key and the fingerprint key never coincide. The scope id in `info` means a key derived for one scope is not the key for another, which narrows what a leak of one derived key gives (it does not narrow what a leak of the master gives). The JDK 21 baseline has no public HKDF API (`javax.crypto.KDF` arrives in Java 24), so 0.8 implements HKDF over `HmacSHA256` directly and tests it against the RFC 5869 vectors (OD-6).
+Different labels mean the sealing key and the fingerprint key never coincide. The scope id in `info` means a key derived for one scope is not the key for another, which narrows what a leak of one derived key gives (not what a leak of the master gives). The JDK 21 baseline has no public HKDF API (`javax.crypto.KDF` arrives in Java 24), so 0.8 implements the two steps over `HmacSHA256` and tests them against the RFC 5869 vectors (OD-6).
 
-Rotation: a token names its key id (see layout). Verification looks up exactly that id with `SecretKeyProvider.secret`, which already throws on an unknown id and must not fall back to another key (the trap recorded in HISTORY S2a). Issuance always uses the current `key-id`. Rotation is: add the new key, change `key-id`, keep the old key until the maximum link lifetime has passed, then `remove` it. After removal its links are refused as `LINK_INVALID` with audit reason `UNKNOWN_KEY`.
+Rotation: a token names its key id (see layout). Verification looks up exactly that id with `SecretKeyProvider.secret`, which throws on an unknown id and must not fall back to another key (the trap recorded in HISTORY S2a). Issuance always uses the current `key-id`. Rotation is: add the new key, change `key-id`, keep the old key until the maximum link lifetime has passed, then retire it. After retirement its links are refused as `LINK_INVALID` with audit reason `UNKNOWN_KEY`. Retiring from the provider's memory (`MultiKeySecretKeyProvider.remove`) is not destruction; whether a retired key is also gone from the key store is the operator's procedure and decides whether option (a') delivers its benefit.
 
 ### Layout
 
-Base64url without padding of a binary layout, fixed order, all lengths explicit:
+Base64url without padding of a binary layout, fixed order, all lengths explicit. Cleartext header:
 
-| Field | Size | Notes |
+| Field | Size (bytes) | Notes |
 |---|---|---|
-| version | 1 byte | `0x01`. A different value is refused before any cryptography |
-| key id length, key id | 1 + up to 16 bytes | ASCII `[A-Za-z0-9_-]`, cleartext (not sensitive) |
-| expiry | 8 bytes | epoch seconds, cleartext, also in the AAD |
-| target length, target | 1 + up to 64 bytes | the label the client sees in this response (alias or real name, D-RM-10), cleartext, also in the AAD |
-| relation length, relation | 1 + up to 64 bytes | cleartext, also in the AAD |
-| nonce | 12 bytes | random |
-| ciphertext and tag | variable + 16 | the sealed payload |
+| version | 1 | `0x01`. Any other value is refused before cryptography |
+| key id length, key id | 1 + up to 16 | ASCII `[A-Za-z0-9_-]`, not sensitive |
+| expiry | 8 | epoch seconds; also in the AAD |
+| target length, target | 1 + up to 64 | the label the client sees in this response (alias or real name, D-RM-10); also in the AAD |
+| relation | 1 | a code, `0x00` direct, `0x01` translated; also in the AAD |
+| nonce | 12 | random |
+| tag | 16 | at the end of the ciphertext |
 
-Associated data is the length-prefixed concatenation of: version, key id, expiry, target, relation, `scopeId` (taken from the session, never from the token), and the caller tag (below). Because scope and caller come from the authenticated session at verification time, a token replayed in another scope or by another caller fails authentication rather than relying on a comparison the code could forget.
+The header is at most 1 + 17 + 8 + 65 + 1 + 12 + 16 = 120 bytes. The target must be cleartext because the AAD has to be known before decryption and the client already sees that label. The relation is cleartext for the same reason, but it is only a one-byte code: the namespaces and resolver name, which are operator-chosen labels that could resemble real system names, are inside the encrypted payload and never in cleartext. All label lengths are enforced at startup (namespaces and resolver names at most 32 bytes, source labels at most 64).
 
-Sealed payload (binary, versioned by the outer version byte):
+Associated data is the length-prefixed concatenation of: version, key id, expiry, target, relation, `scopeId` (from the session, never from the token), and the caller tag. Because scope and caller come from the authenticated session at verification time, a token replayed in another scope or by another caller fails authentication rather than relying on a comparison the code could forget.
 
-| Field | Option (a) | Option (b) |
+Sealed payload:
+
+| Field | Size (bytes) | (a), (a') | (b) |
+|---|---|---|---|
+| link id | 8 | random, for audit correlation | same |
+| issue time | 8 | yes | yes |
+| depth | 1 | 0 | number of origin levels, 1 or more |
+| key namespace | 1 + up to 32 | yes | yes |
+| resolver name (translated only) | 1 + up to 32 | yes | yes |
+| chained key | 2 + 64k, at most 258 | the real key, zero-padded to a multiple of 64 bytes (k = 1 to 4); a key over 256 bytes gets no link and is counted as omitted | absent |
+| origin, one record per level | at most 155 each | absent | origin source label (1 + 64), field path (1 + 32), fingerprint of the chained value (12), and for a translated level the resolver name (1 + 32) and fingerprint of the translated key (12) |
+| root request | at most 291 | absent | entity type (1 + 32), `subjectId` (2 + at most 256), as the caller sent it |
+
+The length prefix of the chained key is inside the ciphertext, so padding hides the exact length within a 64-byte bucket. It does not hide the bucket (T17).
+
+Binding the caller: the AAD carries a caller tag, `HMAC(callerKey, principalId)` truncated to 16 bytes, not the principal in the clear. Whether to bind is OD-2. When unbound the tag is 16 zero bytes.
+
+The target source is not repeated in the payload. The label in the header is authenticated by the AAD and mapped back to the source by the server's per-scope alias table.
+
+### Size arithmetic and defaults
+
+Worst case for option (a) and (a'): header 120 + payload (8 + 8 + 1 + 33 + 33 + 258 = 341) = 461 bytes, which is 616 characters.
+
+Worst case for option (b) with d origin levels: header 120 + fixed payload (8 + 8 + 1 + 33 + 33 = 83) + root request 291 + 155 d = 494 + 155 d bytes. Base64url length is 4 x ceil(bytes / 3).
+
+| d (hops allowed) | Bytes | Characters |
 |---|---|---|
-| link id | 8 random bytes (audit correlation) | same |
-| target source (internal name) and direction (`direct` or `translated`) | yes | yes |
-| namespace, and for translated the resolver name and target namespace | yes | yes |
-| the chained value | the real key | absent |
-| origin: source, request (`entityType`, `subjectId`), field path, fingerprint of the chained value, depth, and the parent link's payload | absent | yes |
-| issue time | yes | yes |
+| 1 | 649 | 868 |
+| 2 | 804 | 1072 |
+| 3 | 959 | 1280 |
+| 4 | 1114 | 1488 |
+| 5 | 1269 | 1692 |
 
-Binding the caller: the AAD carries a caller tag, `HMAC(callerKey, principalId)` truncated to 16 bytes, not the principal in the clear (the tag is in neither the cleartext header nor the audit). Whether to bind is OD-2. When unbound the tag is 16 zero bytes. The recommendation is to bind.
+(b) at one level already exceeds 768 characters, which is why the first draft's default of 768 was inconsistent with a depth default of 3. The defaults are now: `max-length` 1536 characters (1152 bytes), `max-chain-depth` 3 (1280 characters), ceiling 4 (1488). Depth 5 does not fit 1536 and would need `max-length` raised. Startup applies the formula: if `4 x ceil((494 + 155 x max-chain-depth) / 3)` exceeds `max-length`, startup refuses with `INVALID_LINK_LIMIT`. Typical links are far smaller than the worst case (short labels, short keys: about 200 to 300 bytes under (a), 300 to 450 under (b) at depth 1), but the cap and the schema use the worst case. The worst case is also why links count toward the response-size cap (task 193): 50 links at 1536 characters is 77 KB in the extreme.
 
-Binding the target source and relation in both header and payload: the header copy lets the AAD name them before decryption; the payload copy is compared after decryption and a mismatch is `LINK_INVALID` (belt and braces against a future change that stops authenticating the header).
+Maximum encoded length is checked before any decoding. If the sealer would produce a link longer than `max-length`, the link is not issued and counts as omitted.
 
-Maximum encoded length: `dataprism.links.max-length`, default 768 characters. Worst case under option (b) at depth 1: header about 160 bytes, nonce 12, payload about 200, tag 16 gives about 390 bytes, 520 characters. Depth multiplies the origin portion, which is why `max-chain-depth` defaults to 3 and the sealer refuses to issue a link whose encoding would exceed `max-length` (the link is omitted and counted in the truncation marker). Longer input to `follow` is refused before decoding.
+### Expiry and clock skew
 
-Expiry: `min(now + lifetime, scope.expiresAt, caller token expiry)` at issuance. `lifetime` is a duration or the word `scope`, which means "up to the scope's current expiry". It is never beyond the scope (D-RM-6).
+Expiry at issue: `min(now + lifetime, scope.expiresAt, caller token expiry)`. `lifetime` is a duration or the word `scope`, meaning up to the scope's current expiry. It is never beyond the scope (D-RM-6).
 
-## 4. Uniform refusal, audit and what the client never learns
+Members of a cluster have clocks that differ slightly. `dataprism.links.clock-skew` (default `PT5S`, at most `PT30S`) is the tolerance: a link is treated as expired when `now >= expiry + clock-skew`, and a link whose issue time is later than `now + clock-skew` is invalid (audit reason `ISSUED_IN_FUTURE`). The tolerance applies to link expiry only. It never extends the scope or the caller's token, which the live session at `follow` time checks independently, so skew cannot make a link usable beyond the scope.
+
+## 4. Uniform refusal, audit, attempt limiter and what the client never learns
 
 Client sees, for every invalid link, the existing refusal result shape with:
 
@@ -212,19 +243,29 @@ Client sees, for every invalid link, the existing refusal result shape with:
 
 The client never learns: which check failed; whether the link was once valid; whether it was expired, forged, for another scope, caller or target; whether the target exists or is permitted; whether the origin drifted; which key id it names.
 
-Audit (using dispositions so the record's fields and hash encoding do not change; the decision is `DENY:LINK_INVALID`):
+Audit uses dispositions so the record's fields and hash encoding do not change; the decision is `DENY:LINK_INVALID`.
 
 | Disposition key | Value | Meaning |
 |---|---|---|
-| `link` | `INVALID:<reason>` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `DEPTH_EXCEEDED`, `PAYLOAD_MISMATCH` |
+| `link` | `INVALID:<reason>` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `ISSUED_IN_FUTURE`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `DEPTH_EXCEEDED`, `PAYLOAD_MISMATCH` |
 | `link:id` | 16 hex characters | The link's id, when the link authenticated; absent otherwise (an unauthenticated id is attacker data) |
-| `link:attempts` | integer | The scope's failed-attempt count after this call |
+| `link:attempts` | integer | The principal's counted failures in the current window, after this call |
 
-`AUTH_FAILED` covers forgery, tampering, wrong scope, wrong caller and wrong target, because the AEAD cannot say which input differed. That is a deliberate loss of operator diagnostics in exchange for no oracle. If the owner wants more, the only safe addition is a keyed scope tag in the cleartext header (OD-3 option).
+`AUTH_FAILED` covers forgery, tampering, wrong scope, wrong caller and wrong target, because the AEAD cannot say which input differed. That is a deliberate loss of operator diagnostics in exchange for no oracle (OD-3).
 
-On the issuing call the audit gains `links:issued` (count), `links:omitted` (count truncated) and, per resolver used for translated links, no entry at issue (resolvers are not called at issue, see `key-resolvers.md`). A successful follow audits `ALLOW`, the target as `name:status` like any source, and `link:id`.
+On the issuing call the audit gains `links:issued` (count) and `links:omitted` (count truncated). Resolvers are not called at issue, so there is no resolver entry there (see `key-resolvers.md`). A successful follow audits `ALLOW`, the target as `name:status` like any source, and `link:id`.
 
-Never in audit, logs, metrics or exceptions: the token, the sealed payload, the chained value, the fingerprint, any key. A rejected token is not echoed even truncated. `PiiLogScanTest` and `AuditFilePiiScanTest` extend to cover it (section "Test obligations").
+Never in audit, logs, metrics or exceptions: the token, the sealed payload, the chained value, the fingerprint, any key. A rejected token is not echoed even truncated. `PiiLogScanTest` and `AuditFilePiiScanTest` extend to cover it (section 7).
+
+### Attempt limiter
+
+Purpose: stop a prompt-injected agent from grinding forged links. Properties required:
+
+- It counts only failures that honest use does not produce: `MALFORMED`, `TOO_LONG`, `VERSION`, `AUTH_FAILED`, `PAYLOAD_MISMATCH`, `DEPTH_EXCEEDED`, `ISSUED_IN_FUTURE`. It does not count `EXPIRED`, `ORIGIN_DRIFT`, `UNKNOWN_KEY` (honest after a rotation), `TARGET_NOT_PERMITTED` or `RELATION_UNDECLARED`, which ordinary staleness or a permission change produces. The agent that follows an old link is not penalised.
+- It counts per principal within a scope, so one principal cannot lock the others out. The counter key is `HMAC(fingerprintKey, scopeId | principalId)` truncated and hex-encoded, so the map holds neither a case id nor a principal id (boundary 6).
+- The window is fixed and does not depend on a stored scope end, which does not exist: the counter entry is created at the first counted failure with a time-to-live of `dataprism.links.invalid-attempt-window` (default `PT10M`) and increments do not extend it. In a single-node deployment the same semantics hold in process.
+- When the count reaches `invalid-attempt-limit` (default 20), every `follow` by that principal in that scope is refused with `LINK_ATTEMPTS_EXHAUSTED` until the entry expires, including calls carrying a valid link. A lock that still accepted valid links would tell the prober which links are valid.
+- The counter is cluster-wide on a shared topology (an integer under a keyed-hash key). Whether to also set an aggregate per-scope ceiling, the limit and window values, and whether to lock at all or only count and audit, are OD-8.
 
 ## 5. The `follow` tool and `_links`
 
@@ -236,14 +277,14 @@ Input schema (draft 2020-12). The caller supplies nothing but the link: scope, p
 {
   "type": "object",
   "properties": {
-    "link": { "type": "string", "minLength": 1, "maxLength": 768, "pattern": "^[A-Za-z0-9_-]+$" }
+    "link": { "type": "string", "minLength": 1, "maxLength": 1536, "pattern": "^[A-Za-z0-9_-]+$" }
   },
   "required": ["link"],
   "additionalProperties": false
 }
 ```
 
-`maxLength` follows `dataprism.links.max-length`; the schema served is generated from the configured value. A client that ignores the schema gets the same `LINK_INVALID`.
+`maxLength` follows `dataprism.links.max-length`; the served schema is generated from the configured value. A client that ignores the schema gets the same `LINK_INVALID`.
 
 Output: the same envelope as `get_entity_context` (D-070-1), with exactly one entry in `sources`, keyed by the target label. A one-to-many translation (see `key-resolvers.md`) returns `items` instead of `entity`.
 
@@ -260,20 +301,21 @@ Output: the same envelope as `get_entity_context` (D-070-1), with exactly one en
   },
   "required": ["correlationId", "sources"],
   "$defs": {
+    "status": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
     "sourceResult": {
       "type": "object",
       "properties": {
-        "status": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "status": { "$ref": "#/$defs/status" },
         "entity": { "type": "object" },
         "items": {
           "type": "array",
           "items": {
             "type": "object",
-            "properties": { "status": { "type": "string" }, "entity": { "type": "object" } },
+            "properties": { "status": { "$ref": "#/$defs/status" }, "entity": { "type": "object" }, "_links": { "type": "array", "items": { "$ref": "#/$defs/link" } }, "_linksOmitted": { "type": "integer", "minimum": 1 } },
             "required": ["status"]
           }
         },
-        "itemsOmitted": { "type": "integer", "minimum": 1 },
+        "itemsTruncated": { "const": true },
         "_links": { "type": "array", "items": { "$ref": "#/$defs/link" } },
         "_linksOmitted": { "type": "integer", "minimum": 1 }
       },
@@ -287,7 +329,7 @@ Output: the same envelope as `get_entity_context` (D-070-1), with exactly one en
         "field": { "type": "string" },
         "namespace": { "type": "string" },
         "toNamespace": { "type": "string" },
-        "link": { "type": "string", "maxLength": 768 },
+        "link": { "type": "string", "maxLength": 1536 },
         "expiresAt": { "type": "string", "format": "date-time" }
       },
       "required": ["rel", "target", "field", "link", "expiresAt"]
@@ -296,7 +338,16 @@ Output: the same envelope as `get_entity_context` (D-070-1), with exactly one en
 }
 ```
 
-An invalid link returns the refusal result, not this shape. `entity` is present only for `ANSWERED` (D-070-1). `items` appears only for a one-to-many translation and only when the status of the target is `ANSWERED`; the item cap and omission count are `dataprism.key-resolvers.max-targets` and `itemsOmitted`. A bulk or status-only form is task 198's.
+An invalid link returns the refusal result, not this shape. `entity` is present only for `ANSWERED` items or sources (D-070-1). `items` appears only for a one-to-many translation; a source result has either `entity` or `items`, never both. Since a resolver cannot always say how many keys it left out, truncation is a flag, `itemsTruncated`, not a count.
+
+Outer status and items of a one-to-many follow (decisions on the rule itself are OD-9):
+
+- An item whose read is `REFUSED` is omitted from `items` (D-070-2). If every item that was attempted is refused, the whole call is refused with the first item's code, as a single-source refusal is today.
+- The source's `status` is `ANSWERED` if at least one item is `ANSWERED`. Otherwise it is `NO_DATA` if the resolver returned no keys or every item is `NO_DATA`; otherwise the common status if all items share one; otherwise `FAILED`.
+- `items` follow the deterministic order defined in `key-resolvers.md` (ascending keyed fingerprint of the translated key), so output order discloses nothing about real keys.
+- If the read budget runs out part-way, the items already read are returned, the remaining keys are not attempted, and `itemsTruncated` is `true`. If it is exhausted before the first read the call is refused as today (`SCOPE_READ_BUDGET`). A deadline cut-off behaves the same way, with the unread keys covered by `itemsTruncated`.
+
+A bulk or status-only form is task 198's.
 
 ### `_links` on a per-source result
 
@@ -310,10 +361,10 @@ An invalid link returns the refusal result, not this shape. `entity` is present 
       "entity": { "parcel": "PARCEL-7Q2K4M", "state": "in transit" },
       "_links": [
         { "rel": "direct", "target": "depot-service", "field": "parcel",
-          "namespace": "parcel-ref", "link": "AQ…", "expiresAt": "2026-10-09T14:30:00Z" },
+          "namespace": "parcel-ref", "link": "AQ...", "expiresAt": "2026-10-09T14:30:00Z" },
         { "rel": "translated", "target": "courier-roster", "field": "parcel",
           "namespace": "parcel-ref", "toNamespace": "route-code",
-          "link": "AQ…", "expiresAt": "2026-10-09T14:30:00Z" }
+          "link": "AQ...", "expiresAt": "2026-10-09T14:30:00Z" }
       ],
       "_linksOmitted": 12
     }
@@ -324,37 +375,38 @@ An invalid link returns the refusal result, not this shape. `entity` is present 
 Rules:
 
 1. Links exist only for fields marked `chainable: true` (D-RM-4), only toward sources the caller is permitted to see (D-RM-11) and whose declared input namespace matches the field's exactly (`direct`) or is reachable through one declared resolver (`translated`); never two resolvers in a row (D-RM-5, D-RM-14).
-2. `field` is the name of the field as the client sees it in `entity`. Because the identifier itself is removed from output, `field` names the pseudonymised or placeholder field the link stands for. A chainable field that is dropped entirely carries its `field` as the declared model name only if that name is not itself a sensitive key; the scrubber's `<undeclared-N>` rule applies and a link is not issued for an undeclared field (fail closed).
-3. A source whose status is not `ANSWERED` has no `_links` and no `_linksOmitted`. A `REFUSED` source (D-070-2) is omitted entirely and so is any link it would have produced. A source that returned `NO_DATA` has none.
-4. Links are grouped by `rel`, then by target, in ascending target order, so output is deterministic (task 179's ordering rule).
-5. Cap: `dataprism.links.max-per-response` (default 50) across the whole response. Selection under the cap takes links round-robin across targets in order so one relation cannot starve the others. When anything is dropped each affected source carries `_linksOmitted` with the number dropped from it (D-RM-12). The marker states a count only, never what was dropped.
-6. Collections: one link per distinct (field, target) pair, not one per element, unless the collection's elements are individually chainable, in which case the cap applies per response and paging (task 198) carries the rest.
-7. A link whose sealed encoding would exceed `max-length` is not issued and counts as omitted.
-8. The leak validators run on the response with links present. The token is exempt from the key-shape scan by construction only if produced by the sealer (a typed `SealedLink` value); a token-shaped string that is not one fails validation (boundary 1).
+2. **A link identifies exactly one key.** `field` is the path of the chainable value in the record as the client sees it. For a scalar field it is the field name. For an element of a collection, whether the field is a list of keys or a list of records with a chainable field inside, there is one link per distinct element key, with an indexed path such as `depots[2]` or `routes[1].depot`. Duplicates (same key, same field path) are collapsed by fingerprint before the cap. What a link carries: under (a) and (a') the element's real key; under (b) the origin source, the path including the index, and the fingerprint of that element's key. A single link standing for a whole collection is not issued (OD-10). Because only the key is chainable, the `field` path names where the value was, not the value; a chainable field that is dropped entirely from output still has its declared model name as `field`, unless that name would itself be sensitive, in which case the `<undeclared-N>` rule applies and no link is issued (fail closed).
+3. A source whose status is not `ANSWERED` has no `_links` and no `_linksOmitted`. A `REFUSED` source (D-070-2) is omitted entirely and so is any link it would have produced.
+4. Links are grouped by `rel`, then by target in ascending order, then by `field`, so output is deterministic (task 179's ordering rule).
+5. Cap: `dataprism.links.max-per-response` (default 50) across the whole response. Selection under the cap takes links round-robin across targets in order, so one relation cannot starve the others. Each affected source carries `_linksOmitted` with the number dropped from it (D-RM-12). The marker states a count only, never what was dropped. Both the round-robin rule and the default are OD-11.
+6. A link whose sealed encoding would exceed `max-length`, or whose key exceeds 256 bytes under (a) and (a'), is not issued and counts as omitted.
+7. The leak validators run on the response with links present. A token is exempt from the key-shape scan by construction only if produced by the sealer (a typed `SealedLink` value); a token-shaped string that is not one fails validation (boundary 1).
 
 ### Configuration keys
 
-All proposals; unknown keys under `dataprism.links` are startup errors like every group.
+All proposals. Unknown keys under `dataprism.links` are startup errors like every group.
 
-| Key | Default | Validation |
+| Key | Default | Validation, and what a bad value does at startup |
 |---|---|---|
 | `dataprism.links.enabled` | `false` | With `false`, no `_links`, and `follow` is not registered; the product behaves as option (c) |
-| `dataprism.links.key-id` | none | Required when enabled; must resolve; must differ from `dataprism.privacy.hmac-key.key-id` (`LINK_KEY_SHARED`) |
-| `dataprism.links.lifetime` | `PT30M` | Positive duration, or `scope`. Never effective beyond the scope (D-RM-6) |
-| `dataprism.links.max-per-response` | `50` | 1 to 500 |
-| `dataprism.links.max-length` | `768` | 256 to 2048 |
+| `dataprism.links.key-id` | none | Required when enabled. Unresolvable: `LINK_KEY_UNRESOLVED`. Shorter than 32 bytes: `LINK_KEY_WEAK`. Same id as `dataprism.privacy.hmac-key.key-id`: `LINK_KEY_SHARED` |
+| `dataprism.links.lifetime` | `PT30M` | Positive duration, or `scope`; otherwise `INVALID_LINK_LIFETIME`. Never effective beyond the scope (D-RM-6) |
+| `dataprism.links.max-per-response` | `50` | 1 to 500; otherwise `INVALID_LINK_LIMIT` |
+| `dataprism.links.max-length` | `1536` | 512 to 4096, and not less than the worst case for `max-chain-depth` (section 3); otherwise `INVALID_LINK_LIMIT` |
 | `dataprism.links.bind-caller` | `true` | Boolean (OD-2) |
-| `dataprism.links.invalid-attempt-limit` | `20` | Positive; per scope per scope lifetime |
-| `dataprism.links.max-chain-depth` | `3` | 1 to 5; only meaningful under option (b) |
+| `dataprism.links.invalid-attempt-limit` | `20` | Positive; otherwise `INVALID_LINK_LIMIT` |
+| `dataprism.links.invalid-attempt-window` | `PT10M` | Positive duration; otherwise `INVALID_LINK_LIMIT` |
+| `dataprism.links.clock-skew` | `PT5S` | 0 to `PT30S`; otherwise `INVALID_LINK_LIMIT` |
+| `dataprism.links.max-chain-depth` | `3` | 1 to 4; used only under option (b); otherwise `INVALID_LINK_LIMIT` |
 
 ## 6. Boundaries
 
-1. **Nothing reaches `mcp` without passing the privacy engine.** The link builder runs in `orchestration`, on the raw record, and returns only a sealed value typed so that the mapper can emit it and nothing else carries the chained value toward `mcp`. `mcp` receives tokens, never keys. No new class may build a mapper; the sealer needs none (binary layout, base64url). A new architecture rule must forbid any class in `mcp` or `connectors` from depending on the raw-key accessor of the link builder. Under (a) the real key leaves the engine as ciphertext and the validator cannot check it; this is the principal technical argument for (b).
-2. **Boundary 5 (re-identification).** A link is never a path to `ScopeIdentityIndex.subjectFor` and the link module must not depend on `data-prism-reidentification`. The fingerprint of a chained value is not a pseudonym and is never written to the re-identification index. `follow` is an ordinary MCP tool with ordinary authorisation; it is never an operator tool.
-3. **Boundary 6 (Hazelcast).** Links are not stored anywhere: no issued-link table, no used-link set, no cache of origin records. The only shared state is the failed-attempt counter, an integer keyed by scope, which holds no sensitive value; `HazelcastStoredValueBoundaryTest` gains the new map in its inventory and must still reject raw values.
+1. **Nothing reaches `mcp` without passing the privacy engine.** The link builder runs in `orchestration`, on the raw record, and returns only a sealed value typed so that the mapper can emit it and nothing else carries the chained value toward `mcp`. `mcp` receives tokens, never keys. No new class may build a mapper; the sealer needs none (binary layout, base64url). A new architecture rule must forbid any class in `mcp` or `connectors` from depending on the raw-key accessor of the link builder. Under (a) and (a') the real key leaves the engine as ciphertext and the validator cannot check it; this is the principal technical argument against them and is weighed in OD-1.
+2. **Boundary 5 (re-identification).** A link is never a path to `ScopeIdentityIndex.subjectFor`, and the link module must not depend on `data-prism-reidentification`. The fingerprint of a chained value is not a pseudonym and is never written to the re-identification index. `follow` is an ordinary MCP tool with ordinary authorisation; it is never an operator tool.
+3. **Boundary 6 (Hazelcast).** Links are not stored anywhere: no issued-link table, no used-link set, no cache of origin records. The only shared state is the failed-attempt counter, an integer under a keyed-hash key (no case id, no principal id) with a time-to-live; `HazelcastStoredValueBoundaryTest` gains the new map in its inventory and must still reject raw values.
 4. **Boundary 7 (no sensitive value in log, metric, exception, audit).** No token, payload, chained value, fingerprint or key in any of them. Exceptions from the sealer carry a reason enum, never input. Metrics use the closed reason set as a label at most, never a link id.
 
-Also: rule 4 (caller never supplies scope, principal, purpose or case) is honoured because scope and caller come from the session and enter the AAD; rule 2 (fail closed) is honoured because every unresolvable, unknown or erroring path is `LINK_INVALID`.
+Also: rule 4 (the caller never supplies scope, principal, purpose or case) is honoured because scope and caller come from the session and enter the AAD; rule 2 (fail closed) is honoured because every unresolvable, unknown or erroring path is `LINK_INVALID`.
 
 ## 7. Test obligations for 0.8 and 0.9
 
@@ -363,47 +415,54 @@ Mutation-testable: each line names a mutant that must be killed. PIT gates the l
 1. Round trip: issue then follow in the same scope and caller succeeds.
 2. Each AAD field has its own test that changes only that field and expects `LINK_INVALID`: version, key id, expiry, target, relation, scope, caller. Mutants: drop any field from the AAD.
 3. Bit flip at every byte position of a token (parameterised over the whole token) is refused. Mutant: skip tag verification.
-4. Expiry at `now - 1 s`, `now`, `now + 1 s`: boundary exact. Mutants: `<` for `<=`, drop the check.
-5. Effective expiry is the minimum of lifetime, scope expiry and token expiry; each of the three can be the binding one in a test. Mutant: use `lifetime` alone.
+4. Expiry at `expiry + skew - 1 s`, `expiry + skew`, `expiry + skew + 1 s`: boundary exact; skew 0 and the 30 s ceiling both tested. Mutants: `<` for `<=`, drop the check, apply skew to scope or token expiry.
+5. Effective expiry is the minimum of lifetime, scope expiry and token expiry; each of the three can be the binding one. Mutant: use `lifetime` alone. A link whose issue time is in the future beyond the skew is `ISSUED_IN_FUTURE`.
 6. `lifetime=scope` never exceeds scope expiry.
 7. Replay across scope, across caller (when bound), across target.
 8. Unknown key id, retired key id, and a provider holding exactly one key asked for a different id: all refused, never a fallback (the S2a trap).
 9. Uniformity: for every reason in the closed set, the client-visible result is byte-identical apart from `correlationId`; the audit reason differs. Mutant: return a different text or code for any reason.
-10. Timing: a statistical test (not a unit assertion) that valid-but-expired, authenticated-but-not-permitted and forged tokens are not separable beyond a stated tolerance. Marked as a soak test, not a flaky unit test.
+10. Timing: a statistical soak test (not a flaky unit assertion) that valid-but-expired, authenticated-but-not-permitted and forged tokens are not separable beyond a stated tolerance.
 11. Oversize input is refused before any decoding or cryptography. Mutant: reorder the length check after decoding.
 12. Cap: with `max-per-response=N` and more chainable fields, exactly N links and the right `_linksOmitted`; deterministic order; round-robin fairness.
 13. `REFUSED`, `NO_DATA`, `TIMED_OUT` and other non-`ANSWERED` sources carry no `_links`.
 14. Fields not marked `chainable` never produce a link. Mutant: ignore the flag.
 15. Exact namespace match: a near-miss namespace (case, whitespace, prefix) gives no direct link. Mutant: case-insensitive compare.
 16. Translation only through a declared resolver; two resolvers in sequence never produce a link.
-17. Leak tests: the chained value, in plaintext, base64, base64url, hex and URL-encoded forms, does not appear in any response, log line, metric, exception message or audit record, including under failure. Under (a) this test cannot see inside the ciphertext; under (b) the payload holds no chained value and a deliberate mutant that puts it there is caught by a test that opens the payload with the test key.
+17. Leak tests: the chained value, in plaintext, base64, base64url, hex and URL-encoded forms, does not appear in any response, log line, metric, exception message or audit record, including under failure. Under (a) and (a') this test cannot see inside the ciphertext; a second test opens the payload with the test key and asserts only the sealed key is present and padded. Under (b) the payload holds no chained value and a mutant that puts it there is caught by opening the payload.
 18. The token contains no cleartext of the chained value or the root `subjectId` (search the raw bytes before base64). Mutant: put either in the header.
-19. Option (b): origin drift (record removed, record changed, record reordered) is `LINK_INVALID` with audit `ORIGIN_DRIFT`; reordering alone is not drift.
-20. Option (b): chain depth `max-chain-depth + 1` is not issued; `DEPTH_EXCEEDED` on a forged-deeper link.
-21. Failed-attempt limiter: the N+1th failure in a scope returns `LINK_ATTEMPTS_EXHAUSTED`; another scope is unaffected; the counter map holds no sensitive value.
-22. Architecture rules: no `mcp` or `connectors` class depends on the raw-key accessor; the link module does not depend on `data-prism-reidentification`; no class outside the sealer calls `Cipher.getInstance("AES/GCM...")` (extend the existing designated-class pattern).
-23. HKDF against RFC 5869 test vectors; nonce uniqueness over a large sample; derived keys differ per label and per scope.
-24. `PiiLogScanTest`, `AuditFilePiiScanTest` and `HazelcastStoredValueBoundaryTest` still pass with links enabled.
-25. 0.9: external review reproduces items 2, 3, 8, 9 and 17 independently.
+19. Padding (a, a'): keys of different lengths within one 64-byte bucket give tokens of identical length; a key over 256 bytes gets no link. Mutant: no padding, or padding to a variable length.
+20. Option (b): origin drift (record removed, record changed) is `LINK_INVALID` with audit `ORIGIN_DRIFT`; reordering alone is not drift. A link on a one-to-many item re-selects the right translated key after the resolver returns a different order.
+21. Option (b): depth `max-chain-depth + 1` is not issued; `DEPTH_EXCEEDED` on a forged deeper link. For every depth up to the ceiling the worst-case token fits `max-length`: a test builds a worst-case token (maximum labels, maximum `subjectId`) and checks the length formula in section 3. Startup refuses a `max-length` below the formula.
+22. Failed-attempt limiter: counted reasons count and uncounted ones (`EXPIRED`, `ORIGIN_DRIFT`, `UNKNOWN_KEY`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`) never do; the N+1th counted failure by principal P returns `LINK_ATTEMPTS_EXHAUSTED` for P, including for a valid link; principal Q in the same scope and P in another scope are unaffected; the window ends and the lock lifts; increments do not extend the window; the counter map holds no case id, principal id or other sensitive value. Mutants: count every reason, key by scope only, extend the window on increment, accept valid links while locked.
+23. Collections: one link per distinct element key; indexed paths; duplicates collapsed; a record with no chainable value gets none; the cap applies after collapse.
+24. One-to-many follow: the outer status rule for each mix (all answered, some answered, all `NO_DATA`, all `TIMED_OUT`, mixed failures, some refused, all refused); an item status that does not match the code pattern fails the schema; budget exhaustion part-way gives the items read so far and `itemsTruncated`; exhaustion before the first read is `SCOPE_READ_BUDGET`.
+25. Architecture rules: no `mcp` or `connectors` class depends on the raw-key accessor; the link module does not depend on `data-prism-reidentification`; no class outside the sealer calls `Cipher.getInstance("AES/GCM...")` (extend the existing designated-class pattern).
+26. HKDF against RFC 5869 vectors (with the zero salt and one-block expand); nonce uniqueness over a large sample; derived keys differ per label and per scope; a key shorter than 32 bytes refuses startup.
+27. `PiiLogScanTest`, `AuditFilePiiScanTest` and `HazelcastStoredValueBoundaryTest` still pass with links enabled.
+28. 0.9: external review reproduces items 2, 3, 8, 9 and 17 independently.
 
 ## 8. Open decisions for the owner
 
-Not decided here. Each has options and a recommendation.
+Not decided here. Each has options and a recommendation. Choices that the first draft made in the text are now listed (OD-9 to OD-12).
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| OD-1 | How the real chained key reaches `follow` | (a) ciphertext of the real key; (a') as (a) with a dedicated short-lived key; (b) origin reference resolved server-side without Hazelcast; (c) chain only from keys a human supplies. Comparison in section 2 | (b). Second choice (a') if read cost is unacceptable at 300 to 500 sources. Keep (c) reachable by `enabled=false` |
-| OD-2 | Bind a link to the caller? | Bind (a second principal in the case cannot reuse a pasted link) or scope-only (analysts can hand links over) | Bind. Authorisation is rechecked on follow either way, so binding costs only hand-over convenience, and the audit then attributes issue and use to one principal |
+| OD-1 | How the real chained key reaches `follow` | (a) ciphertext of the real key; (a') as (a) with a dedicated short-lived key and destroyed retired keys; (b) origin reference resolved server-side without Hazelcast, with a trace-length cap, quadratic reads and compounding drift; (c) chain only from keys a human supplies. Comparison in section 2 | (a') with fixed-size padding, accepting T10 and T17 in writing, because (b) fails the 1.0 purpose beyond `max-chain-depth` hops. This replaces the first draft's (b). Choose (b) instead if no new real-identifier ciphertext in provider logs matters more than long unaided traces. Keep (c) reachable by `enabled=false`. Measure the pilot's trace lengths and p first if cheap |
+| OD-2 | Bind a link to the caller? | Bind (a second principal in the case cannot reuse a pasted link) or scope-only (analysts can hand links over) | Bind. Authorisation is rechecked on follow either way, so binding costs only hand-over convenience, and the audit attributes issue and use to one principal |
 | OD-3 | Operator diagnostics versus oracle | Keep `AUTH_FAILED` as one reason; or add a keyed scope tag to the cleartext header so audit can say "wrong scope" | Keep one reason. The loss is small and nothing reveals a scope relationship |
-| OD-4 | Scope end semantics. A scope has no stored end; the same case id re-used later is the same scope | (i) accept: links die by lifetime alone; (ii) add a scope epoch (a value stored with the case that changes at scope end) into the key derivation | (i) now, documented; revisit with the pilot. (ii) needs state the roadmap forbids unless the epoch is derived from an existing source |
-| OD-5 | Charging the origin re-read under (b) | Charge each read (origin and target); or charge only the target | Charge each read. The budget exists to bound reads of sources, and an uncharged read is an unbounded one |
+| OD-4 | Scope end semantics. A scope has no stored end; the same case id re-used later is the same scope | (i) accept: links die by lifetime alone; (ii) add a scope epoch (a value stored with the case that changes at scope end) into key derivation | (i) now, documented; revisit with the pilot. (ii) needs state the roadmap forbids unless the epoch derives from an existing source |
+| OD-5 | Charging the origin re-reads under (b) | Charge each read (origin and target); or charge only the target | Charge each read. An uncharged read is an unbounded one. Moot if (a') is chosen |
 | OD-6 | HKDF: implement over HmacSHA256 now, or wait for `javax.crypto.KDF` (Java 24) | Implement and test against RFC vectors; or defer links to a Java 25 baseline | Implement. Bytecode stays Java 21 |
 | OD-7 | Default for `dataprism.links.enabled` | `false` (opt-in); `true` once the quickstart has a chainable field | `false` through 0.9 so a deployment never gains an authority object unreviewed; revisit at 1.0 |
-| OD-8 | Failed-attempt policy | Pause the scope's `follow` after N failures; or only count and audit; or reuse the per-caller rate limit | Pause per scope (default 20) so a prompt-injected agent cannot grind. Counter only holds an integer |
+| OD-8 | Failed-attempt policy (the rule for what counts, per-principal keying and the fixed window are specified in section 4) | The limit and window values; whether to lock or only count and audit; whether to add an aggregate per-scope ceiling on top of per-principal | Lock per principal at 20 counted failures per `PT10M`; no aggregate scope ceiling, because it would let one principal lock out the rest |
+| OD-9 | Outer status of a one-to-many follow and partial results under budget exhaustion | The rule in section 5 (any answered item makes it `ANSWERED`; partial results with `itemsTruncated`); or the outer status is `FAILED` unless every item answered; or refuse the whole call if the budget runs out part-way | The rule in section 5. Returning what was read is consistent with D-RM-12 and the budget is already charged |
+| OD-10 | One link per collection element versus a single link for a whole collection | Per element (a link identifies exactly one key); or one link per collection field that follows to `items` (under (b) only, since (a) would have to seal the whole key list) | Per element. It keeps every link small and fixed in meaning and keeps the cap and paging (task 198) in one place |
+| OD-11 | Cap policy | Round-robin across targets with default 50; or fill by relation; or a smaller default | Round-robin, 50. Round-robin cannot let one relation starve the rest; 50 is a starting value for the load harness to confirm |
+| OD-12 | Link text against context cost | Keep `max-length` 1536 with depth ceiling 4; or shrink label limits so more hops fit | Keep. Typical links are one fifth of the worst case |
 
 ## 9. Proposed names (closing table)
 
-None collides with an existing name: the commands used are recorded in the Outcome of task 191.
+None collides with an existing name; the commands used are recorded in the Outcome of task 191. `KEY_UNRESOLVED` (in `key-resolvers.md`) is close in spelling to the existing startup code `HMAC_KEY_UNRESOLVED`; they are different kinds (a per-source status and a startup refusal), but task 200 should record both together or rename the new one.
 
 | Name | Kind | Proposed release |
 |---|---|---|
@@ -411,7 +470,8 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `LINK_INVALID` | refusal code | 0.8 |
 | `LINK_ATTEMPTS_EXHAUSTED` | refusal code | 0.8 |
 | `LINK_KEY_SHARED` | startup refusal code | 0.8 |
-| `LINKS_KEY_MISSING` | startup refusal code | 0.8 |
+| `LINK_KEY_UNRESOLVED` | startup refusal code | 0.8 |
+| `LINK_KEY_WEAK` | startup refusal code | 0.8 |
 | `INVALID_LINK_LIFETIME` | startup refusal code | 0.8 |
 | `INVALID_LINK_LIMIT` | startup refusal code | 0.8 |
 | `link` | audit disposition key (values `INVALID:<reason>`) | 0.8 |
@@ -421,7 +481,7 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `links:omitted` | audit disposition key | 0.8 |
 | `_links` | result field | 0.8 |
 | `_linksOmitted` | result field | 0.8 |
-| `items`, `itemsOmitted` | result fields (one-to-many follow) | 0.8 |
+| `items`, `itemsTruncated` | result fields (one-to-many follow) | 0.8 |
 | `dataprism.links.enabled` | configuration key | 0.8 |
 | `dataprism.links.key-id` | configuration key | 0.8 |
 | `dataprism.links.lifetime` | configuration key | 0.8 |
@@ -429,5 +489,7 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `dataprism.links.max-length` | configuration key | 0.8 |
 | `dataprism.links.bind-caller` | configuration key | 0.8 |
 | `dataprism.links.invalid-attempt-limit` | configuration key | 0.8 |
-| `dataprism.links.max-chain-depth` | configuration key | 0.8 |
+| `dataprism.links.invalid-attempt-window` | configuration key | 0.8 |
+| `dataprism.links.clock-skew` | configuration key | 0.8 |
+| `dataprism.links.max-chain-depth` | configuration key (option b only) | 0.8 |
 | `dataprism/link/v1/seal`, `/fingerprint`, `/caller` | key-derivation labels | 0.8 |
