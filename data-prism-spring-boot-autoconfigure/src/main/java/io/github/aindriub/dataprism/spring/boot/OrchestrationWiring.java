@@ -21,6 +21,7 @@ import io.github.aindriub.dataprism.orchestration.SourceCircuitBreaker;
 import io.github.aindriub.dataprism.orchestration.SourceFanOut;
 import io.github.aindriub.dataprism.orchestration.SourceFanOutOptions;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,16 +39,36 @@ class OrchestrationWiring {
         return key == null ? CorrelationMdc.off() : CorrelationMdc.of(key);
     }
 
+    /**
+     * The one source of request limits for every orchestrator in the context. Unconditional on purpose: it carries the
+     * scope read budget, so an application bean cannot take it over ({@link #dataPrismRequestLimitsPreflight()}).
+     */
+    @Bean
+    RequestLimits dataPrismRequestLimits(DataPrismProperties properties) {
+        return properties.getLimits().toRequestLimits();
+    }
+
+    /** Resolve this before singleton creation, same reasoning as {@code dataPrismPrivacyPolicyResolverPreflight}. */
+    @Bean
+    static BeanFactoryPostProcessor dataPrismRequestLimitsPreflight() {
+        return factory -> {
+            if (factory.getBeanNamesForType(RequestLimits.class, true, false).length > 1) {
+                throw new DataPrismConfigurationException("FORBIDDEN_PRIVACY_OVERRIDE",
+                        "an application RequestLimits bean cannot replace the configured request limits");
+            }
+        };
+    }
+
     @Bean @ConditionalOnMissingBean
     ContextOrchestrator dataPrismContextOrchestrator(List<DataSourceAdapter<?>> adapters, IdentityResolver identities,
             JsonTreeScrubbingEngine scrubber, FieldMetadataResolver metadata, List<LlmResponseValidator> validators,
             SyntheticValueSource synthetics, ValueTokenSource tokens, SecretKeyProvider keys, AuditRecorder audit,
             ScopeBudget budget, PrivacyMetrics metrics, Clock clock, ParameterFingerprinter fingerprinter,
-            CorrelationMdc correlationMdc) {
+            CorrelationMdc correlationMdc, RequestLimits limits) {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 fingerprinter, audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock,
-                        new SourceFanOutOptions(metrics, correlationMdc)), budget, RequestLimits.DEFAULT,
+                        new SourceFanOutOptions(metrics, correlationMdc)), budget, limits,
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
 }

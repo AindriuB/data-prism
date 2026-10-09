@@ -178,11 +178,11 @@ class LimitsConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class ReviewedIntegrations {
         @Bean
-        DataSourceAdapter<Object> customerAdapter() {
+        DataSourceAdapter<TestPayload> customerAdapter() {
             return new DataSourceAdapter<>() {
                 public String sourceName() { return "customer"; }
-                public Class<Object> responseType() { return Object.class; }
-                public Object fetch(DataRequest request) { return null; }
+                public Class<TestPayload> responseType() { return TestPayload.class; }
+                public TestPayload fetch(DataRequest request) { return null; }
             };
         }
         @Bean IdentityResolver identities() { return new PassThroughIdentityResolver(); }

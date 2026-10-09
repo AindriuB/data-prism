@@ -23,6 +23,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 
+import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
@@ -75,7 +77,8 @@ class ConfiguredJsonSourcesLimitsTest {
 
     private static PrivacyContext context() {
         return new PrivacyContext("SCOPE-1", PrivacyScopeType.INVESTIGATION, "DEFAULT", "investigation",
-                Instant.parse("2030-01-01T00:00:00Z"), PseudonymisationVersion.HMAC_SHA256_V1);
+                Instant.parse("2030-01-01T00:00:00Z"), PseudonymisationVersion.HMAC_SHA256_V1.withKey("v1")
+                        .withVocabulary(VocabularyRegistry.withBuiltIns().resolve("und").id()));
     }
 
     private static InvestigationContext caller() {

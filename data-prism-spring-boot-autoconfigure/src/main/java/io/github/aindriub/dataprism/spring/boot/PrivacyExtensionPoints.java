@@ -78,6 +78,9 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismClusterScopeBudget", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismSharedBudgetPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismCorrelationMdc", Classification.REPLACEABLE, Guard.NONE),
+            // Carries the scope read budget, so it is not replaceable: a second RequestLimits bean is refused.
+            entry("dataPrismRequestLimits", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismRequestLimitsPreflight", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismContextOrchestrator", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismStdioTransportRefused", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpTransportPreflight", Classification.REPLACEABLE, Guard.NONE),

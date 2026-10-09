@@ -83,6 +83,15 @@ import java.util.Set;
 @AutoConfigureBefore(name = "io.github.aindriub.dataprism.spring.boot.DataPrismAutoConfiguration")
 public class ConfiguredJsonSourcesAutoConfiguration {
 
+    /**
+     * Used only where no {@link RequestLimits} bean exists, that is, without the auto-configuration module, which
+     * binds {@code dataprism.limits.*} into the one bean. This module cannot read those properties itself. A test pins
+     * these values to {@code RequestLimits.DEFAULT}.
+     */
+    static final RequestLimits STANDALONE_LIMITS = new RequestLimits(
+            8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 100);
+
+
     static final String CONFIG_LOCATION_PROPERTY = "dataprism.json-sources.config-location";
 
     /**
@@ -132,7 +141,8 @@ public class ConfiguredJsonSourcesAutoConfiguration {
             List<DataSourceAdapter<?>> adapters, IdentityResolver identities, FieldMetadataResolver metadata,
             List<LlmResponseValidator> validators, SyntheticValueSource synthetics, ValueTokenSource tokens,
             SecretKeyProvider keys, AuditRecorder audit, ScopeBudget budget, PrivacyMetrics metrics, Clock clock,
-            PrivacyPolicyResolver policy, ObjectProvider<CorrelationMdc> correlationMdc) {
+            PrivacyPolicyResolver policy, ObjectProvider<CorrelationMdc> correlationMdc,
+            ObjectProvider<RequestLimits> limits) {
         ConfiguredJsonSourcesConfig config = ConfiguredJsonSourcesInitializer.loadConfig(environment);
 
         JsonTreeScrubbingEngine javaFirst = new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens);
@@ -142,7 +152,7 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 new ParameterFingerprinter(keys), audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, new SourceFanOutOptions(metrics,
-                        correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, RequestLimits.DEFAULT,
+                        correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, limits.getIfAvailable(() -> STANDALONE_LIMITS),
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
 }
