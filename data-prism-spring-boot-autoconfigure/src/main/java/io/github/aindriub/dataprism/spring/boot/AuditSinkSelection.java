@@ -136,16 +136,6 @@ class AuditSinkSelection {
         return factory -> {
             java.util.Set<String> sinks = new java.util.LinkedHashSet<>(
                     java.util.Arrays.asList(factory.getBeanNamesForType(AuditSink.class, true, false)));
-            for (String name : factory.getBeanDefinitionNames()) {
-                Class<?> type = factory.getType(name, false);
-                if (type != null && org.springframework.beans.factory.FactoryBean.class.isAssignableFrom(type)) {
-                    Class<?> product = org.springframework.core.ResolvableType.forClass(type)
-                            .as(org.springframework.beans.factory.FactoryBean.class).getGeneric(0).resolve();
-                    if (product != null && AuditSink.class.isAssignableFrom(product)) {
-                        sinks.add(name);
-                    }
-                }
-            }
             for (String name : sinks) {
                 if (!isBuiltInSink(factory, name)) {
                     throw new DataPrismConfigurationException("AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK",
@@ -156,6 +146,12 @@ class AuditSinkSelection {
         };
     }
 
+    /**
+     * Whether {@code name} is the framework's own sink definition. Depends on {@link
+     * org.springframework.beans.factory.annotation.AnnotatedBeanDefinition} factory-method metadata,
+     * which Spring AOT and native images do not preserve, so hash-chained plus json-directory would be
+     * refused there. AOT and native images are unsupported.
+     */
     private static boolean isBuiltInSink(ConfigurableListableBeanFactory factory, String name) {
         return name.equals("dataPrismHashChainedAuditSink")
                 && factory.getBeanDefinition(name) instanceof org.springframework.beans.factory.annotation.AnnotatedBeanDefinition annotated

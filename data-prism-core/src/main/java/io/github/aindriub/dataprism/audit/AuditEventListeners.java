@@ -163,10 +163,23 @@ public final class AuditEventListeners implements AutoCloseable {
         }, "data-prism-audit-listeners-final-report");
         t.setDaemon(true);
         t.start();
+        // The caller may already be interrupted, which would make join throw at once and return before the
+        // line is written. Clear the flag, wait out the deadline, and restore it.
+        boolean interrupted = Thread.interrupted();
         try {
-            t.join(FINAL_REPORT_WAIT_MILLIS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(FINAL_REPORT_WAIT_MILLIS);
+            long left;
+            while (t.isAlive() && (left = deadline - System.nanoTime()) > 0) {
+                try {
+                    TimeUnit.NANOSECONDS.timedJoin(t, left);
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
