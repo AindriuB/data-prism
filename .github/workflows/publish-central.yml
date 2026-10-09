@@ -53,6 +53,21 @@ jobs:
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
+      # Maven 3.10.0 with central-publishing-maven-plugin 0.11.0 leaves
+      # artifact-level maven-metadata*.xml in the Central bundle, and Central
+      # rejects it (task 184 / D-184-A). The wrapper pins 3.9.x; this fails
+      # closed if that pin is ever moved to 3.10 or later. Capturing the
+      # output first means a failing `./mvnw -v` (for example a wrapper
+      # checksum failure) fails the step too.
+      - name: Guard Maven is 3.9.x
+        run: |
+          mvn_version_output="$(./mvnw -v)" || { echo "::error::./mvnw -v failed"; exit 1; }
+          first_line="$(printf '%s\n' "$mvn_version_output" | head -n 1)"
+          if ! printf '%s\n' "$first_line" | grep -Eq '^Apache Maven 3\.9\.[0-9]+( |$)'; then
+            echo "::error::Central release requires Maven 3.9.x (3.10 breaks the bundle, see task 184), got: ${first_line}"
+            exit 1
+          fi
+
       # A tag whose name disagrees with the reactor version would attach
       # signed artifacts to a mislabelled release. workflow_dispatch can also
       # target a tag ref, so this runs there too; it is a no-op on a branch
@@ -128,6 +143,21 @@ jobs:
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      # Maven 3.10.0 with central-publishing-maven-plugin 0.11.0 leaves
+      # artifact-level maven-metadata*.xml in the Central bundle, and Central
+      # rejects it (task 184 / D-184-A). The wrapper pins 3.9.x; this fails
+      # closed if that pin is ever moved to 3.10 or later. Capturing the
+      # output first means a failing `./mvnw -v` (for example a wrapper
+      # checksum failure) fails the step too.
+      - name: Guard Maven is 3.9.x
+        run: |
+          mvn_version_output="$(./mvnw -v)" || { echo "::error::./mvnw -v failed"; exit 1; }
+          first_line="$(printf '%s\n' "$mvn_version_output" | head -n 1)"
+          if ! printf '%s\n' "$first_line" | grep -Eq '^Apache Maven 3\.9\.[0-9]+( |$)'; then
+            echo "::error::Central release requires Maven 3.9.x (3.10 breaks the bundle, see task 184), got: ${first_line}"
+            exit 1
+          fi
 
       # Repeated here rather than trusted from the `stage` job: `publish` runs
       # on its own fresh runner and is the job that actually talks to

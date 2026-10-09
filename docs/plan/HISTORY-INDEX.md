@@ -20,6 +20,9 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 185, 186 | Maven 3.9.x guard in both publish-central jobs and a Dependabot ignore; no fixed Central plugin exists, cause is a Maven 3.10.0 change; pin kept | ## 2026-10-09 — Maven 3.10 release guards and Central plugin investigation (185, 186) |
+| 2026-10-09 | 187 | 0.6.0 live on Central (deployment `aca7186a`), GHCR, GitHub Release and MCP registry; AAR presented in chat; D-184-A/B/C decided; housekeeping | ## 2026-10-09 — 0.6.0 publication complete and repository housekeeping (187) |
+| 2026-10-09 | 184 | Central rejected the first 0.6.0 bundle (Maven 3.10.0 on the runner); Maven Wrapper pin 3.9.16, PR #127; `v0.6.0` moved to `87a2a720` | ## 2026-10-09 — 0.6.0 released after a Central rejection: Maven Wrapper pin and tag move (184) |
 | 2026-10-09 | 183 | 0.6.0 cut locally: version bump, dated CHANGELOG, cut-time doc fixes; release build green; main requires `ci-gate` alone | ## 2026-10-09 — 0.6.0 cut locally on release/0.6.0-cut (183) |
 | 2026-10-09 | 179 | `get_entity_context` `sources` sorted by emitted key; `ToolAdmission.none()` a shared instance checked by identity; stale test comments fixed | ## 2026-10-09 — 0.6.0 wave 12: deterministic sources order, shared ToolAdmission.none() and interrupted-close drain (179, 182) |
 | 2026-10-09 | 182 | `AuditEventListeners.close()` on an interrupted thread drains and joins the reporter; durations saturate; constructor thread leak fixed | ## 2026-10-09 — 0.6.0 wave 12: deterministic sources order, shared ToolAdmission.none() and interrupted-close drain (179, 182) |

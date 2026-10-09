@@ -154,3 +154,7 @@ are byte-equivalent and the owner can move tag `v0.6.0` to the fix commit
   do not change, so the `[0.6.0]` notes stay accurate. Recommendation: keep
   it in `[Unreleased]` and let it ship in the next release's notes. The
   alternative is to edit the released `[0.6.0]` section after it was cut.
+
+## Outcome
+
+Done 2026-10-09. PR #127 merged as `87a2a720`; the owner moved `v0.6.0` to that commit (D-REL-1 a). The owner's `publish-central` re-run showed 14 "Pre Bundling - deleted" lines, Central validated, and deployment `aca7186a` was published. D-184-A (b) and D-184-B became task 185, D-184-C became task 186; D-184-D and D-184-E took the recommendations.
