@@ -28,6 +28,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
 import org.springframework.web.client.RestClient;
@@ -143,13 +144,23 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         if (bean != null) {
             return bean;
         }
-        if (org.springframework.boot.context.properties.bind.Binder.get(environment)
-                .bind("dataprism.limits", org.springframework.boot.context.properties.bind.Bindable
-                        .mapOf(String.class, String.class)).isBound()) {
+        if (limitsConfigured(environment)) {
             throw new IllegalStateException("INVALID_REQUEST_LIMITS: dataprism.limits.* is set but no RequestLimits"
                     + " bean is available; the data-prism auto-configuration that binds it is not active");
         }
         return STANDALONE_LIMITS;
+    }
+
+    private static final List<String> LIMIT_KEYS = List.of("max-sources", "max-records", "max-response-size",
+            "per-source-timeout", "max-concurrency", "scope-read-budget");
+
+    /** Whether the prefix itself or any limit key is set, in any relaxed form (kebab, camelCase, environment variable). */
+    private static boolean limitsConfigured(Environment environment) {
+        Binder binder = Binder.get(environment);
+        if (binder.bind("dataprism.limits", String.class).isBound()) {
+            return true;
+        }
+        return LIMIT_KEYS.stream().anyMatch(key -> binder.bind("dataprism.limits." + key, String.class).isBound());
     }
 
     @Bean

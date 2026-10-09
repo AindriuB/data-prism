@@ -144,4 +144,23 @@ class ConfiguredJsonSourcesLimitsTest {
     void noLimitsPropertyAndNoBeanStarts() {
         runner.run(context -> assertThat(context).hasNotFailed());
     }
+
+    @Test
+    @DisplayName("the refusal also sees a camelCase key, an environment-variable key and a scalar on the prefix")
+    void relaxedAndScalarFormsAreDetected() {
+        runner.withPropertyValues("dataprism.limits.maxSources=4711")
+                .run(context -> assertThat(context).hasFailed());
+        runner.withPropertyValues("dataprism.limits=4711").run(context -> {
+            assertThat(context).hasFailed();
+            Throwable root = context.getStartupFailure();
+            while (root.getCause() != null) {
+                root = root.getCause();
+            }
+            assertThat(root.getMessage()).contains("INVALID_REQUEST_LIMITS").doesNotContain("4711");
+        });
+        runner.withInitializer(ctx -> ctx.getEnvironment().getPropertySources().addFirst(
+                        new org.springframework.core.env.SystemEnvironmentPropertySource("test-systemEnvironment",
+                                java.util.Map.of("DATAPRISM_LIMITS_MAXSOURCES", "4711"))))
+                .run(context -> assertThat(context).hasFailed());
+    }
 }
