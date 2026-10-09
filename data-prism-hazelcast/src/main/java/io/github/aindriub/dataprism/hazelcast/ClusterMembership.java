@@ -84,6 +84,10 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         return new ClusterMembership(clusterName, join, port, Optional.ofNullable(address));
     }
 
+    public java.util.OptionalInt defaultApprovalMinimumMembers() {
+        return java.util.OptionalInt.empty();
+    }
+
     /** Builds a fresh config. Nothing here starts a member. */
     public Config toConfig() {
         Config config = new Config();

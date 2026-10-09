@@ -42,6 +42,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
     }
 
+    public HazelcastApprovalStore(PrivacyCluster cluster, Duration lockTimeout) {
+        this(cluster);
+    }
+
     /**
      * @throws IllegalArgumentException if the request is not {@code PENDING} or its id is already used
      */

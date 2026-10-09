@@ -79,6 +79,16 @@ public final class PrivacyCluster implements AutoCloseable {
         return embedded(membership.toConfig(), reidentificationEnabled);
     }
 
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          java.util.OptionalInt approvalMinimumMembers) {
+        return embedded(membership.toConfig(), reidentificationEnabled);
+    }
+
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          java.util.OptionalInt approvalMinimumMembers) {
+        return embedded(config, reidentificationEnabled);
+    }
+
     /** Validates and hardens the config, then starts a member. Refuses before anything starts. */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled) {
         return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config)),

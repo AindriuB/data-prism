@@ -24,6 +24,10 @@ public final class HazelcastCallerRateLimiter implements CallerRateLimiter {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
     }
 
+    public HazelcastCallerRateLimiter(PrivacyCluster cluster, Duration lockTimeout) {
+        this(cluster);
+    }
+
     @Override
     public boolean tryAcquire(String principalId, int limit, Duration window, Instant now) {
         long windowMillis = Math.max(1L, window.toMillis());

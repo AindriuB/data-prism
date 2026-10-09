@@ -31,6 +31,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
     }
 
+    public HazelcastScopeBudget(PrivacyCluster cluster, java.time.Duration lockTimeout) {
+        this(cluster);
+    }
+
     @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
         String key = ScopeKeys.budget(scopeId, subjectId);
