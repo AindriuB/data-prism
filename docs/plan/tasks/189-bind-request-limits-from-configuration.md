@@ -102,3 +102,29 @@ Write the tests first; each must fail on `main` before the change.
 - Per-call timeouts, charging the budget per source, per-scope caps (0.8).
 - `DataPrismAssembly` in `data-prism-integration-tests`, which may keep `DEFAULT`.
 - Per-scope or per-caller limit overrides.
+
+## Outcome
+
+Done on branch `task/189-limits-config`. `./mvnw -B verify -pl data-prism-spring-boot-autoconfigure,data-prism-connectors-rest -am`
+exits 0 with 1450 tests, 0 failures. Tests were committed failing before the change.
+
+- `dataprism.limits.*` binds all six `RequestLimits` fields (`LimitsProperties`); one bean
+  `dataPrismRequestLimits` (`PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL`), injected into the orchestrator
+  in `OrchestrationWiring` and `ConfiguredJsonSourcesAutoConfiguration`.
+- An application `RequestLimits` bean is refused with the existing `FORBIDDEN_PRIVACY_OVERRIDE` code, by a new
+  static preflight `dataPrismRequestLimitsPreflight` (classified `REPLACEABLE`).
+- `data-prism-connectors-rest` cannot see the bean when the autoconfigure module is absent. Rather than require it
+  (which would break `ConfiguredJsonSourcesAutoConfigurationTest`, not owned here), it falls back to
+  `STANDALONE_LIMITS`, a copy of the defaults pinned to `RequestLimits.DEFAULT` by a test.
+- Edit outside `Owns`: `AutoConfiguredBeanInventoryTest` hard-codes the `@Bean` method count (`hasSize(53)` to
+  `hasSize(55)`). Any other task adding a bean will conflict on that line.
+
+Proposed CHANGELOG `[Unreleased]` `### Added` lines for task 201:
+- `dataprism.limits.max-sources`, `max-records`, `max-response-size`, `per-source-timeout`, `max-concurrency` and
+  `scope-read-budget` set the request limits that were fixed at their defaults. The per-source timeout is measured
+  from the start of the fan-out, not per call.
+- Startup is refused with `INVALID_REQUEST_LIMITS` for a zero or negative limit or a response size that does not fit
+  in an `int`.
+
+Migration note: defaults unchanged; new startup refusal code `INVALID_REQUEST_LIMITS`. An application that supplied
+its own `RequestLimits` bean is now refused with `FORBIDDEN_PRIVACY_OVERRIDE`.
