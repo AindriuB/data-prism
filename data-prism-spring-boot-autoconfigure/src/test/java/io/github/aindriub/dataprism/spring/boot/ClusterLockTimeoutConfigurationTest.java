@@ -35,6 +35,23 @@ class ClusterLockTimeoutConfigurationTest {
             "dataprism.operator.enabled=true", "dataprism.operator.port=9443",
             "dataprism.operator.required-audience=operator", "dataprism.operator.required-scope=dataprism.operate"};
     private static final String TCP_IP = "dataprism.hazelcast.join.mode=tcp-ip";
+    /** Approvals in use through a gated tool. */
+    private static final String[] TOOL_APPROVALS = {"dataprism.oversight.approval-required-tools[0]=get_entity_context"};
+    /** Approvals in use through four-eyes re-identification, with everything else it needs. */
+    private static final String[] REIDENTIFICATION = {
+            "dataprism.hazelcast.reidentification-enabled=true",
+            "dataprism.hazelcast.reidentification-controls-reference=REVIEWED_REIDENTIFICATION_CONTROLS",
+            "dataprism.reidentification.enabled=true", "dataprism.reidentification.purposes[0]=fraud-review",
+            "dataprism.reidentification.roles.requester[0]=REQUEST",
+            "dataprism.reidentification.roles.approver[0]=APPROVE"};
+
+    private static String[] join(String[]... groups) {
+        java.util.List<String> all = new java.util.ArrayList<>();
+        for (String[] g : groups) {
+            all.addAll(java.util.Arrays.asList(g));
+        }
+        return all.toArray(String[]::new);
+    }
 
     @AfterEach
     void shutDown() {
@@ -191,13 +208,37 @@ class ClusterLockTimeoutConfigurationTest {
                     assertThat(minimumOnTheApprovalMap(result)).isEqualTo(2);
                 });
     }
-    @Test void refuses_an_uncountable_entry_even_without_a_minimum() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
-                "dataprism.hazelcast.join.members[0]=10.0.0.*");
+    @Test void refuses_an_uncountable_entry_when_approvals_are_in_use() {
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", join(OPERATOR, TOOL_APPROVALS, new String[] {TCP_IP,
+                "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.*"}));
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {TCP_IP,
+                "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.*"}));
     }
-    @Test void a_hostname_requires_an_explicit_minimum() {
-        refuses("MISSING_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
-                "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=db.internal");
+    @Test void a_hostname_requires_an_explicit_minimum_when_approvals_are_in_use() {
+        refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, TOOL_APPROVALS, new String[] {TCP_IP,
+                "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.1",
+                "dataprism.hazelcast.join.members[1]=db.internal"}));
+        refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {TCP_IP,
+                "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.1",
+                "dataprism.hazelcast.join.members[1]=db.internal"}));
+    }
+    @Test void hostnames_and_wildcards_need_no_quorum_when_approvals_are_not_in_use() {
+        int port = ClusterConfigurationTest.freePort();
+        for (String member : new String[] {"localhost:" + (port + 1), "10.0.0.*"}) {
+            OversightConfigurationTest.runner("embedded").withPropertyValues(TCP_IP,
+                    "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port, "dataprism.hazelcast.join.members[1]=" + member,
+                    "dataprism.hazelcast.member.port=" + port, "dataprism.hazelcast.member.interface=127.0.0.1")
+                    .run(result -> {
+                        assertThat(result).hasNotFailed();
+                        assertThat(minimumOnTheApprovalMap(result)).isZero();
+                    });
+            Hazelcast.shutdownAll();
+        }
+    }
+    @Test void kubernetes_requires_a_minimum_when_reidentification_is_enabled() {
+        refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {
+                "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.mode=kubernetes",
+                "dataprism.hazelcast.join.kubernetes.namespace=ns", "dataprism.hazelcast.join.kubernetes.service-name=svc"}));
     }
     @Test void a_hostname_with_an_explicit_minimum_is_accepted() {
         int port = ClusterConfigurationTest.freePort();
