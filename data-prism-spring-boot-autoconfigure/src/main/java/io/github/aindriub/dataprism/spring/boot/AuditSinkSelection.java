@@ -10,12 +10,12 @@ import io.github.aindriub.dataprism.audit.sink.TeeAuditSink;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
 
@@ -96,38 +96,110 @@ class AuditSinkSelection {
     @Bean
     @ConditionalOnMissingBean(AuditSink.class)
     @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
-    AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties, ObjectProvider<Clock> clock,
-            org.springframework.beans.factory.config.ConfigurableListableBeanFactory beanFactory) {
-        AuditSink primary = openPrimary(properties);
-        AuditProperties.Output output = properties.getAudit().getOutput();
-        if (output.getJsonDirectory() == null || output.getJsonDirectory().isBlank()) {
-            return primary;
+    AuditSink dataPrismHashChainedAuditSink(DataPrismProperties properties,
+            ObjectProvider<JsonProjection> projection) {
+        // Resolved before the authoritative sink is opened, so an unusable JSON directory refuses startup
+        // without the native file having been opened or its torn tail terminated.
+        JsonProjection json = projection.getIfAvailable();
+        String directory = properties.getAudit().getOutput().getJsonDirectory();
+        if (json == null && directory != null && !directory.isBlank()) {
+            // e.g. the projection definition was overridden by an application bean of another type
+            throw new DataPrismConfigurationException("AUDIT_JSON_PROJECTION_MISSING",
+                    "dataprism.audit.output.json-directory is set but the framework's JSON projection is not registered");
         }
+        AuditSink primary = openPrimary(properties);
+        try {
+            return json == null ? primary : new TeeAuditSink(primary, json.asSink());
+        } catch (RuntimeException e) {
+            closeQuietly(primary);
+            throw e;
+        }
+    }
+
+    /**
+     * Refuses {@code dataprism.audit.output.json-directory} when an application {@link AuditSink}
+     * (a bean method, a {@code FactoryBean<AuditSink>}, a lazy definition, or a bean overriding the
+     * built-in sink's name) makes the built-in sink back off: nothing would write to the directory,
+     * and the retention purge would still run on it. Runs before any singleton, so the directory is
+     * never touched. Only present in the configuration that creates the projection.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
+    @ConditionalOnExpression("T(org.springframework.util.StringUtils)"
+            + ".hasText('${dataprism.audit.output.json-directory:}')")
+    static org.springframework.beans.factory.config.BeanFactoryPostProcessor dataPrismJsonAuditProjectionPreflight() {
+        return factory -> {
+            java.util.Set<String> sinks = new java.util.LinkedHashSet<>(
+                    java.util.Arrays.asList(factory.getBeanNamesForType(AuditSink.class, true, false)));
+            for (String name : factory.getBeanDefinitionNames()) {
+                Class<?> type = factory.getType(name, false);
+                if (type != null && org.springframework.beans.factory.FactoryBean.class.isAssignableFrom(type)) {
+                    Class<?> product = org.springframework.core.ResolvableType.forClass(type)
+                            .as(org.springframework.beans.factory.FactoryBean.class).getGeneric(0).resolve();
+                    if (product != null && AuditSink.class.isAssignableFrom(product)) {
+                        sinks.add(name);
+                    }
+                }
+            }
+            for (String name : sinks) {
+                if (!isBuiltInSink(factory, name)) {
+                    throw new DataPrismConfigurationException("AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK",
+                            "dataprism.audit.output.json-directory needs the built-in hash-chained sink;"
+                                    + " an application AuditSink bean replaces it");
+                }
+            }
+        };
+    }
+
+    private static boolean isBuiltInSink(ConfigurableListableBeanFactory factory, String name) {
+        return name.equals("dataPrismHashChainedAuditSink")
+                && factory.getBeanDefinition(name) instanceof org.springframework.beans.factory.annotation.AnnotatedBeanDefinition annotated
+                && annotated.getFactoryMethodMetadata() != null
+                && AuditSinkSelection.class.getName().equals(annotated.getFactoryMethodMetadata().getDeclaringClassName());
+    }
+
+    /**
+     * The optional JSON projection of the hash-chained audit, present only when {@code
+     * dataprism.audit.output.json-directory} has text. Its own bean so the application context
+     * classifies it ({@link PrivacyExtensionPoints}) and closes it. Not {@code
+     * @ConditionalOnMissingBean}: the type is package-private and final, so an application cannot
+     * supply a competing bean, and a bean of the same name is refused by the context's default
+     * refusal to override a bean definition. A directory that cannot be opened is refused at
+     * startup, and the sink bean resolves this bean before it opens the authoritative sink, so a refusal
+     * leaves the native file unopened. An application {@link AuditSink} is refused earlier, by {@link
+     * #dataPrismJsonAuditProjectionPreflight()}.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "dataprism.audit", name = "sink", havingValue = "hash-chained")
+    @ConditionalOnExpression("T(org.springframework.util.StringUtils)"
+            + ".hasText('${dataprism.audit.output.json-directory:}')")
+    JsonProjection dataPrismJsonAuditProjection(DataPrismProperties properties, ObjectProvider<Clock> clock,
+            ConfigurableListableBeanFactory beanFactory) {
+        // Needs no type resolution, so it catches every replacement of the built-in sink, however typed.
+        if (!beanFactory.containsBeanDefinition("dataPrismHashChainedAuditSink")
+                || !isBuiltInSink(beanFactory, "dataPrismHashChainedAuditSink")) {
+            throw new DataPrismConfigurationException("AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK",
+                    "dataprism.audit.output.json-directory needs the built-in hash-chained sink;"
+                            + " an application AuditSink bean replaces it");
+        }
+        AuditProperties.Output output = properties.getAudit().getOutput();
         SegmentedJsonAuditSink json;
         try {
             json = new SegmentedJsonAuditSink(Path.of(output.getJsonDirectory()), output.mapping(),
                     output.getRouting().toRouting());
         } catch (FileAuditSink.OpenFailedException e) {
-            closeQuietly(primary);
             LOG.error("dataprism.audit.output.json-directory could not be opened", e);
             throw new DataPrismConfigurationException("AUDIT_JSON_DIRECTORY_UNUSABLE",
                     "dataprism.audit.output.json-directory could not be opened for writing");
+        }
+        try {
+            return new JsonProjection(json, new JsonAuditRetention(Path.of(output.getJsonDirectory()),
+                    properties.getAudit().getRetention(), clock.getIfAvailable(Clock::systemUTC),
+                    properties.getAudit().isRetentionOverride()));
         } catch (RuntimeException e) {
-            closeQuietly(primary);
+            closeQuietly(json);
             throw e;
         }
-        if (!(beanFactory instanceof org.springframework.beans.factory.support.DefaultSingletonBeanRegistry registry)) {
-            closeQuietly(primary);
-            closeQuietly(json);
-            throw new DataPrismConfigurationException("AUDIT_JSON_DIRECTORY_UNUSABLE",
-                    "the JSON audit projection needs a bean factory that can close it");
-        }
-        // Neither TeeAuditSink nor the context knows the two sinks need closing, so the context is told.
-        JsonProjection projection = new JsonProjection(primary, json, new JsonAuditRetention(
-                Path.of(output.getJsonDirectory()), properties.getAudit().getRetention(),
-                clock.getIfAvailable(Clock::systemUTC), properties.getAudit().isRetentionOverride()));
-        registry.registerDisposableBean("dataPrismJsonAuditProjection", projection);
-        return new TeeAuditSink(primary, json);
     }
 
     /** The authoritative sink. The cause can name a filesystem path, so it is logged and never repeated. */
