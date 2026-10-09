@@ -28,25 +28,30 @@ import java.util.TreeMap;
  * position of a key would then name the same system in every scope, which links
  * aliases across scopes and defeats {@code SourceAliasing}.
  *
- * <p>Statuses only, and deliberately not the timings. How long a source took is
+ * <p>Each entry is a {@link SourceResult}: the status and, for an {@code ANSWERED} source only, that
+ * source's own scrubbed record. Records are never merged. Two systems that use the same field name for
+ * different values would otherwise overwrite one another and hide the very disagreement the platform exists
+ * to show. A source whose scrub or validation refused is {@code REFUSED} and contributes nothing else.
+ *
+ * <p>Timings are deliberately not returned. How long a source took is
  * operational telemetry that belongs in audit and metrics; putting it here would
  * tell an untrusted reader about the shape and health of infrastructure it
  * otherwise cannot see, and the model has no use for it.
  *
  * <p>{@code findings} is the other half of the platform's purpose. The identity
- * in {@code entity} is deliberately consistent — one subject reads the same in
+ * in each entity is deliberately consistent — one subject reads the same in
  * every source — and that consistency would hide the fact that the systems
  * disagree about it. The findings say so, without saying what any source held.
  *
  * <p>{@code fieldsByNamespace} is bookkeeping for task 42, never a value: a
  * {@link ConsistencyFinding} on a namespace-compared field carries the
  * namespace's own name in {@code field()} (see {@code NamespaceCorrelationService}),
- * not the serialised field name(s) {@code entity} is keyed by — two sources can
+ * not the serialised field name(s) each entity is keyed by — two sources can
  * (and often do) use different field names for the same namespace. This is how
  * a caller maps one back to the other, so it is excluded from serialisation
  * ({@link JsonIgnore}): it must never change what {@code get_entity_context}
  * emits, only let {@code compare_entity_sources} find the right node in
- * {@code entity}.
+ * the per-source entities.
  *
  * <p>{@code correlationId} is the id written to this call's audit event, so a
  * caller can join the two. It is excluded from serialisation ({@link JsonIgnore})
@@ -56,14 +61,13 @@ import java.util.TreeMap;
 public record ContextResponse(
         String entityType,
         String subject,
-        Map<String, String> sources,
+        Map<String, SourceResult> sources,
         List<ConsistencyFinding> findings,
-        ObjectNode entity,
         @JsonIgnore Map<PrivacyNamespace, List<String>> fieldsByNamespace,
         @JsonIgnore String correlationId) {
 
     public ContextResponse {
-        Map.copyOf(sources); // null keys and values still throw, as before
+        Map.copyOf(sources); // null keys and values throw
         sources = Collections.unmodifiableMap(new TreeMap<>(sources));
         findings = List.copyOf(findings);
         Map<PrivacyNamespace, List<String>> copy = new LinkedHashMap<>();
@@ -72,37 +76,19 @@ public record ContextResponse(
         correlationId = correlationId == null ? "" : correlationId;
     }
 
-    /** Pre-correlation-id shape: {@code correlationId} is {@code ""}. */
-    public ContextResponse(String entityType, String subject, Map<String, String> sources,
-                           List<ConsistencyFinding> findings, ObjectNode entity,
-                           Map<PrivacyNamespace, List<String>> fieldsByNamespace) {
-        this(entityType, subject, sources, findings, entity, fieldsByNamespace, "");
-    }
-
-    /**
-     * Pre-task-42 shape: leaves {@code fieldsByNamespace} empty, so a
-     * {@code compare_entity_sources} response built from this carries an empty
-     * {@code identity}. {@link DefaultContextOrchestrator} is what populates it;
-     * use that, not this, unless a bare {@code ContextResponse} is genuinely all
-     * that's needed.
-     */
-    public ContextResponse(String entityType, String subject, Map<String, String> sources,
-                           List<ConsistencyFinding> findings, ObjectNode entity) {
-        this(entityType, subject, sources, findings, entity, Map.of(), "");
-    }
-
     static ContextResponse of(String entityType, String subject, List<SourceOutcome> outcomes,
-                              List<ConsistencyFinding> findings, ObjectNode entity,
+                              List<ConsistencyFinding> findings, Map<String, ObjectNode> trees,
                               Map<PrivacyNamespace, List<String>> fieldsByNamespace,
                               SourceAliasing aliasing, InvestigationContext investigationContext,
                               io.github.aindriub.dataprism.core.model.PrivacyContext context,
                               String correlationId) {
-        Map<String, String> statuses = new LinkedHashMap<>();
-        outcomes.forEach(outcome -> statuses.put(
-                aliasing.nameFor(outcome.sourceName(), investigationContext, context),
-                outcome.status().name()));
-        return new ContextResponse(entityType, subject, statuses, findings, entity, fieldsByNamespace,
-                correlationId);
+        Map<String, SourceResult> results = new LinkedHashMap<>();
+        outcomes.forEach(outcome -> {
+            ObjectNode tree = outcome.answered() ? trees.get(outcome.sourceName()) : null;
+            results.put(aliasing.nameFor(outcome.sourceName(), investigationContext, context),
+                    tree == null ? SourceResult.of(outcome.status()) : SourceResult.answered(tree));
+        });
+        return new ContextResponse(entityType, subject, results, findings, fieldsByNamespace, correlationId);
     }
 
     /**
@@ -120,10 +106,10 @@ public record ContextResponse(
         return findings.stream().anyMatch(ConsistencyFinding::disagreement);
     }
 
-    /** The sources that actually contributed to {@code entity}. */
+    /** The sources that actually contributed an entity. */
     public List<String> answered() {
         return sources.entrySet().stream()
-                .filter(e -> e.getValue().equals(SourceOutcome.Status.ANSWERED.name()))
+                .filter(e -> e.getValue().isAnswered())
                 .map(Map.Entry::getKey)
                 .toList();
     }
@@ -131,6 +117,7 @@ public record ContextResponse(
     /** Whether a source was asked and did not answer. */
     public boolean incomplete() {
         return sources.values().stream()
+                .map(SourceResult::status)
                 .anyMatch(status -> !status.equals(SourceOutcome.Status.ANSWERED.name())
                         && !status.equals(SourceOutcome.Status.NO_DATA.name()));
     }

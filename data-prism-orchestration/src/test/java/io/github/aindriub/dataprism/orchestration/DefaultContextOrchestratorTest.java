@@ -320,7 +320,7 @@ class DefaultContextOrchestratorTest {
     }
 
     @Test
-    @DisplayName("a DENY from a refusal records the refusing path as REFUSED")
+    @DisplayName("a DENY because every source was refused records each source's fixed key with its code, no path")
     void denyRecordsRefusedPath() {
         List<AuditEvent> events = new ArrayList<>();
         LlmResponseValidator refusing = (response, prohibited, emitted, ctx) ->
@@ -332,18 +332,23 @@ class DefaultContextOrchestratorTest {
 
         assertThat(events).hasSize(1);
         assertThat(events.get(0).policyDecision()).isEqualTo("DENY:VALIDATION_FAILED");
-        assertThat(events.get(0).fieldDispositions()).containsEntry("merged:<refused>", "REFUSED");
+        // Task 190: the refusal is per source, so each source has its own key and the sanitised code.
+        // Both sources failed here, so nothing was left for the whole-response pass (merged:<refused>).
+        assertThat(events.get(0).fieldDispositions())
+                .containsEntry("alpha:<refused>", "REFUSED:VALIDATION_FAILED")
+                .containsEntry("beta:<refused>", "REFUSED:VALIDATION_FAILED")
+                .doesNotContainKey("merged:<refused>");
     }
 
     @Test
-    @DisplayName("correlationId is not serialised; the 5-argument constructor still compiles")
+    @DisplayName("correlationId is not serialised; a null one becomes empty")
     void correlationIdIsNotSerialised() throws Exception {
         ObjectMapper mapper = JsonMapper.builder().build();
         ContextResponse response = new ContextResponse("THING", "S", Map.of(), List.of(),
-                mapper.createObjectNode(), Map.of(), "corr-id-123");
+                Map.of(), "corr-id-123");
 
         assertThat(mapper.writeValueAsString(response)).doesNotContain("corr-id-123");
-        assertThat(new ContextResponse("THING", "S", Map.of(), List.of(), mapper.createObjectNode())
+        assertThat(new ContextResponse("THING", "S", Map.of(), List.of(), Map.of(), null)
                 .correlationId()).isEmpty();
     }
 

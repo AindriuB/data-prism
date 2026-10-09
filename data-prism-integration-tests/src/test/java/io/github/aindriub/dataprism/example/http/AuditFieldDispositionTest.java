@@ -169,7 +169,7 @@ class AuditFieldDispositionTest {
                         && !event.fieldDispositions().isEmpty()).toList();
 
         assertThat(denies).hasSize(1);
-        assertThat(denies.get(0).fieldDispositions()).containsEntry("keyed-api:<refused>", "REFUSED");
+        assertThat(denies.get(0).fieldDispositions()).containsEntry("keyed-api:<refused>", "REFUSED:UNKNOWN_FIELD");
         assertThat(file).doesNotContain(PAYLOAD_KEY).doesNotContain("leaky.key");
     }
 

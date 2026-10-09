@@ -27,6 +27,7 @@ class PrivacyMetricsTest {
                 "dataprism.source.errors",
                 "dataprism.identity.collision",
                 "dataprism.privacy.failclosed",
+                "dataprism.privacy.source.withheld",
                 "dataprism.reidentification",
                 "dataprism.audit.retention.unverified",
                 "dataprism.audit.retention.anchor_failed",

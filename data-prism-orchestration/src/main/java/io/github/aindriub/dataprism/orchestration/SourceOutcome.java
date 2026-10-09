@@ -28,7 +28,12 @@ public record SourceOutcome(String sourceName, Status status, Duration took, Str
         /** Not called: the source is failing and its breaker is open. */
         CIRCUIT_OPEN,
         /** Not called: the request had already reached its source limit. */
-        SKIPPED_OVER_LIMIT
+        SKIPPED_OVER_LIMIT,
+        /**
+         * The source answered, and the answer was withheld: scrubbing or validating it refused. Nothing of
+         * the record is returned. The call itself is refused only when no source is left to answer.
+         */
+        REFUSED
     }
 
     public boolean answered() {
@@ -38,6 +43,11 @@ public record SourceOutcome(String sourceName, Status status, Duration took, Str
     /** Whether this counts against the source's failure streak. */
     public boolean failure() {
         return status == Status.TIMED_OUT || status == Status.FAILED;
+    }
+
+    /** This outcome, after its answer was refused by the privacy pipeline. */
+    SourceOutcome refused() {
+        return new SourceOutcome(sourceName, Status.REFUSED, took, detail);
     }
 
     public static SourceOutcome answered(String source, Duration took) {

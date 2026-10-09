@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.server.operator;
 
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -42,7 +43,7 @@ class OperatorEndToEndTest {
                     "{\"target\":\"TOOL\",\"name\":\"get_entity_context\"}").statusCode()).isEqualTo(200);
             McpSchema.CallToolResult resumed = app.getEntityContext(client, "123");
             assertThat(resumed.isError()).isNotEqualTo(Boolean.TRUE);
-            assertThat(JSON.readTree(OperatorHarness.text(resumed)).path("entity").path("status").asString())
+            assertThat(entityHolding(JSON.readTree(OperatorHarness.text(resumed)), "status").path("status").asString())
                     .isEqualTo("ACTIVE");
         }
     }
@@ -66,7 +67,7 @@ class OperatorEndToEndTest {
 
             McpSchema.CallToolResult retry = app.getEntityContext(client, "123");
             assertThat(retry.isError()).isNotEqualTo(Boolean.TRUE);
-            assertThat(JSON.readTree(OperatorHarness.text(retry)).path("entity").path("status").asString())
+            assertThat(entityHolding(JSON.readTree(OperatorHarness.text(retry)), "status").path("status").asString())
                     .isEqualTo("ACTIVE");
 
             McpSchema.CallToolResult third = app.getEntityContext(client, "123");
@@ -80,5 +81,15 @@ class OperatorEndToEndTest {
                 assertThat(e.approverId()).isEqualTo("operator-two");
             });
         }
+    }
+
+    /** The entity of the source that holds {@code field}: each source keeps its own record. */
+    private static JsonNode entityHolding(JsonNode response, String field) {
+        for (JsonNode source : response.path("sources")) {
+            if (source.path("entity").has(field)) {
+                return source.path("entity");
+            }
+        }
+        return response.path("sources").path("none").path("entity");
     }
 }

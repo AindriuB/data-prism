@@ -147,8 +147,8 @@ a profile that maps one weaker than `REDACT` refuses startup with
 has no rule for it. The bundled `DEFAULT` and `STRICT` profiles remove all of
 them except `PHI`, which they redact. A field nobody classified is handled by the profile's
 `unclassified` setting. In the bundled `DEFAULT` and `STRICT` profiles, and
-wherever the setting is omitted, that refuses the whole response
-(`FAIL_REQUEST`). The Spring Boot starter and the server always load those
+wherever the setting is omitted, that withholds the source that returned it, and refuses the
+request when no source is left (`FAIL_REQUEST`). The Spring Boot starter and the server always load those
 bundled profiles and refuse an application `PrivacyPolicyResolver` bean
 (`FORBIDDEN_PRIVACY_OVERRIDE`), so a server deployment always has
 `FAIL_REQUEST`. A weaker setting is possible only when you assemble the core

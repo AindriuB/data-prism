@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.example.http;
 
+import tools.jackson.databind.JsonNode;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -378,7 +379,7 @@ class ConfiguredJsonNestedHttpTest {
             assertThat(body).doesNotContain("Raw Full Name").doesNotContain("111-22-3333");
 
             var response = JsonMapper.builder().build().readTree(body);
-            var entity = response.path("entity");
+            var entity = entityHolding(response, "name");
             assertThat(entity.path("address").path("line1").asString()).isEqualTo("123 Main St");
             assertThat(entity.path("address").path("ssn").asString())
                     .isNotBlank().isNotEqualTo("111-22-3333");
@@ -460,5 +461,15 @@ class ConfiguredJsonNestedHttpTest {
         } finally {
             client.closeGracefully();
         }
+    }
+
+    /** The entity of the source that holds {@code field}: each source keeps its own record. */
+    private static JsonNode entityHolding(JsonNode response, String field) {
+        for (JsonNode source : response.path("sources")) {
+            if (source.path("entity").has(field)) {
+                return source.path("entity");
+            }
+        }
+        return response.path("sources").path("none").path("entity");
     }
 }

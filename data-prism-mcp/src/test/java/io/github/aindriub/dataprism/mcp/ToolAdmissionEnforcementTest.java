@@ -447,7 +447,7 @@ class ToolAdmissionEnforcementTest {
                     request.rejectedArguments(), correlationId, Map.of(), request.approvalId(),
                     request.approverId()));
             return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(), List.of(),
-                    DataPrismObjectMapper.create().createObjectNode(), Map.of(), correlationId);
+                    Map.of(), correlationId);
         }
     }
 

@@ -115,7 +115,7 @@ class ExternalCorrelationToolTest {
     private final ContextOrchestrator recording = (request, privacyContext, investigationContext) -> {
         invoked.add(request);
         return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(), List.of(),
-                DataPrismObjectMapper.create().createObjectNode(), Map.of(), "stub-correlation");
+                Map.of(), "stub-correlation");
     };
 
     private static DefaultContextOrchestrator real(AuditRecorder audit, Thing thing) {

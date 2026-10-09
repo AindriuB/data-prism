@@ -209,6 +209,16 @@ class MultiMemberOperatorTest {
     private static String customerName(OperatorHarness member, McpSyncClient client) throws Exception {
         McpSchema.CallToolResult result = member.getEntityContext(client, SUBJECT);
         assertThat(result.isError()).as(OperatorHarness.text(result)).isNotEqualTo(Boolean.TRUE);
-        return JSON.readTree(OperatorHarness.text(result)).path("entity").path("customerName").asString();
+        return entityHolding(JSON.readTree(OperatorHarness.text(result)), "customerName").path("customerName").asString();
+    }
+
+    /** The entity of the source that holds {@code field}: each source keeps its own record. */
+    private static JsonNode entityHolding(JsonNode response, String field) {
+        for (JsonNode source : response.path("sources")) {
+            if (source.path("entity").has(field)) {
+                return source.path("entity");
+            }
+        }
+        return response.path("sources").path("none").path("entity");
     }
 }

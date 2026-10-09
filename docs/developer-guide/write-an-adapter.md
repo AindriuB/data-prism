@@ -193,7 +193,7 @@ HMAC key, and this tutorial does not claim otherwise. `status`, classified
 `@NonSensitive` in step 1, passes through unchanged (not shown in the table
 above, but present in the raw MCP response) — a decision the model states
 explicitly, never a platform default: an unclassified field would have
-refused the whole response, not disclosed it (see
+withheld that source, not disclosed it (see
 [the developer guide overview](index.md) for where `AuditSink` and the
 classification annotations are covered in more depth).
 
