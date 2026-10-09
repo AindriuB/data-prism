@@ -74,7 +74,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         // ScopeKeys separator (an entry key always holds one); locking it makes
         // the duplicate check and the put atomic across scopes.
         String idLock = pending.approvalId();
-        ClusterLocks.lock(approvals, idLock, lockTimeout);
+        ClusterLocks.acquire(approvals, idLock, lockTimeout);
         try {
             if (!locateAll(pending.approvalId()).isEmpty()) {
                 throw new IllegalArgumentException("duplicate approval id");
@@ -85,7 +85,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 throw new IllegalArgumentException("duplicate approval id");
             }
         } finally {
-            ClusterLocks.unlock(approvals, idLock);
+            ClusterLocks.release(approvals, idLock);
         }
         return pending;
     }
@@ -105,7 +105,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
         IMap<String, String> approvals = approvals();
         String requesterLock = requesterLockKey(pending.kind(), pending.requesterPrincipalId());
-        ClusterLocks.lock(approvals, requesterLock, lockTimeout);
+        ClusterLocks.acquire(approvals, requesterLock, lockTimeout);
         try {
             long live = 0;
             for (String raw : approvals.values()) {
@@ -122,7 +122,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             }
             return create(pending);
         } finally {
-            ClusterLocks.unlock(approvals, requesterLock);
+            ClusterLocks.release(approvals, requesterLock);
         }
     }
 
@@ -172,7 +172,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                     fingerprint, now)) {
                 continue;
             }
-            ClusterLocks.lock(approvals, key, lockTimeout);
+            ClusterLocks.acquire(approvals, key, lockTimeout);
             try {
                 String raw = approvals.get(key);
                 if (raw == null) {
@@ -187,7 +187,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                     }
                 }
             } finally {
-                ClusterLocks.unlock(approvals, key);
+                ClusterLocks.release(approvals, key);
             }
         }
         return Optional.empty();
@@ -216,7 +216,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     private ApprovalRequest decide(String approvalId, Instant now, Function<ApprovalRequest, ApprovalRequest> next) {
         IMap<String, String> approvals = approvals();
         String key = locate(approvalId).orElseThrow(() -> new ApprovalRefusedException(Code.UNKNOWN_APPROVAL));
-        ClusterLocks.lock(approvals, key, lockTimeout);
+        ClusterLocks.acquire(approvals, key, lockTimeout);
         try {
             String raw = approvals.get(key);
             if (raw == null) {
@@ -237,7 +237,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             }
             return decided;
         } finally {
-            ClusterLocks.unlock(approvals, key);
+            ClusterLocks.release(approvals, key);
         }
     }
 

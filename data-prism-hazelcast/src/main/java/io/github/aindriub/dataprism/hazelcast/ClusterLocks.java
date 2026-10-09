@@ -46,7 +46,7 @@ final class ClusterLocks {
      *
      * @throws ClusterLockTimeoutException if it was not obtained in time, or the thread was interrupted
      */
-    static void lock(IMap<String, ?> map, String key, Duration timeout) {
+    static void acquire(IMap<String, ?> map, String key, Duration timeout) {
         try {
             if (!map.tryLock(key, timeout.toMillis(), TimeUnit.MILLISECONDS, leaseMillis(timeout),
                     TimeUnit.MILLISECONDS)) {
@@ -58,8 +58,8 @@ final class ClusterLocks {
         }
     }
 
-    /** Releases a lock taken by {@link #lock}; never throws, so it cannot mask the real failure. */
-    static void unlock(IMap<String, ?> map, String key) {
+    /** Releases a lock taken by {@link #acquire}; never throws, so it cannot mask the real failure. */
+    static void release(IMap<String, ?> map, String key) {
         try {
             map.unlock(key);
         } catch (RuntimeException ignored) {

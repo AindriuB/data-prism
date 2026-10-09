@@ -59,7 +59,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         // exception escaped before reaching it.
         try {
             counts = counts();
-            ClusterLocks.lock(counts, key, lockTimeout);
+            ClusterLocks.acquire(counts, key, lockTimeout);
         } catch (ClusterLockTimeoutException held) {
             LOG.error("read budget lock not obtained within {}; refusing the read", lockTimeout);
             throw held;
@@ -79,7 +79,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         } catch (RuntimeException clusterFailure) {
             return refuse(clusterFailure);
         } finally {
-            ClusterLocks.unlock(counts, key);
+            ClusterLocks.release(counts, key);
         }
     }
 
