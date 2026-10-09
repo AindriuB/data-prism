@@ -108,7 +108,7 @@ Collision check (all returned zero matches, except `resolver:` which matched onl
 ```
 for n in LINK_INVALID LINK_ATTEMPTS_EXHAUSTED LINK_KEY_SHARED LINK_KEY_UNRESOLVED LINK_KEY_WEAK INVALID_LINK_LIFETIME \
   INVALID_LINK_LIMIT KEY_UNRESOLVED Resolution itemsTruncated link:attempts links:omitted LINK_AUTH_FAILED RESOLVER_TIMEOUT INVALID_CHAINABLE_FIELD DUPLICATE_KEY_RESOLVER INVALID_KEY_RESOLVER \
-  dataprism.links dataprism.key-resolvers _links _linksOmitted itemsOmitted KeyResolver @Chainable \
+  dataprism.links dataprism.key-resolvers _links _linksOmitted KeyResolver @Chainable \
   chainable keyNamespace "resolver:" "links:issued" "link:id"; do
   grep -rn -- "$n" docs/tools.md docs/audit.md docs/configuration.md; done
 grep -rn -w "follow\|links\|items" docs/tools.md docs/audit.md docs/configuration.md   # prose uses only
