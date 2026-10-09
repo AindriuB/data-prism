@@ -36,8 +36,8 @@ class RefusedDispositionLogCompatibilityTest {
             assertThat(in).as("the checked-in log").isNotNull();
             AuditChainVerifier.VerificationReport report = AuditChainVerifier.verify(in);
 
-            assertThat(report.writers()).hasSize(1);
-            assertThat(report.writers().get(0).sequenceCount()).isEqualTo(3);
+            // One call per writer instance, so three one-event chains.
+            assertThat(report.writers()).hasSize(3).allSatisfy(w -> assertThat(w.broken()).isFalse());
             assertThat(report.hasBreak()).isFalse();
             assertThat(report.hasStructuralAnomaly()).isFalse();
         }
