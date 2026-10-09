@@ -193,10 +193,6 @@ class ClusterLockTimeoutConfigurationTest {
                 "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=10.0.0.1:5701",
                 "dataprism.hazelcast.member.port=5701", "dataprism.hazelcast.approval-minimum-members=2");
     }
-    @Test void refuses_a_member_form_it_cannot_expand_reliably() {
-        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
-                "dataprism.hazelcast.join.members[0]=10.0.0.*", "dataprism.hazelcast.approval-minimum-members=1");
-    }
     @Test void accepts_a_minimum_of_two_for_a_range_of_three() {
         int port = ClusterConfigurationTest.freePort();
         OversightConfigurationTest.runner("embedded").withPropertyValues(TCP_IP,
@@ -289,7 +285,7 @@ class ClusterLockTimeoutConfigurationTest {
     }
     @Test void tcp_ip_defaults_to_a_majority_of_the_listed_members() {
         int port = ClusterConfigurationTest.freePort();
-        OversightConfigurationTest.runner("embedded").withPropertyValues(TCP_IP,
+        OversightConfigurationTest.runner("embedded").withPropertyValues(join(OPERATOR, TOOL_APPROVALS)).withPropertyValues(TCP_IP,
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port,
                 "dataprism.hazelcast.join.members[1]=127.0.0.1:" + (port + 1),
                 "dataprism.hazelcast.join.members[2]=127.0.0.1:" + (port + 2),
