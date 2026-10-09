@@ -70,4 +70,25 @@ class RefusedDispositionLogCompatibilityTest {
         assertThat(report.writers().get(0).sequenceCount()).isEqualTo(2);
         assertThat(Files.readString(path)).contains("REFUSED:UNKNOWN_FIELD");
     }
+
+    private static AuditEvent withDisposition(String value) {
+        return new AuditEvent("e", PerSourceHarness.CLOCK.instant(), "p", "c", "get_entity_context", "THING",
+                "pseudo", "fp", "DEFAULT", "scope", "purpose", "CASE-1", "ALLOW", Set.of(), Set.of(), "corr",
+                "i", 1, "0", "h", AuditEvent.CURRENT_VERSION, Map.of("src:<refused>", value), "", "", "");
+    }
+
+    @Test
+    @DisplayName("REFUSED:<code> is accepted only when <code> is an upper-case token")
+    void onlyATokenCodeFollowsRefused() {
+        assertThat(withDisposition("REFUSED:UNKNOWN_FIELD").fieldDispositions())
+                .containsEntry("src:<refused>", "REFUSED:UNKNOWN_FIELD");
+        assertThat(withDisposition("REFUSED:INVALID_REFUSAL_CODE")).isNotNull();
+        for (String bad : List.of("REFUSED:", "REFUSED:lower", "REFUSED:A B", "REFUSED:1ABC", "REFUSED:A:B",
+                "REFUSED: A", "REFUSED:A\n", "refused:CODE", "REFUSED:" + "A".repeat(65), "REFUSEDX", "DENY:CODE",
+                "REDACT:CODE")) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> withDisposition(bad))
+                    .as(bad).isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(withDisposition("REFUSED:" + "A".repeat(64))).isNotNull();
+    }
 }
