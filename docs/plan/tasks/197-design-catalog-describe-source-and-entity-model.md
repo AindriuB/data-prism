@@ -74,7 +74,7 @@ description SPI so 0.8 implements, and 0.9 freezes, a reviewed design.
 
 ## Outcome
 
-Written: `docs/plan/design/catalog.md` (sections 1 to 6 are the six numbered items; 7 Boundaries, 8 Test obligations, 9 Open decisions OD-C1 to OD-C18, 10 closing names table). Every product choice is an open decision with options and a recommendation; the owner decided OD-C2 explicitly and delegated the rest on 2026-10-09 (recorded in section 9).
+Written: `docs/plan/design/catalog.md` (sections 1 to 6 are the six numbered items; 7 Boundaries, 8 Test obligations, 9 Open decisions OD-C1 to OD-C19, 10 closing names table). Every product choice is an open decision with options and a recommendation; the owner decided OD-C2 explicitly and delegated the rest on 2026-10-09 (recorded in section 9).
 
 Schema validation (draft 2020-12), run with the `jsonschema` package installed in a throwaway virtual environment outside the repository:
 
@@ -89,7 +89,7 @@ Collision check: a script took every backticked name in the first column of the 
 
 Forbidden-word scan (a script holding the words reversed so they are not spelled here) over the new file: no hits.
 
-Review gate: not run by the implementing agent. `reviewer` must return APPROVE against D-RM-8, 9, 10, 11, 13 and boundaries 1, 7, 8, and confirm no product decision is taken. Verdict to be recorded here by the caller.
+Review gate: APPROVE — re-review of 998fa153 (after two CHANGES rounds).
 
 Points the reviewer should look at first: OD-C2 (D-RM-10 asks the audit to record the effective setting; shape C has no place for it, so this is a conflict with shape C and not a choice inside it), OD-C3 (where the per-scope real-names setting lives), and OD-C16 (list_sources size at hundreds of sources against paging that task 198 places in 0.9).
 

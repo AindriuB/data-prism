@@ -771,6 +771,8 @@ Mutation-testable; the privacy modules are mutation-tested from 0.7 and gated in
 16. **Configuration.** A non-positive or non-integer `unselected-source-limit` and an `unselected-source-limit` greater than `max-sources`, and an invalid entry in the real-names setting chosen by OD-C3 (an unknown purpose, or a malformed scope pattern) refuse startup with `INVALID_CATALOG_SETTING`; defaults match this document.
 17. **Schemas.** The three tool schemas in this document are valid JSON Schema draft 2020-12 and each example validates against its schema (the validation command is in the Outcome of the task file). The served schemas are generated from the same definitions, and a build test compares them with the checked-in copies.
 18. **Architecture rules.** `mcp` and `connectors` do not depend on adapter classes; `core` contains no business-domain type.
+19. **Source-name grammar (OD-C18 (c)).** In 0.8 a non-conforming source name starts and works, the gauge `dataprism.catalog.source-names.nonconforming` equals the count of such names, and the single log line carries the count and no name (scanned). From the 0.9 freeze a non-conforming name refuses startup with `INVALID_SOURCE_NAME`. Boundary values: 64 characters conform, 65 do not; an uppercase letter, a leading digit and an underscore do not. Mutant: log the names.
+20. **Audit key `names` (OD-C2 (a)).** `names` accepts only `REAL` and `ALIAS`, and the value matches the effective setting in all four combinations of scope setting and capability; any other value for `names` is rejected by `AuditEvent`; the grammar stays closed for every other key (a test that a made-up key with `REAL` is still rejected); the verifier accepts the key in a chain and `docs/audit.md` documents it. Mutants: accept any value for `names`; accept `REAL` or `ALIAS` for other keys.
 
 ## 9. Open decisions for the owner
 
@@ -838,7 +840,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `CATALOG_UNKNOWN_SOURCE`, `CATALOG_SOURCE_NOT_PERMITTED`, `CATALOG_ENTITY_TYPE_MISMATCH`, `CATALOG_UNKNOWN_ENTITY_TYPE`, `CATALOG_NO_PERMITTED_SOURCE` | audit-only reason codes (shape C) | 0.8; the last two 0.9 | `LINK_<REASON>` (task 191, sibling) |
 | `names` | reserved audit disposition key (values `REAL`, `ALIAS`) | 0.8 (OD-C2 (a), decided) | none |
 | `dataprism.catalog.unselected-source-limit` | configuration key (default `8`) | 0.8 | `dataprism.limits.max-sources` (OD-C7) |
-| `dataprism.catalog.real-names-scopes` | configuration key (default empty), if OD-C3 (c); the alternatives are `dataprism.catalog.real-names-purposes` (a) and `dataprism.catalog.real-names-scope-types` (d) | 0.8 | none |
+| `dataprism.catalog.real-names-scopes` | configuration key (default empty), OD-C3 (c), decided | 0.8 | none |
 | `entityType`, `keyNamespace` | `list_sources` input arguments (`entityType` is the existing argument name, same meaning) | 0.8 | `entityType` of `get_entity_context`; `keyNamespace` from task 191 |
 | `source` | `describe_source` input argument | 0.8 | none |
 | `dataprism.catalog.descriptions.generated` | metric (gauge) | 0.8 | `dataprism.links.keys.loaded` (task 191, sibling) |
