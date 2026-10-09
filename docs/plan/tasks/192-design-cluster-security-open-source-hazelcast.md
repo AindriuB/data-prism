@@ -84,7 +84,7 @@ Written 2026-10-09 on `task/192-cluster-design`. The design is
 Acceptance:
 
 - [x] The file exists and contains every numbered item as a heading (1 Inventory, 2 Options, 3 Recommendation, 4 Proposed configuration/codes/signals/mixed versions, 5 Soak and test obligations, 6 Boundaries and open decisions).
-- [x] Closing table is section 4.9 (39 names: 15 keys, 13 codes, 8 metrics, 1 audit event, 1 health contributor, plus the table itself). Collision check, run from the worktree root:
+- [x] Closing table is section 4.9 (39 names: 15 keys, 14 codes, 8 metrics, 1 audit event, 1 health contributor). Collision check, run from the worktree root:
   - Names extracted from the 4.9 table and each searched with `grep -rIn -F -- <name> docs/configuration.md docs/multiple-instances.md docs/tools.md data-prism-core data-prism-hazelcast data-prism-server data-prism-spring-boot-autoconfigure data-prism-mcp data-prism-security`.
   - Result: no hits for any key, code, metric or audit event. The only hit was the first draft's health name `cluster` (a common word that appears in unrelated prose), renamed `clusterSecurity`, matching the camelCase of the existing `auditIntegrity` contributor.
   - The build must repeat the search before adding anything: other 0.8 work adds codes.
