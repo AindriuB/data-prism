@@ -7,7 +7,7 @@ import java.time.Duration;
 
 /**
  * {@code dataprism.limits.*}: the six {@link RequestLimits} fields. Every default is the value of
- * {@link RequestLimits#DEFAULT}; only a positive value is accepted, and a refusal names the property, never the value.
+ * the framework defaults; only a positive value is accepted, and a refusal names the property, never the value.
  */
 public class LimitsProperties {
     static final String CODE = "INVALID_REQUEST_LIMITS";

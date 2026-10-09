@@ -86,7 +86,7 @@ public class ConfiguredJsonSourcesAutoConfiguration {
     /**
      * Used only where no {@link RequestLimits} bean exists, that is, without the auto-configuration module, which
      * binds {@code dataprism.limits.*} into the one bean. This module cannot read those properties itself. A test pins
-     * these values to {@code RequestLimits.DEFAULT}.
+     * these values to the framework defaults.
      */
     static final RequestLimits STANDALONE_LIMITS = new RequestLimits(
             8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 100);
