@@ -1,7 +1,10 @@
 package io.github.aindriub.dataprism.spring.boot;
 
 public class MetricsProperties {
-    private String sink, registryReference;
+    /** Metrics sink to use; micrometer is the accepted value. Required in production. */
+    private String sink;
+    /** Reference to the approved registry binding. */
+    private String registryReference;
 
     public String getSink() {
         return sink;

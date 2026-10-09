@@ -3,7 +3,11 @@ package io.github.aindriub.dataprism.spring.boot;
 import java.time.Duration;
 
 public class SourceProperties {
-    private String baseUrl, serviceCredentialReference;
+    /** Server-controlled HTTPS base URL of the source. */
+    private String baseUrl;
+    /** Reference to the service credential. A reference only, never a literal secret. */
+    private String serviceCredentialReference;
+    /** Positive request timeout for the source. */
     private Duration timeout;
     private Mtls mtls = new Mtls();
 
@@ -40,7 +44,10 @@ public class SourceProperties {
     }
 
     public static class Mtls {
-        private String keyReference, trustReference;
+        /** Reference to the mTLS client key material. */
+        private String keyReference;
+        /** Reference to the mTLS trust material. */
+        private String trustReference;
 
         public String getKeyReference() {
             return keyReference;

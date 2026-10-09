@@ -23,7 +23,14 @@ public class SecurityProperties {
     }
 
     public static class Jwt {
-        private String issuer, audience, jwkSetUri, issuerDiscoveryUri;
+        /** Trusted JWT issuer. Required for HTTP. */
+        private String issuer;
+        /** Required JWT audience. Required for HTTP. */
+        private String audience;
+        /** Trusted JWKS location. Exactly one of this and issuer-discovery-uri. */
+        private String jwkSetUri;
+        /** Trusted issuer-discovery location. Exactly one of this and jwk-set-uri. */
+        private String issuerDiscoveryUri;
 
         public String getIssuer() {
             return issuer;
@@ -59,7 +66,12 @@ public class SecurityProperties {
     }
 
     public static class CallerClaims {
-        private String principal, roles, investigation;
+        /** Name of the claim carrying the caller principal. */
+        private String principal;
+        /** Name of the claim carrying the caller roles. */
+        private String roles;
+        /** Name of the trusted claim carrying the investigation or case attribute. */
+        private String investigation;
 
         public String getPrincipal() {
             return principal;

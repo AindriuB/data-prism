@@ -13,9 +13,13 @@ public class CorrelationProperties {
     }
 
     public static class Inbound {
+        /** HTTP request header carrying the external correlation id. Unset disables the feature. */
         private String header;
+        /** opaque accepts a value matching the pattern; traceparent accepts a W3C traceparent value and records its trace id. */
         private String format = "opaque";
+        /** Regular expression the whole value must match with format opaque. Unset uses the strict default. */
         private String pattern;
+        /** If true, a call without a valid id is refused and audited before any source is called. */
         private boolean required;
 
         public String getHeader() {
@@ -66,6 +70,7 @@ public class CorrelationProperties {
     }
 
     public static class Outbound {
+        /** Header name that sends the correlation id to a source. Unset sends nothing. */
         private String header;
 
         public String getHeader() {
@@ -77,6 +82,7 @@ public class CorrelationProperties {
         }
     }
 
+    /** SLF4J MDC key under which the validated id is set for the duration of a tool call. Unset turns MDC off; needs inbound.header. */
     private String mdcKey;
 
     /**

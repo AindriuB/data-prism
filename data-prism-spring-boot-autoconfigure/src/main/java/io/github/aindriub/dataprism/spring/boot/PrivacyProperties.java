@@ -3,9 +3,14 @@ package io.github.aindriub.dataprism.spring.boot;
 import java.time.Duration;
 
 public class PrivacyProperties {
-    private String profile, locale = "neutral";
+    /** Privacy profile to apply. Required. */
+    private String profile;
+    /** Vocabulary locale; neutral selects the locale-neutral vocabulary. */
+    private String locale = "neutral";
+    /** Lifetime of a privacy scope. Required in production; must be positive. */
     private Duration scopeLifetime;
     private HmacKey hmacKey = new HmacKey();
+    /** Optional model descriptor file. When unset no descriptor file is read and classification comes from annotations alone. */
     private String descriptorFile;
 
     public String getProfile() {
@@ -55,7 +60,14 @@ public class PrivacyProperties {
     }
 
     public static class HmacKey {
-        private String keyId, environmentVariable, providerReference, value;
+        /** Identifier of the HMAC key to pin for each scope. Required. */
+        private String keyId;
+        /** Name of the environment variable holding the key. A name only, never the key itself. */
+        private String environmentVariable;
+        /** Reference to a key provider. A reference only, never a literal key. */
+        private String providerReference;
+        /** Refused if set: a literal key is never accepted. */
+        private String value;
 
         public String getKeyId() {
             return keyId;
