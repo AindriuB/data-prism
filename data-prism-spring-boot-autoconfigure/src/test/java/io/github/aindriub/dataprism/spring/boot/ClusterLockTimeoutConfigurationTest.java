@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.spring.boot;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
+import io.github.aindriub.dataprism.spring.boot.validation.DataPrismPropertiesValidator;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
@@ -218,9 +219,9 @@ class ClusterLockTimeoutConfigurationTest {
                 "dataprism.hazelcast.cluster-name=quorum-1", "dataprism.hazelcast.join.members[0]=10.0.0.1",
                 "dataprism.hazelcast.join.members[1]=db.internal"}));
     }
-    @Test void hostnames_and_wildcards_need_no_quorum_when_approvals_are_not_in_use() {
+    @Test void hostnames_need_no_quorum_when_approvals_are_not_in_use() {
         int port = ClusterConfigurationTest.freePort();
-        for (String member : new String[] {"localhost:" + (port + 1), "10.0.0.*"}) {
+        for (String member : new String[] {"localhost:" + (port + 1)}) {
             OversightConfigurationTest.runner("embedded").withPropertyValues(TCP_IP,
                     "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port, "dataprism.hazelcast.join.members[1]=" + member,
                     "dataprism.hazelcast.member.port=" + port, "dataprism.hazelcast.member.interface=127.0.0.1")
@@ -230,6 +231,29 @@ class ClusterLockTimeoutConfigurationTest {
                     });
             Hazelcast.shutdownAll();
         }
+    }
+    /** The cluster validation alone, so no member is started (a wildcard would make one try 256 addresses). */
+    private static DataPrismPropertiesValidator clusterValidator(boolean approvalsInUse, Integer minimum, String member) {
+        DataPrismProperties props = new DataPrismProperties();
+        HazelcastProperties h = props.getHazelcast();
+        h.setTopology("embedded");
+        h.setClusterName("quorum-validator");
+        h.getJoin().setMode("tcp-ip");
+        h.getJoin().setMembers(java.util.List.of(member));
+        h.setApprovalMinimumMembers(minimum);
+        if (approvalsInUse) {
+            props.getOversight().setApprovalRequiredTools(java.util.List.of("get_entity_context"));
+        }
+        return new DataPrismPropertiesValidator(props);
+    }
+
+    @Test void a_wildcard_member_raises_no_refusal_when_approvals_are_not_in_use() {
+        clusterValidator(false, null, "10.0.0.*").validateCluster(false, null, null);
+        clusterValidator(false, 1, "10.0.0.*").validateCluster(false, null, null);
+    }
+    @Test void a_wildcard_member_with_an_explicit_minimum_is_still_refused_when_approvals_are_in_use() {
+        assertThatThrownBy(() -> clusterValidator(true, 2, "10.0.0.*").validateCluster(false, null, null))
+                .isInstanceOf(DataPrismConfigurationException.class).hasMessageStartingWith("INVALID_APPROVAL_QUORUM");
     }
     @Test void kubernetes_requires_a_minimum_when_reidentification_is_enabled() {
         refuses("MISSING_APPROVAL_QUORUM", "embedded", join(OPERATOR, REIDENTIFICATION, new String[] {
