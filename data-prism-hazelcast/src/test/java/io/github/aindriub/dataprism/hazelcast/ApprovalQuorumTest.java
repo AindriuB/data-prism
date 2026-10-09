@@ -74,10 +74,39 @@ class ApprovalQuorumTest {
     }
 
     @Test
+    void aPortlessEntryIsTheConfiguredMemberPortNotTheDefault() {
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1", "10.0.0.1:5702"), 5702)).isEqualTo(1);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1", "10.0.0.1:5701"), 5702)).isEqualTo(2);
+        var membership = ClusterMembership.tcpIp("c", List.of("10.0.0.1", "10.0.0.1:5702", "10.0.0.2"))
+                .withPort(5702);
+        assertThat(PrivacyCluster.defaultApprovalMinimumMembers(membership)).isEqualTo(OptionalInt.of(2));
+    }
+
+    @Test
+    void aHostnameMakesTheCountUnknownSoTheDefaultIsRefusedWithoutNamingIt() {
+        assertThat(PrivacyCluster.hasHostname(List.of("10.0.0.1", "db-1.internal:5701"))).isTrue();
+        assertThat(PrivacyCluster.hasHostname(List.of("10.0.0.1-3", "[::1]:5701", "fe80::1"))).isFalse();
+        var membership = ClusterMembership.tcpIp("c", List.of("10.0.0.1", "secret-host.internal"));
+        var refused = org.junit.jupiter.api.Assertions.assertThrows(PrivacyClusterRefusal.class,
+                () -> PrivacyCluster.defaultApprovalMinimumMembers(membership));
+        assertThat(refused.code().name()).isEqualTo("MISSING_APPROVAL_QUORUM");
+        assertThat(refused.getMessage()).doesNotContain("secret-host");
+    }
+
+    @Test
+    void anUncountableEntryIsRefusedWithTheStableCodeAndNoValue() {
+        var membership = ClusterMembership.tcpIp("c", List.of("10.0.0.*"));
+        var refused = org.junit.jupiter.api.Assertions.assertThrows(PrivacyClusterRefusal.class,
+                () -> PrivacyCluster.defaultApprovalMinimumMembers(membership));
+        assertThat(refused.code().name()).isEqualTo("INVALID_APPROVAL_QUORUM");
+        assertThat(refused.getMessage()).doesNotContain("10.0.0");
+    }
+
+    @Test
     void theDefaultMinimumIsAMajorityOfTheListedMembersForTcpIpAndOneForNone() {
-        assertThat(defaultFor("a", "b")).isEqualTo(OptionalInt.of(2));
-        assertThat(defaultFor("a", "b", "c")).isEqualTo(OptionalInt.of(2));
-        assertThat(defaultFor("a", "b", "c", "d")).isEqualTo(OptionalInt.of(3));
+        assertThat(defaultFor("10.0.0.1", "10.0.0.2")).isEqualTo(OptionalInt.of(2));
+        assertThat(defaultFor("10.0.0.1", "10.0.0.2", "10.0.0.3")).isEqualTo(OptionalInt.of(2));
+        assertThat(defaultFor("10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4")).isEqualTo(OptionalInt.of(3));
         assertThat(PrivacyCluster.defaultApprovalMinimumMembers(ClusterMembership.none("c")))
                 .isEqualTo(OptionalInt.of(1));
         assertThat(PrivacyCluster.defaultApprovalMinimumMembers(
@@ -86,20 +115,20 @@ class ApprovalQuorumTest {
 
     @Test
     void membersAreCountedAfterExpandingWhatHazelcastAccepts() {
-        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1-3"))).isEqualTo(3);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1-3"), 5701)).isEqualTo(3);
         assertThat(defaultFor("10.0.0.1-3")).isEqualTo(OptionalInt.of(2));
-        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a,b,c"))).isEqualTo(3);
-        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a, b;c d"))).isEqualTo(4);
-        assertThat(defaultFor("a,b,c")).isEqualTo(OptionalInt.of(2));
-        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1-3:5702", "10.0.0.2:5702"))).isEqualTo(3);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1,10.0.0.2,10.0.0.3"), 5701)).isEqualTo(3);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1, 10.0.0.2;10.0.0.3 10.0.0.4"), 5701)).isEqualTo(4);
+        assertThat(defaultFor("10.0.0.1,10.0.0.2,10.0.0.3")).isEqualTo(OptionalInt.of(2));
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1-3:5702", "10.0.0.2:5702"), 5701)).isEqualTo(3);
     }
 
     @Test
     void aHostAndTheSameHostOnTheDefaultPortAreOneMember() {
-        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a", "a:5701"))).isEqualTo(1);
-        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a:5701", " a "))).isEqualTo(1);
-        assertThat(PrivacyCluster.countTcpIpMembers(List.of("a", "a:5702"))).isEqualTo(2);
-        assertThat(defaultFor("a", "a:5701")).isEqualTo(OptionalInt.of(1));
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1", "10.0.0.1:5701"), 5701)).isEqualTo(1);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1:5701", " 10.0.0.1 "), 5701)).isEqualTo(1);
+        assertThat(PrivacyCluster.countTcpIpMembers(List.of("10.0.0.1", "10.0.0.1:5702"), 5701)).isEqualTo(2);
+        assertThat(defaultFor("10.0.0.1", "10.0.0.1:5701")).isEqualTo(OptionalInt.of(1));
     }
 
     @Test
@@ -107,11 +136,11 @@ class ApprovalQuorumTest {
         for (String form : new String[]{"host-1-3", "10.0-2.0.1", "10.0.0.*", "10.0.0.3-1", "host[1-3]"}) {
             if (form.equals("host-1-3")) {
                 // A hyphenated hostname is a plain hostname; only unambiguous ranges are expanded.
-                assertThat(PrivacyCluster.countTcpIpMembers(List.of(form))).isEqualTo(1);
+                assertThat(PrivacyCluster.countTcpIpMembers(List.of(form), 5701)).isEqualTo(1);
                 continue;
             }
             org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
-                    () -> PrivacyCluster.countTcpIpMembers(List.of(form)), form);
+                    () -> PrivacyCluster.countTcpIpMembers(List.of(form), 5701), form);
         }
     }
 }

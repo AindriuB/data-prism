@@ -171,9 +171,9 @@ class ClusterLockTimeoutConfigurationTest {
         refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
                 "dataprism.hazelcast.join.members[0]=10.0.0.1-3", "dataprism.hazelcast.approval-minimum-members=4");
         refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
-                "dataprism.hazelcast.join.members[0]=a,b,c", "dataprism.hazelcast.approval-minimum-members=4");
+                "dataprism.hazelcast.join.members[0]=10.0.0.1,10.0.0.2,10.0.0.3", "dataprism.hazelcast.approval-minimum-members=4");
         refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
-                "dataprism.hazelcast.join.members[0]=a", "dataprism.hazelcast.join.members[1]=a:5701",
+                "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=10.0.0.1:5701",
                 "dataprism.hazelcast.approval-minimum-members=2");
     }
     @Test void refuses_a_member_form_it_cannot_expand_reliably() {
@@ -190,6 +190,27 @@ class ClusterLockTimeoutConfigurationTest {
                     assertThat(result).hasNotFailed();
                     assertThat(minimumOnTheApprovalMap(result)).isEqualTo(2);
                 });
+    }
+    @Test void refuses_an_uncountable_entry_even_without_a_minimum() {
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
+                "dataprism.hazelcast.join.members[0]=10.0.0.*");
+    }
+    @Test void a_hostname_requires_an_explicit_minimum() {
+        refuses("MISSING_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
+                "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=db.internal");
+    }
+    @Test void a_hostname_with_an_explicit_minimum_is_accepted() {
+        int port = ClusterConfigurationTest.freePort();
+        OversightConfigurationTest.runner("embedded").withPropertyValues(TCP_IP,
+                "dataprism.hazelcast.join.members[0]=127.0.0.1:" + port, "dataprism.hazelcast.join.members[1]=localhost:" + (port + 1),
+                "dataprism.hazelcast.approval-minimum-members=2",
+                "dataprism.hazelcast.member.port=" + port, "dataprism.hazelcast.member.interface=127.0.0.1")
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+    @Test void a_portless_entry_is_the_configured_member_port() {
+        refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
+                "dataprism.hazelcast.join.members[0]=10.0.0.1", "dataprism.hazelcast.join.members[1]=10.0.0.1:5702",
+                "dataprism.hazelcast.member.port=5702", "dataprism.hazelcast.approval-minimum-members=2");
     }
     @Test void refuses_a_minimum_below_one() {
         refuses("INVALID_APPROVAL_QUORUM", "embedded", TCP_IP, "dataprism.hazelcast.cluster-name=quorum-1",
