@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Catalog design: list_sources, describe_source, describe_entity_model (197)
+
+`docs/plan/design/catalog.md` now fixes the contracts for the agent's catalog tools: the adapter description SPI and its YAML equivalent, startup checks on description text with a generated fallback, `list_sources` and `describe_source` schemas and audit records for 0.8, `describe_entity_model` for 0.9, and how `get_entity_context` targets chosen sources. The owner decided OD-C2 explicitly, a reserved audit key `names` of `REAL` or `ALIAS`; the other open decisions OD-C1 to OD-C19 were delegated to the recommendations and are in `PLAN.md`.
+
+**Cost:** Review asked for changes twice. OD-C2 deliberately reopens the OD-13 audit shape for one key, so 0.8 must extend the `AuditEvent` grammar, `docs/audit.md`, the verifier and the closed-grammar test for that key and no other. Listing is allow-all in 0.8 and deny-by-default only from 0.9, which the 0.8 release notes must state. Do not widen the `names` key into a general audit-value exception.
+
 ## 2026-10-09 — Mutation testing on the privacy modules (195)
 
 A `mutation` Maven profile runs PIT 1.30.0 over core, pseudonymisation, validation and orchestration, and `mutation.yml` runs it weekly and on manual dispatch, publishing the report as an artifact without ever failing a build. First scores: core 81%, pseudonymisation 86%, validation 68%, orchestration 79%, so the 0.9 gate can set thresholds from a measurement.

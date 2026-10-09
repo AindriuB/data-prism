@@ -49,7 +49,7 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 ### 0.7.0 state (updated 2026-10-09)
 
-Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only). Open: tasks 190, 193, 194, 196-202. Task 202 is wave 2, and tasks 200 and 201 now depend on it.
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) and task 197 (catalog design). Open: tasks 190, 193, 194, 196, 198-202. Task 202 is wave 2, and tasks 200 and 201 now depend on it.
 
 Design outcomes (documents in `docs/plan/design/`: `sealed-links.md`, `key-resolvers.md`, `cluster-security.md`; both approved by security review; the owner delegated every open decision to the recommendation on 2026-10-09, recorded in the documents as "Decided (owner delegated)"):
 
@@ -59,6 +59,18 @@ Design outcomes (documents in `docs/plan/design/`: `sealed-links.md`, `key-resol
 - Cluster (192): seal what is stored in Hazelcast (AES-GCM values, HMAC'd keys under a non-rotating name key) and advise transport protection. Isolation-only multi-member clusters are not allowed. A signed, sequenced, leased pause document is updated by CAS with union merge on MERGED; a stale or absent pause refuses every call. Cluster-key rotation is phased with sealed member cards. Budgets and rate limits keep a per-instance floor. Separate secrets per purpose.
 - OD-13: the 1.0 claim is the qualified statement. Sealed against reading and forging; not against deletion, short replay or availability; transport protection is the deployer's and unverified.
 - OD-16: `PrivacyCluster.using` refuses in sealed mode when it cannot enforce settings.
+
+Catalog design (197, `docs/plan/design/catalog.md`, approved after two review rounds). OD-C2 (a) was decided explicitly by the owner on 2026-10-09; OD-C1 to OD-C19 otherwise were delegated to the recommendations:
+
+- OD-C2 (a): reserved audit key `names` takes `REAL` or `ALIAS`. This deliberately reopens OD-13 shape C for that one key only.
+- OD-C3: per-scope real names through `dataprism.catalog.real-names-scopes`, a scope-pattern list, empty by default.
+- OD-C5: `list_sources` allows all in 0.8 only; deny-by-default from 0.9 per D-RM-11. Say so in the 0.8 release notes.
+- OD-C7: `dataprism.catalog.unselected-source-limit`, default 8, with a startup check that it is at most `max-sources` (`INVALID_CATALOG_SETTING`).
+- OD-C16: `list_sources` is paged in 0.8; task 198 specifies that page first.
+- OD-C18: source-name grammar `[a-z][a-z0-9-]{0,63}`. In 0.8 a violation raises a warning (gauge and count-only log); `INVALID_SOURCE_NAME` refuses from the 0.9 freeze.
+- OD-C19: any unresolvable label refuses the whole call.
+
+0.8 work items these create: catalog paging moves into 0.8 (specified by 198); the `names` audit key needs an `AuditEvent` grammar for that key only, `docs/audit.md`, the verifier and the closed-grammar test.
 
 Owner decisions for 0.7 (2026-10-09):
 
