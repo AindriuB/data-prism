@@ -85,15 +85,18 @@ old-to-new tables, grouped by who has to act, are in `docs/migration-0.6.md`.
   tags), `INVALID_CONFIG_SHAPE` and `NULL_LIKE_CONFIG_SCALAR`. A present but
   null value is refused, and an empty `tls:` is refused where it used to
   disable `requireHttps`. Quoting rule: a value in a string-typed field that
-  YAML reads as a number or boolean, such as `010` or `1e3`, must be quoted.
+  YAML reads as a number or boolean, such as `1.0`, `1e3`, `42` or `true`, must
+  be quoted.
   Messages name the key and its path (a key is cut to 64 characters) and never
   the value.
 - YAML is now parsed as YAML 1.2 (Jackson 3). `yes`, `no`, `on` and `off` are
   text, not booleans: in a boolean-typed field they are refused as
   `INVALID_CONFIG_BOOLEAN`, and in a string-typed field they now load as the
   text you wrote, where 0.5.x loaded `true` or `false`. Leading-zero numbers
-  are decimal, not octal, and are refused in numeric fields (band bounds,
-  vocabulary versions) as `LEADING_ZERO_CONFIG_NUMBER`.
+  are no longer octal: they are refused in numeric fields (band bounds,
+  vocabulary versions) as `LEADING_ZERO_CONFIG_NUMBER`, and in a string-typed
+  field `010` now loads as the text `010`, where 0.5.x loaded `8`. Neither
+  string-field change is refused, so check string fields that held such a value.
 - Error messages no longer echo configured URLs or credentials
   (`ConfiguredJsonSources`, `RestSources`, `RestSource` and the json-sources
   initializer). A config location in a message is shown as a placeholder, a

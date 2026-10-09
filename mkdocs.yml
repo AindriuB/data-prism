@@ -118,6 +118,7 @@ plugins:
           - reidentification.md
           - eu-ai-act.md
           - architecture.md
+          - migration-0.6.md
         FAQ:
           - faq.md
         Comparison:
@@ -184,6 +185,7 @@ nav:
       - reidentification.md
       - eu-ai-act.md
       - architecture.md
+      - migration-0.6.md
   - FAQ: faq.md
   - Comparison: comparison.md
   - Changelog: changelog.md
