@@ -26,3 +26,9 @@ any public disclosure.
 Findings already described in `docs/design-review.md` and `docs/pack.md` are
 published deliberately — the threat model is public on purpose, and
 reporting a weakness already documented there is not a vulnerability report.
+
+## Verifying releases
+
+Release artifacts carry signatures, SBOMs and build provenance. See
+[`docs/verifying-releases.md`](docs/verifying-releases.md) for how to check
+each one.

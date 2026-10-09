@@ -37,6 +37,13 @@ name: publish-image
 # every job that logs in, rather than trusted from a sibling job or an
 # earlier step in the same job.
 #
+# Task 188: every pushed digest is also signed (keyless cosign) and gets a
+# build-provenance attestation, and every image is pushed with a buildx SBOM
+# and provenance attestation. The per-architecture digests are signed in each
+# matrix leg and the assembled manifest lists in `publish`, all behind the
+# same guards as the pushes. `id-token: write` and `attestations: write` are
+# granted on those two jobs only. docs/verifying-releases.md says how to verify.
+#
 # An earlier decision here (recorded through task 40) was to re-push the
 # already-released version's tag rather than cut a new one: main and the
 # release tag were then the same tree, and the decision was conditioned on
@@ -80,6 +87,14 @@ jobs:
             platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    # Job-level, not workflow-level: only the jobs that sign or attest get
+    # an OIDC token. A job-level block replaces the workflow-level one, so
+    # the two grants the job already relied on are restated.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
 
@@ -315,6 +330,8 @@ jobs:
           docker buildx build -f docker/distribution/Dockerfile \
             --platform "$PLATFORM" \
             --output type=image,name=ghcr.io/aindriub/data-prism-server,push=true,push-by-digest=true,name-canonical=true \
+            --sbom=true \
+            --provenance=mode=max \
             --metadata-file /tmp/metadata.json \
             .
           digest="$(jq -r '."containerimage.digest"' /tmp/metadata.json)"
@@ -353,6 +370,8 @@ jobs:
           docker buildx build -f docker/server/Dockerfile \
             --platform "$PLATFORM" \
             --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-server,push=true,push-by-digest=true,name-canonical=true \
+            --sbom=true \
+            --provenance=mode=max \
             --metadata-file /tmp/metadata-quickstart-server.json \
             .
           digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-server.json)"
@@ -383,6 +402,8 @@ jobs:
           docker buildx build -f docker/fixtures/Dockerfile \
             --platform "$PLATFORM" \
             --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-fixtures,push=true,push-by-digest=true,name-canonical=true \
+            --sbom=true \
+            --provenance=mode=max \
             --metadata-file /tmp/metadata-quickstart-fixtures.json \
             .
           digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-fixtures.json)"
@@ -413,6 +434,8 @@ jobs:
           docker buildx build -f docker/issuer/Dockerfile \
             --platform "$PLATFORM" \
             --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-issuer,push=true,push-by-digest=true,name-canonical=true \
+            --sbom=true \
+            --provenance=mode=max \
             --metadata-file /tmp/metadata-quickstart-issuer.json \
             .
           digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-issuer.json)"
@@ -443,6 +466,8 @@ jobs:
           docker buildx build -f docker/certs-init/Dockerfile \
             --platform "$PLATFORM" \
             --output type=image,name=ghcr.io/aindriub/data-prism-quickstart-certs-init,push=true,push-by-digest=true,name-canonical=true \
+            --sbom=true \
+            --provenance=mode=max \
             --metadata-file /tmp/metadata-quickstart-certs-init.json \
             .
           digest="$(jq -r '."containerimage.digest"' /tmp/metadata-quickstart-certs-init.json)"
@@ -459,6 +484,111 @@ jobs:
           path: /tmp/digest-quickstart/certs-init-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 1
+
+      # Task 188: sign and attest every per-architecture digest pushed above.
+      # Keyless: cosign and the attestation action use this job's GitHub OIDC
+      # token, so no signing key is stored. Same tag-ref/dispatch guard as the
+      # pushes, and these steps come after the version guard step above, so a
+      # plain `v*` tag push (or a branch dispatch) reaches none of them. Each
+      # image's buildx --sbom/--provenance attestations were pushed with the
+      # digest itself.
+      - name: Read pushed digests
+        id: digests
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          for f in "/tmp/digest/${ARCH}" \
+                   "/tmp/digest-quickstart/server-${ARCH}" \
+                   "/tmp/digest-quickstart/fixtures-${ARCH}" \
+                   "/tmp/digest-quickstart/issuer-${ARCH}" \
+                   "/tmp/digest-quickstart/certs-init-${ARCH}"; do
+            if ! test -s "$f"; then
+              echo "::error::digest file ${f} is missing or empty; its push step did not record a digest"
+              exit 1
+            fi
+          done
+          {
+            echo "dist=$(cat "/tmp/digest/${ARCH}")"
+            echo "server=$(cat "/tmp/digest-quickstart/server-${ARCH}")"
+            echo "fixtures=$(cat "/tmp/digest-quickstart/fixtures-${ARCH}")"
+            echo "issuer=$(cat "/tmp/digest-quickstart/issuer-${ARCH}")"
+            echo "certs_init=$(cat "/tmp/digest-quickstart/certs-init-${ARCH}")"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@v4
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+
+      - name: Sign every pushed per-architecture digest
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        env:
+          DIGEST_DIST: ${{ steps.digests.outputs.dist }}
+          DIGEST_SERVER: ${{ steps.digests.outputs.server }}
+          DIGEST_FIXTURES: ${{ steps.digests.outputs.fixtures }}
+          DIGEST_ISSUER: ${{ steps.digests.outputs.issuer }}
+          DIGEST_CERTS_INIT: ${{ steps.digests.outputs.certs_init }}
+        run: |
+          cosign sign --yes "ghcr.io/aindriub/data-prism-server@${DIGEST_DIST}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-server@${DIGEST_SERVER}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-fixtures@${DIGEST_FIXTURES}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-issuer@${DIGEST_ISSUER}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-certs-init@${DIGEST_CERTS_INIT}"
+
+      - name: Attest build provenance of the distribution image (this architecture)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-server
+          subject-digest: ${{ steps.digests.outputs.dist }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart server image (this architecture)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-server
+          subject-digest: ${{ steps.digests.outputs.server }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart fixtures image (this architecture)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-fixtures
+          subject-digest: ${{ steps.digests.outputs.fixtures }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart issuer image (this architecture)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-issuer
+          subject-digest: ${{ steps.digests.outputs.issuer }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart certs-init image (this architecture)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-certs-init
+          subject-digest: ${{ steps.digests.outputs.certs_init }}
+          push-to-registry: true
 
   # Never runs from a plain tag push, and never from a workflow_dispatch off
   # a branch either: both the trigger condition below and the guard step
@@ -482,6 +612,11 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     # Bound once, at the job level, rather than interpolating
     # ${{ inputs.version }} straight into each step's `run:` shell text: a
     # crafted dispatch input containing shell metacharacters would otherwise
@@ -639,3 +774,69 @@ jobs:
             echo "${archs}" | grep -qx amd64
             echo "${archs}" | grep -qx arm64
           done
+
+      # Task 188: sign and attest the assembled manifest lists. The job-level
+      # `if:` and the version guard above already gate everything here. The
+      # digest is the manifest list's own, read back from the registry after
+      # it was pushed; :latest points at the same digest as :VERSION.
+      - name: Read manifest list digests
+        id: lists
+        run: |
+          {
+            echo "dist=$(docker buildx imagetools inspect "ghcr.io/aindriub/data-prism-server:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)"
+            echo "server=$(docker buildx imagetools inspect "ghcr.io/aindriub/data-prism-quickstart-server:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)"
+            echo "fixtures=$(docker buildx imagetools inspect "ghcr.io/aindriub/data-prism-quickstart-fixtures:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)"
+            echo "issuer=$(docker buildx imagetools inspect "ghcr.io/aindriub/data-prism-quickstart-issuer:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)"
+            echo "certs_init=$(docker buildx imagetools inspect "ghcr.io/aindriub/data-prism-quickstart-certs-init:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@v4
+
+      - name: Sign every manifest list
+        env:
+          DIGEST_DIST: ${{ steps.lists.outputs.dist }}
+          DIGEST_SERVER: ${{ steps.lists.outputs.server }}
+          DIGEST_FIXTURES: ${{ steps.lists.outputs.fixtures }}
+          DIGEST_ISSUER: ${{ steps.lists.outputs.issuer }}
+          DIGEST_CERTS_INIT: ${{ steps.lists.outputs.certs_init }}
+        run: |
+          cosign sign --yes "ghcr.io/aindriub/data-prism-server@${DIGEST_DIST}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-server@${DIGEST_SERVER}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-fixtures@${DIGEST_FIXTURES}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-issuer@${DIGEST_ISSUER}"
+          cosign sign --yes "ghcr.io/aindriub/data-prism-quickstart-certs-init@${DIGEST_CERTS_INIT}"
+
+      - name: Attest build provenance of the distribution manifest list
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-server
+          subject-digest: ${{ steps.lists.outputs.dist }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart server manifest list
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-server
+          subject-digest: ${{ steps.lists.outputs.server }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart fixtures manifest list
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-fixtures
+          subject-digest: ${{ steps.lists.outputs.fixtures }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart issuer manifest list
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-issuer
+          subject-digest: ${{ steps.lists.outputs.issuer }}
+          push-to-registry: true
+
+      - name: Attest build provenance of the quickstart certs-init manifest list
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aindriub/data-prism-quickstart-certs-init
+          subject-digest: ${{ steps.lists.outputs.certs_init }}
+          push-to-registry: true
