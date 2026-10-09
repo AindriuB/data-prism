@@ -14,18 +14,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ContextResponseTest {
 
-    private static ContextResponse responseWith(Map<String, String> sources) {
-        return new ContextResponse("CUSTOMER", "subject", sources, List.of(),
-                JsonNodeFactory.instance.objectNode());
+    private static final SourceResult ANSWERED = SourceResult.answered(JsonNodeFactory.instance.objectNode());
+
+    private static ContextResponse responseWith(Map<String, SourceResult> sources) {
+        return new ContextResponse("CUSTOMER", "subject", sources, List.of(), Map.of(), "");
     }
 
     @Test
     @DisplayName("sources iterate in ascending key order whatever order they were supplied in, and answered() follows")
     void sourcesAreSortedByKey() {
         List<String> ascending = List.of("a1", "b2", "c3", "d4", "e5", "f6", "g7", "h8", "i9");
-        Map<String, String> reversed = new LinkedHashMap<>();
+        Map<String, SourceResult> reversed = new LinkedHashMap<>();
         for (int i = ascending.size() - 1; i >= 0; i--) {
-            reversed.put(ascending.get(i), "ANSWERED");
+            reversed.put(ascending.get(i), ANSWERED);
         }
 
         ContextResponse response = responseWith(reversed);
@@ -37,14 +38,14 @@ class ContextResponseTest {
     @Test
     @DisplayName("sources is unmodifiable and refuses a null key or value")
     void sourcesAreUnmodifiableAndNullHostile() {
-        ContextResponse response = responseWith(Map.of("a", "ANSWERED"));
-        assertThatThrownBy(() -> response.sources().put("b", "ANSWERED"))
+        ContextResponse response = responseWith(Map.of("a", ANSWERED));
+        assertThatThrownBy(() -> response.sources().put("b", ANSWERED))
                 .isInstanceOf(UnsupportedOperationException.class);
 
-        Map<String, String> nullKey = new LinkedHashMap<>();
-        nullKey.put(null, "ANSWERED");
+        Map<String, SourceResult> nullKey = new LinkedHashMap<>();
+        nullKey.put(null, ANSWERED);
         assertThatThrownBy(() -> responseWith(nullKey)).isInstanceOf(NullPointerException.class);
-        Map<String, String> nullValue = new LinkedHashMap<>();
+        Map<String, SourceResult> nullValue = new LinkedHashMap<>();
         nullValue.put("a", null);
         assertThatThrownBy(() -> responseWith(nullValue)).isInstanceOf(NullPointerException.class);
     }

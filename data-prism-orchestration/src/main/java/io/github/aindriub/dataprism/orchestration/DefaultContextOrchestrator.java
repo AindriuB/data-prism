@@ -164,7 +164,8 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         // Never logged and never audited: this is every synthetic value the
         // response contains, and it is only ever read by the validators.
         Set<String> emitted = new LinkedHashSet<>();
-        ObjectNode merged = null;
+        Map<String, ObjectNode> trees = Map.of();
+        boolean[] allSourcesRefused = {false};
         Map<String, String> dispositions = new LinkedHashMap<>();
         // Every declared pointer any source reported: what a validator's path is
         // checked against before it is allowed into a refusal.
@@ -180,14 +181,17 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                                 + " times in this scope");
             }
 
-            FetchOutcome fetched = fetchScrubAndMerge(request, context, investigationContext,
-                    sources, prohibited, emitted, dispositions, declared);
-            merged = fetched.merged();
+            FetchOutcome fetched = fetchAndScrub(request, context, investigationContext,
+                    sources, prohibited, dispositions);
+            trees = fetched.trees();
             raw = fetched.raw();
+            emitted.addAll(fetched.emitted());
+            declared.addAll(fetched.declared());
 
             // Before scrubbing, and it has to be: the pseudonym is keyed on the
             // subject, so once these records are scrubbed every source's version
             // of a name is the same string and there is nothing left to compare.
+            // Only sources that were not refused: a refused source leaves no trace.
             findings = correlation.correlate(fetched.raw(), context);
             if (!request.includeAgreementFindings()) {
                 // get_entity_context's response must not change: agreement
@@ -199,21 +203,35 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                         .toList();
             }
 
-            if (merged == null) {
+            if (trees.isEmpty()) {
+                // Nothing left to return. A source that was refused takes the call with it,
+                // with its code; the scrub code first, as when scrubbing was the only
+                // stage that could refuse.
+                if (!fetched.scrubRefusals().isEmpty()) {
+                    allSourcesRefused[0] = true;
+                    throw fetched.scrubRefusals().get(0);
+                }
+                if (!fetched.validationRefusals().isEmpty()) {
+                    allSourcesRefused[0] = true;
+                    throw fetched.validationRefusals().get(0);
+                }
                 throw new PrivacyRefusedException("NO_SOURCE_DATA", request.entityType(),
                         "no source returned a record for this subject");
             }
 
+            // The final check, over everything that is about to leave. Each source's tree
+            // is checked as it is, so a path names a payload property and never a source.
             List<Violation> violations = new ArrayList<>();
-            for (LlmResponseValidator validator : validators) {
-                ValidationResult result = validator.validate(merged, prohibited, emitted, context);
-                violations.addAll(result.violations());
+            for (ObjectNode tree : trees.values()) {
+                for (LlmResponseValidator validator : validators) {
+                    violations.addAll(validator.validate(tree, prohibited, emitted, context).violations());
+                }
             }
             if (!violations.isEmpty()) {
                 violations.forEach(v -> metrics.increment(Metric.PRIVACY_VALIDATION_FAILURES));
                 // Named by classification and path; the values themselves stay in
                 // the withheld response, which no caller ever sees. The validators walk
-                // the merged tree, which can hold payload keys the model never declared.
+                // the trees, which can hold payload keys the model never declared.
                 throw new PrivacyRefusedException("VALIDATION_FAILED",
                         RefusalPaths.redact(violations.get(0).path(), declared),
                         violations.size() + " violation(s), first " + violations.get(0).code()
@@ -223,9 +241,9 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
             if (failure instanceof PrivacyRefusedException) {
                 metrics.increment(Metric.PRIVACY_FAILCLOSED);
             }
-            if (failure instanceof PrivacyRefusedException
-                    && !dispositions.containsValue("REFUSED")) {
+            if (failure instanceof PrivacyRefusedException && !allSourcesRefused[0]) {
                 // Refusal paths are built from payload keys, so none is ever recorded.
+                // Not when every source was refused: each already has its own key and code.
                 dispositions.put("merged:<refused>", "REFUSED");
             }
             audit(request, subjectToken, fingerprint, context, investigationContext, denyDecision(failure), sources,
@@ -241,7 +259,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
                 correlationId, dispositions);
         return ContextResponse.of(request.entityType(), subjectToken, sources,
-                findings, merged, fieldsByNamespace(raw), aliasing, investigationContext, context,
+                findings, trees, fieldsByNamespace(raw), aliasing, investigationContext, context,
                 correlationId);
     }
 
@@ -284,66 +302,95 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
     }
 
     /**
-     * What {@link #fetchScrubAndMerge} produces: the raw, pre-scrub records
-     * {@code correlate} needs, and the scrubbed tree merged across every
-     * source that answered.
+     * What {@link #fetchAndScrub} produces: the raw records {@code correlate} needs,
+     * the scrubbed tree of every source that was not refused, and what was refused.
      */
-    private record FetchOutcome(List<EntityCorrelationService.SourceRecord> raw, ObjectNode merged) {
+    private record FetchOutcome(List<EntityCorrelationService.SourceRecord> raw, Map<String, ObjectNode> trees,
+                                Set<String> emitted, Set<String> declared,
+                                List<PrivacyRefusedException> scrubRefusals,
+                                List<PrivacyRefusedException> validationRefusals) {
+    }
+
+    /** One source's scrub, held until it has been validated. */
+    private record Scrubbed(int index, SourceOutcome outcome, Object record, ScrubResult result) {
     }
 
     /**
-     * Fetches every source in parallel, then scrubs and merges each answer as
-     * it arrives.
+     * Fetches every source in parallel, scrubs each answer, and validates each scrubbed tree on its own.
+     *
+     * <p>A source whose scrub or validation refuses is marked {@code REFUSED} and dropped whole: no
+     * field, no tree, no raw record for correlation, no synthetic value in {@code emitted}. Its raw values
+     * stay in {@code prohibited}, so no other source can carry them out either. Its refusal is kept, and
+     * is thrown by the caller only if no source is left. The audit disposition is a fixed key from the
+     * declared source name with the sanitised code; the refusal path may carry payload keys and is not recorded.
      *
      * <p>A source's raw record is captured for {@code correlate} before it is
      * scrubbed, because correlation compares what each source actually said;
      * once scrubbed, every source's version of a name is the same pseudonym
-     * and there is nothing left to compare. {@code prohibited} and
-     * {@code emitted} are collected here because they are a property of what
-     * was fetched and scrubbed, not of the merge itself.
+     * and there is nothing left to compare.
      */
-    private FetchOutcome fetchScrubAndMerge(ContextRequest request, PrivacyContext context,
-                                            InvestigationContext investigationContext,
-                                            List<SourceOutcome> sources, Set<String> prohibited,
-                                            Set<String> emitted,
-                                            Map<String, String> dispositions,
-                                            Set<String> declared) {
-        List<EntityCorrelationService.SourceRecord> raw = new ArrayList<>();
-        ObjectNode merged = null;
+    private FetchOutcome fetchAndScrub(ContextRequest request, PrivacyContext context,
+                                       InvestigationContext investigationContext,
+                                       List<SourceOutcome> sources, Set<String> prohibited,
+                                       Map<String, String> dispositions) {
+        List<PrivacyRefusedException> scrubRefusals = new ArrayList<>();
+        List<Scrubbed> scrubbed = new ArrayList<>();
         for (SourceFanOut.Fetched fetched : fanOut.fetchAll(adapters,
                 requestsPerSource(request), limits)) {
-            sources.add(fetched.outcome());
             Object record = fetched.record();
             if (record == null) {
+                sources.add(fetched.outcome());
+                continue;
+            }
+            prohibited.addAll(SourceValues.prohibited(record, resolver));
+            ScrubResult result;
+            try {
+                result = scrubber.scrub(record, context);
+            } catch (PrivacyRefusedException refused) {
+                sources.add(fetched.outcome().refused());
+                dispositions.put(fetched.outcome().sourceName() + ":<refused>",
+                        "REFUSED:" + RefusalCodes.sanitise(refused.code()));
+                scrubRefusals.add(refused);
+                continue;
+            }
+            metrics.increment(Metric.PRIVACY_TRANSFORMATIONS);
+            scrubbed.add(new Scrubbed(sources.size(), fetched.outcome(), record, result));
+            sources.add(fetched.outcome());
+        }
+
+        List<EntityCorrelationService.SourceRecord> raw = new ArrayList<>();
+        Map<String, ObjectNode> trees = new LinkedHashMap<>();
+        Set<String> emitted = new LinkedHashSet<>();
+        Set<String> declared = new LinkedHashSet<>();
+        List<PrivacyRefusedException> validationRefusals = new ArrayList<>();
+        for (Scrubbed s : scrubbed) {
+            // Every source's raw values are known by now, so a value that crossed from another source is caught.
+            List<Violation> violations = new ArrayList<>();
+            for (LlmResponseValidator validator : validators) {
+                violations.addAll(validator.validate(s.result().tree(), prohibited, s.result().emitted(), context)
+                        .violations());
+            }
+            String sourceName = s.outcome().sourceName();
+            if (!violations.isEmpty()) {
+                violations.forEach(v -> metrics.increment(Metric.PRIVACY_VALIDATION_FAILURES));
+                sources.set(s.index(), s.outcome().refused());
+                dispositions.put(sourceName + ":<refused>", "REFUSED:VALIDATION_FAILED");
+                validationRefusals.add(new PrivacyRefusedException("VALIDATION_FAILED",
+                        RefusalPaths.redact(violations.get(0).path(), s.result().dispositions().keySet()),
+                        violations.size() + " violation(s), first " + violations.get(0).code()
+                                + " by " + violations.get(0).detectionMethod() + "; response withheld"));
                 continue;
             }
             raw.add(new EntityCorrelationService.SourceRecord(
-                    aliasing.nameFor(fetched.outcome().sourceName(), investigationContext, context),
-                    record));
-            prohibited.addAll(SourceValues.prohibited(record, resolver));
-
-            ScrubResult scrubbed;
-            try {
-                scrubbed = scrubber.scrub(record, context);
-            } catch (PrivacyRefusedException refused) {
-                // Fixed key from the declared source name; the exception path may carry payload keys.
-                dispositions.put(fetched.outcome().sourceName() + ":<refused>", "REFUSED");
-                throw refused;
-            }
-            metrics.increment(Metric.PRIVACY_TRANSFORMATIONS);
-            emitted.addAll(scrubbed.emitted());
+                    aliasing.nameFor(sourceName, investigationContext, context), s.record()));
+            emitted.addAll(s.result().emitted());
             // Real source name, never the alias: the audit trail is operator-facing.
-            String sourceName = fetched.outcome().sourceName();
-            scrubbed.dispositions().forEach((pointer, action) ->
+            s.result().dispositions().forEach((pointer, action) ->
                     dispositions.put(sourceName + ":" + pointer, action.name()));
-            declared.addAll(scrubbed.dispositions().keySet());
-            if (merged == null) {
-                merged = scrubbed.tree();
-            } else {
-                merged.setAll(scrubbed.tree());
-            }
+            declared.addAll(s.result().dispositions().keySet());
+            trees.put(sourceName, s.result().tree());
         }
-        return new FetchOutcome(raw, merged);
+        return new FetchOutcome(raw, trees, emitted, declared, scrubRefusals, validationRefusals);
     }
 
     /**

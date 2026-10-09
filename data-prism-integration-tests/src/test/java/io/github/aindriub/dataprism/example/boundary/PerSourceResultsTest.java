@@ -47,6 +47,10 @@ class PerSourceResultsTest {
         sources.forEachEntry((name, entry) -> {
             names.add(name);
             assertThat(CODES).contains(entry.get("status").asString());
+            List<String> keys = new ArrayList<>();
+            entry.forEachEntry((k, v) -> keys.add(k));
+            assertThat(keys).as("an entry holds a status and at most an entity, nothing derived")
+                    .isSubsetOf("status", "entity");
             assertThat(entry.has("entity")).isEqualTo("ANSWERED".equals(entry.get("status").asString()));
         });
         assertThat(names).containsExactly("alpha-api", "bad-api", "none-api");

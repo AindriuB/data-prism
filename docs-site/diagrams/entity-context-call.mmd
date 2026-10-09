@@ -20,8 +20,10 @@ sequenceDiagram
     Adapter-->>Orchestrator: raw source record
     Orchestrator->>Scrub: scrub(record, context)
     Scrub-->>Orchestrator: scrubbed tree
-    Orchestrator->>Validator: validate(merged, …, context)
-    Validator-->>Orchestrator: ValidationResult
+    Orchestrator->>Validator: validate(source tree, …, context)
+    Validator-->>Orchestrator: ValidationResult (a refused source is withheld)
+    Orchestrator->>Validator: final check of every returned source tree
+    Validator-->>Orchestrator: ValidationResult (a violation refuses the call)
     Orchestrator->>Audit: record(decision=ALLOW)
     Orchestrator-->>Tool: ContextResponse
     Tool-->>Caller: CallToolResult

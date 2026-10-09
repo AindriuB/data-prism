@@ -409,7 +409,7 @@ bare JSON — one `id:`/`event:`/`data:` frame, the JSON-RPC response inside
 ```
 id: 903eface-c8a4-4845-9631-aaa8fea1dc5d
 event: message
-data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-VHK4SXCQ\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":\"ANSWERED\"},\"findings\":[],\"entity\":{\"customerName\":\"Casey Okafor (G2C8D3R4)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-VHK4SXCQ","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":"ANSWERED"},"findings":[],"entity":{"customerName":"Casey Okafor (G2C8D3R4)","email":"[REDACTED]","status":"ACTIVE"}}}}
+data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-VHK4SXCQ\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":{\"status\":\"ANSWERED\",\"entity\":{\"customerName\":\"Casey Okafor (G2C8D3R4)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}},\"findings\":[]}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-VHK4SXCQ","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":{"status":"ANSWERED","entity":{"customerName":"Casey Okafor (G2C8D3R4)","email":"[REDACTED]","status":"ACTIVE"}}},"findings":[]}}}
 ```
 
 Neither raw value appears. `customerName` is a stable synthetic substitute in

@@ -31,6 +31,7 @@ import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
+import io.github.aindriub.dataprism.orchestration.SourceResult;
 import io.github.aindriub.dataprism.orchestration.DefaultContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.NamespaceCorrelationService;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
@@ -325,11 +326,11 @@ class CompareEntitySourcesToolTest {
         ObjectMapper mapper = DataPrismObjectMapper.create();
         // Nothing named "GOVERNMENT_IDENTIFIER" is in the entity tree: dropped,
         // redacted away entirely, or simply never returned by this fixture.
-        ContextResponse response = new ContextResponse("CUSTOMER", "SUBJ-1", Map.of("source-a", "ANSWERED"),
+        ContextResponse response = new ContextResponse("CUSTOMER", "SUBJ-1", Map.of("source-a", SourceResult.answered(mapper.createObjectNode())),
                 List.of(new ConsistencyFinding("GOVERNMENT_IDENTIFIER", PrivacyNamespace.GOVERNMENT_IDENTIFIER,
                         ConsistencyFinding.Kind.MISSING_IN_SOME_SOURCES, List.of(List.of("source-a")), 1,
                         "only 1 of 2 sources held a value")),
-                mapper.createObjectNode());
+                Map.of(), "");
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(new FixedResponseOrchestrator(response),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), mapper, metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
@@ -358,7 +359,7 @@ class CompareEntitySourcesToolTest {
         entity.put("PARTIAL_FIELD", "PSEUDO-PARTIAL");
 
         ContextResponse response = new ContextResponse("CUSTOMER", "SUBJ-1",
-                Map.of("source-a", "ANSWERED", "source-b", "ANSWERED"),
+                Map.of("source-a", SourceResult.answered(entity), "source-b", SourceResult.answered(entity)),
                 List.of(
                         new ConsistencyFinding("AGREED_FIELD", PrivacyNamespace.PERSON_NAME,
                                 ConsistencyFinding.Kind.CONSISTENT,
@@ -369,7 +370,7 @@ class CompareEntitySourcesToolTest {
                         new ConsistencyFinding("PARTIAL_FIELD", PrivacyNamespace.GOVERNMENT_IDENTIFIER,
                                 ConsistencyFinding.Kind.MISSING_IN_SOME_SOURCES,
                                 List.of(List.of("source-a")), 1, "only 1 of 2 sources held a value")),
-                entity);
+                Map.of(), "");
         CompareEntitySourcesTool tool = new CompareEntitySourcesTool(new FixedResponseOrchestrator(response),
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), mapper, metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
@@ -400,6 +401,55 @@ class CompareEntitySourcesToolTest {
 
         // Never named by any finding, so it appears in neither identity nor findings.
         assertThat(soleText(result)).doesNotContain("NEVER_COMPARED_FIELD");
+    }
+
+    private Map<String, Object> identityOf(ContextResponse response) {
+        ObjectMapper mapper = DataPrismObjectMapper.create();
+        CompareEntitySourcesTool tool = new CompareEntitySourcesTool(new FixedResponseOrchestrator(response),
+                authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
+                scopeResolver(), mapper, metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
+        McpSchema.CallToolResult result = tool.specification().callHandler().apply(
+                exchangeFor(caller(Set.of("investigator"))),
+                request(Map.of("entityType", "CUSTOMER", "subjectId", "123")));
+        assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) result.structuredContent();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> identity = (Map<String, Object>) body.get("identity");
+        return identity;
+    }
+
+    private static ConsistencyFinding nameFinding() {
+        return new ConsistencyFinding("PERSON_NAME", PrivacyNamespace.PERSON_NAME,
+                ConsistencyFinding.Kind.INCONSISTENT, List.of(List.of("a-src"), List.of("b-src")), 2, "values differ");
+    }
+
+    @Test
+    @DisplayName("identity takes each field from the first ANSWERED source, in ascending key order, that holds it")
+    void identityTakesTheFirstAnsweredSourceHoldingTheField() {
+        ObjectMapper mapper = DataPrismObjectMapper.create();
+        tools.jackson.databind.node.ObjectNode empty = mapper.createObjectNode();
+        tools.jackson.databind.node.ObjectNode second = mapper.createObjectNode().put("fullName", "FROM-B");
+        tools.jackson.databind.node.ObjectNode third = mapper.createObjectNode().put("fullName", "FROM-C");
+        ContextResponse response = new ContextResponse("CUSTOMER", "SUBJ-1", Map.of(
+                "a-src", SourceResult.answered(empty), "b-src", SourceResult.answered(second),
+                "c-src", SourceResult.answered(third)), List.of(nameFinding()),
+                Map.of(PrivacyNamespace.PERSON_NAME, List.of("fullName")), "");
+
+        assertThat(identityOf(response)).containsExactly(Map.entry("fullName", "FROM-B"));
+    }
+
+    @Test
+    @DisplayName("a refused source contributes nothing to identity, even if it sorts first")
+    void aRefusedSourceContributesNothingToIdentity() {
+        ObjectMapper mapper = DataPrismObjectMapper.create();
+        tools.jackson.databind.node.ObjectNode answered = mapper.createObjectNode().put("fullName", "FROM-B");
+        ContextResponse response = new ContextResponse("CUSTOMER", "SUBJ-1", Map.of(
+                "a-src", SourceResult.of(io.github.aindriub.dataprism.orchestration.SourceOutcome.Status.REFUSED),
+                "b-src", SourceResult.answered(answered)), List.of(nameFinding()),
+                Map.of(PrivacyNamespace.PERSON_NAME, List.of("fullName")), "");
+
+        assertThat(identityOf(response)).containsExactly(Map.entry("fullName", "FROM-B"));
     }
 
     @Test
@@ -588,7 +638,7 @@ class CompareEntitySourcesToolTest {
                                             InvestigationContext investigationContext) {
             requests.add(request);
             return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(), List.of(),
-                    DataPrismObjectMapper.create().createObjectNode());
+                    Map.of(), "");
         }
     }
 
