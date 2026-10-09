@@ -40,13 +40,17 @@ public class ToolAdmission {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
+    private static final ToolAdmission NONE = new ToolAdmission(new InMemoryOversightState(),
+            new InMemoryApprovalStore(), new InMemoryCallerRateLimiter(), OversightPolicy.none(),
+            Clock.systemUTC());
+
     /**
      * The no-oversight-configured behaviour: admits every call. Equivalent to the
-     * behaviour before admission existed.
+     * behaviour before admission existed. Every call returns the same instance, which
+     * callers may recognise by identity.
      */
     public static ToolAdmission none() {
-        return new ToolAdmission(new InMemoryOversightState(), new InMemoryApprovalStore(),
-                new InMemoryCallerRateLimiter(), OversightPolicy.none(), Clock.systemUTC());
+        return NONE;
     }
 
     public AdmissionDecision admit(AuthenticatedCaller caller, String tool, String scopeId,
