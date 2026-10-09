@@ -20,6 +20,8 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 180 | Dead FactoryBean loop removed from `AuditSinkSelection`; `close()` on an interrupted thread keeps the final drop line; thread-count tests compare identities | ## 2026-10-09 — 0.6.0 wave 12: audit follow-ups and architecture fixture move (180, 181) |
+| 2026-10-09 | 181 | 13 architecture fixtures moved as pure renames into `audit/fixture`, `oversight/fixture`, `mapper/fixture`; doc counts verified, none changed | ## 2026-10-09 — 0.6.0 wave 12: audit follow-ups and architecture fixture move (180, 181) |
 | 2026-10-09 | 162 | 0.6.0 CHANGELOG, migration page (51 moved types, refusal codes, YAML 1.2), architecture D-0.6-1..5 and map-key decision; seven false planning claims recorded | ## 2026-10-09 — 0.6.0 wave 11: CHANGELOG, migration page and architecture records (162) |
 | 2026-10-09 | 178 | `AuditEventListeners.close()` bounded final report; json-directory read via Binder `SpringBootCondition`, not SpEL | ## 2026-10-09 — 0.6.0 unplanned fix: bounded close() and json-directory Condition (178) |
 | 2026-10-09 | 177 | Bean inventory test uses a canonical annotation renderer, not `Annotation.toString()` | ## 2026-10-09 — 0.6.0 unplanned fix: canonical annotation rendering in the bean inventory (177) |

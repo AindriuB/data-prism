@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 wave 12: audit follow-ups and architecture fixture move (180, 181)
+
+Tasks 180 and 181 merged onto `release/0.6.0`. The `AuditSinkSelection` JSON-projection preflight no longer has its unreachable FactoryBean loop (`getBeanNamesForType` already finds typed FactoryBeans; the Spring AOT limitation of `isBuiltInSink` is now in its Javadoc). `AuditEventListeners.close()` on an interrupted thread still writes the final drop line, bounded, and restores the interrupt flag, and the thread-count tests compare thread identities rather than counts. Thirteen architecture fixtures moved as pure renames into `audit/fixture`, `oversight/fixture` and `mapper/fixture`; full reactor 1711 tests, 0 failed.
+
+**Cost:** The interrupted-close fix is partial. `thread.join(drainTimeout)` throws at once on an interrupted thread, so the drain is skipped: queued events are dropped and counted and the reporter thread is not joined (`AuditEventListeners.java` about lines 232-266); left open in PLAN.md. A plain `tryLock()` plus inline `log.warn` would bring back the hung-shutdown bug from 178, so do not log on the closing thread. The doc-count sweep in 181 changed nothing: every counted claim already matched the code. `AuditEventListenerTest` ran 10 times green, plus 5 more after the last test-tightening commit.
+
 ## 2026-10-09 — 0.6.0 wave 11: CHANGELOG, migration page and architecture records (162)
 
 Task 162 merged onto `release/0.6.0-spring`. `CHANGELOG.md` `[Unreleased]` carries the Breaking, Added, Changed, Fixed and Build entries, and `docs/migration-0.6.md` lists every moved type (51 rows), removed constructor, refusal code, the YAML 1.2 changes and the logger renames, grouped by audience. `docs/architecture.md` records the new layout, D-0.6-1 to D-0.6-5 and the map-key decision; `docs/conventions.md` and the stale references were corrected. Full reactor 1708 tests, 0 failed.

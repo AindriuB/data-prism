@@ -525,6 +525,9 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 11 | 162 | 0.6.0 CHANGELOG Breaking section, FQCN migration page, `docs-site/diagrams/README.md` path fix | 154-161, 163, 164, 165, 166-170. **Done 2026-10-09** |
 | 11 | 177 | Bean inventory test uses a canonical annotation renderer | unplanned, PR #124 CI. **Done 2026-10-09** |
 | 11 | 178 | Bounded `AuditEventListeners.close()`; json-directory via a Condition | unplanned, review findings. **Done 2026-10-09** |
+| 12 | 180 | Drop dead FactoryBean loop in `AuditSinkSelection`; final drop line survives an interrupted `close()`; thread-count tests compare identities | unplanned, follow-ups from 161 and 163. **Done 2026-10-09** |
+| 12 | 181 | Move 13 architecture fixtures into package-matching directories; sweep documented counts | follow-up from 154. **Done 2026-10-09** |
+| 12 | 179 | Deterministic `sources` order in `get_entity_context`; `ToolAdmission` none | awaiting owner decisions D-179-1 and D-179-2 |
 
 Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169, 170) and 9 (161, 164) are parallel; 170 was added 2026-10-08 (D-166-1) and 158 waits for it because both edit `ConfiguredJsonSources`; 161 and 164 touch different files.
 
@@ -561,13 +564,13 @@ Follow-ups from 161 (not yet tasks): (i) `AuditSinkSelection` FactoryBean loop (
 **Wave 9 done 2026-10-09:** 164 merged onto `release/0.6.0-spring` (tester PASS 1670 at 383ba6ed). Wave 10 is next: 163, then 162. Details are in the retired 164 task file's Outcome. 162 gained the CHANGELOG `Added` line for the configuration metadata. 163 must satisfy `ConfigurationMetadataDocumentedTest` for any property it adds (document it in `docs/configuration.md` and keep the gaps file honest).
 
 **0.6.0 tasks are all done (2026-10-09), including unplanned 177 and 178.** The release cut is next and waits on the owner's go (owner instruction 2026-10-09): version bump to 0.6.0, release PR, tag, publish to Central, GHCR and the MCP registry, then the after-action report. PR #124 (`release/0.6.0-spring`) carries waves 7 to 11. Consolidated 0.6.0 follow-ups, none yet tasks:
-- `AuditSinkSelection` FactoryBean loop is dead code (161); `isBuiltInSink` would misfire under Spring AOT, which is unsupported (161).
-- Theoretical flake at `AuditEventListenerTest` about line 77; `close()` on an already-interrupted thread skips the final drop line (163).
+- DONE in 180: the dead `AuditSinkSelection` FactoryBean loop is gone (the AOT limitation of `isBuiltInSink` is now in its Javadoc, unsupported); the listener thread-count flake is fixed.
+- OPEN (found in 180 review): `AuditEventListeners.close()` on an already-interrupted thread still writes the final drop line, but skips the drain because `thread.join(drainTimeout)` throws at once. Queued events are dropped and counted, and the reporter thread is not joined (`AuditEventListeners.java` about lines 232-266). Not fixed.
 - `get_entity_context` `sources` map order varies between JVM runs (166).
 - `ToolResultCharacterisationTest` Javadoc still says "whatever Jackson 2 does"; `serverUsesTheSharedMapper` comment should name the MCP SDK version; Pillow bump (docs-site) offered separately (wave 6).
 - Roadmap candidate, not 0.6.0: key-shape scan in the leak validators under `PASS_THROUGH_UNSAFE` only.
-- Optional `ToolAdmission.isNone()`/singleton in `security` (155); move audit fixtures into package-matching directories (154).
-- Re-grep `docs/` and `README.md` for stale "five YAML readers" wording before release (162 found six readers).
+- Optional `ToolAdmission.isNone()`/singleton in `security` (155). Fixture move DONE in 181.
+- DONE in 181: every counted doc claim was checked against code and none needed changing.
 
 **Owner instruction (2026-10-09): pause before any release step after 162.** No tag, release PR or publish without the owner's explicit go.
 
