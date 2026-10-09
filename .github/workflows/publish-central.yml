@@ -126,6 +126,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     environment: central
     runs-on: ubuntu-latest
+    # Job-level, not workflow-level: only this job attests (task 188). The
+    # block replaces the workflow-level one, so contents: read is restated.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
 
@@ -190,3 +196,21 @@ jobs:
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: ./mvnw -B --no-transfer-progress -Prelease clean deploy
+
+      # Provenance for the jars and SBOMs this job just built and sent to the
+      # Central Portal. The subjects are read back out of the bundle the
+      # publishing plugin uploaded, so they are exactly the published files
+      # (jars, sources, javadoc and SBOMs of the deployed modules only) under
+      # their Central names, not whatever else sits in target/.
+      - name: Extract the uploaded bundle
+        run: |
+          test -f target/central-publishing/central-bundle.zip
+          mkdir -p /tmp/bundle
+          unzip -q target/central-publishing/central-bundle.zip -d /tmp/bundle
+
+      - name: Attest build provenance of the published jars and SBOMs
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            /tmp/bundle/**/*.jar
+            /tmp/bundle/**/*-cyclonedx.json
