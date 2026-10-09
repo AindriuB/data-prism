@@ -6,6 +6,8 @@ dataprism.audit.credential-reference | java.lang.String | rw | null
 dataprism.audit.directory | java.lang.String | rw | null
 dataprism.audit.entity-types | java.util.List<java.lang.String> | rw | []
 dataprism.audit.file-path | java.lang.String | rw | null
+dataprism.audit.listeners | bean | ro
+dataprism.audit.listeners.queue-capacity | int | rw | 1024
 dataprism.audit.output | bean | ro
 dataprism.audit.output.field-names | java.util.Map<java.lang.String,java.lang.String> | rw | {}
 dataprism.audit.output.field-preset | java.lang.String | rw | canonical

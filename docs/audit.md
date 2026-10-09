@@ -630,6 +630,47 @@ logging layer renders dotted key-value names before relying on a mapping.
 inside it, or contains it). The full list is in
 [configuration](configuration.md#output-field-names-routing-and-a-json-projection).
 
+## Audit event listeners
+
+An application can react to audit events, for example to forward them to a
+SIEM, by declaring `AuditEventListener` beans. See
+[extending](extending.md#react-to-audit-events-with-auditeventlistener) for a
+minimal example.
+
+- **When they are called.** After the configured `dataprism.audit.sink` has
+  accepted the event, and never for an event whose write failed. With
+  `hash-chained` that means the line is fsynced (and the JSON projection, if
+  configured, is written) and the hash chain has advanced. With `slf4j` the
+  event has only been handed to the logger, which is neither durable nor
+  tamper-evident, so a listener's copy has nothing durable to be reconciled
+  against. The same applies to an `approved-sink` that is not durable.
+- **What they receive.** The `AuditEvent` exactly as logged, nothing else: no
+  request, payload, source value or `AuditEntry`. The event is immutable, so a
+  listener cannot change the record or the projection, and it cannot veto the
+  call.
+- **Failure isolation.** Anything a listener throws is caught. One WARN line is
+  written to the application log, never to the audit trail:
+  `AUDIT_LISTENER_FAILED` with the listener's class, the event id, the sequence
+  and the exception's class name. The exception message and stack trace are
+  deliberately left out, because they can quote the event or the listener's
+  destination. A listener that needs detail logs it itself. Other listeners
+  still run.
+- **Delivery is best effort, not a reliable copy.** Events go through a bounded
+  queue to one daemon thread, in sequence order, so audited calls never wait on
+  a listener. A slow listener delays the listeners after it, and when the queue
+  (`dataprism.audit.listeners.queue-capacity`, default 1024) is full the event
+  is dropped for listeners only. Drops are counted and logged as
+  `AUDIT_LISTENER_DROPPED`, at most one line per ten seconds, with counts and
+  no event content. Events are also lost if the process dies, and on shutdown
+  the queue is drained for at most five seconds before the remainder is dropped
+  and counted. The audit log is the complete record; reconcile against it by
+  `sequence` per `instanceId`.
+- **Not replaceable.** Applications add listeners. The dispatcher is built in
+  (`AUDIT_EVENT_LISTENERS_NOT_REPLACEABLE` if a second one is declared).
+- **Where a listener sends events is the operator's responsibility**, including
+  that destination's access control and retention. An audit event can name a
+  principal, a purpose and a case.
+
 ## What this does and does not prove
 
 Read this before treating an intact report, or this file's mere existence,

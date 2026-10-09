@@ -23,6 +23,7 @@ public class AuditProperties {
     private boolean retentionOverride;
     private final Checkpoint checkpoint = new Checkpoint();
     private final Output output = new Output();
+    private final Listeners listeners = new Listeners();
     /** Optional entity type names the audit trail may record. Each entry must match [A-Za-z][A-Za-z0-9_-]{0,63}; empty by default. */
     private List<String> entityTypes = new java.util.ArrayList<>();
 
@@ -41,6 +42,24 @@ public class AuditProperties {
 
     public Output getOutput() {
         return output;
+    }
+
+    public Listeners getListeners() {
+        return listeners;
+    }
+
+    /** Delivery of audit events to application {@code AuditEventListener} beans (best effort, off the audit path). */
+    public static class Listeners {
+        /** How many events may wait for the listener thread. When full, further events are dropped for listeners only (logged as AUDIT_LISTENER_DROPPED); the audit log is unaffected. Must be positive. */
+        private int queueCapacity = 1024;
+
+        public int getQueueCapacity() {
+            return queueCapacity;
+        }
+
+        public void setQueueCapacity(int v) {
+            queueCapacity = v;
+        }
     }
 
     /**
