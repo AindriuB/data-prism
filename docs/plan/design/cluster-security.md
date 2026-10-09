@@ -7,7 +7,7 @@ described here, and 0.8 is also where `docs/multiple-instances.md` and
 
 Status: **proposal.** Every choice that is the owner's to make is marked
 **OD-n** and collected in section 6.2, each with options and a recommendation.
-Nothing in this document is decided until the owner decides it. Where the text
+The owner delegated every decision in section 6.2 to its recommendation on 2026-10-09 ("i trust your recommendations"); each is marked "Decided (owner delegated)" there, with the options kept visible. Where the text
 says "recommended" it means the author's recommendation, not a decision.
 
 Fixed inputs (not reopened here):
@@ -199,6 +199,18 @@ the requester principal. These lock keys are visible to the same attacker.
 | Corrupted identity | identity, reidentification |
 | Denial of service | all, plus locks and partitions |
 
+### 1.9 `dataprism.membercard` (proposed; not in 0.7)
+
+| | |
+|---|---|
+| Key | Keyed hash of the member UUID (2.3.2) |
+| Value | Sealed card: member UUID, accepted cluster key ids, format version, lease (2.4, d2) |
+| Lifetime | The lease (`pause-lease`), refreshed by its member |
+| **Read** | Without the key: member count and card sizes only |
+| **Write** | Without the key: cannot forge a card (AEAD; associated data binds the member UUID). Garbage is a tamper count |
+| **Delete / replay** | Make a member unverified, or hide an accepted key, until the next refresh: fail-closed effects only (2.4, 4.6) |
+| Recoverable | Yes. Each member re-writes its own card |
+
 ---
 
 ## 2. Options
@@ -387,7 +399,7 @@ Honest statement first: **OSS Hazelcast 5.7.0 has no member authentication and
 no inbound allowlist.** What remains is weak and is not a control against A2.
 
 - **(d1) A high-entropy cluster name used as a join secret.** It stops *blind* joiners (a scanner, an accidental peer) and nothing else: it is sent in the clear at join (A1 reads it), it appears in Hazelcast log lines (which operators ship and paste), and a client needs only it to connect. Treating it as a secret would require suppressing Hazelcast's own logging of it. Value: stops A3 and blind A2. Recommended at most as hygiene: reject guessable names. It must **not** be described as authentication.
-- **(d2) Verified-member detection at the application level.** After join, every member that holds the cluster key registers a *member card* in a sealed map of its own, `dataprism.membercard` (to be added to the inventory in T7). A card holds the member UUID, the cluster key ids the member accepts, the format version and a lease equal to `pause-lease`. **A card is authenticated**: AES-GCM under a subkey of the cluster key, with associated data binding the map name, the member UUID, the key id and the lease expiry. An attacker without the key cannot forge one. A member is **verified** if a card that authenticates exists for a UUID in the live member list; cards for UUIDs not in the list are ignored. A replayed old card for a live member is accepted only until its lease ends, and a deleted card makes the member unverified after the grace period. Those are the only effects, and each fails closed: an unverified member triggers the `unverified-member.action` (OD-8); a card claiming fewer keys than the member really accepts makes writers fall back or raise `rotation.blocked` (4.6); a replayed card claiming a key the member has since dropped can, within the lease, cause that member to miss entries sealed under it, which is a miss handled per structure (2.3.1). The cards are also what the rotation procedure in 4.6 uses to decide which key is safe to write. A joined member with no valid card after a grace period is **unverified**. Data Prism can raise a health failure, a metric and an audit event, and (configurable) refuse to serve. It **cannot evict** the member (no supported OSS API), so it is *detection and fail-closed*, not prevention. An attacker's member keeps receiving ciphertext and can still delete, hold locks and deny service; the operator learns of it within the grace period. This also makes a mismatched key (A3) visible at runtime.
+- **(d2) Verified-member detection at the application level.** After join, every member that holds the cluster key registers a *member card* in a sealed map of its own, `dataprism.membercard` (to be added to the inventory in T7). A card holds the member UUID, the cluster key ids the member accepts, the format version and a lease equal to `pause-lease`. **A card is authenticated**: AES-GCM under a subkey of the cluster key, with associated data binding the map name, the member UUID, the key id and the lease expiry. An attacker without the key cannot forge one. A member is **verified** if a card that authenticates exists for a UUID in the live member list; cards for UUIDs not in the list are ignored. A member chooses its own UUID, so an attacker could present a just-departed member's UUID and have it treated as that member until the departed member's last card lease ends; that is a detection delay only, and the impostor still cannot read or forge anything. **To verify in the 0.8 spike:** how 5.7.0 handles a duplicate live UUID. A replayed old card for a live member is accepted only until its lease ends, and a deleted card makes the member unverified after the grace period. Those are the only effects, and each fails closed: an unverified member triggers the `unverified-member.action` (OD-8); a card claiming fewer keys than the member really accepts makes writers fall back or raise `rotation.blocked` (4.6); a replayed card claiming a key the member has since dropped can, within the lease, cause that member to miss entries sealed under it, which is a miss handled per structure (2.3.1). The cards are also what the rotation procedure in 4.6 uses to decide which key is safe to write. A joined member with no valid card after a grace period is **unverified**. Data Prism can raise a health failure, a metric and an audit event, and (configurable) refuse to serve. It **cannot evict** the member (no supported OSS API), so it is *detection and fail-closed*, not prevention. An attacker's member keeps receiving ciphertext and can still delete, hold locks and deny service; the operator learns of it within the grace period. This also makes a mismatched key (A3) visible at runtime.
 - **(d3) Static `tcp-ip` member lists, `required-member`, Kubernetes API-mode discovery.** These steer *outbound discovery* and say nothing about who may connect inward. Not controls.
 - **(d4) `network/interfaces`.** Local bind selection (see 0.4). Part of option (a), not an allowlist.
 
@@ -542,7 +554,7 @@ map entry (boundary 7).
 | `dataprism.cluster.pause.conflict` | counter | Equal-order documents with different content were merged by union (2.3.3) |
 | `dataprism.cluster.rotation.accepting_next` | gauge | Verified members whose card lists the `next` key (phase 1 gate) |
 | `dataprism.cluster.rotation.blocked` | counter | A write was refused because no held key is accepted by all verified members |
-| `dataprism.cluster.rotation.behind` | counter | This member joined with a `current` key older than the sentinel's, holding the sentinel's key only as `next`. It can read, and writes under the write-key rule |
+| `dataprism.cluster.rotation.behind` | gauge | 1 while this member runs with a `current` key older than the sentinel's, holding the sentinel's key only as `next`; 0 otherwise. It can read, and writes under the write-key rule |
 | `dataprism.cluster.seal.entries_under_previous` | gauge | Locally owned entries still sealed under the previous key (phase 2 gate) |
 | `dataprism.cluster.lock.timeout` | counter | A map lock wait ended in a fail-closed refusal |
 | `dataprism.cluster.floor.refusal` | counter | A local floor refused a request that the shared count would have allowed (evidence of reset or replay) |
@@ -769,79 +781,92 @@ owner chooses otherwise, the unsealed rows fall away and the isolation rows stay
 - JCA failures are caught at the sealing boundary and reported as a counter and a constant message, never as the exception text or the input.
 - T15 turns this into a test. Note that boundary 7 is only *partially* enforced today (metric labels and trace attributes are not scanned); the new signals depend on code review for that half until a later task scans them (task 194 covers the key-shape scan in the leak validators only).
 
-### 6.2 Open decisions for the owner
+### 6.2 Decisions (owner delegated to the recommendations)
 
-Each is the owner's to decide. Recommendations are the author's.
+On 2026-10-09 the owner delegated every decision below to the recommendation ("i trust your recommendations"). Each carries a **Decided** line naming the option taken. The options and reasoning stay visible.
 
 **OD-1. Which position does 1.0 take on multi-instance security?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) **E2 with (b) advised**: seal what is stored, detect unverified members, fail closed, bound what cannot be sealed. Largest build.
 - (ii) E1 plus the serialisation filter: isolation attested and checked; no sealing. Smallest build; the product is exactly as secure as the network.
 - (iii) E3 as a requirement: refuse to start without an attested mesh or encrypted network. Not verifiable; adds a hard dependency on deployer infrastructure.
 - **Recommend (i), on its merits and independent of the roadmap's wording.** It is the only option under which Data Prism itself enforces and can test something about cluster protection: it closes approval forging, identity poisoning and disclosure of the re-identification index and of subject identifiers, which are the attacks that make the product's central guarantees false. Rule 2 (fail closed) argues against shipping a multi-instance mode whose safety is an unverifiable attestation, which is what (ii) and (iii) are. The price is the largest build in 0.8, a new secret pair, new cryptography to review, and a state-format break from 0.7. What (i) does not buy is in 2.3.7 and in OD-13.
 
 **OD-2. Is an isolation-only mode (no cluster key) allowed for a multi-member cluster?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Not allowed: any cluster with more than one member requires `sealed`.
 - (ii) Allowed with `security.mode: isolation-only`, an attestation, and a startup WARN plus health note.
 - (iii) Allowed in 0.8 and 0.9, removed at 1.0.
 - **Recommend (i).** Rule 2 (fail closed): an unclassified cluster is refused. The cost to an operator with good isolation is one secret. (iii) is rejected because it would freeze a mode in the 0.9 surface only to remove it, which breaks the stability promise.
 
 **OD-3. How are pauses protected against deletion?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) The signed, sequenced, leased document in 2.3.3, with fail-closed on absence.
 - (ii) Seal each flag only. A delete still lifts a pause; documented as a known limit.
 - (iii) Keep plaintext flags and rely on isolation.
 - **Recommend (i)**, with the compare-and-set, equal-order and monotonic-freshness rules in 2.3.3 (the merge and rewrite choices are OD-14 and OD-15). A pause is a safety control, and a delete that silently lifts it is the worst result in the inventory. The cost is a design with a lease, a clock-skew tolerance and a bootstrap rule. Consequence to accept: while the cluster is unreachable beyond the lease, an instance refuses everything, which is consistent with how budget already fails closed.
 
 **OD-4. What should an instance do when the pause document is stale or absent?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Refuse every call (equivalent to a global pause) until a fresh document is seen.
 - (ii) Refuse only calls that read subject data; allow `list_sources` and similar.
 - (iii) Continue on the last known state and alert.
 - **Recommend (i).** Simple, safe, and testable. (iii) reintroduces the attack for the length of the outage.
 
 **OD-5. How do existing 0.7 clusters cut over to sealed state?**
+**Decided (owner delegated, 2026-10-09): option (ii), the recommended one.**
 - (i) Flag day: stop all instances, start the new ones. Everything in memory is lost, including the re-identification index.
 - (ii) Rolling with the compatibility behaviour in 4.8: new members dual-write pauses and read the old `oversight` map as an additional pause only; nothing else is read from the old format.
 - (iii) Rolling with a one-time migration that re-seals re-identification entries read from the old map.
 - **Recommend (ii).** Pauses cross the generations; forgeable structures do not. For deployments with re-identification on, (iii) is available as an explicit operator-run step, because migrating means trusting entries that could have been forged under 0.7; it should not be automatic. How many deployments run 0.7 clusters with re-identification on is a question for the owner, not an assumption made here.
 
 **OD-6. How must the cluster key rotate for 1.0?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Phased rolling rotation of the cluster key (4.6), with a separate, non-rolling name key. Changing the name key is a planned restart with state loss.
 - (ii) Both keys rotate in the rolling procedure, by dual-probing map and lock keys under the current and previous name keys. More code and more states in the lock path.
 - (iii) Rotation of either key requires a full restart and loses all state, documented.
 - **Recommend (i).** The only structure that cannot be recomputed is the re-identification index, and it needs the cluster key to rotate without loss. Splitting out the name key is what removes the one hazard that makes rolling rotation unsafe (members deriving different keys for one entry). (iii) is defensible if the owner decides clusters will not run re-identification at 1.0.
 
 **OD-7. Local floor for budgets and rate limits?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Enable by default (2.3.5): worst case equals `single-node` behaviour.
 - (ii) Shared counts only; document that a hostile member can reset them.
 - **Recommend (i).** It turns an unbounded risk into the already documented bound at small cost. Residual: counts reset on a restart, as today.
 
 **OD-8. What happens when an unverified member joins?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) `refuse`: health `DOWN` and the instance stops serving after the grace.
 - (ii) `alert`: health stays up, metric and audit event only.
 - **Recommend (i)**, with `alert` as an explicit choice, for the same fail-closed reason. Consequence: an attacker who can join can take every instance out of service. They could do worse anyway (deletion, locks), and the alternative is silence.
 
 **OD-9. One key or several?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Separate secrets for the cluster key, the privacy HMAC key and the link key, each with labelled subkeys.
 - (ii) One master secret with labelled derivation for every purpose.
 - **Recommend (i)**, which here also means the name key (4.6) is a fourth secret. A leaked cluster key (which sits on every instance's configuration and is read by every member) should not expose the pseudonym key or the link key. The cost is three references to provision. This also needs task 191 to agree.
 
 **OD-10. Do the interface checks (required, unbounded, public) ship? Also decides whether `member.interface` becomes required.**
+**Decided (owner delegated, 2026-10-09): option (ii), the recommended one.**
 - (i) Yes: `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE`, `PUBLIC_MEMBER_INTERFACE`.
 - (ii) Only the first two; address classification is a heuristic.
 - (iii) None; documentation only.
 - **Recommend (ii)** until the spike shows address classification is reliable on the supported platforms. A false refusal on a legitimate cloud address is a support cost; a wrong accept is a false assurance.
 
 **OD-11. Scope and order of the 0.8 build.**
+**Decided (owner delegated, 2026-10-09): option (ii), the recommended one.**
 - (i) All six maps, the pause document, member cards and the serialisation filter in one change set.
 - (ii) Staged inside 0.8: the filter and startup checks first, then approval, oversight and re-identification, then identity, budget and caller rate, then member cards.
 - (iii) Defer some structures to 0.9.
 - **Recommend (ii)**, all landing before the 0.8 tag. Partial sealing leaves gaps in the test matrix; staging only orders the work so the first wave removes the harms ranked highest in 0.3. (iii) conflicts with the 0.9 API and configuration freeze.
 
 **OD-12. External review scope.**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Include the sealing envelope, key derivation and the pause document in the 0.9 external security review alongside sealed links.
 - (ii) Review sealed links only.
 - **Recommend (i).** New cryptography in a privacy path; the same reasoning the roadmap applies to links.
 
 **OD-13. What may the documentation and the 1.0 release notes claim about clustering?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 D-RM-1 as recorded in `PLAN.md` says only that 1.0 supports multiple instances, with the security designed in 0.7 and built in 0.8. It does not define "secured". The options:
 - (i) "Multiple instances are supported. Cluster state is sealed against reading and forging by anyone without the cluster key. Transport protection and network isolation are the deployer's responsibility and are not verified by Data Prism. A party that can reach the member port can still delete or replay entries, hold locks, join as an unverified member and deny service (budgets and rate limits are bounded by a per-instance floor; pauses fail closed; re-identification entries can be lost to deletion)".
 - (ii) "Multiple instances are secured" without qualification. Not supportable on open-source Hazelcast: it would overstate what 2.3.7 lists as not stopped.
@@ -849,18 +874,21 @@ D-RM-1 as recorded in `PLAN.md` says only that 1.0 supports multiple instances, 
 - **Recommend (i).** It states exactly what is enforced and what is not, in the same terms as 2.3.7, so a reader can check the claim against the tests in section 5. It requires the roadmap line "supported and secured" to be reworded by the owner.
 
 **OD-14. Pause document: split-brain merge and equal-order rule.**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Union of the pause sets on any conflict or merge (2.3.3). Fails closed; a resume on one side of a partition may be undone and must be repeated.
 - (ii) Highest (sequence, refresh) wins. Simpler; a pause issued on the smaller side of a partition is silently dropped, which lifts a pause.
 - (iii) Refuse everything until an operator re-issues the state.
 - **Recommend (i).** Rule 2: when the state is in doubt, the safe direction for a pause is paused.
 
 **OD-15. May a member re-write a missing pause document from its own memory?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 - (i) Yes, with `putIfAbsent`, only from a document accepted within the last lease, and only if no verified member reports a higher sequence (2.3.3).
 - (ii) No. An absent document stays a global pause until an operator issues a pause or resume, which writes a new one.
 - (iii) Yes, unconditionally.
 - **Recommend (i).** It heals a deletion without operator action, and the conditions prevent a partitioned member from re-writing an older state. (ii) is the more conservative choice; choose it if self-healing after a hostile delete is judged less valuable than having no automatic writer. (iii) is rejected because it lifts pauses.
 
 **OD-16. What does `PrivacyCluster.using(instance)` do about settings it cannot change?**
+**Decided (owner delegated, 2026-10-09): option (i), the recommended one.**
 `using` wraps an instance an integrator started. It cannot add a serialisation filter, turn off Jet, user-code deployment or phone-home (4.5).
 - (i) Refuse (`UNSAFE_HAZELCAST_SERIALIZATION` for a missing or non-allowlisting filter, an `UNSAFE_*` code for the rest). Breaks integrators who pass an unfiltered instance, and needs a release note.
 - (ii) Accept, log a warning and report `clusterSecurity` health as degraded.

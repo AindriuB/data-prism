@@ -84,12 +84,12 @@ Written 2026-10-09 on `task/192-cluster-design`. The design is
 Acceptance:
 
 - [x] The file exists and contains every numbered item as a heading (1 Inventory, 2 Options, 3 Recommendation, 4 Proposed configuration/codes/signals/mixed versions, 5 Soak and test obligations, 6 Boundaries and open decisions).
-- [x] Closing table is section 4.9 (51 names after revision 2: 22 keys, 14 codes, 13 metrics, 1 audit event, 1 health contributor). Collision check, run from the worktree root:
+- [x] Closing table is section 4.9 (52 names: 22 keys, 14 codes, 13 metrics, 1 map, 1 audit event, 1 health contributor). Collision check, run from the worktree root:
   - Names extracted from the 4.9 table and each searched with `grep -rIn -F -- <name> docs/configuration.md docs/multiple-instances.md docs/tools.md data-prism-core data-prism-hazelcast data-prism-server data-prism-spring-boot-autoconfigure data-prism-mcp data-prism-security`.
   - Result: no hits for any key, code, metric or audit event. The only hit was the first draft's health name `cluster` (a common word that appears in unrelated prose), renamed `clusterSecurity`, matching the camelCase of the existing `auditIntegrity` contributor.
   - The build must repeat the search before adding anything: other 0.8 work adds codes.
 - [x] No Enterprise-only feature is recommended. Section 0.4 and 2.5 list what is excluded and the evidence (5.7.0 jar strings and the 5.7 editions page table); section 2.0 lists the documentation each option relies on. Hazelcast version is 5.7.0 throughout.
-- [ ] **Review gate: pending.** The implementer cannot run the `reviewer` agent. The caller runs `reviewer` against D-0.4.1-A, D-RM-1, boundaries 5, 6 and 7 in `docs/architecture.md`, and checks that no product decision is taken in the text (every choice is an OD-n in 6.2 with a recommendation). Verdict: _to be recorded here_.
+- [x] **Review gate: APPROVE** (re-review of `cc0cab77`, after two CHANGES rounds). Original text of the gate: The implementer cannot run the `reviewer` agent. The caller runs `reviewer` against D-0.4.1-A, D-RM-1, boundaries 5, 6 and 7 in `docs/architecture.md`, and checks that no product decision is taken in the text (every choice is an OD-n in 6.2 with a recommendation). Verdict: APPROVE, recorded 2026-10-09.
 
 Findings the owner should know before reading the design:
 
@@ -107,3 +107,5 @@ Existing defects found while reading the code, proposed as **separate fix tasks*
 4. **Pinned Hazelcast is 5.7.0; the 5.7 documentation lists 5.7.2.** `pom.xml:74` (`hazelcast.version`). The open-source line gets no emergency CVE patches (editions page), so bump to the latest 5.7.x patch and re-run the cluster tests.
 
 Revision 2 (after review): rotation (4.6) is now a phased procedure with a separate name key; the pause document is compare-and-set with merge and rewrite rules; the 1.0 claim is OD-13; per-map subkeys are consistent between 2.3.1 and 6.1; 1.7 and 4.5 corrected against the code. Open decisions are OD-1 to OD-16. The reviewer verdict is still to be recorded in the review-gate item above.
+
+Owner decisions: on 2026-10-09 the owner delegated every open decision in the design (OD-1 to OD-16) to its recommendation ("i trust your recommendations"). Each is marked Decided in section 6.2 of the design; the options remain visible there. The decided options are OD-1 (i), 2 (i), 3 (i), 4 (i), 5 (ii), 6 (i), 7 (i), 8 (i), 9 (i), 10 (ii), 11 (ii), 12 (i), 13 (i), 14 (i), 15 (i), 16 (i).
