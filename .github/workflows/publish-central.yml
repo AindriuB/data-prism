@@ -6,9 +6,9 @@ name: publish-central
 #   packages every deployable module under the `release` profile and uploads
 #   the result as a workflow artifact so the owner can inspect it — sources
 #   jar, javadoc jar and `.asc` for every deployed artifact, pom included.
-#   It never calls `mvn deploy` and never talks to the Central Portal.
+#   It never calls `./mvnw deploy` and never talks to the Central Portal.
 # - `workflow_dispatch` is the only trigger that can also run `publish`,
-#   which does call `mvn deploy`. That job additionally targets the `central`
+#   which does call `./mvnw deploy`. That job additionally targets the `central`
 #   GitHub Environment; if the repository owner has configured that
 #   environment with required reviewers (an owner-only, repository-settings
 #   step — see the task 36 hand-off), the run pauses for manual approval
@@ -19,7 +19,7 @@ name: publish-central
 # to the `central` GitHub Environment, not the repository: only `publish`
 # requests that environment, so `stage` — which runs unattended on every tag
 # push — cannot read them even if someone adds `environment:` to it later by
-# mistake. `stage` has no `mvn deploy` step and so no use for them anyway;
+# mistake. `stage` has no `./mvnw deploy` step and so no use for them anyway;
 # do not add them back there.
 on:
   push:
@@ -60,7 +60,7 @@ jobs:
       - name: Guard tag matches reactor version
         if: startsWith(github.ref_name, 'v')
         run: |
-          reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          reactor_version="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
           tag_version="${GITHUB_REF_NAME#v}"
           if [ "$reactor_version" != "$tag_version" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} does not match reactor version ${reactor_version}"
@@ -68,13 +68,13 @@ jobs:
           fi
 
       # The full test suite, then sources/javadoc/signing, all under the
-      # `release` profile: a plain `mvn verify` never runs this. Stops at
+      # `release` profile: a plain `./mvnw verify` never runs this. Stops at
       # `verify`, one phase short of `deploy`, so nothing here can reach
       # Central regardless of which secrets are present.
       - name: Build, test, sign and package (release profile)
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: mvn -B --no-transfer-progress -Prelease clean verify
+        run: ./mvnw -B --no-transfer-progress -Prelease clean verify
 
       # A JDK 25 toolchain that lost --release 21 would ship bytecode Java 21
       # consumers cannot load. Fail before anything is uploaded or released.
@@ -140,7 +140,7 @@ jobs:
             v*) ;;
             *) echo "::error::refusing to publish from non-tag ref ${GITHUB_REF_NAME}"; exit 1 ;;
           esac
-          reactor_version="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          reactor_version="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=project.version)"
           tag_version="${GITHUB_REF_NAME#v}"
           if [ "$reactor_version" != "$tag_version" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} does not match reactor version ${reactor_version}"
@@ -159,4 +159,4 @@ jobs:
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: mvn -B --no-transfer-progress -Prelease clean deploy
+        run: ./mvnw -B --no-transfer-progress -Prelease clean deploy

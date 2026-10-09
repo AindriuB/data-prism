@@ -1,1 +1,3 @@
 data-prism-integration-tests/src/test/resources/characterisation/** -text
+mvnw text eol=lf
+mvnw.cmd text eol=crlf

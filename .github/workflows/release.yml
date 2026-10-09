@@ -24,7 +24,7 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: mvn -B --no-transfer-progress verify
+        run: ./mvnw -B --no-transfer-progress verify
 
       # A JDK 25 toolchain that lost --release 21 would ship bytecode Java 21
       # consumers cannot load. Fail before anything is uploaded or released.
