@@ -51,7 +51,9 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 Follow-ups from task 190: re-capture the two converted HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the Compose stack before the 0.7.0 release. For task 201's migration notes: a 0.7 log carrying `REFUSED:<code>` cannot be read by a pre-0.7 verifier, while old logs verify with the new one. The custom-validator SPI change (the final pass validates an array root, not an object) is Breaking and belongs in the same notes.
 
-Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design) and task 190 (per-source results). Open: tasks 193, 194, 196, 198-202. Task 202 is wave 2, and tasks 200 and 201 now depend on it.
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts). Open: tasks 193, 194, 196, 198-201. Tasks 200 and 201 depend on 202, which has landed: 200 registers its new keys and codes, 201 writes its CHANGELOG lines and migration note (both in the retired 202 outcome, see HISTORY).
+
+Coordinator interpretation of D-070-15: "approvals in use" means `dataprism.oversight.approval-required-tools` is not empty OR `dataprism.reidentification.enabled` (re-identification four-eyes uses the same approval store). The kubernetes rule and every quorum check apply only then; otherwise no quorum is computed or required.
 
 Design outcomes (documents in `docs/plan/design/`: `sealed-links.md`, `key-resolvers.md`, `cluster-security.md`; both approved by security review; the owner delegated every open decision to the recommendation on 2026-10-09, recorded in the documents as "Decided (owner delegated)"):
 
@@ -105,11 +107,12 @@ Owner decisions for 0.7 (2026-10-09):
 ### 0.7.0 follow-ups found in review
 
 - A raw `FactoryBean` (no generic type) with `allowEagerInit=false` escapes both the `RequestLimits` preflight and the `PrivacyPolicyResolver` guard (`Preflights.java:50-56`). Fix both together.
-- Existing Hazelcast defects confirmed by the review of task 192. The first two are decided (D-070-14 to D-070-17) and scheduled as task 202; the last two remain unscheduled:
-  - approval consumption relies on `IMap.lock`, which is unsafe under split brain (`HazelcastApprovalStore.java:151-165`, `:193`), in task 202;
-  - locks have no timeout (`HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`), in task 202;
+- Existing Hazelcast defects confirmed by the review of task 192. The first two are decided (D-070-14 to D-070-17) and landed as task 202; the last two remain unscheduled:
+  - approval consumption relies on `IMap.lock`, which is unsafe under split brain (`HazelcastApprovalStore.java:151-165`, `:193`), fixed in task 202;
+  - locks have no timeout (`HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`), fixed in task 202;
   - Jet and phone-home are not forced off for a supplied `Config` or instance (`PrivacyCluster.java:83-102`, `:131-152` against `ClusterMembership.java:91`);
   - Hazelcast is pinned to 5.7.0 while the docs list 5.7.2 (`pom.xml:74`).
+- 0.8 follow-ups from task 202: writes in `HazelcastOversightState`, `CachingSyntheticValueSource`, `ScopeIdentityIndex` and the `putIfAbsent` in `HazelcastApprovalStore.create` still block unbounded on a lock someone else holds; budget and rate maps still use the default merge policy; once values are sealed the consumed-wins rule must move to a tombstone, because a merge policy cannot read sealed payloads; a crash between `replace` and `setTtl` leaves an entry without expiry until eviction (the stored `expiresAt` refuses it on every use, so not fail-open).
 - Mutation survivors (task 195): strengthen tests before the 0.9 gate turns on. Validation is weakest at 68%, mostly the sensitive-data scanner's check-character functions (`ibanChecksumValid`, `luhnValid`) and its tree walk; core's `JsonTreeScrubbingEngine` survivors (`scrubObject` 155 and 189, `scrubNestedObject` 286 and 302) come next. Candidate 0.8 task. The ranked list is in the retired task 195 outcome.
 - After 0.7.0 reaches `main`, re-run `mutation.yml` through `workflow_dispatch` to pin the 0.9 baseline; the first local scores (core 81%, pseudonymisation 86%, validation 68%, orchestration 79%) are not CI numbers.
 - Test environment: `SourceTreeJacksonParityTest` depended on whether `/tmp/x` existed; fixed on `plan/0.7.0`. Check other tests for reliance on scratch paths.
