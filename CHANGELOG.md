@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-09
+
 ### Breaking
 
 0.6.0 is a clean break. There are no deprecated overloads and no forwarding
@@ -118,6 +120,12 @@ record format (`recordVersion` 3) and the `dataprism.audit` logger name.
 ### Added
 
 - Added AuditEventListener, a read-only SPI called after the configured audit sink accepted each event, on one bounded asynchronous dispatcher (dataprism.audit.listeners.queue-capacity, default 1024). It is best effort: events are dropped for listeners only when the queue is full, and the audit log is unaffected. Failures are logged by class name only as AUDIT_LISTENER_FAILED, and drops as AUDIT_LISTENER_DROPPED.
+- Shutdown of the audit listener dispatcher is bounded. On close it drains queued
+  events for up to 5 seconds, then counts and logs the rest as dropped and
+  interrupts the dispatcher. The final drop report is written on a short-lived
+  thread joined for at most 1 second, so a blocked listener or appender cannot
+  hang shutdown, and closing from an already interrupted thread still drains,
+  joins and restores the interrupt flag.
 - The data-prism-spring-boot-autoconfigure jar now ships Spring configuration metadata (META-INF/spring-configuration-metadata.json), so IDEs complete and describe dataprism.* keys in YAML. The processor runs only at build time and is not a dependency, and a build test keeps the metadata and docs/configuration.md in step.
 - New startup refusal codes, each failing closed: `INVALID_AUDIT_LISTENER_QUEUE_CAPACITY`
   (`dataprism.audit.listeners.queue-capacity` below 1),
@@ -800,6 +808,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.6.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.6.0
 [0.5.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.5.0
 [0.4.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.1
 [0.4.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.0

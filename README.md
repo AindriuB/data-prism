@@ -102,7 +102,7 @@ docker compose up
 ```
 
 pulls the published `ghcr.io/aindriub/data-prism-quickstart-<name>` images
-(pin one with `QUICKSTART_IMAGE_TAG=0.5.0`; run
+(pin one with `QUICKSTART_IMAGE_TAG=0.6.0`; run
 `docker compose -f compose.yaml -f compose.build.yaml up --build` instead to
 build every image from source) and brings up the standalone server, a
 synthetic fixture API and a local HTTPS JWT issuer, proving an
@@ -200,7 +200,7 @@ package root `io.github.aindriub.dataprism`.
 ## Building and running
 
 Building needs JDK 21 or newer (the build compiles with `--release 21`, so a
-newer local JDK is fine; CI builds on 21 and 25) and Maven >= 3.6.3 (`pom.xml:282-284` enforces this).
+newer local JDK is fine; CI builds on 21 and 25) and Maven >= 3.6.3 (`pom.xml:296-298` enforces this).
 
 ```bash
 mvn -B --no-transfer-progress verify
@@ -234,7 +234,7 @@ then load reviewed extension jars without rebuilding the server:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.5.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.6.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 

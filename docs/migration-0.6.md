@@ -9,7 +9,7 @@ description: What breaks when you upgrade Data Prism from 0.5.x to 0.6.0, by aud
 at the old names: a class that moved is simply gone from its old fully
 qualified name, so every consumer recompiles and changes imports. This page
 lists every breaking change, what you have to do about it, and the old and new
-names. The shorter version is the `[Unreleased]` section of the
+names. The shorter version is the `[0.6.0]` section of the
 [changelog](changelog.md).
 
 Package names below are abbreviated by dropping the prefix

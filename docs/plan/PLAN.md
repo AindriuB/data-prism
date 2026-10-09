@@ -490,7 +490,7 @@ Done by task 151:
 Still open, owner-gated:
 
 - Dispatch `publish-central`, then `publish-image` (`version=0.5.0`), then `publish-mcp`, following the 0.4.1 steps 1 to 8 pattern.
-- Close Dependabot PRs #102 and #99 (Pillow, already at 12.3.0). #114, #115 and #116 were closed by Dependabot itself after the merge.
+- #114, #115 and #116 were closed by Dependabot itself after the merge.
 - **Done 2026-10-08:** rebuild of the `docs/extending.md` extension snippet against Central 0.5.0 with `mvn package` (D-151-A fallback). It resolved and built; the doc's "verified" paragraph records the result.
 - PR #118 (maven-dependency-plugin 3.11.0) was folded into task 155 on 2026-10-08, which also did follow-up (d). Original note: follow-up (d) should move that plugin version into root `pluginManagement`; do it with or after merging #118.
 - Follow-up (ap): `release.yml` should build with the release profile.
@@ -529,6 +529,7 @@ Planned 2026-10-08 on `plan/0.6.0`, branched from `origin/main` at v0.5.0 (c850c
 | 12 | 181 | Move 13 architecture fixtures into package-matching directories; sweep documented counts | follow-up from 154. **Done 2026-10-09** |
 | 12 | 179 | Deterministic `sources` order in `get_entity_context`; `ToolAdmission.none()` shared instance; stale MCP test comments | unplanned follow-ups from 155 and 166. **Done 2026-10-09** (D-179-1 a, D-179-2 b) |
 | 12 | 182 | `AuditEventListeners.close()` on an interrupted thread drains within the timeout and joins the reporter; durations saturate | found in 180 review. **Done 2026-10-09** (D-180-1 b) |
+| 13 | 183 | Cut 0.6.0 locally: version, dated CHANGELOG, cut-time doc fixes | all of the above. **Done 2026-10-09** on `release/0.6.0-cut` (D-183-A to D all a) |
 
 Re-sequenced 2026-10-08 when the Jackson 3 task files landed (branch `plan/jackson3`, merged onto `release/0.6.0-moves`). 156 was already running, so 166 runs after the moves rather than before them. Waves 6 (168, 169, 170) and 9 (161, 164) are parallel; 170 was added 2026-10-08 (D-166-1) and 158 waits for it because both edit `ConfiguredJsonSources`; 161 and 164 touch different files.
 
@@ -542,7 +543,7 @@ Follow-up from 166 (not yet a task): `get_entity_context`'s `sources` map iterat
 
 - 158 now chains the cause on `INVALID_MODEL_DESCRIPTOR_FILE` so 170's inner codes reach the operator, and updates `docs/configuration.md`. 159 folds in `JwtDecoderSupport.parseDiscoveryMetadata`'s stale `throws IOException`. 162's acceptance now lists 170's nine codes, the YAML 1.2 changes, the credential-echo removals, 168's inventory and 171's CI step.
 - 162 follow-up: a grep of `docs/` (outside `docs/plan`, `pack.md`, `design-review.md`) and `README.md` for "five YAML readers" and "seven designated classes" found no stale wording; `docs/architecture.md` was updated by 172. 162 should re-grep before release.
-- Follow-ups from wave 6, not yet tasks: the `ToolResultCharacterisationTest` Javadoc says "whatever Jackson 2 does" and should be reworded now the port is done; the `serverUsesTheSharedMapper` comment should name the MCP SDK version whose private fields it reads; a Pillow bump (docs-site) is offered as a separate session.
+- Follow-ups from wave 6, not yet tasks: the `ToolResultCharacterisationTest` Javadoc says "whatever Jackson 2 does" and should be reworded now the port is done; the `serverUsesTheSharedMapper` comment should name the MCP SDK version whose private fields it reads.
 
 **Wave 7 done 2026-10-08:** 158 merged onto `release/0.6.0-spring` (branched from main 387252a9). Wave 8 is next: 159. Details are in the retired 158 task file's Outcome. Notes carried forward:
 
@@ -564,11 +565,11 @@ Follow-ups from 161 (not yet tasks): (i) `AuditSinkSelection` FactoryBean loop (
 
 **Wave 9 done 2026-10-09:** 164 merged onto `release/0.6.0-spring` (tester PASS 1670 at 383ba6ed). Wave 10 is next: 163, then 162. Details are in the retired 164 task file's Outcome. 162 gained the CHANGELOG `Added` line for the configuration metadata. 163 must satisfy `ConfigurationMetadataDocumentedTest` for any property it adds (document it in `docs/configuration.md` and keep the gaps file honest).
 
-**0.6.0 tasks are all done (2026-10-09), including unplanned 177 and 178.** The release cut is next and waits on the owner's go (owner instruction 2026-10-09): version bump to 0.6.0, release PR, tag, publish to Central, GHCR and the MCP registry, then the after-action report. PR #124 (`release/0.6.0-spring`) carries waves 7 to 11. Consolidated 0.6.0 follow-ups, none yet tasks:
+**0.6.0 tasks are all done (2026-10-09), including unplanned 177 to 183. The local cut (183) is done on `release/0.6.0-cut` (head recorded in HISTORY.md); nothing is pushed, tagged or published.** Remaining release steps are owner-gated, in order: push the branch and open the release PR, merge it once CI is green, tag `v0.6.0`, dispatch `publish-central`, then `publish-image` (`version=0.6.0`), then `publish-mcp`, and then the after-action report (`/aar 0.6.0`, chat only, never committed). Also open: run the amd64 Docker smoke on CI or a Linux host. Superseded context: PR #124 carried waves 7 to 11. PR #124 (`release/0.6.0-spring`) carries waves 7 to 11. Consolidated 0.6.0 follow-ups, none yet tasks:
 - DONE in 180: the dead `AuditSinkSelection` FactoryBean loop is gone (the AOT limitation of `isBuiltInSink` is now in its Javadoc, unsupported); the listener thread-count flake is fixed.
 - DONE in 182 (D-180-1 b): `close()` on an interrupted thread drains queued events within the drain timeout, joins the reporter and restores the interrupt in a `finally`; every wait is elapsed-time bounded and durations saturate (huge to `Long.MAX_VALUE`, negative to 0, drop interval minimum 1 ms), which also fixed a thread leak when a huge `dropLogInterval` threw in the constructor after the dispatcher started.
 - DONE in 179 (D-179-1 a): `get_entity_context` `sources` is sorted by emitted key (alias, or real name when exposed), so the order no longer varies between JVM runs.
-- DONE in 179: the stale `ToolResultCharacterisationTest` and `serverUsesTheSharedMapper` comments are fixed. Still open and not a task: Pillow bump (docs-site), offered separately (wave 6).
+- DONE in 179: the stale `ToolResultCharacterisationTest` and `serverUsesTheSharedMapper` comments are fixed.
 - Roadmap candidate, not 0.6.0: key-shape scan in the leak validators under `PASS_THROUGH_UNSAFE` only.
 - DONE in 179 (D-179-2 b): `ToolAdmission.none()` is one shared instance recognised by identity in `ToolOptions`, with no `isNone()`; `.admission(ToolAdmission.none(), null)` is accepted, while real policies and subclasses still need a fingerprinter. Fixture move DONE in 181.
 - DONE in 181: every counted doc claim was checked against code and none needed changing.
@@ -584,7 +585,7 @@ Follow-ups from 161 (not yet tasks): (i) `AuditSinkSelection` FactoryBean loop (
 - 154: `audit` and `oversight` are under the core outer-layer ArchUnit rule with a baseline of 0 violations. Owner decided NOT to add a Jackson databind ban for `audit`; the existing output-shape tests cover it. Follow-up: move the fixtures into package-matching directories.
 - 155: `ToolOptions` and `SourceFanOutOptions` replace the overloads, one entry point each. D-0.6-6 applied as `.noAdmission()` / `.admission(policy, fingerprinter)`. `ContextRequest.of`/`comparison` audit `<unregistered>`. Owner amendment: Dependabot PR #118 folded in (follow-up (d) done). Follow-up: an optional `ToolAdmission.isNone()`/singleton in `security`.
 - 160: `TeeAuditSink` poisons on any `Throwable`; the checkpoint writer terminates a torn tail with `\r\n`; the verifier reports `TORN_CHECKPOINT_LINE`. Owner decisions: (a) the Owns list widened by one line in `AuditChainVerifierCli.header(AnomalyType)`; (b) the NARROW torn rule, where only `\r`-ended lines and a final unterminated unparseable chunk are torn and other garbage stays exit 1. This narrows D-0.6-7's "or otherwise unparseable" wording. Residual risk, to document: an attacker who can write the checkpoint file can label a deletion as "not tampering", which is still noisier than an outright delete; a CRLF-converted checkpoint file reports every line torn (exit 4).
-- 165: `ci-gate` job in build.yml; pages.yml's job renamed `docs-site` (D-165-A). Owner post-merge step: once `ci-gate` has reported on main, switch main's required checks from `build (21)`, `build (25)` and `container-smoke` to `ci-gate` alone.
+- 165: `ci-gate` job in build.yml; pages.yml's job renamed `docs-site` (D-165-A). Owner post-merge step done 2026-10-09: main's required checks are now `ci-gate` alone (strict).
 
 **Jackson 3 port is now IN 0.6.0.** Owner decisions J3-0 to J3-5, dated 2026-10-08. Task files are 166 to 169; the wave table above carries the order: package moves (156, 157), then Jackson 3 (166 to 169), then the Spring splits (158, 159).
 

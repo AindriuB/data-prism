@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 cut locally on release/0.6.0-cut (183)
+
+Task 183 made `release/0.6.0-cut` the 0.6.0 release candidate on this machine. Every module and parent pom, `server.json` (both version fields), the Dockerfile, the Kubernetes image tag, the `publish-image` dispatch default, the README and docs literals are 0.6.0, and the CHANGELOG `[Unreleased]` section is now `[0.6.0] - 2026-10-09` with only the `releases/tag/v0.6.0` link added. The release-profile build (`mvn -B -Prelease -Dgpg.skip=true clean verify`) passed with surefire 1704 and failsafe 17, no failures or skips, and all jars at 0.6.0. The owner also switched main's required status checks to `ci-gate` alone (strict) on 2026-10-09, completing the task 165 post-merge step. Nothing is pushed, tagged or published; the branch head is e39b4319.
+
+**Cost:** The extension snippet was built against a scratch `file://` deploy before publication (D-183-B a), but that deploy also wrote into the real `~/.m2/repository/io/github/aindriub/`, which the implementer had to clean up by hand; use a repository-local `-DaltDeploymentRepository` and a separate `-Dmaven.repo.local` next time. `server.json` was validated against the 2025-12-11 schema. The date `2026-10-09` is the cut date and may need re-dating at tag time, as 0.5.0 did (D-151-C). Release steps that remain are owner-gated: release PR, tag `v0.6.0`, Central publish, GHCR image, MCP registry, then the AAR.
+
 ## 2026-10-09 — 0.6.0 wave 12: deterministic sources order, shared ToolAdmission.none() and interrupted-close drain (179, 182)
 
 Tasks 179 and 182 merged onto `release/0.6.0`. `get_entity_context` now emits `sources` sorted by emitted key (the alias, or the real name when exposed), so the order is stable across JVMs (D-179-1 a). `ToolAdmission.none()` is one shared instance recognised by identity in `ToolOptions`, with no `isNone()`; `.admission(ToolAdmission.none(), null)` is accepted, and real policies and subclasses still need a fingerprinter (D-179-2 b). `AuditEventListeners.close()` on an interrupted thread now drains queued events within the drain timeout, joins the reporter and restores the interrupt in a `finally` (D-180-1 b). Full reactor 1717 tests green at 179.

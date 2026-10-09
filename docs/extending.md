@@ -520,7 +520,7 @@ names `${project.version}`:
     </dependency>
 ```
 
-`data-prism-quickstart-extension/pom.xml:38-58`
+`data-prism-quickstart-extension/pom.xml:39-59`
 
 That works inside this repository, and only inside it, because this module
 inherits from the reactor's own parent pom
@@ -528,7 +528,7 @@ inherits from the reactor's own parent pom
 `io.github.aindriub` artifact to `${project.version}`, imports
 `spring-boot-dependencies` to pin `spring-web` and
 `spring-boot-autoconfigure`, and sets `<maven.compiler.release>21</maven.compiler.release>`
-(`pom.xml:67`). A consumer project has no relationship to that parent, and
+(`pom.xml:68`). A consumer project has no relationship to that parent, and
 loses all three inherited settings, not just the versions: copying the
 dependency block above as shown gets a missing-version error for the two
 `io.github.aindriub` dependencies; copying `${project.version}` into
@@ -548,7 +548,7 @@ depending on Data Prism:
 ```xml
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <data-prism.version>0.5.0</data-prism.version>
+    <data-prism.version>0.6.0</data-prism.version>
     <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
@@ -602,12 +602,14 @@ point of marking them `provided` in the first place. The reason for
 classpath, `-Dloader.path` never supplies them, and a real
 (non-`provided`) scope would bundle a redundant copy this jar does not need
 to ship. (The in-repo module also
-carries three `test`-scope dependencies and two MCP SDK `test`-scope
-dependencies at lines 60-94 — those exist only so the Maven reactor builds
-the packaged artifacts this module's own smoke test starts as
-subprocesses; a consumer's extension pom has no reason to carry them.)
+carries six `test`-scope dependencies at lines 62-105: three
+`data-prism-quickstart-*`/`data-prism-server` entries and two MCP SDK entries
+that exist only so the Maven reactor builds the packaged artifacts this
+module's own smoke test starts as subprocesses and drives, and
+`spring-boot-test` for its `ApplicationContextRunner` test. A consumer's
+extension pom has no reason to carry the first five.)
 
-What has been checked, and what has not (recorded 2026-10-07). The two XML
+What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-09). The two XML
 blocks in this section were extracted programmatically and pasted unmodified
 into a pom whose only other content is `modelVersion`, `groupId`,
 `artifactId`, `version` and `packaging`. Alongside a minimal
@@ -616,7 +618,7 @@ into a pom whose only other content is `modelVersion`, `groupId`,
 `0.4.1` form. It resolved `data-prism-core`, `data-prism-annotations` and
 `data-prism-processor` `0.4.1`, `spring-web` `7.0.9` and
 `spring-boot-autoconfigure` `4.1.1` (Spring Boot `4.1.1`), and the build
-produced a jar. The `0.5.0` form of the snippet differs only in
+produced a jar. The `0.5.0` and `0.6.0` forms of the snippet differ from it only in
 `data-prism.version`. The snippet's Spring dependencies were re-resolved
 against Spring Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1
 migration, at `data-prism.version` `0.4.1`; those Spring versions come from the
@@ -626,7 +628,15 @@ repository, resolved `data-prism-core`, `data-prism-annotations` and
 `data-prism-processor` `0.5.0`, `spring-web` `7.0.9` and
 `spring-boot-autoconfigure` `4.1.1`, and produced a jar. The annotation
 processor ran and rejected an unclassified `@LlmExposedModel` field at compile
-time. Nothing here has been shown for any other version.
+time. On 2026-10-09, before publication, a full `mvn package` of the `0.6.0`
+form of the snippet, with the same minimal `DataSourceAdapter` (importing
+`core.spi`) and an `@LlmExposedModel` record, was built with an empty local
+repository against a scratch file repository holding the `0.6.0` reactor build
+of this repository before the tag, not against Maven Central. It resolved `data-prism-core`,
+`data-prism-annotations` and `data-prism-processor` `0.6.0`, `spring-web`
+`7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. That run
+shows the snippet and the reactor's POMs agree; it is not evidence about the
+artifacts Central will serve. Nothing here has been shown for any other version.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above. If your
@@ -654,7 +664,7 @@ instead of duplicating the wrapper:
 ```
 
 The `<plugin>` itself is adapted from
-`data-prism-quickstart-extension/pom.xml:98-113`, which reads identically
+`data-prism-quickstart-extension/pom.xml:111-126`, which reads identically
 except for the version (the `<build><plugins>` wrapper around it is already
 present elsewhere in that module's pom, so its own citation does not include
 one). That module's own comment explains the placement:
@@ -663,7 +673,7 @@ one). That module's own comment explains the placement:
 > the `@LlmExposedModel` classification check running, not on the checker's
 > own classes.
 
-— `data-prism-quickstart-extension/pom.xml:102-104`
+— `data-prism-quickstart-extension/pom.xml:115-117`
 
 `data-prism-processor` must never appear as a `<dependency>` — only under
 `annotationProcessorPaths`, as above. It is a build-time tool that runs
@@ -732,7 +742,7 @@ the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.5.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.6.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 
