@@ -712,6 +712,28 @@ class AuditEventListenerTest {
     }
 
     @Test
+    void a_hugely_negative_drain_timeout_means_no_wait_and_close_returns_promptly() throws Exception {
+        Set<Thread> before = dispatcherThreads();
+        Semaphore gate = new Semaphore(0);
+        CountDownLatch started = new CountDownLatch(1);
+        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
+            started.countDown();
+            gate.acquireUninterruptibly();
+        }), 16, Duration.ofSeconds(Long.MIN_VALUE), Duration.ofHours(1), new Lines().logger());
+        Set<Thread> startedThreads = startedSince(before);
+        try {
+            recorder(e -> { }, listeners).record(entry());
+            awaitStarted(started);
+            assertThat(java.util.concurrent.CompletableFuture.runAsync(listeners::close)
+                    .orTimeout(BOUND_SECONDS, TimeUnit.SECONDS).thenApply(v -> true).get()).isTrue();
+        } finally {
+            gate.release(1000);
+            listeners.close();
+        }
+        assertAllStopped(startedThreads);
+    }
+
+    @Test
     void close_abandons_a_hung_listener_after_the_drain_timeout_and_logs_the_remainder_as_dropped() throws Exception {
         Lines lines = new Lines();
         CountDownLatch started = new CountDownLatch(1);

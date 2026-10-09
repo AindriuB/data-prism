@@ -295,12 +295,18 @@ public final class AuditEventListeners implements AutoCloseable {
         return interrupted;
     }
 
-    /** {@code d} in nanoseconds, saturating at {@link Long#MAX_VALUE} (about 292 years) instead of throwing. */
+    /**
+     * {@code d} in nanoseconds, clamped to [0, {@link Long#MAX_VALUE}] (about 292 years) instead of throwing;
+     * a negative duration means no wait.
+     */
     private static long saturatedNanos(Duration d) {
+        if (d.isNegative()) {
+            return 0;
+        }
         try {
             return d.toNanos();
         } catch (ArithmeticException e) {
-            return d.isNegative() ? Long.MIN_VALUE : Long.MAX_VALUE;
+            return Long.MAX_VALUE;
         }
     }
 }
