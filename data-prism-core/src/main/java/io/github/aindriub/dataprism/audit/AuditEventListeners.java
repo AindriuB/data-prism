@@ -11,6 +11,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -36,14 +37,16 @@ public final class AuditEventListeners implements AutoCloseable {
     public static final Duration DEFAULT_DROP_LOG_INTERVAL = Duration.ofSeconds(10);
 
     private static final Logger LOG = LoggerFactory.getLogger(AuditEventListeners.class);
-    /** Queued after the last event so the dispatcher stops once it has delivered everything before it. */
     static final String REPORTER_THREAD = "data-prism-audit-listeners-drops";
+    /** Queued after the last event so the dispatcher stops once it has delivered everything before it. */
     private static final Object STOP = new Object();
 
     private final List<AuditEventListener> listeners;
     private final int capacity;
     private final Duration drainTimeout;
     private final ScheduledExecutorService reporter;
+    private volatile Thread reporterThread;
+    private final ReentrantLock reportLock = new ReentrantLock();
     private final Logger log;
     private final BlockingQueue<Object> queue;
     private final Thread thread;
@@ -83,11 +86,12 @@ public final class AuditEventListeners implements AutoCloseable {
             this.reporter = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, REPORTER_THREAD);
                 t.setDaemon(true);
+                reporterThread = t;
                 return t;
             });
             long period = Math.max(1, dropLogInterval.toMillis());
             this.reporter.scheduleWithFixedDelay(this::reportDrops, period, period,
-                    java.util.concurrent.TimeUnit.MILLISECONDS);
+                    TimeUnit.MILLISECONDS);
         }
     }
 
@@ -106,7 +110,7 @@ public final class AuditEventListeners implements AutoCloseable {
     /**
      * O(1), non-blocking, allocation-free and never throws. It does not log: the recorder calls this inside
      * its lock, and a slow appender must not stall recording. Drops are counted here and reported by the
-     * dispatcher thread (rate limited) and by {@link #close()}. Package-private: only the recorder, after a
+     * reporter thread (rate limited) and by {@link #close()}. Package-private: only the recorder, after a
      * successful write, hands events over.
      */
     void publish(AuditEvent event) {
@@ -119,11 +123,43 @@ public final class AuditEventListeners implements AutoCloseable {
     }
 
     /** One report tick: logs the drops since the last tick, if any. Never called on the recording thread. */
-    synchronized void reportDrops() {
-        long total = dropped.get();
-        if (total == reported.get()) {
+    void reportDrops() {
+        if (dropped.get() == reported.get()) {
             return;
         }
+        reportLock.lock();
+        try {
+            logDrops();
+        } finally {
+            reportLock.unlock();
+        }
+    }
+
+    /**
+     * The report {@link #close()} makes. It must never hang: if an appender is stuck inside a periodic tick
+     * holding the lock, the final line is skipped (the count stays available from {@link #droppedCount()}).
+     */
+    private void reportDropsWithoutBlocking() {
+        if (dropped.get() == reported.get()) {
+            return;
+        }
+        try {
+            if (!reportLock.tryLock(200, TimeUnit.MILLISECONDS)) {
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        try {
+            logDrops();
+        } finally {
+            reportLock.unlock();
+        }
+    }
+
+    private void logDrops() {
+        long total = dropped.get();
         long since = total - reported.getAndSet(total);
         if (since > 0) {
             log.warn("AUDIT_LISTENER_DROPPED: " + since + " audit events not delivered to listeners since the"
@@ -204,12 +240,16 @@ public final class AuditEventListeners implements AutoCloseable {
         }
         if (reporter != null) {
             reporter.shutdownNow();
+            Thread rt = reporterThread;
             try {
-                reporter.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS);
+                // joined like the dispatcher, so no reporter thread outlives close() unless an appender hangs
+                if (rt != null) {
+                    rt.join(1000);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }
-        reportDrops();
+        reportDropsWithoutBlocking();
     }
 }
