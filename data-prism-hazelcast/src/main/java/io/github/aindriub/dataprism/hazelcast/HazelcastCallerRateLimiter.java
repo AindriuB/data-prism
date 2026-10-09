@@ -12,16 +12,29 @@ import java.util.concurrent.TimeUnit;
  * A per-caller fixed-window counter shared across the cluster, so a limit of
  * sixty means sixty and not sixty per instance.
  *
- * <p>Fails closed: an unreachable cluster throws, and the caller refuses.
+ * <p>Fails closed: an unreachable cluster throws, and so does a lock held past the lock timeout
+ * ({@link io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException}), and the caller refuses.
  * Windows align to the epoch, like the in-memory counter. The value is
  * {@code windowIndex:count}; no subject or scope appears in it.
  */
 public final class HazelcastCallerRateLimiter implements CallerRateLimiter {
 
     private final PrivacyCluster cluster;
+    private final Duration lockTimeout;
 
+    /** With the default lock timeout of two seconds. */
     public HazelcastCallerRateLimiter(PrivacyCluster cluster) {
+        this(cluster, ClusterLocks.DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * @param lockTimeout how long a call waits for the caller's lock before it refuses, {@code PT100MS}
+     *                    to {@code PT30S}
+     * @throws IllegalArgumentException if the timeout is outside that range
+     */
+    public HazelcastCallerRateLimiter(PrivacyCluster cluster, Duration lockTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
+        this.lockTimeout = ClusterLocks.checked(lockTimeout);
     }
 
     @Override
@@ -29,7 +42,7 @@ public final class HazelcastCallerRateLimiter implements CallerRateLimiter {
         long windowMillis = Math.max(1L, window.toMillis());
         long index = Math.floorDiv(now.toEpochMilli(), windowMillis);
         IMap<String, String> counts = cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP);
-        counts.lock(principalId);
+        ClusterLocks.acquire(counts, principalId, lockTimeout);
         try {
             String current = counts.get(principalId);
             int count = 0;
@@ -46,11 +59,7 @@ public final class HazelcastCallerRateLimiter implements CallerRateLimiter {
             counts.set(principalId, index + ":" + (count + 1), 2 * windowMillis, TimeUnit.MILLISECONDS);
             return true;
         } finally {
-            try {
-                counts.unlock(principalId);
-            } catch (RuntimeException ignored) {
-                // The lock dies with the member; throwing here would mask the real failure.
-            }
+            ClusterLocks.release(counts, principalId);
         }
     }
 }

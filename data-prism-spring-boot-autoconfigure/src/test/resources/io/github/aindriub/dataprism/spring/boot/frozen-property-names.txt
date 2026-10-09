@@ -31,6 +31,7 @@ dataprism.correlation.mdc-key | java.lang.String | rw | null
 dataprism.correlation.outbound | bean | ro
 dataprism.correlation.outbound.header | java.lang.String | rw | null
 dataprism.hazelcast | bean | rw
+dataprism.hazelcast.approval-minimum-members | java.lang.Integer | rw | null
 dataprism.hazelcast.cluster-name | java.lang.String | rw | null
 dataprism.hazelcast.identity-cache-ttl | java.time.Duration | rw | null
 dataprism.hazelcast.join | bean | ro
@@ -40,6 +41,7 @@ dataprism.hazelcast.join.kubernetes.service-dns | java.lang.String | rw | null
 dataprism.hazelcast.join.kubernetes.service-name | java.lang.String | rw | null
 dataprism.hazelcast.join.members | java.util.List<java.lang.String> | rw | []
 dataprism.hazelcast.join.mode | java.lang.String | rw | null
+dataprism.hazelcast.lock-timeout | java.time.Duration | rw | PT2S
 dataprism.hazelcast.map-store-enabled | boolean | rw | false
 dataprism.hazelcast.member | bean | ro
 dataprism.hazelcast.member.interface | java.lang.String | rw | null

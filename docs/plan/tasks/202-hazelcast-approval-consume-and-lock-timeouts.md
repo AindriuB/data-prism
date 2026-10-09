@@ -5,7 +5,10 @@
 **Depends on:** none (scheduled in wave 2 by D-070-14)
 **Decided (owner, 2026-10-09):**
 - D-070-14 (a): fix both defects found by the task 192 review in 0.7, as one task.
-**Open (owner): this task does not start until all three are decided.**
+- D-070-15 = (b), D-070-16 = (a), D-070-17 = `dataprism.hazelcast.lock-timeout`
+  (default `PT2S`, `PT100MS` to `PT30S`, `INVALID_LOCK_TIMEOUT`), decided by the
+  owner. All `[15b]` and `[16a]` items apply.
+**Decided (was open):** the three items below.
 - D-070-15: what to do about split brain on the approval map. See "Decision
   D-070-15" below. Recommendation (b). Acceptance items marked **[15b]** apply
   only if (b) is chosen.
@@ -274,3 +277,97 @@ Write the tests first. Each item says whether it must fail on `main`.
   section (tasks 190 and 193).
 - `CHANGELOG.md`, `docs/migration-0.7.md` and `docs/architecture.md` (task 201),
   and `docs/plan/design/**` (tasks 197, 198 and 200).
+
+
+## Outcome
+
+Branch `task/202-hazelcast-fixes`. Runtime confirmation first: split-brain protection
+(`SplitBrainProtectionConfig`, `ProtectOn.WRITE`) works in the open-source 5.7.0 jar with no
+licence. A map write, `tryLock` and `replace` on a protected map threw
+`SplitBrainProtectionException` on a member below the minimum, and reads still answered.
+
+### Design as built
+- Consume, approve, reject: read, then `IMap.replace(key, expected, next)`, then `setTtl`.
+  `replace` resets the entry's expiry to none on 5.7.0, so `setTtl` restores it.
+  Between the two a crash leaves an entry with no expiry (still LRU-evictable). The
+  bounded `tryLock` is kept around the swap because a mutating call on a key someone
+  else locked waits for that lock; the swap, not the lock, is what makes consumption single.
+- `ClusterLocks.acquire` is `tryLock(timeout, lease = 5 x timeout)`. `consumeApproved`
+  reads first (reads never wait on a lock) and locks only a matching entry.
+- Async variants were not needed, so nothing is left parked on the member by a timed-out call.
+- `ApprovalMergePolicy` ranks CONSUMED, REJECTED, EXPIRED, APPROVED, PENDING; ties keep the
+  surviving copy; an unreadable entry is dropped. It takes `MergingValue<String>`, because
+  `MapMergeTypes` makes Hazelcast demand per-entry statistics on the map.
+- Quorum: `approval-minimum-members` of 1 configures nothing (any running member meets it).
+  A minimum above 1 applies the protection, and a protected member refuses approval writes
+  for about five seconds after it starts, until Hazelcast first evaluates the member list
+  (seen on a solo member; a joining member is evaluated at once). That is why 1 is not configured.
+- The real-heal test merges two same-name clusters in about 7 s with 5 s merge delays.
+
+### Mutation proofs (both run on this worktree, then reverted)
+1. `consumeApproved` with the lock removed and the `replace` swap replaced by an unconditional
+   `set`: `ApprovalRaceTest.exactlyOneCallConsumesAnApproval` failed (BUILD FAILURE, 1 failure of 2).
+2. `decide` with the lock removed and the swap replaced by an unconditional `set`:
+   `ApprovalRaceTest.exactlyOneOfApproveAndRejectDecides` failed (1 failure of 2).
+
+### Proposed CHANGELOG lines (task 201 writes the file)
+Fixed:
+- An approval can no longer be consumed twice across members: consumption is a compare-and-set,
+  not a lock followed by a check.
+- After a split cluster heals, an approval either side consumed, rejected or expired stays so
+  (a merge policy on the approval map). Previously the larger side's `APPROVED` could win.
+- A cluster lock held by another member or by something on the member port no longer hangs
+  request threads. Every wait is bounded and refuses with `CLUSTER_LOCK_TIMEOUT`.
+Added:
+- `dataprism.hazelcast.lock-timeout` (default `PT2S`, `PT100MS` to `PT30S`); startup code `INVALID_LOCK_TIMEOUT`.
+- `dataprism.hazelcast.approval-minimum-members` and split-brain protection on the approval map;
+  startup codes `INVALID_APPROVAL_QUORUM`, `MISSING_APPROVAL_QUORUM`.
+- Refusal code `CLUSTER_LOCK_TIMEOUT` (tool calls and the shared read budget).
+
+### Migration note
+- A call that waits for a cluster lock now refuses after two seconds by default instead of waiting.
+- With `join.mode: tcp-ip` the approval minimum defaults to a majority of the distinct `join.members`,
+  so that list must name every member including this one, and a two-member cluster stops approval-gated
+  tools while either member is down (fail closed). Set `approval-minimum-members: 1` to opt out.
+- New startup refusals apply only when approvals are in use (`dataprism.oversight.approval-required-tools` not empty OR
+  `dataprism.reidentification.enabled`, which uses the same approval store; coordinator decision, consistent with D-070-15).
+  When approvals are not in use no quorum is computed or required and the starter applies no protection. When in use:
+  - a `tcp-ip` hostname member without `approval-minimum-members`: `MISSING_APPROVAL_QUORUM`;
+  - a wildcard, other-octet range or bad-port `tcp-ip` member: `INVALID_APPROVAL_QUORUM`;
+  - `kubernetes` without `approval-minimum-members`: `MISSING_APPROVAL_QUORUM`.
+  A minimum that is below 1, above the countable members, or set with `none` is refused regardless.
+- A budget read blocked by a lock returns `CLUSTER_LOCK_TIMEOUT` where it would have hung.
+- A supplied `PrivacyCluster.using(instance)` gets neither the merge policy nor the quorum.
+
+### New names for task 200's register
+Keys: `dataprism.hazelcast.lock-timeout`, `dataprism.hazelcast.approval-minimum-members`.
+Startup codes: `INVALID_LOCK_TIMEOUT`, `INVALID_APPROVAL_QUORUM`, `MISSING_APPROVAL_QUORUM`.
+Refusal code: `CLUSTER_LOCK_TIMEOUT`. Classes: `ClusterLockTimeoutException` (core, `refusal`),
+`ApprovalMergePolicy` and package-private `ClusterLocks` (hazelcast). Split-brain protection name
+`dataprism.approval.quorum`. API: `PrivacyCluster.embedded(..., OptionalInt)`,
+`ClusterMembership.defaultApprovalMinimumMembers()`, store constructors taking a `Duration`.
+The 192 design's `dataprism.hazelcast.security.lock-timeout` is superseded by `dataprism.hazelcast.lock-timeout`.
+
+### For 0.8
+- A Hazelcast merge policy cannot read sealed payloads, so once values are sealed the consumed-wins
+  rule must move to the tombstone (design 2.3.4) or the application.
+- Writes in `HazelcastOversightState`, the `putIfAbsent` in `HazelcastApprovalStore.create` (it runs under the id lock, but not under a lock on its own entry key), `CachingSyntheticValueSource` and `ScopeIdentityIndex` still
+  block on a lock someone else holds on their keys.
+- Budget and rate maps still have the default merge policy.
+- `data-prism-server` operator tests (task 190) that run an embedded cluster are unaffected by the
+  quorum while the member is solo (minimum 1 configures nothing), but any test using `tcp-ip` lists
+  will now meet the majority default.
+
+### Review changes
+- Member counting is `PrivacyCluster.countTcpIpMembers(List<String>)` (public static; new name for task 200's register),
+  used by the startup default and by the validator. It expands commas, semicolons, spaces and last-octet IPv4 ranges,
+  treats `a` and `a:5701` as one, and throws for forms it cannot expand reliably (validator: `INVALID_APPROVAL_QUORUM`).
+  Second review: `countTcpIpMembers(entries, memberPort)` now takes the member port (portless = that port) and splits on
+  `[,; ]+`; `PrivacyCluster.hasHostname` makes a hostname entry require an explicit minimum (`MISSING_APPROVAL_QUORUM`),
+  and the validator checks countability for every `tcp-ip` configuration. `PrivacyClusterRefusal.Code` gained
+  `INVALID_APPROVAL_QUORUM` and `MISSING_APPROVAL_QUORUM` (file outside Owns, added at the coordinator's instruction).
+  `countTcpIpMembers` is for the starter, not applications.
+  `ClusterMembership` is back to its original state; the default lives in package-private
+  `PrivacyCluster.defaultApprovalMinimumMembers`. No coordinator grant was needed.
+- A crash between `replace` and `setTtl` leaves an entry with no expiry until LRU eviction. The stored `expiresAt`
+  still refuses it on every use, so this is not fail-open.

@@ -25,8 +25,44 @@ public class HazelcastProperties {
     private boolean mapStoreEnabled;
     /** Cluster name for topology embedded. Required there and never dev. */
     private String clusterName;
+    /** Fewest members that must see each other for approvals to be created, decided or consumed. Defaults by join mode; see docs. */
+    private Integer approvalMinimumMembers;
+    /** How long a call waits for a cluster lock before it is refused with CLUSTER_LOCK_TIMEOUT. Between PT100MS and PT30S. */
+    private Duration lockTimeout = Duration.ofSeconds(2);
+    private boolean lockTimeoutSet;
     private final Join join = new Join();
     private final Member member = new Member();
+
+    /**
+     * With {@code tcp-ip}, unset means a majority of the distinct {@code join.members}, which must then name every
+     * member including this one; with {@code none}, 1 and the key is refused; with {@code kubernetes}, required when
+     * {@code dataprism.oversight.approval-required-tools} is not empty. Refused above the member count.
+     */
+    public Integer getApprovalMinimumMembers() {
+        return approvalMinimumMembers;
+    }
+
+    public void setApprovalMinimumMembers(Integer v) {
+        approvalMinimumMembers = v;
+    }
+
+    /**
+     * Applies to the approval store, the read budget and the caller rate limiter. A lock is leased for five times this.
+     * Refused with {@code single-node}.
+     */
+    public Duration getLockTimeout() {
+        return lockTimeout;
+    }
+
+    public void setLockTimeout(Duration v) {
+        lockTimeout = v;
+        lockTimeoutSet = true;
+    }
+
+    /** Whether the lock timeout was given, which {@code single-node} refuses because it has no cluster locks. */
+    public boolean lockTimeoutSet() {
+        return lockTimeoutSet;
+    }
 
     /** Required with {@code embedded}; never {@code dev}. Refused with {@code single-node}. */
     public String getClusterName() {
@@ -51,7 +87,7 @@ public class HazelcastProperties {
     }
 
     public boolean clusterSettingsSet() {
-        return !isBlank(clusterName) || !isBlank(join.mode) || !join.members.isEmpty()
+        return !isBlank(clusterName) || approvalMinimumMembers != null || !isBlank(join.mode) || !join.members.isEmpty()
                 || !isBlank(join.kubernetes.namespace) || !isBlank(join.kubernetes.serviceName)
                 || !isBlank(join.kubernetes.serviceDns) || member.port != null || !isBlank(member.interfaceAddress);
     }

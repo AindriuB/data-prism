@@ -22,6 +22,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * {@code embedded}: the one {@link PrivacyCluster} member, and everything built on it, so the
@@ -49,11 +50,26 @@ class ClusterBackedState {
             ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
                     Optional.ofNullable(h.getMember().getInterface()));
-            return PrivacyCluster.embedded(membership, h.isReidentificationEnabled());
+            return PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
+                    approvalMinimum(h, properties));
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
             throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
         }
+    }
+
+    /**
+     * The explicit minimum if given. Otherwise, with approvals in use (a gated tool or re-identification), empty,
+     * which takes the default for the join mode. Without approvals in use, 1, which applies no protection, so no
+     * quorum is computed from a member list that may not be countable.
+     */
+    private static OptionalInt approvalMinimum(HazelcastProperties h, DataPrismProperties properties) {
+        if (h.getApprovalMinimumMembers() != null) {
+            return OptionalInt.of(h.getApprovalMinimumMembers());
+        }
+        boolean inUse = !properties.getOversight().getApprovalRequiredTools().isEmpty()
+                || properties.getReidentification().isEnabled();
+        return inUse ? OptionalInt.empty() : OptionalInt.of(1);
     }
 
     private static ClusterMembership.Join join(HazelcastProperties.Join join) {
@@ -79,7 +95,8 @@ class ClusterBackedState {
         for (String name : beanFactory.getBeanNamesForType(PrivacyCluster.class, true, false)) {
             beanFactory.registerDependentBean(name, budgetBeanName);
         }
-        return new HazelcastScopeBudget(resolved);
+        return new HazelcastScopeBudget(resolved,
+                beanFactory.getBean(DataPrismProperties.class).getHazelcast().getLockTimeout());
     }
 
     @Bean @ConditionalOnMissingBean
@@ -88,12 +105,12 @@ class ClusterBackedState {
     }
 
     @Bean @ConditionalOnMissingBean
-    ApprovalStore dataPrismClusterApprovalStore(PrivacyCluster cluster) {
-        return new HazelcastApprovalStore(cluster);
+    ApprovalStore dataPrismClusterApprovalStore(PrivacyCluster cluster, DataPrismProperties properties) {
+        return new HazelcastApprovalStore(cluster, properties.getHazelcast().getLockTimeout());
     }
 
     @Bean @ConditionalOnMissingBean
-    CallerRateLimiter dataPrismClusterCallerRateLimiter(PrivacyCluster cluster) {
-        return new HazelcastCallerRateLimiter(cluster);
+    CallerRateLimiter dataPrismClusterCallerRateLimiter(PrivacyCluster cluster, DataPrismProperties properties) {
+        return new HazelcastCallerRateLimiter(cluster, properties.getHazelcast().getLockTimeout());
     }
 }

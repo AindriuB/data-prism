@@ -285,6 +285,7 @@ public final class DataPrismPropertiesValidator {
             default -> refuse("UNSUPPORTED_CLUSTER_JOIN", "dataprism.hazelcast.join.mode must be tcp-ip, "
                     + "kubernetes or none");
         }
+        validateApprovalQuorum(h);
         int port = h.getMember().getPort() == null ? 5701 : h.getMember().getPort();
         if (serverPort != null && serverPort > 0 && port == serverPort) {
             refuse("CLUSTER_PORT_SHARED", "dataprism.hazelcast.member.port must differ from server.port");
@@ -294,6 +295,62 @@ public final class DataPrismPropertiesValidator {
         }
         if (operator.isEnabled() && operator.getPort() != null && port == operator.getPort()) {
             refuse("CLUSTER_PORT_SHARED", "dataprism.hazelcast.member.port must differ from dataprism.operator.port");
+        }
+    }
+
+    /**
+     * The approval map refuses writes on the side of a partition that sees fewer members than the minimum, so a
+     * minimum no partition could ever reach, or none where one is needed, is refused here rather than at runtime.
+     */
+    private void validateApprovalQuorum(HazelcastProperties h) {
+        Integer minimum = h.getApprovalMinimumMembers();
+        String mode = h.getJoin().getMode().strip();
+        // Approvals are in use through a gated tool or four-eyes re-identification, which share one approval store.
+        // Only then is a quorum computed or required.
+        boolean inUse = !oversight.getApprovalRequiredTools().isEmpty() || reidentification.isEnabled();
+        int members = -1;
+        boolean hostname = false;
+        boolean uncountable = false;
+        if ("tcp-ip".equals(mode)) {
+            try {
+                int port = h.getMember().getPort() == null ? 5701 : h.getMember().getPort();
+                members = io.github.aindriub.dataprism.hazelcast.PrivacyCluster.countTcpIpMembers(
+                        h.getJoin().getMembers(), port);
+                hostname = io.github.aindriub.dataprism.hazelcast.PrivacyCluster.hasHostname(h.getJoin().getMembers());
+            } catch (LinkageError hazelcastAbsent) {
+                return; // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
+            } catch (IllegalArgumentException unexpandable) {
+                uncountable = true;
+                if (inUse) {
+                    refuse("INVALID_APPROVAL_QUORUM", "a dataprism.hazelcast.join.members entry cannot be expanded "
+                            + "reliably to a member count (wildcard, range outside the last octet, bad port)");
+                }
+            }
+        }
+        if (minimum == null) {
+            if (inUse && "kubernetes".equals(mode)) {
+                refuse("MISSING_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members is required with "
+                        + "join.mode kubernetes when approvals are in use (dataprism.oversight.approval-required-tools "
+                        + "or dataprism.reidentification.enabled), because the member count is not known here");
+            }
+            if (inUse && hostname) {
+                refuse("MISSING_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members is required when "
+                        + "approvals are in use and a join.members entry is a hostname, because how many members it "
+                        + "names is not known here");
+            }
+            return;
+        }
+        if (minimum < 1) {
+            refuse("INVALID_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members must be at least 1");
+        }
+        if ("none".equals(mode)) {
+            refuse("INVALID_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members cannot be set with "
+                    + "join.mode none, which is one member");
+        }
+        // A hostname may name several members, so the count is only a lower bound and proves nothing against a minimum.
+        if ("tcp-ip".equals(mode) && !hostname && !uncountable && minimum > members) {
+            refuse("INVALID_APPROVAL_QUORUM", "dataprism.hazelcast.approval-minimum-members is above the "
+                    + "number of distinct join.members, so no partition could ever reach it");
         }
     }
 
@@ -494,6 +551,11 @@ public final class DataPrismPropertiesValidator {
                 && (hazelcast.getIdentityCacheTtl().isZero() || hazelcast.getIdentityCacheTtl().isNegative())) {
             refuse("INVALID_HAZELCAST_TTL", "dataprism.hazelcast.identity-cache-ttl must be positive");
         }
+        if (hazelcast.lockTimeoutSet() && (hazelcast.getLockTimeout() == null
+                || hazelcast.getLockTimeout().compareTo(java.time.Duration.ofMillis(100)) < 0
+                || hazelcast.getLockTimeout().compareTo(java.time.Duration.ofSeconds(30)) > 0)) {
+            refuse("INVALID_LOCK_TIMEOUT", "dataprism.hazelcast.lock-timeout must be between PT100MS and PT30S");
+        }
         if (hazelcast.isPersistenceEnabled() || hazelcast.isMapStoreEnabled()) {
             refuse("UNSAFE_HAZELCAST_PERSISTENCE", "persistence and MapStore require a reviewed configuration");
         }
@@ -503,9 +565,11 @@ public final class DataPrismPropertiesValidator {
                     + "TLS is not available in the open-source edition. Isolate the cluster network instead "
                     + "(network isolation: a private network or Kubernetes NetworkPolicy)");
         }
-        if ("single-node".equals(hazelcast.getTopology()) && hazelcast.clusterSettingsSet()) {
-            refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.* and member.* "
-                    + "have no effect with topology single-node; remove them or use topology embedded");
+        if ("single-node".equals(hazelcast.getTopology())
+                && (hazelcast.clusterSettingsSet() || hazelcast.lockTimeoutSet())) {
+            refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.*, member.*, "
+                    + "approval-minimum-members and lock-timeout have no effect with topology single-node; "
+                    + "remove them or use topology embedded");
         }
         if (hazelcast.isReidentificationEnabled() && blank(hazelcast.getReidentificationControlsReference())) {
             refuse("MISSING_REIDENTIFICATION_CONTROLS",

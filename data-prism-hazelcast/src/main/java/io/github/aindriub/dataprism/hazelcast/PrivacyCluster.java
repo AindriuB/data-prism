@@ -7,9 +7,20 @@ import com.hazelcast.config.IndexConfig;
 import com.hazelcast.config.IndexType;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.MaxSizePolicy;
+import com.hazelcast.config.MergePolicyConfig;
+import com.hazelcast.config.SplitBrainProtectionConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.splitbrainprotection.SplitBrainProtectionOn;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.OptionalInt;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The embedded member and the maps it holds.
@@ -66,6 +77,9 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Per-caller fixed-window request counts. */
     public static final String CALLER_RATE_MAP = "dataprism.callerrate";
 
+    /** The split-brain protection on the approval map: writes only, so a minority can still read. */
+    static final String APPROVAL_PROTECTION = "dataprism.approval.quorum";
+
     private final HazelcastInstance instance;
     private final boolean reidentificationEnabled;
 
@@ -76,12 +90,185 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /** Starts a member from an explicit, already validated membership description. */
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled) {
-        return embedded(membership.toConfig(), reidentificationEnabled);
+        return embedded(membership, reidentificationEnabled, OptionalInt.empty());
+    }
+
+    /**
+     * As above, with the fewest members that must see each other for the approval map to accept a write.
+     * Empty uses {@link ClusterMembership#defaultApprovalMinimumMembers()}.
+     */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers) {
+        return embedded(membership.toConfig(), reidentificationEnabled,
+                approvalMinimumMembers.isPresent() ? approvalMinimumMembers
+                        : defaultApprovalMinimumMembers(membership));
+    }
+
+    /**
+     * The fewest members that may see each other for approvals to change: a majority of the distinct
+     * {@code tcp-ip} members (see {@link #countTcpIpMembers}), which therefore must name every member including
+     * this one, and {@code 1} for {@code none}. Empty for {@code kubernetes}, whose member count is not known here.
+     *
+     * @throws PrivacyClusterRefusal {@code MISSING_APPROVAL_QUORUM} if a {@code tcp-ip} entry is a hostname, whose
+     *                               address count only Hazelcast's resolver knows, or {@code INVALID_APPROVAL_QUORUM}
+     *                               if an entry cannot be counted; neither message names the entry
+     */
+    static OptionalInt defaultApprovalMinimumMembers(ClusterMembership membership) {
+        return switch (membership.join()) {
+            case ClusterMembership.TcpIp tcp -> {
+                int count;
+                try {
+                    count = countTcpIpMembers(tcp.members(), membership.port());
+                } catch (IllegalArgumentException uncountable) {
+                    throw new PrivacyClusterRefusal(Code.INVALID_APPROVAL_QUORUM,
+                            "a tcp-ip member entry cannot be expanded reliably to a member count");
+                }
+                if (hasHostname(tcp.members())) {
+                    throw new PrivacyClusterRefusal(Code.MISSING_APPROVAL_QUORUM,
+                            "a tcp-ip member entry is a hostname, so the member count is not known; "
+                                    + "give the approval minimum explicitly");
+                }
+                yield OptionalInt.of(count / 2 + 1);
+            }
+            case ClusterMembership.None none -> OptionalInt.of(1);
+            case ClusterMembership.Kubernetes k -> OptionalInt.empty();
+        };
+    }
+
+    private static final Pattern MEMBER_SEPARATOR = Pattern.compile("[,; ]+");
+    private static final Pattern OCTET_OR_RANGE = Pattern.compile("(\\d{1,3})(?:-(\\d{1,3}))?");
+
+    /**
+     * How many distinct members a {@code tcp-ip} list names, after expanding what Hazelcast accepts: entries joined
+     * by commas, semicolons or spaces, an IPv4 range in the last octet such as {@code 10.0.0.1-3}, and an entry
+     * without a port, which is one member with {@code memberPort}, the port this member listens on. A hostname counts
+     * as one, which can undercount (see {@link #hasHostname}).
+     *
+     * <p>This exists for the starter's startup checks and the default above. It is not an API for applications and
+     * may change without notice.
+     *
+     * @throws IllegalArgumentException for a form that cannot be expanded reliably (a wildcard, a range outside the
+     *                                  last octet or reversed, a bad port); the message names no entry
+     */
+    public static int countTcpIpMembers(List<String> entries, int memberPort) {
+        Set<String> distinct = new HashSet<>();
+        for (String entry : entries) {
+            for (String token : MEMBER_SEPARATOR.split(entry.strip())) {
+                if (!token.isEmpty()) {
+                    expand(token, memberPort, distinct);
+                }
+            }
+        }
+        return distinct.size();
+    }
+
+    /**
+     * Whether any entry is not an IPv4 or IPv6 literal. Hazelcast resolves a hostname to every address it has (all
+     * that match the member interface, when one is set), so how many members it names is not known statically.
+     * Same exclusions as {@link #countTcpIpMembers}; an entry it would refuse is not reported here.
+     */
+    public static boolean hasHostname(List<String> entries) {
+        for (String entry : entries) {
+            for (String token : MEMBER_SEPARATOR.split(entry.strip())) {
+                if (!token.isEmpty() && !isLiteral(hostOf(token))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String hostOf(String token) {
+        if (token.startsWith("[")) {
+            int close = token.indexOf(']');
+            return close < 0 ? token : token.substring(0, close + 1);
+        }
+        int colon = token.indexOf(':');
+        return colon >= 0 && colon == token.lastIndexOf(':') ? token.substring(0, colon) : token;
+    }
+
+    private static boolean isLiteral(String host) {
+        if (host.startsWith("[") || host.indexOf(':') >= 0) {
+            return true;
+        }
+        String[] labels = host.split("\\.", -1);
+        return labels.length == 4 && host.chars().allMatch(c -> c == '.' || c == '-' || Character.isDigit(c));
+    }
+
+    private static void expand(String token, int memberPort, Set<String> into) {
+        String host = token;
+        int port = memberPort;
+        if (token.startsWith("[")) {
+            int close = token.indexOf(']');
+            if (close < 0) {
+                throw unexpandable();
+            }
+            host = token.substring(0, close + 1);
+            String rest = token.substring(close + 1);
+            if (!rest.isEmpty()) {
+                port = port(rest.startsWith(":") ? rest.substring(1) : "x");
+            }
+        } else if (token.indexOf(':') >= 0 && token.indexOf(':') == token.lastIndexOf(':')) {
+            host = token.substring(0, token.indexOf(':'));
+            port = port(token.substring(token.indexOf(':') + 1));
+        }
+        if (host.isEmpty() || host.indexOf('*') >= 0 || (!host.startsWith("[") && host.indexOf('[') >= 0)) {
+            throw unexpandable();
+        }
+        String[] labels = host.split("\\.", -1);
+        if (labels.length == 4 && host.chars().allMatch(c -> c == '.' || c == '-' || Character.isDigit(c))) {
+            Matcher[] octets = new Matcher[4];
+            for (int i = 0; i < 4; i++) {
+                octets[i] = OCTET_OR_RANGE.matcher(labels[i]);
+                if (!octets[i].matches() || (i < 3 && octets[i].group(2) != null)) {
+                    throw unexpandable();
+                }
+            }
+            int low = Integer.parseInt(octets[3].group(1));
+            int high = octets[3].group(2) == null ? low : Integer.parseInt(octets[3].group(2));
+            if (high < low || high > 255) {
+                throw unexpandable();
+            }
+            for (int last = low; last <= high; last++) {
+                into.add(Integer.parseInt(octets[0].group(1)) + "." + Integer.parseInt(octets[1].group(1)) + "."
+                        + Integer.parseInt(octets[2].group(1)) + "." + last + ":" + port);
+            }
+            return;
+        }
+        into.add(host.toLowerCase(Locale.ROOT) + ":" + port);
+    }
+
+    private static int port(String text) {
+        try {
+            int port = Integer.parseInt(text);
+            if (port >= 1 && port <= 65535) {
+                return port;
+            }
+        } catch (NumberFormatException notANumber) {
+            // fall through
+        }
+        throw unexpandable();
+    }
+
+    private static IllegalArgumentException unexpandable() {
+        return new IllegalArgumentException("a tcp-ip member entry cannot be expanded reliably to a member count");
     }
 
     /** Validates and hardens the config, then starts a member. Refuses before anything starts. */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled) {
-        return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config)),
+        return embedded(config, reidentificationEnabled, OptionalInt.empty());
+    }
+
+    /**
+     * As above, and when {@code approvalMinimumMembers} is present, writes to the approval map (create, approve,
+     * reject, consume) throw on a member that sees fewer members than that. Empty, or 1, applies no such protection:
+     * any running member meets a minimum of 1.
+     *
+     * @throws IllegalArgumentException if the minimum is below 1
+     */
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers) {
+        return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config, approvalMinimumMembers)),
                 reidentificationEnabled);
     }
 
@@ -129,6 +316,13 @@ public final class PrivacyCluster implements AutoCloseable {
      * still the caller's, but nothing is discovered implicitly.
      */
     static Config configure(Config config) {
+        return configure(config, OptionalInt.empty());
+    }
+
+    static Config configure(Config config, OptionalInt approvalMinimumMembers) {
+        if (approvalMinimumMembers.isPresent() && approvalMinimumMembers.getAsInt() < 1) {
+            throw new IllegalArgumentException("approvalMinimumMembers must be at least 1");
+        }
         checkClusterName(config);
         checkNoAdvancedNetwork(config);
         var ssl = config.getNetworkConfig().getSSLConfig();
@@ -146,7 +340,18 @@ public final class PrivacyCluster implements AutoCloseable {
         // An evicted pause flag is a path silently reopened.
         oversight.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
         config.addMapConfig(oversight);
-        config.addMapConfig(privacyMap(new MapConfig(APPROVAL_MAP)));
+        MapConfig approval = privacyMap(new MapConfig(APPROVAL_MAP));
+        // After a heal an approval either side used stays used; the default keeps the larger side's copy.
+        approval.setMergePolicyConfig(new MergePolicyConfig(ApprovalMergePolicy.class.getName(),
+                MergePolicyConfig.DEFAULT_BATCH_SIZE));
+        // A minimum of 1 is met by any member that is running, so it needs no protection. Configuring it would
+        // only refuse approvals for the first seconds after start, until Hazelcast first evaluates the members.
+        if (approvalMinimumMembers.isPresent() && approvalMinimumMembers.getAsInt() > 1) {
+            config.addSplitBrainProtectionConfig(new SplitBrainProtectionConfig(APPROVAL_PROTECTION, true,
+                    approvalMinimumMembers.getAsInt()).setProtectOn(SplitBrainProtectionOn.WRITE));
+            approval.setSplitBrainProtectionName(APPROVAL_PROTECTION);
+        }
+        config.addMapConfig(approval);
         MapConfig callerRate = privacyMap(new MapConfig(CALLER_RATE_MAP));
         // An evicted counter resets a caller's window; the 2-window TTL bounds size.
         callerRate.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);

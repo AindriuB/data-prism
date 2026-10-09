@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.IMap;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException.Code;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
@@ -28,8 +29,14 @@ import java.util.function.Function;
  * {@link ApprovalRequest} has no field for one. Each entry lives until the
  * request's {@code expiresAt}, then the cluster drops it.
  *
- * <p>State changes take the entry's lock and re-read under it, which is what
- * makes {@link #consumeApproved} succeed once across members.
+ * <p>A state change is a compare-and-set: it replaces the exact value it read, so of any number of
+ * callers racing on one entry, on any members, one wins. That is what makes {@link #consumeApproved}
+ * succeed once. It holds the entry's lock as well, taken with a timeout, because a mutating call on a
+ * key someone else has locked would otherwise wait for that lock for ever; the lock only bounds the
+ * wait, correctness does not rest on it. A held lock refuses the call with
+ * {@link ClusterLockTimeoutException}. Under a partition each side can still change its own copy once,
+ * which the split-brain protection and {@link ApprovalMergePolicy} on the map narrow (see
+ * {@code docs/multiple-instances.md}).
  */
 public final class HazelcastApprovalStore implements ApprovalStore {
 
@@ -37,9 +44,20 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     private static final Duration EXPIRED_RETENTION = Duration.ofMinutes(1);
 
     private final PrivacyCluster cluster;
+    private final Duration lockTimeout;
 
+    /** With the default lock timeout of two seconds. */
     public HazelcastApprovalStore(PrivacyCluster cluster) {
+        this(cluster, ClusterLocks.DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * @param lockTimeout how long a call waits for a lock before it refuses, {@code PT100MS} to {@code PT30S}
+     * @throws IllegalArgumentException if the timeout is outside that range
+     */
+    public HazelcastApprovalStore(PrivacyCluster cluster, Duration lockTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
+        this.lockTimeout = ClusterLocks.checked(lockTimeout);
     }
 
     /**
@@ -56,7 +74,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         // ScopeKeys separator (an entry key always holds one); locking it makes
         // the duplicate check and the put atomic across scopes.
         String idLock = pending.approvalId();
-        approvals.lock(idLock);
+        ClusterLocks.acquire(approvals, idLock, lockTimeout);
         try {
             if (!locateAll(pending.approvalId()).isEmpty()) {
                 throw new IllegalArgumentException("duplicate approval id");
@@ -67,7 +85,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 throw new IllegalArgumentException("duplicate approval id");
             }
         } finally {
-            unlock(approvals, idLock);
+            ClusterLocks.release(approvals, idLock);
         }
         return pending;
     }
@@ -87,7 +105,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
         IMap<String, String> approvals = approvals();
         String requesterLock = requesterLockKey(pending.kind(), pending.requesterPrincipalId());
-        approvals.lock(requesterLock);
+        ClusterLocks.acquire(approvals, requesterLock, lockTimeout);
         try {
             long live = 0;
             for (String raw : approvals.values()) {
@@ -104,7 +122,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             }
             return create(pending);
         } finally {
-            unlock(approvals, requesterLock);
+            ClusterLocks.release(approvals, requesterLock);
         }
     }
 
@@ -148,7 +166,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                                                      String fingerprint, Instant now) {
         IMap<String, String> approvals = approvals();
         for (String key : keysOf(scopeId)) {
-            approvals.lock(key);
+            // Reads never wait on a lock, so only an entry that matches is locked.
+            String seen = approvals.get(key);
+            if (seen == null || !isMatch(Codec.decode(seen), Status.APPROVED, kind, principal, scopeId, tool,
+                    fingerprint, now)) {
+                continue;
+            }
+            ClusterLocks.acquire(approvals, key, lockTimeout);
             try {
                 String raw = approvals.get(key);
                 if (raw == null) {
@@ -157,11 +181,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 ApprovalRequest request = Codec.decode(raw);
                 if (isMatch(request, Status.APPROVED, kind, principal, scopeId, tool, fingerprint, now)) {
                     ApprovalRequest consumed = request.withStatus(Status.CONSUMED);
-                    write(approvals, key, consumed, now);
-                    return Optional.of(consumed);
+                    // Only the caller whose replace sees the value it read has consumed it.
+                    if (swap(approvals, key, raw, consumed, now)) {
+                        return Optional.of(consumed);
+                    }
                 }
             } finally {
-                unlock(approvals, key);
+                ClusterLocks.release(approvals, key);
             }
         }
         return Optional.empty();
@@ -190,7 +216,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     private ApprovalRequest decide(String approvalId, Instant now, Function<ApprovalRequest, ApprovalRequest> next) {
         IMap<String, String> approvals = approvals();
         String key = locate(approvalId).orElseThrow(() -> new ApprovalRefusedException(Code.UNKNOWN_APPROVAL));
-        approvals.lock(key);
+        ClusterLocks.acquire(approvals, key, lockTimeout);
         try {
             String raw = approvals.get(key);
             if (raw == null) {
@@ -201,14 +227,17 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 throw new ApprovalRefusedException(Code.NOT_PENDING);
             }
             if (!now.isBefore(request.expiresAt())) {
-                write(approvals, key, request.withStatus(Status.EXPIRED), now);
+                swap(approvals, key, raw, request.withStatus(Status.EXPIRED), now);
                 throw new ApprovalRefusedException(Code.EXPIRED);
             }
             ApprovalRequest decided = next.apply(request);
-            write(approvals, key, decided, now);
+            if (!swap(approvals, key, raw, decided, now)) {
+                // Someone changed the entry between the read and the swap: they decided first.
+                throw new ApprovalRefusedException(Code.NOT_PENDING);
+            }
             return decided;
         } finally {
-            unlock(approvals, key);
+            ClusterLocks.release(approvals, key);
         }
     }
 
@@ -239,21 +268,21 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 && now.isBefore(r.expiresAt());
     }
 
-    /** Rewrites an entry keeping its original expiry, since a plain set would reset the TTL. */
-    private static void write(IMap<String, String> approvals, String key, ApprovalRequest request, Instant now) {
-        Duration remaining = Duration.between(now, request.expiresAt());
+    /**
+     * Replaces {@code key}'s value only if it is still {@code expected}, then restores the entry's expiry, because
+     * a replace resets it to none. Returns whether this caller made the change.
+     */
+    private static boolean swap(IMap<String, String> approvals, String key, String expected, ApprovalRequest next,
+                                Instant now) {
+        if (!approvals.replace(key, expected, Codec.encode(next))) {
+            return false;
+        }
+        Duration remaining = Duration.between(now, next.expiresAt());
         if (remaining.isNegative() || remaining.isZero()) {
             remaining = EXPIRED_RETENTION;
         }
-        approvals.set(key, Codec.encode(request), Math.max(1L, remaining.toMillis()), TimeUnit.MILLISECONDS);
-    }
-
-    private static void unlock(IMap<String, String> approvals, String key) {
-        try {
-            approvals.unlock(key);
-        } catch (RuntimeException ignored) {
-            // The lock dies with the member; throwing here would mask the real failure.
-        }
+        approvals.setTtl(key, Math.max(1L, remaining.toMillis()), TimeUnit.MILLISECONDS);
+        return true;
     }
 
     private List<String> keysOf(String scopeId) {

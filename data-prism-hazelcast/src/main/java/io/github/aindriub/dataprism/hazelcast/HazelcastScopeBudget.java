@@ -2,9 +2,11 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -26,11 +28,27 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     private static final Logger LOG = LoggerFactory.getLogger(HazelcastScopeBudget.class);
 
     private final PrivacyCluster cluster;
+    private final Duration lockTimeout;
 
+    /** With the default lock timeout of two seconds. */
     public HazelcastScopeBudget(PrivacyCluster cluster) {
-        this.cluster = Objects.requireNonNull(cluster, "cluster");
+        this(cluster, ClusterLocks.DEFAULT_TIMEOUT);
     }
 
+    /**
+     * @param lockTimeout how long a read waits for the subject's lock before it is refused, {@code PT100MS}
+     *                    to {@code PT30S}
+     * @throws IllegalArgumentException if the timeout is outside that range
+     */
+    public HazelcastScopeBudget(PrivacyCluster cluster, Duration lockTimeout) {
+        this.cluster = Objects.requireNonNull(cluster, "cluster");
+        this.lockTimeout = ClusterLocks.checked(lockTimeout);
+    }
+
+    /**
+     * @throws ClusterLockTimeoutException if the subject's lock is held and not released within the lock
+     *                                     timeout. That is not an exhausted budget and is not reported as one.
+     */
     @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
         String key = ScopeKeys.budget(scopeId, subjectId);
@@ -41,7 +59,10 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         // exception escaped before reaching it.
         try {
             counts = counts();
-            counts.lock(key);
+            ClusterLocks.acquire(counts, key, lockTimeout);
+        } catch (ClusterLockTimeoutException held) {
+            LOG.error("read budget lock not obtained within {}; refusing the read", lockTimeout);
+            throw held;
         } catch (RuntimeException clusterFailure) {
             return refuse(clusterFailure);
         }
@@ -58,12 +79,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         } catch (RuntimeException clusterFailure) {
             return refuse(clusterFailure);
         } finally {
-            try {
-                counts.unlock(key);
-            } catch (RuntimeException ignored) {
-                // The lock dies with the member that held it; nothing to do here,
-                // and throwing would mask whatever actually went wrong above.
-            }
+            ClusterLocks.release(counts, key);
         }
     }
 
