@@ -43,6 +43,10 @@
 - (b) **`none()` returns one `private static final` instance. `ToolOptions` recognises that instance by identity (its `NO_ADMISSION` becomes `ToolAdmission.none()`), and no `isNone()` is added. Recommended.** As a result, `.admission(ToolAdmission.none(), null)` is accepted. This does not breach D-0.6-6, because the caller still names no-admission explicitly. A subclass or any other instance can never match by identity, so a real policy still needs a fingerprinter.
 - (c) (b) plus `public final boolean isNone()`. This adds a public predicate that nothing needs, and it invites callers to branch on admission state. If chosen, it must be `final` and identity-based.
 
+## Decisions made (owner)
+- **D-179-1 = (a):** `sources` is sorted by the emitted key. Goldens stay byte-identical; the sort normalisation in `ToolResultCharacterisationTest` is removed.
+- **D-179-2 = (b):** `ToolAdmission.none()` returns one shared instance, recognised by identity in `ToolOptions`; no `isNone()`. `.admission(ToolAdmission.none(), null)` is accepted; real policies and subclasses still require a fingerprinter.
+
 ## Acceptance
 Sources order (per D-179-1 (a); adjust the wording if the owner chooses otherwise):
 - [ ] `ContextResponseTest` builds a `ContextResponse` from a `LinkedHashMap` of at least 8 source keys inserted in reverse-sorted order. It asserts that `sources().keySet()` iterates in ascending `String` order and that `answered()` follows the same order. This test fails on the pre-change `ContextResponse`. Show this by committing the test first, or with a temporary WIP commit, never with a bare `git stash`, and quote the failure in the hand-back.

@@ -131,6 +131,12 @@ record format (`recordVersion` 3) and the `dataprism.audit` logger name.
 
 ### Changed
 
+- `get_entity_context`'s `sources` entries are now in ascending key order (the
+  alias, or the real name for a caller holding `EXPOSE_SOURCE_NAMES`), where before
+  the order varied between JVM runs.
+- `ToolAdmission.none()` returns one shared instance, and
+  `ToolOptions.defaults().admission(ToolAdmission.none(), null)` is accepted
+  without a fingerprinter. Any other admission still needs one.
 - The JSON audit projection is its own bean, `dataPrismJsonAuditProjection`,
   classified `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`. It is deliberately not an `AuditSink`, because that made
   injecting an `AuditRecorder` ambiguous. The hash-chained sink bean resolves

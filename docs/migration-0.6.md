@@ -323,12 +323,19 @@ projection (non-ASCII, U+2028 and U+2029, control characters, escape casing) and
 for the checkpoint lines are unchanged. The tool-result goldens pin the converted
 map, not the MCP SDK's wire bytes.
 
+`get_entity_context`'s `sources` entries are now in ascending key order, where on
+0.5.x the order varied between JVM runs; a client that relied on a particular order
+never had one to rely on.
+
 ### Building a tool or a server: options records replace overloads
 
 `ToolOptions` (in `mcp`) and `SourceFanOutOptions` (in `orchestration`) carry what
 the removed overloads took one at a time. Every removed constructor and factory is
 in the table below. Admission has no default: name `noAdmission()` or a real
 policy, so approvals are never switched off by omission.
+`ToolAdmission.none()` now returns one shared instance, so
+`.admission(ToolAdmission.none(), null)` is accepted like `noAdmission()`; any other
+admission still needs a fingerprinter.
 
 ```java
 ToolOptions options = ToolOptions.defaults()
