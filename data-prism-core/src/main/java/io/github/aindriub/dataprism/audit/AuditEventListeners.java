@@ -241,17 +241,13 @@ public final class AuditEventListeners implements AutoCloseable {
         }
         closed = true;
         queue.offer(STOP); // the reserved slot; cannot fail unless publish raced past the closed check
-        try {
-            thread.join(drainTimeout.toMillis());
-            if (thread.isAlive()) {
-                abandoned = true;
-                thread.interrupt();
-                thread.join(1000);
-            }
-        } catch (InterruptedException e) {
+        // Interrupts never shorten a wait: each is recorded, the wait continues, and the flag is restored last.
+        boolean interrupted = false;
+        interrupted |= joinUntilDeadline(thread, drainTimeout.toNanos());
+        if (thread.isAlive()) {
             abandoned = true;
             thread.interrupt();
-            Thread.currentThread().interrupt();
+            interrupted |= joinUntilDeadline(thread, TimeUnit.MILLISECONDS.toNanos(1000));
         }
         long left = 0;
         for (Object o : queue) {
@@ -266,15 +262,32 @@ public final class AuditEventListeners implements AutoCloseable {
         if (reporter != null) {
             reporter.shutdownNow();
             Thread rt = reporterThread;
-            try {
-                // joined like the dispatcher, so no reporter thread outlives close() unless an appender hangs
-                if (rt != null) {
-                    rt.join(1000);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            // joined like the dispatcher, so no reporter thread outlives close() unless an appender hangs
+            if (rt != null) {
+                interrupted |= joinUntilDeadline(rt, TimeUnit.MILLISECONDS.toNanos(1000));
             }
         }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
         reportDropsWithoutBlocking();
+    }
+
+    /**
+     * Joins {@code t} for up to {@code nanos}, however often the caller is interrupted meanwhile. Returns
+     * whether it was (including a flag already set on entry); the caller restores the flag.
+     */
+    private static boolean joinUntilDeadline(Thread t, long nanos) {
+        boolean interrupted = Thread.interrupted();
+        long deadline = System.nanoTime() + nanos;
+        long left;
+        while (t.isAlive() && (left = deadline - System.nanoTime()) > 0) {
+            try {
+                TimeUnit.NANOSECONDS.timedJoin(t, left);
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
+        return interrupted;
     }
 }
