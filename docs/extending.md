@@ -602,10 +602,12 @@ point of marking them `provided` in the first place. The reason for
 classpath, `-Dloader.path` never supplies them, and a real
 (non-`provided`) scope would bundle a redundant copy this jar does not need
 to ship. (The in-repo module also
-carries three `test`-scope dependencies and two MCP SDK `test`-scope
-dependencies at lines 62-95 — those exist only so the Maven reactor builds
-the packaged artifacts this module's own smoke test starts as
-subprocesses; a consumer's extension pom has no reason to carry them.)
+carries six `test`-scope dependencies at lines 62-105: three
+`data-prism-quickstart-*`/`data-prism-server` entries and two MCP SDK entries
+that exist only so the Maven reactor builds the packaged artifacts this
+module's own smoke test starts as subprocesses and drives, and
+`spring-boot-test` for its `ApplicationContextRunner` test. A consumer's
+extension pom has no reason to carry the first five.)
 
 What has been checked, and what has not (recorded 2026-10-07). The two XML
 blocks in this section were extracted programmatically and pasted unmodified
