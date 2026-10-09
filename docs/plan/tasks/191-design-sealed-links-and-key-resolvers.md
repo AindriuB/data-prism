@@ -93,7 +93,7 @@ decisions for the owner" section with options and a recommendation each.
 
 ## Outcome
 
-Written: `docs/plan/design/sealed-links.md` (items 1 to 5, boundaries, test obligations, open decisions OD-1 to OD-12, closing name table) and `docs/plan/design/key-resolvers.md` (items 6 and 7, boundaries, test obligations, open decisions OD-R1 to OD-R9, closing name table). Each numbered item is a heading.
+Written: `docs/plan/design/sealed-links.md` (items 1 to 5, boundaries, test obligations, open decisions OD-1 to OD-17, closing name table) and `docs/plan/design/key-resolvers.md` (items 6 and 7, boundaries, test obligations, open decisions OD-R1 to OD-R10, closing name table). Each numbered item is a heading.
 
 Facts found while writing, for the 0.8 builder:
 
@@ -107,7 +107,7 @@ Collision check (all returned zero matches, except `resolver:` which matched onl
 
 ```
 for n in LINK_INVALID LINK_ATTEMPTS_EXHAUSTED LINK_KEY_SHARED LINK_KEY_UNRESOLVED LINK_KEY_WEAK INVALID_LINK_LIFETIME \
-  INVALID_LINK_LIMIT KEY_UNRESOLVED Resolution INVALID_CHAINABLE_FIELD DUPLICATE_KEY_RESOLVER INVALID_KEY_RESOLVER \
+  INVALID_LINK_LIMIT KEY_UNRESOLVED Resolution itemsTruncated link:attempts links:omitted LINK_AUTH_FAILED RESOLVER_TIMEOUT INVALID_CHAINABLE_FIELD DUPLICATE_KEY_RESOLVER INVALID_KEY_RESOLVER \
   dataprism.links dataprism.key-resolvers _links _linksOmitted itemsOmitted KeyResolver @Chainable \
   chainable keyNamespace "resolver:" "links:issued" "link:id"; do
   grep -rn -- "$n" docs/tools.md docs/audit.md docs/configuration.md; done
@@ -120,3 +120,5 @@ Domain check: `grep -n -i -E "payroll|payslip|tax|revenue|RPN|PPSN|employ" docs/
 Review gate: NOT YET RUN. The implementing agent has no reviewer to call; the `reviewer` verdict (APPROVE required, against D-RM-4, 5, 6, 10, 12, 14 and boundaries 1, 5, 6, 7, and confirming no product decision is taken in the text) must be recorded here by the caller.
 
 Revision after review (reviewer requested changes): OD-1 comparison now states the costs of (b) (depth cap, n(n + 3) / 2 reads, compounding drift, one-to-many parents) and of (a)/(a') (ciphertext of real keys in provider logs, length leak, key destruction outside the product); the recommendation changed from (b) to (a') with padding, still the owner's call. Sizes recomputed (defaults `max-length` 1536, `max-chain-depth` 3, ceiling 4); `KeyResolver.resolve` returns a `Resolution` with a `more` flag; limiter counts only non-honest failures, per principal, over a fixed window; collection links, one-to-many outer status, HKDF salt, clock skew and ODs 9 to 12 and R7 to R9 added. Review gate: still to be re-run by the caller.
+
+Second revision (re-review): limiter counts only pre-authentication failures and classifies forged tokens as AUTH_FAILED; audit disposition grammar mismatch stated and made OD-13; one-to-many refusal aligned with D-070-2; max-length floors per option; ODs 14 to 17 and R10 added. Review gate: to be re-run by the caller.

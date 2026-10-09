@@ -104,12 +104,14 @@ A resolver call is charged `dataprism.key-resolvers.budget-cost` (default 1) aga
 
 ### Audit
 
-Dispositions on the `follow` call (no change to record fields or the hash encoding):
+The audit disposition grammar is closed (`AuditEvent.isValidAction`: a `PrivacyAction` name, `REFUSED`, and `REFUSED:<code>` after D-070-13), so the values drafted earlier do not fit it. Widening it is OD-13 in `sealed-links.md`. The information to record, and its shape under that OD's recommendation (shape C):
 
-| Key | Value |
-|---|---|
-| `resolver:<name>` | `OK:<n>` (n keys returned), `EMPTY`, `FAILED:<REASON>` |
-| `resolver:<name>:ms` | elapsed milliseconds, integer |
+| Key | Information | Shape under shape C |
+|---|---|---|
+| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | `REFUSED:RESOLVER_<REASON>`; success (`OK:<n>`, `EMPTY`) is not recorded, since the target statuses show it |
+| `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; a metric labelled by resolver name and outcome |
+
+A refused one-to-many item is audited `REFUSED:<code>` under `<target>[<i>]:<refused>`, per D-070-13.
 
 Never recorded: the input key, any returned key, any fingerprint of them. `<name>` is the resolver's own name from `name()`, validated against the pattern so that it cannot carry data. This is the audit of real behaviour and carries real resolver names; the client never sees them (see Boundaries).
 
@@ -211,6 +213,7 @@ Mutation-testable; PIT gates link checks in 0.9.
 | OD-R5 | Opt-in adapter from `IdentityResolver` | Provide it; or require a hand-written `KeyResolver` | Provide it, opt-in per pair, so no existing mapping is written twice |
 | OD-R7 | Direct link wins over a translated link to the same source | Issue only the direct link (as drafted); or issue both | Only the direct link. A translated link to a source that already accepts the key directly adds a path that may disagree with the direct one and costs a resolver call |
 | OD-R8 | Fate of `IdentityResolver` in 0.8 | Leave it unchanged and undeprecated (as drafted); or deprecate it in favour of `KeyResolver` | Leave it unchanged. It serves fan-out, which `KeyResolver` does not replace; revisit when the surface freezes at 0.9 |
+| OD-R10 | Resolver defaults: timeout `PT2S` and budget cost 1 per resolver call | Those values; or a longer timeout for slow backing services; or cost 0 | `PT2S` and 1. A resolver that reads a backing service should be charged as a read; both are configurable and the load harness should confirm them |
 | OD-R9 | Partial and outer-status rules of a one-to-many follow | Defined in `sealed-links.md` OD-9 | See there |
 | OD-R6 | Should resolvers be configured (a YAML list) or only beans | Beans only; or YAML with class names | Beans only. Class names in configuration widen the reviewed surface, which is the opposite of the project's reviewed-extension rule |
 
@@ -232,7 +235,8 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `DUPLICATE_KEY_RESOLVER` | startup refusal code | 0.8 |
 | `INVALID_KEY_RESOLVER` | startup refusal code | 0.8 |
 | `resolver:<name>` | audit disposition key | 0.8 |
-| `resolver:<name>:ms` | audit disposition key | 0.8 |
+| `resolver:<name>:ms` | audit disposition key (or metric, OD-13) | 0.8 |
+| `RESOLVER_<REASON>` (five audit-only reason codes, shape C) | audit value | 0.8 |
 | `dataprism.key-resolvers.max-targets` | configuration key (default 5) | 0.8 |
 | `dataprism.key-resolvers.timeout` | configuration key (default `PT2S`) | 0.8 |
 | `dataprism.key-resolvers.budget-cost` | configuration key (default 1) | 0.8 |
