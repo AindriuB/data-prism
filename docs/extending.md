@@ -603,7 +603,7 @@ classpath, `-Dloader.path` never supplies them, and a real
 (non-`provided`) scope would bundle a redundant copy this jar does not need
 to ship. (The in-repo module also
 carries three `test`-scope dependencies and two MCP SDK `test`-scope
-dependencies at lines 60-94 — those exist only so the Maven reactor builds
+dependencies at lines 62-95 — those exist only so the Maven reactor builds
 the packaged artifacts this module's own smoke test starts as
 subprocesses; a consumer's extension pom has no reason to carry them.)
 
@@ -616,7 +616,7 @@ into a pom whose only other content is `modelVersion`, `groupId`,
 `0.4.1` form. It resolved `data-prism-core`, `data-prism-annotations` and
 `data-prism-processor` `0.4.1`, `spring-web` `7.0.9` and
 `spring-boot-autoconfigure` `4.1.1` (Spring Boot `4.1.1`), and the build
-produced a jar. The `0.5.0` form of the snippet differs only in
+produced a jar. The `0.5.0` and `0.6.0` forms of the snippet differ from it only in
 `data-prism.version`. The snippet's Spring dependencies were re-resolved
 against Spring Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1
 migration, at `data-prism.version` `0.4.1`; those Spring versions come from the
@@ -626,7 +626,15 @@ repository, resolved `data-prism-core`, `data-prism-annotations` and
 `data-prism-processor` `0.5.0`, `spring-web` `7.0.9` and
 `spring-boot-autoconfigure` `4.1.1`, and produced a jar. The annotation
 processor ran and rejected an unclassified `@LlmExposedModel` field at compile
-time. Nothing here has been shown for any other version.
+time. On 2026-10-09, before publication, a full `mvn package` of the `0.6.0`
+form of the snippet, with the same minimal `DataSourceAdapter` (importing
+`core.spi`) and an `@LlmExposedModel` record, was built with an empty local
+repository against a scratch file repository holding the `0.6.0` reactor build
+of this branch, not against Maven Central. It resolved `data-prism-core`,
+`data-prism-annotations` and `data-prism-processor` `0.6.0`, `spring-web`
+`7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. That run
+shows the snippet and the reactor's POMs agree; it is not evidence about the
+artifacts Central will serve. Nothing here has been shown for any other version.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above. If your
