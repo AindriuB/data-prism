@@ -74,10 +74,25 @@ class AuditEventListenerTest {
         return new AuditRecorder(sink, FIXED, "w", null, listeners);
     }
 
-    private static long dispatcherThreads() {
+    private static Set<Thread> dispatcherThreads() {
         return Thread.getAllStackTraces().keySet().stream()
                 .filter(t -> (t.getName().equals("data-prism-audit-listeners")
-                        || t.getName().equals(AuditEventListeners.REPORTER_THREAD)) && t.isAlive()).count();
+                        || t.getName().equals(AuditEventListeners.REPORTER_THREAD)) && t.isAlive())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    /** The dispatcher and reporter threads that appeared since {@code before}: the ones under test. */
+    private static Set<Thread> startedSince(Set<Thread> before) {
+        Set<Thread> now = dispatcherThreads();
+        now.removeAll(before);
+        return now;
+    }
+
+    private static void assertAllStopped(Set<Thread> threads) throws InterruptedException {
+        for (Thread t : threads) {
+            t.join(TimeUnit.SECONDS.toMillis(BOUND_SECONDS));
+            assertThat(t.isAlive()).isFalse();
+        }
     }
 
     @Test
@@ -542,30 +557,34 @@ class AuditEventListenerTest {
     }
 
     @Test
-    void close_drains_queued_events_then_stops_the_thread() {
-        long before = dispatcherThreads();
+    void close_drains_queued_events_then_stops_the_thread() throws Exception {
+        Set<Thread> before = dispatcherThreads();
         List<Long> seen = Collections.synchronizedList(new ArrayList<>());
         AuditEventListeners listeners = dispatcher(new Lines(), 100, e -> seen.add(e.sequence()));
-        assertThat(dispatcherThreads()).isEqualTo(before + 2);
+        Set<Thread> started = startedSince(before);
+        assertThat(started).hasSize(2);
         AuditRecorder recorder = recorder(e -> { }, listeners);
         for (int i = 0; i < 50; i++) {
             recorder.record(entry());
         }
         listeners.close();
         assertThat(seen).hasSize(50);
-        assertThat(dispatcherThreads()).isEqualTo(before);
+        assertAllStopped(started);
     }
 
     @Test
-    void repeated_start_and_stop_leaves_no_thread_behind() {
-        long before = dispatcherThreads();
+    void repeated_start_and_stop_leaves_no_thread_behind() throws Exception {
+        Set<Thread> before = dispatcherThreads();
+        Set<Thread> seenThreads = new java.util.HashSet<>();
         for (int i = 0; i < 25; i++) {
             AuditEventListeners listeners = dispatcher(new Lines(), 4, e -> { });
+            seenThreads.addAll(startedSince(before));
             recorder(e -> { }, listeners).record(entry());
             listeners.close();
             listeners.close(); // idempotent
         }
-        assertThat(dispatcherThreads()).isEqualTo(before);
+        assertThat(seenThreads).isNotEmpty();
+        assertAllStopped(seenThreads);
     }
 
     @Test
@@ -605,10 +624,10 @@ class AuditEventListenerTest {
     }
 
     @Test
-    void close_abandons_a_hung_listener_after_the_drain_timeout_and_logs_the_remainder_as_dropped() {
+    void close_abandons_a_hung_listener_after_the_drain_timeout_and_logs_the_remainder_as_dropped() throws Exception {
         Lines lines = new Lines();
         CountDownLatch started = new CountDownLatch(1);
-        long before = dispatcherThreads();
+        Set<Thread> before = dispatcherThreads();
         AuditEventListeners listeners = new AuditEventListeners(List.of(e -> {
             started.countDown();
             try {
@@ -617,6 +636,8 @@ class AuditEventListenerTest {
                 Thread.currentThread().interrupt();
             }
         }), 8, Duration.ofMillis(50), Duration.ofHours(1), lines.logger());
+        Set<Thread> started2 = startedSince(before);
+        assertThat(started2).hasSize(2);
         AuditRecorder recorder = recorder(e -> { }, listeners);
         recorder.record(entry());
         awaitStarted(started);
@@ -624,7 +645,7 @@ class AuditEventListenerTest {
             recorder.record(entry());
         }
         listeners.close();
-        assertThat(dispatcherThreads()).isEqualTo(before);
+        assertAllStopped(started2);
         assertThat(listeners.droppedCount()).isEqualTo(3);
         assertThat(lines.warnings).hasSize(1);
         assertThat(lines.warnings.get(0)).startsWith("AUDIT_LISTENER_DROPPED").contains("3 audit events");
@@ -642,10 +663,10 @@ class AuditEventListenerTest {
 
     @Test
     void without_listeners_no_thread_starts_and_recording_is_unchanged() {
-        long before = dispatcherThreads();
+        Set<Thread> before = dispatcherThreads();
         AuditEventListeners none = new AuditEventListeners(List.of(), 4);
         assertThat(none.active()).isFalse();
-        assertThat(dispatcherThreads()).isEqualTo(before);
+        assertThat(startedSince(before)).isEmpty();
         assertThat(recorder(e -> { }, none).record(entry()).sequence()).isEqualTo(1);
         assertThat(none.droppedCount()).isZero();
     }
