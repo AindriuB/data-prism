@@ -36,7 +36,7 @@ review.
 |---|---|---|
 | `annotations` | — | `@InternalIdentifier`, `@SubjectIdentifier`, `@SensitiveData`, `@NonSensitive`, `@SensitiveObject`, `@LlmExposedModel`, the classification/action/namespace enums |
 | `processor` | `annotations` | `LlmExposedModelProcessor`, the annotation processor that fails the build on a field of an `@LlmExposedModel` carrying neither `@SensitiveData` nor `@NonSensitive(reason=...)` (§B2) |
-| `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, `InvestigationContext`, `SourceTree`, every SPI interface the other modules implement (the SPI interfaces live in `core.spi`), and the audit contract (`AuditEvent`, `AuditSink`, per-writer hash chain) |
+| `core` | `annotations` | Privacy model, `FieldMetadataResolver`, `PrivacyPolicyResolver`, canonical envelope, provenance, `InvestigationContext`, `SourceTree`, every SPI interface the other modules implement (the SPI interfaces live in `core.spi`), and the audit contract (`AuditEvent`, `AuditSink`, per-writer hash chain). The `core` root package is empty. It is split into `core.spi` (the extension-facing interfaces and request types), `core.model`, `core.engine`, `core.refusal`, `core.limits` and `core.metrics`, beside the older `core.policy`, `core.correlation` and `core.descriptor`. The `audit` package keeps the contract in its root (`AuditRecorder`, `AuditEvent`, `AuditSink`, `AuditEventListener`) and holds the writers in `audit.sink`, field mapping and JSON rendering in `audit.format`, the checkpoint writer in `audit.checkpoint`, retention in `audit.retention` and the verifier in `audit.verify` |
 | `pseudonymisation` | `core` | HMAC generator, per-namespace synthetic generators, `PseudonymRenderer`, key and algorithm versioning |
 | `hazelcast` | `core` | Embedded member, identity cache, re-identification index, read budget (shared only across joined members), scope purge, `FailSafeMetrics` |
 | `validation` | `core` | `SensitiveDataScanner`, `LlmResponseValidator`, scope-aware pseudonym allowlist |
@@ -46,7 +46,7 @@ review.
 | `connectors-rest` | `core` | `RestDataSource`, source configuration, resilience |
 | `connectors-search` *(planned)* | `core` | Elasticsearch adapter with index and field allowlists |
 | `reidentification` | `core`, `hazelcast`, `security` | The controlled reverse-lookup library: authenticated, purpose-bound, audited, optional four-eyes. No transport; its HTTP surface is served by the standalone server on a separate port, in the same process. The index it reads lives in `hazelcast`, off by default |
-| `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding, validation, privacy-pipeline wiring, MCP lifecycle and servlet registration |
+| `spring-boot-autoconfigure` | the privacy/runtime modules | Shared `dataprism.*` binding (one top-level `*Properties` class per concern, under the root `DataPrismProperties`), validation (`spring.boot.validation`), JWT support (`spring.boot.jwt`), privacy-pipeline wiring (`DataPrismAutoConfiguration` declares no bean and imports package-private configuration classes by concern), MCP lifecycle and servlet registration |
 | `spring-boot-starter` | `spring-boot-autoconfigure` | Dependency-only embedded integration entry point |
 | `server` | `spring-boot-autoconfigure` | Primary executable Streamable HTTP MCP server, JWT boundary, health endpoint, production integrations and privacy metrics |
 | `integration-tests` | everything, and declares `security` directly | The reactor's cross-module integration test suite: 11 test classes exercising three stub sources with divergent representations end to end, including `PiiLogScanTest`, the sole enforcement of boundary 7 below |
@@ -263,6 +263,18 @@ connector or the `example` package) and `onlyTheExampleDependsOnSpringSecurity`
 verified JWT into an `AuthenticatedCaller`; `data-prism-security` itself must
 stay framework-agnostic).
 
+The package layout from 0.6.0 is also locked by `ArchitectureTest`: the `core`
+root package is empty (matched exactly, so its subpackages are not flagged);
+`core.spi` does not depend on `core.engine`; the `core` subpackages and the
+`audit` subpackages are each free of cycles; the `audit` contract package does
+not depend on its subpackages; the `audit` writers (`format`, `sink`,
+`checkpoint`) do not depend on `audit.verify`; and `audit.retention` reaches
+`audit.verify` only through `AuditRetention` using `AuditChainVerifier`, because
+retention replays the chain before it deletes a segment (a class-level
+allowance, not a package one). In `spring-boot-autoconfigure`, `validation` and
+`jwt` do not depend on each other, and nothing outside `spring.boot` depends on
+`validation`.
+
 ## Decisions worth knowing
 
 One line each, with the date and the alternative rejected. Longer reasoning for
@@ -348,6 +360,37 @@ all of these is in `design-review.md` under the section named.
   bytes are pinned back to the Jackson 2 values on data-prism's builders. One
   accepted difference: YAML is now parsed as YAML 1.2 (D-167-1), so
   `yes`/`no`/`on`/`off` are text and leading-zero numbers are decimal.
+- **2026-10-08 — 0.6.0 is a clean break: packages split and overloads replaced
+  with no forwarding types and no deprecation cycle (D-0.6-1 to D-0.6-5).** The
+  `core` root package is split into `spi`, `model`, `engine`, `refusal`, `limits`
+  and `metrics` (D-0.6-1). `audit` and `oversight` come under the `core`
+  outer-layer ArchUnit rule (D-0.6-2). `DataPrismProperties` and
+  `DataPrismAutoConfiguration` are split by concern, with the `dataprism.*`
+  property names and the auto-configuration FQCN, which is named in
+  `AutoConfiguration.imports`, frozen (D-0.6-3). The verifier CLI moves to
+  `audit.verify` with no class at the old name (D-0.6-4), and a `ToolOptions` or
+  `SourceFanOutOptions` record replaces the MCP and fan-out overloads, whose old
+  constructors and factories are removed (D-0.6-5). There are no external users,
+  so there is nothing to protect with a cycle. Rejected: forwarding types at the
+  old FQCNs and deprecated overloads kept for a release, which would leave the
+  old layout in place and the new one unenforced. Cost: every consumer
+  recompiles and changes imports, and an operator has to change the verifier
+  command and any log level set on a renamed category. The old to new tables are
+  in `migration-0.6.md`.
+- **2026-10-08 — Map keys and dynamic property names are undeclared data
+  (architect review of task 175).** A key is not reviewed code, and it can be
+  personal data (a map keyed by email address), so it is treated like an
+  undeclared property: the profile's `unclassified` setting governs it, a kept
+  name becomes `<undeclared-N>`, and refusals, audit records and logs carry only
+  `<undeclared>`. Only a `PASS_THROUGH_UNSAFE` profile built in Java emits keys
+  verbatim. Documented in `extending.md`, "Profiles that admit unclassified
+  data", and pinned by `UndeclaredPropertyNameTest`, `UndeclaredKeyRefusalTest`
+  and `UndeclaredNameToolResultScanTest`. Rejected: refusing
+  `@JsonSerialize(keyUsing=...)` on source records, which would remove a choice
+  D-173-2 deliberately leaves to the model author. Cost: under
+  `PASS_THROUGH_UNSAFE` no validator checks key shapes, because the leak
+  validators scan values only; a key-shape scan is a roadmap candidate, not in
+  0.6.0.
 - **2026-10-07 — Images run Java 25; library bytecode stays Java 21.** The build
   uses `--release 21` and a gate checks class major 65, so the jars run on Java
   21 or newer while the published images run Java 25. Rejected: Java 25
