@@ -88,6 +88,7 @@
     <javadoc-plugin.version>3.12.0</javadoc-plugin.version>
     <gpg-plugin.version>3.2.8</gpg-plugin.version>
     <central-publishing-plugin.version>0.11.0</central-publishing-plugin.version>
+    <cyclonedx-plugin.version>2.9.3</cyclonedx-plugin.version>
   </properties>
 
   <dependencyManagement>
@@ -334,6 +335,27 @@
               <execution>
                 <id>attach-javadocs</id>
                 <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <!-- One CycloneDX JSON SBOM per module, attached with the
+                 `cyclonedx` classifier (<artifact>-<version>-cyclonedx.json).
+                 Bound to `package`, ahead of the `verify`-phase GPG signing,
+                 so the SBOM is signed and bundled for Central like any other
+                 attached artifact. -->
+            <groupId>org.cyclonedx</groupId>
+            <artifactId>cyclonedx-maven-plugin</artifactId>
+            <version>${cyclonedx-plugin.version}</version>
+            <configuration>
+              <outputFormat>json</outputFormat>
+              <projectType>library</projectType>
+            </configuration>
+            <executions>
+              <execution>
+                <id>make-sbom</id>
+                <phase>package</phase>
+                <goals><goal>makeBom</goal></goals>
               </execution>
             </executions>
           </plugin>
