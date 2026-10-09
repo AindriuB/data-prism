@@ -115,7 +115,7 @@ grep -rn -w "follow\|links\|items" docs/tools.md docs/audit.md docs/configuratio
 grep -rn "KeyResolver\|chainable" --include='*.java' .                                  # none
 ```
 
-Domain check: `grep -n -i -E "payroll|payslip|tax|revenue|RPN|PPSN|employ" docs/plan/design/*.md` returns nothing. Examples use parcels, depots and routes.
+Domain check: a grep of the design documents for the workplace-specific word list returned nothing. Examples use parcels, depots and routes.
 
 Review gate: NOT YET RUN. The implementing agent has no reviewer to call; the `reviewer` verdict (APPROVE required, against D-RM-4, 5, 6, 10, 12, 14 and boundaries 1, 5, 6, 7, and confirming no product decision is taken in the text) must be recorded here by the caller.
 

@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 191, 192 | Designs for sealed links, key resolvers and open-source Hazelcast cluster security; all open decisions taken as recommended | ## 2026-10-09 — Sealed-link, key-resolver and cluster-security designs (191, 192) |
 | 2026-10-09 | 188, 189 | SBOMs, image signatures and provenance for releases; request limits bound from dataprism.limits.* | ## 2026-10-09 — Supply chain attestations and configurable request limits (188, 189) |
 | 2026-10-09 | roadmap | Roadmap 0.7 to 1.0 agreed: agent-led sealed-link design, multi-instance on open-source Hazelcast, freeze at 0.9.0; roadmap.md replaces roadmap-ideas.md | ## 2026-10-09 — Road to 1.0 agreed |
 | 2026-10-09 | 185, 186 | Maven 3.9.x guard in both publish-central jobs and a Dependabot ignore; no fixed Central plugin exists, cause is a Maven 3.10.0 change; pin kept | ## 2026-10-09 — Maven 3.10 release guards and Central plugin investigation (185, 186) |

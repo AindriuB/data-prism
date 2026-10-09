@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Sealed-link, key-resolver and cluster-security designs (191, 192)
+
+Three internal design documents under `docs/plan/design/` now fix how sealed links, key resolvers and open-source Hazelcast cluster security will be built in 0.8, each approved by security review. Links carry the real key AEAD-sealed under a short-lived link key in padded buckets, bound to the caller and off by default; clusters seal what they store, refuse isolation-only multi-member setups, and refuse every call when the signed pause document is stale or absent. The owner delegated all open decisions to the recommendations, so the documents record each as "Decided (owner delegated)".
+
+**Cost:** The link design needed four review rounds and the cluster design three, mostly on what the sealing does not cover: the owner accepted residual risks T10 and T17, and the 1.0 cluster claim is deliberately qualified (no protection against deletion, short replay or availability loss; transport protection is the deployer's). Review also confirmed four existing Hazelcast defects, listed in `PLAN.md`, which are fix tasks rather than design work. Do not reopen the choice to put only an opaque handle in the link; (a') was chosen with the key-destruction procedure as its price.
+
 ## 2026-10-09 — Supply chain attestations and configurable request limits (188, 189)
 
 Release builds now attach a CycloneDX SBOM to each of the 14 modules deployed to Central and to the GitHub Release, push images with buildx SBOM and provenance, sign every pushed image digest keylessly with cosign, and attest jars, images and release assets; `docs/verifying-releases.md` tells a consumer how to check each. Separately, `dataprism.limits.*` binds all six request limits into one `PRIVACY_CRITICAL` bean used by both orchestrator wiring sites, with `INVALID_REQUEST_LIMITS` on bad values and refusal of an application-supplied `RequestLimits` bean.

@@ -49,7 +49,16 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 ### 0.7.0 state (updated 2026-10-09)
 
-Landed on `plan/0.7.0`: task 188 (supply chain) and task 189 (limits from configuration). Open: tasks 190-201.
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design) and task 192 (cluster-security design). Open: tasks 190 and 193-201.
+
+Design outcomes (documents in `docs/plan/design/`: `sealed-links.md`, `key-resolvers.md`, `cluster-security.md`; both approved by security review; the owner delegated every open decision to the recommendation on 2026-10-09, recorded in the documents as "Decided (owner delegated)"):
+
+- Links (191), OD-1 (a'): the real key travels in the link, AEAD-sealed under a dedicated short-lived link key, padded to 64-byte buckets (max 256). The owner accepts residual risks T10 (key compromise before destruction decrypts links left in transcripts or provider logs) and T17 (length bucket leak). The key-destruction procedure goes into the 0.8 operator docs.
+- Links are bound to the caller and off by default (`dataprism.links.enabled=false`) through 0.9. The failed-attempt limiter counts only pre-authentication failures, per principal, 20 per PT10M. Link-key rotation has three phases. Maximum link length is 768 under (a'). One link per collection element.
+- Key resolvers: `KeyResolver` SPI returning `Resolution(keys, more)`, resolved at follow time, cap 5, beans only. Audit shape C: `REFUSED:<code>`-shaped values only; `docs/audit.md` documents the new keys in 0.8.
+- Cluster (192): seal what is stored in Hazelcast (AES-GCM values, HMAC'd keys under a non-rotating name key) and advise transport protection. Isolation-only multi-member clusters are not allowed. A signed, sequenced, leased pause document is updated by CAS with union merge on MERGED; a stale or absent pause refuses every call. Cluster-key rotation is phased with sealed member cards. Budgets and rate limits keep a per-instance floor. Separate secrets per purpose.
+- OD-13: the 1.0 claim is the qualified statement. Sealed against reading and forging; not against deletion, short replay or availability; transport protection is the deployer's and unverified.
+- OD-16: `PrivacyCluster.using` refuses in sealed mode when it cannot enforce settings.
 
 Owner decisions for 0.7 (2026-10-09):
 
@@ -78,7 +87,7 @@ Owner decisions for 0.7 (2026-10-09):
 ### 0.7.0 follow-ups found in review
 
 - A raw `FactoryBean` (no generic type) with `allowEagerInit=false` escapes both the `RequestLimits` preflight and the `PrivacyPolicyResolver` guard (`Preflights.java:50-56`). Fix both together.
-- Existing Hazelcast defects confirmed by the review of task 192, to become fix tasks:
+- Existing Hazelcast defects confirmed by the review of task 192, to become fix tasks. Recommendation: fix the approval double-consume under split brain and the locks without timeout in 0.7, because they are correctness bugs in a released feature (owner to confirm):
   - approval consumption relies on `IMap.lock`, which is unsafe under split brain (`HazelcastApprovalStore.java:151-165`, `:193`);
   - locks have no timeout (`HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`);
   - Jet and phone-home are not forced off for a supplied `Config` or instance (`PrivacyCluster.java:83-102`, `:131-152` against `ClusterMembership.java:91`);
