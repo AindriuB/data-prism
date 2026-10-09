@@ -52,6 +52,9 @@ check). Each is copied from that task's hand-back.
 ## Added from 161
 The CHANGELOG and migration page list the two new refusal codes `AUDIT_JSON_PROJECTION_WITHOUT_BUILT_IN_SINK` and `AUDIT_JSON_PROJECTION_MISSING`, and state that an application `AuditSink` combined with `sink=hash-chained` and a json-directory now refuses to start.
 
+## Added from 163
+- [ ] `CHANGELOG.md` `[Unreleased]` `### Added` has: "Added AuditEventListener, a read-only SPI called after the configured audit sink accepted each event, on one bounded asynchronous dispatcher (dataprism.audit.listeners.queue-capacity, default 1024). It is best effort: events are dropped for listeners only when the queue is full, and the audit log is unaffected. Failures are logged by class name only as AUDIT_LISTENER_FAILED, and drops as AUDIT_LISTENER_DROPPED."
+
 ## Added from 164
 - [ ] `CHANGELOG.md` `[Unreleased]` `### Added` has: "The data-prism-spring-boot-autoconfigure jar now ships Spring configuration metadata (META-INF/spring-configuration-metadata.json), so IDEs complete and describe dataprism.* keys in YAML. The processor runs only at build time and is not a dependency, and a build test keeps the metadata and docs/configuration.md in step."
 

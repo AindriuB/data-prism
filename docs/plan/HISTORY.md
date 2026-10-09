@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — 0.6.0 wave 10: read-only AuditEventListener SPI (163)
+
+Task 163 merged onto `release/0.6.0-spring`. Applications can register `AuditEventListener` beans that receive a read-only `AuditEvent` after the configured audit sink accepted it. A single `AuditEventListeners` dispatcher (bean `dataPrismAuditEventListeners`, `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL`) delivers on one daemon thread behind a bounded queue (`dataprism.audit.listeners.queue-capacity`, default 1024), so a slow or hung listener cannot delay audit calls. Drops are reported content-free as `AUDIT_LISTENER_DROPPED`, failures as `AUDIT_LISTENER_FAILED` with the exception class name only. There are now 53 `@Bean` methods (the task said 56/57).
+
+**Cost:** Review asked for changes twice. Defects found were a drop log written inside the recorder lock, an interrupt flag left set that killed the dispatcher, a flaky start assumption in a test, drops going unreported while a listener hangs (fixed with a separate reporter thread), the reporter thread not joined, and `close()` able to hang on the report lock. Do not log or block inside the recorder lock; only an O(1) offer belongs there. Open: a theoretical test flake at `AuditEventListenerTest` about line 77, and `close()` on an already-interrupted thread skips the final drop line. Tester PASS at 8c5242b9.
+
 ## 2026-10-09 — 0.6.0 wave 9: Spring configuration metadata (164)
 
 Task 164 merged onto `release/0.6.0-spring`. The autoconfigure jar now ships `META-INF/spring-configuration-metadata.json`, describing all 79 `dataprism.*` leaf keys, so IDEs complete and describe them in YAML. The processor runs only through `annotationProcessorPaths` and is in no dependency tree. `ConfigurationMetadataDocumentedTest` checks the metadata and `docs/configuration.md` against each other exactly, in both directions, including typed defaults; 10 known gaps (mainly binder-bound `sources.*`) sit in a self-checking gaps file.
