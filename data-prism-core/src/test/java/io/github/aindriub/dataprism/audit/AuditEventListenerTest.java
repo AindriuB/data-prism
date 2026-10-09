@@ -690,6 +690,23 @@ class AuditEventListenerTest {
     }
 
     @Test
+    void a_very_large_drain_timeout_and_drop_interval_are_accepted_and_close_returns_once_drained() throws Exception {
+        Set<Thread> before = dispatcherThreads();
+        List<Long> seen = Collections.synchronizedList(new ArrayList<>());
+        AuditEventListeners listeners = new AuditEventListeners(List.of(e -> seen.add(e.sequence())), 16,
+                Duration.ofSeconds(Long.MAX_VALUE), Duration.ofSeconds(Long.MAX_VALUE), new Lines().logger());
+        Set<Thread> started = startedSince(before);
+        AuditRecorder recorder = recorder(e -> { }, listeners);
+        for (int i = 0; i < 5; i++) {
+            recorder.record(entry());
+        }
+        listeners.close();
+        assertThat(seen).hasSize(5);
+        assertThat(listeners.droppedCount()).isZero();
+        assertAllStopped(started);
+    }
+
+    @Test
     void close_abandons_a_hung_listener_after_the_drain_timeout_and_logs_the_remainder_as_dropped() throws Exception {
         Lines lines = new Lines();
         CountDownLatch started = new CountDownLatch(1);

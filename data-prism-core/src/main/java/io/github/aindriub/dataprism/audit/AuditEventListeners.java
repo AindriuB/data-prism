@@ -91,7 +91,7 @@ public final class AuditEventListeners implements AutoCloseable {
                 reporterThread = t;
                 return t;
             });
-            long period = Math.max(1, dropLogInterval.toMillis());
+            long period = Math.max(1, TimeUnit.NANOSECONDS.toMillis(saturatedNanos(dropLogInterval)));
             this.reporter.scheduleWithFixedDelay(this::reportDrops, period, period,
                     TimeUnit.MILLISECONDS);
         }
@@ -244,7 +244,7 @@ public final class AuditEventListeners implements AutoCloseable {
         // Interrupts never shorten a wait: each is recorded, the wait continues, and the flag is restored last.
         boolean interrupted = false;
         try {
-            interrupted |= joinUntilDeadline(thread, drainTimeout.toNanos());
+            interrupted |= joinUntilDeadline(thread, saturatedNanos(drainTimeout));
             if (thread.isAlive()) {
                 abandoned = true;
                 thread.interrupt();
@@ -282,9 +282,10 @@ public final class AuditEventListeners implements AutoCloseable {
      */
     private static boolean joinUntilDeadline(Thread t, long nanos) {
         boolean interrupted = Thread.interrupted();
-        long deadline = System.nanoTime() + nanos;
+        // Elapsed-time arithmetic, so a huge timeout cannot overflow a deadline sum.
+        long start = System.nanoTime();
         long left;
-        while (t.isAlive() && (left = deadline - System.nanoTime()) > 0) {
+        while (t.isAlive() && (left = nanos - (System.nanoTime() - start)) > 0) {
             try {
                 TimeUnit.NANOSECONDS.timedJoin(t, left);
             } catch (InterruptedException e) {
@@ -292,5 +293,14 @@ public final class AuditEventListeners implements AutoCloseable {
             }
         }
         return interrupted;
+    }
+
+    /** {@code d} in nanoseconds, saturating at {@link Long#MAX_VALUE} (about 292 years) instead of throwing. */
+    private static long saturatedNanos(Duration d) {
+        try {
+            return d.toNanos();
+        } catch (ArithmeticException e) {
+            return d.isNegative() ? Long.MIN_VALUE : Long.MAX_VALUE;
+        }
     }
 }
