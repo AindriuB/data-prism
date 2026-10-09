@@ -108,7 +108,7 @@ The audit disposition grammar is closed (`AuditEvent.isValidAction`: a `PrivacyA
 
 | Key | Information | Shape under shape C |
 |---|---|---|
-| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | `REFUSED:RESOLVER_<REASON>`; success (`OK:<n>`, `EMPTY`) is not recorded, since the target statuses show it |
+| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:KEY_UNRESOLVED` entry, and the reason is a metric (`reason` label, resolver name label) and an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
 | `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; a metric labelled by resolver name and outcome |
 
 A refused one-to-many item is audited `REFUSED:<code>` under `<target>[<i>]:<refused>`, per D-070-13.
@@ -204,18 +204,20 @@ Mutation-testable; PIT gates link checks in 0.9.
 
 ## 9. Open decisions for the owner
 
+On 2026-10-09 the owner delegated every decision in this section to its recommendation ("i trust your recommendations"); each row ends with "Decided (owner delegated)".
+
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| OD-R1 | One-to-many cap default | 5, 16 (matching the batch default, D-RM-7), or unbounded with paging | 5 for `follow`; larger sets belong to bulk follow and paging (task 198). Configurable with a ceiling |
-| OD-R2 | Timing of resolution: at follow (proposed) or at issue | At follow: no I/O at issue, the link may later turn out empty. At issue: the agent sees only links that resolve, but every result costs resolver calls and a mapping is observable through the number of links | At follow. Issuing links is then cheap and leaks no mapping |
-| OD-R3 | New per-source status for resolver failure | New `KEY_UNRESOLVED`; or reuse `FAILED` | New code, entered in task 200's register, because "the target failed" and "we could not form the key" differ for the agent's next step |
-| OD-R4 | Where the namespace vocabulary lives | Free-form validated labels (proposed); or a registry declared once per deployment | Free-form with a startup check that every namespace used appears on at least one field and one input key. A typo otherwise silently yields no link |
-| OD-R5 | Opt-in adapter from `IdentityResolver` | Provide it; or require a hand-written `KeyResolver` | Provide it, opt-in per pair, so no existing mapping is written twice |
-| OD-R7 | Direct link wins over a translated link to the same source | Issue only the direct link (as drafted); or issue both | Only the direct link. A translated link to a source that already accepts the key directly adds a path that may disagree with the direct one and costs a resolver call |
-| OD-R8 | Fate of `IdentityResolver` in 0.8 | Leave it unchanged and undeprecated (as drafted); or deprecate it in favour of `KeyResolver` | Leave it unchanged. It serves fan-out, which `KeyResolver` does not replace; revisit when the surface freezes at 0.9 |
-| OD-R10 | Resolver defaults: timeout `PT2S` and budget cost 1 per resolver call | Those values; or a longer timeout for slow backing services; or cost 0 | `PT2S` and 1. A resolver that reads a backing service should be charged as a read; both are configurable and the load harness should confirm them |
-| OD-R9 | Partial and outer-status rules of a one-to-many follow | Defined in `sealed-links.md` OD-9 | See there |
-| OD-R6 | Should resolvers be configured (a YAML list) or only beans | Beans only; or YAML with class names | Beans only. Class names in configuration widen the reviewed surface, which is the opposite of the project's reviewed-extension rule |
+| OD-R1 | One-to-many cap default | 5, 16 (matching the batch default, D-RM-7), or unbounded with paging | 5 for `follow`; larger sets belong to bulk follow and paging (task 198). Configurable with a ceiling **Decided (owner delegated, 2026-10-09): 5 for `follow`, configurable with a ceiling.** |
+| OD-R2 | Timing of resolution: at follow (proposed) or at issue | At follow: no I/O at issue, the link may later turn out empty. At issue: the agent sees only links that resolve, but every result costs resolver calls and a mapping is observable through the number of links | At follow. Issuing links is then cheap and leaks no mapping **Decided (owner delegated, 2026-10-09): resolve at follow.** |
+| OD-R3 | New per-source status for resolver failure | New `KEY_UNRESOLVED`; or reuse `FAILED` | New code, entered in task 200's register, because "the target failed" and "we could not form the key" differ for the agent's next step **Decided (owner delegated, 2026-10-09): new status `KEY_UNRESOLVED`, registered in task 200.** |
+| OD-R4 | Where the namespace vocabulary lives | Free-form validated labels (proposed); or a registry declared once per deployment | Free-form with a startup check that every namespace used appears on at least one field and one input key. A typo otherwise silently yields no link **Decided (owner delegated, 2026-10-09): free-form validated labels with a startup usage check.** |
+| OD-R5 | Opt-in adapter from `IdentityResolver` | Provide it; or require a hand-written `KeyResolver` | Provide it, opt-in per pair, so no existing mapping is written twice **Decided (owner delegated, 2026-10-09): provide the opt-in adapter.** |
+| OD-R7 | Direct link wins over a translated link to the same source | Issue only the direct link (as drafted); or issue both | Only the direct link. A translated link to a source that already accepts the key directly adds a path that may disagree with the direct one and costs a resolver call **Decided (owner delegated, 2026-10-09): only the direct link.** |
+| OD-R8 | Fate of `IdentityResolver` in 0.8 | Leave it unchanged and undeprecated (as drafted); or deprecate it in favour of `KeyResolver` | Leave it unchanged. It serves fan-out, which `KeyResolver` does not replace; revisit when the surface freezes at 0.9 **Decided (owner delegated, 2026-10-09): `IdentityResolver` unchanged and undeprecated in 0.8.** |
+| OD-R10 | Resolver defaults: timeout `PT2S` and budget cost 1 per resolver call | Those values; or a longer timeout for slow backing services; or cost 0 | `PT2S` and 1. A resolver that reads a backing service should be charged as a read; both are configurable and the load harness should confirm them **Decided (owner delegated, 2026-10-09): `PT2S` timeout, budget cost 1.** |
+| OD-R9 | Partial and outer-status rules of a one-to-many follow | Defined in `sealed-links.md` OD-9 | See there **Decided (owner delegated, 2026-10-09): as OD-9 in `sealed-links.md`.** |
+| OD-R6 | Should resolvers be configured (a YAML list) or only beans | Beans only; or YAML with class names | Beans only. Class names in configuration widen the reviewed surface, which is the opposite of the project's reviewed-extension rule **Decided (owner delegated, 2026-10-09): resolvers are beans only.** |
 
 ## 10. Proposed names (closing table)
 
@@ -236,7 +238,6 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `INVALID_KEY_RESOLVER` | startup refusal code | 0.8 |
 | `resolver:<name>` | audit disposition key | 0.8 |
 | `resolver:<name>:ms` | audit disposition key (or metric, OD-13) | 0.8 |
-| `RESOLVER_<REASON>` (five audit-only reason codes, shape C) | audit value | 0.8 |
 | `dataprism.key-resolvers.max-targets` | configuration key (default 5) | 0.8 |
 | `dataprism.key-resolvers.timeout` | configuration key (default `PT2S`) | 0.8 |
 | `dataprism.key-resolvers.budget-cost` | configuration key (default 1) | 0.8 |
