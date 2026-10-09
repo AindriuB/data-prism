@@ -464,7 +464,7 @@ Each row has options and a recommendation. On 2026-10-09 the owner delegated eve
 | OD-15 | Key rotation when `lifetime=scope` | Rotate the link key at most every maximum scope lifetime and retire it after that plus skew; or cap link lifetime at the rotation interval; or forbid `scope` under (a') | Allow `scope` and state that the (a') exposure window then equals the scope lifetime plus the rotation interval **Decided (owner delegated, 2026-10-09): allow `lifetime=scope`; (a') exposure window is the scope lifetime plus the rotation interval.** |
 | OD-16 | Clock skew defaults | `PT5S` default with `PT30S` ceiling; or 0 (strict); or a larger default | `PT5S` and `PT30S`. Skew applies to link expiry only **Decided (owner delegated, 2026-10-09): `PT5S` default, `PT30S` ceiling, link expiry only.** |
 | OD-17 | The 256-byte ceiling on a sealed key under (a), (a') | 256 bytes, longer keys get no link and show in `_linksOmitted`; or a larger bucket cap with a larger `max-length` | 256. A user with a longer identifier sees no link for that field and a count in `_linksOmitted`; raise the cap only on evidence of such keys **Decided (owner delegated, 2026-10-09): 256-byte ceiling.** |
-| OD-12 | Link text against context cost | Default 768 under (a)/(a') (worst case 616, 25 percent margin) and 1536 under (b) with depth ceiling 4; or keep 1536 for all; or shrink label limits | 768 under (a'): the 1536 figure was sized for (b); the leaner default costs less context and gives the schema a tight bound, and the worst case is exact, not estimated. Typical links are about one third of the worst case **Decided (owner delegated, 2026-10-09): 768 under (a)/(a'), 1536 under (b).** |
+| OD-12 | Link text against context cost | Default 768 under (a)/(a') (worst case 616, 25 percent margin) and 1536 under (b) with depth ceiling 4; or keep 1536 for all; or shrink label limits | 768 under (a'): the 1536 figure was sized for (b); the leaner default costs less context and gives the schema a tight bound, and the worst case is exact, not estimated. Typical links under (a') are 200 to 300 bytes, which is 268 to 400 characters, about 45 to 65 percent of the 616-character worst case **Decided (owner delegated, 2026-10-09): 768 under (a)/(a'), 1536 under (b).** |
 
 ## 9. Proposed names (closing table)
 
@@ -500,3 +500,5 @@ None collides with an existing name; the commands used are recorded in the Outco
 | `dataprism.links.max-chain-depth` | configuration key (option b only) | 0.8 |
 | `LINK_<REASON>` (twelve audit-only reason codes, shape C of OD-13) | audit value | 0.8 |
 | `dataprism/link/v1/seal`, `/fingerprint`, `/caller` | key-derivation labels | 0.8 |
+| `dataprism.links.keys.loaded` | metric (gauge, one series per held link key id, value 1) | 0.8 |
+| link key ids held (list) | health-endpoint field | 0.8 |
