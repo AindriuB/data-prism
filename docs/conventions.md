@@ -75,7 +75,7 @@ rule above before assuming they need adding here individually:
   task 74 added, keeping a sink exception that can name a server filesystem
   path (e.g. `FileAuditSink`'s `PoisonedException`) out of the client-visible
   `AuditUnavailableException`.
-- `dataPrismHashChainedAuditSink` (`DataPrismAutoConfiguration`,
+- `dataPrismHashChainedAuditSink` (`AuditSinkSelection`,
   `data-prism-spring-boot-autoconfigure`, task 67) calls
   `LOG.error(msg, e)` on `FileAuditSink.OpenFailedException` at startup,
   keeping the same kind of path-bearing detail out of the client-visible

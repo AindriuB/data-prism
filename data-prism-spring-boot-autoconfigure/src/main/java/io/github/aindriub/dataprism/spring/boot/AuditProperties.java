@@ -251,7 +251,7 @@ public class AuditProperties {
     /**
      * The file the {@code hash-chained} sink appends to. Required only when
      * {@code dataprism.audit.sink=hash-chained}; see
-     * {@code DataPrismAutoConfiguration#dataPrismHashChainedAuditSink}. Unused,
+     * {@code AuditSinkSelection#dataPrismHashChainedAuditSink}. Unused,
      * and left unset, by every other sink value.
      */
     public String getFilePath() {

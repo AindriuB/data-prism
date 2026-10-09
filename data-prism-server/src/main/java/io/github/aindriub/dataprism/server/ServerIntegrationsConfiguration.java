@@ -20,7 +20,7 @@ import java.nio.charset.StandardCharsets;
 class ServerIntegrationsConfiguration {
     /**
      * STANDALONE_HTTP_ONLY is one of four codes meaning "this deployment has no
-     * usable MCP transport"; see the Javadoc on {@code DataPrismAutoConfiguration
+     * usable MCP transport"; see the Javadoc on {@code Preflights
      * #dataPrismMcpTransportPreflight} in {@code data-prism-spring-boot-autoconfigure}
      * for the full map and why they are not one.
      */
