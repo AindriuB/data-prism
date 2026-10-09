@@ -49,7 +49,9 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 ### 0.7.0 state (updated 2026-10-09)
 
-Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) and task 197 (catalog design). Open: tasks 190, 193, 194, 196, 198-202. Task 202 is wave 2, and tasks 200 and 201 now depend on it.
+Follow-ups from task 190: re-capture the two converted HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the Compose stack before the 0.7.0 release. For task 201's migration notes: a 0.7 log carrying `REFUSED:<code>` cannot be read by a pre-0.7 verifier, while old logs verify with the new one. The custom-validator SPI change (the final pass validates an array root, not an object) is Breaking and belongs in the same notes.
+
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design) and task 190 (per-source results). Open: tasks 193, 194, 196, 198-202. Task 202 is wave 2, and tasks 200 and 201 now depend on it.
 
 Design outcomes (documents in `docs/plan/design/`: `sealed-links.md`, `key-resolvers.md`, `cluster-security.md`; both approved by security review; the owner delegated every open decision to the recommendation on 2026-10-09, recorded in the documents as "Decided (owner delegated)"):
 

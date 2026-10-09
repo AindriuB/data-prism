@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Per-source results with stable status codes (190)
+
+`get_entity_context` now returns `sources.<key>.{status, entity}` and the top-level `entity` is gone (D-070-1 b), so same-named fields from different sources are no longer overwritten in a merge. A source refused in scrub or validation is withheld whole as `REFUSED` while the others are returned; if every answered source is refused the call is refused as before (D-070-2 b). There are seven status codes, and an unknown one means not answered (D-070-3 a). The audit disposition is `REFUSED:<code>` (D-070-13 a), which `AuditEvent` accepts in exactly that suffix shape, and `merged:<refused>` is kept for the final pass. The final pass validates an array of the returned trees with no source names, a Breaking change for custom validators that assume an object root. A new metric `dataprism.privacy.source.withheld` counts withheld sources, and `failclosed` counts refused calls only.
+
+**Cost:** Privacy-boundary review asked for changes twice before approving 171647fe. A withheld source must leave no trace: no tree, no raw record for correlation, no dispositions, no synthetic values in `emitted`; mutation proofs for each are in the task history. 0.7 logs with `REFUSED:<code>` cannot be read by a pre-0.7 verifier, though old logs verify with the new one. The two single-source HTTP examples were converted by hand, not re-captured. Do not restore `merged.setAll` semantics.
+
 ## 2026-10-09 — Catalog design: list_sources, describe_source, describe_entity_model (197)
 
 `docs/plan/design/catalog.md` now fixes the contracts for the agent's catalog tools: the adapter description SPI and its YAML equivalent, startup checks on description text with a generated fallback, `list_sources` and `describe_source` schemas and audit records for 0.8, `describe_entity_model` for 0.9, and how `get_entity_context` targets chosen sources. The owner decided OD-C2 explicitly, a reserved audit key `names` of `REAL` or `ALIAS`; the other open decisions OD-C1 to OD-C19 were delegated to the recommendations and are in `PLAN.md`.

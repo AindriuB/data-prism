@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 190 | Per-source results `sources.<key>.{status, entity}`, seven status codes, per-source refusal, `REFUSED:<code>` audit values, array-root final validation | ## 2026-10-09 — Per-source results with stable status codes (190) |
 | 2026-10-09 | 197 | Catalog design for list_sources, describe_source and describe_entity_model; owner decided audit key `names`, the rest taken as recommended | ## 2026-10-09 — Catalog design: list_sources, describe_source, describe_entity_model (197) |
 | 2026-10-09 | 195 | PIT mutation testing on four privacy modules, weekly and manual, report only; first scores 68% to 86% | ## 2026-10-09 — Mutation testing on the privacy modules (195) |
 | 2026-10-09 | 191, 192 | Designs for sealed links, key resolvers and open-source Hazelcast cluster security; all open decisions taken as recommended | ## 2026-10-09 — Sealed-link, key-resolver and cluster-security designs (191, 192) |
