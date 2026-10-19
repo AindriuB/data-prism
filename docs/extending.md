@@ -438,9 +438,15 @@ happens to an undeclared property's name and value:
 | `PASS_THROUGH_UNSAFE` | **emitted unchanged** | emitted unchanged |
 
 Under `PASS_THROUGH_UNSAFE`, property names from the source payload reach the
-model unchanged, and no validator checks names: the leak validators scan values
-only. Use that setting only for data that carries nothing sensitive, keys
-included.
+model unchanged. The leak validators scan property names as well as values, under
+every profile: a name shaped like an identifier the scanner knows (an email
+address, a card number, an IBAN and so on) is refused by
+`SensitivePatternValidator`, and a name equal to a prohibited raw source value is
+refused by `RawValueLeakValidator`. A name in the scope's emitted set is exempt,
+as a value is. The violation path shows `<undeclared>` in place of the name, and
+so does everything beneath it. A name that matches no known shape still reaches
+the model, so use that setting only for data whose keys carry nothing
+sensitive.
 
 Declared fields keep their names under every setting. Audit records and
 disposition keys use the single segment `<undeclared>` for any undeclared
