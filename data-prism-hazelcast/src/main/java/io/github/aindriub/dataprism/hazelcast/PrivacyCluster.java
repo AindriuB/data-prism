@@ -74,6 +74,18 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Approval requests, keyed scope first. Each entry lives until the request's expiry. */
     public static final String APPROVAL_MAP = "dataprism.approval";
 
+    /**
+     * Claims on approval ids, keyed by the bare id; the value is the approval's entry key. A claim makes an id
+     * unique across scopes. It lives at least as long as the approval it guards.
+     */
+    public static final String APPROVAL_ID_MAP = "dataprism.approval.id";
+
+    /**
+     * The pending approvals of each (kind, requester) with their expiries, which the per-requester cap counts.
+     * One entry processor changes an entry, so the count and the add are one step.
+     */
+    public static final String APPROVAL_PENDING_MAP = "dataprism.approval.pending";
+
     /** Per-caller fixed-window request counts. */
     public static final String CALLER_RATE_MAP = "dataprism.callerrate";
 
@@ -353,11 +365,29 @@ public final class PrivacyCluster implements AutoCloseable {
             approval.setSplitBrainProtectionName(APPROVAL_PROTECTION);
         }
         config.addMapConfig(approval);
+        // The id claims and pending sets guard the approval map, so they get its write quorum, never evict, and a
+        // heal never frees a held claim or lowers a requester's pending set.
+        MapConfig idClaims = approvalGuard(new MapConfig(APPROVAL_ID_MAP), "PutIfAbsentMergePolicy");
+        MapConfig pending = approvalGuard(new MapConfig(APPROVAL_PENDING_MAP), PendingMergePolicy.class.getName());
+        if (approvalMinimumMembers.isPresent() && approvalMinimumMembers.getAsInt() > 1) {
+            idClaims.setSplitBrainProtectionName(APPROVAL_PROTECTION);
+            pending.setSplitBrainProtectionName(APPROVAL_PROTECTION);
+        }
+        config.addMapConfig(idClaims);
+        config.addMapConfig(pending);
         MapConfig callerRate = privacyMap(new MapConfig(CALLER_RATE_MAP));
         // An evicted counter resets a caller's window; the 2-window TTL bounds size.
         callerRate.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
         config.addMapConfig(callerRate);
         return config;
+    }
+
+    private static MapConfig approvalGuard(MapConfig map, String mergePolicy) {
+        privacyMap(map);
+        // An evicted claim or pending id reopens the path it closes. Entries leave by explicit removal or TTL.
+        map.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
+        map.setMergePolicyConfig(new MergePolicyConfig(mergePolicy, MergePolicyConfig.DEFAULT_BATCH_SIZE));
+        return map;
     }
 
     private static MapConfig privacyMap(MapConfig map) {

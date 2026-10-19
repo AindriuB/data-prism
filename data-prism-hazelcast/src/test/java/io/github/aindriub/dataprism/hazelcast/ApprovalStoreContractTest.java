@@ -309,21 +309,14 @@ class ApprovalStoreContractTest {
     }
 
     @Test
-    void theRequesterLockKeyIsNeitherAnEntryKeyNorAnIdLockKey() {
-        for (Kind k : Kind.values()) {
-            for (String principal : new String[]{"alice", "", null, "a\0b"}) {
-                String lock = HazelcastApprovalStore.requesterLockKey(k, principal);
-                // Ids hold no NUL, so a bare-id lock key holds none; the lock key holds NULs.
-                assertThat(lock).contains("\0");
-                // An entry key is scope + NUL + id, and an id holds no NUL, so its first NUL is followed by none.
-                String afterFirstSeparator = lock.substring(lock.indexOf('\0') + 1);
-                assertThat(afterFirstSeparator).contains("\0");
-                assertThat(ScopeKeys.approvalId(lock)).contains("\0");
-            }
-        }
-        assertThat(HazelcastApprovalStore.requesterLockKey(Kind.TOOL_CALL, "alice"))
-                .isNotEqualTo(HazelcastApprovalStore.requesterLockKey(Kind.REIDENTIFICATION, "alice"))
-                .isNotEqualTo(HazelcastApprovalStore.requesterLockKey(Kind.TOOL_CALL, "bob"));
+    void thePendingKeyDistinguishesKindAndRequester() {
+        assertThat(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "alice"))
+                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.REIDENTIFICATION, "alice"))
+                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "bob"))
+                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, null))
+                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "~"));
+        assertThat(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, null))
+                .isNotEqualTo(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, ""));
     }
 
     @Test

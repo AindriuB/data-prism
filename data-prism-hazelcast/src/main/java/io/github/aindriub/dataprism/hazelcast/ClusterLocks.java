@@ -10,12 +10,12 @@ import java.util.concurrent.TimeUnit;
 /**
  * Every lock this module takes goes through here, so no wait is unbounded.
  *
- * <p>A mutating {@code IMap} call on a key another owner has locked waits for that lock, so an approval
- * change must hold the lock itself, taken with a timeout, before it writes. Hazelcast gives such a lock no
- * protection under split brain; correctness does not rest on it, only the bound does (approvals
- * change by compare-and-set and counters by atomic entry processors). Those locks have a lease of
- * {@value #LEASE_FACTOR} times the timeout. Multi-entry creation checks instead use
- * {@link #acquireRetained}: requester and approval-ID locks must stay owned through the check and insert.
+ * <p>A mutating {@code IMap} call on a key another owner has locked waits for that lock, so a change must hold
+ * the lock itself, taken with a timeout, before it writes. The lock bounds waits only. Hazelcast gives it no
+ * protection under split brain and a paused owner loses it when its lease runs out, so correctness never rests
+ * on it: approvals change by compare-and-set, approval ids are claimed by {@code putIfAbsent}, and counters and
+ * pending-approval sets change by atomic entry processors. Every lock has a lease of {@value #LEASE_FACTOR}
+ * times the timeout, so no owner can hold one for ever.
  */
 final class ClusterLocks {
 
@@ -23,7 +23,7 @@ final class ClusterLocks {
     static final Duration MIN_TIMEOUT = Duration.ofMillis(100);
     static final Duration MAX_TIMEOUT = Duration.ofSeconds(30);
 
-    /** The lease of locks taken by {@link #acquire}, as a multiple of the lock timeout. */
+    /** The lease of every lock taken here, as a multiple of the lock timeout. */
     static final int LEASE_FACTOR = 5;
 
     private ClusterLocks() {
@@ -43,36 +43,28 @@ final class ClusterLocks {
     }
 
     /**
-     * Takes the lock on {@code key}, waiting at most {@code timeout}.
+     * Takes the lock on {@code key}, waiting at most {@code timeout}, for a lease of
+     * {@link #leaseMillis(Duration)}.
      *
-     * @throws ClusterLockTimeoutException if it was not obtained in time, or the thread was interrupted
+     * @throws ClusterLockTimeoutException       if it was not obtained in time, or the thread was interrupted
+     * @throws ClusterOperationRefusedException if Hazelcast rejected the lock or its lease (for example because
+     *                                          {@code hazelcast.lock.max.lease.time.seconds} is below it)
      */
     static void acquire(IMap<String, ?> map, String key, Duration timeout) {
-        acquire(map, key, timeout, leaseMillis(timeout));
-    }
-
-    /**
-     * Keeps ownership until explicit release or member departure. Acquisition still waits at most {@code timeout}.
-     * A paused owner makes competing calls refuse; it must never hand them a stale count by expiring its lock.
-     */
-    static void acquireRetained(IMap<String, ?> map, String key, Duration timeout) {
-        // Explicit infinite lease also avoids inheriting a configured finite default lock lease.
-        acquire(map, key, timeout, Long.MAX_VALUE);
-    }
-
-    private static void acquire(IMap<String, ?> map, String key, Duration timeout, long leaseMillis) {
         try {
-            if (!map.tryLock(key, timeout.toMillis(), TimeUnit.MILLISECONDS, leaseMillis,
+            if (!map.tryLock(key, timeout.toMillis(), TimeUnit.MILLISECONDS, leaseMillis(timeout),
                     TimeUnit.MILLISECONDS)) {
                 throw new ClusterLockTimeoutException();
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new ClusterLockTimeoutException();
+        } catch (IllegalArgumentException rejected) {
+            throw new ClusterOperationRefusedException();
         }
     }
 
-    /** Releases either kind of lock; never throws, so it cannot mask the real failure. */
+    /** Releases a lock; never throws, so it cannot mask the real failure. */
     static void release(IMap<String, ?> map, String key) {
         try {
             map.unlock(key);
