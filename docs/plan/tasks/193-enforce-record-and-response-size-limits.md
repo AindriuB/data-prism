@@ -71,3 +71,64 @@ Write the tests first; each must fail on `main` before the change.
 - Binding the limits from configuration (task 189).
 - The fan-out, `maxSources` behaviour or the read budget.
 - Audit-entry size handling (0.9).
+
+## Outcome — implementation ready for review, 2026-10-19
+
+Implementation commit: `e957f7940`, on `codex/193-response-limits`, based on
+`plan/0.7.0` at `98fd4248`. Not merged or retired.
+
+Both limits run after validation and response assembly, inside the existing
+DENY audit boundary and before ALLOW. The exact checked response is returned.
+`ResponseSize` is package-private and constructs no mapper, JSON factory or
+generator. It counts returned source roots and object array elements, and walks
+JSON iteratively. The byte bound covers the compact context body, including
+source keys/statuses and findings; ignored bookkeeping and correlation fields,
+the transport envelope and duplicate MCP representations are outside that
+measure. Withheld payloads contribute zero; their existing status entries still
+occupy bytes in the emitted body and are therefore counted. Ordinary scalar
+encoding is exact except that each surrogate code unit reserves six bytes;
+supported JSON trees are bounded within three times their compact UTF-8 size.
+Opaque nodes whose custom serialisation cannot be bounded refuse conservatively.
+
+Verification in the task's isolated worktree:
+
+- Tests first against the integration baseline: the byte, record and nested
+  record refusal tests failed because no exception was thrown (3 failures,
+  0 errors). The withheld-source compatibility case already passed.
+- Required `./mvnw -B verify -pl data-prism-orchestration,data-prism-mcp,data-prism-architecture -am`:
+  all 20 reactor modules passed, 1,832 surefire and 17 failsafe tests, no
+  failures/errors/skips. Architecture tests unchanged.
+- Added three further tests for combined-source totals and validation-withheld
+  payloads after that run; the final focused suite passed all 14 tests. No
+  runtime behaviour changed after the full run.
+- Generated-tree test: 2,000 deterministic cases cover Unicode, escaping,
+  numeric values, nested containers and empty arrays. Additional tests cover
+  numeric extremes, binary encoding, findings/status metadata and deep traversal.
+- `ResponseLimitRefusalTest` drives the real MCP tool and its designated mapper:
+  the first accepted byte limit bounds the emitted body; both refusals return
+  exactly the code/path with the audit correlation id, one DENY and no ALLOW.
+- Negative proof: disabling both guards fails
+  `recordLimitAllowsEqualityAndRefusesOneMore`,
+  `byteLimitAllowsEqualityAndRefusesOneLessThanAsciiBody`, and the combined-source
+  checks. Maven skipped downstream MCP after those expected failures, so a
+  separate mutation run proved
+  `bothLimitErrorsCarryOnlyTheCodePathAndAuditedCorrelation` fails too. Source
+  restored in `finally`; all 14 focused tests passed again afterward.
+- `./mvnw -B -Prelease -DskipTests -Dgpg.skip package`: passed, no publication.
+- `mkdocs build --strict` and all six standalone `check_*.py` docs guards passed
+  with `DP_REQUIRE_NO_STUBS=true`; `git diff --check` passed.
+
+### Changed (for task 201)
+
+- Enforce the configured record and response-size caps before returning a
+  context. Exceeding either refuses the whole call with `TOO_MANY_RECORDS` or
+  `RESPONSE_TOO_LARGE`, respectively, and one correlated `DENY:<code>` audit event.
+
+### Migration note (for task 201)
+
+A response previously returned can now be refused. Raise
+`dataprism.limits.max-records` or `dataprism.limits.max-response-size` when the
+larger response is intended. Equality is allowed. Record totals exclude withheld
+payloads; the size cap covers the compact context body including status entries
+and findings, not the MCP envelope. Surrogate-heavy text may be refused before
+its exact encoded size reaches the cap because the bound is conservative.
