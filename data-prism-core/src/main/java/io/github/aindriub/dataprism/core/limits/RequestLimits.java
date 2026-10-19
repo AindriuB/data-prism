@@ -12,7 +12,6 @@ import java.util.Objects;
  * bill and the load on the source systems arrive before anyone notices. See
  * docs/pack.md §74 and docs/design-review.md §D4.
  *
- * @param maxSources          sources one request may call
  * <p>A record is each returned source's root object plus every object that is
  * an array element at any depth. Other nested objects and scalar array elements
  * do not add records. Withheld source payloads count zero.
@@ -26,6 +25,7 @@ import java.util.Objects;
  * refuse conservatively; ordinary JSON is exact apart from that reservation.
  * Unsupported opaque nodes fail closed. Equality with either limit is allowed.
  *
+ * @param maxSources          sources one request may call
  * @param maxRecords          records one request may carry
  * @param maxResponseBytes    conservative compact UTF-8 context-body size
  * @param perSourceTimeout    how long any one source may take before it is treated

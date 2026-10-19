@@ -90,7 +90,9 @@ the transport envelope and duplicate MCP representations are outside that
 measure. Withheld payloads contribute zero; their existing status entries still
 occupy bytes in the emitted body and are therefore counted. Ordinary scalar
 encoding is exact except that each surrogate code unit reserves six bytes;
-supported JSON trees are bounded within three times their compact UTF-8 size.
+for well-formed text (no lone surrogates) supported JSON trees are bounded within
+three times their compact UTF-8 size. A lone surrogate can push the result past
+that, and the overcount is safe because it can only refuse a body that would fit.
 Opaque nodes whose custom serialisation cannot be bounded refuse conservatively.
 
 Verification in the task's isolated worktree:

@@ -41,3 +41,5 @@ overcount is safe because it refuses early, and the docs should say so.
 - Say "supports", never "compliant".
 
 ## Outcome
+
+Record and byte-limit paragraphs moved above the first `@param` in `RequestLimits`. The three-times bound is now qualified to well-formed text in `ResponseSize.tree` and the task 193 Outcome, with the lone-surrogate overcount noted as safe. Comments and Markdown only.

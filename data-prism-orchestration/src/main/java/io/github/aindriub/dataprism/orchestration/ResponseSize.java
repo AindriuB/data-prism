@@ -129,7 +129,10 @@ final class ResponseSize {
 
     /**
      * Exact for ordinary JSON scalars; surrogate code units reserve six bytes apiece.
-     * For supported JSON trees the result is at most three times the compact UTF-8 size.
+     * For supported JSON trees of well-formed text (no lone surrogates) the result is
+     * at most three times the compact UTF-8 size. A lone surrogate reserves six bytes
+     * but encodes to fewer, so it can push the result past three times that size. The
+     * overcount is safe: it can only refuse a body that would have fitted.
      */
     static long tree(JsonNode root) {
         long bytes = 0;
