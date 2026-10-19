@@ -108,8 +108,9 @@ duplicate ID.
 - `dataprism.approval.pending` (`APPROVAL_PENDING_MAP`): key `KIND NUL (=requester | ~)`, value the alternating
   `id NUL expiry` list (`PendingSet`). `PendingSet.Reserve` prunes ids with `expiresAt <= createdAt`, refuses at the
   cap, else adds; `PendingSet.Release` removes one id and deletes the entry when empty. Both overloads reserve (the
-  uncapped one with `Integer.MAX_VALUE`). The entry has no TTL: it is pruned on the next reserve and removed when
-  empty, so it is never shorter-lived than the approvals it counts.
+  uncapped one with `Integer.MAX_VALUE`). The entry has a TTL written by the processor on every reserve and release:
+  the longest remaining approval plus the one-minute slack, so it never expires before an approval it counts and
+  never outlives the last one by more than the slack. (Review round 1 changed this from no TTL.)
 - Order is claim, reserve, insert; undo is in reverse. After an ambiguous insert failure the undo runs only if
   `containsKey` confirms the entry is absent.
 - `create` takes bounded locks (id claim, pending entry, approval entry) through `ClusterLocks.acquire` only, to bound
@@ -178,3 +179,19 @@ against the cap until they expire.
 
 **For the 0.8 sealing (task 215).** The two guard maps hold approval ids (the claim key), scope ids (the claim value)
 and requester principals (the pending key) in clear. If sealing covers the approval map it must cover these too.
+
+### Review fixes (after APPROVE at 52081eb1)
+
+- The claim's TTL is refreshed in `swap` (decide and consume) to the entry's new TTL plus the slack, so a claim
+  outlives its approval under clock skew. Tests: `ApprovalRetentionTest` asserts the claim TTL at creation, after a
+  decision with the caller's clock two hours behind, 59 minutes and three hours ahead, and after consume.
+- The pending entry now expires: see the Design bullet above. `ApprovalRetentionTest` asserts its TTL after a reserve
+  and a release, and that an approval that expires undecided takes the pending entry and the claim with it.
+- `docs/multiple-instances.md` gains a "Retention" paragraph and the upgrade caution now says approvals created before
+  the upgrade have no claim until they expire.
+- `PendingMergePolicy` prefers the readable side (was: kept an unreadable existing side); `ApprovalGuardMapsTest`
+  covers both directions and both-unreadable. The `HazelcastApprovalStore` class Javadoc no longer claims nothing
+  catches a cluster exception.
+- For the 0.8 sealing: the pending entry and the claim still hold principal, approval id and scope in clear while they
+  live (at most the approval's lifetime plus a minute). If the sealing covers the approval map it must cover both,
+  and a sealed key would need the same TTL handling, because the processor rewrites the value with a TTL.

@@ -84,6 +84,8 @@ class ApprovalGuardMapsTest {
         String readable = pending("a", "2030-01-01T01:00:00Z");
         assertThat(policy.merge(entry(readable), null)).isEqualTo(readable);
         assertThat(policy.merge(entry("garbage"), entry(readable))).isEqualTo(readable);
+        assertThat(policy.merge(entry(readable), entry("garbage"))).isEqualTo(readable);
+        assertThat(policy.merge(entry("garbage"), entry("more garbage"))).isNull();
     }
 
     @Test

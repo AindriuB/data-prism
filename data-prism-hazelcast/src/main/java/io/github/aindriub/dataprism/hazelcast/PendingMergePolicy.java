@@ -22,10 +22,23 @@ public final class PendingMergePolicy implements SplitBrainMergePolicy<String, M
         if (existing == null) {
             return merging.getValue();
         }
-        try {
+        boolean incomingReadable = readable(merging.getValue());
+        boolean currentReadable = readable(existing.getValue());
+        if (incomingReadable && currentReadable) {
             return PendingSet.union(merging.getValue(), existing.getValue());
+        }
+        if (incomingReadable) {
+            return merging.getValue();
+        }
+        return currentReadable ? existing.getValue() : null;
+    }
+
+    private static boolean readable(String raw) {
+        try {
+            PendingSet.decode(raw);
+            return true;
         } catch (RuntimeException unreadable) {
-            return existing.getValue();
+            return false;
         }
     }
 

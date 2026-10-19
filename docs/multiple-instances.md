@@ -57,7 +57,7 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.oversight` | Pause flags: global, per tool, per scope. No eviction | No | 1 |
 | `dataprism.approval` | Approval requests, each until its expiry | No | 1 |
 | `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. Each claim outlives its approval by the minute an expired entry stays visible. No eviction | No | 1 |
-| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with expiries, which the pending cap counts. Changed only by an entry processor. No eviction | No | 1 |
+| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with expiries, which the pending cap counts. Changed only by an entry processor, which gives it a lifetime of the longest pending approval plus a minute, renewed on every change. No eviction | No | 1 |
 | `dataprism.callerrate` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
 The other maps evict least-recently-used entries beyond 100,000 per member.
@@ -320,8 +320,9 @@ described below.
 run together. An older member does not know the id claims or the pending counts,
 so during the mix the same approval id can still be created twice, and a
 requester can exceed the cap. Roll all members to the new version before relying
-on either guarantee. Approvals created before the upgrade are not counted against
-the cap until they expire.
+on either guarantee. Approvals created before the upgrade have no id claim and are not counted against
+the cap, so until they expire the same id can be created again and they do not
+use up a requester's slots.
 
 ### Approvals under a partition
 
@@ -337,6 +338,17 @@ reverse order when a step fails. An undo that fails can leave an id unusable, or
 requester over-counted, until the approval expires; it never under-counts. An approval
 leaves the pending entry when it is approved, rejected or found expired, or when its scope
 ends. Consuming an approval leaves its id claimed until the approval expires.
+
+**Retention.** The id claim and the requester's pending entry carry the principal, the
+approval id and the scope in clear, so they must not outlive the approvals they guard
+by much. Each claim lives for its approval's lifetime plus a minute, and the claim's
+lifetime is renewed whenever the approval's expiry is reset by a decision or a consume.
+The pending entry lives for the longest pending approval's lifetime plus a minute,
+renewed on every reserve or release. If every approval of a requester expires
+undecided, the pending entry and the claims therefore disappear by themselves about a
+minute later, with no call needed, and an earlier `forgetScope` is not required to
+remove them. Hazelcast truncates entry times to whole seconds, so the lifetimes are
+exact to about a second.
 
 A partition still leaves each side with its own copy of the entry. Two protections
 narrow what that allows.

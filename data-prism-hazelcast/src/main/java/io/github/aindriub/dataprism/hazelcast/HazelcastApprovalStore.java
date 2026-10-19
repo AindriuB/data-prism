@@ -27,7 +27,10 @@ import java.util.function.Supplier;
  * Approvals shared across the cluster, so one granted on one instance is
  * consumable on any instance, exactly once.
  *
- * <p>Fails closed: nothing here catches a cluster exception. Entries are stored
+ * <p>Fails closed: a cluster failure is never turned into success. {@link #create} reports one as
+ * {@link ClusterOperationRefusedException} (a lost write quorum keeps its own exception) and the other calls let it
+ * propagate. Only the undo and clean-up steps after a change that has already happened swallow a failure, and they
+ * can only leave an id unusable or a requester over-counted until expiry. Entries are stored
  * as strings, like every other key and value in the cluster, so no serialiser
  * has to agree across members. A record holds principal ids, purpose, case id,
  * fingerprint, namespace and the synthetic value, and no subject id, because
@@ -48,11 +51,15 @@ import java.util.function.Supplier;
  */
 public final class HazelcastApprovalStore implements ApprovalStore {
 
-    /** How long an entry we mark expired stays visible, so a late approver sees EXPIRED. */
-    private static final Duration EXPIRED_RETENTION = Duration.ofMinutes(1);
+    /**
+     * How long an entry we mark expired stays visible, so a late approver sees EXPIRED. It is also the slack that
+     * keeps each id claim and each pending entry alive longer than the approvals they guard.
+     */
+    private static final Duration DEFAULT_RETENTION = Duration.ofMinutes(1);
 
     private final PrivacyCluster cluster;
     private final Duration lockTimeout;
+    private final Duration retention;
 
     /** With the default lock timeout of two seconds. */
     public HazelcastApprovalStore(PrivacyCluster cluster) {
@@ -64,8 +71,14 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      * @throws IllegalArgumentException if the timeout is outside that range
      */
     public HazelcastApprovalStore(PrivacyCluster cluster, Duration lockTimeout) {
+        this(cluster, lockTimeout, DEFAULT_RETENTION);
+    }
+
+    /** As above, with a shorter retention for tests that wait for entries to expire. */
+    HazelcastApprovalStore(PrivacyCluster cluster, Duration lockTimeout, Duration retention) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
+        this.retention = Objects.requireNonNull(retention, "retention");
     }
 
     /**
@@ -117,14 +130,15 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             locks.take(pendingSets, pendingKey);
             locks.take(approvals, entryKey);
             // The claim outlives the approval entry, including the minute an expired entry stays visible.
-            if (cluster(() -> claims.putIfAbsent(id, entryKey, ttl + EXPIRED_RETENTION.toMillis(),
+            if (cluster(() -> claims.putIfAbsent(id, entryKey, ttl + retention.toMillis(),
                     TimeUnit.MILLISECONDS)) != null) {
                 throw new IllegalArgumentException("duplicate approval id");
             }
             boolean reserved;
             try {
                 reserved = cluster(() -> pendingSets.executeOnKey(pendingKey,
-                        new PendingSet.Reserve(id, pending.createdAt(), pending.expiresAt(), cap)));
+                        new PendingSet.Reserve(id, pending.createdAt(), pending.expiresAt(), cap,
+                                retention.toMillis())));
             } catch (RuntimeException failed) {
                 unclaim(claims, id, entryKey);
                 throw failed;
@@ -140,7 +154,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 // Only a confirmed absence is undone: if the insert may have happened, keeping the claim and the
                 // count errs towards refusing.
                 if (confirmedAbsent(approvals, entryKey)) {
-                    unreserve(pendingSets, pendingKey, id);
+                    unreserve(pendingSets, pending, retention.toMillis());
                     unclaim(claims, id, entryKey);
                 }
                 throw failed;
@@ -179,9 +193,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     /** Best effort: a failure leaves the requester over-counted until the approval's expiry, never under-counted. */
-    private static void unreserve(IMap<String, String> pendingSets, String pendingKey, String id) {
+    private static void unreserve(IMap<String, String> pendingSets, ApprovalRequest request, long slackMillis) {
         try {
-            pendingSets.executeOnKey(pendingKey, new PendingSet.Release(id));
+            pendingSets.executeOnKey(pendingKey(request.kind(), request.requesterPrincipalId()),
+                    new PendingSet.Release(request.approvalId(), request.createdAt(), slackMillis));
         } catch (RuntimeException ignored) {
             // The id is pruned once it expires.
         }
@@ -229,7 +244,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
 
     /** Removes an approval that left {@code PENDING} from its requester's count. Best effort, as above. */
     private void leavePending(ApprovalRequest request) {
-        unreserve(pendingSets(), pendingKey(request.kind(), request.requesterPrincipalId()), request.approvalId());
+        unreserve(pendingSets(), request, retention.toMillis());
     }
 
     @Override
@@ -322,8 +337,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             approvals.delete(key);
             if (raw != null) {
                 ApprovalRequest request = Codec.decode(raw);
-                unreserve(pendingSets, pendingKey(request.kind(), request.requesterPrincipalId()),
-                        request.approvalId());
+                unreserve(pendingSets, request, DEFAULT_RETENTION.toMillis());
                 unclaim(claims, request.approvalId(), key);
             }
         }
@@ -390,16 +404,24 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      * Replaces {@code key}'s value only if it is still {@code expected}, then restores the entry's expiry, because
      * a replace resets it to none. Returns whether this caller made the change.
      */
-    private static boolean swap(IMap<String, String> approvals, String key, String expected, ApprovalRequest next,
-                                Instant now) {
+    private boolean swap(IMap<String, String> approvals, String key, String expected, ApprovalRequest next,
+                         Instant now) {
         if (!approvals.replace(key, expected, Codec.encode(next))) {
             return false;
         }
         Duration remaining = Duration.between(now, next.expiresAt());
         if (remaining.isNegative() || remaining.isZero()) {
-            remaining = EXPIRED_RETENTION;
+            remaining = retention;
         }
         approvals.setTtl(key, Math.max(1L, remaining.toMillis()), TimeUnit.MILLISECONDS);
+        // The claim must outlive the entry it guards, however the caller's clock sat when it set the entry's expiry.
+        // Best effort: if this fails the claim keeps the lifetime it had, which only matters under clock skew.
+        try {
+            idClaims().setTtl(next.approvalId(), Math.max(1L, remaining.toMillis()) + retention.toMillis(),
+                    TimeUnit.MILLISECONDS);
+        } catch (RuntimeException ignored) {
+            // See above.
+        }
         return true;
     }
 
