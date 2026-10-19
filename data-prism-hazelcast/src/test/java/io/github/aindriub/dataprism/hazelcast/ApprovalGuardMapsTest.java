@@ -79,18 +79,18 @@ class ApprovalGuardMapsTest {
     }
 
     @Test
-    void whenTheSidesDisagreeOnAnIdsOwnerTheMemberStaysAndTheChoiceDoesNotDependOnTheOrder() {
+    void whenTheSidesDisagreeOnAnIdsOwnerTheMemberStaysUnownedWithTheLaterExpiryInEitherOrder() {
         var policy = new PendingMergePolicy();
         String left = pending("r-1", "2030-01-01T01:00:00Z", "scope-a");
-        String right = pending("r-1", "2030-01-01T01:00:00Z", "scope-b");
-        String later = pending("r-1", "2030-01-01T02:00:00Z", "scope-c");
+        String right = pending("r-1", "2030-01-01T02:00:00Z", "scope-b");
+        String same = pending("r-1", "2030-01-01T02:00:00Z", "scope-b");
         for (String[] pair : new String[][]{{left, right}, {right, left}}) {
             Map<String, PendingSet.Member> merged = PendingSet.decode(policy.merge(entry(pair[0]), entry(pair[1])));
             assertThat(merged).containsOnlyKeys("r-1");
-            assertThat(merged.get("r-1").owner()).isEqualTo("scope-a");
+            assertThat(merged.get("r-1").owner()).isEqualTo(PendingSet.CONFLICT);
+            assertThat(merged.get("r-1").expiresAt()).isEqualTo(Instant.parse("2030-01-01T02:00:00Z"));
         }
-        assertThat(PendingSet.decode(policy.merge(entry(left), entry(later))).get("r-1").owner()).isEqualTo("scope-c");
-        assertThat(PendingSet.decode(policy.merge(entry(later), entry(left))).get("r-1").owner()).isEqualTo("scope-c");
+        assertThat(PendingSet.decode(policy.merge(entry(right), entry(same))).get("r-1").owner()).isEqualTo("scope-b");
     }
 
     @Test

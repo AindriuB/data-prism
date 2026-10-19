@@ -43,6 +43,7 @@ final class PendingSweeper implements AutoCloseable {
     private final HazelcastInstance instance;
     private final Clock clock;
     private final ScheduledExecutorService executor;
+    private volatile Duration lockTimeout = ClusterLocks.DEFAULT_TIMEOUT;
 
     PendingSweeper(HazelcastInstance instance, Duration interval, Clock clock) {
         this.instance = instance;
@@ -94,7 +95,12 @@ final class PendingSweeper implements AutoCloseable {
     /** One sweep of the id claims this member owns; returns how many stale claims it removed. */
     int sweepClaims() {
         return ClaimEntries.sweep(instance.getMap(PrivacyCluster.APPROVAL_ID_MAP),
-                instance.getMap(PrivacyCluster.APPROVAL_MAP));
+                instance.getMap(PrivacyCluster.APPROVAL_MAP), lockTimeout);
+    }
+
+    /** The lock timeout the stores were configured with; the claim sweep leases its brief locks for that. */
+    void useLockTimeout(Duration lockTimeout) {
+        this.lockTimeout = lockTimeout;
     }
 
     private void sweepQuietly() {

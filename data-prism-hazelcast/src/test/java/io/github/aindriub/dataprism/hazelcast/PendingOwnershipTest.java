@@ -45,6 +45,17 @@ class PendingOwnershipTest {
     }
 
     @Test
+    void aLateReserveOfAShorterApprovalKeepsTheLongerExpiryAndTheLatestWriterOwns() {
+        String longer = reserve(null, "r-1", "scope-b", 1);
+        Map.Entry<String, String> entry = new AbstractMap.SimpleEntry<>("k", longer);
+        new PendingSet.Reserve("r-1", "scope-a", NOW, NOW.plus(Duration.ofMinutes(10)), 1).process(entry);
+        PendingSet.Member member = PendingSet.decode(entry.getValue()).get("r-1");
+        assertThat(member.expiresAt()).isEqualTo(LATER);
+        assertThat(member.owner()).isEqualTo("scope-a");
+        assertThat(PendingSet.decode(entry.getValue())).hasSize(1);
+    }
+
+    @Test
     void aReleaseByAFormerOwnerLeavesTheSlotAlone() {
         String taken = reserve(reserve(null, "r-1", "scope-a", 1), "r-1", "scope-b", 1);
         assertThat(release(taken, "r-1", "scope-a")).isEqualTo(taken);
@@ -88,5 +99,49 @@ class PendingOwnershipTest {
             stall.resume();
             for (PrivacyCluster member : members) member.close();
         }
+    }
+
+    @Test
+    void aCreatorStoppedBetweenClaimAndReserveCannotShortenTheTakersSlot() throws Exception {
+        PrivacyCluster[] members = TestMembers.pair(TestMembers.uniqueName("pending-late"), OptionalInt.empty());
+        StalledInsert stall = StalledInsert.beforeReserve();
+        try (var caller = Executors.newSingleThreadExecutor()) {
+            var paused = new HazelcastApprovalStore(stall.over(members[1]), TIMEOUT);
+            var other = new HazelcastApprovalStore(members[0], TIMEOUT);
+            ApprovalRequest a = withLife("r-1", "scope-a", NOW, Duration.ofMinutes(10));
+            ApprovalRequest b = withLife("r-1", "scope-b", NOW, Duration.ofHours(1));
+            var stalled = caller.submit(() -> paused.create(a, 1));
+            try {
+                assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
+                String pendingKey = HazelcastApprovalStore.pendingKey(a.kind(), a.requesterPrincipalId());
+                StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_ID_MAP, "r-1");
+                StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_PENDING_MAP, pendingKey);
+                StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_MAP, ScopeKeys.approval("scope-a", "r-1"));
+                // The claim names an entry that does not exist yet, so scope-b takes it over and reserves +1 hour.
+                assertThat(other.create(b, 1)).isEqualTo(b);
+
+                // The stopped creator now reserves its shorter approval, then finds it lost the claim.
+                stall.resume();
+                assertThatThrownBy(() -> stalled.get(10, TimeUnit.SECONDS))
+                        .hasCauseInstanceOf(IllegalArgumentException.class);
+
+                // Eleven minutes on, the ten-minute expiry has passed but scope-b's approval is still pending.
+                ApprovalRequest c = withLife("r-2", "scope-c", NOW.plus(Duration.ofMinutes(11)), Duration.ofHours(2));
+                assertThatThrownBy(() -> other.create(c, 1)).isInstanceOf(ApprovalRefusedException.class)
+                        .satisfies(failure -> assertThat(((ApprovalRefusedException) failure).code())
+                                .isEqualTo(ApprovalRefusedException.Code.TOO_MANY_PENDING));
+            } finally {
+                stall.resume();
+            }
+        } finally {
+            stall.resume();
+            for (PrivacyCluster member : members) member.close();
+        }
+    }
+
+    private static ApprovalRequest withLife(String id, String scope, Instant created, Duration life) {
+        return new ApprovalRequest(id, ApprovalRequest.Kind.TOOL_CALL, "alice", "client", scope, "search",
+                "fp-" + id, "PERSON_NAME", "synthetic", "audit", "CASE-1", created, created.plus(life),
+                Status.PENDING, null, null);
     }
 }

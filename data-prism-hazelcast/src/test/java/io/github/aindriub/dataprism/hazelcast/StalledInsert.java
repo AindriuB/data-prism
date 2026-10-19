@@ -45,6 +45,11 @@ final class StalledInsert {
         return new StalledInsert(PrivacyCluster.APPROVAL_ID_MAP, "get", 1, 2);
     }
 
+    /** Stops the caller after it claimed the id and before it reserves the cap in the pending map. */
+    static StalledInsert beforeReserve() {
+        return new StalledInsert(PrivacyCluster.APPROVAL_PENDING_MAP, "executeOnKey", 2, 1);
+    }
+
     /** When the stopped call is let go it fails instead of running, as an insert that threw would. */
     StalledInsert failingOnResume() {
         this.failOnResume = true;

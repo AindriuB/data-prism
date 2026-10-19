@@ -62,26 +62,29 @@ final class PendingSet {
         return out.toString();
     }
 
+    /** Owner of a member whose two sides disagreed after a heal: no one can release it, so it only over-counts. */
+    static final String CONFLICT = "\u0001conflict";
+
     /**
-     * Every id from both. For an id on both sides the later expiry wins and so does its owner; on a tie the smaller
-     * owner does. The result does not depend on the order of the arguments, and the count is the union's.
+     * Every id from both. For an id on both sides the later expiry wins; if the sides name different owners the
+     * member keeps no owner ({@link #CONFLICT}), so nobody's release can remove it early. The result does not depend
+     * on the order of the arguments, and the count is the union's.
      */
     static String union(String left, String right) {
         Map<String, Member> merged = decode(left);
-        decode(right).forEach((id, member) -> merged.merge(id, member, (a, b) -> {
-            int byExpiry = a.expiresAt().compareTo(b.expiresAt());
-            if (byExpiry != 0) {
-                return byExpiry > 0 ? a : b;
-            }
-            return a.owner().compareTo(b.owner()) <= 0 ? a : b;
-        }));
+        decode(right).forEach((id, member) -> merged.merge(id, member, (a, b) -> new Member(
+                a.expiresAt().isAfter(b.expiresAt()) ? a.expiresAt() : b.expiresAt(),
+                a.owner().equals(b.owner()) ? a.owner() : CONFLICT)));
         return encode(merged);
     }
 
     /**
      * Adds {@code id} for {@code owner} unless {@code cap} live ids are already there. Live means {@code createdAt}
      * is before the id's expiry; expired ids are pruned first. An id that is already there is taken over by
-     * {@code owner} with the count unchanged. Returns whether the id is now recorded.
+     * {@code owner} with the count unchanged, and keeps the later of the two expiries, so a creator that reserves late
+     * can never shorten the slot of the approval that took its id over. The latest writer is the owner: it is the
+     * only one that can release, and a stale writer that wrote last leaves a slot nobody releases, which only
+     * over-counts. Returns whether the id is now recorded.
      */
     record Reserve(String id, String owner, Instant createdAt, Instant expiresAt, int cap)
             implements EntryProcessor<String, String, Boolean> {
@@ -92,7 +95,9 @@ final class PendingSet {
             if (!ids.containsKey(id) && ids.size() >= cap) {
                 return false;
             }
-            ids.put(id, new Member(expiresAt, owner));
+            Member present = ids.get(id);
+            Instant expiry = present != null && present.expiresAt().isAfter(expiresAt) ? present.expiresAt() : expiresAt;
+            ids.put(id, new Member(expiry, owner));
             entry.setValue(encode(ids));
             return true;
         }

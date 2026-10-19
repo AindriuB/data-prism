@@ -75,6 +75,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
         this.retention = DEFAULT_RETENTION;
+        cluster.useLockTimeout(this.lockTimeout);
     }
 
     /**
@@ -106,7 +107,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
 
     /**
      * Claims the id, then reserves the cap, then inserts, and undoes in reverse order when a step fails. A failed
-     * undo can leave an id unusable or a requester over-counted until expiry; it never under-counts. The locks it
+     * undo can leave an id unusable or a requester over-counted until expiry; no undo or release removes a slot that
+     * another approval of the same id owns (see {@link PendingSet}). The locks it
      * takes on the keys it writes only bound the wait.
      */
     private ApprovalRequest admit(ApprovalRequest pending, int cap) {
@@ -207,7 +209,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
     }
 
-    /** Best effort: a failure leaves the requester over-counted until the approval's expiry, never under-counted. */
+    /** Best effort, and only for the slot this request owns: a failure leaves the requester over-counted until expiry. */
     private static void unreserve(IMap<String, String> pendingSets, ApprovalRequest request) {
         try {
             pendingSets.executeOnKey(pendingKey(request.kind(), request.requesterPrincipalId()),

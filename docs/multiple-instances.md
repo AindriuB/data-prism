@@ -335,9 +335,20 @@ An approval id is claimed by `putIfAbsent` in `dataprism.approval.id`, and the p
 cap is one entry processor on the requester's entry in `dataprism.approval.pending`. A
 creation claims the id (taking over a claim whose entry is gone), then reserves the cap (each pending id records the scope that owns it, so a creator that lost its claim cannot release a slot the new owner relies on), then checks it still holds the claim, inserts the approval and checks again, and undoes in
 reverse order when a step fails. An undo that fails can leave an id unusable, or a
-requester over-counted, until the approval expires; it never under-counts, apart from the clock tolerance of the sweep described below. An approval
+requester over-counted, until the approval expires; it never under-counts, with the clock tolerance stated under Retention below. An approval
 leaves the pending entry when it is approved, rejected or found expired, or when its scope
 ends. Consuming an approval leaves its id claimed while the consumed entry still exists.
+
+**What the cap counts.** A pending approval stays counted until one of three things happens:
+it leaves `PENDING` (the entry that owns the slot releases it); its expiry has passed on the clock
+of the caller creating the next approval (the cap compares each id's expiry with that request's
+creation time, so the count can differ by the clock difference between the callers that create
+approvals); or the sweep removes it once its expiry plus one minute has passed on the sweeping
+member's clock. Every other path only counts longer: a failed undo, a creator that lost its id
+claim, a slot taken over by a later creator (the slot keeps the later expiry and is owned by the
+latest writer), a release by an entry that does not own the slot, and a heal that finds the two
+sides disagreeing on the owner (the slot then has no owner and stays until it expires). None of
+those removes a slot early.
 
 **Retention.** The id claim and the requester's pending entry carry the principal, the
 approval id and the scope in clear, so they must not outlive the approvals they guard by

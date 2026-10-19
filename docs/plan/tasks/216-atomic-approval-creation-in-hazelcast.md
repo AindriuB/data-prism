@@ -287,3 +287,28 @@ and requester principals (the pending key) in clear. If sealing covers the appro
 - **Under-count claim.** "Never under-counts" now holds for every undo and release path, with one stated exception that
   was already there: the sweep removes an id once its expiry plus 60 s has passed on the sweeping member's clock, so a
   caller whose clock runs more than 60 s behind could see an id removed that it still counts.
+
+### Review fixes, fifth round (after the shared-reservation fix was accepted)
+
+- **Defect fixed: a late `Reserve` overwrote the expiry.** Stalled between claim and reserve, the first creator could
+  write a shorter expiry over the taker's longer one, and the prune then dropped the id while the taker's approval was
+  pending. `Reserve` on a present id now keeps the later expiry. The test `aCreatorStoppedBetweenClaimAndReserveCannotShortenTheTakersSlot`
+  uses the new `StalledInsert.beforeReserve()` pause point (10 minute against 1 hour, then a create at +11 minutes with
+  cap 1 must be refused); a unit test checks the processor. Making `Reserve` overwrite the expiry fails both.
+- **Owner rule, differing from the review's wording.** The review suggested keeping the owner that goes with the later
+  expiry. A taker with the shorter expiry would then leave the slot owned by the paused creator, whose later undo would
+  remove the taker's slot. So the expiry is the maximum and the owner is the latest writer; a stale writer that wrote
+  last only leaves a slot nobody releases (over-count). The merge keeps the later expiry and, where the sides name
+  different owners, gives the member no owner (`PendingSet.CONFLICT`), so a heal cannot hand a release to the wrong side.
+- **Brief locks lease for the configured timeout.** `ClusterLocks.tryAcquireNow` takes the timeout; the stores tell the
+  cluster's sweeper the timeout they were built with (`PrivacyCluster.useLockTimeout`), so the claim sweep's locks have
+  the same lease as every other (default `PT2S` until a store is built; the last store built sets it).
+- **What holds for the cap, exactly.** Every write path to the pending map: `Reserve` adds an id or keeps the later
+  expiry and the latest writer as owner; its prune drops an id whose expiry is not after the new request's creation
+  time; `Release` removes an id only for its owner; the sweep removes an id only when expiry plus 60 s is not after the
+  sweeping member's clock; the merge unions and keeps the later expiry. So a pending approval is counted until it leaves
+  `PENDING`, or its expiry has passed by the clock of the caller creating the next approval, or by the sweeping
+  member's clock plus 60 s. The accepted tolerance is therefore the clock difference between callers (prune) and
+  between a caller and the sweeping member beyond 60 s (sweep). Failed undos, lost claims, takeovers, non-owner releases
+  and heal conflicts only count longer. The earlier statement "never under-counts" is kept in the docs with that
+  tolerance named, and is now true of the paths that used to break it (the overwritten expiry above).

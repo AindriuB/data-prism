@@ -114,6 +114,11 @@ public final class PrivacyCluster implements AutoCloseable {
         return sweeper.sweepClaims();
     }
 
+    /** Tells the sweep the lock timeout in use, so the locks it takes carry the same lease as everyone's. */
+    void useLockTimeout(java.time.Duration lockTimeout) {
+        sweeper.useLockTimeout(lockTimeout);
+    }
+
     boolean sweeperStopped() {
         return sweeper.isStopped();
     }

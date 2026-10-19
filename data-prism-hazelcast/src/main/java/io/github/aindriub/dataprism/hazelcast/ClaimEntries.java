@@ -87,13 +87,13 @@ final class ClaimEntries {
     /**
      * One pass over the claims this member owns; returns how many stale claims it removed. An id whose lock is held
      * right now is skipped: its creator is running, and a claim that is only waiting for its insert must not be taken
-     * for a stale one and make that creator refuse. The lock only keeps the sweep off a normally running creator.
+     * for a stale one and make that creator refuse. The lease is the configured lock timeout's, like every lock. The lock only keeps the sweep off a normally running creator.
      * Safety does not rest on it (a creator whose lease ran out is handled by the claim check after its insert).
      */
-    static int sweep(IMap<String, String> claims, IMap<String, String> approvals) {
+    static int sweep(IMap<String, String> claims, IMap<String, String> approvals, java.time.Duration lockTimeout) {
         int removed = 0;
         for (String id : claims.localKeySet()) {
-            if (!ClusterLocks.tryAcquireNow(claims, id)) {
+            if (!ClusterLocks.tryAcquireNow(claims, id, lockTimeout)) {
                 continue;
             }
             try {
