@@ -81,13 +81,15 @@ autoconfigure, mcp and integration-tests with `-am`: validation 44 tests, 0
 failures; every other module green except integration-tests, 172 run, 1 failure
 (below). `./mvnw -Prelease -DskipTests package`: BUILD SUCCESS.
 
-**Open: one existing pin contradicts this task.**
-`UndeclaredNameToolResultScanTest.passThroughPinned` asserts that the key
-`zzResultKeyWv4@example.com` (`UndeclaredKeyFixture.RESULT_KEY`) reaches the
-result under `PASS_THROUGH_UNSAFE`. That key is email-shaped, so it is now
-refused, as intended. Neither file is in this task's `Owns`. Needed: change
-`RESULT_KEY` to a key that matches no scanner shape (for example
-`RESULT_TOKEN + "-note"`), and keep the pin. Not done here.
+**Widened Owns (coordinator, after review):** `UndeclaredKeyFixture.java` and
+`UndeclaredNameToolResultScanTest.java` joined `Owns`. The pin
+`passThroughPinned` encoded the behaviour this task removes (an email-shaped
+key reaching the result). `RESULT_KEY` is now `RESULT_TOKEN + "-note"`, which
+matches no scanner shape, so the pin still proves that an undeclared,
+non-sensitive key passes under `PASS_THROUGH_UNSAFE`. The other users of
+`RESULT_KEY` and `RESULT_TOKEN` only plant or search for the token text, so
+their meaning is unchanged; `KEY` (the email-shaped key used by the refusal
+tests) is untouched.
 
 CHANGELOG (task 201), under `### Security`:
 
