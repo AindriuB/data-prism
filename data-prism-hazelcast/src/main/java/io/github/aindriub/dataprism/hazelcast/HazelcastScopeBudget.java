@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
@@ -7,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -68,18 +70,23 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         }
 
         try {
-            int current = counts.getOrDefault(key, 0);
-            if (current >= budget) {
-                return false;
-            }
-            // A refused read is not counted, so a caller that keeps asking cannot
-            // push the count somewhere a later budget increase never recovers from.
-            counts.set(key, current + 1);
-            return true;
+            // The lease bounds lock stalls; correctness belongs to the atomic map transition.
+            return counts.executeOnKey(key, new ReadWithinBudget(budget));
         } catch (RuntimeException clusterFailure) {
             return refuse(clusterFailure);
         } finally {
             ClusterLocks.release(counts, key);
+        }
+    }
+
+    private record ReadWithinBudget(int budget) implements EntryProcessor<String, Integer, Boolean> {
+        @Override
+        public Boolean process(Map.Entry<String, Integer> entry) {
+            int current = entry.getValue() == null ? 0 : entry.getValue();
+            if (current >= budget) return false;
+            // Refusals do not count, so a later budget increase can still admit reads.
+            entry.setValue(current + 1);
+            return true;
         }
     }
 

@@ -12,8 +12,8 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>A mutating {@code IMap} call on a key another owner has locked waits for that lock, so an approval
  * change must hold the lock itself, taken with a timeout, before it writes. Hazelcast gives such a lock no
- * protection under split brain; correctness does not rest on it, only the bound does (approvals also
- * change by compare-and-set). The lock lease is {@value #LEASE_FACTOR} times the timeout, so a lock whose
+ * protection under split brain; correctness does not rest on it, only the bound does (approvals
+ * change by compare-and-set and counters by atomic entry processors). The lock lease is {@value #LEASE_FACTOR} times the timeout, so a lock whose
  * holder died is released on its own and the longest stall it can cause is known.
  */
 final class ClusterLocks {

@@ -33,6 +33,7 @@ class ClusterLockTimeoutTest {
 
     private static final Duration TIMEOUT = Duration.ofMillis(300);
 
+    private PrivacyCluster[] members;
     private PrivacyCluster cluster;
     private HazelcastApprovalStore approvals;
     private HazelcastScopeBudget budget;
@@ -41,7 +42,8 @@ class ClusterLockTimeoutTest {
 
     @BeforeEach
     void start() {
-        cluster = TestMembers.pair(TestMembers.uniqueName("locks"), OptionalInt.empty())[0];
+        members = TestMembers.pair(TestMembers.uniqueName("locks"), OptionalInt.empty());
+        cluster = members[0];
         approvals = new HazelcastApprovalStore(cluster, TIMEOUT);
         budget = new HazelcastScopeBudget(cluster, TIMEOUT);
         limiter = new HazelcastCallerRateLimiter(cluster, TIMEOUT);
@@ -51,7 +53,9 @@ class ClusterLockTimeoutTest {
     @AfterEach
     void stop() {
         caller.shutdownNow();
-        cluster.close();
+        for (PrivacyCluster member : members) {
+            member.close();
+        }
     }
 
     private interface Call {
