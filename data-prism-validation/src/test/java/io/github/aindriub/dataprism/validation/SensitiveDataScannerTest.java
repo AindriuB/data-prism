@@ -236,6 +236,37 @@ class SensitiveDataScannerTest {
     }
 
     @Test
+    @DisplayName("an object of many email-shaped keys stops at the match cap and is still reported, without key names")
+    void keyScanIsBoundedByTheMatchCap() {
+        ObjectNode response = mapper.createObjectNode();
+        for (int i = 0; i < 1000; i++) {
+            response.put("person" + i + "@example.test", "ok");
+        }
+
+        ScanReport report = scanner.scan(response);
+
+        assertThat(report.matches()).hasSize(64);
+        assertThat(report.matches()).allSatisfy(match -> {
+            assertThat(match.path()).isEqualTo("$.<undeclared>");
+            assertThat(match.classification()).isEqualTo(DataClassification.CONTACT);
+        });
+    }
+
+    @Test
+    @DisplayName("keys past the character budget are not scanned and the scan reports incomplete")
+    void keyScanIsBoundedByTheBudget() {
+        ObjectNode response = mapper.createObjectNode();
+        for (int i = 0; i < 1000; i++) {
+            response.put("person" + i + "@example.test", "ok");
+        }
+
+        ScanReport report = new SensitiveDataScanner(100).scan(response);
+
+        assertThat(report.complete()).isFalse();
+        assertThat(report.matches().size()).isLessThanOrEqualTo(5);
+    }
+
+    @Test
     @DisplayName("an exempted value is not reported at all")
     void exemptValuesAreSkipped() {
         ObjectNode response = mapper.createObjectNode();
