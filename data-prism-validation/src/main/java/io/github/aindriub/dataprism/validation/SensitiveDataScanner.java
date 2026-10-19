@@ -43,6 +43,9 @@ public final class SensitiveDataScanner {
 
     private static final int MAX_DEPTH = 16;
 
+    /** Stands in for a property name in any path; same text as {@code RefusalPaths.UNDECLARED}. */
+    private static final String KEY_SEGMENT = "<undeclared>";
+
     /** Enough to identify the problem; a response with more is refused regardless. */
     private static final int MAX_MATCHES = 64;
 
@@ -97,7 +100,11 @@ public final class SensitiveDataScanner {
             }
             if (node.isObject()) {
                 for (Map.Entry<String, JsonNode> entry : node.properties()) {
-                    node(entry.getValue(), path + "." + entry.getKey(), depth + 1);
+                    // A property name is payload data, so it is scanned like a value. When it
+                    // is flagged, it and everything under it is reported under a redacted
+                    // segment: the name must never reach a path.
+                    boolean flagged = scalar(entry.getKey(), path + "." + KEY_SEGMENT);
+                    node(entry.getValue(), path + "." + (flagged ? KEY_SEGMENT : entry.getKey()), depth + 1);
                 }
                 return;
             }
@@ -110,27 +117,31 @@ public final class SensitiveDataScanner {
             scalar(node.asString(), path);
         }
 
-        private void scalar(String text, String path) {
+        /** @return true if the text matched at least one detector */
+        private boolean scalar(String text, String path) {
             if (text == null || text.isBlank()) {
-                return;
+                return false;
             }
             remaining -= text.length();
             if (remaining < 0) {
                 complete = false;
-                return;
+                return false;
             }
             if (exempt.test(text)) {
-                return;
+                return false;
             }
+            boolean found = false;
             for (Detector detector : Detector.values()) {
                 String method = detector.detect(text);
                 if (method != null) {
+                    found = true;
                     matches.add(new SensitiveMatch(path, detector.classification, method));
                     if (matches.size() >= MAX_MATCHES) {
-                        return;
+                        return true;
                     }
                 }
             }
+            return found;
         }
     }
 
