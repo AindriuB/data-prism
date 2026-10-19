@@ -79,9 +79,12 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         }
     }
 
+    private static final java.util.regex.Pattern SAFE_NAME = java.util.regex.Pattern.compile("[a-z0-9][a-z0-9-]*");
+
     public Scenario {
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("scenario needs a name");
+        if (name == null || !SAFE_NAME.matcher(name).matches()) {
+            throw new IllegalArgumentException(
+                    "scenario name must be lower-case letters, digits and hyphens (it names the result file): " + name);
         }
         if (sources <= 0) {
             throw new IllegalArgumentException("scenario needs at least one source");
@@ -91,6 +94,12 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         }
         if (load == null || load.concurrency() <= 0) {
             throw new IllegalArgumentException("scenario load needs a concurrency of at least 1");
+        }
+        for (var field : Map.of("calls", load.calls(), "warmupCalls", load.warmupCalls(),
+                "ratePerSecond", load.ratePerSecond(), "durationSeconds", load.durationSeconds()).entrySet()) {
+            if (field.getValue() < 0) {
+                throw new IllegalArgumentException("scenario load." + field.getKey() + " must not be negative");
+            }
         }
         if (load.calls() <= 0 && load.durationSeconds() <= 0) {
             throw new IllegalArgumentException("scenario load needs calls or durationSeconds");
@@ -111,7 +120,13 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES).build();
         try {
-            return mapper.readValue(Files.readString(file), Scenario.class);
+            Scenario scenario = mapper.readValue(Files.readString(file), Scenario.class);
+            String expected = file.getFileName().toString().replaceFirst("\\.json$", "");
+            if (!scenario.name().equals(expected)) {
+                throw new IllegalArgumentException("scenario name \"" + scenario.name()
+                        + "\" must match its file name " + file.getFileName());
+            }
+            return scenario;
         } catch (tools.jackson.databind.exc.ValueInstantiationException invalid) {
             // The record's own validation, wrapped by the mapper: surface it as what it is.
             if (invalid.getCause() instanceof IllegalArgumentException cause) {

@@ -47,6 +47,7 @@ final class ResultWriter {
         calls.put("completed", s.completed());
         calls.put("transportFailures", s.transportFailures());
         calls.put("transportFailureKinds", s.transportFailureKinds());
+        calls.put("notDispatched", run.notDispatched());
         doc.put("calls", calls);
         Map<String, Object> latency = new LinkedHashMap<>();
         latency.put("p50", s.p50Ms());
@@ -54,6 +55,7 @@ final class ResultWriter {
         latency.put("p99", s.p99Ms());
         latency.put("max", s.maxMs());
         latency.put("mean", s.meanMs());
+        latency.put("clamped", s.clamped());
         doc.put("latencyMs", latency);
         doc.put("elapsedSeconds", run.elapsed().toNanos() / 1e9);
         doc.put("throughputPerSecond", s.throughputPerSecond());

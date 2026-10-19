@@ -60,6 +60,16 @@ Everything runs on loopback in one run, and is stopped when the run ends:
   discarded. `ratePerSecond` of 0 means as fast as the workers go; above 0,
   call *i* is due at `start + i / rate` and its latency is measured from that
   due time, so a stalled server shows as latency rather than as missing calls.
+  A call that times out (reaches `callTimeoutSeconds`) is counted in
+  `calls.transportFailures` and is also recorded in the latency figures, at
+  the time from its due time to the timeout (a lower bound on what it would
+  have taken), so a stall raises p99 and max. Any other transport failure
+  (for example connection refused after the server dies) is only counted in
+  `calls.transportFailures`, so a dead server cannot look fast.
+  The deadline is the real clock: workers that have fallen behind stop
+  dispatching when `durationSeconds` passes rather than working through the
+  backlog, and the scheduled calls they never made are reported as
+  `calls.notDispatched`.
 - `limits` are the six `dataprism.limits.*` keys. An omitted key takes the
   framework default (`docs/configuration.md`), except `maxSources`, which takes
   `sources` so the fan-out is not silently skipped. Pass a smaller `maxSources`
@@ -70,9 +80,14 @@ Everything runs on loopback in one run, and is stopped when the run ends:
 
 ## The result file
 
-`calls` (attempted, completed, transport failures by exception class),
-`latencyMs` (p50, p95, p99, max, mean; p50 to max are exact up to about 262 ms
-and within 0.002 % above), `throughputPerSecond` (completed calls over the
+`calls` (attempted, completed, transport failures by exception class, and
+`notDispatched`: paced calls scheduled within the duration but never made
+because the driver could not keep up; a non-zero value means the offered rate
+was not reached),
+`latencyMs` (p50, p95, p99, max, mean, over completed and timed-out calls; p50 to
+max are exact up to about 262 ms and within 0.002 % above; values over six
+hours are recorded as six hours and counted in `clamped`, which is 0 in any
+run that is not badly overloaded), `throughputPerSecond` (completed calls over the
 measured wall time), `refusalCodes` (count by code of calls the server
 refused or denied), `sourceStatusTotals` and `perSourceStatus` (all seven
 statuses, `ANSWERED`, `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`,

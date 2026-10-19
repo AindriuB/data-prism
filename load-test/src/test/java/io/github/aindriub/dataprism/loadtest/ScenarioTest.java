@@ -18,7 +18,7 @@ class ScenarioTest {
 
     @Test
     void omittedLimitsTakeTheFrameworksDocumentedDefaultsExceptSources() throws Exception {
-        Path file = dir.resolve("s.json");
+        Path file = dir.resolve("x.json");
         Files.writeString(file, """
                 {"name":"x","sources":5,"sourceLatency":{"minMs":1,"maxMs":2},"load":{"concurrency":1,"calls":3}}
                 """);
@@ -36,13 +36,47 @@ class ScenarioTest {
 
     @Test
     void refusesAScenarioWithNoWorkToDo() throws Exception {
-        Path file = dir.resolve("s.json");
+        Path file = dir.resolve("x.json");
         Files.writeString(file, """
                 {"name":"x","sources":5,"sourceLatency":{"minMs":1,"maxMs":2},"load":{"concurrency":1}}
                 """);
 
         assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("calls");
+    }
+
+    @Test
+    void rejectsNegativeLoadValuesWithAMessageNamingTheField() throws Exception {
+        for (String field : List.of("ratePerSecond", "warmupCalls", "calls", "durationSeconds")) {
+            Path file = dir.resolve("x.json");
+            String calls = field.equals("calls") ? "" : "\"calls\":3,";
+            Files.writeString(file, """
+                    {"name":"x","sources":5,"load":{"concurrency":1,%s"%s":-1}}
+                    """.formatted(calls, field));
+
+            assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(field).hasMessageContaining("negative");
+        }
+    }
+
+    @Test
+    void rejectsANameThatIsNotASafeFileNameOrDoesNotMatchTheFile() throws Exception {
+        for (String name : List.of("../evil", "a/b", "A", "x y", "", "-x")) {
+            Path file = dir.resolve("x.json");
+            Files.writeString(file, """
+                    {"name":"%s","sources":5,"load":{"concurrency":1,"calls":3}}
+                    """.formatted(name));
+
+            assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("name");
+        }
+        Path mismatched = dir.resolve("other.json");
+        Files.writeString(mismatched, """
+                {"name":"x","sources":5,"load":{"concurrency":1,"calls":3}}
+                """);
+
+        assertThatThrownBy(() -> Scenario.load(mismatched)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("other.json");
     }
 
     @Test

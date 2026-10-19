@@ -10,8 +10,8 @@ if [ "$#" -ne 1 ]; then
   exit 2
 fi
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-scenario="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+root="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+scenario="$(CDPATH= cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 
 # The real server and the one extension the harness loads onto it, built from this checkout.
 (cd "$root" && ./mvnw -B -q -pl data-prism-server,data-prism-connectors-rest -am -DskipTests package)

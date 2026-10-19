@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -196,7 +197,10 @@ final class ServerProcess implements AutoCloseable {
                         + logFile + "\n" + tail(40));
             }
             try {
-                if (client.send(health, HttpResponse.BodyHandlers.discarding()).statusCode() == 200) {
+                // A 200 counts only from our own child: the port was free when chosen, but another process
+                // could have taken it, so the child must be alive and its log must say it bound this port.
+                if (client.send(health, HttpResponse.BodyHandlers.discarding()).statusCode() == 200
+                        && process.isAlive() && logShowsPort(logFile, port)) {
                     return;
                 }
             } catch (IOException notYet) {
@@ -205,6 +209,15 @@ final class ServerProcess implements AutoCloseable {
             Thread.sleep(250);
         }
         throw new IOException("server not healthy within " + timeout + "; see " + logFile + "\n" + tail(40));
+    }
+
+    /** Whether the server log says the web server started on {@code port}. */
+    static boolean logShowsPort(Path log, int port) {
+        try {
+            return Pattern.compile("started on port\\s+" + port + "\\b").matcher(Files.readString(log)).find();
+        } catch (IOException | RuntimeException unreadable) {
+            return false;
+        }
     }
 
     private String tail(int lines) throws IOException {

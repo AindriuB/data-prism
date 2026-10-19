@@ -1,10 +1,12 @@
 package io.github.aindriub.dataprism.loadtest;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -65,17 +67,38 @@ public final class LoadTestMain {
     }
 
     private static String git(Path repoRoot, String... arguments) {
+        List<String> command = new java.util.ArrayList<>(List.of("git", "-C", repoRoot.toString()));
+        command.addAll(List.of(arguments));
+        return boundedOutput(command, Duration.ofSeconds(10));
+    }
+
+    /**
+     * The trimmed output of a command that exits 0 within {@code bound}, otherwise {@code "unknown"}. The output
+     * is drained on another thread so that a command that never ends is bounded too, and is then killed.
+     */
+    static String boundedOutput(List<String> command, Duration bound) {
+        Process process = null;
         try {
-            String[] command = new String[arguments.length + 3];
-            command[0] = "git";
-            command[1] = "-C";
-            command[2] = repoRoot.toString();
-            System.arraycopy(arguments, 0, command, 3, arguments.length);
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            String output = new String(process.getInputStream().readAllBytes()).trim();
-            return process.waitFor(10, TimeUnit.SECONDS) && process.exitValue() == 0 ? output : "unknown";
+            process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            Process running = process;
+            CompletableFuture<String> output = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return new String(running.getInputStream().readAllBytes()).trim();
+                } catch (IOException e) {
+                    return "unknown";
+                }
+            });
+            String text = output.get(bound.toNanos(), TimeUnit.NANOSECONDS);
+            return process.waitFor(bound.toNanos(), TimeUnit.NANOSECONDS) && process.exitValue() == 0 ? text : "unknown";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "unknown";
         } catch (Exception e) {
             return "unknown";
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
         }
     }
 }
