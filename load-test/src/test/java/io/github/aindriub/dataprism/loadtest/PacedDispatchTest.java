@@ -94,22 +94,37 @@ class PacedDispatchTest {
         CallOutcome outcome = LoadDriver.measuredCall(subject -> {
             now.addAndGet(5 * MILLI);
             return result;
-        }, now::get, "m-1", 100 * MILLI);
+        }, now::get, "m-1", 100 * MILLI, Duration.ofSeconds(60));
 
         assertThat(outcome.completed()).isTrue();
         assertThat(outcome.latencyMicros()).isEqualTo(405_000);
     }
 
     @Test
-    void aFailedCallIsStillTimedFromTheScheduledTime() {
+    void aFastTransportFailureIsNotTimed() {
+        now.set(500 * MILLI);
+
+        CallOutcome outcome = LoadDriver.measuredCall(subject -> {
+            now.addAndGet(200_000);
+            throw new IllegalStateException("connection refused");
+        }, now::get, "m-1", 100 * MILLI, Duration.ofSeconds(60));
+
+        assertThat(outcome.completed()).isFalse();
+        assertThat(outcome.timedOut()).isFalse();
+        assertThat(outcome.latencyMicros()).isZero();
+    }
+
+    @Test
+    void aTimeoutIsTimedFromTheScheduledTime() {
         now.set(500 * MILLI);
 
         CallOutcome outcome = LoadDriver.measuredCall(subject -> {
             now.addAndGet(60 * SECOND);
             throw new IllegalStateException("timed out");
-        }, now::get, "m-1", 100 * MILLI);
+        }, now::get, "m-1", 100 * MILLI, Duration.ofSeconds(60));
 
         assertThat(outcome.completed()).isFalse();
+        assertThat(outcome.timedOut()).isTrue();
         assertThat(outcome.transportFailure()).isEqualTo("IllegalStateException");
         assertThat(outcome.latencyMicros()).isEqualTo(60_400_000);
     }

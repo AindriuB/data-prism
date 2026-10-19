@@ -12,7 +12,7 @@ import java.util.TreeMap;
  *
  * <p>Latency is held in microseconds with five significant digits, which is exact for any value up to
  * 262143 microseconds (about 262 ms) and within 0.002 % above that. Percentiles are reported in
- * milliseconds. Failed calls are included, at their time to failure. A value above six hours is recorded as
+ * milliseconds. Timed-out calls are included, at their time to the timeout; other transport failures are only counted. A value above six hours is recorded as
  * six hours and counted in {@code clamped}.
  */
 final class ResultAggregator {
@@ -30,18 +30,18 @@ final class ResultAggregator {
 
     synchronized void record(CallOutcome outcome) {
         attempted++;
-        // A failed call is timed too, at the elapsed time to the failure: a stall must raise the tail, never
-        // drop out of it.
-        if (outcome.latencyMicros() > HIGHEST_TRACKABLE_MICROS) {
-            clamped++;
-        }
-        latency.recordValue(Math.min(Math.max(outcome.latencyMicros(), 0), HIGHEST_TRACKABLE_MICROS));
         if (!outcome.completed()) {
             transportFailures++;
             transportFailureKinds.merge(outcome.transportFailure(), 1L, Long::sum);
+            // Only a timeout is timed: a stall must raise the tail, never drop out of it. A fast failure (a
+            // dead server refusing connections) is counted but kept out, or it would pull p50 down.
+            if (outcome.timedOut()) {
+                recordLatency(outcome.latencyMicros());
+            }
             return;
         }
         completed++;
+        recordLatency(outcome.latencyMicros());
         if (outcome.refusalCode() != null) {
             refusalCodes.merge(outcome.refusalCode(), 1L, Long::sum);
         }
@@ -49,6 +49,13 @@ final class ResultAggregator {
             Map<String, Long> tally = perSource.computeIfAbsent(source, ignored -> zeroed());
             tally.merge(status, 1L, Long::sum);
         });
+    }
+
+    private void recordLatency(long micros) {
+        if (micros > HIGHEST_TRACKABLE_MICROS) {
+            clamped++;
+        }
+        latency.recordValue(Math.min(Math.max(micros, 0), HIGHEST_TRACKABLE_MICROS));
     }
 
     synchronized Summary summary(Duration elapsed) {

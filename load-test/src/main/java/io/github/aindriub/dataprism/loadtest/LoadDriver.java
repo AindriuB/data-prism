@@ -160,7 +160,7 @@ final class LoadDriver {
     private CallOutcome call(McpSyncClient client, String subject, long measuredFrom) {
         return measuredCall(id -> client.callTool(new McpSchema.CallToolRequest("get_entity_context",
                 Map.of("entityType", SourceGenerator.ENTITY_TYPE, "subjectId", id))),
-                System::nanoTime, subject, measuredFrom);
+                System::nanoTime, subject, measuredFrom, Duration.ofSeconds(scenario.load().callTimeoutSeconds()));
     }
 
     /** The seam around {@code callTool}. */
@@ -170,15 +170,30 @@ final class LoadDriver {
     }
 
     /**
-     * Makes one call and times it from {@code measuredFrom} (its scheduled time), whether it completes or not.
+     * Makes one call and times it from {@code measuredFrom} (its scheduled time). A failure is timed only if it
+     * was a timeout: a {@code TimeoutException} in the cause chain, or a wait of at least {@code callTimeout}.
      */
-    static CallOutcome measuredCall(ToolCall toolCall, LongSupplier clock, String subject, long measuredFrom) {
+    static CallOutcome measuredCall(ToolCall toolCall, LongSupplier clock, String subject, long measuredFrom,
+                                    Duration callTimeout) {
+        long sent = clock.getAsLong();
         try {
             McpSchema.CallToolResult result = toolCall.invoke(subject);
             return ResponseClassifier.classify(result, micros(clock, measuredFrom));
         } catch (RuntimeException failure) {
-            return CallOutcome.transportFailure(failure.getClass().getSimpleName(), micros(clock, measuredFrom));
+            String kind = failure.getClass().getSimpleName();
+            boolean timedOut = hasTimeoutCause(failure) || clock.getAsLong() - sent >= callTimeout.toNanos();
+            return timedOut ? CallOutcome.timeout(kind, micros(clock, measuredFrom))
+                    : CallOutcome.transportFailure(kind);
         }
+    }
+
+    private static boolean hasTimeoutCause(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof java.util.concurrent.TimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static long micros(LongSupplier clock, long measuredFrom) {

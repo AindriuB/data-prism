@@ -39,7 +39,7 @@ class ResultAggregatorTest {
             aggregator.record(CallOutcome.completed(1000, Map.of("a", "ANSWERED")));
         }
         aggregator.record(CallOutcome.refused(2000, "SCOPE_READ_BUDGET"));
-        aggregator.record(CallOutcome.transportFailure("IOException", 1000));
+        aggregator.record(CallOutcome.transportFailure("IOException"));
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(5));
 
@@ -56,7 +56,7 @@ class ResultAggregatorTest {
         for (int i = 0; i < 99; i++) {
             aggregator.record(CallOutcome.completed(1000, Map.of()));
         }
-        aggregator.record(CallOutcome.transportFailure("TimeoutException", 60_000_000));
+        aggregator.record(CallOutcome.timeout("TimeoutException", 60_000_000));
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(10));
 
@@ -67,11 +67,28 @@ class ResultAggregatorTest {
     }
 
     @Test
+    void fastFailuresAfterTheServerDiesLeaveTheMedianAlone() {
+        ResultAggregator aggregator = new ResultAggregator();
+        for (int i = 0; i < 10; i++) {
+            aggregator.record(CallOutcome.completed(20_000, Map.of()));
+        }
+        for (int i = 0; i < 1000; i++) {
+            aggregator.record(CallOutcome.transportFailure("ConnectException"));
+        }
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(10));
+
+        assertThat(summary.p50Ms()).isEqualTo(20.0);
+        assertThat(summary.meanMs()).isEqualTo(20.0);
+        assertThat(summary.transportFailures()).isEqualTo(1000);
+    }
+
+    @Test
     void valuesBeyondTheTrackableMaximumAreCountedAsClamped() {
         ResultAggregator aggregator = new ResultAggregator();
         aggregator.record(CallOutcome.completed(1000, Map.of()));
         aggregator.record(CallOutcome.completed(ResultAggregator.HIGHEST_TRACKABLE_MICROS + 1, Map.of()));
-        aggregator.record(CallOutcome.transportFailure("TimeoutException", Long.MAX_VALUE));
+        aggregator.record(CallOutcome.timeout("TimeoutException", Long.MAX_VALUE));
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
 

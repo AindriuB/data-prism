@@ -49,9 +49,10 @@ class ScenarioTest {
     void rejectsNegativeLoadValuesWithAMessageNamingTheField() throws Exception {
         for (String field : List.of("ratePerSecond", "warmupCalls", "calls", "durationSeconds")) {
             Path file = dir.resolve("x.json");
+            String calls = field.equals("calls") ? "" : "\"calls\":3,";
             Files.writeString(file, """
-                    {"name":"x","sources":5,"load":{"concurrency":1,"calls":3,"%s":-1}}
-                    """.formatted(field));
+                    {"name":"x","sources":5,"load":{"concurrency":1,%s"%s":-1}}
+                    """.formatted(calls, field));
 
             assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining(field).hasMessageContaining("negative");
