@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
-**Depends on:** 188, 189, 190, 193, 194, 195, 196, 202, 209
+**Depends on:** 188, 189, 190, 193, 194, 195, 196, 202, 209, 216, 217
 **Owns:**
 - CHANGELOG.md (the `## [Unreleased]` section only)
 - docs/migration-0.7.md (new)
@@ -10,7 +10,8 @@
 - docs/architecture.md ("Decisions worth knowing" only)
 - docs/faq.md (pattern-scan behaviour only)
 - docs/configuration.md (the two "refusing the whole response" passages at
-  `:132` and the `:448` diagram alt text only)
+  `:132` and the `:448` diagram alt text only; and the
+  `dataprism.limits.max-response-size` row at `:534` only)
 - docs/plan/tasks/201-changelog-migration-and-architecture-0-7.md (Outcome section only)
 
 ## Goal
@@ -59,6 +60,10 @@ changes), and records the release's architecture decisions.
       - the key scan always on (D-070-7).
 - [ ] `docs/configuration.md:132` and the `:448` alt text describe per-source
       refusal as task 190 implemented it.
+- [ ] The `dataprism.limits.max-response-size` row in `docs/configuration.md`
+      (`:534`) no longer says "the largest response one request may take from a
+      source". Since task 193 it bounds the compact body returned to the
+      client, not one source's response, so the row says that.
 - [ ] `mkdocs build --strict` exits 0, then run every `docs-site/hooks/check_*.py` with `DP_REQUIRE_NO_STUBS=true`, as CI does. A successful MkDocs build alone does not run every guard.
 - [ ] No version number, date or tag is written for 0.7.0; the section stays `[Unreleased]`.
 
