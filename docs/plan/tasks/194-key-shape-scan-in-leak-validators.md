@@ -62,3 +62,36 @@ Write the tests first; each must fail on `main` before the change.
 - New identifier shapes in `SensitiveDataScanner`.
 - Changing how the engine renames undeclared keys.
 - Any orchestration or MCP change.
+
+## Outcome
+
+Implemented: `SensitiveDataScanner` (so `SensitivePatternValidator`) and
+`RawValueLeakValidator` scan property names as well as values. A flagged name,
+and everything beneath it, is reported under the path segment `<undeclared>`.
+`LlmResponseValidator` is untouched. Tests: `KeyShapeScanTest` (validation, 13
+cases, red on main) and `KeyShapeLeakScanTest` (integration, 2 cases).
+
+Non-vacuity, `KeyShapeLeakScanTest` with `data-prism-validation/src/main`
+restored to `f960f2a9` (key scan off): 2 run, 2 failed (the single-source call
+was not refused; the two-source run carried the key). With the key scan on: 2
+run, 0 failed.
+
+`./mvnw -B verify` on validation, architecture, connectors-rest, orchestration,
+autoconfigure, mcp and integration-tests with `-am`: validation 44 tests, 0
+failures; every other module green except integration-tests, 172 run, 1 failure
+(below). `./mvnw -Prelease -DskipTests package`: BUILD SUCCESS.
+
+**Open: one existing pin contradicts this task.**
+`UndeclaredNameToolResultScanTest.passThroughPinned` asserts that the key
+`zzResultKeyWv4@example.com` (`UndeclaredKeyFixture.RESULT_KEY`) reaches the
+result under `PASS_THROUGH_UNSAFE`. That key is email-shaped, so it is now
+refused, as intended. Neither file is in this task's `Owns`. Needed: change
+`RESULT_KEY` to a key that matches no scanner shape (for example
+`RESULT_TOKEN + "-note"`), and keep the pin. Not done here.
+
+CHANGELOG (task 201), under `### Security`:
+
+- The response leak validators now scan property names as well as values, so a
+  map keyed by an email address or other identifier is refused even under a
+  Java-built `PASS_THROUGH_UNSAFE` profile. A flagged name is reported as
+  `<undeclared>`. A key that matches no known identifier shape still passes.

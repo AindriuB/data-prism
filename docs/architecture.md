@@ -387,10 +387,12 @@ all of these is in `design-review.md` under the section named.
   data", and pinned by `UndeclaredPropertyNameTest`, `UndeclaredKeyRefusalTest`
   and `UndeclaredNameToolResultScanTest`. Rejected: refusing
   `@JsonSerialize(keyUsing=...)` on source records, which would remove a choice
-  D-173-2 deliberately leaves to the model author. Cost: under
-  `PASS_THROUGH_UNSAFE` no validator checks key shapes, because the leak
-  validators scan values only; a key-shape scan is a roadmap candidate, not in
-  0.6.0.
+  D-173-2 deliberately leaves to the model author. Update
+  (task 194, D-070-7): `SensitivePatternValidator` and `RawValueLeakValidator`
+  scan property names as well as values, always on and under every profile with
+  no SPI change, so a map keyed by an email address is refused even under
+  `PASS_THROUGH_UNSAFE`. A flagged name is reported as `<undeclared>`. Cost: a
+  key that matches no known shape still passes verbatim.
 - **2026-10-07 — Images run Java 25; library bytecode stays Java 21.** The build
   uses `--release 21` and a gate checks class major 65, so the jars run on Java
   21 or newer while the published images run Java 25. Rejected: Java 25
