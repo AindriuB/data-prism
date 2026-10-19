@@ -97,3 +97,80 @@ duplicate ID.
 - In anything you write, say that the product "supports" a requirement, never that it is "compliant".
 
 ## Outcome
+
+### Result (2026-10-19)
+
+**Design.**
+- `dataprism.approval.id` (`PrivacyCluster.APPROVAL_ID_MAP`): key is the bare approval id, value is the approval's
+  entry key. `create` claims with `putIfAbsent`; a present claim is the only source of
+  `IllegalArgumentException("duplicate approval id")`. The claim's TTL is the approval's TTL plus the one minute an
+  expired entry stays visible, so it always outlives the entry. Release is `remove(id, entryKey)`.
+- `dataprism.approval.pending` (`APPROVAL_PENDING_MAP`): key `KIND NUL (=requester | ~)`, value the alternating
+  `id NUL expiry` list (`PendingSet`). `PendingSet.Reserve` prunes ids with `expiresAt <= createdAt`, refuses at the
+  cap, else adds; `PendingSet.Release` removes one id and deletes the entry when empty. Both overloads reserve (the
+  uncapped one with `Integer.MAX_VALUE`). The entry has no TTL: it is pruned on the next reserve and removed when
+  empty, so it is never shorter-lived than the approvals it counts.
+- Order is claim, reserve, insert; undo is in reverse. After an ambiguous insert failure the undo runs only if
+  `containsKey` confirms the entry is absent.
+- `create` takes bounded locks (id claim, pending entry, approval entry) through `ClusterLocks.acquire` only, to bound
+  waits. `acquireRetained` and every `Long.MAX_VALUE` lease are gone from `src/main`.
+- Both guard maps: `EvictionPolicy.NONE`, the `APPROVAL_PROTECTION` write quorum when `approvalMinimumMembers > 1`,
+  merge policies `PutIfAbsentMergePolicy` (claims) and `PendingMergePolicy` (union of ids, later expiry).
+- Approve, reject and expiry-on-decide remove the id from the pending entry (best effort, never under-counts).
+  `forgetScope` and `ScopeIdentityIndex.endScope` (which used to delete approval keys by prefix and now delegates to
+  `HazelcastApprovalStore.forget`) free the claim and the slot.
+- New code `CLUSTER_OPERATION_REFUSED` (`ClusterOperationRefusedException`, in the hazelcast module because core is not
+  owned here; no existing code fitted). `ClusterLocks.acquire` maps the `IllegalArgumentException` of `tryLock` to it;
+  `create` maps any other failure of a claim, processor or insert call. It names no key, scope, principal or id.
+
+**Deviations and decisions to confirm.**
+1. Consume does not release the id claim (Required approach, step 1 says to release on consume). The consumed entry
+   stays in the approval map until its expiry, and releasing the claim would allow a second entry with the same id,
+   which `locate` refuses as ambiguous. The claim expires with the entry.
+2. `SplitBrainProtectionException` is not translated to the new code: `ApprovalQuorumTest` and the docs already name it
+   for a lost write quorum. Everything else a cluster call throws inside `create` becomes
+   `CLUSTER_OPERATION_REFUSED`.
+3. Outside `Owns`, not edited: `data-prism-spring-boot-autoconfigure/.../ClusterLockTimeoutConfigurationTest.java:156`
+   holds the lock on the bare id in `PrivacyCluster.APPROVAL_MAP` and expects `create` to refuse. `create` now locks
+   the id in `APPROVAL_ID_MAP`. The fix is one token (`APPROVAL_MAP` to `APPROVAL_ID_MAP`); with it the full reactor
+   passes. Until that change lands (task 201 owns that module, or the orchestrator), the full `./mvnw verify` fails on
+   that one test. The patch is kept by the implementer.
+
+**Discrimination check.** `admit` was temporarily replaced with the pre-34adde0b shape (leased requester lock, count
+over `approvals.values()`, leased bare-id lock, `locateAll`), uncommitted:
+- `ApprovalIdLockTest.cappedCreationKeepsItsIdClaimAfterItsLeaseExpires` and `...uncapped...`:
+  `AssertionError: Expecting code to raise a throwable.` at `ApprovalIdLockTest.java:50` (the second member's create of
+  the same id in another scope succeeded).
+- `PendingCapLockTest.aCallerPausedBeforeInsertingStillCountsAgainstTheCapAfterItsLeaseExpires`:
+  `AssertionError: Expecting code to raise a throwable.` at `PendingCapLockTest.java:43` (the second create under cap 1
+  succeeded).
+With the fix all three pass. The tests wait on latches and on `tryLock` of every lock key the stalled caller may hold
+(`StalledInsert.awaitFree`), which returns when the lease expires; no sleep.
+
+**Verification.** `./mvnw verify` (full reactor, with the one-token fix above applied locally and then reverted):
+BUILD SUCCESS, surefire 1857 tests, 0 failures, 0 errors, 0 skipped (hazelcast 141); failsafe 17 tests, 0 failures
+(server 14, quickstart extension 3). Without that fix: 1 failure, `ClusterLockTimeoutConfigurationTest`.
+`./mvnw -Prelease -DskipTests package` (Javadoc): BUILD SUCCESS. A first hazelcast run failed
+`HazelcastStoredValueBoundaryTest` (it enumerates every map); the test now covers the two new maps, and the module
+passed on both later full runs.
+
+**Proposed `CHANGELOG.md` lines.**
+- `### Fixed`: Hazelcast approval creation no longer relies on locks that never expire. The pending cap per requester
+  and the uniqueness of an approval id across scopes now hold through atomic map operations, so a creating member that
+  stalls past its lock lease can no longer let a requester exceed the cap or one id exist in two scopes. Every cluster
+  lock is leased for five times `dataprism.hazelcast.lock-timeout` again.
+- `### Changed`: a Hazelcast approval create that the cluster rejects (for example a configured
+  `hazelcast.lock.max.lease.time.seconds` below the lease) is refused with the new code `CLUSTER_OPERATION_REFUSED`
+  instead of an `IllegalArgumentException` that looked like a duplicate id. Two maps are added,
+  `dataprism.approval.id` and `dataprism.approval.pending`.
+
+**Migration note for task 201.** Map the new code in `ToolAdmission`, `ReidentificationService` and
+`OversightOperatorController` (they already fail closed on any `RuntimeException`, but the client-visible code is
+generic); update `ClusterLockTimeoutConfigurationTest.java:156` as in item 3; list the two new maps in
+`docs/architecture.md` and `docs/tools.md` if they enumerate maps. A rolling upgrade is safe for creation only once
+all members run the new version: an old member does not know the claims, so during the mix an id can still be created
+twice. Pending entries and claims start empty after the upgrade, so approvals created before it are not counted
+against the cap until they expire.
+
+**For the 0.8 sealing (task 215).** The two guard maps hold approval ids (the claim key), scope ids (the claim value)
+and requester principals (the pending key) in clear. If sealing covers the approval map it must cover these too.
