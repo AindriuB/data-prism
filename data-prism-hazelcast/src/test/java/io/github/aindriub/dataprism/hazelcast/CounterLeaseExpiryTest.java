@@ -24,16 +24,19 @@ class CounterLeaseExpiryTest {
 
     @Test void budgetRemainsAtomicAfterTheCallerLeaseExpires() throws Exception {
         afterLeaseExpiry(PrivacyCluster.BUDGET_MAP, ScopeKeys.budget("scope", "subject"),
-                cluster -> new HazelcastScopeBudget(cluster, TIMEOUT).tryRead("scope", "subject", 1));
+                cluster -> new HazelcastScopeBudget(cluster, TIMEOUT).tryRead("scope", "subject", 1),
+                stored -> (Integer) stored);
     }
 
     @Test void rateLimitRemainsAtomicAfterTheCallerLeaseExpires() throws Exception {
         afterLeaseExpiry(PrivacyCluster.CALLER_RATE_MAP, "operator",
                 cluster -> new HazelcastCallerRateLimiter(cluster, TIMEOUT)
-                        .tryAcquire("operator", 1, Duration.ofMinutes(10), NOW));
+                        .tryAcquire("operator", 1, Duration.ofMinutes(10), NOW),
+                stored -> Integer.parseInt(((String) stored).substring(((String) stored).indexOf(':') + 1)));
     }
 
-    private void afterLeaseExpiry(String mapName, String key, Function<PrivacyCluster, Boolean> acquire)
+    private void afterLeaseExpiry(String mapName, String key, Function<PrivacyCluster, Boolean> acquire,
+                                Function<Object, Integer> countOf)
             throws Exception {
         PrivacyCluster[] members = TestMembers.pair(TestMembers.uniqueName("counter-lease"), OptionalInt.empty());
         CountDownLatch paused = new CountDownLatch(1);
@@ -73,6 +76,8 @@ class CounterLeaseExpiryTest {
                 resume.countDown();
                 assertThat(stalled.get(10, TimeUnit.SECONDS)).isFalse();
                 assertThat(acquire.apply(members[1])).isFalse();
+                // One acquisition was admitted: the stalled call, which was refused, added nothing.
+                assertThat(countOf.apply(otherMap.get(key))).isEqualTo(1);
             } finally {
                 resume.countDown();
             }
