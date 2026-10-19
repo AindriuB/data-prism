@@ -20,7 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
-| 2026-10-19 | 194, 196 | Key scan honours the match cap and character budget; load-test cleanup closes late-tracked resources and waits for in-flight launches | `## 2026-10-19 — PR #132 review fixes` |
+| 2026-10-19 | 194, 196 | Key scan honours the match cap and character budget; load-test cleanup closes late-tracked resources and waits for in-flight launches; paced dispatch stops at the real clock; ten harness P3s fixed after a whole-harness bug hunt | `## 2026-10-19 — PR #132 review fixes` |
 | 2026-10-19 | 194 | Leak validators scan property names as well as values; a flagged key is reported as `<undeclared>` | `## 2026-10-19 — Key-shape scan in the leak validators (194)` |
 | 2026-10-19 | 196 | Standalone `load-test/` project: MCP Java SDK driver, synthetic HTTPS sources, one-command runner | `## 2026-10-19 — Load-test harness (196)` |
 | 2026-10-19 | 198 | Design for paged `list_sources` (0.8), batch tool, collection paging, truncation markers and status-only bulk follow; all OD-B1 to OD-B24 decided | `## 2026-10-19 — Batch, paging and bulk-follow design (198)` |

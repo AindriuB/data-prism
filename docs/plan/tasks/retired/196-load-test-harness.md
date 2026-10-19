@@ -226,3 +226,5 @@ machine (result file, not committed):
 ```
 
 Post-merge fix, 2026-10-19: PR #132 review found that `RunCleanup.track` could leave a resource open if it was tracked after cleanup began. `RunCleanup` now closes such resources at once, and `LaunchGuard` blocks cleanup (bounded at 10 s) until an in-flight launch settles. Our first review rated the race only a suggestion; it was a real defect.
+
+Second post-merge fix, 2026-10-19: PR review then found that paced dispatch stopped at the scheduled time rather than the real clock, so overloaded paced runs ran past their duration. It now stops on the real clock, and calls scheduled but never made are reported as `calls.notDispatched`. A whole-harness bug hunt followed and fixed ten P3s (early park wakeup, timeouts missing from latency, a silent 600 s clamp now a 6 h maximum with clamped values counted, an untested latency origin, the failure log not uploaded by CI, unbounded git output, health accepted from a foreign process on the port, negative scenario values, an unchecked scenario name used as a path, `CDPATH` in `run.sh`). The harness has 52 tests.
