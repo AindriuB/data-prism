@@ -1,16 +1,16 @@
 # 203 — Add case authorisation and a client allowlist to the security module
 
-Renumbered from 188 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
+Renumbered from 188 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` (f74757a at filing, post-0.6.0)
+**Release:** 0.8.0 (before the 0.9 API freeze)
+**Base branch:** `origin/main` after 0.7.0 integration; refresh the cited paths and call sites against that base before implementation.
 **Depends on:** none
 **Decided (owner, 2026-10-15):**
 - **D-1.0-1.** At the Spring layer, startup refuses without a `CaseAuthorizer` bean unless
   `dataprism.security-policy.case-authorisation=token-trusted` is set explicitly. The default bean is
   `REPLACEABLE`. Task 210 implements the Spring part; this task provides the SPI it wires.
-- **D-1.0-5.** Everything here ships in 1.0.0. Breaking changes are accepted. Constructors change in
+- **D-1.0-5.** Everything here is required by 1.0.0; implementation ships in 0.8.0 under the reconciled roadmap. Breaking changes are accepted. Constructors change in
   place: no deprecated or forwarding overload is left behind, because it would freeze into the 1.0 API.
 
 **Owns:**

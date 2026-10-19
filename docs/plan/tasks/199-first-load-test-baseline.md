@@ -1,7 +1,7 @@
 # 199 — Take and record the first load-test baseline
 
 **Repo:** .
-**Branch:** from `main` after tasks 189, 190, 193 and 196 have merged
+**Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
 **Depends on:** 189, 190, 193, 196
 **Decided (owner, 2026-10-09):** D-070-11 (a): 8, 32 and 100 sources (300
 optional), three runs each, on one named machine; recorded internally in

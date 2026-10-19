@@ -1,10 +1,10 @@
 # 206 — Add an opt-in keyed HMAC audit chain, with verifier and retention support
 
-Renumbered from 191 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
+Renumbered from 191 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` (f74757a at filing, post-0.6.0)
+**Release:** 0.8.0 (before the 0.9 API freeze)
+**Base branch:** `origin/main` after 0.7.0 integration; refresh the cited paths and call sites against that base before implementation.
 **Depends on:** none
 **Decided (owner, 2026-10-15), D-1.0-4:** the keyed chain is opt-in and off by default. It uses a key
 separate from the pseudonymisation key; using the same key is a startup refusal (task 211). It claims

@@ -2,6 +2,8 @@
 
 Agreed 2026-10-09. This lives under `docs/plan/`, which mkdocs excludes (`exclude_docs: plan/` in `mkdocs.yml`), so it is internal planning and is not published. It replaces the draft `roadmap-ideas.md`. Owner decisions are recorded in `PLAN.md` under "Road to 1.0".
 
+Reconciled 2026-10-19: see [task allocation and decisions](reconciliation-2026-10-19.md). Imported tasks 203–214 are allocated before the freeze or superseded; they do not add new 1.0 features.
+
 ## Purpose of 1.0
 
 1.0 is a privacy layer that an operations or support team can run against many services at once, in the hundreds. Each service has its own identifiers. An LLM agent discovers the sources, follows relationships between them by itself, and compares what each service holds about the same entity, without ever seeing a real identifier. A typical use is a support agent tracing a record that propagated through several services to find where it stopped.
@@ -49,12 +51,17 @@ Features:
 - Fix fields from one source overwriting another's in the merged tree.
 - Design set: sealed-link threat model, link and key-resolver contracts, catalog and `describe_source`, batch and bulk-follow schemas, `describe_entity_model` spec.
 - Key-shape scan in the leak validators.
+- Existing pattern validator wired into both Spring orchestration paths (209).
 
 ### 0.8 Build the many-source core
 
 Readiness:
 
-- Cluster security build.
+- Cluster security build from the approved sealed-state design (215 plans implementation tasks); 204/205/212 are superseded alternatives.
+- Case-authorisation SPI and client allowlist (203/210).
+- Optional keyed audit chains and size-capped segments (206/207/211).
+- FREE_TEXT classification and recogniser SPI/wiring (208).
+- Rotation procedures and migration documentation for these controls (213).
 - Fan-out rewrite: separate queue, per-source and overall deadlines, no silent cut-off at `maxSources`.
 - Read budget charged per source called, plus a per-scope total cap, on both budget implementations.
 - Source configuration split across files, with startup validation.
@@ -65,7 +72,7 @@ Readiness:
 Features:
 
 - Adapter description: entity types, description, input keys, output model, cost, freshness.
-- `list_sources` and `describe_source`.
+- Paged `list_sources` (catalog OD-C16; task 198 specifies its page first) and `describe_source`.
 - Sealed links, `_links`, `follow`, `chainable`.
 - Key resolvers.
 - Real source names when scope and caller both allow.
@@ -83,6 +90,7 @@ Readiness:
 - External security review.
 - Pilot.
 - Final operations and upgrade guides.
+- Data-protection control annex based on merged implementations (214).
 - Other MCP clients verified.
 
 Features:

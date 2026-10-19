@@ -1,7 +1,7 @@
 # 200 — Design: one register of every tool, code and key planned up to the 0.9 freeze
 
 **Repo:** .
-**Branch:** from `main` after tasks 189, 190, 191, 192, 193, 197 and 198 have merged
+**Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
 **Depends on:** 189, 190, 191, 192, 193, 197, 198, 202
 **Kind:** design, docs only. No code.
 **Owns:**
@@ -42,6 +42,7 @@ checklist exists before 0.8 starts building against it.
    by a test (for example a frozen list) for each kind.
 
 ## Acceptance
+- [ ] Include tasks 203, 206–208, 210–214 and the cluster design as proposed pre-freeze contracts, with release and decision status from `docs/plan/reconciliation-2026-10-19.md`. Proposals are not shipped APIs. Include task 209's merged bean behaviour when available; the register does not wait for 0.8 implementations.
 - [ ] Every name in the five design documents' closing tables, and every
       shipped tool, status code, refusal code and `dataprism.*` key, appears in
       the register; the Outcome shows the extraction commands and counts.

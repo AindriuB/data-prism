@@ -1,12 +1,12 @@
 # 211 — Wire the keyed audit chain, retired audit keys and the segment size cap into configuration
 
-Renumbered from 196 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
+Renumbered from 196 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` once 206, 207 and 210 have merged
-**Depends on:** 206, 207, 210 (210 only because both edit the shared Spring files below)
-**Serialised with:** 209, 210, 212
+**Release:** 0.8.0 (before the 0.9 API freeze)
+**Base branch:** `origin/main` once 206, 207, 208 and 210 have merged
+**Depends on:** 206, 207, 208, 210 (210 only because both edit the shared Spring files below)
+**Serialised with:** 210, 208, and the cluster-wiring successor tasks
 **Decided (owner, 2026-10-15), D-1.0-4:** the keyed chain is opt-in and off by default. It uses a key
 separate from the pseudonymisation key, and configuring the same key is a startup refusal. It claims
 only to resist a writer without the key, not the operator.

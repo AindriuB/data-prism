@@ -1,6 +1,12 @@
 # 205 — Settle how the re-identification map stores the subject id
 
-Renumbered from 190 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
+**Status: SUPERSEDED — not executable and not implemented.** Owner decision in this chat, 2026-10-19: the approved sealed-state design governs; encrypted re-identification values and separate cluster/name keys replace the plaintext and isolation-only options. Task 215 plans the implementation successors. The original brief below is retained as history; its release, decisions, dependencies and acceptance criteria are not current instructions.
+
+See `docs/plan/reconciliation-2026-10-19.md` and `docs/plan/design/cluster-security.md`.
+
+## Original brief (superseded)
+
+Renumbered from 190 on 2026-10-19 (id collision with the 0.7.0 plan). Scope superseded by the sealed-state design on 2026-10-19.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)

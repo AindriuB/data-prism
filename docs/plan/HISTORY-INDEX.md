@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-19 | 198, 203–215 | Reconcile pre-freeze control work, supersede isolation-only cluster briefs, scope 209 to the 0.7 wiring correction, and repair PR docs CI. | `## 2026-10-19 — PR 130 planning reconciliation and docs guard repair` |
 | 2026-10-09 | 202 | Approval consume compare-and-set, consumed-wins merge, `approval-minimum-members` split-brain protection, bounded lock waits (`CLUSTER_LOCK_TIMEOUT`) | ## 2026-10-09 — Hazelcast approval compare-and-set, split-brain protection, bounded lock waits (202) |
 | 2026-10-09 | 190 | Per-source results `sources.<key>.{status, entity}`, seven status codes, per-source refusal, `REFUSED:<code>` audit values, array-root final validation | ## 2026-10-09 — Per-source results with stable status codes (190) |
 | 2026-10-09 | 197 | Catalog design for list_sources, describe_source and describe_entity_model; owner decided audit key `names`, the rest taken as recommended | ## 2026-10-09 — Catalog design: list_sources, describe_source, describe_entity_model (197) |

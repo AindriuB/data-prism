@@ -1,7 +1,7 @@
 # 196 — Build a load-test harness that drives many sources through the real server
 
 **Repo:** .
-**Branch:** from `main` after tasks 189 and 190 have merged
+**Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
 **Depends on:** 189 (limits raised through configuration), 190 (the per-source response shape it tallies)
 **Decided (owner, 2026-10-09):** D-070-10 (a): a Java driver on the MCP Java SDK
 client with HdrHistogram, in a standalone `load-test/` outside the reactor.

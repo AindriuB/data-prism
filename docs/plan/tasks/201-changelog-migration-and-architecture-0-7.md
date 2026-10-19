@@ -1,13 +1,14 @@
 # 201 — Write the 0.7 changelog, migration page and architecture decisions
 
 **Repo:** .
-**Branch:** from `main` after tasks 188, 189, 190, 193, 194, 195 and 196 have merged
-**Depends on:** 188, 189, 190, 193, 194, 195, 196, 202
+**Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
+**Depends on:** 188, 189, 190, 193, 194, 195, 196, 202, 209
 **Owns:**
 - CHANGELOG.md (the `## [Unreleased]` section only)
 - docs/migration-0.7.md (new)
-- mkdocs.yml (the `nav` entries for `migration-0.7.md` only)
+- mkdocs.yml (the `nav` and `llmstxt` entries for `migration-0.7.md` only)
 - docs/architecture.md ("Decisions worth knowing" only)
+- docs/faq.md (pattern-scan behaviour only)
 - docs/configuration.md (the two "refusing the whole response" passages at
   `:132` and the `:448` diagram alt text only)
 - docs/plan/tasks/201-changelog-migration-and-architecture-0-7.md (Outcome section only)
@@ -32,6 +33,7 @@ changes), and records the release's architecture decisions.
   at the commits before and after task 190, for the before/after excerpt.
 
 ## Acceptance
+- [ ] Include task 209's pattern-scan wiring fix in the changelog, migration guide and architecture record: it first runs on the Spring path in 0.7, not 1.0. Update `docs/faq.md` to describe the existing scan without claiming the future recogniser feature.
 - [ ] `[Unreleased]` has `### Breaking` (the `get_entity_context` response
       shape), `### Added` (`dataprism.limits.*`, verification page),
       `### Changed` (record and size caps now enforced, new refusal codes),
@@ -57,8 +59,7 @@ changes), and records the release's architecture decisions.
       - the key scan always on (D-070-7).
 - [ ] `docs/configuration.md:132` and the `:448` alt text describe per-source
       refusal as task 190 implemented it.
-- [ ] `mkdocs build --strict` exits 0 (this runs the site hooks, including the
-      changelog check).
+- [ ] `mkdocs build --strict` exits 0, then run every `docs-site/hooks/check_*.py` with `DP_REQUIRE_NO_STUBS=true`, as CI does. A successful MkDocs build alone does not run every guard.
 - [ ] No version number, date or tag is written for 0.7.0; the section stays `[Unreleased]`.
 
 ## Out of scope

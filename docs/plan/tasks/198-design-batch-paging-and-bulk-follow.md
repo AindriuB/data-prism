@@ -1,8 +1,8 @@
 # 198 — Design: `get_entity_contexts` batch, paged collections and status-only bulk follow
 
 **Repo:** .
-**Branch:** from `main` after tasks 190 and 191 have merged
-**Depends on:** 190 (per-source result shape and status codes), 191 (sealed next and drill-in links)
+**Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
+**Depends on:** 190 (per-source result shape and status codes), 191 (sealed next and drill-in links), 197 (catalog contract and OD-C16)
 **Kind:** design, docs only. No code.
 **Owns:**
 - docs/plan/design/batch-and-bulk-follow.md (new)
@@ -11,6 +11,7 @@
 (Location decided by D-070-12 (a): `docs/plan/design/`, internal.)
 
 ## Goal
+First specify paging for `list_sources` in 0.8, as decided in catalog OD-C16.
 The owner expects thousands of items per investigation. 0.9 builds the batch
 tool, paged collections and a status-only bulk follow that returns counts plus
 drill-in links for the exceptions. This task fixes those contracts now, so the
@@ -18,6 +19,8 @@ drill-in links for the exceptions. This task fixes those contracts now, so the
 holds no surprises.
 
 ## Context
+- `docs/plan/design/catalog.md`, OD-C16: `list_sources` paging ships in 0.8;
+  specify that page first, preserving the catalog filters and name-visibility rules.
 - `docs/plan/PLAN.md` "Road to 1.0": D-RM-7 (batch size per scope, default 16,
   configured ceiling), D-RM-12 (per-source truncation at record boundaries with
   markers and next-page links; hard overall cap), D-RM-15 (paging plus
@@ -40,8 +43,11 @@ holds no surprises.
    code when exceeded.
 2. Budget and limits per item: how read budget, `maxSources`, record and size
    caps apply across a batch, and how a partial batch is reported.
-3. Paging: which collections page, page-size keys and defaults, sealed next
-   links, end-of-collection marker, what happens when a link expires mid-walk.
+3. Paging: specify the `list_sources` page for 0.8 first, including input and
+   output JSON Schema, ordering, filter and caller/scope binding, page-size keys
+   and defaults, sealed next links, end-of-collection marker, and what happens
+   when a link expires mid-walk or the catalog changes. Separately specify the
+   collection paging that ships in 0.9.
 4. Truncation markers (D-RM-12): shape, where they appear, the overall hard cap
    and its code.
 5. Status-only bulk follow: input and output JSON Schema, the counts it returns
@@ -49,7 +55,7 @@ holds no surprises.
    returns entity data.
 6. Audit: one event per call or per item, the fields added, and an estimate of
    audit volume for a 5,000-item investigation.
-7. "Boundaries" (1, 6, 7), "Test obligations for 0.9", "Open decisions for the
+7. "Boundaries" (1, 6, 7), "Test obligations for 0.8 and 0.9", "Open decisions for the
    owner" with options and a recommendation each.
 
 ## Acceptance
@@ -57,7 +63,9 @@ holds no surprises.
       valid JSON Schema (draft 2020-12), validator command in the Outcome.
 - [ ] Every proposed tool, refusal code, status code, audit field and
       configuration key is in a closing table and collides with nothing existing
-      or in tasks 191 and 197's tables (197 may run in parallel; reconcile in task 200).
+      or in tasks 191 and 197's tables; reconcile in task 200.
+- [ ] `list_sources` paging is specified first and marked for 0.8; batch,
+      collection paging and bulk follow remain 0.9. The review checks OD-C16.
 - [ ] Examples use an invented neutral domain.
 - [ ] **Review gate:** `reviewer` returns APPROVE after checking against D-RM-7,
       12 and 15, the status codes as merged by task 190, and boundaries 1, 6 and
@@ -65,4 +73,4 @@ holds no surprises.
 
 ## Out of scope
 - Code, properties, schemas in `docs/tools.md`.
-- Catalog tools (task 197), link cryptography (task 191).
+- Catalog semantics other than paging (task 197), link cryptography (task 191).

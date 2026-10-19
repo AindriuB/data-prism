@@ -1,9 +1,9 @@
 # 207 — Cap the size of a day's audit segment, keeping one continuous chain
 
-Renumbered from 192 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
+Renumbered from 192 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
+**Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` once 206 has merged
 **Depends on:** 206 (both edit `AuditChainVerifier` and `AuditRetention`)
 **Owns:**

@@ -1,7 +1,7 @@
 # 194 — Scan property names, not only values, in the leak validators
 
 **Repo:** .
-**Branch:** from `main` after task 190 has merged
+**Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
 **Depends on:** 190
 **Decided (owner, 2026-10-09):** D-070-7 (a): the key scan is always on, under
 every profile, with no SPI change.

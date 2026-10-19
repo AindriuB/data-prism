@@ -1,11 +1,11 @@
 # 208 — Add the FREE_TEXT classification and a free-text recogniser hook in validation
 
-Renumbered from 193 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
+Renumbered from 193 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` (f74757a at filing, post-0.6.0)
-**Depends on:** none
+**Release:** 0.8.0 (before the 0.9 API freeze)
+**Base branch:** `origin/main` after 0.7.0 integration; refresh the cited paths and call sites against that base before implementation.
+**Depends on:** 209, 210 (extend the existing pattern-validator bean after security wiring)
 **Owns:**
 - data-prism-annotations/src/main/java/io/github/aindriub/dataprism/annotations/DataClassification.java *(append `FREE_TEXT` only)*
 - data-prism-core/src/main/resources/privacy-profiles-default.yaml
@@ -13,6 +13,10 @@ Renumbered from 193 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not 
 - data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/FreeTextRecogniser.java *(new)*
 - data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/SensitivePatternValidator.java
 - data-prism-validation/src/test/java/io/github/aindriub/dataprism/validation/** *(new `SensitivePatternValidatorRecogniserTest.java`; in existing files only the one-argument constructor call at `ScopeAllowlistTest.java:159`)*
+
+**Additional ownership for Spring recogniser wiring:**
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyEngineWiring.java *(existing `dataPrismSensitivePatternValidator` method only)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/PatternValidatorWiringTest.java *(recogniser cases only)*
 
 ## Goal
 Validation recognises only a fixed list of identifier shapes (`SensitiveDataScanner`, `docs/faq.md:35-58`).
@@ -31,6 +35,7 @@ recogniser can only add refusals and can never relax one. Core gains no recognit
 - `DataClassification.values()` is read by `ModelDescriptors`, `PrivacyProfiles` and the connectors' `ConfiguredJsonSources`, so a new constant is accepted in descriptors and YAML sources with no further change
 
 ## Acceptance
+- [ ] Extend the unconditional bean from 209 to collect all application `FreeTextRecogniser` beans in `@Order` order. An empty list preserves the existing scan. Spring tests prove a sentinel recognition refuses, an unrecognised value passes, and a recogniser failure refuses without exposing its exception. Do not add a second validator bean or weaken 209's tests.
 - [ ] `DataClassification.FREE_TEXT` is the last constant. It is not in `SPECIAL_CATEGORIES`. Its Javadoc says it marks unstructured text that may contain personal data in prose.
 - [ ] `privacy-profiles-default.yaml` maps `FREE_TEXT: { action: REDACT }` in `DEFAULT` and `FREE_TEXT: { action: REMOVE }` in `STRICT`, each with a one-line comment giving the reason. `PrivacyProfilesTest` asserts both mappings, and asserts that every `DataClassification` constant is mapped in both bundled profiles. Mutation proof: deleting the `STRICT` line makes that test fail.
 - [ ] `FreeTextRecogniser` is a public `@FunctionalInterface` in `io.github.aindriub.dataprism.validation`. Its method takes one string leaf value and returns the `Set<DataClassification>` it recognised, empty for none. It is not given the `PrivacyContext`, the prohibited set, the emitted set or the JSON path.
@@ -41,10 +46,10 @@ recogniser can only add refusals and can never relax one. Core gains no recognit
 - [ ] Recogniser calls are bounded by the same depth and size budget as the shape scan. Past the budget the result is the existing `RESPONSE_TOO_LARGE_TO_SCAN` refusal, and no leaf is silently left unchecked. A test covers this.
 - [ ] With an empty recogniser list, every existing test in `data-prism-validation` passes, and the only edit to an existing test is the constructor call at `ScopeAllowlistTest.java:159`.
 - [ ] No `pom.xml` gains a dependency.
-- [ ] `./mvnw -B -pl data-prism-annotations,data-prism-core,data-prism-validation -am verify` passes.
+- [ ] `./mvnw -B -pl data-prism-annotations,data-prism-core,data-prism-validation,data-prism-spring-boot-autoconfigure -am verify` passes.
 
 ## Out of scope
-- Wiring the validator and recognisers into Spring (task 209). Note that on `main` the Spring-built orchestrators do not include `SensitivePatternValidator` at all; task 209 fixes that.
+- Creating the pattern-validator bean (task 209, already in 0.7); this task extends its recogniser list.
 - `RawValueLeakValidator` and `DefaultContextOrchestrator`. Recognisers live inside `SensitivePatternValidator`, which is already in the validator list, so neither needs a change.
 - Any bundled recogniser, language model or entity-recognition library.
 - `docs/faq.md`, `docs/extending.md` and every other doc (task 213).

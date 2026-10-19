@@ -1,18 +1,18 @@
 # 210 — Wire case authorisation and the client allowlist into configuration
 
-Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
+Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
+**Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` once 203 and 209 have merged
 **Depends on:** 203, 209 (209 only because both edit the shared Spring files listed below)
-**Serialised with:** 209, 211, 212 (shared: `PrivacyExtensionPoints.java`, the bean-inventory lists,
+**Serialised with:** 208, 211, and the cluster-wiring successor tasks (shared: `PrivacyExtensionPoints.java`, the bean-inventory lists,
 `frozen-property-names.txt`, `DataPrismPropertiesValidator.java`, `docs/configuration.md`)
 **Decided (owner, 2026-10-15):**
 - **D-1.0-1.** Startup refuses without a `CaseAuthorizer` bean unless
   `dataprism.security-policy.case-authorisation=token-trusted` is set explicitly. The default bean is
   classified `REPLACEABLE`.
-- **D-1.0-5.** Breaking change, shipped in 1.0.0.
+- **D-1.0-5.** Breaking change, required by 1.0.0 and scheduled for 0.8.0 before the freeze.
 
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/SecurityPolicyProperties.java
@@ -62,6 +62,6 @@ decided how cases are authorised refuses to start. One that wants the old behavi
 ## Out of scope
 - A built-in case authorizer backed by a store or a token claim.
 - An example `CaseAuthorizer` in `data-prism-quickstart-extension`. File it as a follow-up if wanted.
-- Audit, free-text and cluster wiring (tasks 211, 209 and 212).
+- Audit, free-text and cluster wiring (211, 208 and the successors planned by 215).
 - `server.json`. Registry metadata changes go with the release cut.
 - Every `docs/` file other than `docs/configuration.md` (tasks 213 and 214).

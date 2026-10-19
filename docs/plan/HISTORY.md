@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-19 — PR 130 planning reconciliation and docs guard repair
+
+Reconciled imported tasks 203–214 with the 0.7–1.0 roadmap on the integration branch. The owner selected the approved sealed-state cluster design; 204/205/212 are explicitly superseded, not implemented, and 215 plans implementation successors. Task 209 becomes the existing Spring pattern-scan wiring correction in 0.7; recognisers move to 208 in 0.8. Other feature changes land before the 0.9 freeze; 214 supplies 0.9 evidence. Fixed remaining 0.7 task bases, 198 catalog paging scope, and the nav/llmstxt mismatch blocking PR docs CI. PR remains draft.
+
+**Validation:** strict MkDocs build and all six docs guard scripts passed locally with `DP_REQUIRE_NO_STUBS=true`; active task ids and dependencies checked for missing ids, cycles and superseded prerequisites. No Java implementation changed or new full-reactor result claimed.
+
+**Cost:** two independently numbered plans described conflicting cluster protections and release timing. Keep superseded briefs as history, require concrete implementation successors before 213 starts, and run the standalone docs guards after MkDocs: build success alone missed the nav mismatch.
+
 ## 2026-10-09 — Hazelcast approval compare-and-set, split-brain protection, bounded lock waits (202)
 
 Approval consume, approve and reject are now compare-and-set, and the approval map merges consumed-wins, so a healed split cannot revive a consumed approval. Split-brain protection on the approval map is set by `dataprism.hazelcast.approval-minimum-members`: the `tcp-ip` default is a majority after expanding commas and last-octet ranges, portless entries count at the member port, and hostname members or uncountable forms require an explicit minimum (`MISSING_APPROVAL_QUORUM`, `INVALID_APPROVAL_QUORUM`). All quorum checks apply only when approvals are in use, meaning `approval-required-tools` is non-empty or re-identification is enabled (the coordinator extended the kubernetes rule to re-identification, consistent with D-070-15). Every Hazelcast lock wait is bounded by `dataprism.hazelcast.lock-timeout` (default `PT2S`) and refuses with `CLUSTER_LOCK_TIMEOUT`. Review gate: APPROVE — production code and docs approved on re-review of bef0db4f; final test-only fix applied after (validator-level wildcard tests).

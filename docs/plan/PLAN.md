@@ -47,6 +47,16 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 - `DataSourceAdapter` declares only `sourceName()`, `responseType()` and `fetch()` (`DataSourceAdapter.java:12-16`); there is no description or input-key declaration.
 
 
+### Reconciliation and current execution state (2026-10-19)
+
+PR #130 (`plan/0.7.0`) remains an in-progress integration PR. See `reconciliation-2026-10-19.md` for task allocation and the current dependency sequence. This section supersedes the older execution summary below.
+
+Ready 0.7 tasks: 193, 194, 196, 198. Then 209 after 194, 199 after 193/196, 200 after 193/198, and 201 after 193/194/196/209; their other prerequisites are already on the integration branch. 198 now designs 0.8 catalog paging first. The remaining briefs use the integration branch, not today's `main`.
+
+Owner confirmed on 2026-10-19 that the approved sealed-state cluster design governs: encrypted re-identification values and separate cluster/name keys. Tasks 204/205/212 are superseded, not completed; 215 plans the implementation successors. D-1.0-3 and D-1.0-7 resolve through that design, and the isolation-only interpretation of D-1.0-2 is superseded. Case authorisation (203/210), keyed audit/segment caps (206/207/211), FREE_TEXT and recognisers (208), and controls/rotation docs (213) are scheduled for 0.8. Existing pattern-validator wiring (209) is a 0.7 correction. The annex (214) is 0.9 evidence. 1.0 remains a stability release, with the freeze at 0.9. Imported D-1.0-1 and D-1.0-4 retain their recorded meanings.
+
+Task 213 is blocked until 215 names concrete cluster implementation dependencies. No superseded brief is an implementation prerequisite. No code task is marked complete by this reconciliation.
+
 ### 0.7.0 state (updated 2026-10-09)
 
 Follow-ups from task 190: re-capture the two converted HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the Compose stack before the 0.7.0 release. For task 201's migration notes: a 0.7 log carrying `REFUSED:<code>` cannot be read by a pre-0.7 verifier, while old logs verify with the new one. The custom-validator SPI change (the final pass validates an array root, not an object) is Breaking and belongs in the same notes.

@@ -1,7 +1,7 @@
 # 193 — Enforce maxRecords and maxResponseBytes, refusing when either is exceeded
 
 **Repo:** .
-**Branch:** from `main` after task 190 has merged
+**Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
 **Depends on:** 190
 **Decided (owner, 2026-10-09):**
 - D-070-5 (a): a record is each source's top-level record plus each object
