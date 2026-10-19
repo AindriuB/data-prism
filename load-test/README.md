@@ -60,6 +60,10 @@ Everything runs on loopback in one run, and is stopped when the run ends:
   discarded. `ratePerSecond` of 0 means as fast as the workers go; above 0,
   call *i* is due at `start + i / rate` and its latency is measured from that
   due time, so a stalled server shows as latency rather than as missing calls.
+  The deadline is the real clock: workers that have fallen behind stop
+  dispatching when `durationSeconds` passes rather than working through the
+  backlog, and the scheduled calls they never made are reported as
+  `calls.notDispatched`.
 - `limits` are the six `dataprism.limits.*` keys. An omitted key takes the
   framework default (`docs/configuration.md`), except `maxSources`, which takes
   `sources` so the fan-out is not silently skipped. Pass a smaller `maxSources`
@@ -70,7 +74,10 @@ Everything runs on loopback in one run, and is stopped when the run ends:
 
 ## The result file
 
-`calls` (attempted, completed, transport failures by exception class),
+`calls` (attempted, completed, transport failures by exception class, and
+`notDispatched`: paced calls scheduled within the duration but never made
+because the driver could not keep up; a non-zero value means the offered rate
+was not reached),
 `latencyMs` (p50, p95, p99, max, mean; p50 to max are exact up to about 262 ms
 and within 0.002 % above), `throughputPerSecond` (completed calls over the
 measured wall time), `refusalCodes` (count by code of calls the server
