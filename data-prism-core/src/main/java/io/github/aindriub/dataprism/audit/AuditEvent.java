@@ -70,6 +70,10 @@ public record AuditEvent(
     /** The record version written by this code. */
     public static final int CURRENT_VERSION = 3;
 
+    /** A refused source's disposition from release 0.7: {@code REFUSED:<code>}, the code a plain upper-case token. */
+    private static final java.util.regex.Pattern REFUSED_WITH_CODE =
+            java.util.regex.Pattern.compile("REFUSED:[A-Z][A-Z0-9_]{0,63}");
+
     /** Task 108's ceiling on an external correlation id: at most this many characters. */
     private static final int EXTERNAL_ID_MAX_LENGTH = 256;
 
@@ -80,7 +84,7 @@ public record AuditEvent(
         fieldDispositions.forEach((path, action) -> {
             if (!isValidAction(action)) {
                 throw new IllegalArgumentException(
-                        "field disposition for '" + path + "' is not a PrivacyAction name or REFUSED");
+                        "field disposition for '" + path + "' is not a PrivacyAction name, REFUSED or REFUSED:<code>");
             }
         });
         approvalId = approvalId == null ? "" : approvalId;
@@ -144,6 +148,9 @@ public record AuditEvent(
         }
         if (action == null) {
             return false;
+        }
+        if (REFUSED_WITH_CODE.matcher(action).matches()) {
+            return true;
         }
         try {
             PrivacyAction.valueOf(action);

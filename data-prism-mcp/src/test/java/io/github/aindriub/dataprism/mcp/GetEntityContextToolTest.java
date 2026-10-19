@@ -275,7 +275,7 @@ class GetEntityContextToolTest {
             requests.add(request);
             investigationContexts.add(investigationContext);
             return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(), List.of(),
-                    DataPrismObjectMapper.create().createObjectNode());
+                    Map.of(), "");
         }
     }
 
@@ -292,7 +292,7 @@ class GetEntityContextToolTest {
                                             InvestigationContext investigationContext) {
             String subject = synthetics.syntheticValue(request.subjectId(), PrivacyNamespace.NONE, privacyContext);
             return new ContextResponse(request.entityType(), subject, Map.of(), List.of(),
-                    DataPrismObjectMapper.create().createObjectNode());
+                    Map.of(), "");
         }
     }
 

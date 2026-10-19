@@ -1,0 +1,43 @@
+name: mutation
+
+# Report-only mutation testing over the privacy modules (task 195). It runs
+# weekly and on manual dispatch, never on a pull request, so a PR from a fork
+# cannot reach it. It reads no secret and fails on no score: the -Pmutation
+# profile sets no threshold. The reports are uploaded as an artifact.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v6
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - name: Mutation testing
+        run: >-
+          ./mvnw -B --no-transfer-progress -Pmutation verify
+          -pl data-prism-core,data-prism-pseudonymisation,data-prism-validation,data-prism-orchestration
+          -am
+
+      - name: Publish PIT reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pit-reports
+          path: "**/target/pit-reports/"
+          if-no-files-found: warn
+          retention-days: 30

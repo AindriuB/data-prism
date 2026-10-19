@@ -11,6 +11,7 @@ import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
+import io.github.aindriub.dataprism.orchestration.SourceResult;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
@@ -293,8 +294,8 @@ class DataPrismMcpServerTest {
             investigationContexts.add(investigationContext);
             String sourceName = investigationContext.has(Capability.EXPOSE_SOURCE_NAMES)
                     ? "customer-api" : "ALIASED-SOURCE";
-            return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(sourceName, "ANSWERED"),
-                    List.of(), DataPrismObjectMapper.create().createObjectNode());
+            return new ContextResponse(request.entityType(), "SUBJ-STUB", Map.of(sourceName, SourceResult.answered(DataPrismObjectMapper.create().createObjectNode())),
+                    List.of(), Map.of(), "");
         }
     }
 }

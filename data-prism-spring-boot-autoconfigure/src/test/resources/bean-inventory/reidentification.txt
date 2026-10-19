@@ -33,6 +33,8 @@ dataPrismReidentificationIndexFeed | org.springframework.beans.factory.config.Be
 dataPrismReidentificationModulePreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismReidentificationPolicy | io.github.aindriub.dataprism.reidentification.ReidentificationPolicy
 dataPrismReidentificationService | io.github.aindriub.dataprism.reidentification.ReidentificationService
+dataPrismRequestLimits | io.github.aindriub.dataprism.core.limits.RequestLimits
+dataPrismRequestLimitsPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismScopeResolver | io.github.aindriub.dataprism.security.ScopeResolver
 dataPrismScrubber | io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine
 dataPrismSecretKeyProvider | io.github.aindriub.dataprism.core.spi.SecretKeyProvider

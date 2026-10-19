@@ -1,14 +1,16 @@
-# 188 — Add case authorisation and a client allowlist to the security module
+# 203 — Add case authorisation and a client allowlist to the security module
+
+Renumbered from 188 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` (f74757a at filing, post-0.6.0)
+**Release:** 0.8.0 (before the 0.9 API freeze)
+**Base branch:** `origin/main` after 0.7.0 integration; refresh the cited paths and call sites against that base before implementation.
 **Depends on:** none
 **Decided (owner, 2026-10-15):**
 - **D-1.0-1.** At the Spring layer, startup refuses without a `CaseAuthorizer` bean unless
   `dataprism.security-policy.case-authorisation=token-trusted` is set explicitly. The default bean is
-  `REPLACEABLE`. Task 195 implements the Spring part; this task provides the SPI it wires.
-- **D-1.0-5.** Everything here ships in 1.0.0. Breaking changes are accepted. Constructors change in
+  `REPLACEABLE`. Task 210 implements the Spring part; this task provides the SPI it wires.
+- **D-1.0-5.** Everything here is required by 1.0.0; implementation ships in 0.8.0 under the reconciled roadmap. Breaking changes are accepted. Constructors change in
   place: no deprecated or forwarding overload is left behind, because it would freeze into the 1.0 API.
 
 **Owns:**
@@ -36,7 +38,7 @@ trail through the existing DENY path, which needs no change.
 - data-prism-security/src/main/java/io/github/aindriub/dataprism/security/AuthenticatedCaller.java:21-66 — `clientId` and `caseId` are already mandatory and non-blank
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/GetEntityContextTool.java:205-214,308-333 — a denied decision and a `SecurityRefusedException` from `resolve` are both audited as `DENY:<code>` with the caller's `clientId` and `caseId`. `CompareEntitySourcesTool.java:205-214` is identical. No change to `data-prism-mcp/src/main` is needed or allowed.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/refusal/RefusalCodes.java — new codes must match `[A-Z][A-Z0-9_]{0,63}`
-- Call sites to update, found with `rg -n 'new (ScopeResolver|AuthorizationService)\(' --glob '!**/target/**'`: the security tests, 11 files under `data-prism-mcp/src/test`, `ExampleApplication.java` and 8 test files under `data-prism-integration-tests/src/test`, and `SecurityWiring.java`. `docs/tools.md:69-70` also shows the old constructors; task 198 owns that file.
+- Call sites to update, found with `rg -n 'new (ScopeResolver|AuthorizationService)\(' --glob '!**/target/**'`: the security tests, 11 files under `data-prism-mcp/src/test`, `ExampleApplication.java` and 8 test files under `data-prism-integration-tests/src/test`, and `SecurityWiring.java`. `docs/tools.md:69-70` also shows the old constructors; task 213 owns that file.
 - docs/conventions.md, "Privacy rules a diff must satisfy" — "No caller-supplied scope, principal, purpose or case id"
 
 ## Acceptance
@@ -51,15 +53,15 @@ trail through the existing DENY path, which needs no change.
 - [ ] With `ClientAllowlist.unrestricted()`, every pre-existing `AuthorizationServiceTest` case passes with only its constructor call changed.
 - [ ] `CaseAuthorisationDenialAuditTest` drives `GetEntityContextTool` with an authorizer that returns `false`. It asserts that one `AuditEvent` is recorded with `policyDecision` `DENY:CASE_NOT_AUTHORISED` and the caller's `caseId` and `clientId`, that the orchestrator is never invoked, and that the tool result is an error.
 - [ ] `ClientAllowlistDenialAuditTest` does the same for a disallowed client and asserts `DENY:CLIENT_NOT_ALLOWED`.
-- [ ] Every other caller passes `CaseAuthorizer.tokenTrusted()` and `ClientAllowlist.unrestricted()` explicitly, so behaviour outside the new tests is unchanged. `SecurityWiring` does the same until task 195 replaces it.
+- [ ] Every other caller passes `CaseAuthorizer.tokenTrusted()` and `ClientAllowlist.unrestricted()` explicitly, so behaviour outside the new tests is unchanged. `SecurityWiring` does the same until task 210 replaces it.
 - [ ] Mutation proof: with the authorizer call removed from `resolve`, at least one `ScopeResolverTest` case fails; with the allowlist check removed, at least one `AuthorizationServiceTest` case fails. Name both in the close-out.
 - [ ] `git diff --stat origin/main` lists no file under `data-prism-mcp/src/main`.
 - [ ] `./mvnw -B -pl data-prism-security,data-prism-mcp,data-prism-integration-tests,data-prism-spring-boot-autoconfigure -am verify` passes.
 
 ## Out of scope
-- Properties, startup refusals, the `dataPrismCaseAuthorizer` bean, `PrivacyExtensionPoints` and `docs/configuration.md`. Task 195 owns all of them.
+- Properties, startup refusals, the `dataPrismCaseAuthorizer` bean, `PrivacyExtensionPoints` and `docs/configuration.md`. Task 210 owns all of them.
 - A built-in authorizer that reads assignments from a store or the token. The SPI is the deliverable; deployers supply the implementation.
 - The operator (re-identification) surface. It has its own audience and authorisation.
-- Enforcing which model endpoint a client talks to, or where data is transferred. That is a gateway or egress control; tasks 195 and 199 document it.
+- Enforcing which model endpoint a client talks to, or where data is transferred. That is a gateway or egress control; tasks 210 and 214 document it.
 - `ClaimNames` and the claims that carry the client and case ids.
-- `docs/tools.md` and every other file under `docs/` (task 198).
+- `docs/tools.md` and every other file under `docs/` (task 213).

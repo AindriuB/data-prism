@@ -45,7 +45,7 @@ class WorkedExampleTest {
     @DisplayName("one subject reads the same across all three systems")
     void identityIsConsistentAcrossSources() {
         ContextResponse response = customer123();
-        String body = response.entity().toString();
+        String body = allEntities(response);
 
         // The three source spellings are Patrick Murphy, Pat Murphy and P. Murphy.
         // None of them may appear.
@@ -56,8 +56,8 @@ class WorkedExampleTest {
 
         // And the fields that carried them all resolve to the same pseudonym,
         // because the pseudonym is keyed on the subject rather than the value.
-        String customerName = response.entity().get("customerName").asString();
-        String holderName = response.entity().get("holderName").asString();
+        String customerName = field(response, "customerName").asString();
+        String holderName = field(response, "holderName").asString();
         assertThat(holderName).isEqualTo(customerName);
         assertThat(customerName).matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
     }
@@ -127,7 +127,7 @@ class WorkedExampleTest {
             assertThat(response.findings().toString())
                     .as("findings must not name the real source '%s'", realName)
                     .doesNotContain(realName);
-            assertThat(response.entity().toString())
+            assertThat(allEntities(response))
                     .as("the serialised entity must not name the real source '%s'", realName)
                     .doesNotContain(realName);
         }
@@ -175,5 +175,17 @@ class WorkedExampleTest {
                 .doesNotContain("customer-api", "account-api", "order-api");
         assertThat(response.answered()).hasSize(3);
         assertThat(response.incomplete()).isFalse();
+    }
+
+    /** Every answered source's own entity, serialised together: the response no longer merges them. */
+    private static String allEntities(ContextResponse response) {
+        return response.sources().values().stream().filter(io.github.aindriub.dataprism.orchestration.SourceResult::isAnswered)
+                .map(r -> r.entity().toString()).collect(java.util.stream.Collectors.joining());
+    }
+
+    /** The field from whichever answered source holds it, or {@code null}. */
+    private static tools.jackson.databind.JsonNode field(ContextResponse response, String name) {
+        return response.sources().values().stream().filter(io.github.aindriub.dataprism.orchestration.SourceResult::isAnswered)
+                .map(r -> r.entity().get(name)).filter(java.util.Objects::nonNull).findFirst().orElse(null);
     }
 }

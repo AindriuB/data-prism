@@ -106,8 +106,12 @@ A few properties are deliberate, not accidental gaps:
   version 2 record's `recordVersion` to `1` is therefore reported as a break.
   `fieldDispositions` maps a field path to the action taken on it. Paths look
   like `<sourceName>:<json-pointer>` with array indices collapsed to `*` (for
-  example `crm:/contacts/*/email`); the action is a `PrivacyAction` name or
-  `REFUSED`. Dispositions name field paths and actions and never values.
+  example `crm:/contacts/*/email`); the action is a `PrivacyAction` name,
+  `REFUSED`, or (from 0.7) `REFUSED:<code>`, where `<code>` is the refusal code
+  as a plain upper-case token (`[A-Z][A-Z0-9_]{0,63}`; anything else is
+  `INVALID_REFUSAL_CODE`). Logs written by 0.7 can therefore contain
+  `REFUSED:<code>`, which a reader or verifier older than 0.7 rejects; a log
+  written before 0.7, with plain `REFUSED`, still reads and verifies. Dispositions name field paths and actions and never values.
   `approvalId` and `approverId` identify a four-eyes approval request and the
   second principal, or are empty. `AuditFilePiiScanTest`
   (`data-prism-integration-tests`) scans this file's own output for stub
@@ -228,7 +232,7 @@ before 0.4.0.
 | Form | Written by | Meaning | Example |
 |---|---|---|---|
 | `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
-| `DENY:<code>` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching, with the refusal code (for example an exhausted read budget, `DENY:SCOPE_READ_BUDGET`). A failure that is not a privacy refusal, such as a scrubber or validator fault, is `DENY:REQUEST_FAILED`; the client sees only "the request could not be completed". Adapter failures are recorded per source, and if every source fails the result is `DENY:NO_SOURCE_DATA`. A code that is not a plain upper-case token (`[A-Z][A-Z0-9_]{0,63}`), which an application-supplied scrubber or validator could throw, is recorded as `DENY:INVALID_REFUSAL_CODE`. A refusal is also marked `REFUSED` under one of two fixed keys, `<source>:<refused>` or `merged:<refused>`, with no code; dispositions for fields already scrubbed from earlier sources may also be present, and an internal error adds no `REFUSED` mark. The code is joined to the client's result by `correlationId` | `DENY:SCOPE_READ_BUDGET`, `DENY:REQUEST_FAILED` |
+| `DENY:<code>` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching, with the refusal code (for example an exhausted read budget, `DENY:SCOPE_READ_BUDGET`). A failure that is not a privacy refusal, such as a scrubber or validator fault, is `DENY:REQUEST_FAILED`; the client sees only "the request could not be completed". Adapter failures are recorded per source, and if every source fails the result is `DENY:NO_SOURCE_DATA`. A code that is not a plain upper-case token (`[A-Z][A-Z0-9_]{0,63}`), which an application-supplied scrubber or validator could throw, is recorded as `DENY:INVALID_REFUSAL_CODE`. A source whose scrub or validation refuses is marked under the fixed key `<source>:<refused>` with the value `REFUSED:<code>` (the code passed through the same sanitising as above; before 0.7 the value was plain `REFUSED`). The call is then refused only when every source that answered was refused, with the code of the first scrub refusal, or, if no scrub refused, of the first validation refusal. Otherwise it is `ALLOW`, the source is listed as `<source>:REFUSED` among the source systems, and nothing of it is recorded but that key. The fixed key `merged:<refused>`, value `REFUSED`, marks every other refusal, including a violation found only by the final check over the whole response; an internal error adds no `REFUSED` mark. The code is joined to the client's result by `correlationId` | `DENY:SCOPE_READ_BUDGET`, `DENY:REQUEST_FAILED` |
 | `DENY:<code>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran, with the refusal code: authorisation, scope, admission, or no authenticated caller. The client's result carries the bare code | `DENY:TOOL_NOT_PERMITTED`, `DENY:NO_AUTHENTICATED_CALLER`, `DENY:CALLER_RATE_LIMITED`, `DENY:APPROVAL_REQUIRED` |
 | `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
 | `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |

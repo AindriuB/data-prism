@@ -69,9 +69,10 @@ the raw subject ids in the keys of the first three.
 ## Configuration
 
 These properties apply with `dataprism.hazelcast.topology: embedded`. With
-`single-node` they are refused (`CLUSTER_SETTINGS_IGNORED`). They are also
-refused when the application supplies its own `PrivacyCluster` bean, because they
-would have no effect. Relaxed binding drops hyphens in environment variables:
+`single-node` they are refused (`CLUSTER_SETTINGS_IGNORED`). All but
+`lock-timeout` are also refused when the application supplies its own
+`PrivacyCluster` bean, because they would have no effect; `lock-timeout` still
+applies, because the stores are built over that bean. Relaxed binding drops hyphens in environment variables:
 `dataprism.hazelcast.cluster-name` is `DATAPRISM_HAZELCAST_CLUSTERNAME`.
 
 | Property | Meaning |
@@ -84,6 +85,8 @@ would have no effect. Relaxed binding drops hyphens in environment variables:
 | `dataprism.hazelcast.join.kubernetes.service-dns` | For `kubernetes` only. DNS mode. Exactly one of this and `service-name` |
 | `dataprism.hazelcast.member.port` | Optional. Default 5701, never auto-incremented |
 | `dataprism.hazelcast.member.interface` | Optional. An IPv4 literal or wildcard such as `10.0.*.*` |
+| `dataprism.hazelcast.lock-timeout` | Optional. Default `PT2S`, from `PT100MS` to `PT30S`. How long a call waits for a cluster lock before it is refused. See [Failure behaviour](#failure-behaviour) |
+| `dataprism.hazelcast.approval-minimum-members` | Optional integer, at least 1. The fewest members that must see each other for approvals to be created, decided or consumed. `tcp-ip`: unset means a majority of the distinct `join.members` entries, so the list must name every member, this one included. Members are counted after expanding entries separated by commas, semicolons or spaces and last-octet ranges such as `10.0.0.1-3`; an entry without a port is the configured `member.port`, so `10.0.0.1` and `10.0.0.1:5701` are one member only when `member.port` is 5701. `none`: 1, and the key is refused. The checks below apply only when approvals are in use, that is `dataprism.oversight.approval-required-tools` is not empty or `dataprism.reidentification.enabled` is true; otherwise no quorum is computed or required. A form that cannot be counted reliably (a wildcard, a range in another octet) is then refused with `INVALID_APPROVAL_QUORUM`. If any entry is a hostname, the count is unknown, because Hazelcast resolves a hostname to every address it has, so you must set the minimum (`MISSING_APPROVAL_QUORUM` otherwise). `kubernetes`: required when approvals are in use. Application code that builds its own `ToolAdmission` or `ReidentificationService` over the starter's `ApprovalStore`, without setting the starter properties that put approvals in use, should set `approval-minimum-members` explicitly: the starter applies no protection otherwise. See [Failure behaviour](#failure-behaviour) |
 
 `join.mode: none` is the explicit single-member choice: the member binds
 `127.0.0.1` only and neither discovers nor accepts other members. It refuses
@@ -118,6 +121,9 @@ leaves it running. The code is on the configuration failure.
 | `INVALID_CLUSTER_INTERFACE` | `member.interface` is not an IPv4 literal or wildcard pattern, or is set with `none` |
 | `CLUSTER_PORT_SHARED` | `member.port` equals `server.port`, `management.server.port` or an enabled `dataprism.operator.port` |
 | `CLUSTER_SETTINGS_IGNORED` | Cluster settings with `single-node`, or with an application-supplied `PrivacyCluster` |
+| `INVALID_LOCK_TIMEOUT` | `lock-timeout` below `PT100MS`, above `PT30S`, zero or negative |
+| `INVALID_APPROVAL_QUORUM` | `approval-minimum-members` below 1, above the number of distinct `join.members` entries with `tcp-ip`, or set at all with `none`. Also, when approvals are in use, a `tcp-ip` entry that cannot be counted (wildcard, a range outside the last octet) |
+| `MISSING_APPROVAL_QUORUM` | Approvals in use (`dataprism.oversight.approval-required-tools` set or `dataprism.reidentification.enabled`) and either `tcp-ip` with a hostname among `join.members`, or `kubernetes`, with no `approval-minimum-members`: the member count is not known to the starter, so you must give it |
 | `HAZELCAST_TLS_UNSUPPORTED` | `tls-key-reference` or `tls-trust-reference` set, or a supplied Hazelcast `Config` that enables TLS or Hazelcast security |
 | `UNSAFE_HAZELCAST_DISCOVERY` | An enabled advanced network config, in a supplied `Config` or instance. Auto-detection or multicast enabled on a supplied instance passed to `using()`. A supplied `Config` given to `PrivacyCluster.embedded(Config)` has auto-detection and multicast forced off, not refused |
 
@@ -268,5 +274,80 @@ Losing the owner and the backup of an entry together loses that entry:
   entries per member, and an evicted entry is lost for good.
 - Identity entries are recomputed, with no change to any answer.
 
-This page makes no claim beyond that. Scaling to zero loses everything held only
-in memory.
+Scaling to zero loses everything held only in memory.
+
+### A lock someone holds
+
+Reading the budget, counting a caller's requests and creating or deciding an
+approval each take a short cluster lock on the entry they change. A lock that
+another member, a slow member or something on the member port holds no longer
+hangs the request thread. The call waits at most `dataprism.hazelcast.lock-timeout`
+(default two seconds) and then is refused with `CLUSTER_LOCK_TIMEOUT`, without
+changing any counter or approval:
+
+- A tool call refused at admission, or a read refused by the budget, returns
+  `CLUSTER_LOCK_TIMEOUT` and is audited as `DENY:CLUSTER_LOCK_TIMEOUT`. A held lock
+  is therefore not reported as an exhausted budget. A budget failure that is not a
+  lock timeout, such as an unreachable cluster, still refuses the read as before.
+- The operator API keeps answering `503 OVERSIGHT_UNAVAILABLE`.
+
+Entry locks are leased for five times the lock timeout (ten seconds with the
+default). Creation instead retains the approval-ID lock through its uniqueness
+check and insert, with no expiring lease. Pending-cap creation also retains its
+requester lock through count-and-store. A paused owner keeps competing creations
+for the same ID or capped requester refused within the configured lock timeout;
+locks are released in `finally`, or when their owning member leaves the cluster.
+This favours ID uniqueness and cap enforcement over creation availability for
+that ID or requester. Deciding an existing approval does not need either
+creation lock. Writes to the identity and
+re-identification caches and to the
+pause flags take no lock of their own, but a lock someone else holds on one of
+their keys still blocks them; those are not bounded yet.
+
+### Approvals under a partition
+
+An approval is consumed, approved or rejected by a compare-and-set on its entry:
+of any number of callers racing on any members, exactly one succeeds. Hazelcast's
+locks give no such guarantee under split brain, so correctness does not rest on
+them; they only bound the wait.
+
+A partition still leaves each side with its own copy of the entry. Two protections
+narrow what that allows.
+
+- **After the heal, a used approval stays used.** The approval map merges the two
+  copies by taking the one furthest along: consumed, then rejected, then expired,
+  then approved, then pending. Hazelcast's default would have kept the larger
+  side's copy, so an approval that one side had consumed could have become usable
+  again. Budgets and rate windows are not merged this way: a merge can lose them
+  or lower a count, so after a partition a caller may get more reads or requests
+  than the limit.
+- **The smaller side refuses.** Writes to the approval map (create, approve,
+  reject, consume) throw on a member that sees fewer members than
+  `approval-minimum-members`, and admission turns that into `OVERSIGHT_UNAVAILABLE`.
+  Reads still work. This needs no licence: it is the open-source split-brain
+  protection, not the CP subsystem.
+
+What can still happen: **one use per side, inside the detection window.** A member
+learns it is on the smaller side only when Hazelcast removes the others from its
+member list. A member that leaves or whose connection closes is noticed at once;
+one that stops answering is noticed after Hazelcast's heartbeat timeout
+(`hazelcast.max.no.heartbeat.seconds`, 60 seconds unless you changed it). In that
+window both sides can consume the same approval once. After it, the smaller side
+refuses and the heal keeps the consumed state.
+
+What it costs: in a two-member `tcp-ip` cluster the default minimum is 2, so
+losing either member stops approval-gated tools until it returns. That is
+deliberate. Where one member is enough, set `approval-minimum-members: 1`, which
+removes the protection and the cost, and accepts one use per side for the whole
+partition. A minimum of 1 applies no protection at all. A member also refuses
+approvals while it is the only one running of a cluster that needs more.
+
+Consuming, approving or rejecting changes the value and then restores the entry's
+expiry in a second step. A crash between the two leaves the entry without an
+expiry until it is evicted (least recently used), but the stored `expiresAt` is
+still checked on every use, so an expired approval is refused: it fails closed.
+
+A `PrivacyCluster` you build yourself with `PrivacyCluster.using(instance)` gets
+none of these map settings: not the merge policy and not the quorum. Configure
+them on the instance, or accept the defaults above. `PrivacyCluster.embedded(Config)`
+adds the merge policy but, unless you pass a minimum, not the quorum.

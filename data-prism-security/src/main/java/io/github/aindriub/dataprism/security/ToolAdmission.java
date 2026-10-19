@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.security;
 
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException.Code;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
@@ -78,6 +79,8 @@ public class ToolAdmission {
         } catch (ApprovalRefusedException e) {
             return AdmissionDecision.refuse(e.code() == Code.TOO_MANY_PENDING
                     ? "TOO_MANY_PENDING" : "OVERSIGHT_UNAVAILABLE");
+        } catch (ClusterLockTimeoutException e) {
+            return AdmissionDecision.refuse(ClusterLockTimeoutException.CODE);
         } catch (RuntimeException e) {
             return AdmissionDecision.refuse("OVERSIGHT_UNAVAILABLE");
         }

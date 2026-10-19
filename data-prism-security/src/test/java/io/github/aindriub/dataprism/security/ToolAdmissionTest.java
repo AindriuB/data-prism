@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.security;
 
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
@@ -196,6 +197,36 @@ class ToolAdmissionTest {
         CallerRateLimiter broken = proxy(CallerRateLimiter.class);
         ToolAdmission a = new ToolAdmission(state, approvals, broken, limited(5), CLOCK);
         assertEquals("OVERSIGHT_UNAVAILABLE", a.admit(CALLER, "t", "s", "f").code());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T throwing(Class<T> type, RuntimeException failure) {
+        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (p, m, args) -> {
+            throw failure;
+        });
+    }
+
+    @Test
+    void aLockTimeoutInTheApprovalStoreRefusesWithItsOwnCode() {
+        ApprovalStore held = throwing(ApprovalStore.class, new ClusterLockTimeoutException());
+        AdmissionDecision d = new ToolAdmission(state, held, limiter, approval(), CLOCK)
+                .admit(CALLER, "risky", "s", "f");
+        assertFalse(d.admitted());
+        assertEquals("CLUSTER_LOCK_TIMEOUT", d.code());
+    }
+
+    @Test
+    void aLockTimeoutInTheRateLimiterRefusesWithItsOwnCode() {
+        CallerRateLimiter held = throwing(CallerRateLimiter.class, new ClusterLockTimeoutException());
+        assertEquals("CLUSTER_LOCK_TIMEOUT",
+                new ToolAdmission(state, approvals, held, limited(5), CLOCK).admit(CALLER, "t", "s", "f").code());
+    }
+
+    @Test
+    void aClusterExceptionThatIsNotATimeoutIsStillOversightUnavailable() {
+        ApprovalStore down = throwing(ApprovalStore.class, new IllegalStateException("split brain"));
+        assertEquals("OVERSIGHT_UNAVAILABLE", new ToolAdmission(state, down, limiter, approval(), CLOCK)
+                .admit(CALLER, "risky", "s", "f").code());
     }
 
     @Test

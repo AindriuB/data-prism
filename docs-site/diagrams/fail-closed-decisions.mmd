@@ -2,9 +2,9 @@ flowchart TD
     Field["Response field"]
     Classified{"Classified?"}
     Action["Pseudonymise, redact or remove per classification"]
-    Unclassified["Unclassified: whole response refused, FAIL_REQUEST"]
-    Scan{"Response contains a detected identifier shape?"}
-    RefusedShape["Refused"]
+    Unclassified["Unclassified: source withheld, FAIL_REQUEST; call refused if every answered source is withheld"]
+    Scan{"Source tree contains a detected identifier shape?"}
+    RefusedShape["Source withheld; call refused if every answered source is withheld"]
     Returned["Field returned"]
 
     Field --> Classified

@@ -31,6 +31,7 @@ dataprism.correlation.mdc-key | java.lang.String | rw | null
 dataprism.correlation.outbound | bean | ro
 dataprism.correlation.outbound.header | java.lang.String | rw | null
 dataprism.hazelcast | bean | rw
+dataprism.hazelcast.approval-minimum-members | java.lang.Integer | rw | null
 dataprism.hazelcast.cluster-name | java.lang.String | rw | null
 dataprism.hazelcast.identity-cache-ttl | java.time.Duration | rw | null
 dataprism.hazelcast.join | bean | ro
@@ -40,6 +41,7 @@ dataprism.hazelcast.join.kubernetes.service-dns | java.lang.String | rw | null
 dataprism.hazelcast.join.kubernetes.service-name | java.lang.String | rw | null
 dataprism.hazelcast.join.members | java.util.List<java.lang.String> | rw | []
 dataprism.hazelcast.join.mode | java.lang.String | rw | null
+dataprism.hazelcast.lock-timeout | java.time.Duration | rw | PT2S
 dataprism.hazelcast.map-store-enabled | boolean | rw | false
 dataprism.hazelcast.member | bean | ro
 dataprism.hazelcast.member.interface | java.lang.String | rw | null
@@ -52,6 +54,13 @@ dataprism.hazelcast.tls-trust-reference | java.lang.String | rw | null
 dataprism.hazelcast.topology | java.lang.String | rw | null
 dataprism.identity | bean | rw
 dataprism.identity.resolver | java.lang.String | rw | null
+dataprism.limits | bean | rw
+dataprism.limits.max-concurrency | int | rw | 4
+dataprism.limits.max-records | int | rw | 500
+dataprism.limits.max-response-size | org.springframework.util.unit.DataSize | rw | 524288B
+dataprism.limits.max-sources | int | rw | 8
+dataprism.limits.per-source-timeout | java.time.Duration | rw | PT3S
+dataprism.limits.scope-read-budget | int | rw | 100
 dataprism.metrics | bean | rw
 dataprism.metrics.registry-reference | java.lang.String | rw | null
 dataprism.metrics.sink | java.lang.String | rw | null

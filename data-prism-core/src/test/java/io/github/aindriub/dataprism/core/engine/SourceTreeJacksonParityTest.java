@@ -157,7 +157,10 @@ class SourceTreeJacksonParityTest {
         assertThat(json(Locale.forLanguageTag("en-IE"))).isEqualTo("\"en_IE\"");
         assertThat(json(Locale.forLanguageTag("sr-Latn-RS"))).isEqualTo("\"sr_RS_#Latn\"");
         assertThat(SourceTree.of(new Box(Map.of(Locale.forLanguageTag("en-IE"), 1))).get("v").propertyNames()).containsExactly("en_IE");
-        assertThat(json(Path.of("/tmp/x"))).isEqualTo("\"file:///tmp/x\"");
+        // Jackson 2 writes a Path as toUri(), which gains a trailing slash when the
+        // path exists as a directory, so the expectation is derived, not fixed.
+        Path path = Path.of("/tmp/x");
+        assertThat(json(path)).isEqualTo("\"" + path.toUri() + "\"").startsWith("\"file:///tmp/x");
         assertThat(json(new File("/tmp/x"))).isEqualTo("\"/tmp/x\"");
         assertThat(json(URI.create("http://h/x"))).isEqualTo("\"http://h/x\"");
         assertThat(json(urlOf("http://h/x"))).isEqualTo("\"http://h/x\"");

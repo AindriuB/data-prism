@@ -17,6 +17,56 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-19 — PR 130 planning reconciliation and docs guard repair
+
+Reconciled imported tasks 203–214 with the 0.7–1.0 roadmap on the integration branch. The owner selected the approved sealed-state cluster design; 204/205/212 are explicitly superseded, not implemented, and 215 plans implementation successors. Task 209 becomes the existing Spring pattern-scan wiring correction in 0.7; recognisers move to 208 in 0.8. Other feature changes land before the 0.9 freeze; 214 supplies 0.9 evidence. Fixed remaining 0.7 task bases, 198 catalog paging scope, and the nav/llmstxt mismatch blocking PR docs CI. PR remains draft.
+
+**Validation:** strict MkDocs build and all six docs guard scripts passed locally with `DP_REQUIRE_NO_STUBS=true`; active task ids and dependencies checked for missing ids, cycles and superseded prerequisites. No Java implementation changed or new full-reactor result claimed.
+
+**Cost:** two independently numbered plans described conflicting cluster protections and release timing. Keep superseded briefs as history, require concrete implementation successors before 213 starts, and run the standalone docs guards after MkDocs: build success alone missed the nav mismatch.
+
+## 2026-10-09 — Hazelcast approval compare-and-set, split-brain protection, bounded lock waits (202)
+
+Approval consume, approve and reject are now compare-and-set, and the approval map merges consumed-wins, so a healed split cannot revive a consumed approval. Split-brain protection on the approval map is set by `dataprism.hazelcast.approval-minimum-members`: the `tcp-ip` default is a majority after expanding commas and last-octet ranges, portless entries count at the member port, and hostname members or uncountable forms require an explicit minimum (`MISSING_APPROVAL_QUORUM`, `INVALID_APPROVAL_QUORUM`). All quorum checks apply only when approvals are in use, meaning `approval-required-tools` is non-empty or re-identification is enabled (the coordinator extended the kubernetes rule to re-identification, consistent with D-070-15). Every Hazelcast lock wait is bounded by `dataprism.hazelcast.lock-timeout` (default `PT2S`) and refuses with `CLUSTER_LOCK_TIMEOUT`. Review gate: APPROVE — production code and docs approved on re-review of bef0db4f; final test-only fix applied after (validator-level wildcard tests).
+
+**Cost:** Four review rounds, mostly on counting `tcp-ip` members reliably; the last round's only defect was a test that started a member joining a `10.0.0.*` wildcard, now moved to validator level. A merge policy cannot read sealed payloads, so the consumed-wins rule must move to a tombstone once values are sealed. Left for 0.8: unbounded writes in `HazelcastOversightState`, `CachingSyntheticValueSource`, `ScopeIdentityIndex` and `HazelcastApprovalStore.create`'s `putIfAbsent`; budget and rate maps keep the default merge policy; a crash between `replace` and `setTtl` leaves an entry without expiry until eviction, though the stored `expiresAt` refuses it. Do not go back to lock-then-check for consumption.
+
+## 2026-10-09 — Per-source results with stable status codes (190)
+
+`get_entity_context` now returns `sources.<key>.{status, entity}` and the top-level `entity` is gone (D-070-1 b), so same-named fields from different sources are no longer overwritten in a merge. A source refused in scrub or validation is withheld whole as `REFUSED` while the others are returned; if every answered source is refused the call is refused as before (D-070-2 b). There are seven status codes, and an unknown one means not answered (D-070-3 a). The audit disposition is `REFUSED:<code>` (D-070-13 a), which `AuditEvent` accepts in exactly that suffix shape, and `merged:<refused>` is kept for the final pass. The final pass validates an array of the returned trees with no source names, a Breaking change for custom validators that assume an object root. A new metric `dataprism.privacy.source.withheld` counts withheld sources, and `failclosed` counts refused calls only.
+
+**Cost:** Privacy-boundary review asked for changes twice before approving 171647fe. A withheld source must leave no trace: no tree, no raw record for correlation, no dispositions, no synthetic values in `emitted`; mutation proofs for each are in the task history. 0.7 logs with `REFUSED:<code>` cannot be read by a pre-0.7 verifier, though old logs verify with the new one. The two single-source HTTP examples were converted by hand, not re-captured. Do not restore `merged.setAll` semantics.
+
+## 2026-10-09 — Catalog design: list_sources, describe_source, describe_entity_model (197)
+
+`docs/plan/design/catalog.md` now fixes the contracts for the agent's catalog tools: the adapter description SPI and its YAML equivalent, startup checks on description text with a generated fallback, `list_sources` and `describe_source` schemas and audit records for 0.8, `describe_entity_model` for 0.9, and how `get_entity_context` targets chosen sources. The owner decided OD-C2 explicitly, a reserved audit key `names` of `REAL` or `ALIAS`; the other open decisions OD-C1 to OD-C19 were delegated to the recommendations and are in `PLAN.md`.
+
+**Cost:** Review asked for changes twice. OD-C2 deliberately reopens the OD-13 audit shape for one key, so 0.8 must extend the `AuditEvent` grammar, `docs/audit.md`, the verifier and the closed-grammar test for that key and no other. Listing is allow-all in 0.8 and deny-by-default only from 0.9, which the 0.8 release notes must state. Do not widen the `names` key into a general audit-value exception.
+
+## 2026-10-09 — Mutation testing on the privacy modules (195)
+
+A `mutation` Maven profile runs PIT 1.30.0 over core, pseudonymisation, validation and orchestration, and `mutation.yml` runs it weekly and on manual dispatch, publishing the report as an artifact without ever failing a build. First scores: core 81%, pseudonymisation 86%, validation 68%, orchestration 79%, so the 0.9 gate can set thresholds from a measurement.
+
+**Cost:** One core mutant is timing-sensitive, so core is 81% plus or minus a mutant, and core alone takes about three minutes. These are local numbers, not CI numbers; re-run the workflow after 0.7.0 reaches `main` before pinning anything. A PIT run writes `target/`, so never run it beside another build in the same worktree.
+
+## 2026-10-09 — Sealed-link, key-resolver and cluster-security designs (191, 192)
+
+Three internal design documents under `docs/plan/design/` now fix how sealed links, key resolvers and open-source Hazelcast cluster security will be built in 0.8, each approved by security review. Links carry the real key AEAD-sealed under a short-lived link key in padded buckets, bound to the caller and off by default; clusters seal what they store, refuse isolation-only multi-member setups, and refuse every call when the signed pause document is stale or absent. The owner delegated all open decisions to the recommendations, so the documents record each as "Decided (owner delegated)".
+
+**Cost:** The link design needed four review rounds and the cluster design three, mostly on what the sealing does not cover: the owner accepted residual risks T10 and T17, and the 1.0 cluster claim is deliberately qualified (no protection against deletion, short replay or availability loss; transport protection is the deployer's). Review also confirmed four existing Hazelcast defects, listed in `PLAN.md`, which are fix tasks rather than design work. Do not reopen the choice to put only an opaque handle in the link; (a') was chosen with the key-destruction procedure as its price.
+
+## 2026-10-09 — Supply chain attestations and configurable request limits (188, 189)
+
+Release builds now attach a CycloneDX SBOM to each of the 14 modules deployed to Central and to the GitHub Release, push images with buildx SBOM and provenance, sign every pushed image digest keylessly with cosign, and attest jars, images and release assets; `docs/verifying-releases.md` tells a consumer how to check each. Separately, `dataprism.limits.*` binds all six request limits into one `PRIVACY_CRITICAL` bean used by both orchestrator wiring sites, with `INVALID_REQUEST_LIMITS` on bad values and refusal of an application-supplied `RequestLimits` bean.
+
+**Cost:** None of the signing and attestation steps run outside a real release, so they are unproven until 0.7.0; the five-item checklist is in `PLAN.md`. Task 188 needed two review rounds. For 189, `data-prism-connectors-rest` cannot see the bean without the autoconfigure module; a standalone copy of the defaults was the first answer, and review made it fail closed when any `dataprism.limits.*` key is set with no bean. The hard-coded bean count in `AutoConfiguredBeanInventoryTest` (53 to 55) will conflict with any other task adding a bean. A raw `FactoryBean` with `allowEagerInit=false` still escapes the preflight; it is a follow-up, not fixed.
+
+## 2026-10-09 — Road to 1.0 agreed
+
+The roadmap from 0.7 to 1.0 is now recorded in `docs/plan/roadmap.md`, replacing the draft ideas file, with the owner decisions and design-time code facts in `PLAN.md`. 1.0 is defined as a privacy layer an operations team can run against hundreds of services, where an LLM agent discovers sources, follows sealed one-step links between them and compares per-source results, never seeing a real identifier. The plan is 0.7 (foundations and design), 0.8 (many-source core), 0.9 (release candidate, API freeze at 0.9.0) and 1.0 (stability promise, no new features).
+
+**Cost:** The first draft listed Hazelcast Enterprise as an option for cluster security; the owner ruled it out, so cluster security is designed on open-source Hazelcast only. Sealed links are new cryptography in a privacy path, which is why the roadmap schedules a threat model in 0.7 and an external review in 0.9, with a fallback of chaining only from human-supplied keys. Design-time checks of the code corrected one claim: sources past `maxSources` are already marked `SKIPPED_OVER_LIMIT` per source, so the problem is a partial answer, not an invisible one.
+
 ## 2026-10-09 — Maven 3.10 release guards and Central plugin investigation (185, 186)
 
 Task 185 added a "Guard Maven is 3.9.x" step to both jobs of `publish-central.yml`, directly after `actions/setup-java`, which fails unless the first line of `./mvnw -v` matches `Apache Maven 3.9.N`. It also added a Dependabot ignore for `org.apache.maven:apache-maven` >= 3.10. Task 186 (investigation only) found no fixed plugin: `org.sonatype.central` is at 0.11.0 and the `io.github.mavenplugins` fork 1.3.1 has the same bug. The cause is a Maven 3.10.0 change in `LegacyLocalRepositoryManager.overlay`, which now writes `maven-metadata-local.xml`, `_remote.repositories` and `.locks/` instead of `maven-metadata-central-staging.xml`. Upstream: apache/maven #13388 (issue) and #13389 (PR against maven-3.10.x), mavenplugins #78 and #79.

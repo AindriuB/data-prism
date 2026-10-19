@@ -1,15 +1,17 @@
-# 191 — Add an opt-in keyed HMAC audit chain, with verifier and retention support
+# 206 — Add an opt-in keyed HMAC audit chain, with verifier and retention support
+
+Renumbered from 191 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled on 2026-10-19; see `docs/plan/reconciliation-2026-10-19.md`.
 
 **Repo:** `.`
-**Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` (f74757a at filing, post-0.6.0)
+**Release:** 0.8.0 (before the 0.9 API freeze)
+**Base branch:** `origin/main` after 0.7.0 integration; refresh the cited paths and call sites against that base before implementation.
 **Depends on:** none
 **Decided (owner, 2026-10-15), D-1.0-4:** the keyed chain is opt-in and off by default. It uses a key
-separate from the pseudonymisation key; using the same key is a startup refusal (task 196). It claims
+separate from the pseudonymisation key; using the same key is a startup refusal (task 211). It claims
 only to resist a writer who lacks the key, not the operator. **This partly reverses the 2026-09-23
 decision rejecting a keyed chain**, `docs/architecture.md:496-523`, which was reaffirmed on 2026-10-06 as
 owner decision D2 when task 107 was dropped (`docs/plan/PLAN.md:75-77,678-681`). That decision's
-reasoning still holds for the operator threat; task 198 records the partial reversal.
+reasoning still holds for the operator threat; task 213 records the partial reversal.
 
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/AuditEventHash.java
@@ -51,13 +53,13 @@ byte-identical, and the existing disclaimers must not be softened.
 - [ ] `AuditChainVerifierCli` accepts `--hmac-key-file <path>`, repeatable, and `--allow-unkeyed-writers`. A key file holds the key id and the base64 key, in a format stated in `--help`. The CLI never prints key material. An unreadable or malformed key file exits `EXIT_UNREADABLE_INPUT` with a message that names the flag and not the file's contents.
 - [ ] The existing `LIMITATION` text is unchanged. On every run with a key, the CLI also prints one line saying that a keyed chain resists a writer without the key, not anyone holding it, including the operator and the process that writes the file. When unkeyed writers were allowed, it prints a line with their count. A test asserts all three strings.
 - [ ] Mutation proof: making the keyed entry point return the unkeyed hash makes at least one test fail. Name it in the close-out.
-- [ ] `AuditWiring` passes `AuditChainMode.unkeyed()` and an empty key list, so Spring behaviour is unchanged until task 196.
+- [ ] `AuditWiring` passes `AuditChainMode.unkeyed()` and an empty key list, so Spring behaviour is unchanged until task 211.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-spring-boot-autoconfigure -am verify` passes.
 
 ## Out of scope
-- Properties, key resolution, the same-key refusal and `docs/configuration.md` (task 196).
-- Size-capped segments (task 192, which edits `AuditChainVerifier` and `AuditRetention` after this task).
+- Properties, key resolution, the same-key refusal and `docs/configuration.md` (task 211).
+- Size-capped segments (task 207, which edits `AuditChainVerifier` and `AuditRetention` after this task).
 - Asymmetric signing and external publication of checkpoints. These remain the answer to the operator threat and are not part of this task.
-- Collapsing the existing `verify` overloads. That is a roadmap API-cleanup item; doing it here would touch test files owned by tasks 188 and 196.
+- Collapsing the existing `verify` overloads. That is a roadmap API-cleanup item; doing it here would touch test files owned by tasks 203 and 211.
 - The JSON projection, which is not hash-chained.
-- `docs/audit.md`, the rotation procedure and `docs/architecture.md` (task 198).
+- `docs/audit.md`, the rotation procedure and `docs/architecture.md` (task 213).

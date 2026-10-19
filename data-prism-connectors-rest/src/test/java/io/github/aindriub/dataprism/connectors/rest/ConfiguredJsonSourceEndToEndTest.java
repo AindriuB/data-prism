@@ -204,25 +204,25 @@ class ConfiguredJsonSourceEndToEndTest {
         // is that these two independently-classified fields resolve to the exact
         // same synthetic string despite different field names and different raw
         // values, in different shapes of response.
-        assertThat(response.entity().get("customerName").asString())
-                .isEqualTo(response.entity().get("name").asString())
+        assertThat(field(response, "customerName").asString())
+                .isEqualTo(field(response, "name").asString())
                 .doesNotContain("Alice Raw", "Bob Raw");
 
         // Raw values are absent, from both sources.
-        assertThat(response.entity().toString())
+        assertThat(allEntities(response))
                 .doesNotContain("Alice Raw", "Bob Raw", "alice@raw.example", "bob@raw.example");
 
         // Redacted, not passed through, for both.
-        assertThat(response.entity().get("email").asString()).isEqualTo("[REDACTED]");
-        assertThat(response.entity().get("emailAddress").asString()).isEqualTo("[REDACTED]");
+        assertThat(field(response, "email").asString()).isEqualTo("[REDACTED]");
+        assertThat(field(response, "emailAddress").asString()).isEqualTo("[REDACTED]");
 
         // The internal identifier is dropped for both, never emitted.
-        assertThat(response.entity().has("customerId")).isFalse();
-        assertThat(response.entity().has("id")).isFalse();
+        assertThat((field(response, "customerId") != null)).isFalse();
+        assertThat((field(response, "id") != null)).isFalse();
 
         // Non-sensitive passthrough, for both.
-        assertThat(response.entity().get("status").asString()).isEqualTo("ACTIVE");
-        assertThat(response.entity().get("state").asString()).isEqualTo("ACTIVE");
+        assertThat(field(response, "status").asString()).isEqualTo("ACTIVE");
+        assertThat(field(response, "state").asString()).isEqualTo("ACTIVE");
     }
 
     @Test
@@ -344,5 +344,17 @@ class ConfiguredJsonSourceEndToEndTest {
                 ContextRequest.of("CUSTOMER", "CUST-1"), context(vocabulary), caller()))
                 .isInstanceOf(PrivacyRefusedException.class)
                 .hasMessageContaining("RAW_SOURCE_VALUE");
+    }
+
+    /** Every answered source's own entity, serialised together: the response no longer merges them. */
+    private static String allEntities(ContextResponse response) {
+        return response.sources().values().stream().filter(io.github.aindriub.dataprism.orchestration.SourceResult::isAnswered)
+                .map(r -> r.entity().toString()).collect(java.util.stream.Collectors.joining());
+    }
+
+    /** The field from whichever answered source holds it, or {@code null}. */
+    private static tools.jackson.databind.JsonNode field(ContextResponse response, String name) {
+        return response.sources().values().stream().filter(io.github.aindriub.dataprism.orchestration.SourceResult::isAnswered)
+                .map(r -> r.entity().get(name)).filter(java.util.Objects::nonNull).findFirst().orElse(null);
     }
 }

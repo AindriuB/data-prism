@@ -12,6 +12,123 @@ the sizing and the exit criteria. This file carries the order and the state.
 
 ---
 
+## Road to 1.0 (agreed 2026-10-09)
+
+Full roadmap in `roadmap.md` (this directory). It supersedes `roadmap-ideas.md`, which is removed. Releases 0.7 (foundations and design), 0.8 (many-source core), 0.9 (release candidate, freeze at 0.9.0), then 1.0.
+
+Owner decisions:
+
+- D-0.4.1-A: no Hazelcast Enterprise.
+- D-RM-1 (a): 1.0 supports multiple instances; cluster security designed in 0.7, built in 0.8. Owner-settled: generic tools only; the agent sequences its own calls; no application-specific traces or links on the server; per-source results are never merged; real names are opt-in per scope.
+- D-RM-2 (a): search comes after 1.0.
+- D-RM-3: folded into D-RM-14.
+- D-RM-4 (a): links only for fields marked `chainable: true`.
+- D-RM-5: exact namespace match; translation only via a declared key resolver.
+- D-RM-6: link lifetime configurable, default 30 min, may be set to the scope lifetime, never beyond the scope.
+- D-RM-7 (c): batch size configurable per scope, default 16, with a configured ceiling. The owner expects thousands of items per investigation.
+- D-RM-8 (a): separate alias description checked at startup, generated fallback.
+- D-RM-9 (a): refuse with a clear code when no source is chosen and the estate is too large.
+- D-RM-10 (a): real names only when the scope setting and the caller permission both allow; audit always records real names plus the effective setting.
+- D-RM-11 (a): role-to-source patterns in the security policy; unmatched sources denied.
+- D-RM-12 (a): per-source truncation at record boundaries with markers and next-page links; hard overall cap as backstop.
+- D-RM-13 (a): keep `compare_entity_sources`; review usage before the 0.9 freeze.
+- D-RM-14 (a): HATEOAS links: sealed, one-step, built from adapter and resolver declarations.
+- D-RM-15 (b): paging plus status-only bulk follow with drill-in links.
+
+Facts found during design, for the 0.7 planner (each checked against the code on 2026-10-09):
+
+- `RequestLimits.DEFAULT` (maxSources 8, maxRecords 500, maxResponseBytes 512 KiB, per-source timeout 3 s, concurrency 4, read budget 100) is hard-wired: `RequestLimits.java:41`, passed in `OrchestrationWiring.java:50` and also `ConfiguredJsonSourcesAutoConfiguration.java:145`. Nothing binds it from configuration.
+- The per-source timeout is measured from the start of the fan-out, not from each call: `SourceFanOut.java:102` and `:139`.
+- The read budget is charged once per request, not per source called: `DefaultContextOrchestrator.java:174`.
+- `maxRecords` and `maxResponseBytes` are validated in the `RequestLimits` constructor (`:47-48`) and read nowhere else in main code.
+- The merged tree overwrites same-named fields across sources: `merged.setAll(scrubbed.tree())`, `DefaultContextOrchestrator.java:343`.
+- `SourceFanOut` marks every source past `maxSources` as `SKIPPED_OVER_LIMIT` (`:84-90`). It is visible as a per-source status, but the call still succeeds with a partial answer.
+- `SecurityPolicy` holds only `allowedPurposes` and `roleCapabilities` (`SecurityPolicy.java:23`); there is no per-source authorisation.
+- `DataSourceAdapter` declares only `sourceName()`, `responseType()` and `fetch()` (`DataSourceAdapter.java:12-16`); there is no description or input-key declaration.
+
+
+### Reconciliation and current execution state (2026-10-19)
+
+PR #130 (`plan/0.7.0`) remains an in-progress integration PR. See `reconciliation-2026-10-19.md` for task allocation and the current dependency sequence. This section supersedes the older execution summary below.
+
+Ready 0.7 tasks: 193, 194, 196, 198. Then 209 after 194, 199 after 193/196, 200 after 193/198, and 201 after 193/194/196/209; their other prerequisites are already on the integration branch. 198 now designs 0.8 catalog paging first. The remaining briefs use the integration branch, not today's `main`.
+
+Owner confirmed on 2026-10-19 that the approved sealed-state cluster design governs: encrypted re-identification values and separate cluster/name keys. Tasks 204/205/212 are superseded, not completed; 215 plans the implementation successors. D-1.0-3 and D-1.0-7 resolve through that design, and the isolation-only interpretation of D-1.0-2 is superseded. Case authorisation (203/210), keyed audit/segment caps (206/207/211), FREE_TEXT and recognisers (208), and controls/rotation docs (213) are scheduled for 0.8. Existing pattern-validator wiring (209) is a 0.7 correction. The annex (214) is 0.9 evidence. 1.0 remains a stability release, with the freeze at 0.9. Imported D-1.0-1 and D-1.0-4 retain their recorded meanings.
+
+Task 213 is blocked until 215 names concrete cluster implementation dependencies. No superseded brief is an implementation prerequisite. No code task is marked complete by this reconciliation.
+
+### 0.7.0 state (updated 2026-10-09)
+
+Follow-ups from task 190: re-capture the two converted HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the Compose stack before the 0.7.0 release. For task 201's migration notes: a 0.7 log carrying `REFUSED:<code>` cannot be read by a pre-0.7 verifier, while old logs verify with the new one. The custom-validator SPI change (the final pass validates an array root, not an object) is Breaking and belongs in the same notes.
+
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts). Open: tasks 193, 194, 196, 198-201. Tasks 200 and 201 depend on 202, which has landed: 200 registers its new keys and codes, 201 writes its CHANGELOG lines and migration note (both in the retired 202 outcome, `docs/plan/tasks/retired/202-hazelcast-approval-consume-and-lock-timeouts.md`).
+
+Coordinator interpretation of D-070-15: "approvals in use" means `dataprism.oversight.approval-required-tools` is not empty OR `dataprism.reidentification.enabled` (re-identification four-eyes uses the same approval store). The kubernetes rule and every quorum check apply only then; otherwise no quorum is computed or required.
+
+Design outcomes (documents in `docs/plan/design/`: `sealed-links.md`, `key-resolvers.md`, `cluster-security.md`; both approved by security review; the owner delegated every open decision to the recommendation on 2026-10-09, recorded in the documents as "Decided (owner delegated)"):
+
+- Links (191), OD-1 (a'): the real key travels in the link, AEAD-sealed under a dedicated short-lived link key, padded to 64-byte buckets (max 256). The owner accepts residual risks T10 (key compromise before destruction decrypts links left in transcripts or provider logs) and T17 (length bucket leak). The key-destruction procedure goes into the 0.8 operator docs.
+- Links are bound to the caller and off by default (`dataprism.links.enabled=false`) through 0.9. The failed-attempt limiter counts only pre-authentication failures, per principal, 20 per PT10M. Link-key rotation has three phases. Maximum link length is 768 under (a'). One link per collection element.
+- Key resolvers: `KeyResolver` SPI returning `Resolution(keys, more)`, resolved at follow time, cap 5, beans only. Audit shape C: `REFUSED:<code>`-shaped values only; `docs/audit.md` documents the new keys in 0.8.
+- Cluster (192): seal what is stored in Hazelcast (AES-GCM values, HMAC'd keys under a non-rotating name key) and advise transport protection. Isolation-only multi-member clusters are not allowed. A signed, sequenced, leased pause document is updated by CAS with union merge on MERGED; a stale or absent pause refuses every call. Cluster-key rotation is phased with sealed member cards. Budgets and rate limits keep a per-instance floor. Separate secrets per purpose.
+- OD-13: the 1.0 claim is the qualified statement. Sealed against reading and forging; not against deletion, short replay or availability; transport protection is the deployer's and unverified.
+- OD-16: `PrivacyCluster.using` refuses in sealed mode when it cannot enforce settings.
+
+Catalog design (197, `docs/plan/design/catalog.md`, approved after two review rounds). OD-C2 (a) was decided explicitly by the owner on 2026-10-09; OD-C1 to OD-C19 otherwise were delegated to the recommendations:
+
+- OD-C2 (a): reserved audit key `names` takes `REAL` or `ALIAS`. This deliberately reopens OD-13 shape C for that one key only.
+- OD-C3: per-scope real names through `dataprism.catalog.real-names-scopes`, a scope-pattern list, empty by default.
+- OD-C5: `list_sources` allows all in 0.8 only; deny-by-default from 0.9 per D-RM-11. Say so in the 0.8 release notes.
+- OD-C7: `dataprism.catalog.unselected-source-limit`, default 8, with a startup check that it is at most `max-sources` (`INVALID_CATALOG_SETTING`).
+- OD-C16: `list_sources` is paged in 0.8; task 198 specifies that page first.
+- OD-C18: source-name grammar `[a-z][a-z0-9-]{0,63}`. In 0.8 a violation raises a warning (gauge and count-only log); `INVALID_SOURCE_NAME` refuses from the 0.9 freeze.
+- OD-C19: any unresolvable label refuses the whole call.
+
+0.8 work items these create: catalog paging moves into 0.8 (specified by 198); the `names` audit key needs an `AuditEvent` grammar for that key only, `docs/audit.md`, the verifier and the closed-grammar test.
+
+Owner decisions for 0.7 (2026-10-09):
+
+- D-070-1 (b): each `sources` entry becomes `{status, entity}`, `entity` only for `ANSWERED`; the top-level `entity` is removed. The one shape break before 1.0.
+- D-070-2 (b): a source whose scrub or validation refuses is marked `REFUSED` and omitted; the others are returned. If every answered source is refused, the whole call is refused as today.
+- D-070-3 (a): seven status codes (today's six plus `REFUSED`); clients treat an unknown code as an error.
+- D-070-4 (a): prefix `dataprism.limits`; keys `max-sources`, `max-records`, `max-response-size`, `per-source-timeout`, `max-concurrency`, `scope-read-budget`; defaults unchanged; positive only; `INVALID_REQUEST_LIMITS`; one `PRIVACY_CRITICAL` bean `dataPrismRequestLimits`.
+- D-070-5 (a): a record is a source's top-level record plus each object in an array; exceeding `max-records` refuses (truncation is 0.9).
+- D-070-6 (a): size is a conservative upper bound computed in the orchestrator before the audit event, no mapper; one `DENY:RESPONSE_TOO_LARGE`.
+- D-070-7 (a): the key-shape scan is always on under every profile, no SPI change.
+- D-070-8 (a): CycloneDX SBOMs, buildx SBOM and provenance, keyless cosign on every pushed digest, `attest-build-provenance` on release assets.
+- D-070-9 (a): PIT on core, pseudonymisation, validation and orchestration; weekly plus manual; report only.
+- D-070-10 (a): load driver is a Java client on the MCP Java SDK with HdrHistogram, standalone `load-test/` outside the reactor.
+- D-070-11 (a): baseline at 8, 32 and 100 sources (300 optional), three runs each, one named machine; internal in `docs/plan/perf/`, published from 0.9.
+- D-070-12 (a): design documents and the contract register are internal, under `docs/plan/design/`.
+- D-070-13 (a): the audit value for a refused source is `REFUSED:<code>` with the code sanitised. Record fields, hash-chain encoding and the `merged:<refused>` key are unchanged. 0.7 logs are not readable by a pre-0.7 verifier; old logs verify with the new one.
+- D-070-14 (a): fix the approval double-consume and the locks-without-timeout bugs in 0.7, as task 202 (wave 2).
+- D-070-15 (b): approval consume becomes conditional, the approval map merges consumed-wins, and split-brain protection is configured by `dataprism.hazelcast.approval-minimum-members`. Default for tcp-ip is a majority of the listed members; for none, 1; for kubernetes, required whenever approval-gated tools are configured. Refusals: `MISSING_APPROVAL_QUORUM` and `INVALID_APPROVAL_QUORUM`. Cost: in a two-member cluster, losing either member stops approval-gated tools.
+- D-070-16 (a): a lock that cannot be taken in time fails with the new code `CLUSTER_LOCK_TIMEOUT`.
+- D-070-17: `dataprism.hazelcast.lock-timeout`, default `PT2S`, range `PT100MS` to `PT30S`, refusal `INVALID_LOCK_TIMEOUT`.
+
+### 0.7.0 release checklist additions (from task 188; CI-only paths, none exercised yet)
+
+1. After dispatching `publish-image.yml`, confirm `cosign verify` and `gh attestation verify` from `docs/verifying-releases.md` pass on the manifest list and one per-arch digest of every image.
+2. Confirm the manifest list assembled from the two per-arch indexes (which now carry attestation manifests) still lists amd64 and arm64, and that `imagetools inspect --format '{{json .SBOM}}'` returns an SBOM.
+3. Confirm the Central bundle lists `*-cyclonedx.json` with `.asc` files, and that `publish-central.yml`'s attest step finds `central-bundle.zip` after a real deploy.
+4. Confirm `gh attestation verify oci://ghcr.io/aindriub/<image>@<digest>` passes on both the manifest list and a per-arch digest (per-arch digests are now indexes).
+5. Confirm the GitHub Release shows the SBOM assets and `gh attestation verify` passes on them.
+
+### 0.7.0 follow-ups found in review
+
+- A raw `FactoryBean` (no generic type) with `allowEagerInit=false` escapes both the `RequestLimits` preflight and the `PrivacyPolicyResolver` guard (`Preflights.java:50-56`). Fix both together.
+- Existing Hazelcast defects confirmed by the review of task 192. The first two are decided (D-070-14 to D-070-17) and landed as task 202; the last two remain unscheduled:
+  - approval consumption relies on `IMap.lock`, which is unsafe under split brain (`HazelcastApprovalStore.java:151-165`, `:193`), fixed in task 202;
+  - locks have no timeout (`HazelcastScopeBudget.java:44`, `HazelcastCallerRateLimiter.java:32`, `HazelcastApprovalStore.java:59`, `:90`, `:151`, `:193`), fixed in task 202;
+  - Jet and phone-home are not forced off for a supplied `Config` or instance (`PrivacyCluster.java:83-102`, `:131-152` against `ClusterMembership.java:91`);
+  - Hazelcast is pinned to 5.7.0 while the docs list 5.7.2 (`pom.xml:74`).
+- 0.8 follow-ups from task 202: writes in `HazelcastOversightState`, `CachingSyntheticValueSource`, `ScopeIdentityIndex` and the `putIfAbsent` in `HazelcastApprovalStore.create` still block unbounded on a lock someone else holds; budget and rate maps still use the default merge policy; once values are sealed the consumed-wins rule must move to a tombstone, because a merge policy cannot read sealed payloads; a crash between `replace` and `setTtl` leaves an entry without expiry until eviction (the stored `expiresAt` refuses it on every use, so not fail-open).
+- Mutation survivors (task 195): strengthen tests before the 0.9 gate turns on. Validation is weakest at 68%, mostly the sensitive-data scanner's check-character functions (`ibanChecksumValid`, `luhnValid`) and its tree walk; core's `JsonTreeScrubbingEngine` survivors (`scrubObject` 155 and 189, `scrubNestedObject` 286 and 302) come next. Candidate 0.8 task. The ranked list is in the retired task 195 outcome.
+- After 0.7.0 reaches `main`, re-run `mutation.yml` through `workflow_dispatch` to pin the 0.9 baseline; the first local scores (core 81%, pseudonymisation 86%, validation 68%, orchestration 79%) are not CI numbers.
+- Test environment: `SourceTreeJacksonParityTest` depended on whether `/tmp/x` existed; fixed on `plan/0.7.0`. Check other tests for reliance on scratch paths.
+
+---
+
 ## Decided
 
 The five choices that blocked S0 were settled on 2026-09-08. Recorded here in
@@ -331,7 +448,7 @@ Elastic-style log stacks can ingest. It depends on 0.4.0's audit segments
 
 #### Open owner questions
 
-- 1.0 roadmap: draft ideas in docs/plan/roadmap-ideas.md (not agreed).
+- 1.0 roadmap: superseded. Agreed 2026-10-09; see "Road to 1.0" above and `roadmap.md`.
 - Delete the local branches already merged into main: done. The owner deleted `docs/dedupe-claude-md-rules`, `record/19-20-close-wave` and `simplify/waves-1-2` locally on 2026-10-07; the remote branches are untouched.
 
 Release-cut items are consolidated in "0.5.0 release-cut checklist" below.

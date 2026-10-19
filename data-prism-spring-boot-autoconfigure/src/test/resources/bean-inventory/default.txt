@@ -28,6 +28,8 @@ dataPrismPropertiesValidated | java.lang.Object
 dataPrismPseudonymisationVersion | io.github.aindriub.dataprism.core.model.PseudonymisationVersion
 dataPrismRawValueLeakValidator | io.github.aindriub.dataprism.validation.LlmResponseValidator
 dataPrismReidentificationModulePreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
+dataPrismRequestLimits | io.github.aindriub.dataprism.core.limits.RequestLimits
+dataPrismRequestLimitsPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismScopeBudget | io.github.aindriub.dataprism.core.limits.ScopeBudget
 dataPrismScopeResolver | io.github.aindriub.dataprism.security.ScopeResolver
 dataPrismScrubber | io.github.aindriub.dataprism.core.engine.JsonTreeScrubbingEngine

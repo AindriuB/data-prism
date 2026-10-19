@@ -119,6 +119,7 @@ plugins:
           - eu-ai-act.md
           - architecture.md
           - migration-0.6.md
+          - verifying-releases.md
         FAQ:
           - faq.md
         Comparison:
@@ -186,6 +187,7 @@ nav:
       - eu-ai-act.md
       - architecture.md
       - migration-0.6.md
+      - verifying-releases.md
   - FAQ: faq.md
   - Comparison: comparison.md
   - Changelog: changelog.md

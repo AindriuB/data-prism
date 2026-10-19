@@ -27,8 +27,9 @@ Fail-closed privacy layer that pseudonymises enterprise API data for LLM agents 
     ---
 
     The server and starter load only the bundled privacy profiles; both set
-    `unclassified: FAIL_REQUEST`, refusing the whole response for a field
-    nobody classified.
+    `unclassified: FAIL_REQUEST`. A source that returns a field nobody classified
+    is withheld and marked `REFUSED`, and the other sources are still returned.
+    The whole request is refused only when every source that answered is refused.
 
     [Configuration contract](configuration.md#dataprism-vocabulary)
 

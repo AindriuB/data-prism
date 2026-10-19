@@ -28,6 +28,9 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.bind.BindException;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
 import org.springframework.web.client.RestClient;
@@ -83,6 +86,15 @@ import java.util.Set;
 @AutoConfigureBefore(name = "io.github.aindriub.dataprism.spring.boot.DataPrismAutoConfiguration")
 public class ConfiguredJsonSourcesAutoConfiguration {
 
+    /**
+     * Used only where no {@link RequestLimits} bean exists, that is, without the auto-configuration module, which
+     * binds {@code dataprism.limits.*} into the one bean. This module cannot read those properties itself. A test pins
+     * these values to the framework defaults.
+     */
+    static final RequestLimits STANDALONE_LIMITS = new RequestLimits(
+            8, 500, 512 * 1024, java.time.Duration.ofSeconds(3), 4, 100);
+
+
     static final String CONFIG_LOCATION_PROPERTY = "dataprism.json-sources.config-location";
 
     /**
@@ -125,6 +137,32 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         return ConfiguredJsonSourcesInitializer.loadConfig(environment).sources().keySet();
     }
 
+    /**
+     * The context's {@link RequestLimits} bean. Without one the deployment cannot be honouring
+     * {@code dataprism.limits.*}, so if any such property is set the answer is a refusal, never the defaults.
+     */
+    private static RequestLimits requestLimits(ObjectProvider<RequestLimits> limits, Environment environment) {
+        RequestLimits bean = limits.getIfAvailable();
+        if (bean != null) {
+            return bean;
+        }
+        if (limitsConfigured(environment)) {
+            throw new IllegalStateException("INVALID_REQUEST_LIMITS: dataprism.limits.* is set but no RequestLimits"
+                    + " bean is available; the data-prism auto-configuration that binds it is not active");
+        }
+        return STANDALONE_LIMITS;
+    }
+
+    /** Whether anything at all is set under {@code dataprism.limits}: a scalar, a known key, or an unknown or misspelt one. */
+    private static boolean limitsConfigured(Environment environment) {
+        Binder binder = Binder.get(environment);
+        try {
+            return binder.bind("dataprism.limits", Bindable.mapOf(String.class, String.class)).isBound();
+        } catch (BindException scalarOnThePrefix) {
+            return true;
+        }
+    }
+
     @Bean
     @ConditionalOnProperty(name = CONFIG_LOCATION_PROPERTY)
     @ConditionalOnMissingBean(ContextOrchestrator.class)
@@ -132,7 +170,8 @@ public class ConfiguredJsonSourcesAutoConfiguration {
             List<DataSourceAdapter<?>> adapters, IdentityResolver identities, FieldMetadataResolver metadata,
             List<LlmResponseValidator> validators, SyntheticValueSource synthetics, ValueTokenSource tokens,
             SecretKeyProvider keys, AuditRecorder audit, ScopeBudget budget, PrivacyMetrics metrics, Clock clock,
-            PrivacyPolicyResolver policy, ObjectProvider<CorrelationMdc> correlationMdc) {
+            PrivacyPolicyResolver policy, ObjectProvider<CorrelationMdc> correlationMdc,
+            ObjectProvider<RequestLimits> limits) {
         ConfiguredJsonSourcesConfig config = ConfiguredJsonSourcesInitializer.loadConfig(environment);
 
         JsonTreeScrubbingEngine javaFirst = new JsonTreeScrubbingEngine(metadata, policy, synthetics, tokens);
@@ -142,7 +181,7 @@ public class ConfiguredJsonSourcesAutoConfiguration {
         return new DefaultContextOrchestrator(adapters, scrubber, metadata, List.copyOf(validators), synthetics,
                 new ParameterFingerprinter(keys), audit, identities,
                 new SourceFanOut(SourceCircuitBreaker.disabled(), clock, new SourceFanOutOptions(metrics,
-                        correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, RequestLimits.DEFAULT,
+                        correlationMdc.getIfAvailable(CorrelationMdc::off))), budget, requestLimits(limits, environment),
                 new NamespaceCorrelationService(metadata), new SourceAliasing(tokens), metrics);
     }
 }

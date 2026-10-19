@@ -29,8 +29,8 @@ class ReidentificationEndToEndTest {
     void aPseudonymFromAToolResultIsReidentifiedAfterASecondOperatorApproves() throws Exception {
         try (OperatorHarness app = OperatorHarness.start(tempDir, true);
              McpSyncClient client = app.mcpClient(app.mcpToken("analyst-e2e", CASE))) {
-            JsonNode entity = JSON.readTree(OperatorHarness.text(app.getEntityContext(client, SUBJECT)))
-                    .path("entity");
+            JsonNode entity = entityHolding(
+                    JSON.readTree(OperatorHarness.text(app.getEntityContext(client, SUBJECT))), "customerName");
             String synthetic = entity.path("customerName").asString();
             assertThat(synthetic).isNotBlank().isNotEqualTo("Fixture Person");
 
@@ -53,5 +53,15 @@ class ReidentificationEndToEndTest {
             assertThat(body.path("status").asString()).isEqualTo("RESOLVED");
             assertThat(body.path("subjectId").asString()).isEqualTo(SUBJECT);
         }
+    }
+
+    /** The entity of the source that holds {@code field}: each source keeps its own record. */
+    private static JsonNode entityHolding(JsonNode response, String field) {
+        for (JsonNode source : response.path("sources")) {
+            if (source.path("entity").has(field)) {
+                return source.path("entity");
+            }
+        }
+        return response.path("sources").path("none").path("entity");
     }
 }

@@ -20,6 +20,7 @@ import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
+import io.github.aindriub.dataprism.orchestration.SourceResult;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.security.AdmissionDecision;
@@ -62,7 +63,7 @@ import java.util.UUID;
  * pseudonym {@link ContextResponse#subject()}, or a node copied unmodified out
  * of the {@code ContextResponse} the orchestrator returned. {@code identity} is
  * assembled by copying, verbatim, the node named by each finding's
- * {@link ConsistencyFinding#field()} out of {@link ContextResponse#entity()} —
+ * {@link ConsistencyFinding#field()} out of the per-source entities of {@link ContextResponse#sources()} —
  * the post-scrub tree — never re-derived, re-formatted or read from anywhere
  * else; a field a finding names that the scrubbed tree does not contain is
  * omitted, never defaulted.
@@ -293,15 +294,19 @@ public final class CompareEntitySourcesTool {
      */
     private ObjectNode identity(ContextResponse response) {
         ObjectNode identity = mapper.createObjectNode();
-        ObjectNode entity = response.entity();
-        if (entity == null) {
-            return identity;
-        }
+        // Each source keeps its own record, so a field name two sources share holds two values. The
+        // identity takes the first ANSWERED source, in ascending emitted-key order, that holds it. A
+        // refused source has no entity and so contributes nothing.
+        List<ObjectNode> entities = response.sources().values().stream()
+                .filter(SourceResult::isAnswered).map(SourceResult::entity).toList();
         for (ConsistencyFinding finding : response.findings()) {
             for (String fieldName : fieldNames(response, finding)) {
-                JsonNode node = entity.get(fieldName);
-                if (node != null && !node.isNull() && !node.isMissingNode()) {
-                    identity.set(fieldName, node.deepCopy());
+                for (ObjectNode entity : entities) {
+                    JsonNode node = entity.get(fieldName);
+                    if (node != null && !node.isNull() && !node.isMissingNode()) {
+                        identity.set(fieldName, node.deepCopy());
+                        break;
+                    }
                 }
             }
         }

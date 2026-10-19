@@ -20,6 +20,14 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-19 | 198, 203–215 | Reconcile pre-freeze control work, supersede isolation-only cluster briefs, scope 209 to the 0.7 wiring correction, and repair PR docs CI. | `## 2026-10-19 — PR 130 planning reconciliation and docs guard repair` |
+| 2026-10-09 | 202 | Approval consume compare-and-set, consumed-wins merge, `approval-minimum-members` split-brain protection, bounded lock waits (`CLUSTER_LOCK_TIMEOUT`) | ## 2026-10-09 — Hazelcast approval compare-and-set, split-brain protection, bounded lock waits (202) |
+| 2026-10-09 | 190 | Per-source results `sources.<key>.{status, entity}`, seven status codes, per-source refusal, `REFUSED:<code>` audit values, array-root final validation | ## 2026-10-09 — Per-source results with stable status codes (190) |
+| 2026-10-09 | 197 | Catalog design for list_sources, describe_source and describe_entity_model; owner decided audit key `names`, the rest taken as recommended | ## 2026-10-09 — Catalog design: list_sources, describe_source, describe_entity_model (197) |
+| 2026-10-09 | 195 | PIT mutation testing on four privacy modules, weekly and manual, report only; first scores 68% to 86% | ## 2026-10-09 — Mutation testing on the privacy modules (195) |
+| 2026-10-09 | 191, 192 | Designs for sealed links, key resolvers and open-source Hazelcast cluster security; all open decisions taken as recommended | ## 2026-10-09 — Sealed-link, key-resolver and cluster-security designs (191, 192) |
+| 2026-10-09 | 188, 189 | SBOMs, image signatures and provenance for releases; request limits bound from dataprism.limits.* | ## 2026-10-09 — Supply chain attestations and configurable request limits (188, 189) |
+| 2026-10-09 | roadmap | Roadmap 0.7 to 1.0 agreed: agent-led sealed-link design, multi-instance on open-source Hazelcast, freeze at 0.9.0; roadmap.md replaces roadmap-ideas.md | ## 2026-10-09 — Road to 1.0 agreed |
 | 2026-10-09 | 185, 186 | Maven 3.9.x guard in both publish-central jobs and a Dependabot ignore; no fixed Central plugin exists, cause is a Maven 3.10.0 change; pin kept | ## 2026-10-09 — Maven 3.10 release guards and Central plugin investigation (185, 186) |
 | 2026-10-09 | 187 | 0.6.0 live on Central (deployment `aca7186a`), GHCR, GitHub Release and MCP registry; AAR presented in chat; D-184-A/B/C decided; housekeeping | ## 2026-10-09 — 0.6.0 publication complete and repository housekeeping (187) |
 | 2026-10-09 | 184 | Central rejected the first 0.6.0 bundle (Maven 3.10.0 on the runner); Maven Wrapper pin 3.9.16, PR #127; `v0.6.0` moved to `87a2a720` | ## 2026-10-09 — 0.6.0 released after a Central rejection: Maven Wrapper pin and tag move (184) |

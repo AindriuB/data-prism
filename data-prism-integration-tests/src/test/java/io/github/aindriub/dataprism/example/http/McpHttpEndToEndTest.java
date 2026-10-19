@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.example.http;
 
+import tools.jackson.databind.JsonNode;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -318,10 +319,10 @@ class McpHttpEndToEndTest {
                     .doesNotContain("P. Murphy").doesNotContain("patrick.murphy@example.invalid")
                     .doesNotContain("4200.55").doesNotContain("\"123\"");
             assertThat(response.path("subject").asString()).startsWith("SUBJ-").isNotEqualTo("123");
-            assertThat(response.path("entity").path("customerName").asString())
+            assertThat(entityHolding(response, "customerName").path("customerName").asString())
                     .matches("^[A-Za-z]+ [A-Za-z]+ \\([0-9A-Z]{8}\\)$");
-            assertThat(response.path("entity").path("email").asString()).isEqualTo("[REDACTED]");
-            assertThat(response.path("entity").path("status").asString()).isEqualTo("ACTIVE");
+            assertThat(entityHolding(response, "email").path("email").asString()).isEqualTo("[REDACTED]");
+            assertThat(entityHolding(response, "status").path("status").asString()).isEqualTo("ACTIVE");
         } finally {
             client.closeGracefully();
         }
@@ -392,5 +393,15 @@ class McpHttpEndToEndTest {
         } finally {
             client.closeGracefully();
         }
+    }
+
+    /** The entity of the source that holds {@code field}: each source keeps its own record. */
+    private static JsonNode entityHolding(JsonNode response, String field) {
+        for (JsonNode source : response.path("sources")) {
+            if (source.path("entity").has(field)) {
+                return source.path("entity");
+            }
+        }
+        return response.path("sources").path("none").path("entity");
     }
 }
