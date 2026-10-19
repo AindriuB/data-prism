@@ -76,10 +76,12 @@ restored to `f960f2a9` (key scan off): 2 run, 2 failed (the single-source call
 was not refused; the two-source run carried the key). With the key scan on: 2
 run, 0 failed.
 
-`./mvnw -B verify` on validation, architecture, connectors-rest, orchestration,
-autoconfigure, mcp and integration-tests with `-am`: validation 44 tests, 0
-failures; every other module green except integration-tests, 172 run, 1 failure
-(below). `./mvnw -Prelease -DskipTests package`: BUILD SUCCESS.
+Final verify, run at commit e8307a0e (clean tree): `./mvnw -B verify` over the
+full reactor, exit code 0 (BUILD SUCCESS). Counts from the report XMLs: surefire
+1856 tests, 0 failures, 0 errors, 0 skipped; failsafe 17 tests, 0 failures, 0
+errors, 0 skipped. `./mvnw -B -Prelease -DskipTests package` at the same commit:
+exit code 0 (BUILD SUCCESS). An earlier run showed one failure,
+`UndeclaredNameToolResultScanTest.passThroughPinned`; it was fixed by e8307a0e.
 
 **Widened Owns (coordinator, after review):** `UndeclaredKeyFixture.java` and
 `UndeclaredNameToolResultScanTest.java` joined `Owns`. The pin
