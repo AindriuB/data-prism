@@ -124,13 +124,17 @@ duplicate ID.
   `create` maps any other failure of a claim, processor or insert call. It names no key, scope, principal or id.
 
 **Deviations and decisions to confirm.**
-1. Consume does not release the id claim (Required approach, step 1 says to release on consume). The consumed entry
+1. Accepted by the coordinator: consume does not release the id claim (Required approach, step 1 says to release on consume). The consumed entry
    stays in the approval map until its expiry, and releasing the claim would allow a second entry with the same id,
    which `locate` refuses as ambiguous. The claim expires with the entry.
 2. `SplitBrainProtectionException` is not translated to the new code: `ApprovalQuorumTest` and the docs already name it
    for a lost write quorum. Everything else a cluster call throws inside `create` becomes
    `CLUSTER_OPERATION_REFUSED`.
-3. Outside `Owns`, not edited: `data-prism-spring-boot-autoconfigure/.../ClusterLockTimeoutConfigurationTest.java:156`
+3. (Resolved: the coordinator widened `Owns` to include
+   `data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterLockTimeoutConfigurationTest.java`
+   (line 156 only), because no other open task owns it and the test pins the lock key this task moves. The one-token
+   change is committed as "216: lock the id claim map in the lock-timeout configuration test".) Originally outside
+   `Owns`: `data-prism-spring-boot-autoconfigure/.../ClusterLockTimeoutConfigurationTest.java:156`
    holds the lock on the bare id in `PrivacyCluster.APPROVAL_MAP` and expects `create` to refuse. `create` now locks
    the id in `APPROVAL_ID_MAP`. The fix is one token (`APPROVAL_MAP` to `APPROVAL_ID_MAP`); with it the full reactor
    passes. Until that change lands (task 201 owns that module, or the orchestrator), the full `./mvnw verify` fails on

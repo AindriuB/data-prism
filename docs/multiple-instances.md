@@ -316,6 +316,13 @@ never confused. One way to see the new code: set
 A lost write quorum keeps its own `SplitBrainProtectionException`, as
 described below.
 
+**Upgrade caution.** Do not create approvals while members of different versions
+run together. An older member does not know the id claims or the pending counts,
+so during the mix the same approval id can still be created twice, and a
+requester can exceed the cap. Roll all members to the new version before relying
+on either guarantee. Approvals created before the upgrade are not counted against
+the cap until they expire.
+
 ### Approvals under a partition
 
 An approval is consumed, approved or rejected by a compare-and-set on its entry:
