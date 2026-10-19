@@ -56,7 +56,7 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.budget` | Per-subject read counts | Yes | 1 |
 | `dataprism.oversight` | Pause flags: global, per tool, per scope. No eviction | No | 1 |
 | `dataprism.approval` | Approval requests, each until its expiry | No | 1 |
-| `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. Each claim outlives its approval by the minute an expired entry stays visible. No eviction | No | 1 |
+| `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
 | `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with expiries, which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
 | `dataprism.callerrate` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
@@ -333,19 +333,26 @@ them; they only bound the wait.
 
 An approval id is claimed by `putIfAbsent` in `dataprism.approval.id`, and the pending
 cap is one entry processor on the requester's entry in `dataprism.approval.pending`. A
-creation claims the id, then reserves the cap, then inserts the approval, and undoes in
+creation claims the id (taking over a claim whose entry is gone), then reserves the cap, then inserts the approval and checks it still holds the claim, and undoes in
 reverse order when a step fails. An undo that fails can leave an id unusable, or a
 requester over-counted, until the approval expires; it never under-counts. An approval
 leaves the pending entry when it is approved, rejected or found expired, or when its scope
-ends. Consuming an approval leaves its id claimed until the approval expires.
+ends. Consuming an approval leaves its id claimed while the consumed entry still exists.
 
 **Retention.** The id claim and the requester's pending entry carry the principal, the
 approval id and the scope in clear, so they must not outlive the approvals they guard by
 much, and they must never be dropped early. The two are handled differently.
 
-- A claim has a TTL of its approval's lifetime plus a minute. When a decision or a consume
-  resets the approval's expiry, the claim is extended to match, by an entry processor that
-  acts only if the claim still names that approval and only ever makes it longer.
+- A claim has **no TTL and depends on no clock**. It is valid if and only if the approval entry it
+  names still exists. A claim whose entry is gone (expired, scope ended, or its creator died before
+  inserting) is stale: the next creator of that id takes it over, by marking it, checking the old entry is
+  still absent, and then naming itself, all by compare-and-set. A creator that was paused before its
+  insert checks, after inserting, that it still holds the claim, and withdraws its entry and refuses if
+  not, so a lock lease that ran out during the pause cannot let two approvals share an id. Stale claims
+  that nobody re-creates are removed by the sweep below, which uses the same marking steps and never
+  removes a claim whose entry exists. A lifetime for claims was tried and dropped: comparing lifetimes
+  written by different members breaks under clock skew between members, and a claim that expires while
+  its approval lives lets the id be created again.
 - A pending entry has **no TTL**. Any TTL could drop an id that is still counted, and the
   requester could then pass the cap, which fails open. Instead every member runs a sweep, by
   default every five minutes, over the pending entries it owns. The sweep removes an id only
@@ -358,8 +365,9 @@ much, and they must never be dropped early. The two are handled differently.
   tries again at the next interval.
 
 The one-minute slack is also the tolerance for a caller whose clock runs behind the sweeping
-member's. Hazelcast truncates claim and entry times to whole seconds, so claim lifetimes are
-exact to about a second.
+member's. The same sweep removes stale id claims on the same schedule, so a claim outlives its
+approval entry by at most the sweep interval. A creator that happens to be between its claim and its
+insert when the sweep passes is refused, and can simply retry.
 
 A partition still leaves each side with its own copy of the entry. Two protections
 narrow what that allows.

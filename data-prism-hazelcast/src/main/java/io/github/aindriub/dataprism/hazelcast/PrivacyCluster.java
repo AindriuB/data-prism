@@ -109,6 +109,11 @@ public final class PrivacyCluster implements AutoCloseable {
         return sweeper.sweep(now);
     }
 
+    /** Runs one sweep of the id claims this member owns, as the schedule does. */
+    int sweepStaleClaims() {
+        return sweeper.sweepClaims();
+    }
+
     boolean sweeperStopped() {
         return sweeper.isStopped();
     }

@@ -16,7 +16,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Bounds how long a requester's pending entry outlives its approvals. The entry has no TTL, because any TTL could
+ * Bounds how long a requester's pending entry, and an id claim, outlive their approvals; see {@link ClaimEntries} for
+ * the claims.
+ *
+ * <p>Bounds how long a requester's pending entry outlives its approvals. The entry has no TTL, because any TTL could
  * drop a live id and let the cap be passed. Instead each member periodically runs {@link PendingSet.Sweep} over the
  * pending keys it owns, passing its own clock reading in. Retention is therefore bounded by an approval's expiry,
  * plus {@link #SLACK}, plus the sweep interval.
@@ -88,6 +91,12 @@ final class PendingSweeper implements AutoCloseable {
         return removed;
     }
 
+    /** One sweep of the id claims this member owns; returns how many stale claims it removed. */
+    int sweepClaims() {
+        return ClaimEntries.sweep(instance.getMap(PrivacyCluster.APPROVAL_ID_MAP),
+                instance.getMap(PrivacyCluster.APPROVAL_MAP));
+    }
+
     private void sweepQuietly() {
         if (!instance.getLifecycleService().isRunning()) {
             executor.shutdown();
@@ -97,6 +106,11 @@ final class PendingSweeper implements AutoCloseable {
             sweep(clock.instant());
         } catch (RuntimeException failure) {
             LOG.warn("pending-approval sweep failed: {}", failure.getClass().getSimpleName());
+        }
+        try {
+            sweepClaims();
+        } catch (RuntimeException failure) {
+            LOG.warn("approval-id claim sweep failed: {}", failure.getClass().getSimpleName());
         }
     }
 

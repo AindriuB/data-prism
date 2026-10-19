@@ -103,8 +103,8 @@ duplicate ID.
 **Design.**
 - `dataprism.approval.id` (`PrivacyCluster.APPROVAL_ID_MAP`): key is the bare approval id, value is the approval's
   entry key. `create` claims with `putIfAbsent`; a present claim is the only source of
-  `IllegalArgumentException("duplicate approval id")`. The claim's TTL is the approval's TTL plus the one minute an
-  expired entry stays visible, so it always outlives the entry. Release is `remove(id, entryKey)`.
+  `IllegalArgumentException("duplicate approval id")`. (Superseded by the third round: the claim has no TTL; it is valid
+  while the entry it names exists, and a stale claim is taken over or swept.) Release is `remove(id, entryKey)`.
 - `dataprism.approval.pending` (`APPROVAL_PENDING_MAP`): key `KIND NUL (=requester | ~)`, value the alternating
   `id NUL expiry` list (`PendingSet`). `PendingSet.Reserve` prunes ids with `expiresAt <= createdAt`, refuses at the
   cap, else adds; `PendingSet.Release` removes one id and deletes the entry when empty. Both overloads reserve (the
@@ -224,3 +224,38 @@ and requester principals (the pending key) in clear. If sealing covers the appro
 - **For the 0.8 sealing.** The value of the claim map now carries the expiry, and the pending map's value is
   rewritten by processors, so any sealing of these maps must be applied inside the processors or leave their values
   readable to them.
+
+### Review fixes, third round (after CHANGES at cb6b6c7f)
+
+- **Clock-based claim lifetimes dropped.** f62ab970 refreshed the claim's TTL in `swap` from the caller's `now`, which
+  can leave the claim shorter than the entry. cb6b6c7f made the refresh conditional and extend-only and stored the
+  creator's expiry in the claim value, but comparing that expiry with the decider's clock fails when members' clocks
+  differ (creator ten minutes ahead: the extend is skipped while the entry TTL grows, the claim expires first, and
+  the id can be created in a second scope). Any cross-member TTL comparison has this fault, so claims now carry
+  no TTL and no time.
+- **Rule: a claim is valid if and only if the entry it names exists.** `ClaimEntries.claim` takes over a stale claim by
+  mark (`replace(id, K, K NUL ~ NUL new)`), check `K` absent, finish (`replace(id, marked, new)`). The previous
+  creator, after its insert, re-reads the claim and withdraws its entry and refuses if it no longer names it. The
+  Javadoc of `ClaimEntries` has the argument. One correction to the brief: the ID lock cannot rule out a takeover
+  during an in-flight insert, because a paused creator loses the lock when its lease runs out; the argument therefore
+  rests on the order of steps (insert, then verify the claim), not on the lock. While the lease is alive the lock does
+  block the taker (`ApprovalIdLockTest` asserts `CLUSTER_LOCK_TIMEOUT`). After the lease expires the taker wins and
+  the paused creator gets "duplicate approval id", so the earlier acceptance wording ("the paused caller succeeds") is
+  replaced by "exactly one succeeds".
+- **Sweep.** `PendingSweeper` also sweeps claims on the same schedule (`PrivacyCluster.sweepStaleClaims()`), over
+  `localKeySet()`: mark, check the entry is absent, remove; an entry that exists puts the claim back. Retention of a
+  claim is the entry's lifetime plus the sweep interval.
+- **consume and forget.** Consume leaves the entry (CONSUMED) until expiry, so its claim stays valid. `forget` deletes
+  the entries and releases each claim conditionally (`remove(id, entryKey)`); a claim left by a failed release is
+  stale and is taken over or swept.
+- **Tests.** Claim TTL-extension tests deleted. New or rewritten: a claim has no TTL; a live claim refuses a duplicate
+  whatever the deciding clock; approve then consume keeps the claim; create takes over a missing, an expired and a
+  same-scope stale claim; a marked claim refuses others; six racing creators over a stale claim give exactly one
+  winner and one entry (five rounds); the claim sweep removes only stale claims, resolves marked ones and never one
+  whose entry exists; a sweep that meets a creator mid-insert makes that creator refuse and leaves nothing half-created.
+  Mutating the code to skip the post-insert claim check makes both `ApprovalIdLockTest` tests and the mid-insert sweep
+  test fail.
+- **Known limit.** After a lost claim the id stays counted in the requester's pending entry (it may be the new owner's);
+  the cap over-counts until the approval expires or the sweep removes it. It never under-counts.
+- **For the 0.8 sealing.** The claim value is again the plain entry key and the pending value is rewritten by
+  processors; marked claims contain NULs and the literal `~`.

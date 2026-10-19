@@ -188,10 +188,10 @@ class HazelcastStoredValueBoundaryTest {
                 assertThat(request.scopeId()).isEqualTo(parts[0]);
             });
             case PrivacyCluster.APPROVAL_ID_MAP -> map.forEach((key, value) -> {
-                // A bare approval id, claiming the approval entry key (scope, NUL, the same id) and recording its expiry.
+                // A bare approval id, claiming the approval entry key (scope, NUL, the same id).
                 assertThat(key).isInstanceOf(String.class);
                 assertThat((String) key).doesNotContain("\0");
-                assertThat((String) value).startsWith(SCOPE_ID + "\0" + key + "\0");
+                assertThat(value).isEqualTo(SCOPE_ID + "\0" + key);
             });
             case PrivacyCluster.APPROVAL_PENDING_MAP -> map.forEach((key, value) -> {
                 parts(key, 2, name);

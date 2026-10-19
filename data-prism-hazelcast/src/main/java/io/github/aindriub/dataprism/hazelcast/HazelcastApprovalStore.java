@@ -43,7 +43,9 @@ import java.util.function.Supplier;
  * key someone else has locked would otherwise wait for that lock for ever; the lock only bounds the
  * wait, correctness does not rest on it. A held lock refuses the call with
  * {@link ClusterLockTimeoutException}. Every lock has a lease of five times the timeout. Creation rests on
- * {@code putIfAbsent} too: an id is claimed in {@link PrivacyCluster#APPROVAL_ID_MAP}, and the per-requester cap
+ * {@code putIfAbsent} too: an id is claimed in {@link PrivacyCluster#APPROVAL_ID_MAP} (a claim is valid while the
+ * entry it names exists, with no clock involved; see {@link ClaimEntries} for why a paused creator cannot get a
+ * duplicate past a takeover), and the per-requester cap
  * is one entry processor on {@link PrivacyCluster#APPROVAL_PENDING_MAP}, so neither check depends on a lock still
  * being held. Under a partition each side can still change its own copy once,
  * which the split-brain protection and {@link ApprovalMergePolicy} on the map narrow (see
@@ -52,8 +54,7 @@ import java.util.function.Supplier;
 public final class HazelcastApprovalStore implements ApprovalStore {
 
     /**
-     * How long an entry we mark expired stays visible, so a late approver sees EXPIRED. It is also the slack that
-     * keeps each id claim and each pending entry alive longer than the approvals they guard.
+     * How long an entry we mark expired stays visible, so a late approver sees EXPIRED.
      */
     private static final Duration DEFAULT_RETENTION = Duration.ofMinutes(1);
 
@@ -71,14 +72,9 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      * @throws IllegalArgumentException if the timeout is outside that range
      */
     public HazelcastApprovalStore(PrivacyCluster cluster, Duration lockTimeout) {
-        this(cluster, lockTimeout, DEFAULT_RETENTION);
-    }
-
-    /** As above, with a shorter retention for tests that wait for entries to expire. */
-    HazelcastApprovalStore(PrivacyCluster cluster, Duration lockTimeout, Duration retention) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
-        this.retention = Objects.requireNonNull(retention, "retention");
+        this.retention = DEFAULT_RETENTION;
     }
 
     /**
@@ -129,10 +125,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             locks.take(claims, id);
             locks.take(pendingSets, pendingKey);
             locks.take(approvals, entryKey);
-            // The claim outlives the approval entry, including the minute an expired entry stays visible.
-            long claimTtl = ttl + retention.toMillis();
-            String claim = ClaimEntries.value(entryKey, System.currentTimeMillis() + claimTtl);
-            if (cluster(() -> claims.putIfAbsent(id, claim, claimTtl, TimeUnit.MILLISECONDS)) != null) {
+            if (!cluster(() -> ClaimEntries.claim(claims, approvals, id, entryKey))) {
                 throw new IllegalArgumentException("duplicate approval id");
             }
             boolean reserved;
@@ -163,6 +156,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 // An entry is already here. Its id stays claimed and counted, as it was before this call.
                 throw new IllegalArgumentException("duplicate approval id");
             }
+            // The claim may have been taken over while this caller was stopped before the insert (see
+            // ClaimEntries). Keep the entry only if the claim still names it. The id stays counted: it may now
+            // be the new owner's, and an over-count is the safe side.
+            if (!entryKey.equals(cluster(() -> claims.get(id)))) {
+                withdraw(approvals, entryKey, encoded);
+                throw new IllegalArgumentException("duplicate approval id");
+            }
         }
         return pending;
     }
@@ -183,10 +183,19 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
     }
 
+    /** Removes this caller's own entry after it lost its claim. A failure leaves two entries, which every lookup refuses. */
+    private static void withdraw(IMap<String, String> approvals, String entryKey, String encoded) {
+        try {
+            approvals.remove(entryKey, encoded);
+        } catch (RuntimeException ignored) {
+            // Two entries with one id make find and decide refuse (UNKNOWN_APPROVAL), which fails closed.
+        }
+    }
+
     /** Releases a claim only if it is still this approval's. Best effort: a failure leaves the id unusable. */
     private static void unclaim(IMap<String, String> claims, String id, String entryKey) {
         try {
-            claims.executeOnKey(id, new ClaimEntries.Release(entryKey));
+            ClaimEntries.release(claims, id, entryKey);
         } catch (RuntimeException ignored) {
             // The claim expires with the approval it guards; the id is unusable until then, never reusable early.
         }
@@ -414,16 +423,6 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             remaining = retention;
         }
         approvals.setTtl(key, Math.max(1L, remaining.toMillis()), TimeUnit.MILLISECONDS);
-        // The claim must outlive the entry it guards, however the caller's clock sat when it set the entry's expiry.
-        // Best effort: if this fails the claim keeps the lifetime it had, which only matters under clock skew.
-        // Only the claim that names this entry is extended, and only ever longer, so a stale or out-of-order caller
-        // can neither touch a later approval's claim nor shorten this one.
-        try {
-            idClaims().executeOnKey(next.approvalId(), new ClaimEntries.Extend(key,
-                    Math.max(1L, remaining.toMillis()) + retention.toMillis(), System.currentTimeMillis()));
-        } catch (RuntimeException ignored) {
-            // See above.
-        }
         return true;
     }
 
