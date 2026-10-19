@@ -63,4 +63,49 @@ class RunCleanupTest {
         assertThat(closes).containsExactly("later");
         assertThat(dir).doesNotExist();
     }
+
+    @Test
+    void closesAThingTrackedAfterCleanupHasRunInsteadOfQueueingIt() throws Exception {
+        Path dir = Files.createDirectory(parent.resolve("run"));
+        List<String> closes = new ArrayList<>();
+        RunCleanup cleanup = new RunCleanup(dir);
+        cleanup.run();
+
+        cleanup.track(() -> closes.add("late"));
+
+        assertThat(closes).containsExactly("late");
+    }
+
+    @Test
+    void aTrackRacingWithRunNeverLeavesAThingUnclosed() throws Exception {
+        for (int round = 0; round < 200; round++) {
+            Path dir = Files.createDirectory(parent.resolve("race" + round));
+            RunCleanup cleanup = new RunCleanup(dir);
+            java.util.concurrent.atomic.AtomicInteger closes = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+            Thread tracker = new Thread(() -> {
+                await(start);
+                cleanup.track(closes::incrementAndGet);
+            });
+            Thread runner = new Thread(() -> {
+                await(start);
+                cleanup.run();
+            });
+            tracker.start();
+            runner.start();
+            tracker.join();
+            runner.join();
+            cleanup.run();
+
+            assertThat(closes.get()).as("round %d", round).isEqualTo(1);
+        }
+    }
+
+    private static void await(java.util.concurrent.CyclicBarrier barrier) {
+        try {
+            barrier.await();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
 }

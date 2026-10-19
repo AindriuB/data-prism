@@ -5,7 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Stops what a run started and removes its temporary directory (keystores included). It runs from the normal
@@ -16,34 +15,50 @@ final class RunCleanup implements Runnable {
 
     private final Path dir;
     private final Deque<AutoCloseable> started = new ArrayDeque<>();
-    private final AtomicBoolean done = new AtomicBoolean();
+    private boolean begun;
 
     RunCleanup(Path dir) {
         this.dir = dir;
     }
 
-    /** Registers something to close on cleanup, most recently tracked first. */
-    synchronized void track(AutoCloseable closeable) {
-        started.push(closeable);
+    /**
+     * Registers something to close on cleanup, most recently tracked first. If cleanup has already begun
+     * (a signal can land while a resource is being launched) it is closed at once instead of queued.
+     */
+    void track(AutoCloseable closeable) {
+        synchronized (this) {
+            if (!begun) {
+                started.push(closeable);
+                return;
+            }
+        }
+        closeQuietly(closeable);
     }
 
     @Override
     public void run() {
-        if (!done.compareAndSet(false, true)) {
-            return;
+        synchronized (this) {
+            if (begun) {
+                return;
+            }
+            begun = true;
         }
         AutoCloseable next;
         while ((next = pop()) != null) {
-            try {
-                next.close();
-            } catch (Exception ignored) {
-                // Best effort: keep stopping the rest.
-            }
+            closeQuietly(next);
         }
         try (var paths = Files.walk(dir)) {
             paths.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
         } catch (IOException | RuntimeException ignored) {
             // Temporary files only; a leftover directory under the OS temp dir is harmless.
+        }
+    }
+
+    private static void closeQuietly(AutoCloseable closeable) {
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+            // Best effort: keep stopping the rest.
         }
     }
 

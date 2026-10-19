@@ -85,9 +85,21 @@ final class ServerProcess implements AutoCloseable {
         byte[] key = new byte[48];
         new SecureRandom().nextBytes(key);
         builder.environment().put(HMAC_ENV, Base64.getEncoder().encodeToString(key));
-        Process process = builder.start();
+        // A closer is tracked before the launch, so a signal in the gap between start() and tracking the
+        // server still stops the child: whichever of the two happens second kills the process.
+        LaunchGuard guard = new LaunchGuard();
+        cleanup.track(guard);
+        Process process = null;
+        try {
+            process = builder.start();
+        } finally {
+            if (process != null) {
+                guard.launched(process);
+            } else {
+                guard.failed();
+            }
+        }
         ServerProcess server = new ServerProcess(process, port, log, resultsDir);
-        // Tracked at once, so a signal during startup stops the child too.
         cleanup.track(server);
         try {
             server.awaitHealthy(Duration.ofSeconds(180));
@@ -100,6 +112,59 @@ final class ServerProcess implements AutoCloseable {
             throw failed;
         }
         return server;
+    }
+
+    /**
+     * Kills a child process whether cleanup runs before, during or after its launch. A guard starts out
+     * "launching"; {@link #close()} waits (bounded) for the launch to settle so the shutdown hook cannot let
+     * the JVM halt while a child is about to exist.
+     */
+    static final class LaunchGuard implements AutoCloseable {
+        private final long boundNanos;
+        private Process process;
+        private boolean launching = true;
+        private boolean closed;
+
+        LaunchGuard() {
+            this(Duration.ofSeconds(10));
+        }
+
+        LaunchGuard(Duration bound) {
+            this.boundNanos = bound.toNanos();
+        }
+
+        synchronized void launched(Process launched) {
+            process = launched;
+            launching = false;
+            notifyAll();
+            if (closed) {
+                launched.destroyForcibly();
+            }
+        }
+
+        synchronized void failed() {
+            launching = false;
+            notifyAll();
+        }
+
+        @Override
+        public synchronized void close() {
+            closed = true;
+            long remaining = boundNanos;
+            long deadline = System.nanoTime() + remaining;
+            while (launching && remaining > 0) {
+                try {
+                    java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(this, remaining);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                remaining = deadline - System.nanoTime();
+            }
+            if (process != null) {
+                process.destroyForcibly();
+            }
+        }
     }
 
     String mcpBaseUrl() {
