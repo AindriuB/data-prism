@@ -485,6 +485,13 @@ only `GET_ENTITY_CONTEXT`:
 No source adapter is ever invoked for a refused call: authorisation happens
 before the orchestrator is asked for anything.
 
+## Response limit refusals
+
+| Code | Meaning |
+|---|---|
+| `TOO_MANY_RECORDS` | The whole call exceeds `dataprism.limits.max-records`: each returned source root and each object inside an array counts; withheld source payloads count zero. |
+| `RESPONSE_TOO_LARGE` | The whole call exceeds the conservative compact UTF-8 context-body bound in `dataprism.limits.max-response-size`, including statuses and findings but excluding the transport envelope and duplicate MCP representations; surrogate code units reserve six bytes each. |
+
 ## Admission codes: oversight refusals
 
 After authorisation and scope resolution, and before any source is touched,
