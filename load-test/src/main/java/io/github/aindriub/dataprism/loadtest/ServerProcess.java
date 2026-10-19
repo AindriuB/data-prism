@@ -89,7 +89,13 @@ final class ServerProcess implements AutoCloseable {
         // server still stops the child: whichever of the two happens second kills the process.
         LaunchGuard guard = new LaunchGuard();
         cleanup.track(guard);
-        Process process = builder.start();
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException | RuntimeException failed) {
+            guard.failed();
+            throw failed;
+        }
         guard.launched(process);
         ServerProcess server = new ServerProcess(process, port, log, resultsDir);
         cleanup.track(server);
@@ -106,21 +112,53 @@ final class ServerProcess implements AutoCloseable {
         return server;
     }
 
-    /** Kills a child process whether cleanup runs before or after the process exists. */
-    private static final class LaunchGuard implements AutoCloseable {
+    /**
+     * Kills a child process whether cleanup runs before, during or after its launch. A guard starts out
+     * "launching"; {@link #close()} waits (bounded) for the launch to settle so the shutdown hook cannot let
+     * the JVM halt while a child is about to exist.
+     */
+    static final class LaunchGuard implements AutoCloseable {
+        private final long boundNanos;
         private Process process;
+        private boolean launching = true;
         private boolean closed;
+
+        LaunchGuard() {
+            this(Duration.ofSeconds(10));
+        }
+
+        LaunchGuard(Duration bound) {
+            this.boundNanos = bound.toNanos();
+        }
 
         synchronized void launched(Process launched) {
             process = launched;
+            launching = false;
+            notifyAll();
             if (closed) {
                 launched.destroyForcibly();
             }
         }
 
+        synchronized void failed() {
+            launching = false;
+            notifyAll();
+        }
+
         @Override
         public synchronized void close() {
             closed = true;
+            long remaining = boundNanos;
+            long deadline = System.nanoTime() + remaining;
+            while (launching && remaining > 0) {
+                try {
+                    java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(this, remaining);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                remaining = deadline - System.nanoTime();
+            }
             if (process != null) {
                 process.destroyForcibly();
             }
