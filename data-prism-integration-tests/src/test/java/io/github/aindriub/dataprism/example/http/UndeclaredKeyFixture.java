@@ -91,7 +91,8 @@ final class UndeclaredKeyFixture {
 
     /** A different synthetic key for the successful-result scan (task 124). */
     static final String RESULT_TOKEN = "zzResultKeyWv4";
-    static final String RESULT_KEY = RESULT_TOKEN + "@example.com";
+    /** Matches no scanner shape: an email-shaped key is refused by the key scan (task 194). */
+    static final String RESULT_KEY = RESULT_TOKEN + "-note";
 
     /** The undeclared property's value is benign, so a pass-through run still succeeds. */
     @LlmExposedModel

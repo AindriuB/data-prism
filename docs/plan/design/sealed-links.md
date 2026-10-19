@@ -223,7 +223,7 @@ Worst case for option (b) with d origin levels: header 120 + fixed payload (8 + 
 | 4 | 1114 | 1488 |
 | 5 | 1269 | 1692 |
 
-(b) at one level already exceeds 768 characters, so a 768 default could not hold even one hop. The defaults depend on the option. Under (a) and (a') the worst case is 616 characters, so the default `max-length` is 768 (576 bytes): a margin of 152 characters (25 percent) for a future header field, and a leaner schema and cap than the first sizing. Under (b) the default is 1536 characters (1152 bytes), `max-chain-depth` 3 (1280 characters), ceiling 4 (1488); depth 5 does not fit 1536 and would need `max-length` raised. The adopted option is (a') (OD-1), so the effective defaults are 768 and no chain depth. Under (b) startup applies the formula: if `4 x ceil((494 + 155 x max-chain-depth) / 3)` exceeds `max-length`, startup refuses with `INVALID_LINK_LIMIT`. Typical links are far smaller than the worst case (short labels, short keys: about 200 to 300 bytes under (a), 300 to 450 under (b) at depth 1), but the cap and the schema use the worst case. The worst case is also why links count toward the response-size cap (task 193): 50 links at 768 characters is 38 KB in the extreme under (a'); under (b) at 1536 it would be 77 KB.
+(b) at one level already exceeds 768 characters, so a 768 default could not hold even one hop. The defaults depend on the option. Under (a) and (a') the worst case is 616 characters, so the default `max-length` is 768 (576 bytes): a margin of 152 characters (25 percent) for a future header field, and a leaner schema and cap than the first sizing. Under (b) the default is 1536 characters (1152 bytes), `max-chain-depth` 3 (1280 characters), ceiling 4 (1488); depth 5 does not fit 1536 and would need `max-length` raised. The adopted option is (a') (OD-1), so the effective defaults were 768 and no chain depth; the owner raised the default `max-length` to 1024 on 2026-10-19 (OD-B12 of `batch-and-bulk-follow.md`), replacing the 768 decided here, and the 616-character worst case of this section is unchanged. Under (b) startup applies the formula: if `4 x ceil((494 + 155 x max-chain-depth) / 3)` exceeds `max-length`, startup refuses with `INVALID_LINK_LIMIT`. Typical links are far smaller than the worst case (short labels, short keys: about 200 to 300 bytes under (a), 300 to 450 under (b) at depth 1), but the cap and the schema use the worst case. The worst case is also why links count toward the response-size cap (task 193): 50 links at 768 characters is 38 KB in the extreme under (a'); under (b) at 1536 it would be 77 KB.
 
 Maximum encoded length is checked before any decoding. If the sealer would produce a link longer than `max-length`, the link is not issued and counts as omitted.
 
@@ -278,7 +278,7 @@ Input schema (draft 2020-12). The caller supplies nothing but the link: scope, p
 {
   "type": "object",
   "properties": {
-    "link": { "type": "string", "minLength": 1, "maxLength": 768, "pattern": "^[A-Za-z0-9_-]+$" }
+    "link": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[A-Za-z0-9_-]+$" }
   },
   "required": ["link"],
   "additionalProperties": false
@@ -330,7 +330,7 @@ Output: the same envelope as `get_entity_context` (D-070-1), with exactly one en
         "field": { "type": "string" },
         "namespace": { "type": "string" },
         "toNamespace": { "type": "string" },
-        "link": { "type": "string", "maxLength": 768 },
+        "link": { "type": "string", "maxLength": 1024 },
         "expiresAt": { "type": "string", "format": "date-time" }
       },
       "required": ["rel", "target", "field", "link", "expiresAt"]
@@ -393,7 +393,7 @@ All proposals. Unknown keys under `dataprism.links` are startup errors like ever
 | `dataprism.links.key-id` | none | Required when enabled. Unresolvable: `LINK_KEY_UNRESOLVED`. Shorter than 32 bytes: `LINK_KEY_WEAK`. Same id as `dataprism.privacy.hmac-key.key-id`: `LINK_KEY_SHARED` |
 | `dataprism.links.lifetime` | `PT30M` | Positive duration, or `scope`; otherwise `INVALID_LINK_LIFETIME`. Never effective beyond the scope (D-RM-6) |
 | `dataprism.links.max-per-response` | `50` | 1 to 500; otherwise `INVALID_LINK_LIMIT` |
-| `dataprism.links.max-length` | `768` under (a)/(a'); `1536` under (b) | At most 4096. Floor depends on the option: 616 under (a) and (a'), the worst case of (a) in section 3; under (b) the formula `4 x ceil((494 + 155 x max-chain-depth) / 3)` (868 at depth 1). A value below the floor of the chosen option is `INVALID_LINK_LIMIT` |
+| `dataprism.links.max-length` | `1024` under (a)/(a') (was 768 until 2026-10-19; see OD-B12 of `batch-and-bulk-follow.md`); `1536` under (b) | At most 4096. Floor depends on the option: 616 under (a) and (a'), the worst case of (a) in section 3; under (b) the formula `4 x ceil((494 + 155 x max-chain-depth) / 3)` (868 at depth 1). A value below the floor of the chosen option is `INVALID_LINK_LIMIT` |
 | `dataprism.links.bind-caller` | `true` | Boolean (OD-2) |
 | `dataprism.links.invalid-attempt-limit` | `20` | Positive; otherwise `INVALID_LINK_LIMIT` |
 | `dataprism.links.invalid-attempt-window` | `PT10M` | Positive duration; otherwise `INVALID_LINK_LIMIT` |
@@ -464,7 +464,7 @@ Each row has options and a recommendation. On 2026-10-09 the owner delegated eve
 | OD-15 | Key rotation when `lifetime=scope` | Rotate the link key at most every maximum scope lifetime and retire it after that plus skew; or cap link lifetime at the rotation interval; or forbid `scope` under (a') | Allow `scope` and state that the (a') exposure window then equals the scope lifetime plus the rotation interval **Decided (owner delegated, 2026-10-09): allow `lifetime=scope`; (a') exposure window is the scope lifetime plus the rotation interval.** |
 | OD-16 | Clock skew defaults | `PT5S` default with `PT30S` ceiling; or 0 (strict); or a larger default | `PT5S` and `PT30S`. Skew applies to link expiry only **Decided (owner delegated, 2026-10-09): `PT5S` default, `PT30S` ceiling, link expiry only.** |
 | OD-17 | The 256-byte ceiling on a sealed key under (a), (a') | 256 bytes, longer keys get no link and show in `_linksOmitted`; or a larger bucket cap with a larger `max-length` | 256. A user with a longer identifier sees no link for that field and a count in `_linksOmitted`; raise the cap only on evidence of such keys **Decided (owner delegated, 2026-10-09): 256-byte ceiling.** |
-| OD-12 | Link text against context cost | Default 768 under (a)/(a') (worst case 616, 25 percent margin) and 1536 under (b) with depth ceiling 4; or keep 1536 for all; or shrink label limits | 768 under (a'): the 1536 figure was sized for (b); the leaner default costs less context and gives the schema a tight bound, and the worst case is exact, not estimated. Typical links under (a') are 200 to 300 bytes, which is 268 to 400 characters, about 45 to 65 percent of the 616-character worst case **Decided (owner delegated, 2026-10-09): 768 under (a)/(a'), 1536 under (b).** |
+| OD-12 | Link text against context cost | Default 768 under (a)/(a') (worst case 616, 25 percent margin) and 1536 under (b) with depth ceiling 4; or keep 1536 for all; or shrink label limits | 768 under (a'): the 1536 figure was sized for (b); the leaner default costs less context and gives the schema a tight bound, and the worst case is exact, not estimated. Typical links under (a') are 200 to 300 bytes, which is 268 to 400 characters, about 45 to 65 percent of the 616-character worst case **Decided (owner delegated, 2026-10-09): 768 under (a)/(a'), 1536 under (b).** **Amended by the owner, 2026-10-19: the (a)/(a') default is 1024, to leave a margin for the collection page link of OD-B12 in `batch-and-bulk-follow.md`.** |
 
 ## 9. Proposed names (closing table)
 

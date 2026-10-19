@@ -1,6 +1,6 @@
 # 205 — Settle how the re-identification map stores the subject id
 
-**Status: SUPERSEDED — not executable and not implemented.** Owner decision in this chat, 2026-10-19: the approved sealed-state design governs; encrypted re-identification values and separate cluster/name keys replace the plaintext and isolation-only options. Task 215 plans the implementation successors. The original brief below is retained as history; its release, decisions, dependencies and acceptance criteria are not current instructions.
+**Status: SUPERSEDED — not executable and not implemented.** Owner decision, 2026-10-19: the approved sealed-state cluster design governs; encrypted re-identification values and separate cluster/name keys replace the plaintext and isolation-only options. Task 215 plans the implementation successors. The original brief below is retained as history; its release, decisions, dependencies and acceptance criteria are not current instructions.
 
 See `docs/plan/reconciliation-2026-10-19.md` and `docs/plan/design/cluster-security.md`.
 

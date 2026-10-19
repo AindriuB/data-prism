@@ -90,7 +90,9 @@ the transport envelope and duplicate MCP representations are outside that
 measure. Withheld payloads contribute zero; their existing status entries still
 occupy bytes in the emitted body and are therefore counted. Ordinary scalar
 encoding is exact except that each surrogate code unit reserves six bytes;
-supported JSON trees are bounded within three times their compact UTF-8 size.
+for well-formed text (no lone surrogates) supported JSON trees are bounded within
+three times their compact UTF-8 size. A lone surrogate can push the result past
+that, and the overcount is safe because it can only refuse a body that would fit.
 Opaque nodes whose custom serialisation cannot be bounded refuse conservatively.
 
 Verification in the task's isolated worktree:
@@ -168,3 +170,7 @@ After the update, all 15 response-limit regressions and the unchanged
 `ArchitectureTest` passed on Java 21. The task implementation remains the
 reviewed `bea3de45` change; no response-limit runtime code changed during this
 refresh. Full verification on both supported JDKs runs in PR CI.
+
+### Landing
+
+Implemented outside the plan-and-fanout loop, by an external author, and merged as PR #131 on 2026-10-19. It was reviewed after the merge on 2026-10-19, and the review findings (the response-size Javadoc faults) were addressed by task 217. The owner's decision on OD-B18 of task 198 (2026-10-19) will later replace the whole-call refusal built here with a per-source refusal for a source that cannot be truncated; the hard overall cap stays.

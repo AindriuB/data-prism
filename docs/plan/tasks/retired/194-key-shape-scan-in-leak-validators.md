@@ -62,3 +62,42 @@ Write the tests first; each must fail on `main` before the change.
 - New identifier shapes in `SensitiveDataScanner`.
 - Changing how the engine renames undeclared keys.
 - Any orchestration or MCP change.
+
+## Outcome
+
+Implemented: `SensitiveDataScanner` (so `SensitivePatternValidator`) and
+`RawValueLeakValidator` scan property names as well as values. A flagged name,
+and everything beneath it, is reported under the path segment `<undeclared>`.
+`LlmResponseValidator` is untouched. Tests: `KeyShapeScanTest` (validation, 13
+cases, red on main) and `KeyShapeLeakScanTest` (integration, 2 cases).
+
+Non-vacuity, `KeyShapeLeakScanTest` with `data-prism-validation/src/main`
+restored to `f960f2a9` (key scan off): 2 run, 2 failed (the single-source call
+was not refused; the two-source run carried the key). With the key scan on: 2
+run, 0 failed.
+
+Final verify, run at commit e8307a0e (clean tree): `./mvnw -B verify` over the
+full reactor, exit code 0 (BUILD SUCCESS). Counts from the report XMLs: surefire
+1856 tests, 0 failures, 0 errors, 0 skipped; failsafe 17 tests, 0 failures, 0
+errors, 0 skipped. `./mvnw -B -Prelease -DskipTests package` at the same commit:
+exit code 0 (BUILD SUCCESS). An earlier run showed one failure,
+`UndeclaredNameToolResultScanTest.passThroughPinned`; it was fixed by e8307a0e.
+
+**Widened Owns (coordinator, after review):** `UndeclaredKeyFixture.java` and
+`UndeclaredNameToolResultScanTest.java` joined `Owns`. The pin
+`passThroughPinned` encoded the behaviour this task removes (an email-shaped
+key reaching the result). `RESULT_KEY` is now `RESULT_TOKEN + "-note"`, which
+matches no scanner shape, so the pin still proves that an undeclared,
+non-sensitive key passes under `PASS_THROUGH_UNSAFE`. The other users of
+`RESULT_KEY` and `RESULT_TOKEN` only plant or search for the token text, so
+their meaning is unchanged; `KEY` (the email-shaped key used by the refusal
+tests) is untouched.
+
+CHANGELOG (task 201), under `### Security`:
+
+- The response leak validators now scan property names as well as values, so a
+  map keyed by an email address or other identifier is refused even under a
+  Java-built `PASS_THROUGH_UNSAFE` profile. A flagged name is reported as
+  `<undeclared>`. A key that matches no known identifier shape still passes.
+
+Post-merge fix, 2026-10-19: PR #132 review found that the key scan in `SensitiveDataScanner` bypassed `MAX_MATCHES` and the character budget (1,000 sensitive keys gave 1,000 matches). Fixed on `fix/194-key-scan-limits`. Our review of this task missed the bypass.

@@ -13,7 +13,7 @@ Renumbered from 198 on 2026-10-19. Reconciled with the pre-0.9 freeze; see `docs
 - docs/migration-0.8.md (new)
 - mkdocs.yml (nav and llmstxt entries for both new pages)
 - docs/audit.md
-- docs/architecture.md (new dated decisions and explicit supersession pointers)
+- docs/architecture.md *(added lines only: new dated decisions and explicit supersession pointers)*
 - docs/multiple-instances.md
 - docs/reidentification.md
 - docs/faq.md (free-text answer)
@@ -38,7 +38,7 @@ Document controls when they ship in 0.8, before the 0.9 freeze. Keep 1.0 a stabi
 - [ ] `docs/extending.md` shows how a standalone server loads a `CaseAuthorizer` extension and how to supply a recogniser. Constructor examples compile against the merged APIs.
 - [ ] Migration and changelog cover all changed public constructors, map formats, startup refusals, properties, audit behaviour, and recogniser functionality. Use `[Unreleased]`; no version bump, tag or publication.
 - [ ] Replace the old statement that no rotation procedure exists with a link to the procedure. Segment examples still match `audit-*.log`.
-- [ ] Wording says “supports” and makes no claim that a deployment meets a legal duty.
+- [ ] Wording says “supports”, never “compliant” or “compliance”, and makes no claim that a deployment meets a legal duty.
 - [ ] `mkdocs build --strict` and every `docs-site/hooks/check_*.py` pass, with `DP_REQUIRE_NO_STUBS=true`. Build success alone is insufficient.
 
 ## Out of scope

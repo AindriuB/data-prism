@@ -32,6 +32,8 @@ import java.util.Set;
  */
 public final class RawValueLeakValidator implements LlmResponseValidator {
 
+    private static final String KEY_SEGMENT = "<undeclared>";
+
     /**
      * The emitted set is ignored here. A value the engine generated is not a raw
      * source value, so it cannot be in {@code prohibited} in the first place; an
@@ -55,7 +57,14 @@ public final class RawValueLeakValidator implements LlmResponseValidator {
         }
         if (node.isObject()) {
             for (Map.Entry<String, JsonNode> e : node.properties()) {
-                walk(e.getValue(), path + "." + e.getKey(), prohibited, out);
+                // A property name equal to a prohibited value is a leak too, and the
+                // name must not reach the path.
+                String key = e.getKey();
+                boolean leaked = !key.isBlank() && prohibited.contains(Text.canonical(key));
+                if (leaked) {
+                    out.add(new Violation(path + "." + KEY_SEGMENT, "RAW_SOURCE_VALUE", "exact-match"));
+                }
+                walk(e.getValue(), path + "." + (leaked ? KEY_SEGMENT : key), prohibited, out);
             }
             return;
         }
