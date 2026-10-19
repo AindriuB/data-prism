@@ -1,12 +1,12 @@
 # Roadmap reconciliation — 2026-10-19
 
-PR #130 is the in-progress 0.7 integration branch, not a finished release or a task-only PR. Its base is 0.6.0 plus the Maven release guards and PR #129's imported briefs. The imported ids collided with 0.7 tasks and were renumbered 203–214. No feature is claimed implemented by this reconciliation.
+PR #130 was the 0.7 integration branch; it merged to `main` on 2026-10-19, as did PR #131 (task 193). `main` is now the integration base for the remaining 0.7 tasks, and this reconciliation was written while #130 was still open. Its base is 0.6.0 plus the Maven release guards and PR #129's imported briefs. The imported ids collided with 0.7 tasks and were renumbered 203–214. No feature is claimed implemented by this reconciliation.
 
 ## Authority and decisions
 
-The owner requested reconciliation in this chat on 2026-10-19 and explicitly chose: “Use the sealed-state design (Recommended)”. The question made clear that this means encrypted re-identification values and separate cluster/name keys, replacing the plaintext and isolation-only options. This resolves D-1.0-3 and D-1.0-7 in favour of the existing design's encrypted storage and independent purpose-specific keys, and supersedes D-1.0-2's isolation-only option. Preserve the qualified security claim and residual risks in `design/cluster-security.md`.
+Owner decision, 2026-10-19: the approved sealed-state cluster design governs. The owner requested reconciliation and explicitly chose: “Use the sealed-state design (Recommended)”. The question made clear that this means encrypted re-identification values and separate cluster/name keys, replacing the plaintext and isolation-only options. This resolves D-1.0-3 and D-1.0-7 in favour of the existing design's encrypted storage and independent purpose-specific keys, and supersedes D-1.0-2's isolation-only option. Preserve the qualified security claim and residual risks in `design/cluster-security.md`.
 
-D-1.0-1 (case-authoriser SPI and explicit token-trusted fallback) and D-1.0-4 (optional keyed audit chain, separate key, no protection against a key holder) remain the decisions recorded in the imported task briefs. They are not newly decided here. D-1.0-5's “ships in 1.0” is scheduled as available **by** 1.0: feature/API changes land in 0.8, before the 0.9 freeze. The 1.0 release adds the stability commitment, not these new features.
+D-1.0-1 (case-authoriser SPI and explicit token-trusted fallback) and D-1.0-4 (optional keyed audit chain, separate key, no protection against a key holder) remain the decisions recorded in the imported task briefs. They are not newly decided here. D-1.0-5's “ships in 1.0” is scheduled as available **by** 1.0: feature/API changes land in 0.8, before the 0.9 freeze. The 1.0 release adds the stability commitment, not these new features. The owner confirmed this rescheduling on 2026-10-19 (D-1.0-5 rescheduling CONFIRMED): the 1.0 controls (203/210, 206/207/211, 208, 213) ship in 0.8.0, and the pattern-validator wiring (209) is a 0.7 correction.
 
 ## Allocation
 
@@ -24,14 +24,14 @@ D-1.0-1 (case-authoriser SPI and explicit token-trusted fallback) and D-1.0-4 (o
 ## Current 0.7 sequence
 
 - Completed on the integration branch: 188, 189, 190, 191, 192, 195, 197, 202.
-- Ready: 193 (record/size caps), 194 (key-shape scan), 196 (load harness), 198 (paging/batch design). Task 198 now depends on completed 197 and designs `list_sources` paging for 0.8 first (OD-C16).
+- Landed after this note was written: 193 (record/size caps, PR #131), 194 (key-shape scan), 196 (load harness), 198 (paging/batch design) and 217 (Javadoc follow-ups). See `PLAN.md` for the open order. Task 198 now depends on completed 197 and designs `list_sources` paging for 0.8 first (OD-C16).
 - After 194: 209 (existing pattern-validator wiring). This is a source-confirmed gap on both main and the PR head: `PrivacyEngineWiring` registers only `RawValueLeakValidator`; both orchestration configurations collect validator beans. Runtime proof belongs in 209, not in this planning review.
 - 199 follows 193 and 196 (plus completed 189/190); its measurements require a quiet named machine and owner agreement before running.
 - 200 follows 193 and 198 (other prerequisites completed); register imported contracts as proposals, with release/status distinctions.
 - 201 follows 193, 194, 196 and 209 (other prerequisites completed); document the pattern scan as a 0.7 fix.
 - Re-capture the two HTTP examples, complete combined verification and prepare the release cut only after those tasks. No version bump, tag or publication is authorised by this reconciliation.
 
-All remaining 0.7 briefs branch from `plan/0.7.0` while that is the integration branch. Starting them from today's `main` would omit their prerequisites.
+Remaining 0.7 briefs branch from `plan/0.7.0`, which is level with `main` after PRs #130 and #131 and carries the verified results of tasks 194, 196, 198 and 217.
 
 ## Remaining planning work
 
@@ -41,6 +41,6 @@ The existing 0.8 many-source, fan-out, budget, catalog and sealed-link scope rem
 
 ## PR repair and validation
 
-The docs CI failure was a nav/llmstxt mismatch: `verifying-releases.md` was in nav only. Add it to both. Future page tasks must update both and explicitly run all `docs-site/hooks/check_*.py` after `mkdocs build --strict`; the build alone did not exercise every guard.
+The docs CI failure was a nav/llmstxt mismatch: `verifying-releases.md` was in nav only. The reconciliation commit added the missing `llmstxt` entry; the nav entry already existed. Future page tasks must update both and explicitly run all `docs-site/hooks/check_*.py` after `mkdocs build --strict`; the build alone did not exercise every guard.
 
-PR #130 remains draft until its open tasks and verification are complete. Successful CI on the current partial implementation is not evidence that the release scope is complete.
+PR #130 has merged; the release scope is still incomplete. Successful CI on a partial implementation is not evidence that the release scope is complete.

@@ -94,8 +94,12 @@ Cross-task points for 200: (1) relation bytes `0x02` to `0x04` extend task 191's
 
 Forbidden-word scan: no real-world business or workplace terms; examples use the invented parcel, depot and courier-roster domain.
 
-Review gate: first review CHANGES; revised (see below); re-review PENDING. The orchestrator runs the reviewer against D-RM-7, 12, 15, the status codes as merged by task 190 and boundaries 1, 6, 7. The document no longer claims that no product decision is taken: every number, name and shape is a proposal under an OD-B, and the text follows the recommendations where it must be specific.
+Review gate: first review CHANGES; revised (see below); re-review APPROVE, after three review rounds, the final at `517398c4`. The orchestrator runs the reviewer against D-RM-7, 12, 15, the status codes as merged by task 190 and boundaries 1, 6, 7. The document no longer claims that no product decision is taken: every number, name and shape is a proposal under an OD-B, and the text follows the recommendations where it must be specific.
 
 ### Revision after review
 
 Changes: a relation-byte table says which tool accepts each of `0x00` to `0x04`; the batch cap now covers the envelope and an item that cannot fit an empty response is `REFUSED` (progress guaranteed); truncation is fail closed, with `next` required in every marker; `follow_bulk` has an explicit three-phase call with the attempt limiter defined (shared counter, whole-call refusal when locked or when the limit is reached), per-target counts and per-target omitted exceptions (D-RM-1), a group link bounded and counted against `max-links`, and one audit event per link asked; `pageSize` without a link key is handled inside OD-B2; the collection page link is sized at its true worst case (768 characters, zero margin, flagged with fixes in OD-B12); the page schema declares `_links` and `_linksOmitted`; the closing table gains `item`, `status`, `target`. Quiet decisions are now explicit: OD-B18 to OD-B23, plus extensions to OD-B2, OD-B10, OD-B11, OD-B12 and OD-B14. Open decisions are now OD-B1 to OD-B24 (OD-B24 added after the re-review). Schemas re-validated: 7 schemas and 5 examples valid, same checker.
+
+### Owner decisions, 2026-10-19
+
+The owner decided OD-B12 in part (truncation option (i); default link `max-length` raised to 1024, replacing the 768 of task 191), OD-B18 (a per-source `REFUSED:RESPONSE_TOO_LARGE` replaces task 193's whole-call refusal for a source that cannot be truncated) and OD-B24 (b) (a bulk link whose target is `REFUSED` is audited `DENY:<code>`). Every other open decision, OD-B1 to OD-B24, and the mechanism part of OD-B12, was delegated and follows the recommendation. Each row of section 9 of the design document records its decision.

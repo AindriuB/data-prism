@@ -20,6 +20,13 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-19 | 194 | Leak validators scan property names as well as values; a flagged key is reported as `<undeclared>` | `## 2026-10-19 — Key-shape scan in the leak validators (194)` |
+| 2026-10-19 | 196 | Standalone `load-test/` project: MCP Java SDK driver, synthetic HTTPS sources, one-command runner | `## 2026-10-19 — Load-test harness (196)` |
+| 2026-10-19 | 198 | Design for paged `list_sources` (0.8), batch tool, collection paging, truncation markers and status-only bulk follow; all OD-B1 to OD-B24 decided | `## 2026-10-19 — Batch, paging and bulk-follow design (198)` |
+| 2026-10-19 | 217 | Javadoc fixes from the task 193 review: record and byte-limit paragraphs placed before `@param`, three-times bound qualified to well-formed text | `## 2026-10-19 — Response-size Javadoc follow-ups (217)` |
+| 2026-10-19 | 193 | Record and response-size caps enforced: `TOO_MANY_RECORDS` and `RESPONSE_TOO_LARGE` refuse the whole call with one `DENY:<code>` audit event (PR #131) | `## 2026-10-19 — Record and response-size limits enforced (193)` |
+| 2026-10-19 | none (main commits) | Hazelcast: atomic counters via entry processors and a quorum test that waits for propagation; retained locks for approval creation superseded by task 216 | `## 2026-10-19 — Hazelcast commits made on main without a task file` |
+| 2026-10-19 | none (98fd4248) | Reconciliation commit reviewed after the fact; five wording faults corrected | `## 2026-10-19 — Review of the reconciliation commit 98fd4248` |
 | 2026-10-19 | 198, 203–215 | Reconcile pre-freeze control work, supersede isolation-only cluster briefs, scope 209 to the 0.7 wiring correction, and repair PR docs CI. | `## 2026-10-19 — PR 130 planning reconciliation and docs guard repair` |
 | 2026-10-09 | 202 | Approval consume compare-and-set, consumed-wins merge, `approval-minimum-members` split-brain protection, bounded lock waits (`CLUSTER_LOCK_TIMEOUT`) | ## 2026-10-09 — Hazelcast approval compare-and-set, split-brain protection, bounded lock waits (202) |
 | 2026-10-09 | 190 | Per-source results `sources.<key>.{status, entity}`, seven status codes, per-source refusal, `REFUSED:<code>` audit values, array-root final validation | ## 2026-10-09 — Per-source results with stable status codes (190) |

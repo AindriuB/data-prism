@@ -170,3 +170,7 @@ After the update, all 15 response-limit regressions and the unchanged
 `ArchitectureTest` passed on Java 21. The task implementation remains the
 reviewed `bea3de45` change; no response-limit runtime code changed during this
 refresh. Full verification on both supported JDKs runs in PR CI.
+
+### Landing
+
+Implemented outside the plan-and-fanout loop, by an external author, and merged as PR #131 on 2026-10-19. It was reviewed after the merge on 2026-10-19, and the review findings (the response-size Javadoc faults) were addressed by task 217. The owner's decision on OD-B18 of task 198 (2026-10-19) will later replace the whole-call refusal built here with a per-source refusal for a source that cannot be truncated; the hard overall cap stays.

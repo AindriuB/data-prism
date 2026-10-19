@@ -17,6 +17,41 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-19 — Key-shape scan in the leak validators (194)
+`SensitiveDataScanner` (so `SensitivePatternValidator`) and `RawValueLeakValidator` now scan property names as well as values. A map keyed by an email address or other identifier is refused even under a Java-built `PASS_THROUGH_UNSAFE` profile, and a flagged name, with everything beneath it, is reported under the path segment `<undeclared>`. A key that matches no known identifier shape still passes. Verified at `e8307a0e`: 1,856 surefire and 17 failsafe tests, zero failures, errors or skips, and the release-profile package build passed.
+**Cost:** An existing pin, `UndeclaredNameToolResultScanTest.passThroughPinned`, encoded the behaviour the task removes (an email-shaped key reaching the result), so it failed in the first full run; the coordinator widened `Owns` and moved the pin to a non-sensitive key. Not done, and left as a follow-up: each validator should also redact the keys flagged by the other, which `RefusalPaths.redact` covers today. Non-vacuity was shown by restoring `data-prism-validation/src/main` to `f960f2a9` (2 of 2 integration cases failed).
+
+
+## 2026-10-19 — Load-test harness (196)
+`load-test/` sits outside the root reactor and drives a packaged server with a Java client on the MCP Java SDK and HdrHistogram, against synthetic HTTPS sources, a run-time token issuer and `load-test/run.sh`. Scenarios exist for 8, 32, 100 and 300 sources and all four ran to completion; probes with `maxSources: 4` and `maxRecords: 3` tallied `SKIPPED_OVER_LIMIT` and `TOO_MANY_RECORDS` from the live server. It measures nothing yet as a baseline; task 199 does that.
+**Cost:** `RestSource` refuses plaintext, so the harness sources share a throwaway per-run certificate. The `perSourceStatus` keys in the results are the server's per-scope aliases, not the generated source names, which task 199 must account for. Open follow-up: `RunCleanup.track` has a race, so a server launched after the shutdown hook has run is never closed; it should close immediately when cleanup has already run.
+
+
+## 2026-10-19 — Batch, paging and bulk-follow design (198)
+`docs/plan/design/batch-and-bulk-follow.md` specifies the paged `list_sources` for 0.8 first, then the 0.9 batch tool `get_entity_contexts`, collection paging, truncation markers with the hard overall cap, and `follow_bulk`, with audit volume for a 5,000-item investigation. It was approved on the third review round. The owner decided OD-B12 in part (truncation off by default while links are off, never without a `next` link; default link `max-length` raised to 1024, replacing task 191's 768), OD-B18 (a per-source `REFUSED:RESPONSE_TOO_LARGE` replaces task 193's whole-call refusal for a source that cannot be truncated) and OD-B24 (b) (a bulk link to a `REFUSED` target is audited `DENY:<code>`), and delegated every other OD to the recommendation.
+**Cost:** The first review returned CHANGES: the draft had quiet product decisions in the text (batch envelope accounting, the link limiter, progress when the first item does not fit), which became OD-B18 to OD-B24, and the collection page link was first sized with zero margin against the 768 default, which the 1024 decision resolves. Cross-task points for task 200 are in PLAN.md.
+
+
+## 2026-10-19 — Response-size Javadoc follow-ups (217)
+In `RequestLimits` the record and byte-limit paragraphs now precede the first `@param` instead of rendering under `@param maxSources`. `ResponseSize.tree` and the task 193 Outcome state the "three times the compact UTF-8 size" bound as holding for well-formed text only; a lone surrogate reserves six bytes but encodes to fewer, and the overcount is safe because it can only refuse a body that would fit. Comments and Markdown only.
+**Cost:** The branch was cut from the follow-up planning branch, so merging it brought in the planning commits that added task files 216 and 217 and edits to 200, 201 and 215. The `docs/configuration.md` wording of `max-response-size` stays with task 201.
+
+
+## 2026-10-19 — Record and response-size limits enforced (193)
+`dataprism.limits.max-records` and `max-response-size` are now enforced. Exceeding either refuses the whole call with one correlated `DENY:<code>` audit event; equality is allowed. The size is a conservative bound computed in the orchestrator before the audit event, with no mapper, and a comparison request is measured against both the context and the comparison body. It was implemented outside the plan-and-fanout loop and merged as PR #131, reviewed after merge on 2026-10-19; task 217 addressed the review findings.
+**Cost:** The first size bound covered only the context body, and a real-tool regression showed a comparison body (with its added `consistent` boolean and `identity` projection) 115 bytes over a 1,763-byte cap, so both bodies are now measured. A surrogate-heavy text may be refused before its exact encoded size reaches the cap. Task 198's OD-B18 will turn the whole-call refusal into a per-source one for a source that cannot be truncated, so do not extend the whole-call refusal for that case.
+
+
+## 2026-10-19 — Hazelcast commits made on main without a task file
+Four commits on `main` were authored by ChatGPT with no task file. `b3ed53df` makes the clustered budget and rate counters atomic with entry processors so they stay correct after a lock lease expires, and `b2db8bc3` makes the quorum test wait for propagation before asserting approval refusals; both were reviewed and approved. `34adde0b` and `08939a79` take retained (infinite-lease) locks around approval creation, which closes real races but contradicts `cluster-security.md` and task 202's "lease derived from the timeout". Under owner decision D-0.7-HZ-1 (2026-10-19) task 216 supersedes them with an atomic approval creation and restores bounded leases.
+**Cost:** A fix that closes a race by holding a lock forever trades one failure for another, since a crashed member then holds the lock for ever; do not retry retained locks. Work done without a task file cannot be checked against the design documents until after the fact.
+
+
+## 2026-10-19 — Review of the reconciliation commit 98fd4248
+The reconciliation commit was reviewed after merge. Five faults were corrected on `plan/0.7.0`: task 214 named config names from tasks 209 to 212 where 210, 211 and the 215 successors own them; task 213 had lost "added lines only" for `docs/architecture.md` and the explicit ban on "compliant" and "compliance"; tasks 204, 205 and 212 and the reconciliation note said "Owner decision in this chat" instead of a dated statement; the reconciliation note claimed the commit added both docs entries when it added only the `llmstxt` entry; and PLAN.md and the reconciliation note still described PRs #130 and #131 as open. The owner also confirmed the D-1.0-5 rescheduling and made the legal scope of task 214 jurisdiction-neutral.
+**Cost:** Dated statements of what the owner chose belong in the repository; a phrase that refers to a conversation is unreadable to the next session.
+
+
 ## 2026-10-19 — PR 130 planning reconciliation and docs guard repair
 
 Reconciled imported tasks 203–214 with the 0.7–1.0 roadmap on the integration branch. The owner selected the approved sealed-state cluster design; 204/205/212 are explicitly superseded, not implemented, and 215 plans implementation successors. Task 209 becomes the existing Spring pattern-scan wiring correction in 0.7; recognisers move to 208 in 0.8. Other feature changes land before the 0.9 freeze; 214 supplies 0.9 evidence. Fixed remaining 0.7 task bases, 198 catalog paging scope, and the nav/llmstxt mismatch blocking PR docs CI. PR remains draft.
