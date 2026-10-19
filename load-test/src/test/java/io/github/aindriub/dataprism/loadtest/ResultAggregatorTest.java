@@ -25,6 +25,14 @@ class ResultAggregatorTest {
     }
 
     @Test
+    void latencyIsExactUpToAbout262Milliseconds() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record(CallOutcome.completed(262_143, Map.of()));
+
+        assertThat(aggregator.summary(Duration.ofSeconds(1)).maxMs()).isEqualTo(262.143);
+    }
+
+    @Test
     void countsAttemptedCompletedAndFailedAndComputesThroughput() {
         ResultAggregator aggregator = new ResultAggregator();
         for (int i = 0; i < 8; i++) {

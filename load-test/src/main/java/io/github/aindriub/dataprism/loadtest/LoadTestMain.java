@@ -36,12 +36,17 @@ public final class LoadTestMain {
         List<SourceDefinition> sources = SourceGenerator.generate(scenario);
         Path workDir = Files.createTempDirectory("data-prism-load-test-");
         Instant startedAt = Instant.now();
+        // Ctrl-C and SIGTERM end the JVM without running finally blocks: the hook stops the server child and
+        // removes the keystores. The finally path runs the same idempotent cleanup.
+        RunCleanup cleanup = new RunCleanup(workDir);
+        Thread hook = new Thread(cleanup, "load-test-cleanup");
+        Runtime.getRuntime().addShutdownHook(hook);
         try (TokenIssuer issuer = new TokenIssuer(workDir);
                 SyntheticSources fixtures = new SyntheticSources(sources, scenario.seed(), issuer.tls())) {
             Path catalogue = workDir.resolve("json-sources.yaml");
             Files.writeString(catalogue, SourceGenerator.catalogueYaml(sources, fixtures.baseUrl()));
             System.out.println("scenario " + scenario.name() + ": " + sources.size() + " sources, starting server");
-            try (ServerProcess server = ServerProcess.start(repoRoot, workDir, catalogue, issuer, scenario)) {
+            try (ServerProcess server = ServerProcess.start(repoRoot, workDir, resultsDir, catalogue, issuer, scenario, cleanup)) {
                 System.out.println("server healthy; driving " + scenario.load());
                 String token = issuer.mintToken(Duration.ofHours(12));
                 LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), token, scenario).run();
@@ -50,7 +55,12 @@ public final class LoadTestMain {
                 System.out.println("wrote " + file);
             }
         } finally {
-            deleteRecursively(workDir);
+            cleanup.run();
+            try {
+                Runtime.getRuntime().removeShutdownHook(hook);
+            } catch (IllegalStateException alreadyShuttingDown) {
+                // The hook is the one running us; nothing to remove.
+            }
         }
     }
 
@@ -66,14 +76,6 @@ public final class LoadTestMain {
             return process.waitFor(10, TimeUnit.SECONDS) && process.exitValue() == 0 ? output : "unknown";
         } catch (Exception e) {
             return "unknown";
-        }
-    }
-
-    private static void deleteRecursively(Path dir) {
-        try (var paths = Files.walk(dir)) {
-            paths.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
-        } catch (Exception ignored) {
-            // Temporary files only; a leftover directory under the OS temp dir is harmless.
         }
     }
 }

@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 /**
@@ -30,13 +31,18 @@ final class ServerProcess implements AutoCloseable {
     private final int port;
     private final Path logFile;
 
-    private ServerProcess(Process process, int port, Path logFile) {
+    private final Path resultsDir;
+    private final AtomicBoolean closed = new AtomicBoolean();
+
+    private ServerProcess(Process process, int port, Path logFile, Path resultsDir) {
+        this.resultsDir = resultsDir;
         this.process = process;
         this.port = port;
         this.logFile = logFile;
     }
 
-    static ServerProcess start(Path repoRoot, Path workDir, Path catalogue, TokenIssuer issuer, Scenario scenario)
+    static ServerProcess start(Path repoRoot, Path workDir, Path resultsDir, Path catalogue, TokenIssuer issuer,
+            Scenario scenario, RunCleanup cleanup)
             throws IOException, InterruptedException {
         Path serverJar = single(repoRoot.resolve("data-prism-server/target"), "data-prism-server-*.jar");
         Path restJar = single(repoRoot.resolve("data-prism-connectors-rest/target"), "data-prism-connectors-rest-*.jar");
@@ -80,11 +86,17 @@ final class ServerProcess implements AutoCloseable {
         new SecureRandom().nextBytes(key);
         builder.environment().put(HMAC_ENV, Base64.getEncoder().encodeToString(key));
         Process process = builder.start();
-        ServerProcess server = new ServerProcess(process, port, log);
+        ServerProcess server = new ServerProcess(process, port, log, resultsDir);
+        // Tracked at once, so a signal during startup stops the child too.
+        cleanup.track(server);
         try {
             server.awaitHealthy(Duration.ofSeconds(180));
         } catch (IOException | InterruptedException | RuntimeException failed) {
+            Path kept = server.keepLog();
             server.close();
+            if (failed instanceof IOException io && kept != null) {
+                throw new IOException(io.getMessage().replace(server.logFile.toString(), kept.toString()), io);
+            }
             throw failed;
         }
         return server;
@@ -96,6 +108,16 @@ final class ServerProcess implements AutoCloseable {
 
     Path logFile() {
         return logFile;
+    }
+
+    /** Copies the server log out of the temp dir (deleted on exit) to the git-ignored results dir. */
+    private Path keepLog() {
+        try {
+            Files.createDirectories(resultsDir);
+            return Files.copy(logFile, resultsDir.resolve("server-failure-" + System.currentTimeMillis() + ".log"));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     private void awaitHealthy(Duration timeout) throws IOException, InterruptedException {
@@ -127,6 +149,9 @@ final class ServerProcess implements AutoCloseable {
 
     @Override
     public void close() {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         process.destroy();
         try {
             if (!process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) {

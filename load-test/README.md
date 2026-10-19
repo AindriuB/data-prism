@@ -71,7 +71,7 @@ Everything runs on loopback in one run, and is stopped when the run ends:
 ## The result file
 
 `calls` (attempted, completed, transport failures by exception class),
-`latencyMs` (p50, p95, p99, max, mean; p50 to max are exact up to about 131 ms
+`latencyMs` (p50, p95, p99, max, mean; p50 to max are exact up to about 262 ms
 and within 0.002 % above), `throughputPerSecond` (completed calls over the
 measured wall time), `refusalCodes` (count by code of calls the server
 refused or denied), `sourceStatusTotals` and `perSourceStatus` (all seven

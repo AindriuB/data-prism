@@ -11,7 +11,7 @@ import java.util.TreeMap;
  * Accumulates call outcomes from many threads and summarises them.
  *
  * <p>Latency is held in microseconds with five significant digits, which is exact for any value up to
- * 131071 microseconds (about 131 ms) and within 0.002 % above that. Percentiles are reported in
+ * 262143 microseconds (about 262 ms) and within 0.002 % above that. Percentiles are reported in
  * milliseconds.
  */
 final class ResultAggregator {
