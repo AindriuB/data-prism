@@ -224,3 +224,5 @@ machine (result file, not committed):
   }
 }
 ```
+
+Post-merge fix, 2026-10-19: PR #132 review found that `RunCleanup.track` could leave a resource open if it was tracked after cleanup began. `RunCleanup` now closes such resources at once, and `LaunchGuard` blocks cleanup (bounded at 10 s) until an in-flight launch settles. Our first review rated the race only a suggestion; it was a real defect.

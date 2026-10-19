@@ -99,3 +99,5 @@ CHANGELOG (task 201), under `### Security`:
   map keyed by an email address or other identifier is refused even under a
   Java-built `PASS_THROUGH_UNSAFE` profile. A flagged name is reported as
   `<undeclared>`. A key that matches no known identifier shape still passes.
+
+Post-merge fix, 2026-10-19: PR #132 review found that the key scan in `SensitiveDataScanner` bypassed `MAX_MATCHES` and the character budget (1,000 sensitive keys gave 1,000 matches). Fixed on `fix/194-key-scan-limits`. Our review of this task missed the bypass.

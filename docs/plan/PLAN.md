@@ -70,7 +70,6 @@ Owner decisions, all dated 2026-10-19:
 
 Follow-ups found in review, none yet scheduled:
 
-- Task 196: `RunCleanup.track` has a race. A server launched after the shutdown hook has run is never closed. Close it immediately when cleanup has already run.
 - Task 194: defence in depth. Each leak validator should also redact the keys flagged by the other. `RefusalPaths.redact` covers it today.
 - For task 199: the load-test `perSourceStatus` keys are per-scope aliases, not generated source names (see the load-test README).
 - For task 200 (from 198): relation bytes `0x02` to `0x04` extend task 191's header table; the link `max-length` is now 1024 (OD-B12); `docs/tools.md` says an unknown status is "not answered" while D-070-3 says "an error"; the catalog schema allows 128-character labels where task 191 caps them at 64.
