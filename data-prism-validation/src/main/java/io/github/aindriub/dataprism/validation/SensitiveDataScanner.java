@@ -114,6 +114,9 @@ public final class SensitiveDataScanner {
             if (node.isArray()) {
                 for (int i = 0; i < node.size(); i++) {
                     node(node.get(i), path + "[" + i + "]", depth + 1);
+                    if (!complete || matches.size() >= MAX_MATCHES) {
+                        return;
+                    }
                 }
                 return;
             }

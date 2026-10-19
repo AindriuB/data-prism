@@ -253,7 +253,7 @@ class SensitiveDataScannerTest {
     }
 
     @Test
-    @DisplayName("keys past the character budget are not scanned and the scan reports incomplete")
+    @DisplayName("documents the existing budget behaviour for keys: past the budget the scan reports incomplete")
     void keyScanIsBoundedByTheBudget() {
         ObjectNode response = mapper.createObjectNode();
         for (int i = 0; i < 1000; i++) {
@@ -264,6 +264,28 @@ class SensitiveDataScannerTest {
 
         assertThat(report.complete()).isFalse();
         assertThat(report.matches().size()).isLessThanOrEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("the array walk stops reading elements once the match cap is reached")
+    void arrayWalkStopsAtTheMatchCap() {
+        int[] reads = {0};
+        tools.jackson.databind.node.ArrayNode array = new tools.jackson.databind.node.ArrayNode(
+                tools.jackson.databind.node.JsonNodeFactory.instance) {
+            @Override
+            public tools.jackson.databind.JsonNode get(int index) {
+                reads[0]++;
+                return super.get(index);
+            }
+        };
+        for (int i = 0; i < 1000; i++) {
+            array.add("person" + i + "@example.test");
+        }
+
+        ScanReport report = scanner.scan(array);
+
+        assertThat(report.matches()).hasSize(64);
+        assertThat(reads[0]).isEqualTo(64);
     }
 
     @Test
