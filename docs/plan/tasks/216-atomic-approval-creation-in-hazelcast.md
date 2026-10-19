@@ -102,8 +102,11 @@ duplicate ID.
 
 **Design.**
 - `dataprism.approval.id` (`PrivacyCluster.APPROVAL_ID_MAP`): key is the bare approval id, value is the approval's
-  entry key. `create` claims with `putIfAbsent`; a present claim is the only source of
-  `IllegalArgumentException("duplicate approval id")`. (Superseded by the third round: the claim has no TTL; it is valid
+  entry key. `create` claims with `putIfAbsent`. `IllegalArgumentException("duplicate approval id")` has these sources, all in
+  `HazelcastApprovalStore.admit`: a claim held by a live approval, a marked claim, a lost race for a stale claim (the
+  mark or the finish failed, or the old entry appeared), an approval entry already at the entry key, a claim lost
+  before the insert, and a claim lost after the insert (the entry is then withdrawn). A cluster failure is never
+  reported as a duplicate; it is `CLUSTER_OPERATION_REFUSED`. (Superseded by the third round: the claim has no TTL; it is valid
   while the entry it names exists, and a stale claim is taken over or swept.) Release is `remove(id, entryKey)`.
 - `dataprism.approval.pending` (`APPROVAL_PENDING_MAP`): key `KIND NUL (=requester | ~)`, value the alternating
   `id NUL expiry` list (`PendingSet`). `PendingSet.Reserve` prunes ids with `expiresAt <= createdAt`, refuses at the
@@ -259,3 +262,28 @@ and requester principals (the pending key) in clear. If sealing covers the appro
   the cap over-counts until the approval expires or the sweep removes it. It never under-counts.
 - **For the 0.8 sealing.** The claim value is again the plain entry key and the pending value is rewritten by
   processors; marked claims contain NULs and the literal `~`.
+
+### Review fixes, fourth round (after the claim protocol was accepted)
+
+- **Defect fixed: a taken-over creator's undo released the new owner's slot.** Pending members now record the owning
+  scope (`id`, expiry, `owner`; with the id this is the approval's entry key). `Reserve` by a different owner takes the
+  slot over, count unchanged; `Release(id, owner)` removes a member only for that owner. Decide, approve, reject,
+  forget, the undo paths and `endScope` release with the scope of the request they hold; the sweep removes by expiry
+  only. The merge keeps a member when the sides disagree on its owner (later expiry wins, then the smaller owner, so the
+  result does not depend on argument order; the count is the union's). `create` also reads its claim after reserving
+  and before inserting, and leaves the slot alone if the claim is gone, so a creator that overwrote the owner of a slot
+  cannot later release the live owner's slot. `PendingOwnershipTest` runs the reviewer's interleaving (cap 1; the
+  paused creator's insert throws after the takeover; a second create must still be refused). Mutating `Release` to
+  ignore the owner fails it and the unit test.
+- **Claim sweep skips ids whose lock is held** (`ClusterLocks.tryAcquireNow`, no wait, same lease as every lock), so a
+  running creator is not refused for a free id. The mid-insert test now shows the sweep leaving the claim alone while
+  the lock is held and removing it only after the lease ran out.
+- **Raw NUL bytes** in `ApprovalRetentionTest` replaced by `"\0"` escapes (the file was binary to git).
+- **Ordering tests.** `ClaimInterleavingTest` forces both orders: the owner reads its claim after the taker marked it
+  (only the taker succeeds, the owner withdraws) and before (the taker finds the entry, restores the claim and
+  refuses, only the owner succeeds); plus an end-to-end case with the owner stopped just before its second claim check.
+  The racing-creators test is renamed to say it runs on one member, where the id lock serialises the creators, and
+  points to the interleaving tests.
+- **Under-count claim.** "Never under-counts" now holds for every undo and release path, with one stated exception that
+  was already there: the sweep removes an id once its expiry plus 60 s has passed on the sweeping member's clock, so a
+  caller whose clock runs more than 60 s behind could see an id removed that it still counts.

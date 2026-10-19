@@ -131,7 +131,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             boolean reserved;
             try {
                 reserved = cluster(() -> pendingSets.executeOnKey(pendingKey,
-                        new PendingSet.Reserve(id, pending.createdAt(), pending.expiresAt(), cap)));
+                        new PendingSet.Reserve(id, PendingSet.ownerOf(pending.scopeId()), pending.createdAt(),
+                                pending.expiresAt(), cap)));
             } catch (RuntimeException failed) {
                 unclaim(claims, id, entryKey);
                 throw failed;
@@ -139,6 +140,11 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             if (!reserved) {
                 unclaim(claims, id, entryKey);
                 throw new ApprovalRefusedException(Code.TOO_MANY_PENDING);
+            }
+            // The claim may have been taken over since this caller claimed it. Then the slot reserved above may be
+            // the new owner's: leave it (an over-count is the safe side) and do not insert.
+            if (!entryKey.equals(cluster(() -> claims.get(id)))) {
+                throw new IllegalArgumentException("duplicate approval id");
             }
             String existing;
             try {
@@ -205,7 +211,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     private static void unreserve(IMap<String, String> pendingSets, ApprovalRequest request) {
         try {
             pendingSets.executeOnKey(pendingKey(request.kind(), request.requesterPrincipalId()),
-                    new PendingSet.Release(request.approvalId()));
+                    new PendingSet.Release(request.approvalId(), PendingSet.ownerOf(request.scopeId())));
         } catch (RuntimeException ignored) {
             // The id is dropped by the reserve prune once it expires, and by the sweep after that.
         }

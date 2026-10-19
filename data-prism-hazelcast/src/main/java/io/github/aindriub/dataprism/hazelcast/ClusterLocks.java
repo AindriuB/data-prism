@@ -64,6 +64,21 @@ final class ClusterLocks {
         }
     }
 
+    /**
+     * Takes the lock only if it is free right now, with the same lease as {@link #acquire}. Never waits and never
+     * throws: a lock Hazelcast rejects counts as not taken.
+     */
+    static boolean tryAcquireNow(IMap<String, ?> map, String key) {
+        try {
+            return map.tryLock(key, 0, TimeUnit.MILLISECONDS, leaseMillis(DEFAULT_TIMEOUT), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (RuntimeException rejected) {
+            return false;
+        }
+    }
+
     /** Releases a lock; never throws, so it cannot mask the real failure. */
     static void release(IMap<String, ?> map, String key) {
         try {

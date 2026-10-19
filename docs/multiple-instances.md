@@ -57,7 +57,7 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.oversight` | Pause flags: global, per tool, per scope. No eviction | No | 1 |
 | `dataprism.approval` | Approval requests, each until its expiry | No | 1 |
 | `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
-| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with expiries, which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
+| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with their expiries and the scope that owns each, which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
 | `dataprism.callerrate` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
 The other maps evict least-recently-used entries beyond 100,000 per member.
@@ -333,9 +333,9 @@ them; they only bound the wait.
 
 An approval id is claimed by `putIfAbsent` in `dataprism.approval.id`, and the pending
 cap is one entry processor on the requester's entry in `dataprism.approval.pending`. A
-creation claims the id (taking over a claim whose entry is gone), then reserves the cap, then inserts the approval and checks it still holds the claim, and undoes in
+creation claims the id (taking over a claim whose entry is gone), then reserves the cap (each pending id records the scope that owns it, so a creator that lost its claim cannot release a slot the new owner relies on), then checks it still holds the claim, inserts the approval and checks again, and undoes in
 reverse order when a step fails. An undo that fails can leave an id unusable, or a
-requester over-counted, until the approval expires; it never under-counts. An approval
+requester over-counted, until the approval expires; it never under-counts, apart from the clock tolerance of the sweep described below. An approval
 leaves the pending entry when it is approved, rejected or found expired, or when its scope
 ends. Consuming an approval leaves its id claimed while the consumed entry still exists.
 
@@ -365,7 +365,7 @@ much, and they must never be dropped early. The two are handled differently.
   tries again at the next interval.
 
 The one-minute slack is also the tolerance for a caller whose clock runs behind the sweeping
-member's. The same sweep removes stale id claims on the same schedule, so a claim outlives its
+member's. The same sweep removes stale id claims on the same schedule, skipping any id whose lock is held at that moment (its creator is running), so a claim outlives its
 approval entry by at most the sweep interval. A creator that happens to be between its claim and its
 insert when the sweep passes is refused, and can simply retry.
 

@@ -84,34 +84,50 @@ final class ClaimEntries {
         claims.remove(id, entryKey);
     }
 
-    /** One pass over the claims this member owns; returns how many stale claims it removed. */
+    /**
+     * One pass over the claims this member owns; returns how many stale claims it removed. An id whose lock is held
+     * right now is skipped: its creator is running, and a claim that is only waiting for its insert must not be taken
+     * for a stale one and make that creator refuse. The lock only keeps the sweep off a normally running creator.
+     * Safety does not rest on it (a creator whose lease ran out is handled by the claim check after its insert).
+     */
     static int sweep(IMap<String, String> claims, IMap<String, String> approvals) {
         int removed = 0;
         for (String id : claims.localKeySet()) {
-            String value = claims.get(id);
-            if (value == null) {
+            if (!ClusterLocks.tryAcquireNow(claims, id)) {
                 continue;
             }
-            String named = named(value);
-            if (approvals.containsKey(named)) {
-                if (marked(value)) {
-                    claims.replace(id, value, named);
-                }
-                continue;
-            }
-            String marker = value;
-            if (!marked(value)) {
-                marker = marker(named, "");
-                if (!claims.replace(id, value, marker)) {
-                    continue;
-                }
-            }
-            if (approvals.containsKey(named)) {
-                claims.replace(id, marker, named);
-            } else if (claims.remove(id, marker)) {
-                removed++;
+            try {
+                removed += sweepOne(claims, approvals, id);
+            } finally {
+                ClusterLocks.release(claims, id);
             }
         }
         return removed;
+    }
+
+    private static int sweepOne(IMap<String, String> claims, IMap<String, String> approvals, String id) {
+        String value = claims.get(id);
+        if (value == null) {
+            return 0;
+        }
+        String named = named(value);
+        if (approvals.containsKey(named)) {
+            if (marked(value)) {
+                claims.replace(id, value, named);
+            }
+            return 0;
+        }
+        String marker = value;
+        if (!marked(value)) {
+            marker = marker(named, "");
+            if (!claims.replace(id, value, marker)) {
+                return 0;
+            }
+        }
+        if (approvals.containsKey(named)) {
+            claims.replace(id, marker, named);
+            return 0;
+        }
+        return claims.remove(id, marker) ? 1 : 0;
     }
 }
