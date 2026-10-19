@@ -74,3 +74,28 @@ holds no surprises.
 ## Out of scope
 - Code, properties, schemas in `docs/tools.md`.
 - Catalog semantics other than paging (task 197), link cryptography (task 191).
+
+## Outcome
+
+Written: `docs/plan/design/batch-and-bulk-follow.md`. Part A (before section 1) specifies the paged `list_sources` for 0.8 first (OD-C16): input and output schemas, keyset ordering, `page.last` end marker, a sealed next link bound to scope, caller, filters, label kind and a catalog tag, expiry and catalog-change behaviour, name-visibility rules, configuration, audit. Sections 1 to 7 are the brief's numbered items (batch tool, budget and limits per item, paging with 3.1 pointing to Part A and 3.2 collection paging, truncation markers and the overall cap, `follow_bulk`, audit with a 5,000-item estimate, boundaries 1, 6, 7); 8 test obligations, 9 open decisions OD-B1 to OD-B17 (options and a recommendation each, none decided), 10 closing names table. Branch cut from `origin/main` at `f960f2a9`.
+
+Schema validation (draft 2020-12), run with the `jsonschema` package installed in a throwaway virtual environment outside the repository, using the same checker as task 197 (`check_schemas.py`, kept outside the repository):
+
+```
+python3 -m venv <scratch>/venv && <scratch>/venv/bin/pip install jsonschema
+<scratch>/venv/bin/python -I check_schemas.py docs/plan/design/batch-and-bulk-follow.md
+```
+
+It extracts every fenced JSON block with a `$schema`, runs `Draft202012Validator.check_schema`, then validates each block preceded by `<!-- example-of: <title> -->` against the schema of that title. Result: 7 schemas valid (`list_sources` input and output, `get_entity_contexts` input and output, `follow page result`, `follow_bulk` input and output) and 5 examples valid. Negative checks confirmed the conditional rules reject `page.last: false` without `next`, `last: true` with `next`, and a `REFUSED` item without `code`.
+
+Collision check: a loop ran `grep -rIlw <name>` over `docs/`, `data-prism-*/src`, `examples/`, `README.md` and `CHANGELOG.md` for each new tool, capability, refusal and startup code, result field, configuration group and `outcome`/`deferredBy` value. No hit outside this document, except `get_entity_contexts` (named in `roadmap.md` and this brief) and `maxItems`, which is a JSON Schema keyword in `catalog.md` and was therefore renamed `batchSize` in the result. Reuses, not new names: `LINK_INVALID`, `LINK_ATTEMPTS_EXHAUSTED`, `LINK_EXPIRED`, `LINK_ORIGIN_DRIFT`, `TOO_MANY_RECORDS`, `RESPONSE_TOO_LARGE`, `SCOPE_READ_BUDGET`, `INVALID_REQUEST_LIMITS`. Reconcile in task 200.
+
+Cross-task points for 200: (1) relation bytes `0x02` to `0x04` extend task 191's header table; (2) a collection page link is 544 bytes / 728 characters at the worst, against `max-length` 768, so 191's sizing must include it; (3) `docs/tools.md` says an unknown status is "not answered" while PLAN.md D-070-3 says "an error"; (4) catalog schema `source` allows 128 characters while task 191 caps labels at 64 (the page link sizing in Part A uses the 128).
+
+Forbidden-word scan: no real-world business or workplace terms; examples use the invented parcel, depot and courier-roster domain.
+
+Review gate: first review CHANGES; revised (see below); re-review PENDING. The orchestrator runs the reviewer against D-RM-7, 12, 15, the status codes as merged by task 190 and boundaries 1, 6, 7. The document no longer claims that no product decision is taken: every number, name and shape is a proposal under an OD-B, and the text follows the recommendations where it must be specific.
+
+### Revision after review
+
+Changes: a relation-byte table says which tool accepts each of `0x00` to `0x04`; the batch cap now covers the envelope and an item that cannot fit an empty response is `REFUSED` (progress guaranteed); truncation is fail closed, with `next` required in every marker; `follow_bulk` has an explicit three-phase call with the attempt limiter defined (shared counter, whole-call refusal when locked or when the limit is reached), per-target counts and per-target omitted exceptions (D-RM-1), a group link bounded and counted against `max-links`, and one audit event per link asked; `pageSize` without a link key is handled inside OD-B2; the collection page link is sized at its true worst case (768 characters, zero margin, flagged with fixes in OD-B12); the page schema declares `_links` and `_linksOmitted`; the closing table gains `item`, `status`, `target`. Quiet decisions are now explicit: OD-B18 to OD-B23, plus extensions to OD-B2, OD-B10, OD-B11, OD-B12 and OD-B14. Open decisions are now OD-B1 to OD-B24 (OD-B24 added after the re-review). Schemas re-validated: 7 schemas and 5 examples valid, same checker.
