@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
-**Depends on:** 189, 190, 191, 192, 193, 197, 198, 202, 216
+**Depends on:** 189, 190, 191, 192, 193, 197, 198, 202, 216, 232
 **Kind:** design, docs only. No code.
 **Owns:**
 - docs/plan/design/contract-register.md (new)
