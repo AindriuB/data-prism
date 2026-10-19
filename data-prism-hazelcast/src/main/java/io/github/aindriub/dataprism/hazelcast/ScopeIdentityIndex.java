@@ -66,11 +66,13 @@ public final class ScopeIdentityIndex {
         String prefix = ScopeKeys.scopePrefix(scopeId);
         for (String map : new String[]{PrivacyCluster.IDENTITY_MAP,
                 PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP,
-                PrivacyCluster.APPROVAL_MAP, PrivacyCluster.OVERSIGHT_MAP}) {
+                PrivacyCluster.OVERSIGHT_MAP}) {
             IMap<String, ?> entries = cluster.instance().getMap(map);
             entries.keySet().stream()
                     .filter(key -> key.startsWith(prefix))
                     .forEach(entries::delete);
         }
+        // Approvals go with their id claims and pending counts, so those ids and slots are free again.
+        HazelcastApprovalStore.forget(cluster, scopeId);
     }
 }

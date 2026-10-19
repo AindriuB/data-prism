@@ -97,3 +97,218 @@ duplicate ID.
 - In anything you write, say that the product "supports" a requirement, never that it is "compliant".
 
 ## Outcome
+
+### Result (2026-10-19)
+
+**Design.**
+- `dataprism.approval.id` (`PrivacyCluster.APPROVAL_ID_MAP`): key is the bare approval id, value is the approval's
+  entry key. `create` claims with `putIfAbsent`. `IllegalArgumentException("duplicate approval id")` has these sources, all in
+  `HazelcastApprovalStore.admit`: a claim held by a live approval, a marked claim, a lost race for a stale claim (the
+  mark or the finish failed, or the old entry appeared), an approval entry already at the entry key, a claim lost
+  before the insert, and a claim lost after the insert (the entry is then withdrawn). A cluster failure is never
+  reported as a duplicate; it is `CLUSTER_OPERATION_REFUSED`. (Superseded by the third round: the claim has no TTL; it is valid
+  while the entry it names exists, and a stale claim is taken over or swept.) Release is `remove(id, entryKey)`.
+- `dataprism.approval.pending` (`APPROVAL_PENDING_MAP`): key `KIND NUL (=requester | ~)`, value the alternating
+  `id NUL expiry` list (`PendingSet`). `PendingSet.Reserve` prunes ids with `expiresAt <= createdAt`, refuses at the
+  cap, else adds; `PendingSet.Release` removes one id and deletes the entry when empty. Both overloads reserve (the
+  uncapped one with `Integer.MAX_VALUE`). The entry has no TTL (see "TTL tried and reverted" below). A periodic
+  `PendingSweeper` bounds its retention.
+- Order is claim, reserve, insert; undo is in reverse. After an ambiguous insert failure the undo runs only if
+  `containsKey` confirms the entry is absent.
+- `create` takes bounded locks (id claim, pending entry, approval entry) through `ClusterLocks.acquire` only, to bound
+  waits. `acquireRetained` and every `Long.MAX_VALUE` lease are gone from `src/main`.
+- Both guard maps: `EvictionPolicy.NONE`, the `APPROVAL_PROTECTION` write quorum when `approvalMinimumMembers > 1`,
+  merge policies `PutIfAbsentMergePolicy` (claims) and `PendingMergePolicy` (union of ids, later expiry).
+- Approve, reject and expiry-on-decide remove the id from the pending entry (best effort, never under-counts).
+  `forgetScope` and `ScopeIdentityIndex.endScope` (which used to delete approval keys by prefix and now delegates to
+  `HazelcastApprovalStore.forget`) free the claim and the slot.
+- New code `CLUSTER_OPERATION_REFUSED` (`ClusterOperationRefusedException`, in the hazelcast module because core is not
+  owned here; no existing code fitted). `ClusterLocks.acquire` maps the `IllegalArgumentException` of `tryLock` to it;
+  `create` maps any other failure of a claim, processor or insert call. It names no key, scope, principal or id.
+
+**Deviations and decisions to confirm.**
+1. Accepted by the coordinator: consume does not release the id claim (Required approach, step 1 says to release on consume). The consumed entry
+   stays in the approval map until its expiry, and releasing the claim would allow a second entry with the same id,
+   which `locate` refuses as ambiguous. The claim expires with the entry.
+2. `SplitBrainProtectionException` is not translated to the new code: `ApprovalQuorumTest` and the docs already name it
+   for a lost write quorum. Everything else a cluster call throws inside `create` becomes
+   `CLUSTER_OPERATION_REFUSED`.
+3. (Resolved: the coordinator widened `Owns` to include
+   `data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterLockTimeoutConfigurationTest.java`
+   (line 156 only), because no other open task owns it and the test pins the lock key this task moves. The one-token
+   change is committed as "216: lock the id claim map in the lock-timeout configuration test".) Originally outside
+   `Owns`: `data-prism-spring-boot-autoconfigure/.../ClusterLockTimeoutConfigurationTest.java:156`
+   holds the lock on the bare id in `PrivacyCluster.APPROVAL_MAP` and expects `create` to refuse. `create` now locks
+   the id in `APPROVAL_ID_MAP`. The fix is one token (`APPROVAL_MAP` to `APPROVAL_ID_MAP`); with it the full reactor
+   passes. Until that change lands (task 201 owns that module, or the orchestrator), the full `./mvnw verify` fails on
+   that one test. The patch is kept by the implementer.
+
+**Discrimination check.** `admit` was temporarily replaced with the pre-34adde0b shape (leased requester lock, count
+over `approvals.values()`, leased bare-id lock, `locateAll`), uncommitted:
+- `ApprovalIdLockTest.cappedCreationKeepsItsIdClaimAfterItsLeaseExpires` and `...uncapped...`:
+  `AssertionError: Expecting code to raise a throwable.` at `ApprovalIdLockTest.java:50` (the second member's create of
+  the same id in another scope succeeded).
+- `PendingCapLockTest.aCallerPausedBeforeInsertingStillCountsAgainstTheCapAfterItsLeaseExpires`:
+  `AssertionError: Expecting code to raise a throwable.` at `PendingCapLockTest.java:43` (the second create under cap 1
+  succeeded).
+With the fix all three pass. The tests wait on latches and on `tryLock` of every lock key the stalled caller may hold
+(`StalledInsert.awaitFree`), which returns when the lease expires; no sleep.
+
+**Verification.** `./mvnw verify` (full reactor, with the one-token fix above applied locally and then reverted):
+BUILD SUCCESS, surefire 1857 tests, 0 failures, 0 errors, 0 skipped (hazelcast 141); failsafe 17 tests, 0 failures
+(server 14, quickstart extension 3). Without that fix: 1 failure, `ClusterLockTimeoutConfigurationTest`.
+`./mvnw -Prelease -DskipTests package` (Javadoc): BUILD SUCCESS. A first hazelcast run failed
+`HazelcastStoredValueBoundaryTest` (it enumerates every map); the test now covers the two new maps, and the module
+passed on both later full runs.
+
+**Proposed `CHANGELOG.md` lines.**
+- `### Fixed`: Hazelcast approval creation no longer relies on locks that never expire. The pending cap per requester
+  and the uniqueness of an approval id across scopes now hold through atomic map operations, so a creating member that
+  stalls past its lock lease can no longer let a requester exceed the cap or one id exist in two scopes. Every cluster
+  lock is leased for five times `dataprism.hazelcast.lock-timeout` again.
+- `### Changed`: a Hazelcast approval create that the cluster rejects (for example a configured
+  `hazelcast.lock.max.lease.time.seconds` below the lease) is refused with the new code `CLUSTER_OPERATION_REFUSED`
+  instead of an `IllegalArgumentException` that looked like a duplicate id. Two maps are added,
+  `dataprism.approval.id` and `dataprism.approval.pending`.
+
+**Migration note for task 201.** Map the new code in `ToolAdmission`, `ReidentificationService` and
+`OversightOperatorController` (they already fail closed on any `RuntimeException`, but the client-visible code is
+generic); update `ClusterLockTimeoutConfigurationTest.java:156` as in item 3; list the two new maps in
+`docs/architecture.md` and `docs/tools.md` if they enumerate maps. A rolling upgrade is safe for creation only once
+all members run the new version: an old member does not know the claims, so during the mix an id can still be created
+twice. Pending entries and claims start empty after the upgrade, so approvals created before it are not counted
+against the cap until they expire.
+
+**For the 0.8 sealing (task 215).** The two guard maps hold approval ids (the claim key), scope ids (the claim value)
+and requester principals (the pending key) in clear. If sealing covers the approval map it must cover these too.
+
+### Review fixes (after APPROVE at 52081eb1)
+
+- The claim's TTL is refreshed in `swap` (decide and consume) to the entry's new TTL plus the slack, so a claim
+  outlives its approval under clock skew. Tests: `ApprovalRetentionTest` asserts the claim TTL at creation, after a
+  decision with the caller's clock two hours behind, 59 minutes and three hours ahead, and after consume.
+- The pending entry now expires: see the Design bullet above. `ApprovalRetentionTest` asserts its TTL after a reserve
+  and a release, and that an approval that expires undecided takes the pending entry and the claim with it.
+- `docs/multiple-instances.md` gains a "Retention" paragraph and the upgrade caution now says approvals created before
+  the upgrade have no claim until they expire.
+- `PendingMergePolicy` prefers the readable side (was: kept an unreadable existing side); `ApprovalGuardMapsTest`
+  covers both directions and both-unreadable. The `HazelcastApprovalStore` class Javadoc no longer claims nothing
+  catches a cluster exception.
+- For the 0.8 sealing: the pending entry and the claim still hold principal, approval id and scope in clear while they
+  live (at most the approval's lifetime plus a minute). If the sealing covers the approval map it must cover both,
+  and a sealed key would need the same TTL handling, because the processor rewrites the value with a TTL.
+
+### Review fixes, second round (after CHANGES at f62ab970)
+
+- **TTL tried and reverted.** f62ab970 gave the pending entry a TTL to bound retention. Any TTL can under-count the
+  cap, which fails open: with Hazelcast 5.7 a merge after a heal copies the merging side's TTL onto the entry, and
+  a caller whose clock is skewed sets a shorter one; either lets the entry expire while an approval it counts is
+  still live. The TTL is removed. `PendingSet.Reserve` and `Release` do no clock arithmetic on request times beyond
+  the live check in `Reserve` (`createdAt` against each id's expiry), which is the cap rule itself.
+- **Sweep.** `PendingSweeper` (started and stopped with `PrivacyCluster`, daemon thread, interval from the Hazelcast
+  config property `dataprism.approval.pending.sweep-seconds`, default 300) runs `PendingSet.Sweep(now, slack)` over
+  `localKeySet()`. The processor reads no clock; it removes an id only when expiry plus 60 s is not after the
+  sweep's `now`, deletes an empty entry, leaves an unreadable one, and is idempotent. Tests call
+  `PrivacyCluster.sweepPendingApprovals(now)` directly, and one test runs the schedule at one second. Retention is
+  bounded by expiry + 60 s + interval. A caller whose clock runs more than 60 s behind the sweeping member's could
+  still see an id it counted removed early; the slack is the stated tolerance.
+- **Claim refresh.** The claim value is now `entryKey NUL expiryMillis`. `ClaimEntries.Extend` acts only when the claim
+  still names the caller's entry key and only extends (new TTL = max of the remaining and the required);
+  `ClaimEntries.Release` replaces the conditional `remove`. Tests: a stale refresh and release after forget and
+  recreate in another scope leave the new claim alone; a late smaller refresh never shortens; approve and consume in
+  either clock order leave the claim outliving the entry. Mutating the processor (no key check, no
+  never-shorten rule, no slack in the sweep) makes `aStaleRefreshAfterForgetAndRecreateInAnotherScopeLeavesTheNewClaimAlone`,
+  `aClaimRefreshNeverShortensTheClaimWhateverTheOrderOfArrival` and
+  `theSweepKeepsEveryIdUntilItsExpiryPlusTheSlackHasPassed` fail respectively.
+- **Merge.** `PendingMergePolicy` keeps the existing value when neither side is readable, so `Reserve` throws and
+  creates are refused, rather than returning null (which would reset the count to zero).
+- **Item E (use the instance retention field in `forget`).** Moot: `unreserve` no longer takes a slack, so `forget`
+  uses no retention at all; the only retention left is the claim's, set from the instance field.
+- **For the 0.8 sealing.** The value of the claim map now carries the expiry, and the pending map's value is
+  rewritten by processors, so any sealing of these maps must be applied inside the processors or leave their values
+  readable to them.
+
+### Review fixes, third round (after CHANGES at cb6b6c7f)
+
+- **Clock-based claim lifetimes dropped.** f62ab970 refreshed the claim's TTL in `swap` from the caller's `now`, which
+  can leave the claim shorter than the entry. cb6b6c7f made the refresh conditional and extend-only and stored the
+  creator's expiry in the claim value, but comparing that expiry with the decider's clock fails when members' clocks
+  differ (creator ten minutes ahead: the extend is skipped while the entry TTL grows, the claim expires first, and
+  the id can be created in a second scope). Any cross-member TTL comparison has this fault, so claims now carry
+  no TTL and no time.
+- **Rule: a claim is valid if and only if the entry it names exists.** `ClaimEntries.claim` takes over a stale claim by
+  mark (`replace(id, K, K NUL ~ NUL new)`), check `K` absent, finish (`replace(id, marked, new)`). The previous
+  creator, after its insert, re-reads the claim and withdraws its entry and refuses if it no longer names it. The
+  Javadoc of `ClaimEntries` has the argument. One correction to the brief: the ID lock cannot rule out a takeover
+  during an in-flight insert, because a paused creator loses the lock when its lease runs out; the argument therefore
+  rests on the order of steps (insert, then verify the claim), not on the lock. While the lease is alive the lock does
+  block the taker (`ApprovalIdLockTest` asserts `CLUSTER_LOCK_TIMEOUT`). After the lease expires the taker wins and
+  the paused creator gets "duplicate approval id", so the earlier acceptance wording ("the paused caller succeeds") is
+  replaced by "exactly one succeeds".
+- **Sweep.** `PendingSweeper` also sweeps claims on the same schedule (`PrivacyCluster.sweepStaleClaims()`), over
+  `localKeySet()`: mark, check the entry is absent, remove; an entry that exists puts the claim back. Retention of a
+  claim is the entry's lifetime plus the sweep interval.
+- **consume and forget.** Consume leaves the entry (CONSUMED) until expiry, so its claim stays valid. `forget` deletes
+  the entries and releases each claim conditionally (`remove(id, entryKey)`); a claim left by a failed release is
+  stale and is taken over or swept.
+- **Tests.** Claim TTL-extension tests deleted. New or rewritten: a claim has no TTL; a live claim refuses a duplicate
+  whatever the deciding clock; approve then consume keeps the claim; create takes over a missing, an expired and a
+  same-scope stale claim; a marked claim refuses others; six racing creators over a stale claim give exactly one
+  winner and one entry (five rounds); the claim sweep removes only stale claims, resolves marked ones and never one
+  whose entry exists; a sweep that meets a creator mid-insert makes that creator refuse and leaves nothing half-created.
+  Mutating the code to skip the post-insert claim check makes both `ApprovalIdLockTest` tests and the mid-insert sweep
+  test fail.
+- **Known limit.** After a lost claim the id stays counted in the requester's pending entry (it may be the new owner's);
+  the cap over-counts until the approval expires or the sweep removes it. It never under-counts.
+- **For the 0.8 sealing.** The claim value is again the plain entry key and the pending value is rewritten by
+  processors; marked claims contain NULs and the literal `~`.
+
+### Review fixes, fourth round (after the claim protocol was accepted)
+
+- **Defect fixed: a taken-over creator's undo released the new owner's slot.** Pending members now record the owning
+  scope (`id`, expiry, `owner`; with the id this is the approval's entry key). `Reserve` by a different owner takes the
+  slot over, count unchanged; `Release(id, owner)` removes a member only for that owner. Decide, approve, reject,
+  forget, the undo paths and `endScope` release with the scope of the request they hold; the sweep removes by expiry
+  only. The merge keeps a member when the sides disagree on its owner (later expiry wins, then the smaller owner, so the
+  result does not depend on argument order; the count is the union's). `create` also reads its claim after reserving
+  and before inserting, and leaves the slot alone if the claim is gone, so a creator that overwrote the owner of a slot
+  cannot later release the live owner's slot. `PendingOwnershipTest` runs the reviewer's interleaving (cap 1; the
+  paused creator's insert throws after the takeover; a second create must still be refused). Mutating `Release` to
+  ignore the owner fails it and the unit test.
+- **Claim sweep skips ids whose lock is held** (`ClusterLocks.tryAcquireNow`, no wait, same lease as every lock), so a
+  running creator is not refused for a free id. The mid-insert test now shows the sweep leaving the claim alone while
+  the lock is held and removing it only after the lease ran out.
+- **Raw NUL bytes** in `ApprovalRetentionTest` replaced by `"\0"` escapes (the file was binary to git).
+- **Ordering tests.** `ClaimInterleavingTest` forces both orders: the owner reads its claim after the taker marked it
+  (only the taker succeeds, the owner withdraws) and before (the taker finds the entry, restores the claim and
+  refuses, only the owner succeeds); plus an end-to-end case with the owner stopped just before its second claim check.
+  The racing-creators test is renamed to say it runs on one member, where the id lock serialises the creators, and
+  points to the interleaving tests.
+- **Under-count claim.** "Never under-counts" now holds for every undo and release path, with one stated exception that
+  was already there: the sweep removes an id once its expiry plus 60 s has passed on the sweeping member's clock, so a
+  caller whose clock runs more than 60 s behind could see an id removed that it still counts.
+
+### Review fixes, fifth round (after the shared-reservation fix was accepted)
+
+- **Defect fixed: a late `Reserve` overwrote the expiry.** Stalled between claim and reserve, the first creator could
+  write a shorter expiry over the taker's longer one, and the prune then dropped the id while the taker's approval was
+  pending. `Reserve` on a present id now keeps the later expiry. The test `aCreatorStoppedBetweenClaimAndReserveCannotShortenTheTakersSlot`
+  uses the new `StalledInsert.beforeReserve()` pause point (10 minute against 1 hour, then a create at +11 minutes with
+  cap 1 must be refused); a unit test checks the processor. Making `Reserve` overwrite the expiry fails both.
+- **Owner rule, differing from the review's wording.** The review suggested keeping the owner that goes with the later
+  expiry. A taker with the shorter expiry would then leave the slot owned by the paused creator, whose later undo would
+  remove the taker's slot. So the expiry is the maximum and the owner is the latest writer; a stale writer that wrote
+  last only leaves a slot nobody releases (over-count). The merge keeps the later expiry and, where the sides name
+  different owners, gives the member no owner (`PendingSet.CONFLICT`), so a heal cannot hand a release to the wrong side.
+- **Brief locks lease for the configured timeout.** `ClusterLocks.tryAcquireNow` takes the timeout; the stores tell the
+  cluster's sweeper the timeout they were built with (`PrivacyCluster.useLockTimeout`), so the claim sweep's locks have
+  the same lease as every other (default `PT2S` until a store is built; the last store built sets it).
+- **What holds for the cap, exactly.** Every write path to the pending map: `Reserve` adds an id or keeps the later
+  expiry and the latest writer as owner; its prune drops an id whose expiry is not after the new request's creation
+  time; `Release` removes an id only for its owner; the sweep removes an id only when expiry plus 60 s is not after the
+  sweeping member's clock; the merge unions and keeps the later expiry. So a pending approval is counted until it leaves
+  `PENDING`, or its expiry has passed by the clock of the caller creating the next approval, or by the sweeping
+  member's clock plus 60 s. The accepted tolerance is therefore the clock difference between callers (prune) and
+  between a caller and the sweeping member beyond 60 s (sweep). Failed undos, lost claims, takeovers, non-owner releases
+  and heal conflicts only count longer. The earlier statement "never under-counts" is kept in the docs with that
+  tolerance named, and is now true of the paths that used to break it (the overwritten expiry above).

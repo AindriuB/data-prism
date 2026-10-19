@@ -153,7 +153,7 @@ class ClusterLockTimeoutConfigurationTest {
                 ApprovalRequest request = new ApprovalRequest("ctx-1", ApprovalRequest.Kind.TOOL_CALL, "alice", "c",
                         "scope-1", "search", "fp", null, null, "p", "case", now, now.plusSeconds(60),
                         ApprovalRequest.Status.PENDING, null, null);
-                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP), "ctx-1",
+                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP), "ctx-1",
                         () -> refusesWithinTheTimeoutAndHalfASecond(() -> approvals.create(request), caller));
                 holdWhile(cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP), "alice",
                         () -> refusesWithinTheTimeoutAndHalfASecond(
