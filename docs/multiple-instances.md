@@ -57,7 +57,7 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.oversight` | Pause flags: global, per tool, per scope. No eviction | No | 1 |
 | `dataprism.approval` | Approval requests, each until its expiry | No | 1 |
 | `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. Each claim outlives its approval by the minute an expired entry stays visible. No eviction | No | 1 |
-| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with expiries, which the pending cap counts. Changed only by an entry processor, which gives it a lifetime of the longest pending approval plus a minute, renewed on every change. No eviction | No | 1 |
+| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with expiries, which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
 | `dataprism.callerrate` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
 The other maps evict least-recently-used entries beyond 100,000 per member.
@@ -340,14 +340,25 @@ leaves the pending entry when it is approved, rejected or found expired, or when
 ends. Consuming an approval leaves its id claimed until the approval expires.
 
 **Retention.** The id claim and the requester's pending entry carry the principal, the
-approval id and the scope in clear, so they must not outlive the approvals they guard
-by much. Each claim lives for its approval's lifetime plus a minute, and the claim's
-lifetime is renewed whenever the approval's expiry is reset by a decision or a consume.
-The pending entry lives for the longest pending approval's lifetime plus a minute,
-renewed on every reserve or release. If every approval of a requester expires
-undecided, the pending entry and the claims therefore disappear by themselves about a
-minute later, with no call needed, and an earlier `forgetScope` is not required to
-remove them. Hazelcast truncates entry times to whole seconds, so the lifetimes are
+approval id and the scope in clear, so they must not outlive the approvals they guard by
+much, and they must never be dropped early. The two are handled differently.
+
+- A claim has a TTL of its approval's lifetime plus a minute. When a decision or a consume
+  resets the approval's expiry, the claim is extended to match, by an entry processor that
+  acts only if the claim still names that approval and only ever makes it longer.
+- A pending entry has **no TTL**. Any TTL could drop an id that is still counted, and the
+  requester could then pass the cap, which fails open. Instead every member runs a sweep, by
+  default every five minutes, over the pending entries it owns. The sweep removes an id only
+  when its expiry plus one minute has passed, and removes the entry when it is empty. The
+  sweep is handed the time, so running it twice changes nothing more. Retention is therefore
+  bounded by the approval's expiry, plus one minute, plus the sweep interval. Set the interval
+  with the Hazelcast config property `dataprism.approval.pending.sweep-seconds` (1 to 86400,
+  default 300); anything else is refused at start. An entry the sweep cannot read is left in
+  place, so the cap keeps refusing. A member that has lost the write quorum cannot sweep and
+  tries again at the next interval.
+
+The one-minute slack is also the tolerance for a caller whose clock runs behind the sweeping
+member's. Hazelcast truncates claim and entry times to whole seconds, so claim lifetimes are
 exact to about a second.
 
 A partition still leaves each side with its own copy of the entry. Two protections

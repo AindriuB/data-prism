@@ -10,8 +10,8 @@ import com.hazelcast.spi.merge.SplitBrainMergePolicy;
  *
  * <p>The union of both sides' ids, each with the later expiry. A heal therefore never lowers a requester's pending
  * count, so the cap cannot be exceeded by splitting and healing. An entry that cannot be read on either side is
- * dropped in favour of the readable one; if neither is readable it is dropped, and the approvals themselves are
- * still guarded by their id claims.
+ * dropped in favour of the readable one; if neither is readable the existing value is kept, so the cap refuses (fail closed)
+ * rather than counting from zero.
  *
  * <p>Public only because Hazelcast instantiates a configured policy by class name.
  */
@@ -30,7 +30,9 @@ public final class PendingMergePolicy implements SplitBrainMergePolicy<String, M
         if (incomingReadable) {
             return merging.getValue();
         }
-        return currentReadable ? existing.getValue() : null;
+        // Neither side is readable: keep the existing value. The next reserve throws on it and the create is refused,
+        // which fails closed; dropping it would reset the requester's count to zero.
+        return existing.getValue();
     }
 
     private static boolean readable(String raw) {

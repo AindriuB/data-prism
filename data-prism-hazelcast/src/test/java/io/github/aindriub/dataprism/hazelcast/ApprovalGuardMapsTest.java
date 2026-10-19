@@ -85,7 +85,8 @@ class ApprovalGuardMapsTest {
         assertThat(policy.merge(entry(readable), null)).isEqualTo(readable);
         assertThat(policy.merge(entry("garbage"), entry(readable))).isEqualTo(readable);
         assertThat(policy.merge(entry(readable), entry("garbage"))).isEqualTo(readable);
-        assertThat(policy.merge(entry("garbage"), entry("more garbage"))).isNull();
+        // Neither side readable: the existing value stays, so the cap refuses rather than counting from zero.
+        assertThat(policy.merge(entry("garbage"), entry("more garbage"))).isEqualTo("more garbage");
     }
 
     @Test

@@ -95,9 +95,22 @@ public final class PrivacyCluster implements AutoCloseable {
     private final HazelcastInstance instance;
     private final boolean reidentificationEnabled;
 
+    private final PendingSweeper sweeper;
+
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled) {
         this.instance = instance;
         this.reidentificationEnabled = reidentificationEnabled;
+        this.sweeper = new PendingSweeper(instance, PendingSweeper.intervalOf(instance.getConfig()),
+                java.time.Clock.systemUTC());
+    }
+
+    /** Runs one sweep of the pending-approval entries this member owns, as the schedule does. */
+    int sweepPendingApprovals(java.time.Instant now) {
+        return sweeper.sweep(now);
+    }
+
+    boolean sweeperStopped() {
+        return sweeper.isStopped();
     }
 
     /** Starts a member from an explicit, already validated membership description. */
@@ -338,6 +351,7 @@ public final class PrivacyCluster implements AutoCloseable {
         }
         checkClusterName(config);
         checkNoAdvancedNetwork(config);
+        PendingSweeper.intervalOf(config);
         var ssl = config.getNetworkConfig().getSSLConfig();
         if ((ssl != null && ssl.isEnabled()) || config.getSecurityConfig().isEnabled()) {
             throw new PrivacyClusterRefusal(Code.HAZELCAST_TLS_UNSUPPORTED,
@@ -414,6 +428,7 @@ public final class PrivacyCluster implements AutoCloseable {
 
     @Override
     public void close() {
+        sweeper.close();
         instance.shutdown();
     }
 }

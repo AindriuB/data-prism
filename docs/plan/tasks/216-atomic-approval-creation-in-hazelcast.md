@@ -108,9 +108,8 @@ duplicate ID.
 - `dataprism.approval.pending` (`APPROVAL_PENDING_MAP`): key `KIND NUL (=requester | ~)`, value the alternating
   `id NUL expiry` list (`PendingSet`). `PendingSet.Reserve` prunes ids with `expiresAt <= createdAt`, refuses at the
   cap, else adds; `PendingSet.Release` removes one id and deletes the entry when empty. Both overloads reserve (the
-  uncapped one with `Integer.MAX_VALUE`). The entry has a TTL written by the processor on every reserve and release:
-  the longest remaining approval plus the one-minute slack, so it never expires before an approval it counts and
-  never outlives the last one by more than the slack. (Review round 1 changed this from no TTL.)
+  uncapped one with `Integer.MAX_VALUE`). The entry has no TTL (see "TTL tried and reverted" below). A periodic
+  `PendingSweeper` bounds its retention.
 - Order is claim, reserve, insert; undo is in reverse. After an ambiguous insert failure the undo runs only if
   `containsKey` confirms the entry is absent.
 - `create` takes bounded locks (id claim, pending entry, approval entry) through `ClusterLocks.acquire` only, to bound
@@ -195,3 +194,33 @@ and requester principals (the pending key) in clear. If sealing covers the appro
 - For the 0.8 sealing: the pending entry and the claim still hold principal, approval id and scope in clear while they
   live (at most the approval's lifetime plus a minute). If the sealing covers the approval map it must cover both,
   and a sealed key would need the same TTL handling, because the processor rewrites the value with a TTL.
+
+### Review fixes, second round (after CHANGES at f62ab970)
+
+- **TTL tried and reverted.** f62ab970 gave the pending entry a TTL to bound retention. Any TTL can under-count the
+  cap, which fails open: with Hazelcast 5.7 a merge after a heal copies the merging side's TTL onto the entry, and
+  a caller whose clock is skewed sets a shorter one; either lets the entry expire while an approval it counts is
+  still live. The TTL is removed. `PendingSet.Reserve` and `Release` do no clock arithmetic on request times beyond
+  the live check in `Reserve` (`createdAt` against each id's expiry), which is the cap rule itself.
+- **Sweep.** `PendingSweeper` (started and stopped with `PrivacyCluster`, daemon thread, interval from the Hazelcast
+  config property `dataprism.approval.pending.sweep-seconds`, default 300) runs `PendingSet.Sweep(now, slack)` over
+  `localKeySet()`. The processor reads no clock; it removes an id only when expiry plus 60 s is not after the
+  sweep's `now`, deletes an empty entry, leaves an unreadable one, and is idempotent. Tests call
+  `PrivacyCluster.sweepPendingApprovals(now)` directly, and one test runs the schedule at one second. Retention is
+  bounded by expiry + 60 s + interval. A caller whose clock runs more than 60 s behind the sweeping member's could
+  still see an id it counted removed early; the slack is the stated tolerance.
+- **Claim refresh.** The claim value is now `entryKey NUL expiryMillis`. `ClaimEntries.Extend` acts only when the claim
+  still names the caller's entry key and only extends (new TTL = max of the remaining and the required);
+  `ClaimEntries.Release` replaces the conditional `remove`. Tests: a stale refresh and release after forget and
+  recreate in another scope leave the new claim alone; a late smaller refresh never shortens; approve and consume in
+  either clock order leave the claim outliving the entry. Mutating the processor (no key check, no
+  never-shorten rule, no slack in the sweep) makes `aStaleRefreshAfterForgetAndRecreateInAnotherScopeLeavesTheNewClaimAlone`,
+  `aClaimRefreshNeverShortensTheClaimWhateverTheOrderOfArrival` and
+  `theSweepKeepsEveryIdUntilItsExpiryPlusTheSlackHasPassed` fail respectively.
+- **Merge.** `PendingMergePolicy` keeps the existing value when neither side is readable, so `Reserve` throws and
+  creates are refused, rather than returning null (which would reset the count to zero).
+- **Item E (use the instance retention field in `forget`).** Moot: `unreserve` no longer takes a slack, so `forget`
+  uses no retention at all; the only retention left is the claim's, set from the instance field.
+- **For the 0.8 sealing.** The value of the claim map now carries the expiry, and the pending map's value is
+  rewritten by processors, so any sealing of these maps must be applied inside the processors or leave their values
+  readable to them.

@@ -130,15 +130,15 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             locks.take(pendingSets, pendingKey);
             locks.take(approvals, entryKey);
             // The claim outlives the approval entry, including the minute an expired entry stays visible.
-            if (cluster(() -> claims.putIfAbsent(id, entryKey, ttl + retention.toMillis(),
-                    TimeUnit.MILLISECONDS)) != null) {
+            long claimTtl = ttl + retention.toMillis();
+            String claim = ClaimEntries.value(entryKey, System.currentTimeMillis() + claimTtl);
+            if (cluster(() -> claims.putIfAbsent(id, claim, claimTtl, TimeUnit.MILLISECONDS)) != null) {
                 throw new IllegalArgumentException("duplicate approval id");
             }
             boolean reserved;
             try {
                 reserved = cluster(() -> pendingSets.executeOnKey(pendingKey,
-                        new PendingSet.Reserve(id, pending.createdAt(), pending.expiresAt(), cap,
-                                retention.toMillis())));
+                        new PendingSet.Reserve(id, pending.createdAt(), pending.expiresAt(), cap)));
             } catch (RuntimeException failed) {
                 unclaim(claims, id, entryKey);
                 throw failed;
@@ -154,7 +154,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 // Only a confirmed absence is undone: if the insert may have happened, keeping the claim and the
                 // count errs towards refusing.
                 if (confirmedAbsent(approvals, entryKey)) {
-                    unreserve(pendingSets, pending, retention.toMillis());
+                    unreserve(pendingSets, pending);
                     unclaim(claims, id, entryKey);
                 }
                 throw failed;
@@ -186,19 +186,19 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     /** Releases a claim only if it is still this approval's. Best effort: a failure leaves the id unusable. */
     private static void unclaim(IMap<String, String> claims, String id, String entryKey) {
         try {
-            claims.remove(id, entryKey);
+            claims.executeOnKey(id, new ClaimEntries.Release(entryKey));
         } catch (RuntimeException ignored) {
             // The claim expires with the approval it guards; the id is unusable until then, never reusable early.
         }
     }
 
     /** Best effort: a failure leaves the requester over-counted until the approval's expiry, never under-counted. */
-    private static void unreserve(IMap<String, String> pendingSets, ApprovalRequest request, long slackMillis) {
+    private static void unreserve(IMap<String, String> pendingSets, ApprovalRequest request) {
         try {
             pendingSets.executeOnKey(pendingKey(request.kind(), request.requesterPrincipalId()),
-                    new PendingSet.Release(request.approvalId(), request.createdAt(), slackMillis));
+                    new PendingSet.Release(request.approvalId()));
         } catch (RuntimeException ignored) {
-            // The id is pruned once it expires.
+            // The id is dropped by the reserve prune once it expires, and by the sweep after that.
         }
     }
 
@@ -244,7 +244,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
 
     /** Removes an approval that left {@code PENDING} from its requester's count. Best effort, as above. */
     private void leavePending(ApprovalRequest request) {
-        unreserve(pendingSets(), request, retention.toMillis());
+        unreserve(pendingSets(), request);
     }
 
     @Override
@@ -337,7 +337,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             approvals.delete(key);
             if (raw != null) {
                 ApprovalRequest request = Codec.decode(raw);
-                unreserve(pendingSets, request, DEFAULT_RETENTION.toMillis());
+                unreserve(pendingSets, request);
                 unclaim(claims, request.approvalId(), key);
             }
         }
@@ -416,9 +416,11 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         approvals.setTtl(key, Math.max(1L, remaining.toMillis()), TimeUnit.MILLISECONDS);
         // The claim must outlive the entry it guards, however the caller's clock sat when it set the entry's expiry.
         // Best effort: if this fails the claim keeps the lifetime it had, which only matters under clock skew.
+        // Only the claim that names this entry is extended, and only ever longer, so a stale or out-of-order caller
+        // can neither touch a later approval's claim nor shorten this one.
         try {
-            idClaims().setTtl(next.approvalId(), Math.max(1L, remaining.toMillis()) + retention.toMillis(),
-                    TimeUnit.MILLISECONDS);
+            idClaims().executeOnKey(next.approvalId(), new ClaimEntries.Extend(key,
+                    Math.max(1L, remaining.toMillis()) + retention.toMillis(), System.currentTimeMillis()));
         } catch (RuntimeException ignored) {
             // See above.
         }
