@@ -1,10 +1,13 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.IMap;
+import com.hazelcast.map.ExtendedMapEntry;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -44,7 +47,17 @@ public final class HazelcastCallerRateLimiter implements CallerRateLimiter {
         IMap<String, String> counts = cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP);
         ClusterLocks.acquire(counts, principalId, lockTimeout);
         try {
-            String current = counts.get(principalId);
+            return counts.executeOnKey(principalId, new AcquireWithinWindow(limit, index, windowMillis));
+        } finally {
+            ClusterLocks.release(counts, principalId);
+        }
+    }
+
+    private record AcquireWithinWindow(int limit, long index, long windowMillis)
+            implements EntryProcessor<String, String, Boolean> {
+        @Override
+        public Boolean process(Map.Entry<String, String> entry) {
+            String current = entry.getValue();
             int count = 0;
             if (current != null) {
                 int split = current.indexOf(':');
@@ -52,14 +65,11 @@ public final class HazelcastCallerRateLimiter implements CallerRateLimiter {
                     count = Integer.parseInt(current.substring(split + 1));
                 }
             }
-            if (count >= limit) {
-                return false;
-            }
-            // Expire two windows on, so an idle caller's entry does not linger.
-            counts.set(principalId, index + ":" + (count + 1), 2 * windowMillis, TimeUnit.MILLISECONDS);
+            if (count >= limit) return false;
+            // Count and two-window expiry change together, independently of the caller's lease.
+            ((ExtendedMapEntry<String, String>) entry).setValue(index + ":" + (count + 1),
+                    2 * windowMillis, TimeUnit.MILLISECONDS);
             return true;
-        } finally {
-            ClusterLocks.release(counts, principalId);
         }
     }
 }

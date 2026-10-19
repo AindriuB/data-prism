@@ -72,9 +72,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         IMap<String, String> approvals = approvals();
         // The bare id is never an entry key as long as ids contain no NUL, the
         // ScopeKeys separator (an entry key always holds one); locking it makes
-        // the duplicate check and the put atomic across scopes.
+        // the duplicate check and the put atomic across scopes. Retain ownership
+        // through insertion: a leased lock could expire after the uniqueness snapshot.
         String idLock = pending.approvalId();
-        ClusterLocks.acquire(approvals, idLock, lockTimeout);
+        ClusterLocks.acquireRetained(approvals, idLock, lockTimeout);
         try {
             if (!locateAll(pending.approvalId()).isEmpty()) {
                 throw new IllegalArgumentException("duplicate approval id");
@@ -91,8 +92,9 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     /**
-     * Counts and creates under one lock per (kind, requester), so two members cannot both admit the request that
-     * takes a requester over the cap. The requester lock is always taken before the id lock, never after.
+     * Counts and creates under one retained lock per (kind, requester). It cannot expire between the snapshot
+     * and the create; competing calls time out instead of admitting against a stale count. The requester lock
+     * is always taken before the id lock, never after.
      */
     @Override
     public ApprovalRequest create(ApprovalRequest pending, int maxLivePendingPerRequester) {
@@ -105,7 +107,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
         IMap<String, String> approvals = approvals();
         String requesterLock = requesterLockKey(pending.kind(), pending.requesterPrincipalId());
-        ClusterLocks.acquire(approvals, requesterLock, lockTimeout);
+        ClusterLocks.acquireRetained(approvals, requesterLock, lockTimeout);
         try {
             long live = 0;
             for (String raw : approvals.values()) {

@@ -17,18 +17,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** A state change must not give an approval a longer, or no, life: it still expires at its expiresAt. */
 class ApprovalExpiryTest {
 
+    private PrivacyCluster[] members;
     private PrivacyCluster cluster;
     private HazelcastApprovalStore approvals;
 
     @BeforeEach
     void start() {
-        cluster = TestMembers.pair(TestMembers.uniqueName("expiry"), OptionalInt.empty())[0];
+        members = TestMembers.pair(TestMembers.uniqueName("expiry"), OptionalInt.empty());
+        cluster = members[0];
         approvals = new HazelcastApprovalStore(cluster);
     }
 
     @AfterEach
     void stop() {
-        cluster.close();
+        for (PrivacyCluster member : members) {
+            member.close();
+        }
     }
 
     private ApprovalRequest pending(String id, Instant now) {

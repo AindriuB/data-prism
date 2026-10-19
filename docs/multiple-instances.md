@@ -291,9 +291,16 @@ changing any counter or approval:
   lock timeout, such as an unreachable cluster, still refuses the read as before.
 - The operator API keeps answering `503 OVERSIGHT_UNAVAILABLE`.
 
-Each lock is leased for five times the lock timeout, so a lock whose holder died
-is released on its own and the longest it can stall a key is known (ten seconds
-with the default). Writes to the identity and re-identification caches and to the
+Entry locks are leased for five times the lock timeout (ten seconds with the
+default). Creation instead retains the approval-ID lock through its uniqueness
+check and insert, with no expiring lease. Pending-cap creation also retains its
+requester lock through count-and-store. A paused owner keeps competing creations
+for the same ID or capped requester refused within the configured lock timeout;
+locks are released in `finally`, or when their owning member leaves the cluster.
+This favours ID uniqueness and cap enforcement over creation availability for
+that ID or requester. Deciding an existing approval does not need either
+creation lock. Writes to the identity and
+re-identification caches and to the
 pause flags take no lock of their own, but a lock someone else holds on one of
 their keys still blocks them; those are not bounded yet.
 

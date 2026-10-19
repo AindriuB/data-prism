@@ -6,6 +6,7 @@ import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
 
@@ -28,8 +29,9 @@ class ApprovalQuorumTest {
     }
 
     @Test
-    void withEnoughMembersTheCallsSucceed() {
+    void withEnoughMembersTheCallsSucceed() throws InterruptedException {
         members = TestMembers.pair(TestMembers.uniqueName("quorum-ok"), OptionalInt.of(2));
+        awaitQuorum(true);
         var approvals = new HazelcastApprovalStore(members[0]);
         approvals.create(TestMembers.request("a-1", "scope-1", Status.PENDING));
         approvals.create(TestMembers.request("a-2", "scope-1", Status.PENDING));
@@ -39,14 +41,19 @@ class ApprovalQuorumTest {
     }
 
     @Test
-    void withFewerVisibleMembersThanTheMinimumEveryWriteThrows() {
+    void withFewerVisibleMembersThanTheMinimumEveryWriteThrows() throws InterruptedException {
         members = TestMembers.pair(TestMembers.uniqueName("quorum-lost"), OptionalInt.of(2));
+        awaitQuorum(true);
         var approvals = new HazelcastApprovalStore(members[0]);
         approvals.create(TestMembers.request("b-1", "scope-1", Status.PENDING));
         approvals.create(TestMembers.request("b-2", "scope-1", Status.PENDING));
         approvals.create(TestMembers.request("b-3", "scope-1", Status.PENDING));
         approvals.approve("b-3", "bob", NOW);
         members[1].close();
+        // Membership and split-brain protection update asynchronously. Do not probe with writes:
+        // a successful consume during the documented detection window would change the fixture.
+        awaitQuorum(false);
+        assertThat(members[0].instance().getCluster().getMembers()).hasSize(1);
 
         assertThatThrownBy(() -> approvals.consumeApproved(Kind.TOOL_CALL, "alice", "scope-1", "search", "fp-b-3", NOW))
                 .isInstanceOf(SplitBrainProtectionException.class);
@@ -67,6 +74,19 @@ class ApprovalQuorumTest {
         var approvals = new HazelcastApprovalStore(members[0]);
         assertThatThrownBy(() -> approvals.create(TestMembers.request("c-1", "scope-1", Status.PENDING)))
                 .isInstanceOf(SplitBrainProtectionException.class);
+    }
+
+    private void awaitQuorum(boolean present) throws InterruptedException {
+        for (PrivacyCluster member : members) {
+            if (!member.instance().getLifecycleService().isRunning()) continue;
+            var protection = member.instance().getSplitBrainProtectionService()
+                    .getSplitBrainProtection(PrivacyCluster.APPROVAL_PROTECTION);
+            long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (protection.hasMinimumSize() != present && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            assertThat(protection.hasMinimumSize()).as("approval quorum observed within 10 seconds").isEqualTo(present);
+        }
     }
 
     private static OptionalInt defaultFor(String... members) {

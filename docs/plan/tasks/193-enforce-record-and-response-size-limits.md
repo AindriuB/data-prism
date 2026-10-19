@@ -156,3 +156,15 @@ After the correction, the required 20-module `verify` command passed again:
 unchanged architecture tests. Strict MkDocs and `git diff --check` also passed.
 Logs: `logs/193-comparison-red.log`, `logs/193-comparison-focused.log`,
 `logs/193-comparison-verify.log`, and `logs/193-comparison-docs.log`.
+
+### Refresh after integration PR #130 merged
+
+Updated the task branch with `main` at `275e9cf1`, which includes PR #130's
+atomic counter updates, retained requester/approval-ID locks, fixture cleanup,
+and quorum-state synchronization. PR #131 now targets `main`. Its earlier Java
+21 CI failure was the same `ApprovalQuorumTest` timing race corrected on main.
+
+After the update, all 15 response-limit regressions and the unchanged
+`ArchitectureTest` passed on Java 21. The task implementation remains the
+reviewed `bea3de45` change; no response-limit runtime code changed during this
+refresh. Full verification on both supported JDKs runs in PR CI.

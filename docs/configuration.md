@@ -192,7 +192,7 @@ Each key below is also described in the group table above. Defaults here are the
 | `dataprism.hazelcast.join.kubernetes.service-dns` | unset | The service DNS name (DNS mode) |
 | `dataprism.hazelcast.member.port` | unset | The member port; 5701 when unset |
 | `dataprism.hazelcast.member.interface` | unset | The network interface the member binds; every interface when unset |
-| `dataprism.hazelcast.lock-timeout` | `PT2S` | How long a call waits for a cluster lock before it is refused with `CLUSTER_LOCK_TIMEOUT`; from `PT100MS` to `PT30S`. Locks are leased for five times this |
+| `dataprism.hazelcast.lock-timeout` | `PT2S` | How long a call waits for a cluster lock before it is refused with `CLUSTER_LOCK_TIMEOUT`; from `PT100MS` to `PT30S`. Entry locks are leased for five times this; approval-ID and pending-cap requester locks stay owned until creation finishes, so a paused owner causes bounded refusals |
 | `dataprism.hazelcast.approval-minimum-members` | unset | The fewest members that must see each other for approvals to change. Unset: a majority of the distinct `join.members` with `tcp-ip`, 1 with `none`; required with `kubernetes`, and with a hostname among `tcp-ip` members, when approvals are in use (`dataprism.oversight.approval-required-tools` set or `dataprism.reidentification.enabled`); the quorum is not computed or required otherwise |
 | `dataprism.hazelcast.reidentification-enabled` | `false` | Keeps the re-identification index in the cluster |
 | `dataprism.hazelcast.persistence-enabled` | `false` | Refused without an explicit reviewed configuration |
