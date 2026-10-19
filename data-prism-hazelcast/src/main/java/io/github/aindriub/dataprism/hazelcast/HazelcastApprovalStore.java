@@ -72,9 +72,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         IMap<String, String> approvals = approvals();
         // The bare id is never an entry key as long as ids contain no NUL, the
         // ScopeKeys separator (an entry key always holds one); locking it makes
-        // the duplicate check and the put atomic across scopes.
+        // the duplicate check and the put atomic across scopes. Retain ownership
+        // through insertion: a leased lock could expire after the uniqueness snapshot.
         String idLock = pending.approvalId();
-        ClusterLocks.acquire(approvals, idLock, lockTimeout);
+        ClusterLocks.acquireRetained(approvals, idLock, lockTimeout);
         try {
             if (!locateAll(pending.approvalId()).isEmpty()) {
                 throw new IllegalArgumentException("duplicate approval id");

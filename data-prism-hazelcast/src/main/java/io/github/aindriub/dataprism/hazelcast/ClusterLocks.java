@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit;
  * change must hold the lock itself, taken with a timeout, before it writes. Hazelcast gives such a lock no
  * protection under split brain; correctness does not rest on it, only the bound does (approvals
  * change by compare-and-set and counters by atomic entry processors). Those locks have a lease of
- * {@value #LEASE_FACTOR} times the timeout. The multi-entry pending cap instead uses
- * {@link #acquireRetained}: its requester lock must stay owned throughout the count and create.
+ * {@value #LEASE_FACTOR} times the timeout. Multi-entry creation checks instead use
+ * {@link #acquireRetained}: requester and approval-ID locks must stay owned through the check and insert.
  */
 final class ClusterLocks {
 
