@@ -1,0 +1,15 @@
+{
+  "name": "sources-100",
+  "sources": 100,
+  "sourceLatency": { "minMs": 5, "maxMs": 40 },
+  "load": { "concurrency": 4, "calls": 200, "warmupCalls": 20, "ratePerSecond": 0, "callTimeoutSeconds": 60 },
+  "limits": {
+    "maxSources": 100,
+    "maxRecords": 5000,
+    "maxResponseSize": "4MB",
+    "perSourceTimeout": "5s",
+    "maxConcurrency": 32,
+    "scopeReadBudget": 100
+  },
+  "seed": 196
+}
