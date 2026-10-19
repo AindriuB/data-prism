@@ -89,14 +89,16 @@ final class ServerProcess implements AutoCloseable {
         // server still stops the child: whichever of the two happens second kills the process.
         LaunchGuard guard = new LaunchGuard();
         cleanup.track(guard);
-        Process process;
+        Process process = null;
         try {
             process = builder.start();
-        } catch (IOException | RuntimeException failed) {
-            guard.failed();
-            throw failed;
+        } finally {
+            if (process != null) {
+                guard.launched(process);
+            } else {
+                guard.failed();
+            }
         }
-        guard.launched(process);
         ServerProcess server = new ServerProcess(process, port, log, resultsDir);
         cleanup.track(server);
         try {

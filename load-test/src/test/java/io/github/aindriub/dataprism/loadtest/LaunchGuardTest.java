@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.loadtest;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -52,7 +53,14 @@ class LaunchGuardTest {
         }
     }
 
+    private static boolean parkedOrDone(Thread thread) {
+        Thread.State state = thread.getState();
+        return state == Thread.State.TIMED_WAITING || state == Thread.State.WAITING
+                || state == Thread.State.TERMINATED;
+    }
+
     @Test
+    @Timeout(30)
     void aLateLaunchedKillsTheChildWhenCloseCameFirst() {
         ServerProcess.LaunchGuard guard = new ServerProcess.LaunchGuard(Duration.ZERO);
         StubProcess child = new StubProcess();
@@ -65,6 +73,7 @@ class LaunchGuardTest {
     }
 
     @Test
+    @Timeout(30)
     void closeAfterLaunchedKillsTheChild() {
         ServerProcess.LaunchGuard guard = new ServerProcess.LaunchGuard();
         StubProcess child = new StubProcess();
@@ -76,6 +85,7 @@ class LaunchGuardTest {
     }
 
     @Test
+    @Timeout(30)
     void closeWhileLaunchingBlocksUntilLaunchedThenKills() throws Exception {
         ServerProcess.LaunchGuard guard = new ServerProcess.LaunchGuard(Duration.ofSeconds(30));
         StubProcess child = new StubProcess();
@@ -86,7 +96,7 @@ class LaunchGuardTest {
         });
         closer.start();
         // Wait until the closer is parked inside close() (waiting on the monitor), without sleeping.
-        while (closer.getState() != Thread.State.TIMED_WAITING && closer.getState() != Thread.State.WAITING) {
+        while (!parkedOrDone(closer)) {
             Thread.onSpinWait();
         }
         assertThat(closeReturned.getCount()).isEqualTo(1);
@@ -98,11 +108,12 @@ class LaunchGuardTest {
     }
 
     @Test
+    @Timeout(30)
     void failedReleasesCloseWithoutWaitingForTheBound() throws Exception {
         ServerProcess.LaunchGuard guard = new ServerProcess.LaunchGuard(Duration.ofMinutes(5));
         Thread closer = new Thread(guard::close);
         closer.start();
-        while (closer.getState() != Thread.State.TIMED_WAITING && closer.getState() != Thread.State.WAITING) {
+        while (!parkedOrDone(closer)) {
             Thread.onSpinWait();
         }
 
