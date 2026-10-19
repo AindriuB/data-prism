@@ -1,4 +1,6 @@
-# 193 — Add the FREE_TEXT classification and a free-text recogniser hook in validation
+# 208 — Add the FREE_TEXT classification and a free-text recogniser hook in validation
+
+Renumbered from 193 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
@@ -42,7 +44,7 @@ recogniser can only add refusals and can never relax one. Core gains no recognit
 - [ ] `./mvnw -B -pl data-prism-annotations,data-prism-core,data-prism-validation -am verify` passes.
 
 ## Out of scope
-- Wiring the validator and recognisers into Spring (task 194). Note that on `main` the Spring-built orchestrators do not include `SensitivePatternValidator` at all; task 194 fixes that.
+- Wiring the validator and recognisers into Spring (task 209). Note that on `main` the Spring-built orchestrators do not include `SensitivePatternValidator` at all; task 209 fixes that.
 - `RawValueLeakValidator` and `DefaultContextOrchestrator`. Recognisers live inside `SensitivePatternValidator`, which is already in the validator list, so neither needs a change.
 - Any bundled recogniser, language model or entity-recognition library.
-- `docs/faq.md`, `docs/extending.md` and every other doc (task 198).
+- `docs/faq.md`, `docs/extending.md` and every other doc (task 213).

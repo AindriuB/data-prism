@@ -1,10 +1,12 @@
-# 196 — Wire the keyed audit chain, retired audit keys and the segment size cap into configuration
+# 211 — Wire the keyed audit chain, retired audit keys and the segment size cap into configuration
+
+Renumbered from 196 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` once 191, 192 and 195 have merged
-**Depends on:** 191, 192, 195 (195 only because both edit the shared Spring files below)
-**Serialised with:** 194, 195, 197
+**Base branch:** `origin/main` once 206, 207 and 210 have merged
+**Depends on:** 206, 207, 210 (210 only because both edit the shared Spring files below)
+**Serialised with:** 209, 210, 212
 **Decided (owner, 2026-10-15), D-1.0-4:** the keyed chain is opt-in and off by default. It uses a key
 separate from the pseudonymisation key, and configuring the same key is a startup refusal. It claims
 only to resist a writer without the key, not the operator.
@@ -25,7 +27,7 @@ only to resist a writer without the key, not the operator.
 - docs/configuration.md *(the `dataprism.audit` rows and the prose around them only)*
 
 ## Goal
-Expose task 191's keyed chain and task 192's segment size cap through `dataprism.audit.*`. A key that is
+Expose task 206's keyed chain and task 207's segment size cap through `dataprism.audit.*`. A key that is
 configured but cannot be resolved, or that is the pseudonymisation key, refuses startup. Retention must
 be able to verify segments written under a retired key, or it would stop purging after a key rotation.
 
@@ -50,8 +52,8 @@ be able to verify segments written under a retired key, or it would stop purging
 - [ ] `./mvnw -B verify` (full reactor) passes.
 
 ## Out of scope
-- Any change under `data-prism-core` (tasks 191 and 192).
-- Key rotation tooling. Rotation is a documented procedure (task 198), not code.
+- Any change under `data-prism-core` (tasks 206 and 207).
+- Key rotation tooling. Rotation is a documented procedure (task 213), not code.
 - The JSON projection's segments.
-- Security, free-text and cluster wiring (tasks 195, 194 and 197).
-- `docs/audit.md` and every `docs/` file other than `docs/configuration.md` (task 198).
+- Security, free-text and cluster wiring (tasks 210, 209 and 212).
+- `docs/audit.md` and every `docs/` file other than `docs/configuration.md` (task 213).

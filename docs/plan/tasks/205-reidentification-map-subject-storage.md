@@ -1,9 +1,11 @@
-# 190 — Settle how the re-identification map stores the subject id
+# 205 — Settle how the re-identification map stores the subject id
+
+Renumbered from 190 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` once 189 has merged
-**Depends on:** 189
+**Base branch:** `origin/main` once 204 has merged
+**Depends on:** 204
 **Blocked on:** **D-1.0-3 (open).** Does the re-identification map keep the raw subject id in plaintext,
 or encrypt it? Do not fan out until the owner has answered. If the answer is "encrypt", the key's source
 also needs a decision. Ask whether it follows D-1.0-7 (the subject-key HMAC key) or is separate, and
@@ -20,7 +22,7 @@ record the answer here before starting.
 ## Goal
 The re-identification index maps a pseudonym to its subject. It is off by default, and it is the one
 cluster map that cannot be recomputed (`PrivacyCluster.java:25-29,54-55`). Its value is the raw subject
-id (`CachingSyntheticValueSource.java:131-135`), so after task 189 it is the last place in the cluster
+id (`CachingSyntheticValueSource.java:131-135`), so after task 204 it is the last place in the cluster
 where a subject id, possibly a national identifier, is readable by anyone who reaches the member port.
 Implement whichever storage D-1.0-3 chooses, and make the result explicit in code and tests.
 
@@ -28,7 +30,7 @@ Implement whichever storage D-1.0-3 chooses, and make the result explicit in cod
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/CachingSyntheticValueSource.java:114-136 — `store`, including the re-identification write
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ScopeIdentityIndex.java:34-75 — `subjectFor` and `endScope`
 - docs/architecture.md:303-314 — why the index is a store, not a cache, and therefore off by default
-- docs/reidentification.md — the operator surface that reads this index; task 198 updates it
+- docs/reidentification.md — the operator surface that reads this index; task 213 updates it
 
 ## Acceptance
 Under **"keep plaintext"**:
@@ -47,7 +49,7 @@ Either way:
 - [ ] `./mvnw -B -pl data-prism-hazelcast -am verify` passes.
 
 ## Out of scope
-- Wiring a key or property at the Spring layer (task 197).
-- The identity and budget maps (task 189).
-- The operator surface, the four-eyes approval flow and `docs/reidentification.md` (task 198 updates the doc).
+- Wiring a key or property at the Spring layer (task 212).
+- The identity and budget maps (task 204).
+- The operator surface, the four-eyes approval flow and `docs/reidentification.md` (task 213 updates the doc).
 - Persistence or `MapStore` for the index, which stay refused.

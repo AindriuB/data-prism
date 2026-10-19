@@ -1,11 +1,13 @@
-# 194 — Run the pattern validator and free-text recognisers in every Spring-built orchestrator
+# 209 — Run the pattern validator and free-text recognisers in every Spring-built orchestrator
+
+Renumbered from 194 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` once 193 has merged
-**Depends on:** 193
-**Serialised with:** 195, 196, 197. All four edit `PrivacyExtensionPoints.java` and the bean-inventory
-lists, so they run one at a time in the order 194, 195, 196, 197.
+**Base branch:** `origin/main` once 208 has merged
+**Depends on:** 208
+**Serialised with:** 210, 211, 212. All four edit `PrivacyExtensionPoints.java` and the bean-inventory
+lists, so they run one at a time in the order 209, 210, 211, 212.
 
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyEngineWiring.java *(one new `@Bean` method beside `dataPrismRawValueLeakValidator`, :159-166)*
@@ -31,7 +33,7 @@ run it.
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/OrchestrationWiring.java:41-51 and data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesAutoConfiguration.java:128-145 — the two consumers; neither needs editing
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java:1-80 — the `PRIVACY_CRITICAL` / `COMPETING_BEAN_REFUSAL` contract for a list-collected bean
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AutoConfiguredBeanClassificationTest.java and AutoConfiguredBeanInventoryTest.java — the two exhaustiveness guards a new `@Bean` must satisfy
-- data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/SensitivePatternValidator.java — the `(SensitiveDataScanner, List<FreeTextRecogniser>)` constructor from task 193
+- data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/SensitivePatternValidator.java — the `(SensitiveDataScanner, List<FreeTextRecogniser>)` constructor from task 208
 
 ## Acceptance
 - [ ] A new `@Bean` method `dataPrismSensitivePatternValidator` returns `LlmResponseValidator`. It is unconditional, not `@ConditionalOnMissingBean`, and builds `SensitivePatternValidator` with every `FreeTextRecogniser` bean in `@Order` order, or none.
@@ -47,5 +49,5 @@ run it.
 ## Out of scope
 - `DefaultContextOrchestrator`, `OrchestrationWiring` and `ConfiguredJsonSourcesAutoConfiguration`, which need no change.
 - Any shipped `FreeTextRecogniser` implementation.
-- `docs/faq.md`, `docs/extending.md` and `docs/architecture.md` (task 198, which records that the scan was not wired on the Spring path before this task).
-- Security, audit and cluster wiring (tasks 195, 196 and 197).
+- `docs/faq.md`, `docs/extending.md` and `docs/architecture.md` (task 213, which records that the scan was not wired on the Spring path before this task).
+- Security, audit and cluster wiring (tasks 210, 211 and 212).

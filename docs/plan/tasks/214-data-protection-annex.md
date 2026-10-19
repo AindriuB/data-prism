@@ -1,10 +1,12 @@
-# 199 — Write docs/data-protection.md, a DPIA-ready control annex
+# 214 — Write docs/data-protection.md, a DPIA-ready control annex
+
+Renumbered from 199 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
 **Executor:** `scribe` (docs only; no code)
-**Base branch:** `origin/main` once 198 has merged
-**Depends on:** 198 (cites its anchors in `audit.md`, `key-rotation.md` and `architecture.md`; both edit `mkdocs.yml`)
+**Base branch:** `origin/main` once 213 has merged
+**Depends on:** 213 (cites its anchors in `audit.md`, `key-rotation.md` and `architecture.md`; both edit `mkdocs.yml`)
 **Owns:**
 - docs/data-protection.md *(new)*
 - mkdocs.yml *(one `nav` insertion and one `llmstxt` insertion for `data-protection.md` only)*
@@ -22,8 +24,8 @@ stays open.
 - docs/use-cases/gdpr-data-minimisation-mcp.md — the citation style to follow: EUR-Lex links, verbatim quotes, "not legal advice"
 - docs/eu-ai-act.md — the existing EU AI Act support mapping; link to it rather than repeat it
 - docs/audit.md — what the trail records and what it does and does not prove; docs/key-rotation.md — both rotation procedures
-- docs/configuration.md — the merged property names and refusal codes from tasks 194 to 197
-- docs/architecture.md, "Decisions worth knowing" — the 2026-10-15 entries task 198 adds
+- docs/configuration.md — the merged property names and refusal codes from tasks 209 to 212
+- docs/architecture.md, "Decisions worth knowing" — the 2026-10-15 entries task 213 adds
 - docs/plan/roadmap-ideas.md, "1.0.0" — "Docs that say 'supports' and never 'compliant'"
 
 ## Acceptance
@@ -52,4 +54,4 @@ stays open.
 ## Out of scope
 - Any conclusion on AI Act risk classification, or any statement that a deployment meets a legal duty.
 - `docs/threat-model.md` and the rest of S12.
-- Every other file under `docs/` (task 198), and `docs/plan/**`.
+- Every other file under `docs/` (task 213), and `docs/plan/**`.

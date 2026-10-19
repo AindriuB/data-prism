@@ -1,10 +1,12 @@
-# 195 — Wire case authorisation and the client allowlist into configuration
+# 210 — Wire case authorisation and the client allowlist into configuration
+
+Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
-**Base branch:** `origin/main` once 188 and 194 have merged
-**Depends on:** 188, 194 (194 only because both edit the shared Spring files listed below)
-**Serialised with:** 194, 196, 197 (shared: `PrivacyExtensionPoints.java`, the bean-inventory lists,
+**Base branch:** `origin/main` once 203 and 209 have merged
+**Depends on:** 203, 209 (209 only because both edit the shared Spring files listed below)
+**Serialised with:** 209, 211, 212 (shared: `PrivacyExtensionPoints.java`, the bean-inventory lists,
 `frozen-property-names.txt`, `DataPrismPropertiesValidator.java`, `docs/configuration.md`)
 **Decided (owner, 2026-10-15):**
 - **D-1.0-1.** Startup refuses without a `CaseAuthorizer` bean unless
@@ -33,7 +35,7 @@
 - docs/configuration.md *(the `dataprism.security-policy` rows and the prose around them only)*
 
 ## Goal
-Expose task 188's case authoriser and client allowlist through `dataprism.*`. A deployment that has not
+Expose task 203's case authoriser and client allowlist through `dataprism.*`. A deployment that has not
 decided how cases are authorised refuses to start. One that wants the old behaviour must say
 `token-trusted` in so many words, and is warned. A configured allowlist admits only the listed clients.
 
@@ -60,6 +62,6 @@ decided how cases are authorised refuses to start. One that wants the old behavi
 ## Out of scope
 - A built-in case authorizer backed by a store or a token claim.
 - An example `CaseAuthorizer` in `data-prism-quickstart-extension`. File it as a follow-up if wanted.
-- Audit, free-text and cluster wiring (tasks 196, 194 and 197).
+- Audit, free-text and cluster wiring (tasks 211, 209 and 212).
 - `server.json`. Registry metadata changes go with the release cut.
-- Every `docs/` file other than `docs/configuration.md` (tasks 198 and 199).
+- Every `docs/` file other than `docs/configuration.md` (tasks 213 and 214).

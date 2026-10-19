@@ -1,10 +1,12 @@
-# 198 — Document key rotation, the new controls and the 1.0.0 breaking changes
+# 213 — Document key rotation, the new controls and the 1.0.0 breaking changes
+
+Renumbered from 198 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
 **Executor:** `scribe` (docs only; no code)
-**Base branch:** `origin/main` once 194, 195, 196 and 197 have merged
-**Depends on:** 194, 195, 196, 197 (and through them 188 to 193)
+**Base branch:** `origin/main` once 209, 210, 211 and 212 have merged
+**Depends on:** 209, 210, 211, 212 (and through them 203 to 208)
 **Owns:**
 - docs/key-rotation.md *(new)*
 - mkdocs.yml *(one `nav` insertion and one `llmstxt` insertion for `key-rotation.md` only)*
@@ -20,19 +22,19 @@
 - CHANGELOG.md *(the `[Unreleased]` section only)*
 
 ## Goal
-Bring the user-facing docs in line with tasks 188 to 197, and close a gap the docs name themselves:
+Bring the user-facing docs in line with tasks 203 to 212, and close a gap the docs name themselves:
 `docs/use-cases/gdpr-data-minimisation-mcp.md:75-79` says no key-rotation procedure is documented.
 Write numbered rotation procedures for both the pseudonymisation key and the new audit chain key.
 Record the decisions behind 1.0.0's hardening in `docs/architecture.md`, including the partial reversal
 of the decision that rejected a keyed audit chain.
 
 ## Context
-- docs/architecture.md:315-329 — the 2026-10-06 cluster entry whose "Accepted consequence" (raw subject ids in map keys) tasks 189 and 197 remove; :469-486 — the segmented audit entry; :496-523 — the 2026-09-23 decision rejecting a keyed chain, reaffirmed 2026-10-06 (D2)
+- docs/architecture.md:315-329 — the 2026-10-06 cluster entry whose "Accepted consequence" (raw subject ids in map keys) tasks 204 and 212 remove; :469-486 — the segmented audit entry; :496-523 — the 2026-09-23 decision rejecting a keyed chain, reaffirmed 2026-10-06 (D2)
 - docs/plan/PLAN.md:1535-1542 — the open question coupling exposure tracing to a stable pseudonymisation key; state the effect of rotation on it, do not decide it
 - docs/plan/HISTORY-INDEX.md, the S2a row (`## 2026-09-08 — S2a key rotation`) — how `MultiKeySecretKeyProvider` lets running scopes keep their key
 - docs/plan/PLAN.md:2408-2417 — "Found on task 77", item 2: the FAQ omits the scan's depth cap of 16
 - docs/audit.md:222-245 ("policyDecision values"), :246-290 (verifier, exit codes), :675-768 ("What this does and does not prove", "External checkpoints", "Directory mode")
-- The retired task files 188 to 197, Outcomes included, for the merged names of types, properties and refusal codes
+- The retired task files 203 to 212, Outcomes included, for the merged names of types, properties and refusal codes
 - docs-site/hooks/check_site.py and check_changelog.py — run by the docs build
 
 ## Acceptance
@@ -43,7 +45,7 @@ of the decision that rejected a keyed audit chain.
   - D-1.0-4: an opt-in keyed chain under a separate key now exists. The entry says it **partly reverses** the 2026-09-23 decision and its 2026-10-06 reaffirmation, that it claims only to resist a writer without the key, and that the 2026-09-23 conclusion still holds for the operator threat, which still needs asymmetric signing or external checkpoints under separate custody.
   - D-1.0-1: case authorisation is a refused-unless-decided SPI.
   - D-1.0-2: multi-member joins need a declared isolated network, and map keys carry an HMAC of the subject. The entry says this removes the 2026-10-06 entry's "Accepted consequence" for identity and budget keys, and states what D-1.0-3 decided for the re-identification map.
-  - The free-text classification and recogniser hook. The entry records that, before task 194, the Spring-built orchestrators did not run the pattern scan.
+  - The free-text classification and recogniser hook. The entry records that, before task 209, the Spring-built orchestrators did not run the pattern scan.
   No existing entry's text changes (`git diff` on the file shows only added lines).
 - [ ] `docs/multiple-instances.md` documents `join.isolated-network`, `UNSECURED_CLUSTER_JOIN`, the shared subject key and `CLUSTER_SUBJECT_KEY_MISMATCH`, and no longer says that map keys hold raw subject ids. `docs/reidentification.md` states what the index stores, per D-1.0-3.
 - [ ] `docs/faq.md`'s free-text answer names `FREE_TEXT` and its two bundled actions, the `FreeTextRecogniser` hook, the depth cap of 16 and its fail-closed result, and that the Spring-built server runs the scan from 1.0.0.
@@ -55,7 +57,7 @@ of the decision that rejected a keyed audit chain.
 - [ ] `mkdocs build --strict` passes, and so do `check_site.py` and `check_changelog.py` through it.
 
 ## Out of scope
-- `docs/data-protection.md` (task 199).
-- `docs/configuration.md`, which tasks 194 to 197 own and have already updated.
+- `docs/data-protection.md` (task 214).
+- `docs/configuration.md`, which tasks 209 to 212 own and have already updated.
 - `docs/plan/**`. The scribe's `/record` step updates `PLAN.md` and `HISTORY.md` separately.
 - A migration page for 1.0.0 and the version cut, which belong to the release task.

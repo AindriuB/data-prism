@@ -1,4 +1,6 @@
-# 189 — Gate multi-member joins behind an isolated-network declaration and key cluster maps by an HMAC of the subject
+# 204 — Gate multi-member joins behind an isolated-network declaration and key cluster maps by an HMAC of the subject
+
+Renumbered from 189 on 2026-10-19 (id collision with the 0.7.0 plan). Scope not yet reconciled with docs/plan/roadmap.md.
 
 **Repo:** `.`
 **Release:** 1.0.0 (data-protection hardening)
@@ -13,10 +15,10 @@
 
 **Not decided here:** where the subject-key HMAC key comes from (**D-1.0-7**, open) and what the
 re-identification map stores (**D-1.0-3**, open). This task takes the key as an argument and does not
-touch the re-identification value, so neither decision blocks it. Tasks 190 and 197 carry them.
+touch the re-identification value, so neither decision blocks it. Tasks 205 and 212 carry them.
 
 **Owns:**
-- data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/** *(not the re-identification `set` in `CachingSyntheticValueSource.java:131-135` or `ScopeIdentityIndex.java`, which task 190 owns)*
+- data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/** *(not the re-identification `set` in `CachingSyntheticValueSource.java:131-135` or `ScopeIdentityIndex.java`, which task 205 owns)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterBackedState.java *(`dataPrismPrivacyCluster` and `join` only, behaviour-preserving; see the acceptance item)*
 
@@ -50,14 +52,14 @@ identity and budget map key embeds the raw subject id, which may be a national i
 - [ ] `PrivacyCluster.embedded` and `using` have overloads that take a `SubjectKeyHmac`. A cluster built with one writes `ScopeKeys.identity` and `ScopeKeys.budget` keys that contain the scope prefix and the HMAC, and never the subject id. A test reads a fixture subject through `CachingSyntheticValueSource` and `HazelcastScopeBudget`, then asserts the fixture subject id is not a substring of any key or value in `IDENTITY_MAP` or `BUDGET_MAP`. Ending a scope by prefix still removes its entries, and a test proves this.
 - [ ] Mutation proof: with `ScopeKeys.identity` reverted to embed the raw subject id, the new `HazelcastStoredValueBoundaryTest` case fails. Name it in the close-out.
 - [ ] A keyed member records a key-check value (an HMAC of a fixed label, never the key) in a cluster map at startup. A second member with a different key refuses to start with new code `CLUSTER_SUBJECT_KEY_MISMATCH` and shuts down only the instance it started. A two-member test covers this. The reason is in the Javadoc: two keys silently split the read budget, which would fail open.
-- [ ] The `embedded` and `using` overloads without a `SubjectKeyHmac` still exist so `ClusterBackedState` compiles, and keep today's raw keys. Their Javadoc says task 197 deletes them before 1.0.0. They are not `@Deprecated`, because they will never ship.
-- [ ] `ClusterBackedState` changes only so it compiles. It passes the isolated-network declaration for `tcp-ip` and `kubernetes` and the single-member declaration for `none`, and calls the overload without a key. A comment names task 197 as the task that replaces this. `ClusterConfigurationTest` passes unmodified.
+- [ ] The `embedded` and `using` overloads without a `SubjectKeyHmac` still exist so `ClusterBackedState` compiles, and keep today's raw keys. Their Javadoc says task 212 deletes them before 1.0.0. They are not `@Deprecated`, because they will never ship.
+- [ ] `ClusterBackedState` changes only so it compiles. It passes the isolated-network declaration for `tcp-ip` and `kubernetes` and the single-member declaration for `none`, and calls the overload without a key. A comment names task 212 as the task that replaces this. `ClusterConfigurationTest` passes unmodified.
 - [ ] No exception message, log line or `toString()` added by this task contains a subject id or key material.
 - [ ] `./mvnw -B -pl data-prism-hazelcast,data-prism-spring-boot-autoconfigure -am verify` passes.
 
 ## Out of scope
-- The re-identification map's value (task 190, D-1.0-3).
-- Where the key comes from, properties, refusals at the Spring layer and `docs/configuration.md` (task 197, D-1.0-7).
+- The re-identification map's value (task 205, D-1.0-3).
+- Where the key comes from, properties, refusals at the Spring layer and `docs/configuration.md` (task 212, D-1.0-7).
 - Encrypting map values, signing approvals, or a signed pause document. These are the rest of the deferred "secure clustering" option in PLAN.md and stay deferred.
 - Hazelcast Enterprise, member TLS and member authentication.
-- `docs/multiple-instances.md` and `docs/architecture.md` (task 198).
+- `docs/multiple-instances.md` and `docs/architecture.md` (task 213).
