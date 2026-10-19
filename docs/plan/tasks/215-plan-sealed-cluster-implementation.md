@@ -6,7 +6,7 @@
 **Depends on:** 192, 200, 202
 **Kind:** planning; no runtime code.
 **Owns:**
-- docs/plan/tasks/216-*.md through docs/plan/tasks/229-*.md (new briefs only; check unused ids before allocation)
+- docs/plan/tasks/218-*.md through docs/plan/tasks/231-*.md (new briefs only; check unused ids before allocation)
 - docs/plan/tasks/213-document-key-rotation-and-1-0-controls.md (replace descriptive dependencies with allocated ids only)
 - docs/plan/tasks/215-plan-sealed-cluster-implementation.md (Outcome)
 

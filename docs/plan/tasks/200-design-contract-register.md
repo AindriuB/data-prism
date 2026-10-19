@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
-**Depends on:** 189, 190, 191, 192, 193, 197, 198, 202
+**Depends on:** 189, 190, 191, 192, 193, 197, 198, 202, 216
 **Kind:** design, docs only. No code.
 **Owns:**
 - docs/plan/design/contract-register.md (new)
@@ -43,6 +43,7 @@ checklist exists before 0.8 starts building against it.
 
 ## Acceptance
 - [ ] Include tasks 203, 206–208, 210–214 and the cluster design as proposed pre-freeze contracts, with release and decision status from `docs/plan/reconciliation-2026-10-19.md`. Proposals are not shipped APIs. Include task 209's merged bean behaviour when available; the register does not wait for 0.8 implementations.
+- [ ] Register the refusal code that task 216 introduces for Hazelcast lock, index or entry-processor failures during approval creation (`CLUSTER_OPERATION_REFUSED`, or the name recorded in 216's Outcome), with its meaning and where it surfaces.
 - [ ] Every name in the five design documents' closing tables, and every
       shipped tool, status code, refusal code and `dataprism.*` key, appears in
       the register; the Outcome shows the extraction commands and counts.
