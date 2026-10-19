@@ -105,12 +105,18 @@ public final class SensitiveDataScanner {
                     // segment: the name must never reach a path.
                     boolean flagged = scalar(entry.getKey(), path + "." + KEY_SEGMENT);
                     node(entry.getValue(), path + "." + (flagged ? KEY_SEGMENT : entry.getKey()), depth + 1);
+                    if (!complete || matches.size() >= MAX_MATCHES) {
+                        return;
+                    }
                 }
                 return;
             }
             if (node.isArray()) {
                 for (int i = 0; i < node.size(); i++) {
                     node(node.get(i), path + "[" + i + "]", depth + 1);
+                    if (!complete || matches.size() >= MAX_MATCHES) {
+                        return;
+                    }
                 }
                 return;
             }
@@ -119,7 +125,9 @@ public final class SensitiveDataScanner {
 
         /** @return true if the text matched at least one detector */
         private boolean scalar(String text, String path) {
-            if (text == null || text.isBlank()) {
+            // The stopping conditions apply before every text, property names included, so
+            // the match cap and the budget bound all the work, not only the node visits.
+            if (!complete || matches.size() >= MAX_MATCHES || text == null || text.isBlank()) {
                 return false;
             }
             remaining -= text.length();

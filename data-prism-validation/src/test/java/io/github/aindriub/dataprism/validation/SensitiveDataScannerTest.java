@@ -236,6 +236,59 @@ class SensitiveDataScannerTest {
     }
 
     @Test
+    @DisplayName("an object of many email-shaped keys stops at the match cap and is still reported, without key names")
+    void keyScanIsBoundedByTheMatchCap() {
+        ObjectNode response = mapper.createObjectNode();
+        for (int i = 0; i < 1000; i++) {
+            response.put("person" + i + "@example.test", "ok");
+        }
+
+        ScanReport report = scanner.scan(response);
+
+        assertThat(report.matches()).hasSize(64);
+        assertThat(report.matches()).allSatisfy(match -> {
+            assertThat(match.path()).isEqualTo("$.<undeclared>");
+            assertThat(match.classification()).isEqualTo(DataClassification.CONTACT);
+        });
+    }
+
+    @Test
+    @DisplayName("documents the existing budget behaviour for keys: past the budget the scan reports incomplete")
+    void keyScanIsBoundedByTheBudget() {
+        ObjectNode response = mapper.createObjectNode();
+        for (int i = 0; i < 1000; i++) {
+            response.put("person" + i + "@example.test", "ok");
+        }
+
+        ScanReport report = new SensitiveDataScanner(100).scan(response);
+
+        assertThat(report.complete()).isFalse();
+        assertThat(report.matches().size()).isLessThanOrEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("the array walk stops reading elements once the match cap is reached")
+    void arrayWalkStopsAtTheMatchCap() {
+        int[] reads = {0};
+        tools.jackson.databind.node.ArrayNode array = new tools.jackson.databind.node.ArrayNode(
+                tools.jackson.databind.node.JsonNodeFactory.instance) {
+            @Override
+            public tools.jackson.databind.JsonNode get(int index) {
+                reads[0]++;
+                return super.get(index);
+            }
+        };
+        for (int i = 0; i < 1000; i++) {
+            array.add("person" + i + "@example.test");
+        }
+
+        ScanReport report = scanner.scan(array);
+
+        assertThat(report.matches()).hasSize(64);
+        assertThat(reads[0]).isEqualTo(64);
+    }
+
+    @Test
     @DisplayName("an exempted value is not reported at all")
     void exemptValuesAreSkipped() {
         ObjectNode response = mapper.createObjectNode();
