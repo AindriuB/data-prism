@@ -62,3 +62,165 @@ Write the harness's own unit tests first.
 - Taking or recording the baseline (task 199).
 - Soak runs, cluster runs (0.8).
 - Any change to server, orchestrator or limits code.
+
+## Outcome
+
+Built `load-test/` as a standalone project outside the root reactor (root `pom.xml`
+unchanged): a Java driver on the MCP Java SDK client and HdrHistogram, a synthetic
+HTTPS source listener, a run-time token issuer (RSA key and TLS certificate generated
+per run), a launcher for the packaged server with the configured-JSON-sources
+extension, and `load-test/run.sh` as the one command. Scenario files exist for 8, 32,
+100 and 300 sources; all four ran to completion here (300 sources: 100 calls, p50 206 ms,
+no refusals). A probe with `maxSources: 4` produced 1200 `SKIPPED_OVER_LIMIT` and one
+with `maxRecords: 3` produced 300 `TOO_MANY_RECORDS`, so task 193's limits and statuses
+are tallied from the live server. `actionlint` exits 0 on `load-test.yml`.
+
+Findings for task 199: the sources must be HTTPS (`RestSource` refuses plaintext), so
+the harness's sources share the run's throwaway certificate; `perSourceStatus` keys are
+the server's per-scope aliases, not the generated names.
+
+Smoke run, `load-test/run.sh load-test/scenarios/sources-8.json`, on the implementer's
+machine (result file, not committed):
+
+```json
+{
+  "scenario" : "sources-8",
+  "startedAt" : "2026-10-19T19:53:27.979637Z",
+  "commit" : "8541386847e94d7c93db37eb138ce4a4b897b95e",
+  "workingTreeDirty" : true,
+  "jdk" : "Homebrew 25.0.4",
+  "host" : "Mac OS X 27.0.1 aarch64, 8 processors, 4096 MiB max heap of the driver",
+  "parameters" : {
+    "name" : "sources-8",
+    "sources" : 8,
+    "sourceLatency" : {
+      "minMs" : 5,
+      "maxMs" : 25
+    },
+    "load" : {
+      "concurrency" : 4,
+      "calls" : 300,
+      "warmupCalls" : 30,
+      "ratePerSecond" : 0,
+      "durationSeconds" : 0,
+      "callTimeoutSeconds" : 60
+    },
+    "limits" : {
+      "maxSources" : 8,
+      "maxRecords" : 500,
+      "maxResponseSize" : "512KB",
+      "perSourceTimeout" : "3s",
+      "maxConcurrency" : 8,
+      "scopeReadBudget" : 100
+    },
+    "seed" : 196
+  },
+  "effectiveLimits" : {
+    "dataprism.limits.max-sources" : "8",
+    "dataprism.limits.max-records" : "500",
+    "dataprism.limits.max-response-size" : "512KB",
+    "dataprism.limits.per-source-timeout" : "3s",
+    "dataprism.limits.max-concurrency" : "8",
+    "dataprism.limits.scope-read-budget" : "100"
+  },
+  "calls" : {
+    "attempted" : 300,
+    "completed" : 300,
+    "transportFailures" : 0,
+    "transportFailureKinds" : { }
+  },
+  "latencyMs" : {
+    "p50" : 32.255,
+    "p95" : 39.187,
+    "p99" : 43.659,
+    "max" : 46.015,
+    "mean" : 32.602736666666665
+  },
+  "elapsedSeconds" : 2.467523042,
+  "throughputPerSecond" : 121.57941178001775,
+  "refusalCodes" : { },
+  "sourceStatusTotals" : {
+    "ANSWERED" : 2400,
+    "NO_DATA" : 0,
+    "TIMED_OUT" : 0,
+    "FAILED" : 0,
+    "CIRCUIT_OPEN" : 0,
+    "SKIPPED_OVER_LIMIT" : 0,
+    "REFUSED" : 0
+  },
+  "perSourceStatus" : {
+    "ORGANISATION_IDENTITY-0WDMF2H7" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-1GQ33MSW" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-6T9J9PK8" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-MSYK6MBB" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-RK0NEW2V" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-S67KNS2Q" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XFFA17G1" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XRWG0WV5" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    }
+  }
+}
+```
