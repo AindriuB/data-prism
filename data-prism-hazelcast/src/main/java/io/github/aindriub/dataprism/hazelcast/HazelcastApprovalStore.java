@@ -39,7 +39,10 @@ import java.util.function.Supplier;
  * succeed once. It holds the entry's lock as well, taken with a timeout, because a mutating call on a
  * key someone else has locked would otherwise wait for that lock for ever; the lock only bounds the
  * wait, correctness does not rest on it. A held lock refuses the call with
- * {@link ClusterLockTimeoutException}. Under a partition each side can still change its own copy once,
+ * {@link ClusterLockTimeoutException}. Every lock has a lease of five times the timeout. Creation rests on
+ * {@code putIfAbsent} too: an id is claimed in {@link PrivacyCluster#APPROVAL_ID_MAP}, and the per-requester cap
+ * is one entry processor on {@link PrivacyCluster#APPROVAL_PENDING_MAP}, so neither check depends on a lock still
+ * being held. Under a partition each side can still change its own copy once,
  * which the split-brain protection and {@link ApprovalMergePolicy} on the map narrow (see
  * {@code docs/multiple-instances.md}).
  */
