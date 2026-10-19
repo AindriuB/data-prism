@@ -4,14 +4,26 @@ import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-/** Mapper-free bounds for the compact context body, not its transport envelope. */
+/** Mapper-free bounds for compact context and comparison bodies, excluding transport envelopes. */
 final class ResponseSize {
     private ResponseSize() { }
 
     static long bytes(ContextResponse response) {
+        return bodyBytes(response, false);
+    }
+
+    /** Comparison requests can be emitted as either body; bound both before auditing. */
+    static long bytes(ContextResponse response, boolean comparison) {
+        long context = bytes(response);
+        return comparison ? Math.max(context, bodyBytes(response, true)) : context;
+    }
+
+    private static long bodyBytes(ContextResponse response, boolean comparison) {
         long sources = 2;
         boolean first = true;
         for (var entry : response.sources().entrySet()) {
@@ -43,11 +55,45 @@ final class ResponseSize {
                     List.of(string(finding.field()), string(finding.namespace() == null ? null : finding.namespace().name()),
                             string(finding.kind() == null ? null : finding.kind().name()), groups,
                             (long) Integer.toString(finding.distinctValues()).length(), string(finding.detail())));
+            if (comparison) {
+                value = add(value, 1 + string("consistent") + 1 + (finding.disagreement() ? 5 : 4));
+            }
             findings = add(findings, (first ? 0 : 1) + value);
             first = false;
         }
+        if (comparison) {
+            return object(List.of("entityType", "subject", "identity", "findings"),
+                    List.of(string(response.entityType()), string(response.subject()), identity(response), findings));
+        }
         return object(List.of("entityType", "subject", "sources", "findings"),
                 List.of(string(response.entityType()), string(response.subject()), sources, findings));
+    }
+
+    /** Mirrors CompareEntitySourcesTool's first-answer field projection without copying a tree. */
+    private static long identity(ContextResponse response) {
+        Map<String, JsonNode> fields = new LinkedHashMap<>();
+        for (ConsistencyFinding finding : response.findings()) {
+            var names = new LinkedHashSet<>(response.fieldsFor(finding.namespace()));
+            names.add(finding.field());
+            for (String name : names) {
+                for (SourceResult source : response.sources().values()) {
+                    if (!source.isAnswered()) continue;
+                    JsonNode node = source.entity().get(name);
+                    if (node != null && !node.isNull() && !node.isMissingNode()) {
+                        fields.put(name, node);
+                        break;
+                    }
+                }
+            }
+        }
+        long bytes = 2;
+        boolean first = true;
+        for (var field : fields.entrySet()) {
+            bytes = add(bytes, (first ? 0 : 1) + string(field.getKey()) + 1);
+            bytes = add(bytes, tree(field.getValue()));
+            first = false;
+        }
+        return bytes;
     }
 
     private static long object(List<String> keys, List<Long> values) {

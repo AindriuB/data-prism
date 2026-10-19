@@ -78,11 +78,14 @@ Implementation commit: `e957f7940`, on `codex/193-response-limits`, based on
 `plan/0.7.0` at `98fd4248`. Not merged or retired.
 
 Both limits run after validation and response assembly, inside the existing
-DENY audit boundary and before ALLOW. The exact checked response is returned.
+DENY audit boundary and before ALLOW. The returned context and, for comparison
+requests, its comparison projection are both bounded.
 `ResponseSize` is package-private and constructs no mapper, JSON factory or
 generator. It counts returned source roots and object array elements, and walks
 JSON iteratively. The byte bound covers the compact context body, including
-source keys/statuses and findings; ignored bookkeeping and correlation fields,
+source keys/statuses and findings. Comparison requests also measure the projected
+identity and each finding's `consistent` boolean, enforcing the larger body
+bound. Ignored bookkeeping and correlation fields,
 the transport envelope and duplicate MCP representations are outside that
 measure. Withheld payloads contribute zero; their existing status entries still
 occupy bytes in the emitted body and are therefore counted. Ordinary scalar
@@ -130,5 +133,26 @@ A response previously returned can now be refused. Raise
 `dataprism.limits.max-records` or `dataprism.limits.max-response-size` when the
 larger response is intended. Equality is allowed. Record totals exclude withheld
 payloads; the size cap covers the compact context body including status entries
-and findings, not the MCP envelope. Surrogate-heavy text may be refused before
+and findings, plus the comparison projection when requested, not the MCP envelope.
+Comparison requests enforce the larger of the context and comparison bounds,
+so omitted context fields can make a comparison refusal conservative. Surrogate-heavy text may be refused before
 its exact encoded size reaches the cap because the bound is conservative.
+
+### Review correction — comparison response size
+
+The comparison tool adds a `consistent` boolean to every finding and projects
+source fields into `identity`. The original context-only bound could therefore
+allow a comparison body larger than the cap. The orchestrator now measures both
+bodies for comparison requests before auditing, using no mapper or copied tree.
+
+The new real-tool regression reproduced the defect before the fix: a cap of
+1,763 bytes allowed a 1,878-byte ASCII comparison body with ten findings. It now
+checks ASCII equality, Unicode and escaped values, text/structured equivalence,
+and one correlated `DENY:RESPONSE_TOO_LARGE` with no payload one byte below the
+accepted bound. All 15 focused response-limit tests pass.
+
+After the correction, the required 20-module `verify` command passed again:
+1,836 surefire and 17 failsafe tests, zero failures/errors/skips, including the
+unchanged architecture tests. Strict MkDocs and `git diff --check` also passed.
+Logs: `logs/193-comparison-red.log`, `logs/193-comparison-focused.log`,
+`logs/193-comparison-verify.log`, and `logs/193-comparison-docs.log`.

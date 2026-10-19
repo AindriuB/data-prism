@@ -251,7 +251,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 throw new PrivacyRefusedException("TOO_MANY_RECORDS", "$",
                         "response exceeds configured record limit " + limits.maxRecords());
             }
-            if (ResponseSize.bytes(response) > limits.maxResponseBytes()) {
+            if (ResponseSize.bytes(response, request.includeAgreementFindings()) > limits.maxResponseBytes()) {
                 throw new PrivacyRefusedException("RESPONSE_TOO_LARGE", "$",
                         "response exceeds configured byte limit " + limits.maxResponseBytes());
             }

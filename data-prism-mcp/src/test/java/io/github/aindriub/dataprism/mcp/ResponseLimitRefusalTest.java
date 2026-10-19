@@ -1,11 +1,13 @@
 package io.github.aindriub.dataprism.mcp;
 
+import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.core.engine.DefaultFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.limits.InMemoryScopeBudget;
 import io.github.aindriub.dataprism.core.limits.RequestLimits;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.model.ConsistencyFinding;
 import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.model.ScrubResult;
@@ -40,6 +42,11 @@ class ResponseLimitRefusalTest {
     private record Parcel(String label) { }
 
     private McpSchema.CallToolResult call(ObjectNode tree, int records, int bytes, List<AuditEvent> events) {
+        return call(tree, records, bytes, events, false, List.of());
+    }
+
+    private McpSchema.CallToolResult call(ObjectNode tree, int records, int bytes, List<AuditEvent> events,
+                                         boolean comparison, List<ConsistencyFinding> findings) {
         var adapter = new DataSourceAdapter<Parcel>() {
             public String sourceName() { return "synthetic-depot"; }
             public Class<Parcel> responseType() { return Parcel.class; }
@@ -53,9 +60,17 @@ class ResponseLimitRefusalTest {
                 new PassThroughIdentityResolver(),
                 new SourceFanOut(SourceCircuitBreaker.disabled(), CLOCK, SourceFanOutOptions.defaults()),
                 new InMemoryScopeBudget(), new RequestLimits(8, records, bytes, Duration.ofSeconds(3), 4, 100),
-                (raw, context) -> List.of(), new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
-        var policy = new SecurityPolicy(Set.of("test"), Map.of("operator", Set.of("GET_ENTITY_CONTEXT")));
+                (raw, context) -> findings, new SourceAliasing(new HmacValueTokenSource(KEYS)), PrivacyMetrics.none());
+        var policy = new SecurityPolicy(Set.of("test"), Map.of("operator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
         var caller = new AuthenticatedCaller("principal-1", "client-1", Set.of("operator"), "test", "case-1", null);
+        if (comparison) {
+            var tool = new CompareEntitySourcesTool(orchestrator,
+                    new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.CASE),
+                    new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(1), new PurposeValidator(Set.of("test"))),
+                    PrivacyMetrics.none(), recorder, CLOCK, caller, ToolOptions.defaults().noAdmission().build());
+            return tool.specification().callHandler().apply(null,
+                    new McpSchema.CallToolRequest(CompareEntitySourcesTool.NAME, Map.of("entityType", "PARCEL", "subjectId", "fixture-1")));
+        }
         var tool = new GetEntityContextTool(orchestrator,
                 new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.CASE),
                 new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(1), new PurposeValidator(Set.of("test"))),
@@ -79,6 +94,46 @@ class ResponseLimitRefusalTest {
                 assertThat(result.meta().get(ToolCalls.CORRELATION_ID_META_KEY)).isEqualTo(event.correlationId());
             });
             assertThat(result.structuredContent()).isNull();
+        }
+    }
+
+    @Test void comparisonFindingsAreBoundedBeforeAllowIsAudited() {
+        for (String value : List.of("ascii", "é漢字", "📦", "\"\\\n\u0000")) {
+            ObjectNode tree = JsonNodeFactory.instance.objectNode();
+            List<ConsistencyFinding> findings = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                String field = "label" + i;
+                tree.put(field, value);
+                findings.add(new ConsistencyFinding(field, PrivacyNamespace.NONE,
+                        ConsistencyFinding.Kind.SUSPECTED_INSTRUCTION_CONTENT, List.of(), 1, "instruction shape"));
+            }
+            var unrestricted = call(tree, 1, 100000, new ArrayList<>(), true, findings);
+            String body = ((McpSchema.TextContent) unrestricted.content().getFirst()).text();
+            int actual = body.getBytes(StandardCharsets.UTF_8).length;
+            var mapper = DataPrismObjectMapper.create();
+            assertThat(mapper.readTree(body)).isEqualTo(mapper.valueToTree(unrestricted.structuredContent()));
+            assertThat(mapper.readTree(body).get("identity").size()).isEqualTo(10);
+            assertThat(mapper.readTree(body).get("findings").size()).isEqualTo(10);
+            int low = 1, high = 100000;
+            while (low < high) {
+                int middle = (low + high) / 2;
+                if (Boolean.TRUE.equals(call(tree, 1, middle, new ArrayList<>(), true, findings).isError())) low = middle + 1;
+                else high = middle;
+            }
+            assertThat(low).isBetween(actual, 3 * actual);
+            if (value.equals("ascii")) assertThat(low).isEqualTo(actual);
+            List<AuditEvent> allowed = new ArrayList<>();
+            assertThat(call(tree, 1, low, allowed, true, findings).isError()).isNotEqualTo(Boolean.TRUE);
+            assertThat(allowed).singleElement().satisfies(event -> assertThat(event.policyDecision()).isEqualTo("ALLOW"));
+            List<AuditEvent> denied = new ArrayList<>();
+            var refused = call(tree, 1, low - 1, denied, true, findings);
+            assertThat(refused.isError()).isTrue();
+            assertThat(((McpSchema.TextContent) refused.content().getFirst()).text()).isEqualTo("refused: RESPONSE_TOO_LARGE at $");
+            assertThat(refused.structuredContent()).isNull();
+            assertThat(denied).singleElement().satisfies(event -> {
+                assertThat(event.policyDecision()).isEqualTo("DENY:RESPONSE_TOO_LARGE");
+                assertThat(refused.meta().get(ToolCalls.CORRELATION_ID_META_KEY)).isEqualTo(event.correlationId());
+            });
         }
     }
 
