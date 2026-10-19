@@ -173,6 +173,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
         // checked against before it is allowed into a refusal.
         Set<String> declared = new LinkedHashSet<>();
 
+        ContextResponse response;
         try {
             if (!budget.tryRead(context.scopeId(), request.subjectId(), limits.scopeReadBudget())) {
                 // Refused rather than throttled. A banded value narrows under
@@ -244,6 +245,16 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                         violations.size() + " violation(s), first " + violations.get(0).code()
                                 + " by " + violations.get(0).detectionMethod() + "; response withheld");
             }
+            response = ContextResponse.of(request.entityType(), subjectToken, sources,
+                    findings, trees, fieldsByNamespace(raw), aliasing, investigationContext, context, correlationId);
+            if (ResponseSize.records(response) > limits.maxRecords()) {
+                throw new PrivacyRefusedException("TOO_MANY_RECORDS", "$",
+                        "response exceeds configured record limit " + limits.maxRecords());
+            }
+            if (ResponseSize.bytes(response, request.includeAgreementFindings()) > limits.maxResponseBytes()) {
+                throw new PrivacyRefusedException("RESPONSE_TOO_LARGE", "$",
+                        "response exceeds configured byte limit " + limits.maxResponseBytes());
+            }
         } catch (RuntimeException failure) {
             if (failure instanceof PrivacyRefusedException) {
                 metrics.increment(Metric.PRIVACY_FAILCLOSED);
@@ -269,9 +280,7 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 .forEach(o -> metrics.increment(Metric.PRIVACY_SOURCE_WITHHELD));
         audit(request, subjectToken, fingerprint, context, investigationContext, "ALLOW", sources,
                 correlationId, dispositions);
-        return ContextResponse.of(request.entityType(), subjectToken, sources,
-                findings, trees, fieldsByNamespace(raw), aliasing, investigationContext, context,
-                correlationId);
+        return response;
     }
 
     /**

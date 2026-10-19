@@ -13,8 +13,21 @@ import java.util.Objects;
  * docs/pack.md §74 and docs/design-review.md §D4.
  *
  * @param maxSources          sources one request may call
+ * <p>A record is each returned source's root object plus every object that is
+ * an array element at any depth. Other nested objects and scalar array elements
+ * do not add records. Withheld source payloads count zero.
+ *
+ * <p>The byte limit bounds the compact UTF-8 context body (including source
+ * statuses and findings), before ALLOW is audited. It excludes the MCP/JSON-RPC
+ * envelope and the transport's duplicate text/structured representations.
+ * Comparison requests also bound the projected identity and findings (including
+ * their consistency booleans); the larger of the two body bounds is enforced.
+ * A mapper-free walk reserves six bytes per surrogate code unit, so it may
+ * refuse conservatively; ordinary JSON is exact apart from that reservation.
+ * Unsupported opaque nodes fail closed. Equality with either limit is allowed.
+ *
  * @param maxRecords          records one request may carry
- * @param maxResponseBytes    serialised size of the response
+ * @param maxResponseBytes    conservative compact UTF-8 context-body size
  * @param perSourceTimeout    how long any one source may take before it is treated
  *                            as absent
  * @param maxConcurrency      concurrent downstream calls across the whole request.
