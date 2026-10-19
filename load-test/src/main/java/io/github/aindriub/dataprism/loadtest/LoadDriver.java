@@ -125,8 +125,13 @@ final class LoadDriver {
             if (due >= end) {
                 return;
             }
-            long wait = due - clock.getAsLong();
-            if (wait > 0) {
+            // parkNanos may return early; wait until the schedule says go. A set interrupt flag makes it
+            // return at once every time, so an interrupted worker stops instead of spinning.
+            long wait;
+            while ((wait = due - clock.getAsLong()) > 0) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
                 park.accept(wait);
             }
             if (clock.getAsLong() >= end) {
@@ -153,13 +158,31 @@ final class LoadDriver {
     }
 
     private CallOutcome call(McpSyncClient client, String subject, long measuredFrom) {
+        return measuredCall(id -> client.callTool(new McpSchema.CallToolRequest("get_entity_context",
+                Map.of("entityType", SourceGenerator.ENTITY_TYPE, "subjectId", id))),
+                System::nanoTime, subject, measuredFrom);
+    }
+
+    /** The seam around {@code callTool}. */
+    @FunctionalInterface
+    interface ToolCall {
+        McpSchema.CallToolResult invoke(String subject);
+    }
+
+    /**
+     * Makes one call and times it from {@code measuredFrom} (its scheduled time), whether it completes or not.
+     */
+    static CallOutcome measuredCall(ToolCall toolCall, LongSupplier clock, String subject, long measuredFrom) {
         try {
-            McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest("get_entity_context",
-                    Map.of("entityType", SourceGenerator.ENTITY_TYPE, "subjectId", subject)));
-            long micros = (System.nanoTime() - Math.min(measuredFrom, System.nanoTime())) / 1_000;
-            return ResponseClassifier.classify(result, micros);
+            McpSchema.CallToolResult result = toolCall.invoke(subject);
+            return ResponseClassifier.classify(result, micros(clock, measuredFrom));
         } catch (RuntimeException failure) {
-            return CallOutcome.transportFailure(failure.getClass().getSimpleName());
+            return CallOutcome.transportFailure(failure.getClass().getSimpleName(), micros(clock, measuredFrom));
         }
+    }
+
+    private static long micros(LongSupplier clock, long measuredFrom) {
+        long now = clock.getAsLong();
+        return (now - Math.min(measuredFrom, now)) / 1_000;
     }
 }

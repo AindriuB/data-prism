@@ -55,6 +55,7 @@ final class ResultWriter {
         latency.put("p99", s.p99Ms());
         latency.put("max", s.maxMs());
         latency.put("mean", s.meanMs());
+        latency.put("clamped", s.clamped());
         doc.put("latencyMs", latency);
         doc.put("elapsedSeconds", run.elapsed().toNanos() / 1e9);
         doc.put("throughputPerSecond", s.throughputPerSecond());

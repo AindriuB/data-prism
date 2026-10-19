@@ -39,7 +39,7 @@ class ResultAggregatorTest {
             aggregator.record(CallOutcome.completed(1000, Map.of("a", "ANSWERED")));
         }
         aggregator.record(CallOutcome.refused(2000, "SCOPE_READ_BUDGET"));
-        aggregator.record(CallOutcome.transportFailure("IOException"));
+        aggregator.record(CallOutcome.transportFailure("IOException", 1000));
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(5));
 
@@ -48,6 +48,35 @@ class ResultAggregatorTest {
         assertThat(summary.transportFailures()).isEqualTo(1);
         assertThat(summary.throughputPerSecond()).isEqualTo(9 / 5.0);
         assertThat(summary.transportFailureKinds()).containsEntry("IOException", 1L);
+    }
+
+    @Test
+    void aFailedCallRaisesTheTailItDoesNotHideFrom() {
+        ResultAggregator aggregator = new ResultAggregator();
+        for (int i = 0; i < 99; i++) {
+            aggregator.record(CallOutcome.completed(1000, Map.of()));
+        }
+        aggregator.record(CallOutcome.transportFailure("TimeoutException", 60_000_000));
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(10));
+
+        assertThat(summary.maxMs()).isCloseTo(60_000.0, org.assertj.core.data.Percentage.withPercentage(0.01));
+        assertThat(summary.transportFailures()).isEqualTo(1);
+        assertThat(summary.completed()).isEqualTo(99);
+        assertThat(summary.throughputPerSecond()).isEqualTo(9.9);
+    }
+
+    @Test
+    void valuesBeyondTheTrackableMaximumAreCountedAsClamped() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record(CallOutcome.completed(1000, Map.of()));
+        aggregator.record(CallOutcome.completed(ResultAggregator.HIGHEST_TRACKABLE_MICROS + 1, Map.of()));
+        aggregator.record(CallOutcome.transportFailure("TimeoutException", Long.MAX_VALUE));
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
+
+        assertThat(summary.clamped()).isEqualTo(2);
+        assertThat(summary.maxMs()).isCloseTo(ResultAggregator.HIGHEST_TRACKABLE_MICROS / 1000.0, org.assertj.core.data.Percentage.withPercentage(1));
     }
 
     @Test

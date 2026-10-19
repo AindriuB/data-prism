@@ -1,6 +1,9 @@
 package io.github.aindriub.dataprism.loadtest;
 
+import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
+
+import java.util.Map;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -53,6 +56,62 @@ class PacedDispatchTest {
         assertThat(LoadDriver.notDispatched(100, 1, 0, 100)).isZero();
         assertThat(LoadDriver.notDispatched(0, 1, 0, 10)).isZero();
         assertThat(LoadDriver.notDispatched(100, 0, 20, 5)).isZero();
+    }
+
+    @Test
+    void anEarlyReturnFromParkDoesNotDispatchBeforeTheDueTime() {
+        List<Long> clockAtDispatch = new ArrayList<>();
+        // Each park wakes after a third of the wait, as a spurious wakeup would.
+        LoadDriver.workerLoop(new AtomicLong(), new AtomicLong(), 3, 0, 100, SECOND,
+                now::get, wait -> now.addAndGet(Math.max(1, wait / 3)),
+                (index, due) -> clockAtDispatch.add(now.get() - due));
+
+        assertThat(clockAtDispatch).hasSize(3).allSatisfy(late -> assertThat(late).isGreaterThanOrEqualTo(0));
+    }
+
+    @Test
+    void aStuckInterruptFlagStopsTheWorkerInsteadOfSpinningOrDispatchingEarly() {
+        AtomicLong dispatched = new AtomicLong();
+        Thread.currentThread().interrupt();
+        try {
+            LoadDriver.workerLoop(new AtomicLong(), dispatched, 3, 0, 100, SECOND,
+                    now::get, wait -> { }, (index, due) -> dues.add(due));
+
+            // Index 0 is due at once and needs no wait; index 1 would wait while interrupted.
+            assertThat(dues).containsExactly(0L);
+            assertThat(dispatched.get()).isEqualTo(1);
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void latencyIsMeasuredFromTheScheduledTimeNotFromWhenTheCallWasSent() {
+        now.set(500 * MILLI);
+        McpSchema.CallToolResult result = McpSchema.CallToolResult.builder()
+                .structuredContent(Map.of()).addTextContent("{}").build();
+
+        CallOutcome outcome = LoadDriver.measuredCall(subject -> {
+            now.addAndGet(5 * MILLI);
+            return result;
+        }, now::get, "m-1", 100 * MILLI);
+
+        assertThat(outcome.completed()).isTrue();
+        assertThat(outcome.latencyMicros()).isEqualTo(405_000);
+    }
+
+    @Test
+    void aFailedCallIsStillTimedFromTheScheduledTime() {
+        now.set(500 * MILLI);
+
+        CallOutcome outcome = LoadDriver.measuredCall(subject -> {
+            now.addAndGet(60 * SECOND);
+            throw new IllegalStateException("timed out");
+        }, now::get, "m-1", 100 * MILLI);
+
+        assertThat(outcome.completed()).isFalse();
+        assertThat(outcome.transportFailure()).isEqualTo("IllegalStateException");
+        assertThat(outcome.latencyMicros()).isEqualTo(60_400_000);
     }
 
     private void slowCall(long index, long due) {
