@@ -54,12 +54,20 @@ Each refusal writes an audit event whose decision is `DENY:<code>`.
 | `APPROVAL_NOT_PENDING` | `approve` on a request that was already decided |
 | `APPROVAL_NOT_APPROVED` | `collect` before approval, or after it was used |
 | `TOO_MANY_PENDING` | The requester already holds the maximum number of live pending re-identification approvals (`ReidentificationPolicy.maxPendingPerRequester`, default 5, counted apart from tool-call approvals). No approval is created, and the event carries no approval id |
-| `CLUSTER_LOCK_TIMEOUT` | A cluster lock the step needs was held for longer than `dataprism.hazelcast.lock-timeout`. Nothing was changed; retry. 503 on the operator API |
-| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the step needs, such as a lock or its lease. Nothing was changed; retry later, and tell an operator if it persists. 503 on the operator API |
+| `CLUSTER_LOCK_TIMEOUT` | A cluster lock the step needs was held for longer than `dataprism.hazelcast.lock-timeout`. The failed lock wait changes nothing, but a step that ran earlier stays done. `collect` and `approve` return this code before they consume or decide, so re-read the request first (see below), then retry. 503 on the operator API |
+| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the step needs, such as a lock or its lease. The failed step changes nothing, but earlier steps stay done: a `request` that fails while creating its approval may leave a pending request that counts against the cap until it expires. Retry later, and tell an operator if it persists. 503 on the operator API |
 | `REIDENTIFICATION_UNAVAILABLE` | Any other store or lookup failure; the request fails closed |
 | `AUDIT_UNAVAILABLE` | The audit write failed; nothing is returned |
 
 Resolving a subject id to a person remains the source systems' job.
+
+What to do after either cluster code. The failed lock wait changes nothing, but a step that ran earlier stays done.
+
+- `collect`: with the shipped Hazelcast store these codes come from the consume's lock, before the consume commits, so the approval is still usable and the same `collect` can be repeated. A consumed approval is never restored: if `collect` fails after its consume (the lookup or the audit write), request again.
+- `approve`: these codes come from the decision's lock, before the decision commits. Another approver may have decided meanwhile, so check the request's status before you repeat it. A different failure of `approve`, such as a timeout that loses the reply, can follow a decision that did commit, so check the status before you treat any failed `approve` as final.
+- `request`: a request that fails while creating its approval may leave a pending request, which counts against `maxPendingPerRequester` until it expires. A retry opens a new request.
+
+The full list of what may already have happened is in [what a cluster refusal leaves behind](multiple-instances.md#what-a-cluster-refusal-leaves-behind).
 
 ## How the index is fed
 

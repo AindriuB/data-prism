@@ -6,6 +6,10 @@ package io.github.aindriub.dataprism.core.refusal;
  *
  * <p>Carries the stable code {@value #CODE}. It names no key, scope or subject, so the
  * code and message are safe to log and to audit.
+ *
+ * <p>Only the step that failed is known to have changed nothing. Steps of the same call that ran before it are
+ * not undone: a rate-limit allowance stays used, and an approval consumed earlier stays consumed. See
+ * {@code docs/multiple-instances.md}, "What a cluster refusal leaves behind".
  */
 public final class ClusterLockTimeoutException extends PrivacyRefusedException {
 

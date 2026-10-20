@@ -47,6 +47,9 @@ final class ClusterLocks {
      * Takes the lock on {@code key}, waiting at most {@code timeout}, for a lease of
      * {@link #leaseMillis(Duration)}.
      *
+     * <p>A call that throws here has written nothing under this lock, but the caller's earlier steps may have
+     * changed state, so the exception is not a promise that the whole operation changed nothing.
+     *
      * @throws ClusterLockTimeoutException       if it was not obtained in time, or the thread was interrupted
      * @throws ClusterOperationRefusedException if Hazelcast rejected the lock or its lease (for example because
      *                                          {@code hazelcast.lock.max.lease.time.seconds} is below it)
