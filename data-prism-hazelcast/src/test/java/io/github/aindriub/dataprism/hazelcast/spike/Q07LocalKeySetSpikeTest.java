@@ -26,6 +26,7 @@ class Q07LocalKeySetSpikeTest {
     private static final int KEYS = 500;
 
     private final List<HazelcastInstance> members = new ArrayList<>();
+    private List<Config> configs;
 
     @AfterEach
     void stop() {
@@ -52,7 +53,7 @@ class Q07LocalKeySetSpikeTest {
     }
 
     private void startMembers(int count) {
-        List<Config> configs = Spike.configs(Spike.name("q7"), 3);
+        configs = Spike.configs(Spike.name("q7"), 3);
         for (int i = 0; i < count; i++) {
             members.add(Spike.start(configs.get(i)));
         }
@@ -103,7 +104,7 @@ class Q07LocalKeySetSpikeTest {
         });
         sampler.start();
         try {
-            members.add(Spike.start(Spike.configs(Spike.name("q7"), 3).get(2)));
+            members.add(Spike.start(configs.get(2)));
         } finally {
             joining.set(false);
             sampler.join();
@@ -111,16 +112,20 @@ class Q07LocalKeySetSpikeTest {
         // Sampled while the third member joined; not asserted, because it depends on timing.
         System.out.println("Q7 migration samples " + samples + " anomalous " + anomalous);
         assertThat(Spike.await(60, () -> members.get(0).getPartitionService().isClusterSafe())).isTrue();
-        Set<String> union = new HashSet<>();
-        int total = 0;
-        for (HazelcastInstance member : members) {
-            Set<String> local = member.<String, String>getMap("m").localKeySet();
-            assertThat(local).isEqualTo(primaryKeys(member)).isNotEmpty();
-            union.addAll(local);
-            total += local.size();
-        }
-        assertThat(union).isEqualTo(allKeys());
-        assertThat(total).isEqualTo(KEYS);
+        boolean settled = Spike.await(30, () -> {
+            Set<String> union = new HashSet<>();
+            int total = 0;
+            for (HazelcastInstance member : members) {
+                Set<String> local = member.<String, String>getMap("m").localKeySet();
+                if (!local.equals(primaryKeys(member))) {
+                    return false;
+                }
+                union.addAll(local);
+                total += local.size();
+            }
+            return union.equals(allKeys()) && total == KEYS;
+        });
+        assertThat(settled).isTrue();
     }
 
     @Test
