@@ -391,3 +391,17 @@ Migration-note paragraph for `docs/migration-0.7.md`, by audience:
   can throw it (or `ClusterLockTimeoutException`) to have the code reach the caller.
 
 `dataprism.approval.pending.sweep-seconds` was never released, so it gets no migration entry.
+
+### Owner waivers and follow-ups (2026-10-20)
+
+- **Waiver 1 (owner).** The acceptance item "with the audit sink failing, the answer is `AUDIT_UNAVAILABLE`" is waived. The brief was
+  wrong about the existing behaviour (deviation 1): `ReidentificationService.refuse` and `refuseApproval`, and the operator
+  controller's `recordDenial`, swallow a failed denial audit, so the call is still refused and nothing is resolved. Follow-up for
+  0.8 (owner decision): a denial whose audit write fails answers `AUDIT_UNAVAILABLE` and counts a metric, consistently across the
+  re-identification, operator and tool paths.
+- **Waiver 2 (owner).** The "no `sweep-seconds` reference" acceptance grep is waived (deviation 2): decision records may name the
+  old key and no live reference remains.
+- **Review suggestions.** The two docs suggestions were applied in the register (`design/contract-register.md`, the
+  `hazelcast.lock.max.lease.time.seconds` row and D13; the S3 row now says the code is already in `docs/tools.md`). The two code
+  suggestions are P3 follow-ups in `PLAN.md`: the mutable static logger in `ClusterRefusals` breaks under parallel tests, and the
+  sentinel log test runs at `ClusterRefusals.refused` rather than at a real throw site.

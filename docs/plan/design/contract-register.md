@@ -924,7 +924,7 @@ The release column is a lower bound: `<=0.6.0` means the pinned list or the conf
 | Name | State | Release | Source | Note |
 |---|---|---|---|---|
 | *(replaced)* the unreleased Hazelcast config property for the approval sweep interval | withdrawn | n/a | t233 | Now the Spring-bound `dataprism.hazelcast.approval-sweep-interval` (section 6.1; OD-200-14). A `Config` that still carries the old name is neither read nor refused; the old name is in section 10 |
-| `hazelcast.lock.max.lease.time.seconds` (Hazelcast's own) | not ours | n/a | docs/multiple-instances.md; t216 | If set below the lease the store asks for (five times `lock-timeout`), approval creation is refused with `CLUSTER_OPERATION_REFUSED` |
+| `hazelcast.lock.max.lease.time.seconds` (Hazelcast's own) | not ours | n/a | docs/multiple-instances.md; t216 | If set below the lease a lock-taking call asks for (five times `lock-timeout`), the cluster rejects the lock and the call is refused with `CLUSTER_OPERATION_REFUSED`: approval creation, `findPending`, `consumeApproved`, the caller rate limiter and the read budget (t233 surfaces it on the admission, read, re-identification and operator paths) |
 | YAML file `sources:` (root keys `sources`, `tls`; entry keys `base-url`, `path`, `timeout`, `correlation-header`; tls keys `key-store`, `key-store-password-env`, `trust-store`, `trust-store-password-env`, `store-type`) | shipped | <=0.6.0 | connectors-rest:RestSources.java:34 | unknown keys refuse (`UNKNOWN_CONFIG_KEY`); kebab case |
 | YAML file `json-sources:` (root `json-sources`, `tls`; source keys `base-url`, `path`, `timeout`, `model-version`, `subject-json-path`, `fields`, `nested-catalogues`, `correlation-header`; field keys `identifier`, `nonSensitive`, `classifications`, `namespace`, `action`, `nested`) | shipped | <=0.6.0 | connectors-rest:ConfiguredJsonSources.java:54 | kebab case for source keys, camelCase for field keys (`nonSensitive`): section 13 |
 | model descriptor file (root `models`; keys `exposed`, `descendable`, `undeclaredFields`, `fields`; field keys `classifications`, `namespace`, `action`, `subject`, `nonSensitive`, `identifier`) | shipped | <=0.6.0 | core:ModelDescriptors.java:29 | camelCase; `dataprism.privacy.descriptor-file` points at it |
@@ -1287,7 +1287,7 @@ Recorded, not resolved by editing: this task may not edit the design documents o
 | D10 | `UNSAFE_HAZELCAST_DISCOVERY` and `INVALID_CLUSTER_PORT` are shipped but not string literals | `PrivacyClusterRefusal.java:14`, `:17` | Registered in 3.5. A literal-only extraction misses them (E2). E1c finds four more that E1 misses because the code starts a message: `SPECIAL_CATEGORY_EXPOSED`, `AUDIT_CHECKPOINT_UNAVAILABLE`, `AUDIT_LISTENER_DROPPED`, `AUDIT_LISTENER_FAILED`. |
 | D11 | The `FOLLOW` capability is cited, not defined | `batch-and-bulk-follow.md:1091` against all of `sealed-links.md` | OD-200-5. |
 | D12 | Option-(b)-only names remain in the 0.8 tables although option (a') was adopted | `sealed-links.md:500` (`dataprism.links.max-chain-depth`, "option b only"), `:250` (`DEPTH_EXCEEDED`) | OD-200-8. |
-| D13 | Shipped documents do not list 68 of the 214 shipped codes, nor `CLUSTER_OPERATION_REFUSED` in `docs/tools.md` | section 3, "Docs" column; `docs/tools.md:512` lists `CLUSTER_LOCK_TIMEOUT` only | Successor task S3. Not a design disagreement; a freeze-checklist gap. |
+| D13 | Shipped documents do not list 68 of the 214 shipped codes | section 3, "Docs" column. `CLUSTER_OPERATION_REFUSED` is now listed in `docs/tools.md` (t233) | Successor task S3. Not a design disagreement; a freeze-checklist gap. |
 
 **D3 detail: identifier length caps.**
 
@@ -1497,7 +1497,7 @@ Not allocated or numbered here (the orchestrator allocates ids). Each is outside
 |---|---|---|---|
 | S1 | Correct the design documents' stale rows: `sealed-links.md` closing table (D5) and relation table (D4), `key-resolvers.md` closing table and failure table (D5, D6), `cluster-security.md` lock-timeout rows (D7), and the label caps after OD-200-4 (D3) | docs/plan/design/*.md | owner decisions 4, 8, 9 |
 | S2 | Surface or log `CLUSTER_OPERATION_REFUSED` and move its class (OD-200-2); replace the sweep property (OD-200-14) | hazelcast, security, reidentification, server, autoconfigure | owner decisions 2, 14 |
-| S3 | Document the shipped codes the shipped pages lack ("Docs: no" in section 3) and add `CLUSTER_OPERATION_REFUSED` to `docs/tools.md` | docs/tools.md, docs/configuration.md, docs/multiple-instances.md | OD-200-2 |
+| S3 | Document the shipped codes the shipped pages lack ("Docs: no" in section 3) (`CLUSTER_OPERATION_REFUSED` is already in `docs/tools.md`, t233) | docs/tools.md, docs/configuration.md, docs/multiple-instances.md | OD-200-2 |
 | S4 | Add the freeze tests of section 15 that do not need a decision: code extraction and frozen lists, golden `tools/list`, map names, operator endpoints, SPI signature snapshot | test sources, test resources | none |
 | S5 | Correct the D-070-3 line in `PLAN.md` once OD-200-1 is chosen | docs/plan/PLAN.md | owner decision 1 |
 | S6 | Design the 0.9 contract that has no name yet (section 6.5): per-source role authorisation (D-RM-11), audit-entry size handling, and the `compare_entity_sources` review | docs/plan/design/ (new document) | none; before the 0.9 briefs |

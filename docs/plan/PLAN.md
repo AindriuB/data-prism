@@ -51,11 +51,16 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 PRs #130 (`plan/0.7.0`) and #131 (task 193) have merged to `main`, and `main` is the integration base. `plan/0.7.0` carries, in addition, the verified results of tasks 194, 196, 198 and 217, not yet on `main`. See `reconciliation-2026-10-19.md` for task allocation. This section supersedes the older execution summary below.
 
-Open 0.7 work: a new task (pending, below), then 201. Task 200 (contract register) landed on 2026-10-20; tasks 199, 209, 216 and 232 landed on `plan/0.7.0` the same day. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
+Open 0.7 work: task 201 only. Tasks 199, 200, 209, 216, 232 and 233 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
 
-1. New task (pending: the planner writes it next; no task file yet). It implements OD-200-2 (surface `CLUSTER_OPERATION_REFUSED` to callers, class moved to `core.refusal`, cause chained and logged, no data in the message) and OD-200-14 (`dataprism.hazelcast.approval-sweep-interval`, a Spring-bound `Duration`, default `PT5M`, validated at startup and pinned in the frozen property list). It is register successor S2. 201 must wait for it.
-2. 201 after the new task (209, 216, 217 and 232 are done). It must take its CHANGELOG lines and migration note from the Outcome of the retired 216 (`docs/plan/tasks/retired/216-atomic-approval-creation-in-hazelcast.md`), and from the Outcome of the retired 232 (`docs/plan/tasks/retired/232-approval-creation-tokens-and-bounded-cleanup.md`) its CHANGELOG lines, migration note and value-format changes. It must also include 209's `### Breaking` line and migration note from the Outcome of `docs/plan/tasks/retired/209-wire-pattern-validator-and-recognisers.md`: Spring-built and configured-JSON-source orchestrators now run `SensitivePatternValidator`, so sensitive-shaped values in `@NonSensitive` fields are refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; deployers must classify such fields correctly, and there is no opt-out property. Its `docs/tools.md` and `docs/multiple-instances.md` text must list `CLUSTER_OPERATION_REFUSED` as client-visible (OD-200-2) and the new sweep property (OD-200-14).
-3. 215 (0.8 planning) can start now that 200 has landed, in parallel with the new task and 201. It reads `docs/plan/design/contract-register.md`.
+1. 201 (no remaining dependency; its Depends on was updated for 233). It takes its CHANGELOG lines and migration notes from the Outcomes of the retired tasks 189, 190, 193, 194, 196, 202, 209, 216, 217, 232 and 233, all under `docs/plan/tasks/retired/`. From 216 and 232 it takes their CHANGELOG lines, migration notes and value-format changes. From 209 it takes the `### Breaking` line and migration note: Spring-built and configured-JSON-source orchestrators now run `SensitivePatternValidator`, so sensitive-shaped values in `@NonSensitive` fields are refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; deployers must classify such fields correctly, and there is no opt-out property. From 233 it takes the proposed `Changed` and `Added` lines and the audience-by-audience migration paragraph in its Outcome, including D-0.7-HZ-3 (owner, 2026-10-20): both `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` now reach callers on the re-identification and operator paths, which changes the documented `503 OVERSIGHT_UNAVAILABLE` response in `docs/multiple-instances.md`. `docs/tools.md` already lists `CLUSTER_OPERATION_REFUSED`; 201 checks `docs/multiple-instances.md` and the new `dataprism.hazelcast.approval-sweep-interval` key (OD-200-14).
+2. 215 (0.8 planning) can start now. It reads `docs/plan/design/contract-register.md`.
+
+Follow-ups from 233 (none scheduled):
+
+- 0.8 (owner decision): a denial whose audit write fails answers `AUDIT_UNAVAILABLE` and counts a metric, consistently across the re-identification, operator and tool paths. Today `ReidentificationService.refuse` and `refuseApproval` and the operator controller's `recordDenial` swallow the failed audit and still refuse. The 233 brief wrongly called the `AUDIT_UNAVAILABLE` answer existing behaviour; the owner waived that acceptance item.
+- P3: `ClusterRefusals` in the hazelcast module holds a mutable static logger, which would break under parallel tests.
+- P3: the sentinel log test runs at `ClusterRefusals.refused` rather than at a real throw site.
 
 Follow-ups from 199 and 209 (none scheduled):
 
@@ -165,8 +170,8 @@ Owner decisions from the contract register (task 200, 2026-10-20). The register 
 The register (`docs/plan/design/contract-register.md`, section 16) names six successor tasks. Ids are not yet allocated. The planner writes the briefs; none is a task file today.
 
 - S1 (0.8, before the 0.8 briefs): correct the stale rows in the design documents (`sealed-links.md` closing and relation tables, `key-resolvers.md` closing and failure tables, `cluster-security.md` lock-timeout rows) and apply the OD-200-4 length caps, OD-200-3, -6, -7, -8, -9 and -10 renames. Depends on the decisions above, now made.
-- S2 (0.7): the pending task above (OD-200-2 and OD-200-14). Not a follow-up; listed here for completeness.
-- S3 (0.8): document the shipped codes the shipped pages lack ("Docs: no" in register section 3) and add `CLUSTER_OPERATION_REFUSED` to `docs/tools.md`. Part of this lands in 201; the rest follows S2.
+- S2 (0.7, done): task 233 (OD-200-2 and OD-200-14), landed 2026-10-20.
+- S3 (0.8): document the shipped codes the shipped pages lack ("Docs: no" in register section 3) (`CLUSTER_OPERATION_REFUSED` is already in `docs/tools.md`). Part of this lands in 201.
 - S4 (0.8, before the 0.9 freeze): add the freeze tests of register section 15 that need no decision: code extraction and frozen lists (run E1c as well as E1), golden `tools/list`, map names, operator endpoints, SPI signature snapshot. Its frozen list must classify the five enums whose exits were not traced.
 - S5 (done): the D-070-3 line in `PLAN.md` is corrected by the OD-200-1 decision, recorded 2026-10-20.
 - S6 (0.9, before the 0.9 briefs): design the 0.9 contract with no name yet (register section 6.5): per-source role authorisation (D-RM-11), audit-entry size handling, and the `compare_entity_sources` review.
