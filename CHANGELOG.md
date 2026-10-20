@@ -166,6 +166,9 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
 
 ### Security
 
+- Jackson 3 (`tools.jackson`) is managed at 3.1.8, ahead of the Spring Boot 4.1.1
+  BOM, fixing GHSA-wv8q-qhhj-9h54, GHSA-cxp5-3px4-pw24, GHSA-q4xh-88c3-wmh7,
+  GHSA-wjgm-6hv5-3cvf and GHSA-gx83-3vf8-gh7j in the published artifacts and images.
 - The response leak validators scan property names as well as values, so a map
   keyed by an email address or other identifier is refused even under a
   Java-built `PASS_THROUGH_UNSAFE` profile. A flagged name is reported as
