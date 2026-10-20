@@ -61,7 +61,7 @@ final class ClusterLocks {
             Thread.currentThread().interrupt();
             throw new ClusterLockTimeoutException();
         } catch (IllegalArgumentException rejected) {
-            throw new ClusterOperationRefusedException(null);
+            throw ClusterRefusals.refused(rejected);
         }
     }
 

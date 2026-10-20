@@ -309,7 +309,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         } catch (PrivacyRefusedException | SplitBrainProtectionException refusal) {
             throw refusal;
         } catch (RuntimeException failure) {
-            throw new ClusterOperationRefusedException(null);
+            throw ClusterRefusals.refused(failure);
         }
     }
 
@@ -325,7 +325,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 throw refusal;
             } catch (RuntimeException failure) {
                 close();
-                throw new ClusterOperationRefusedException(null);
+                throw ClusterRefusals.refused(failure);
             }
             releases.push(() -> ClusterLocks.release(map, key));
         }

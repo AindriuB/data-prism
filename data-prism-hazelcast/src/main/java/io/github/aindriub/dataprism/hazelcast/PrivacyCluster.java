@@ -119,6 +119,11 @@ public final class PrivacyCluster implements AutoCloseable {
         sweeper.useLockTimeout(lockTimeout);
     }
 
+    /** How often this member sweeps the pending-approval entries and id claims it owns. */
+    public java.time.Duration approvalSweepInterval() {
+        return PendingSweeper.DEFAULT_INTERVAL;
+    }
+
     boolean sweeperStopped() {
         return sweeper.isStopped();
     }
@@ -288,6 +293,21 @@ public final class PrivacyCluster implements AutoCloseable {
 
     private static IllegalArgumentException unexpandable() {
         return new IllegalArgumentException("a tcp-ip member entry cannot be expanded reliably to a member count");
+    }
+
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers, java.time.Duration interval) {
+        return embedded(membership, reidentificationEnabled, approvalMinimumMembers);
+    }
+
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers, java.time.Duration interval) {
+        return embedded(config, reidentificationEnabled, approvalMinimumMembers);
+    }
+
+    public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
+                                       java.time.Duration interval) {
+        return using(instance, reidentificationEnabled);
     }
 
     /** Validates and hardens the config, then starts a member. Refuses before anything starts. */
