@@ -51,10 +51,17 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 PRs #130 (`plan/0.7.0`) and #131 (task 193) have merged to `main`, and `main` is the integration base. `plan/0.7.0` carries, in addition, the verified results of tasks 194, 196, 198 and 217, not yet on `main`. See `reconciliation-2026-10-19.md` for task allocation. This section supersedes the older execution summary below.
 
-Open 0.7 work: task 201 only. Tasks 199, 200, 209, 216, 232 and 233 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
+Every 0.7.0 task has landed on `plan/0.7.0`; task 201 (CHANGELOG, migration page, architecture entries) landed on 2026-10-20 and is the last. Task 215 (0.8 planning) is open and can start now; it reads `docs/plan/design/contract-register.md`.
 
-1. 201 (no remaining dependency; its Depends on was updated for 233). It takes its CHANGELOG lines and migration notes from the Outcomes of the retired tasks 189, 190, 193, 194, 196, 202, 209, 216, 217, 232 and 233, all under `docs/plan/tasks/retired/`. From 216 and 232 it takes their CHANGELOG lines, migration notes and value-format changes. From 209 it takes the `### Breaking` line and migration note: Spring-built and configured-JSON-source orchestrators now run `SensitivePatternValidator`, so sensitive-shaped values in `@NonSensitive` fields are refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; deployers must classify such fields correctly, and there is no opt-out property. From 233 it takes the proposed `Changed` and `Added` lines and the audience-by-audience migration paragraph in its Outcome, including D-0.7-HZ-3 (owner, 2026-10-20): both `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` now reach callers on the re-identification and operator paths, which changes the documented `503 OVERSIGHT_UNAVAILABLE` response in `docs/multiple-instances.md`. `docs/tools.md` already lists `CLUSTER_OPERATION_REFUSED`; 201 checks `docs/multiple-instances.md` and the new `dataprism.hazelcast.approval-sweep-interval` key (OD-200-14).
-2. 215 (0.8 planning) can start now. It reads `docs/plan/design/contract-register.md`.
+#### 0.7.0 release gate
+
+Nothing below is done. The first two block the release; the third and fourth follow it.
+
+1. Re-capture the two single-source HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the running Compose stack. They are still marked "Not re-captured for 0.7". This needs Docker (OrbStack) running and network pulls for the from-source build. Required before release.
+2. Owner go/no-go for the version bump, tag and publish (D-0.6 rule: no version bump, tag, publish or release PR without the owner's explicit go).
+3. After publishing and before announcing, run task 188's five-step supply-chain verification (see its retired Outcome, "Release checklist for 0.7.0", and the checklist below). If any step fails, correct the CHANGELOG Security and Build lines and the migration page's "Verifying a release" section.
+4. The after-action report after the release, presented in chat and never committed.
+
 
 Follow-ups from 233 (none scheduled):
 
@@ -102,7 +109,7 @@ Follow-ups found in review, none yet scheduled:
 
 Follow-ups from task 190: re-capture the two converted HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the Compose stack before the 0.7.0 release. For task 201's migration notes: a 0.7 log carrying `REFUSED:<code>` cannot be read by a pre-0.7 verifier, while old logs verify with the new one. The custom-validator SPI change (the final pass validates an array root, not an object) is Breaking and belongs in the same notes.
 
-Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts), then on 2026-10-19 tasks 193, 194, 196, 198 and 217, and on 2026-10-20 task 216 (atomic approval creation). Open: tasks 200 and 201. Tasks 200 and 201 depend on 202, which has landed: 200 registers its new keys and codes, 201 writes its CHANGELOG lines and migration note (both in the retired 202 outcome, `docs/plan/tasks/retired/202-hazelcast-approval-consume-and-lock-timeouts.md`).
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts), then on 2026-10-19 tasks 193, 194, 196, 198 and 217, and on 2026-10-20 task 216 (atomic approval creation). Tasks 200 and 201 have since landed too; nothing 0.7 is open except the release gate above.
 
 Coordinator interpretation of D-070-15: "approvals in use" means `dataprism.oversight.approval-required-tools` is not empty OR `dataprism.reidentification.enabled` (re-identification four-eyes uses the same approval store). The kubernetes rule and every quorum check apply only then; otherwise no quorum is computed or required.
 
