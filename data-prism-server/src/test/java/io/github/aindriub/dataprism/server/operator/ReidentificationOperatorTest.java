@@ -232,6 +232,7 @@ class ReidentificationOperatorTest {
         assertThat(listed.path("purpose").asString()).isEqualTo("fraud-review");
         assertThat(listed.path("caseId").asString()).isEqualTo("CASE-VIEW");
         assertThat(listed.path("expiresAt").asString()).isNotBlank();
+        assertThat(listed.path("status").asString()).isEqualTo("PENDING");
         assertThat(list.body()).doesNotContain(SUBJECT).doesNotContain("bindingFingerprint");
 
         HttpResponse<String> detail = app.operator("GET", "/operator/approvals/" + approvalId, approver, null);
@@ -240,6 +241,7 @@ class ReidentificationOperatorTest {
         assertThat(view.path("syntheticValue").asString()).isEqualTo(synthetic);
         assertThat(view.path("namespace").asString()).isEqualTo("PERSON_NAME");
         assertThat(view.path("scopeId").asString()).isEqualTo("case:CASE-VIEW");
+        assertThat(view.path("status").asString()).isEqualTo("PENDING");
         assertThat(detail.body()).doesNotContain(SUBJECT).doesNotContain("bindingFingerprint");
         assertThat(app.auditFor("operator:approval")).singleElement()
                 .satisfies(e -> assertThat(e.approvalId()).isEqualTo(approvalId));
