@@ -1,0 +1,142 @@
+{
+  "scenario" : "sources-8",
+  "startedAt" : "2026-10-20T07:38:12.029924Z",
+  "commit" : "558371184710ee673cb329edaee63e2a42092cf0",
+  "workingTreeDirty" : false,
+  "jdk" : "Homebrew 25.0.4",
+  "host" : "Mac OS X 27.0.1 aarch64, 8 processors, 4096 MiB max heap of the driver",
+  "parameters" : {
+    "name" : "sources-8",
+    "sources" : 8,
+    "sourceLatency" : {
+      "minMs" : 5,
+      "maxMs" : 25
+    },
+    "load" : {
+      "concurrency" : 4,
+      "calls" : 300,
+      "warmupCalls" : 30,
+      "ratePerSecond" : 0,
+      "durationSeconds" : 0,
+      "callTimeoutSeconds" : 60
+    },
+    "limits" : {
+      "maxSources" : 8,
+      "maxRecords" : 500,
+      "maxResponseSize" : "512KB",
+      "perSourceTimeout" : "3s",
+      "maxConcurrency" : 8,
+      "scopeReadBudget" : 100
+    },
+    "seed" : 196
+  },
+  "effectiveLimits" : {
+    "dataprism.limits.max-sources" : "8",
+    "dataprism.limits.max-records" : "500",
+    "dataprism.limits.max-response-size" : "512KB",
+    "dataprism.limits.per-source-timeout" : "3s",
+    "dataprism.limits.max-concurrency" : "8",
+    "dataprism.limits.scope-read-budget" : "100"
+  },
+  "calls" : {
+    "attempted" : 300,
+    "completed" : 300,
+    "transportFailures" : 0,
+    "transportFailureKinds" : { },
+    "notDispatched" : 0
+  },
+  "latencyMs" : {
+    "p50" : 29.91,
+    "p95" : 37.223,
+    "p99" : 41.348,
+    "max" : 45.242,
+    "mean" : 30.330753333333334,
+    "clamped" : 0
+  },
+  "elapsedSeconds" : 2.29245075,
+  "throughputPerSecond" : 130.86431627811416,
+  "refusalCodes" : { },
+  "sourceStatusTotals" : {
+    "ANSWERED" : 2400,
+    "NO_DATA" : 0,
+    "TIMED_OUT" : 0,
+    "FAILED" : 0,
+    "CIRCUIT_OPEN" : 0,
+    "SKIPPED_OVER_LIMIT" : 0,
+    "REFUSED" : 0
+  },
+  "perSourceStatus" : {
+    "ORGANISATION_IDENTITY-0YQH220M" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-B07ZPAJR" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-EV4S8W97" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-FRX0Z06R" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-FW0ECF5R" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GARVFZT3" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JCV416EX" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VER4AC17" : {
+      "ANSWERED" : 300,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    }
+  }
+}
