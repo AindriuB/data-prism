@@ -5,7 +5,7 @@
 **Kind:** planning documents only; no code.
 **Base branch:** `origin/main` (or the 0.8 integration branch).
 **Depends on:** none
-**Blocked on:** owner decisions OD-215-1 to OD-215-10 in `docs/plan/tasks/OD-215-open-decisions.md`. Do not start until each is decided; apply exactly what was decided. OD-215-11 to OD-215-16 belong to later tasks and are not applied here.
+**Decisions:** OD-215-1 to OD-215-10 are decided (2026-10-20) in `docs/plan/tasks/OD-215-open-decisions.md`. Apply exactly what was decided there. OD-215-11 to OD-215-16 belong to later tasks and are not applied here.
 **Owns:**
 - docs/plan/design/cluster-security.md
 - docs/plan/design/contract-register.md *(cluster rows only: the cluster rows of sections 3.2 and 3.5, the `dataprism.cluster.*` rows of section 5, the `dataprism.hazelcast.security.*` rows of sections 6.2 and 6.4, the cluster rows of sections 8.1, 9 and 10, rows C3, D7 and D8, and the cluster entries of section 13)*

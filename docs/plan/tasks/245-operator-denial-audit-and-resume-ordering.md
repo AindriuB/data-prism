@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 244, 210 and 223 have merged
 **Depends on:** 244 (the metric constant), 210 (210 owns configuration arguments across `data-prism-server/src/test/**`), 223 (sealed-cluster plan; 222 owns the cluster-key, name-key and member-interface arguments across `data-prism-server/src/test/java/**`, and 223 owns the raw map-key and lock-key expressions across `data-prism-server/src/test/java/**` and `data-prism-reidentification/src/test/java/**`; this task's new test files sit under both globs, so they are written against the keyed, key-configured test setup. 223 follows 222)
-**Blocked on:** OD-08-14 (how `resume` stays audit-first without leaving a false ALLOW)
+**Decisions:** OD-08-14 decided 2026-10-20 (a): audit-first, with a linked `DENY:<code>` under the same correlation id when the apply fails.
 **Wave:** 5 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-reidentification/src/main/java/io/github/aindriub/dataprism/reidentification/ReidentificationService.java *(`refuse`, `refuseApproval`, `auditDeny` and the return values of their callers only)*

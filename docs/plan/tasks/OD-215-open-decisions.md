@@ -1,6 +1,6 @@
 # Open decisions for the 0.8 sealed cluster (OD-215-1 to OD-215-16)
 
-Written 2026-10-20 with the sealed-cluster briefs 218 to 231 (task 215). None is decided. The approved design `docs/plan/design/cluster-security.md` and the owner's 2026-10-19 confirmation (`reconciliation-2026-10-19.md`) are fixed inputs: sealed state, encrypted re-identification values, separate cluster and name keys, no isolation-only mode, no Enterprise feature, Hazelcast OSS 5.7.x. Every option below stays inside them. Each brief that depends on a decision names it in a **Blocked on** line and does not start until the decision is recorded here and in `docs/plan/PLAN.md`.
+Written 2026-10-20 with the sealed-cluster briefs 218 to 231 (task 215). All sixteen are decided (2026-10-20, see "Decisions" below). The approved design `docs/plan/design/cluster-security.md` and the owner's 2026-10-19 confirmation (`reconciliation-2026-10-19.md`) are fixed inputs: sealed state, encrypted re-identification values, separate cluster and name keys, no isolation-only mode, no Enterprise feature, Hazelcast OSS 5.7.x. Every option below stays inside them. Each brief that depends on a decision names it in a **Blocked on** line and does not start until the decision is recorded here and in `docs/plan/PLAN.md`.
 
 Task 218 applies OD-215-1 to OD-215-10 to the design and the register. OD-215-11 to OD-215-16 are applied by the task named in their row.
 
@@ -22,6 +22,18 @@ Task 218 applies OD-215-1 to OD-215-10 to the design and the register. OD-215-11
 | OD-215-14 | Who builds a Hazelcast failed-attempt limiter for sealed links (core OD-08-2 (a)). Ids 218 to 231 are used up | (a) A further sealed-cluster brief, id allocated by the coordinator, after 226 and core 242, adding a sealed counter map and its boundary checker. (b) Fold it into 226. Cost: 226 then depends on core 242 and grows. (c) Nothing, if core OD-08-2 chooses (b) or (c) | (a) if OD-08-2 is (a) | coordinator |
 | OD-215-15 | Whether the local floor also covers the per-scope read total that core 243 adds | (a) Yes: subject, scope total and caller each have a local count. (b) Subject and caller only, as the design was written before the scope total existed. Cost: a reset of the shared scope total is unbounded | (a) | 226 |
 | OD-215-16 | Which operator writes are allowed while a member is not serving (unverified member under `refuse`, or a stale pause document) | (a) Pause allowed, resume refused until the member serves again. (b) Both allowed. (c) Both refused | (a). Pausing is the safe direction; resuming while the cluster is in doubt is not | 227, 228 |
+
+## Decisions
+
+Decided (2026-10-20, owner):
+
+- OD-215-1 (a): non-rolling cutover. A 0.8 member that finds any entry in a pre-0.8 map refuses with `UNSEALED_CLUSTER_STATE`; the compatibility mode is withdrawn. Owner note: the cluster state is cached data and can be fetched again; pending approvals are lost and must be requested again. Task 213 documents this in `docs/migration-0.8.md`.
+- OD-215-6 (b)+(c): tamper is a metric plus a rate-bounded WARN log, with no audit record, and the name `CLUSTER_STATE_TAMPER` as an audit record is withdrawn. `isolation.attestation` is kept, reported on health and in one startup log line, with no audit record.
+- OD-215-14: resolved by core OD-08-2 (a) as brief 264, with the fallback the owner agreed (core OD-08-2 (c)) if 264 slips to 0.9.0.
+
+Decided by delegation, recommended option (2026-10-20, owner delegated to the recommendation):
+
+- OD-215-2 (a), OD-215-3 (a), OD-215-4 (a), OD-215-5 (a), OD-215-7 (a), OD-215-8 (a), OD-215-9 (a), OD-215-10 (a), OD-215-11 (a if 219 shows it possible, otherwise b), OD-215-12 (a) with capacity 100,000, OD-215-13 (a) sweeper only, OD-215-15 (a) yes, OD-215-16 (a) pause allowed and resume refused until the member serves again.
 
 ## Coordination notes (not owner decisions)
 

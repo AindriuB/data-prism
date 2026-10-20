@@ -1,6 +1,6 @@
 # Open decisions for the 0.8 core (OD-08-1 to OD-08-18)
 
-Written 2026-10-20 with the 0.8 core briefs 238 to 263. None is decided. Each brief that depends on one says so in a **Blocked on** line and does not start until the decision is recorded here and in `docs/plan/PLAN.md`. Each row gives the options with their costs and a recommendation.
+Written 2026-10-20 with the 0.8 core briefs 238 to 263. All eighteen are decided (2026-10-20, see "Decisions" below); no decision remains open for 0.8. The briefs that depended on them carry a **Decisions** line in place of the former **Blocked on** line. Each row gives the options with their costs and a recommendation.
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
@@ -22,3 +22,17 @@ Written 2026-10-20 with the 0.8 core briefs 238 to 263. None is decided. Each br
 | OD-08-16 | The ceiling for `dataprism.key-resolvers.max-targets` (OD-R1: default 5, "configurable with a ceiling") | (a) 16, the batch default of D-RM-7. (b) 50. (c) Not configurable above 5 | (a) |
 | OD-08-17 | The scheduled advisory scan of the resolved dependency tree | (a) Fail the scheduled run on any HIGH or CRITICAL advisory, with ignore entries that each state a reason; pull-request builds are not affected. (b) Report only | (a) |
 | OD-08-18 | How the link-key material is referenced (the register has only `dataprism.links.key-id`; rotation phase 1 needs several keys held at once) | (a) `dataprism.links.key-id` names the current key and `dataprism.links.keys.<key-id>.environment-variable` or `.provider-reference` holds each key, current and retiring, with no literal value; the shape of task 211's retired audit keys. (b) `dataprism.links.key.*` plus `next` and `previous` groups, as the cluster keys do. Cost: at most three keys, and a rename of the registered key. (c) `key-id` only, resolved by an application `SecretKeyProvider` bean. Cost: no way to configure a link key without code | (a) |
+
+## Decisions
+
+Decided (2026-10-20, owner):
+
+- OD-08-2 (a): a shared Hazelcast limiter, brief 264, with startup refusal `MISSING_SHARED_LINK_LIMITER` when links are enabled on a shared topology without one. If 264 slips (the owner accepts it slipping to 0.9.0), fallback (c) is agreed: refuse links only on members joining via `tcp-ip` or `kubernetes`, never with `join.mode: none` or `single-node`. Option (b), weakening the limiter per instance, is excluded outright.
+- OD-08-3: `dataprism.limits.request-timeout` default `PT10S`; `dataprism.limits.scope-total-read-budget` default 50,000; `dataprism.limits.scope-read-budget` stays 100 and now counts source reads. This is a behaviour change for the migration notes (261).
+- OD-08-4 (a): remove `SKIPPED_OVER_LIMIT` from the status vocabulary before the 0.9 freeze; a Breaking entry in `CHANGELOG.md` when it is built.
+
+Decided by delegation, recommended option (2026-10-20, owner delegated to the recommendation):
+
+- OD-08-1 (a), OD-08-5 (a), OD-08-6 (a), OD-08-7 (a), OD-08-8 (a), OD-08-9 (a) with the code `MISSING_PAGING_KEY`, OD-08-10 (a) given that OD-215-5 adds a gauge, OD-08-11 (a), OD-08-12 (a), OD-08-13 (a), OD-08-14 (a), OD-08-15 (a), OD-08-16 (a) with ceiling 16, OD-08-17 (a), OD-08-18 (a).
+
+Also recorded: the design 5.2 key-rotation soak and the packet capture belong to task 263, whose brief already carries them.

@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 229 and core task 255.
 **Depends on:** 222 (the key groups and `validateCluster`), 229 (every reader of the settings exists), 255 (core plan; serialised with 254 and 255 on the shared Spring files below, and the link keys whose check values the member card carries)
-**Blocked on:** OD-215-6 (audit shape of tamper records and the isolation attestation)
+**Decisions:** OD-215-6 decided 2026-10-20 (b)+(c): tamper is a metric plus a rate-bounded WARN log with no audit record; `isolation.attestation` is kept, reported on health and in one startup log line, with no audit record.
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/HazelcastProperties.java *(the `security.pause-lease`, `clock-skew-tolerance`, `unverified-member.*`, `local-floor.enabled` and `isolation.attestation` properties only)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterBackedState.java *(passing `ClusterSecuritySettings` and link-key check values to the `PrivacyCluster` bean, the health contributor bean and the tamper listener only)*

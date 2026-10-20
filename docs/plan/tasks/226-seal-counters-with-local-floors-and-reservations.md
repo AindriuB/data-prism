@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 223 and 243.
 **Depends on:** 219 (answers 8 and 9), 223 (keyed names, `SealedWrites`, `ClusterSecuritySettings`, `CounterMapsBoundary`), 243 (core plan: `ScopeBudget.reserve` and `release`)
-**Blocked on:** OD-215-11 (counter merge policy), OD-215-15 (local floor on the scope total), core OD-08-1 (this brief assumes option (a); if another option is chosen, stop and have the reservation part re-cut)
+**Decisions:** OD-215-11 (a if 219 shows it possible, otherwise b), OD-215-15 (a, local floor covers the scope total) and core OD-08-1 (a, this brief owns `reserve` and `release` on `HazelcastScopeBudget`) are decided 2026-10-20.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastScopeBudget.java
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastCallerRateLimiter.java

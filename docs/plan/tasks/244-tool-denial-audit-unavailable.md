@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 220 has merged
 **Depends on:** 220 (sealed-cluster plan; 220 inserts every `dataprism.cluster.*` constant into `Metric.java` and `PrivacyMetricsTest.java`, which this task also inserts into)
-**Blocked on:** OD-08-13 (the metric's name and shape)
+**Decisions:** OD-08-13 decided 2026-10-20 (a): one constant `DENIAL_AUDIT_UNAVAILABLE`, `dataprism.audit.denial_unavailable`, on every path.
 **Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DenialAuditFailedException.java *(new)*

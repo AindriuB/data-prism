@@ -4,7 +4,7 @@
 **Release:** 0.8.0 (`dataprism.links.enabled` stays `false` by default through 0.9)
 **Base branch:** the 0.8 integration branch once 254 and 253 have merged
 **Depends on:** 254 (serialised on the shared Spring files; `LinksProperties`), 253 (the `follow` tool), 241 (registry and invoker)
-**Blocked on:** OD-08-2 (the limiter on a shared topology), OD-08-10 (link-key and catalog signals), OD-08-16 (the `max-targets` ceiling)
+**Decisions:** OD-08-2 (a, shared Hazelcast limiter, brief 264, `MISSING_SHARED_LINK_LIMITER`; fallback (c) agreed if 264 slips: refuse links only on members joining via `tcp-ip` or `kubernetes`, never `join.mode: none` or `single-node`; option (b) excluded), OD-08-10 (a, else b given OD-215-5) and OD-08-16 (a, ceiling 16) are decided 2026-10-20.
 **Serialised with:** the sealed-cluster wiring tasks on the shared Spring files listed in 254: 222 lands before this task (through 254), and 230 after it (230 depends on 255). `PiiLogScanTest.java` is also edited by 231, which follows 230 and so this task. Sealed-cluster task 264 (the shared Hazelcast limiter) follows 230 and so this task; it edits `LinkWiring.java` (the in-memory limiter bean's condition only) and supplies the cluster-wide bean that this task's refusal looks for
 **Wave:** 11 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**

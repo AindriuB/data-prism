@@ -42,7 +42,7 @@ Waves are on the combined 0.8 graph of 213, 218 to 231 and 238 to 264, with 203 
 
 | Id | Title | Depends on | Wave |
 |---|---|---|---|
-| 218 | Align the cluster design and the contract register with the 0.8 decisions | none (blocked on OD-215-1 to -10) | 1 |
+| 218 | Align the cluster design and the contract register with the 0.8 decisions | none (decisions OD-215-1 to -10 recorded) | 1 |
 | 219 | Pin the Hazelcast 5.7 behaviours the sealed cluster relies on | none | 1 |
 | 220 | Labelled HKDF, the sealing envelope and keyed names, with vectors | 218 | 2 |
 | 221 | Force safe Hazelcast settings, move to `.s1` maps, refuse old-format state | 218, 219 | 2 |

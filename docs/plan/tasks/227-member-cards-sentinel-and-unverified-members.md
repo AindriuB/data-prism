@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 223.
 **Depends on:** 219 (answers 6 and 11), 220 (`ServingGate`, key check value), 223 (`ClusterSecuritySettings`, `MemberCardMapsBoundary`, sealing context in `PrivacyCluster`)
-**Blocked on:** OD-215-16 (which oversight writes are allowed while the member is not serving)
+**Decisions:** OD-215-16 decided 2026-10-20 (a): pause allowed, resume refused until the member serves again.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/MemberCards.java *(new)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterSentinel.java *(new)*

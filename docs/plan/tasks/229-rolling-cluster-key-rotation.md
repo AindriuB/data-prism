@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 224, 225, 226 and 228.
 **Depends on:** 219 (answer 7), 224, 225, 226 (every store sealed), 227 (cards, sentinel), 228 (pause document)
-**Blocked on:** OD-215-13 (re-seal on read, or sweeper only)
+**Decisions:** OD-215-13 decided 2026-10-20 (a): re-sealing in phase 2 by the sweeper only.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/seal/CardWriteKeyPolicy.java *(new)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/RotationSweeper.java *(new)*
