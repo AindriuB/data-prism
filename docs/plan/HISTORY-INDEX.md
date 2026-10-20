@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-20 | 235 | Approval decisions are audit-first (D-0.7-AUD-1, design (a)): `ALLOW:APPROVED` before the commit, linked `DENY` when the decision does not apply; swallowed undo removed; unknown outcome re-read; two new metrics; ArchitectureTest rule | `## 2026-10-20 — 235: approval decisions are audit-first` |
 | 2026-10-20 | PR 137 review | Cluster-refusal retry guidance corrected: new "What a cluster refusal leaves behind" subsection, per-path retry advice, no unqualified "nothing changed" claim; `findPending` removed from the lock-taking rows of the contract register | `## 2026-10-20 — Cluster-refusal retry guidance corrected` |
 | 2026-10-20 | 234 | Jackson 3 managed at 3.1.8 via jackson-bom ahead of the Boot BOM (reactor had resolved 3.1.5; Dependabot cannot see BOM-managed versions); stale Pillow alerts noted | `## 2026-10-20 — 234: Jackson 3 managed at 3.1.8` |
 | 2026-10-20 | recapture | Single-source HTTP examples in remote-http.md and protect-your-own-api.md re-captured against the Compose stack; tools/list is two tools; other fail-closed blocks not re-captured | `## 2026-10-20 — 0.7 HTTP examples re-captured` |

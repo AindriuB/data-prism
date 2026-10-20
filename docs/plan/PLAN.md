@@ -55,19 +55,27 @@ Every 0.7.0 task has landed on `plan/0.7.0`; task 201 (CHANGELOG, migration page
 
 #### 0.7.0 release gate
 
-Item 1 is done; the rest is not. Item 6 (235) gates the release. The version bump must not happen without the owner's go.
+Items 1 and 6 are done; the rest is not. The version bump must not happen without the owner's go.
 
 1. Done: the single-source HTTP example blocks in `docs/agents/remote-http.md` and `docs/protect-your-own-api.md` were re-captured against the Compose stack and the from-source walkthrough on 2026-10-20 (04720f98).
 2. Owner go/no-go for the version bump, tag and publish (D-0.6 rule: no version bump, tag, publish or release PR without the owner's explicit go).
 3. After publishing and before announcing, run task 188's five-step supply-chain verification (see its retired Outcome, "Release checklist for 0.7.0", and the checklist below). If any step fails, correct the CHANGELOG Security and Build lines and the migration page's "Verifying a release" section.
 4. The after-action report after the release, presented in chat and never committed.
 5. The version bump must also update the hard-coded jar version in `docs/protect-your-own-api.md` (`data-prism-connectors-rest-0.6.0.jar`, and "recorded against 0.6.0" in the paragraph under the captured block, which says 0.6.0 only because the version is not yet bumped) and the stale "0.3.0" proof-table row around line 590. Alternatively reword them to avoid a version. Required with the bump.
-6. Task 235 landed: unaudited approval decisions fixed before 0.7.0, per D-0.7-AUD-1 (below). Its plan branch `plan/235` (9c368b18) will be merged by the 235 record.
+6. Done: task 235 landed on 2026-10-20. Approval decisions are audit-first, per D-0.7-AUD-1 (below).
 
 Follow-ups from the re-capture (not release-blocking): the other fail-closed blocks on `docs/protect-your-own-api.md` (the `MISSING` and `UNSUPPORTED_IDENTITY_RESOLVER` refusals and the rest) were not re-captured against the real stack.
 
 
-Owner decision D-0.7-AUD-1 (accepted 2026-10-20): fix unaudited approval decisions before 0.7.0, through task 235, using design (a), audit-first. The plan branch `plan/235` (9c368b18) will be merged by the 235 record.
+Owner decision D-0.7-AUD-1 (accepted 2026-10-20): fix unaudited approval decisions before 0.7.0, through task 235, using design (a), audit-first. Landed 2026-10-20.
+
+Follow-ups from 235 (found in its review, none scheduled):
+
+- P3: a lease expiring mid-decide can make `committed()` false after a commit that applied, producing a `DENY:APPROVAL_NOT_PENDING` that understates what happened. This existed before 235.
+- P3: the `ArchitectureTest` audit-first rule cannot see stores outside the reactor or decorator stores.
+- P3: `ReidentificationOperatorController` writes `ALLOW:FORWARDED` under its own correlation id.
+- P3: an expired approval is no longer marked `EXPIRED` at the pre-check.
+- P3: the `Metric.java` line references in the contract register for the `audit.retention.*` rows are two lines stale (the constants are now at lines 28 to 31).
 
 Follow-ups from the cluster-refusal retry docs fix (0.8, none scheduled):
 
@@ -97,7 +105,7 @@ Follow-ups from 199 and 209 (none scheduled):
 
 Follow-ups from 232 (found in its review and bug hunt, none scheduled):
 
-- `ReidentificationService` should re-read with `find` on an uncertain outcome before auditing DENY. This is the lost-response residual documented in `docs/multiple-instances.md`.
+- Done in 235: `ReidentificationService` re-reads with `find` on an uncertain outcome before auditing DENY.
 - `endScope` and `forgetScope` have no production caller. Wire scope end to them, or note in the docs that they are unused.
 - The endScope wiring test relies on brittle `arg$1` reflection; replace it.
 - A forget during a split is undone by the heal.
