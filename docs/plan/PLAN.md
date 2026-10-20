@@ -57,7 +57,7 @@ All six items are done: the HTTP example re-capture, the owner's go, publication
 
 #### 0.8 plan (agreed 2026-10-20)
 
-Task 215 (sealed cluster) and the core planning produced 56 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome has the sealed-cluster table. The combined graph counts 203 and 206 to 211 as landed. No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
+Task 215 (sealed cluster) and the core planning produced 42 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome has the sealed-cluster table. The combined graph counts 203 and 206 to 211 as landed. No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
 
 Order by wave (briefs in a wave can run in parallel when their owned files do not overlap):
 

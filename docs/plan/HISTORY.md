@@ -17,7 +17,7 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
-## 2026-10-20 — 0.8 planning recorded: 56 briefs and 34 decisions
+## 2026-10-20 — 0.8 planning recorded: 42 briefs and 34 decisions
 
 The 0.8 plan is one graph: 213, sealed-cluster briefs 218 to 231 and 264, and core briefs 238 to 263, in 14 waves with 213 last. The owner decided five questions himself (non-rolling cutover with `UNSEALED_CLUSTER_STATE`; tamper as metric and rate-bounded WARN log with the attestation kept; the shared Hazelcast link limiter as brief 264; the new limit names and defaults; removal of `SKIPPED_OVER_LIMIT`) resolved OD-215-14 through the second, and delegated the other 28 to the recommended options. No decision remains open for 0.8, and the briefs' former **Blocked on** lines became **Decisions** lines.
 **Cost:** The core and sealed-cluster plans were written on separate branches and each needed an artefact from the other (OD-08-1 needs 226, OD-08-2 needs a new brief), which is why 264 was added after 218 to 231 had used the id range and why 213 gained a dependency on it. Per-instance limiting on a cluster was considered and excluded outright, since a forger would get the limit once per member; do not reintroduce it as a fallback. If 264 slips to 0.9.0 the agreed fallback refuses links on joining members instead.
