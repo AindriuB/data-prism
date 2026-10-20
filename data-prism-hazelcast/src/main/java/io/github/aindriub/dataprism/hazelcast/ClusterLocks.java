@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 
 import java.time.Duration;
 import java.util.Objects;
@@ -60,7 +61,7 @@ final class ClusterLocks {
             Thread.currentThread().interrupt();
             throw new ClusterLockTimeoutException();
         } catch (IllegalArgumentException rejected) {
-            throw new ClusterOperationRefusedException();
+            throw new ClusterOperationRefusedException(null);
         }
     }
 

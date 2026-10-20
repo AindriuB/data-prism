@@ -7,6 +7,7 @@ import com.hazelcast.splitbrainprotection.SplitBrainProtectionException;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException.Code;
@@ -308,7 +309,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         } catch (PrivacyRefusedException | SplitBrainProtectionException refusal) {
             throw refusal;
         } catch (RuntimeException failure) {
-            throw new ClusterOperationRefusedException();
+            throw new ClusterOperationRefusedException(null);
         }
     }
 
@@ -324,7 +325,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 throw refusal;
             } catch (RuntimeException failure) {
                 close();
-                throw new ClusterOperationRefusedException();
+                throw new ClusterOperationRefusedException(null);
             }
             releases.push(() -> ClusterLocks.release(map, key));
         }
