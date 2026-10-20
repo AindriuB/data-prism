@@ -3,6 +3,8 @@ package io.github.aindriub.dataprism.reidentification;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
@@ -45,6 +47,7 @@ public final class ReidentificationService {
     private final AuditRecorder audit;
     private final ReidentificationPolicy policy;
     private final Clock clock;
+    private final PrivacyMetrics metrics;
 
     public ReidentificationService(ScopeIdentityIndex index, ApprovalStore approvals, AuditRecorder audit,
                                    ReidentificationPolicy policy, Clock clock) {
@@ -53,6 +56,12 @@ public final class ReidentificationService {
 
     public ReidentificationService(SubjectLookup lookup, ApprovalStore approvals, AuditRecorder audit,
                                    ReidentificationPolicy policy, Clock clock) {
+        this(lookup, approvals, audit, policy, clock, PrivacyMetrics.none());
+    }
+
+    public ReidentificationService(SubjectLookup lookup, ApprovalStore approvals, AuditRecorder audit,
+                                   ReidentificationPolicy policy, Clock clock, PrivacyMetrics metrics) {
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.lookup = Objects.requireNonNull(lookup, "lookup");
         this.approvals = Objects.requireNonNull(approvals, "approvals");
         this.audit = Objects.requireNonNull(audit, "audit");

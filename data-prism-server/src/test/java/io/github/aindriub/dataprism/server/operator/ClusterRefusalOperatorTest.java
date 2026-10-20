@@ -5,6 +5,7 @@ import tools.jackson.databind.json.JsonMapper;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
@@ -20,6 +21,7 @@ import io.github.aindriub.dataprism.reidentification.Permission;
 import io.github.aindriub.dataprism.reidentification.ReidentificationService;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.http.ResponseEntity;
 
@@ -50,6 +52,8 @@ class ClusterRefusalOperatorTest {
             Set.of("approver"), "operations", "case-1", null);
     private static final AuthenticatedCaller REQUESTER = new AuthenticatedCaller("req-1", "operator-console",
             Set.of("requester"), "fraud-review", "case-1", null);
+    private static final ObjectProvider<PrivacyMetrics> NO_METRICS =
+            new DefaultListableBeanFactory().getBeanProvider(PrivacyMetrics.class);
     private static final String SENTINEL = "sentinel-key-x-1";
 
     private final List<AuditEvent> audited = new ArrayList<>();
@@ -81,7 +85,7 @@ class ClusterRefusalOperatorTest {
     }
 
     private OversightOperatorController oversight(ApprovalStore store) {
-        return new OversightOperatorController(() -> Optional.of(OPERATOR), audit, state, store, CLOCK);
+        return new OversightOperatorController(() -> Optional.of(OPERATOR), audit, state, store, CLOCK, NO_METRICS);
     }
 
     private void pending(String id) {
@@ -140,7 +144,7 @@ class ClusterRefusalOperatorTest {
                     OversightState.class.getClassLoader(), new Class<?>[] {OversightState.class}, (p, m, a) -> {
                         throw failure;
                     });
-            var controller = new OversightOperatorController(() -> Optional.of(OPERATOR), audit, refusing, real, CLOCK);
+            var controller = new OversightOperatorController(() -> Optional.of(OPERATOR), audit, refusing, real, CLOCK, NO_METRICS);
             OperatorException thrown = catchThrowableOfType(OperatorException.class,
                     () -> controller.pause(new OversightOperatorController.PauseRequest("ALL", "")));
             assertThat(bodyOf(thrown)).isEqualTo("{\"code\":\"" + failure.code() + "\"}");

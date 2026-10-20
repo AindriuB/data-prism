@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.server.operator;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
@@ -10,6 +12,7 @@ import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.OversightSnapshot;
 import io.github.aindriub.dataprism.oversight.OversightState;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,9 +46,11 @@ final class OversightOperatorController {
     private final OversightState state;
     private final ApprovalStore approvals;
     private final Clock clock;
+    private final PrivacyMetrics metrics;
 
     OversightOperatorController(OperatorCallers callers, OperatorAudit audit, OversightState state,
-                                ApprovalStore approvals, Clock clock) {
+                                ApprovalStore approvals, Clock clock, ObjectProvider<PrivacyMetrics> metrics) {
+        this.metrics = metrics.getIfAvailable(PrivacyMetrics::none);
         this.callers = callers;
         this.audit = audit;
         this.state = state;
