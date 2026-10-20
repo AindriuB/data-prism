@@ -9,8 +9,8 @@ description: What changes when upgrading from 0.6.x to 0.7.0, by audience, cover
 returns, one change that refuses responses 0.6.x let through, and a Hazelcast
 upgrade that cannot be rolled. This page lists every change that can stop
 something working, who has to act, and what to do. The shorter version is the
-unreleased 0.7 section of the `CHANGELOG.md` at the repository root (the
-[changelog](changelog.md) page shows it once the release is published).
+`[0.7.0]` section of the `CHANGELOG.md` at the repository root (also on the
+[changelog](changelog.md) page).
 
 ## Who has to do what
 
@@ -358,6 +358,13 @@ See [Running more than one instance](multiple-instances.md).
   explicit minimum through the overload that takes one (`1` opts out). A
   `PrivacyCluster.using(instance)` you supply gets neither the merge policy nor
   the quorum.
+- **Import `jackson-bom` yourself.** The Jackson 3 override (3.1.8) is in this
+  project's parent pom and does not reach your build. If your application or
+  extension imports the Spring Boot 4.1.1 BOM, it resolves Jackson 3 at 3.1.5,
+  which is affected by the advisories listed in the changelog. Import
+  `tools.jackson:jackson-bom` 3.1.8 or later (type `pom`, scope `import`) ahead
+  of the Boot BOM, as the snippet in [Extending Data Prism](extending.md) now
+  does.
 
 ## Verifying a release
 

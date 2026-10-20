@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-20
+
 ### Breaking
 
 The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
@@ -175,6 +177,10 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
 - Jackson 3 (`tools.jackson`) is managed at 3.1.8, ahead of the Spring Boot 4.1.1
   BOM, fixing GHSA-wv8q-qhhj-9h54, GHSA-cxp5-3px4-pw24, GHSA-q4xh-88c3-wmh7,
   GHSA-wjgm-6hv5-3cvf and GHSA-gx83-3vf8-gh7j in the published artifacts and images.
+  An application that uses the Data Prism libraries with its own Spring Boot 4.1.1
+  BOM must import `tools.jackson:jackson-bom` 3.1.8 or later itself, ahead of the
+  Boot BOM, because the override does not reach a consumer's build. The consumer
+  snippet in `docs/extending.md` now does.
 - The response leak validators scan property names as well as values, so a map
   keyed by an email address or other identifier is refused even under a
   Java-built `PASS_THROUGH_UNSAFE` profile. A flagged name is reported as
@@ -1006,6 +1012,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.7.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.7.0
 [0.6.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.6.0
 [0.5.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.5.0
 [0.4.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.1

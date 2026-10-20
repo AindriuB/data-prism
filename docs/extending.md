@@ -554,12 +554,21 @@ depending on Data Prism:
 ```xml
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <data-prism.version>0.6.0</data-prism.version>
+    <data-prism.version>0.7.0</data-prism.version>
     <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <!-- Spring Boot 4.1.1 manages Jackson 3 at 3.1.5, which is affected by the five GHSAs
+           listed in the changelog; remove this once Boot manages 3.1.7 or later. -->
+      <dependency>
+        <groupId>tools.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>3.1.8</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
@@ -615,7 +624,7 @@ module's own smoke test starts as subprocesses and drives, and
 `spring-boot-test` for its `ApplicationContextRunner` test. A consumer's
 extension pom has no reason to carry the first five.)
 
-What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-09). The two XML
+What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-20). The two XML
 blocks in this section were extracted programmatically and pasted unmodified
 into a pom whose only other content is `modelVersion`, `groupId`,
 `artifactId`, `version` and `packaging`. Alongside a minimal
@@ -642,7 +651,21 @@ of this repository before the tag, not against Maven Central. It resolved `data-
 `data-prism-annotations` and `data-prism-processor` `0.6.0`, `spring-web`
 `7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. That run
 shows the snippet and the reactor's POMs agree; it is not evidence about the
-artifacts Central will serve. Nothing here has been shown for any other version.
+artifacts Central will serve. The same was done on 2026-10-20, before
+publication, for the `0.7.0` form: a full `mvn package` with an empty local
+repository against a scratch file repository holding the `0.7.0` reactor build
+of this repository, not against Maven Central. It resolved `data-prism-core`,
+`data-prism-annotations` and `data-prism-processor` `0.7.0`, `spring-web`
+`7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. The
+`0.7.0` form differs from the earlier ones in `data-prism.version` and in the
+`tools.jackson:jackson-bom` import ahead of the Spring Boot BOM, and the
+`tools.jackson` artifacts it resolved (`jackson-databind`, `jackson-core` and
+`jackson-dataformat-yaml`) were `3.1.8`. Without that import they resolve to
+`3.1.5`, the version the Spring Boot BOM manages, because a consumer's own
+dependency management decides it and this repository's parent pom does not
+reach it. Like the `0.6.0` run, it shows the snippet and the
+reactor's POMs agree and is not evidence about the artifacts Central will
+serve. Nothing here has been shown for any other version.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above. If your
@@ -748,7 +771,7 @@ the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.6.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.7.0.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 
