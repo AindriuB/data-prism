@@ -24,6 +24,15 @@ public class PrivacyRefusedException extends RuntimeException {
         this.path = path;
     }
 
+    /**
+     * As above, chaining {@code cause} for diagnosis. The cause's message is not copied into this one.
+     */
+    public PrivacyRefusedException(String code, String path, String detail, Throwable cause) {
+        super(code + " at " + path + ": " + detail, cause);
+        this.code = code;
+        this.path = path;
+    }
+
     public String code() {
         return code;
     }

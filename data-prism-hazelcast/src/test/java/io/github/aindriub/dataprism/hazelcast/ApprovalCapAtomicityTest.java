@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.config.Config;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;

@@ -51,11 +51,16 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 PRs #130 (`plan/0.7.0`) and #131 (task 193) have merged to `main`, and `main` is the integration base. `plan/0.7.0` carries, in addition, the verified results of tasks 194, 196, 198 and 217, not yet on `main`. See `reconciliation-2026-10-19.md` for task allocation. This section supersedes the older execution summary below.
 
-Open 0.7 tasks: 200, then 201. Tasks 199, 209, 216 and 232 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
+Open 0.7 work: task 201 only. Tasks 199, 200, 209, 216, 232 and 233 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
 
-1. 200 now (its prerequisites, 193, 198 and 216, are done). It must register the new code `CLUSTER_OPERATION_REFUSED` (from 216) and the new metric `dataprism.approval.release.skipped` (from 232).
-2. 201 after 200 (209, 216, 217 and 232 are done). It must take its CHANGELOG lines and migration note from the Outcome of the retired 216 (`docs/plan/tasks/retired/216-atomic-approval-creation-in-hazelcast.md`), and from the Outcome of the retired 232 (`docs/plan/tasks/retired/232-approval-creation-tokens-and-bounded-cleanup.md`) its CHANGELOG lines, migration note and value-format changes. It must also include 209's `### Breaking` line and migration note from the Outcome of `docs/plan/tasks/retired/209-wire-pattern-validator-and-recognisers.md`: Spring-built and configured-JSON-source orchestrators now run `SensitivePatternValidator`, so sensitive-shaped values in `@NonSensitive` fields are refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; deployers must classify such fields correctly, and there is no opt-out property.
-3. 215 (0.8 planning) after 200, and so in parallel with 201.
+1. 201 (no remaining dependency; its Depends on was updated for 233). It takes its CHANGELOG lines and migration notes from the Outcomes of the retired tasks 189, 190, 193, 194, 196, 202, 209, 216, 217, 232 and 233, all under `docs/plan/tasks/retired/`. From 216 and 232 it takes their CHANGELOG lines, migration notes and value-format changes. From 209 it takes the `### Breaking` line and migration note: Spring-built and configured-JSON-source orchestrators now run `SensitivePatternValidator`, so sensitive-shaped values in `@NonSensitive` fields are refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; deployers must classify such fields correctly, and there is no opt-out property. From 233 it takes the proposed `Changed` and `Added` lines and the audience-by-audience migration paragraph in its Outcome, including D-0.7-HZ-3 (owner, 2026-10-20): both `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` now reach callers on the re-identification and operator paths, which changes the documented `503 OVERSIGHT_UNAVAILABLE` response in `docs/multiple-instances.md`. `docs/tools.md` already lists `CLUSTER_OPERATION_REFUSED`; 201 checks `docs/multiple-instances.md` and the new `dataprism.hazelcast.approval-sweep-interval` key (OD-200-14).
+2. 215 (0.8 planning) can start now. It reads `docs/plan/design/contract-register.md`.
+
+Follow-ups from 233 (none scheduled):
+
+- 0.8 (owner decision): a denial whose audit write fails answers `AUDIT_UNAVAILABLE` and counts a metric, consistently across the re-identification, operator and tool paths. Today `ReidentificationService.refuse` and `refuseApproval` and the operator controller's `recordDenial` swallow the failed audit and still refuse. The 233 brief wrongly called the `AUDIT_UNAVAILABLE` answer existing behaviour; the owner waived that acceptance item.
+- P3: `ClusterRefusals` in the hazelcast module holds a mutable static logger, which would break under parallel tests.
+- P3: the sentinel log test runs at `ClusterRefusals.refused` rather than at a real throw site.
 
 Follow-ups from 199 and 209 (none scheduled):
 
@@ -91,7 +96,6 @@ Owner decisions, all dated 2026-10-19:
 Follow-ups found in review, none yet scheduled:
 
 - Task 194: defence in depth. Each leak validator should also redact the keys flagged by the other. `RefusalPaths.redact` covers it today.
-- For task 200 (from 198): relation bytes `0x02` to `0x04` extend task 191's header table; the link `max-length` is now 1024 (OD-B12); `docs/tools.md` says an unknown status is "not answered" while D-070-3 says "an error"; the catalog schema allows 128-character labels where task 191 caps them at 64.
 - For task 201 (from 193): the `docs/configuration.md` wording of `dataprism.limits.max-response-size` (already in 201's brief); and the per-source `REFUSED:RESPONSE_TOO_LARGE` direction of OD-B18 changes what 193 built, for the 0.9 migration notes.
 
 ### 0.7.0 state (updated 2026-10-09)
@@ -127,7 +131,7 @@ Owner decisions for 0.7 (2026-10-09):
 
 - D-070-1 (b): each `sources` entry becomes `{status, entity}`, `entity` only for `ANSWERED`; the top-level `entity` is removed. The one shape break before 1.0.
 - D-070-2 (b): a source whose scrub or validation refuses is marked `REFUSED` and omitted; the others are returned. If every answered source is refused, the whole call is refused as today.
-- D-070-3 (a): seven status codes (today's six plus `REFUSED`); clients treat an unknown code as an error.
+- D-070-3 (a): seven status codes (today's six plus `REFUSED`); clients treat an unknown code as "not answered" (a gap), not as an error. Corrected on 2026-10-20 by OD-200-1; the earlier text said "an error".
 - D-070-4 (a): prefix `dataprism.limits`; keys `max-sources`, `max-records`, `max-response-size`, `per-source-timeout`, `max-concurrency`, `scope-read-budget`; defaults unchanged; positive only; `INVALID_REQUEST_LIMITS`; one `PRIVACY_CRITICAL` bean `dataPrismRequestLimits`.
 - D-070-5 (a): a record is a source's top-level record plus each object in an array; exceeding `max-records` refuses (truncation is 0.9).
 - D-070-6 (a): size is a conservative upper bound computed in the orchestrator before the audit event, no mapper; one `DENY:RESPONSE_TOO_LARGE`.
@@ -142,6 +146,35 @@ Owner decisions for 0.7 (2026-10-09):
 - D-070-15 (b): approval consume becomes conditional, the approval map merges consumed-wins, and split-brain protection is configured by `dataprism.hazelcast.approval-minimum-members`. Default for tcp-ip is a majority of the listed members; for none, 1; for kubernetes, required whenever approval-gated tools are configured. Refusals: `MISSING_APPROVAL_QUORUM` and `INVALID_APPROVAL_QUORUM`. Cost: in a two-member cluster, losing either member stops approval-gated tools.
 - D-070-16 (a): a lock that cannot be taken in time fails with the new code `CLUSTER_LOCK_TIMEOUT`.
 - D-070-17: `dataprism.hazelcast.lock-timeout`, default `PT2S`, range `PT100MS` to `PT30S`, refusal `INVALID_LOCK_TIMEOUT`.
+
+Owner decisions from the contract register (task 200, 2026-10-20). The register is `docs/plan/design/contract-register.md`, section 14; each decision is recorded there too.
+
+- OD-200-1 (owner, explicit): an unrecognised per-source status means "not answered". Supersedes the "an error" wording of D-070-3.
+- OD-200-2 (owner, explicit): `CLUSTER_OPERATION_REFUSED` is surfaced to callers in 0.7, like `CLUSTER_LOCK_TIMEOUT`; cause chained and logged, no data in the message; the class moves to `core.refusal`.
+- OD-200-3 (delegated): the per-source status is `RESOLVER_FAILED`, not `KEY_UNRESOLVED`.
+- OD-200-4 (delegated): the sealed-link layout's length caps govern: source labels 64, namespace and resolver name 32, entity type 64, field path 64; catalog schemas follow.
+- OD-200-5 (delegated): new capabilities `FOLLOW` and `FOLLOW_BULK`, off until a role is granted them, with an upgrade note.
+- OD-200-6 (delegated): the `@Chainable` attribute is `keyNamespace`.
+- OD-200-7 (delegated): metric words are separated by `_` inside a segment; `dataprism.catalog.source-names.nonconforming` becomes `dataprism.catalog.source_names.nonconforming`.
+- OD-200-8 (delegated): `dataprism.links.max-chain-depth` and `LINK_DEPTH_EXCEEDED` are dropped (option (b) of links is rejected); `LINK_ORIGIN_DRIFT` stays.
+- OD-200-9 (delegated): `dataprism.hazelcast.security.mode` and its two startup codes are dropped; the security reviewer is told, because the approved cluster design changes by one key.
+- OD-200-10 (delegated): key-failure startup codes use one family, `<AREA>_KEY_WEAK`, `<AREA>_KEY_UNRESOLVED`, `<AREA>_KEY_SHARED`; task 211 uses `AUDIT_HMAC_KEY_WEAK` and `AUDIT_HMAC_KEY_SHARED`.
+- OD-200-11 (delegated): the shipped `Authoriz*` spelling is accepted for new security types, recorded as an exception to `docs/conventions.md`.
+- OD-200-12 (delegated): the audit key stays `names` and the result field stays `labels`; the documents say they are one setting.
+- OD-200-13 (delegated): the shipped near-synonym codes (`MISSING_PURPOSE` and `PURPOSE_REQUIRED` and the others) stay and are documented by surface.
+- OD-200-14 (owner, explicit): `dataprism.approval.pending.sweep-seconds` is replaced by `dataprism.hazelcast.approval-sweep-interval`, a Spring-bound `Duration`, default `PT5M`, validated at startup and pinned in the frozen property list.
+- OD-200-15 (delegated): a metric with a closed label gets one `Metric` constant per outcome; `PrivacyMetrics` gains no label overload. Whether the `source` tag should carry an alias is a separate, undecided change.
+
+### Contract register successor tasks (0.8 and 0.9 follow-ups, from task 200)
+
+The register (`docs/plan/design/contract-register.md`, section 16) names six successor tasks. Ids are not yet allocated. The planner writes the briefs; none is a task file today.
+
+- S1 (0.8, before the 0.8 briefs): correct the stale rows in the design documents (`sealed-links.md` closing and relation tables, `key-resolvers.md` closing and failure tables, `cluster-security.md` lock-timeout rows) and apply the OD-200-4 length caps, OD-200-3, -6, -7, -8, -9 and -10 renames. Depends on the decisions above, now made.
+- S2 (0.7, done): task 233 (OD-200-2 and OD-200-14), landed 2026-10-20.
+- S3 (0.8): document the shipped codes the shipped pages lack ("Docs: no" in register section 3) (`CLUSTER_OPERATION_REFUSED` is already in `docs/tools.md`). Part of this lands in 201.
+- S4 (0.8, before the 0.9 freeze): add the freeze tests of register section 15 that need no decision: code extraction and frozen lists (run E1c as well as E1), golden `tools/list`, map names, operator endpoints, SPI signature snapshot. Its frozen list must classify the five enums whose exits were not traced.
+- S5 (done): the D-070-3 line in `PLAN.md` is corrected by the OD-200-1 decision, recorded 2026-10-20.
+- S6 (0.9, before the 0.9 briefs): design the 0.9 contract with no name yet (register section 6.5): per-source role authorisation (D-RM-11), audit-entry size handling, and the `compare_entity_sources` review.
 
 ### 0.7.0 release checklist additions (from task 188; CI-only paths, none exercised yet)
 

@@ -96,12 +96,14 @@ public final class PrivacyCluster implements AutoCloseable {
     private final boolean reidentificationEnabled;
 
     private final PendingSweeper sweeper;
+    private final java.time.Duration approvalSweepInterval;
 
-    private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled) {
+    private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
+                           java.time.Duration approvalSweepInterval) {
         this.instance = instance;
         this.reidentificationEnabled = reidentificationEnabled;
-        this.sweeper = new PendingSweeper(instance, PendingSweeper.intervalOf(instance.getConfig()),
-                java.time.Clock.systemUTC());
+        this.approvalSweepInterval = approvalSweepInterval;
+        this.sweeper = new PendingSweeper(instance, approvalSweepInterval, java.time.Clock.systemUTC());
     }
 
     /** Runs one sweep of the pending-approval entries this member owns, as the schedule does. */
@@ -117,6 +119,11 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Tells the sweep the lock timeout in use, so the locks it takes carry the same lease as everyone's. */
     void useLockTimeout(java.time.Duration lockTimeout) {
         sweeper.useLockTimeout(lockTimeout);
+    }
+
+    /** How often this member sweeps the pending-approval entries and id claims it owns. */
+    public java.time.Duration approvalSweepInterval() {
+        return approvalSweepInterval;
     }
 
     boolean sweeperStopped() {
@@ -135,9 +142,23 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers) {
+        return embedded(membership, reidentificationEnabled, approvalMinimumMembers,
+                PendingSweeper.DEFAULT_INTERVAL);
+    }
+
+    /**
+     * As above, with the interval at which this member sweeps the pending-approval entries and id claims it owns.
+     *
+     * @param approvalSweepInterval from {@code PT1S} to {@code P1D}
+     * @throws IllegalArgumentException if the interval is outside that range
+     */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          java.time.Duration approvalSweepInterval) {
+        PendingSweeper.checked(approvalSweepInterval);
         return embedded(membership.toConfig(), reidentificationEnabled,
                 approvalMinimumMembers.isPresent() ? approvalMinimumMembers
-                        : defaultApprovalMinimumMembers(membership));
+                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval);
     }
 
     /**
@@ -304,8 +325,21 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers) {
+        return embedded(config, reidentificationEnabled, approvalMinimumMembers, PendingSweeper.DEFAULT_INTERVAL);
+    }
+
+    /**
+     * As above, with the interval at which this member sweeps the pending-approval entries and id claims it owns.
+     *
+     * @param approvalSweepInterval from {@code PT1S} to {@code P1D}
+     * @throws IllegalArgumentException if the interval is outside that range; nothing is started
+     */
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          java.time.Duration approvalSweepInterval) {
+        PendingSweeper.checked(approvalSweepInterval);
         return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config, approvalMinimumMembers)),
-                reidentificationEnabled);
+                reidentificationEnabled, approvalSweepInterval);
     }
 
     /**
@@ -313,6 +347,19 @@ public final class PrivacyCluster implements AutoCloseable {
      * The instance is validated and, if refused, left running: it is not ours to stop.
      */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled) {
+        return using(instance, reidentificationEnabled, PendingSweeper.DEFAULT_INTERVAL);
+    }
+
+    /**
+     * As above, with the interval at which this wrapper sweeps the pending-approval entries and id claims its
+     * member owns.
+     *
+     * @param approvalSweepInterval from {@code PT1S} to {@code P1D}
+     * @throws IllegalArgumentException if the interval is outside that range
+     */
+    public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
+                                       java.time.Duration approvalSweepInterval) {
+        PendingSweeper.checked(approvalSweepInterval);
         Config config = instance.getConfig();
         checkClusterName(config);
         checkNoAdvancedNetwork(config);
@@ -321,7 +368,7 @@ public final class PrivacyCluster implements AutoCloseable {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_DISCOVERY,
                     "auto-detection and multicast must be disabled on the supplied instance");
         }
-        return new PrivacyCluster(instance, reidentificationEnabled);
+        return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval);
     }
 
     /**
@@ -361,7 +408,6 @@ public final class PrivacyCluster implements AutoCloseable {
         }
         checkClusterName(config);
         checkNoAdvancedNetwork(config);
-        PendingSweeper.intervalOf(config);
         var ssl = config.getNetworkConfig().getSSLConfig();
         if ((ssl != null && ssl.isEnabled()) || config.getSecurityConfig().isEnabled()) {
             throw new PrivacyClusterRefusal(Code.HAZELCAST_TLS_UNSUPPORTED,

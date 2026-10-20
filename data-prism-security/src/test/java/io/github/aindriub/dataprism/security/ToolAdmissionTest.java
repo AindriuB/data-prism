@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.security;
 
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
@@ -227,6 +228,43 @@ class ToolAdmissionTest {
         ApprovalStore down = throwing(ApprovalStore.class, new IllegalStateException("split brain"));
         assertEquals("OVERSIGHT_UNAVAILABLE", new ToolAdmission(state, down, limiter, approval(), CLOCK)
                 .admit(CALLER, "risky", "s", "f").code());
+    }
+
+    /** An in-memory store that throws {@code failure} from the one named method only. */
+    private static ApprovalStore storeThrowingOn(String method, RuntimeException failure) {
+        ApprovalStore real = new InMemoryApprovalStore();
+        return (ApprovalStore) Proxy.newProxyInstance(ApprovalStore.class.getClassLoader(),
+                new Class<?>[] {ApprovalStore.class}, (p, m, args) -> {
+                    if (m.getName().equals(method)) {
+                        throw failure;
+                    }
+                    try {
+                        return m.invoke(real, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+    }
+
+    @Test
+    void aRefusedClusterOperationInEachApprovalStoreCallRefusesWithItsOwnCode() {
+        for (String method : new String[] {"create", "findPending", "consumeApproved"}) {
+            ApprovalStore refused = storeThrowingOn(method, new ClusterOperationRefusedException(
+                    new IllegalArgumentException("sentinel-key-x-1")));
+            AdmissionDecision d = new ToolAdmission(state, refused, limiter, approval(), CLOCK)
+                    .admit(CALLER, "risky", "s", "f");
+            assertFalse(d.admitted(), method);
+            assertEquals("CLUSTER_OPERATION_REFUSED", d.code(), method);
+        }
+    }
+
+    @Test
+    void aRefusedClusterOperationInTheRateLimiterRefusesWithItsOwnCode() {
+        CallerRateLimiter refused = throwing(CallerRateLimiter.class, new ClusterOperationRefusedException(null));
+        AdmissionDecision d = new ToolAdmission(state, approvals, refused, limited(5), CLOCK)
+                .admit(CALLER, "t", "s", "f");
+        assertFalse(d.admitted());
+        assertEquals("CLUSTER_OPERATION_REFUSED", d.code());
     }
 
     @Test

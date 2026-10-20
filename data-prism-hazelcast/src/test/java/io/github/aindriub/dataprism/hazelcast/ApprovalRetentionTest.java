@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.hazelcast;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.IMap;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
@@ -335,9 +336,9 @@ class ApprovalRetentionTest {
         int port = FreePorts.consecutive(1);
         Config config = ClusterMembership.tcpIp(TestMembers.uniqueName("sweep-schedule"),
                 List.of("127.0.0.1:" + port)).withPort(port).withInterface("127.0.0.1").toConfig();
-        config.setProperty(PendingSweeper.INTERVAL_PROPERTY, "1");
-        PrivacyCluster scheduled = PrivacyCluster.embedded(config, false, OptionalInt.empty());
+        PrivacyCluster scheduled = PrivacyCluster.embedded(config, false, OptionalInt.empty(), Duration.ofSeconds(1));
         try {
+            assertThat(scheduled.approvalSweepInterval()).isEqualTo(Duration.ofSeconds(1));
             var scheduledStore = new HazelcastApprovalStore(scheduled, Duration.ofMillis(300));
             IMap<String, String> pendingMap = scheduled.instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
             // Expired years ago, so the wall-clock sweep finds it past its slack.
@@ -352,14 +353,47 @@ class ApprovalRetentionTest {
     }
 
     @Test
-    void theSweepIntervalIsConfigurableAndValidated() {
-        Config config = new Config();
-        assertThat(PendingSweeper.intervalOf(config)).isEqualTo(Duration.ofMinutes(5));
-        config.setProperty(PendingSweeper.INTERVAL_PROPERTY, "30");
-        assertThat(PendingSweeper.intervalOf(config)).isEqualTo(Duration.ofSeconds(30));
-        for (String bad : new String[]{"0", "-5", "abc", "86401", "1.5"}) {
-            config.setProperty(PendingSweeper.INTERVAL_PROPERTY, bad);
-            assertThatThrownBy(() -> PendingSweeper.intervalOf(config)).isInstanceOf(IllegalArgumentException.class);
+    void theSweepIntervalIsAFactoryInputWithinItsBounds() {
+        assertThat(cluster.approvalSweepInterval()).isEqualTo(Duration.ofMinutes(5));
+        for (Duration good : new Duration[]{Duration.ofSeconds(1), Duration.ofDays(1)}) {
+            int port = FreePorts.consecutive(1);
+            ClusterMembership membership = ClusterMembership.tcpIp(TestMembers.uniqueName("sweep-bounds"),
+                    List.of("127.0.0.1:" + port)).withPort(port).withInterface("127.0.0.1");
+            try (PrivacyCluster built = PrivacyCluster.embedded(membership, false, OptionalInt.empty(), good)) {
+                assertThat(built.approvalSweepInterval()).isEqualTo(good);
+            }
+            int otherPort = FreePorts.consecutive(1);
+            try (PrivacyCluster other = TestMembers.member(TestMembers.uniqueName("sweep-using"), otherPort,
+                    List.of("127.0.0.1:" + otherPort), OptionalInt.empty());
+                 PrivacyCluster wrapped = PrivacyCluster.using(other.instance(), false, good)) {
+                assertThat(wrapped.approvalSweepInterval()).isEqualTo(good);
+            }
+        }
+        for (Duration bad : new Duration[]{Duration.ZERO, Duration.ofSeconds(-1), Duration.ofMillis(500),
+                Duration.ofDays(1).plusSeconds(1)}) {
+            int port = FreePorts.consecutive(1);
+            ClusterMembership membership = ClusterMembership.tcpIp(TestMembers.uniqueName("sweep-bad"),
+                    List.of("127.0.0.1:" + port)).withPort(port).withInterface("127.0.0.1");
+            assertThatThrownBy(() -> PrivacyCluster.embedded(membership, false, OptionalInt.empty(), bad))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> PrivacyCluster.embedded(membership.toConfig(), false, OptionalInt.empty(), bad))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> PrivacyCluster.using(cluster.instance(), false, bad))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThatThrownBy(() -> PrivacyCluster.embedded(
+                ClusterMembership.tcpIp(TestMembers.uniqueName("sweep-null"), List.of("127.0.0.1:1")), false,
+                OptionalInt.empty(), null)).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void aConfigCarryingTheOldIntervalPropertyIsNeitherReadNorRefused() {
+        int port = FreePorts.consecutive(1);
+        Config config = ClusterMembership.tcpIp(TestMembers.uniqueName("sweep-old"), List.of("127.0.0.1:" + port))
+                .withPort(port).withInterface("127.0.0.1").toConfig();
+        config.setProperty("dataprism.approval.pending.sweep-" + "seconds", "not-a-number");
+        try (PrivacyCluster built = PrivacyCluster.embedded(config, false, OptionalInt.empty())) {
+            assertThat(built.approvalSweepInterval()).isEqualTo(Duration.ofMinutes(5));
         }
     }
 }

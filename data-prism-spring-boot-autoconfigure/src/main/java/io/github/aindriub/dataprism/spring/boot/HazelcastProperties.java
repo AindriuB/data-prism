@@ -30,6 +30,9 @@ public class HazelcastProperties {
     /** How long a call waits for a cluster lock before it is refused with CLUSTER_LOCK_TIMEOUT. Between PT100MS and PT30S. */
     private Duration lockTimeout = Duration.ofSeconds(2);
     private boolean lockTimeoutSet;
+    /** How often each member sweeps the pending-approval entries and approval-id claims it owns. Between PT1S and P1D. */
+    private Duration approvalSweepInterval = Duration.ofMinutes(5);
+    private boolean approvalSweepIntervalSet;
     private final Join join = new Join();
     private final Member member = new Member();
 
@@ -62,6 +65,25 @@ public class HazelcastProperties {
     /** Whether the lock timeout was given, which {@code single-node} refuses because it has no cluster locks. */
     public boolean lockTimeoutSet() {
         return lockTimeoutSet;
+    }
+
+    /**
+     * An entry left behind by an approval is removed at most this long after it could last matter. A shorter interval
+     * clears them sooner at the cost of more cluster calls. Fixed when the cluster is built: refused with
+     * {@code single-node} and when the application supplies its own {@code PrivacyCluster}.
+     */
+    public Duration getApprovalSweepInterval() {
+        return approvalSweepInterval;
+    }
+
+    public void setApprovalSweepInterval(Duration v) {
+        approvalSweepInterval = v;
+        approvalSweepIntervalSet = true;
+    }
+
+    /** Whether the sweep interval was given, which a topology that builds no cluster here refuses. */
+    public boolean approvalSweepIntervalSet() {
+        return approvalSweepIntervalSet;
     }
 
     /** Required with {@code embedded}; never {@code dev}. Refused with {@code single-node}. */

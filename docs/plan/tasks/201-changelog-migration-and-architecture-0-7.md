@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Branch:** from `plan/0.7.0` after every task in **Depends on** has merged there; use `main` once the integration branch has merged.
-**Depends on:** 188, 189, 190, 193, 194, 195, 196, 202, 209, 216, 217, 232
+**Depends on:** 188, 189, 190, 193, 194, 195, 196, 202, 209, 216, 217, 232, 233
 **Owns:**
 - CHANGELOG.md (the `## [Unreleased]` section only)
 - docs/migration-0.7.md (new)

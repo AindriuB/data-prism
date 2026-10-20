@@ -122,7 +122,8 @@ final class ReidentificationOperatorController {
             case "SELF_APPROVAL", "APPROVAL_EXPIRED", "APPROVAL_NOT_PENDING", "APPROVAL_NOT_APPROVED" ->
                     HttpStatus.CONFLICT;
             case "TOO_MANY_PENDING" -> HttpStatus.TOO_MANY_REQUESTS;
-            case "REIDENTIFICATION_UNAVAILABLE", "AUDIT_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
+            case "REIDENTIFICATION_UNAVAILABLE", "AUDIT_UNAVAILABLE", "CLUSTER_LOCK_TIMEOUT",
+                 "CLUSTER_OPERATION_REFUSED" -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }
