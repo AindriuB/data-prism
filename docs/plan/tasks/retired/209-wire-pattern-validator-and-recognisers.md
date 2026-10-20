@@ -49,3 +49,34 @@ run it.
 - `FREE_TEXT`, the recogniser SPI and its Spring wiring (task 208, 0.8).
 - `docs/faq.md`, `docs/extending.md` and `docs/architecture.md` (task 201 records the 0.7 fix; task 213 adds the later recogniser documentation).
 - Security, audit and cluster wiring (210, 211 and the successors planned by 215).
+
+## Outcome
+`SensitivePatternValidator` is now registered as the unconditional bean `dataPrismSensitivePatternValidator` in
+`PrivacyEngineWiring`, classified `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`. Both validator collectors,
+`OrchestrationWiring:64` and `ConfiguredJsonSourcesAutoConfiguration:171`, pick it up, so the shape scan now runs in the
+starter, the packaged server and the configured-JSON-sources orchestrator. No property was added.
+
+The claim was re-checked on `55837118` and confirmed: before this task the only framework `LlmResponseValidator` bean was
+`RawValueLeakValidator`.
+
+Tests: `PatternValidatorWiringTest` (red before the bean existed, with a mutation proof that removing the bean fails it)
+and `ConfiguredJsonSourcesPatternValidatorTest` (with a control). The bean inventory changed by exactly 9 added lines,
+all for the new bean. The coordinator accepted a widening of Owns to `AutoConfiguredBeanInventoryTest.java:96`
+(expected count 55 to 56, commit `c15938b1`).
+
+Verification on the branch: `./mvnw -B verify` passed with 1942 surefire and 17 failsafe tests; the release-profile
+package build passed and the bean inventory was stable. Reviewer APPROVE, tester PASS.
+
+### For task 201
+
+Proposed CHANGELOG line under `### Breaking`: Spring-built and configured-JSON-source orchestrators now run
+`SensitivePatternValidator`, so responses carrying sensitive-shaped values (for example email-shaped) in
+`@NonSensitive` fields are now refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN` where they were previously
+returned.
+
+Migration note: deployers must classify such fields correctly (for example as sensitive, so they are redacted) rather
+than `@NonSensitive`. There is no opt-out property.
+
+### Follow-up
+
+Reviewer suggestion: assert "first `SENSITIVE_PATTERN`" in both tests, so a different first violation code would fail them.
