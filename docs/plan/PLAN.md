@@ -51,10 +51,46 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 PRs #130 (`plan/0.7.0`) and #131 (task 193) have merged to `main`, and `main` is the integration base. `plan/0.7.0` carries, in addition, the verified results of tasks 194, 196, 198 and 217, not yet on `main`. See `reconciliation-2026-10-19.md` for task allocation. This section supersedes the older execution summary below.
 
-Open 0.7 work: task 201 only. Tasks 199, 200, 209, 216, 232 and 233 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
+Every 0.7.0 task has landed on `plan/0.7.0`; task 201 (CHANGELOG, migration page, architecture entries) landed on 2026-10-20 and is the last. Task 215 (0.8 planning) is open and can start now; it reads `docs/plan/design/contract-register.md`.
 
-1. 201 (no remaining dependency; its Depends on was updated for 233). It takes its CHANGELOG lines and migration notes from the Outcomes of the retired tasks 189, 190, 193, 194, 196, 202, 209, 216, 217, 232 and 233, all under `docs/plan/tasks/retired/`. From 216 and 232 it takes their CHANGELOG lines, migration notes and value-format changes. From 209 it takes the `### Breaking` line and migration note: Spring-built and configured-JSON-source orchestrators now run `SensitivePatternValidator`, so sensitive-shaped values in `@NonSensitive` fields are refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; deployers must classify such fields correctly, and there is no opt-out property. From 233 it takes the proposed `Changed` and `Added` lines and the audience-by-audience migration paragraph in its Outcome, including D-0.7-HZ-3 (owner, 2026-10-20): both `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` now reach callers on the re-identification and operator paths, which changes the documented `503 OVERSIGHT_UNAVAILABLE` response in `docs/multiple-instances.md`. `docs/tools.md` already lists `CLUSTER_OPERATION_REFUSED`; 201 checks `docs/multiple-instances.md` and the new `dataprism.hazelcast.approval-sweep-interval` key (OD-200-14).
-2. 215 (0.8 planning) can start now. It reads `docs/plan/design/contract-register.md`.
+#### 0.7.0 release gate
+
+Items 1 and 6 are done; the rest is not. The version bump must not happen without the owner's go.
+
+1. Done: the single-source HTTP example blocks in `docs/agents/remote-http.md` and `docs/protect-your-own-api.md` were re-captured against the Compose stack and the from-source walkthrough on 2026-10-20 (04720f98).
+2. Owner go/no-go for the version bump, tag and publish (D-0.6 rule: no version bump, tag, publish or release PR without the owner's explicit go).
+3. After publishing and before announcing, run task 188's five-step supply-chain verification (see its retired Outcome, "Release checklist for 0.7.0", and the checklist below). If any step fails, correct the CHANGELOG Security and Build lines and the migration page's "Verifying a release" section.
+4. The after-action report after the release, presented in chat and never committed.
+5. The version bump must also update the hard-coded jar version in `docs/protect-your-own-api.md` (`data-prism-connectors-rest-0.6.0.jar`, and "recorded against 0.6.0" in the paragraph under the captured block, which says 0.6.0 only because the version is not yet bumped) and the stale "0.3.0" proof-table row around line 590. Alternatively reword them to avoid a version. Required with the bump.
+6. Done: task 235 landed on 2026-10-20. Approval decisions are audit-first, per D-0.7-AUD-1 (below).
+
+Follow-ups from the re-capture (not release-blocking): the other fail-closed blocks on `docs/protect-your-own-api.md` (the `MISSING` and `UNSUPPORTED_IDENTITY_RESOLVER` refusals and the rest) were not re-captured against the real stack.
+
+
+Owner decision D-0.7-AUD-1 (accepted 2026-10-20): fix unaudited approval decisions before 0.7.0, through task 235, using design (a), audit-first. Landed 2026-10-20.
+
+Owner decision D-0.7-OPS-1 (accepted 2026-10-20): the operator `ApprovalView` carries an effective `status`, with a stored PENDING at or past expiry shown as EXPIRED (task 236). It answers a PR #137 review finding and makes the retry check in `docs/multiple-instances.md` work. Landed 2026-10-20.
+
+Follow-ups from 235 (found in its review, none scheduled):
+
+- P3: a lease expiring mid-decide can make `committed()` false after a commit that applied, producing a `DENY:APPROVAL_NOT_PENDING` that understates what happened. This existed before 235.
+- P3: the `ArchitectureTest` audit-first rule cannot see stores outside the reactor or decorator stores.
+- P3: `ReidentificationOperatorController` writes `ALLOW:FORWARDED` under its own correlation id.
+- P3: an expired approval is no longer marked `EXPIRED` at the pre-check.
+- P3: the `Metric.java` line references in the contract register for the `audit.retention.*` rows are two lines stale (the constants are now at lines 28 to 31).
+
+Follow-ups from the cluster-refusal retry docs fix (0.8, none scheduled):
+
+- `forgetOne` aborts on `CLUSTER_OPERATION_REFUSED` while the other maps are already deleted. It fails closed, but unlike the `CLUSTER_LOCK_TIMEOUT` path.
+- `OversightOperatorController.resume` writes `ALLOW:RESUMED` before applying the resume, so a failure in a custom `OversightState` leaves a false `ALLOW` in the audit.
+
+Follow-ups from 234 (none scheduled):
+
+- Dependabot cannot see BOM-managed versions. Add a CI check or a periodic `dependency:tree` audit for runtime advisories, for example OWASP dependency-check or osv-scanner on the resolved tree.
+- Add a pip ecosystem entry and a load-test entry to `dependabot.yml`.
+- Remove the `jackson-bom` override in the root `pom.xml` once Spring Boot manages Jackson 3.1.7 or later.
+- Dependabot PR #133 is superseded by 234; the owner can close it.
+- The stale Pillow alerts #1 to #36 should clear on rescan, or the owner can dismiss them as fixed (Pillow is 12.3.0 on `main`).
 
 Follow-ups from 233 (none scheduled):
 
@@ -71,7 +107,7 @@ Follow-ups from 199 and 209 (none scheduled):
 
 Follow-ups from 232 (found in its review and bug hunt, none scheduled):
 
-- `ReidentificationService` should re-read with `find` on an uncertain outcome before auditing DENY. This is the lost-response residual documented in `docs/multiple-instances.md`.
+- Done in 235: `ReidentificationService` re-reads with `find` on an uncertain outcome before auditing DENY.
 - `endScope` and `forgetScope` have no production caller. Wire scope end to them, or note in the docs that they are unused.
 - The endScope wiring test relies on brittle `arg$1` reflection; replace it.
 - A forget during a split is undone by the heal.
@@ -102,7 +138,7 @@ Follow-ups found in review, none yet scheduled:
 
 Follow-ups from task 190: re-capture the two converted HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the Compose stack before the 0.7.0 release. For task 201's migration notes: a 0.7 log carrying `REFUSED:<code>` cannot be read by a pre-0.7 verifier, while old logs verify with the new one. The custom-validator SPI change (the final pass validates an array root, not an object) is Breaking and belongs in the same notes.
 
-Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts), then on 2026-10-19 tasks 193, 194, 196, 198 and 217, and on 2026-10-20 task 216 (atomic approval creation). Open: tasks 200 and 201. Tasks 200 and 201 depend on 202, which has landed: 200 registers its new keys and codes, 201 writes its CHANGELOG lines and migration note (both in the retired 202 outcome, `docs/plan/tasks/retired/202-hazelcast-approval-consume-and-lock-timeouts.md`).
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts), then on 2026-10-19 tasks 193, 194, 196, 198 and 217, and on 2026-10-20 task 216 (atomic approval creation). Tasks 200 and 201 have since landed too; nothing 0.7 is open except the release gate above.
 
 Coordinator interpretation of D-070-15: "approvals in use" means `dataprism.oversight.approval-required-tools` is not empty OR `dataprism.reidentification.enabled` (re-identification four-eyes uses the same approval store). The kubernetes rule and every quorum check apply only then; otherwise no quorum is computed or required.
 

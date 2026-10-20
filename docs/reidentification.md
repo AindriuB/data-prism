@@ -37,6 +37,16 @@ Four-eyes is configured by `ReidentificationPolicy.fourEyes`; the owner decision
 for this project is that deployments default it to on. If the audit sink fails,
 no subject id is returned and the outcome is `REFUSED("AUDIT_UNAVAILABLE")`.
 
+An approval is usable only after its `ALLOW:APPROVED` event is written. `approve`
+checks everything the store would refuse (not pending, expired, the requester
+approving their own request) and refuses with one `DENY:<code>` event. Otherwise it
+writes `ALLOW:APPROVED` and only then commits the approval. If that write fails,
+nothing was committed: the outcome is `REFUSED("AUDIT_UNAVAILABLE")`, the approval
+stays `PENDING`, and there is nothing to undo. If the commit then does not apply
+(another approver decided first, or the store refused), `approve` refuses with the
+decision's own code and writes a `DENY:<code>` under the same `correlationId` as the
+`ALLOW:APPROVED`. See [the audit log](audit.md) for how to read that pair.
+
 ## Refusal codes
 
 Each refusal writes an audit event whose decision is `DENY:<code>`.
@@ -54,12 +64,20 @@ Each refusal writes an audit event whose decision is `DENY:<code>`.
 | `APPROVAL_NOT_PENDING` | `approve` on a request that was already decided |
 | `APPROVAL_NOT_APPROVED` | `collect` before approval, or after it was used |
 | `TOO_MANY_PENDING` | The requester already holds the maximum number of live pending re-identification approvals (`ReidentificationPolicy.maxPendingPerRequester`, default 5, counted apart from tool-call approvals). No approval is created, and the event carries no approval id |
-| `CLUSTER_LOCK_TIMEOUT` | A cluster lock the step needs was held for longer than `dataprism.hazelcast.lock-timeout`. Nothing was changed; retry. 503 on the operator API |
-| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the step needs, such as a lock or its lease. Nothing was changed; retry later, and tell an operator if it persists. 503 on the operator API |
+| `CLUSTER_LOCK_TIMEOUT` | A cluster lock the step needs was held for longer than `dataprism.hazelcast.lock-timeout`. The failed lock wait changes nothing, but a step that ran earlier stays done. `collect` and `approve` return this code before they consume or decide, so re-read the request first (see below), then retry. 503 on the operator API |
+| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the step needs, such as a lock or its lease. The failed step changes nothing, but earlier steps stay done: a `request` that fails while creating its approval may leave a pending request that counts against the cap until it expires. Retry later, and tell an operator if it persists. 503 on the operator API |
 | `REIDENTIFICATION_UNAVAILABLE` | Any other store or lookup failure; the request fails closed |
-| `AUDIT_UNAVAILABLE` | The audit write failed; nothing is returned |
+| `AUDIT_UNAVAILABLE` | The audit write failed; nothing is returned. For `approve`, the approval was not committed and is still `PENDING` |
 
 Resolving a subject id to a person remains the source systems' job.
+
+What to do after either cluster code. The failed lock wait changes nothing, but a step that ran earlier stays done.
+
+- `collect`: with the shipped Hazelcast store these codes come from the consume's lock, before the consume commits, so the approval is still usable and the same `collect` can be repeated. A consumed approval is never restored: if `collect` fails after its consume (the lookup or the audit write), request again.
+- `approve`: these codes come from the decision's lock, before the decision commits. Another approver may have decided meanwhile, so check the request's status before you repeat it. A different failure of `approve`, such as a timeout that loses the reply, can follow a decision that did commit, so check the status before you treat any failed `approve` as final.
+- `request`: a request that fails while creating its approval may leave a pending request, which counts against `maxPendingPerRequester` until it expires. A retry opens a new request.
+
+The full list of what may already have happened is in [what a cluster refusal leaves behind](multiple-instances.md#what-a-cluster-refusal-leaves-behind).
 
 ## How the index is fed
 
@@ -112,7 +130,10 @@ separate application. Set `dataprism.operator.enabled=true` with `port`, `requir
 - **Audit.** Every endpoint writes one event with tool `operator:<action>`, the operator's principal
   and client ids and the target in `scopeId` or `entityType`. A refusal is `DENY:<code>`. If the event
   cannot be written the call fails with 503 `AUDIT_UNAVAILABLE`, and a resume, an approval or any
-  re-identification step does not take effect. A pause or a rejection takes effect first and is then
+  re-identification step does not take effect. An approval is audited first and committed only after
+  its `ALLOW:APPROVED` event is written, so an approval that was refused for `AUDIT_UNAVAILABLE` is
+  still `PENDING`. If the decision then does not apply, a `DENY:<code>` event with the same
+  `correlationId` follows the `ALLOW:APPROVED`. A pause or a rejection takes effect first and is then
   audited; if that audit write fails the answer is 503 `APPLIED_AUDIT_UNAVAILABLE`, which means the
   pause or rejection **is in force** but unaudited. Do not retry it as if it had failed.
 - **Errors.** Every error body is `{"code":"<CODE>"}`. No exception message and no request value is
@@ -132,8 +153,8 @@ separate application. Set `dataprism.operator.enabled=true` with `port`, `requir
 | `POST /operator/pause` | `{"target":"ALL"\|"TOOL"\|"SCOPE","name":"..."}`; `name` is required for `TOOL` and `SCOPE` and absent for `ALL` | 200 `{"status":"PAUSED","target":...}` | 400 `INVALID_REQUEST`, 503 `OVERSIGHT_UNAVAILABLE`, `AUDIT_UNAVAILABLE` |
 | `POST /operator/resume` | as `pause` | 200 `{"status":"RESUMED",...}` | as `pause` |
 | `GET /operator/state` | none | 200 `{"allPaused":bool,"pausedTools":[...],"pausedScopes":[...]}` | 503 |
-| `GET /operator/approvals` | none | 200 `{"approvals":[{approvalId, kind, requesterPrincipalId, requesterClientId, scopeId, tool, purpose, caseId, createdAt, expiresAt}]}`; a re-identification entry also carries `namespace` and `syntheticValue`. Never a subject id or a binding | 503 |
-| `GET /operator/approvals/{id}` | none | 200 the same view for one approval, of either kind | 404 `APPROVAL_NOT_FOUND`, 503 |
+| `GET /operator/approvals` | none | 200 `{"approvals":[{approvalId, kind, status, requesterPrincipalId, requesterClientId, scopeId, tool, purpose, caseId, createdAt, expiresAt}]}`; a re-identification entry also carries `namespace` and `syntheticValue`. Never a subject id or a binding | 503 |
+| `GET /operator/approvals/{id}` | none | 200 the same view for one approval, of either kind, whatever its status | 404 `APPROVAL_NOT_FOUND`, 503 |
 | `POST /operator/approvals/{id}/approve` | none | 200 `{"status":"APPROVED","approvalId":...}` for a tool-call approval | 404 `APPROVAL_NOT_FOUND`, 409 `APPROVAL_NOT_PENDING`, `APPROVAL_EXPIRED`, `SELF_APPROVAL`, 503 |
 | `POST /operator/approvals/{id}/reject` | none | 200 `{"status":"REJECTED",...}` | 404 `APPROVAL_NOT_FOUND`, 409 `APPROVAL_NOT_PENDING`, `APPROVAL_EXPIRED`, 503 |
 | `POST /operator/reidentifications` | `{"scopeId","namespace","syntheticValue","purpose","caseId"}`; `namespace` is a `PrivacyNamespace` name | 202 `{"status":"PENDING_APPROVAL","approvalId":...}`; 200 `{"status":"RESOLVED","subjectId":...}` with four-eyes off | 400 `INVALID_REQUEST`, `PURPOSE_REQUIRED`, `PURPOSE_NOT_ALLOWED`; 403 `REIDENTIFICATION_NOT_PERMITTED`; 404 `REIDENTIFICATION_NOT_FOUND`; 429 `TOO_MANY_PENDING`; 503 |
@@ -155,6 +176,13 @@ or case claim), `REIDENTIFICATION_DISABLED` (404, `dataprism.reidentification.en
 the approval list and in the detail carries the synthetic value and its namespace, with the requester,
 purpose, case and expiry. It never carries the subject id, which an approval has no field for. A
 tool-call approval carries neither a synthetic value nor a namespace.
+
+Every entry also carries `status`, the approval's effective status: `PENDING`, `APPROVED`,
+`REJECTED`, `CONSUMED` or `EXPIRED`. A request that is still stored as `PENDING` but whose expiry
+has passed is shown as `EXPIRED`, judged as the stores judge it (expired at the expiry instant
+itself). `GET /operator/approvals` lists only live pending approvals, so each entry there is
+`PENDING`; `GET /operator/approvals/{id}` shows an approval in any status, which is how an
+operator checks whether a decision applied. The view does not name the approver.
 
 The tool-call endpoints (`/operator/approvals/...`) act only on tool-call approvals; a
 re-identification approval is decided through `/operator/reidentifications/{id}/approve`, which

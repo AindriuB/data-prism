@@ -509,8 +509,8 @@ code. No source adapter is invoked.
 | `APPROVAL_PENDING` | The approval is requested and not yet decided. The text is `APPROVAL_PENDING approvalId=<id>`. |
 | `TOO_MANY_PENDING` | The caller already holds the maximum number of live pending tool-call approvals (`OversightPolicy.maxPendingPerRequester`, default 5). No approval is created. A matching retry still gets `APPROVAL_PENDING`. |
 | `OVERSIGHT_UNAVAILABLE` | Admission could not be evaluated, so the call is refused rather than let through. |
-| `CLUSTER_LOCK_TIMEOUT` | A cluster lock that admission needs was held by someone else for longer than `dataprism.hazelcast.lock-timeout` (default two seconds). Nothing was counted or changed; retry. A read refused for the same reason by the shared read budget returns this code too, not `SCOPE_READ_BUDGET`. |
-| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation that admission needs, such as a lock or its lease, so the call is refused rather than let through. Nothing was counted or changed. Retry later, and tell an operator if it persists. A read refused for the same reason by the shared read budget returns this code too, as `refused: CLUSTER_OPERATION_REFUSED at $`, not `SCOPE_READ_BUDGET`. |
+| `CLUSTER_LOCK_TIMEOUT` | A cluster lock that admission needs was held by someone else for longer than `dataprism.hazelcast.lock-timeout` (default two seconds). The failed lock wait changes nothing, but steps that ran earlier in the same call are not undone: a per-caller rate-limit allowance is already used if the limiter had already admitted the call, and an approval that admission had already consumed is not restored, so after a refused read a retry of an approval-gated tool needs a fresh approval. A read refused for the same reason by the shared read budget returns this code too, not `SCOPE_READ_BUDGET`; that read was not counted against the budget. See [what a cluster refusal leaves behind](multiple-instances.md#what-a-cluster-refusal-leaves-behind). |
+| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation that admission needs, such as a lock or its lease, so the call is refused rather than let through. The failed step changes nothing, but earlier steps are not undone (a rate-limit allowance used, an approval consumed by admission not restored, and, if creating an approval failed, a pending approval or count that may be left until it expires). Retry later, and tell an operator if it persists; an approval-gated tool may need a fresh approval first. A read refused for the same reason by the shared read budget returns this code too, as `refused: CLUSTER_OPERATION_REFUSED at $`, not `SCOPE_READ_BUDGET`. |
 
 After a different person approves, the identical call succeeds once. "Identical"
 means the same entity type and subject, and also the same purpose, privacy
@@ -520,6 +520,12 @@ profile or client, is refused with `APPROVAL_REQUIRED` and a new approval id,
 and the earlier approval is left unconsumed. The approval id and the
 approver's id are written to the audit record of the call that ran under it.
 Neither is an argument: a caller cannot supply them.
+
+An approval is usable only after its `ALLOW:APPROVED` event (tool `operator:approve`) is
+written: the operator API writes that event first and commits the approval second. If the
+write fails, the approver gets 503 `AUDIT_UNAVAILABLE`, the approval is still `PENDING`,
+and the identical call is answered `APPROVAL_PENDING`. There is nothing for a failed undo
+to leave behind.
 
 A call that needs approval consumes one of the caller's rate-limit tokens before
 it is refused with `APPROVAL_REQUIRED` or `APPROVAL_PENDING`. That is the current

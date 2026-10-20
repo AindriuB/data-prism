@@ -3,6 +3,10 @@ package io.github.aindriub.dataprism.reidentification;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
+import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
@@ -47,12 +51,22 @@ class ReidentificationServiceTest {
 
     private final InMemoryApprovalStore store = new InMemoryApprovalStore();
 
+    private java.util.function.Consumer<AuditEvent> onEvent;
     private final AuditRecorder recorder = new AuditRecorder(e -> {
         if (auditDown) {
             throw new IllegalStateException("sink down");
         }
+        if (onEvent != null) {
+            onEvent.accept(e);
+        }
         events.add(e);
     }, clock, "test");
+    private final Map<Metric, Integer> counts = new java.util.EnumMap<>(Metric.class);
+    private final PrivacyMetrics metrics = new PrivacyMetrics() {
+        @Override public void increment(Metric metric) { counts.merge(metric, 1, Integer::sum); }
+        @Override public void increment(Metric metric, String sourceName) { increment(metric); }
+        @Override public void record(Metric metric, String sourceName, Duration duration) { }
+    };
 
     private static final Map<String, Set<Permission>> ROLES = Map.of(
             "investigator", Set.of(Permission.REQUEST),
@@ -64,12 +78,16 @@ class ReidentificationServiceTest {
     }
 
     private ReidentificationService service(boolean fourEyes, int maxPending) {
+        return service(fourEyes, maxPending, store);
+    }
+
+    private ReidentificationService service(boolean fourEyes, int maxPending, ApprovalStore approvals) {
         ReidentificationPolicy policy = new ReidentificationPolicy(Set.of("fraud-investigation", "audit-review"), ROLES,
                 fourEyes, Duration.ofMinutes(10), maxPending);
         return new ReidentificationService((scope, ns, synth) -> {
             lookups++;
             return found;
-        }, store, recorder, policy, clock);
+        }, approvals, recorder, policy, clock, metrics);
     }
 
     private static AuthenticatedCaller caller(String principal, String role) {
@@ -259,6 +277,222 @@ class ReidentificationServiceTest {
         auditDown = false;
         assertThat(s.collect(alice, id)).isInstanceOf(Refused.class);
         assertThat(lookups).isZero();
+    }
+
+    /** A store that delegates to the in-memory one, except where {@code intercept} answers for a method. */
+    private interface Intercept {
+        Object call(String method, Object[] args, Delegate delegate) throws Throwable;
+    }
+
+    private interface Delegate {
+        Object call() throws Throwable;
+    }
+
+    private ApprovalStore intercepting(Intercept intercept) {
+        return (ApprovalStore) Proxy.newProxyInstance(ApprovalStore.class.getClassLoader(),
+                new Class<?>[] {ApprovalStore.class}, (p, m, args) -> intercept.call(m.getName(), args, (Delegate) () -> {
+                    try {
+                        return m.invoke(store, args);
+                    } catch (InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                }));
+    }
+
+    private String requested(ReidentificationService s) {
+        return ((PendingApproval) s.request(caller("alice", "supervisor"), req("fraud-investigation"))).approvalId();
+    }
+
+    private List<AuditEvent> decisionEvents(String id) {
+        return events.stream().filter(e -> id.equals(e.approvalId()) && e.policyDecision().contains("APPROVED")
+                || id.equals(e.approvalId()) && e.policyDecision().startsWith("DENY")).toList();
+    }
+
+    @Test
+    void approveWithAuditDownLeavesTheApprovalPendingEvenWhenAnUndoWouldFail() {
+        java.util.concurrent.atomic.AtomicInteger consumes = new java.util.concurrent.atomic.AtomicInteger();
+        ApprovalStore failingUndo = intercepting((method, args, delegate) -> {
+            if (method.equals("consumeApproved") && consumes.getAndIncrement() == 0) {
+                throw new IllegalStateException("undo failed");
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, failingUndo);
+        String id = requested(s);
+        auditDown = true;
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("AUDIT_UNAVAILABLE"));
+        auditDown = false;
+        assertThat(s.collect(caller("alice", "supervisor"), id)).isEqualTo(new Refused("APPROVAL_NOT_APPROVED"));
+        assertThat(lookups).isZero();
+        assertThat(store.find(id)).get().extracting(a -> a.status()).isEqualTo(Status.PENDING);
+        assertThat(counts).containsEntry(Metric.APPROVAL_DECISION_AUDIT_UNAVAILABLE, 1)
+                .doesNotContainKey(Metric.APPROVAL_DECISION_UNCONFIRMED);
+    }
+
+    @Test
+    void theApprovalIsStillPendingWhenItsAllowEventIsWritten() {
+        ReidentificationService s = service(true);
+        String id = requested(s);
+        List<Status> seen = new ArrayList<>();
+        onEvent = e -> {
+            if (e.policyDecision().equals("ALLOW:APPROVED")) {
+                seen.add(store.find(id).orElseThrow().status());
+            }
+        };
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isInstanceOf(Approved.class);
+        assertThat(seen).containsExactly(Status.PENDING);
+    }
+
+    @Test
+    void anApproveThatLosesARaceIsAuditedAsAllowThenALinkedDeny() {
+        ApprovalStore raced = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                throw new ApprovalRefusedException(ApprovalRefusedException.Code.NOT_PENDING);
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, raced);
+        String id = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("APPROVAL_NOT_PENDING"));
+        List<AuditEvent> pair = decisionEvents(id);
+        assertThat(pair).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED",
+                "DENY:APPROVAL_NOT_PENDING");
+        assertThat(pair.get(1).correlationId()).isEqualTo(pair.get(0).correlationId());
+        assertThat(counts).doesNotContainKey(Metric.APPROVAL_DECISION_UNCONFIRMED);
+    }
+
+    @Test
+    void anApproveWhoseReplyIsLostAfterItAppliedIsSuccessWithoutADeny() {
+        ApprovalStore lostReply = intercepting((method, args, delegate) -> {
+            Object result = delegate.call();
+            if (method.equals("approve")) {
+                throw new IllegalStateException("reply lost");
+            }
+            return result;
+        });
+        ReidentificationService s = service(true, 5, lostReply);
+        String id = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isInstanceOf(Approved.class);
+        assertThat(decisionEvents(id)).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED");
+        assertThat(counts).isEmpty();
+    }
+
+    @Test
+    void anApproveThatCannotBeConfirmedIsRefusedWithALinkedDenyAndCounted() {
+        ApprovalStore neverApplied = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                throw new IllegalStateException("store down");
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, neverApplied);
+        String id = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("REIDENTIFICATION_UNAVAILABLE"));
+        List<AuditEvent> pair = decisionEvents(id);
+        assertThat(pair).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED",
+                "DENY:REIDENTIFICATION_UNAVAILABLE");
+        assertThat(pair.get(1).correlationId()).isEqualTo(pair.get(0).correlationId());
+        assertThat(counts).containsEntry(Metric.APPROVAL_DECISION_UNCONFIRMED, 1);
+    }
+
+    @Test
+    void anotherApproversDecisionIsNotThisApproversSuccess() {
+        ApprovalStore other = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                store.approve((String) args[0], "carol", now.get());
+                throw new IllegalStateException("reply lost");
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, other);
+        String id = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("REIDENTIFICATION_UNAVAILABLE"));
+        assertThat(decisionEvents(id)).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED",
+                "DENY:REIDENTIFICATION_UNAVAILABLE");
+    }
+
+    @Test
+    void aDecidedStatusThatCarriesThisApproverIsNotSuccess() {
+        ApprovalStore rejecting = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                store.reject((String) args[0], "bob", now.get());
+                throw new IllegalStateException("reply lost");
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, rejecting);
+        String id = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("REIDENTIFICATION_UNAVAILABLE"));
+    }
+
+    @Test
+    void aClusterRefusalBeforeTheCommitIsAllowThenALinkedDeny() {
+        for (RuntimeException failure : List.<RuntimeException>of(new ClusterLockTimeoutException(),
+                new ClusterOperationRefusedException(new IllegalArgumentException("x")))) {
+            events.clear();
+            ApprovalStore refusing = intercepting((method, args, delegate) -> {
+                if (method.equals("approve")) {
+                    throw failure;
+                }
+                return delegate.call();
+            });
+            ReidentificationService s = service(true, 5, refusing);
+            String id = requested(s);
+            String code = failure instanceof ClusterLockTimeoutException
+                    ? ClusterLockTimeoutException.CODE : ClusterOperationRefusedException.CODE;
+            assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused(code));
+            List<AuditEvent> pair = decisionEvents(id);
+            assertThat(pair).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED", "DENY:" + code);
+            assertThat(pair.get(1).correlationId()).isEqualTo(pair.get(0).correlationId());
+            assertThat(pair.get(1).approvalId()).isEqualTo(pair.get(0).approvalId()).isEqualTo(id);
+        }
+    }
+
+    @Test
+    void aLinkedDenyThatCannotBeWrittenKeepsTheDecisionsCodeAndIsCounted() {
+        ApprovalStore raced = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                throw new ApprovalRefusedException(ApprovalRefusedException.Code.NOT_PENDING);
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, raced);
+        String id = requested(s);
+        onEvent = e -> {
+            if (e.policyDecision().startsWith("DENY")) {
+                throw new IllegalStateException("sink down");
+            }
+        };
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("APPROVAL_NOT_PENDING"));
+        assertThat(counts).containsEntry(Metric.APPROVAL_DECISION_UNCONFIRMED, 1)
+                .doesNotContainKey(Metric.APPROVAL_DECISION_AUDIT_UNAVAILABLE);
+    }
+
+    @Test
+    void anApproveTheStoreWouldRefuseIsDeniedOnceWithoutAnAllowAndNeverReachesTheStore() {
+        int[] approves = {0};
+        ApprovalStore counting = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                approves[0]++;
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, counting);
+        String self = requested(s);
+        String expired = requested(s);
+        String decided = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), decided)).isInstanceOf(Approved.class);
+        events.clear();
+        approves[0] = 0;
+        counts.clear();
+        assertThat(s.approve(caller("alice", "supervisor"), self)).isEqualTo(new Refused("SELF_APPROVAL"));
+        assertThat(s.approve(caller("bob", "supervisor"), decided)).isEqualTo(new Refused("APPROVAL_NOT_PENDING"));
+        now.set(now.get().plus(Duration.ofHours(1)));
+        assertThat(s.approve(caller("bob", "supervisor"), expired)).isEqualTo(new Refused("APPROVAL_EXPIRED"));
+        assertThat(events).extracting(AuditEvent::policyDecision)
+                .containsExactly("DENY:SELF_APPROVAL", "DENY:APPROVAL_NOT_PENDING", "DENY:APPROVAL_EXPIRED");
+        assertThat(approves[0]).isZero();
+        assertThat(counts).isEmpty();
     }
 
     @Test

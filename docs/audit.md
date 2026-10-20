@@ -234,7 +234,7 @@ before 0.4.0.
 | `ALLOW` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | The call was answered | `ALLOW` |
 | `DENY:<code>` | `data-prism-orchestration` (`DefaultContextOrchestrator`) | A call that reached the orchestrator was refused, before or after fetching, with the refusal code (for example an exhausted read budget, `DENY:SCOPE_READ_BUDGET`). A failure that is not a privacy refusal, such as a scrubber or validator fault, is `DENY:REQUEST_FAILED`; the client sees only "the request could not be completed". Adapter failures are recorded per source, and if every source fails the result is `DENY:NO_SOURCE_DATA`. A code that is not a plain upper-case token (`[A-Z][A-Z0-9_]{0,63}`), which an application-supplied scrubber or validator could throw, is recorded as `DENY:INVALID_REFUSAL_CODE`. A source whose scrub or validation refuses is marked under the fixed key `<source>:<refused>` with the value `REFUSED:<code>` (the code passed through the same sanitising as above; before 0.7 the value was plain `REFUSED`). The call is then refused only when every source that answered was refused, with the code of the first scrub refusal, or, if no scrub refused, of the first validation refusal. Otherwise it is `ALLOW`, the source is listed as `<source>:REFUSED` among the source systems, and nothing of it is recorded but that key. The fixed key `merged:<refused>`, value `REFUSED`, marks every other refusal, including a violation found only by the final check over the whole response; an internal error adds no `REFUSED` mark. The code is joined to the client's result by `correlationId` | `DENY:SCOPE_READ_BUDGET`, `DENY:REQUEST_FAILED` |
 | `DENY:<code>` | `data-prism-mcp` (`GetEntityContextTool`, `CompareEntitySourcesTool`) | The tool refused the call before the orchestrator ran, with the refusal code: authorisation, scope, admission, or no authenticated caller. The client's result carries the bare code | `DENY:TOOL_NOT_PERMITTED`, `DENY:NO_AUTHENTICATED_CALLER`, `DENY:CALLER_RATE_LIMITED`, `DENY:APPROVAL_REQUIRED` |
-| `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step succeeded. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED` | `ALLOW:REQUESTED` |
+| `ALLOW:<STAGE>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was submitted by an authorised caller. `<STAGE>` is `REQUESTED`, `APPROVED` or `RESOLVED`. `REQUESTED` and `RESOLVED` record a step that was done. `ALLOW:APPROVED` is written before the approval is committed, so it records the decision, and it took effect unless a `DENY:<code>` with the same `correlationId` follows (see below). The operator API writes the same pair for a tool-call approval, with tool `operator:approve` | `ALLOW:REQUESTED` |
 | `DENY:<code>` | `data-prism-reidentification` (`ReidentificationService`) | A re-identification step was refused, with the refusal code | `DENY:APPROVAL_EXPIRED` |
 | `DENY` (plain) | Releases before 0.4.0 (the orchestrator) | A refusal or internal failure, without the code. Never written by 0.4.0; still read, and still verifies, in files written by 0.3.x | `DENY` |
 | bare `<CODE>` | Releases before 0.4.0 (the MCP tools) | A tool refusal, recorded as the code alone. Never written by 0.4.0; still read, and still verifies, in files written by 0.3.x | `TOOL_NOT_PERMITTED` |
@@ -246,6 +246,18 @@ is a denial or failure. A consumer that tests only for an exact `DENY` misses
 every `DENY:<code>`, and, when it reads files written before 0.4.0, every bare
 code. Treat a value you do not recognise as a denial. The set of codes can grow
 between releases.
+
+An approval is audited before it is committed, so `ALLOW:APPROVED` says that an
+authorised approver submitted the decision. It took effect unless a `DENY:<code>` event
+with the same `correlationId` and approval id follows. With `DENY:APPROVAL_NOT_FOUND`,
+`APPROVAL_NOT_PENDING`, `APPROVAL_EXPIRED`, `SELF_APPROVAL`, `CLUSTER_LOCK_TIMEOUT` or
+`CLUSTER_OPERATION_REFUSED` it did not apply. With `DENY:REIDENTIFICATION_UNAVAILABLE`
+or `DENY:OVERSIGHT_UNAVAILABLE` the outcome is unknown: re-read the approval. Every use
+of an approval is audited separately with its approval id (`ALLOW:RESOLVED`, or the tool
+call's `ALLOW` carrying `approvalId`), so an approval that was used always has both
+events. When the linked `DENY` could not be written, the `ALLOW` stands alone and the
+audit overstates; `dataprism.approval.decision.unconfirmed` counts those cases. The audit
+can overstate a decision. It never understates one.
 
 ## The offline verifier
 

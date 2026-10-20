@@ -8,6 +8,12 @@ package io.github.aindriub.dataprism.core.refusal;
  * <p>Carries the stable code {@value #CODE}. The message names no key, scope, principal or approval id and does
  * not repeat the cause's message, so the code and message are safe to log and to audit. The cause is chained for
  * diagnosis only: it must never be shown to a caller, and a log line may carry its class name but not its message.
+ *
+ * <p>A rejected lock or lease changes nothing. Steps of the same call that ran before it are not undone: a
+ * rate-limit allowance stays used, and an approval consumed earlier stays consumed. A rejection of a later
+ * cluster call while an approval is being created can follow writes that call made, which it undoes where it
+ * can, so a pending approval or count may be left until it expires. See {@code docs/multiple-instances.md},
+ * "What a cluster refusal leaves behind".
  */
 public final class ClusterOperationRefusedException extends PrivacyRefusedException {
 
