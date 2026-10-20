@@ -27,7 +27,7 @@ below are from the second pass.
 
 ## Reproduce
 
-From a checkout of the commit above, with JDK 21 or later and nothing else
+From a checkout of the commit above, with JDK 25.0.4 (the version measured, so runs stay comparable) and nothing else
 running:
 
     load-test/run.sh load-test/scenarios/sources-8.json     # three times
@@ -72,7 +72,7 @@ after the last dispatch. With 3 runs, the "spread" is only the min to max range;
 it is not a confidence interval.
 
 Source status counts (per-source keys are per-scope aliases, so the file's
-`perSourceStatus` has one entry per generated source, each with the same count):
+`perSourceStatus` has one entry per generated source, each with the same count, except the one FAILED read below):
 
 | Scenario | Run 1 | Run 2 | Run 3 |
 |---|---|---|---|
@@ -86,8 +86,9 @@ any run. The one `FAILED` (300-source run 2) is a single source of 30000; the
 result file records the status only, not a cause, so it is unexplained. It
 happened during the run where other JVMs were starting on the host.
 
-Run log (one-minute load average before and after each run; all runs were
-back-to-back):
+Run log (one-minute load average before and after each run, read from `uptime`
+immediately before and after each `load-test/run.sh` invocation, so it includes
+the Maven build `run.sh` does first; all runs were back-to-back):
 
 | Result file | Load before | Load after |
 |---|---|---|
@@ -115,8 +116,9 @@ The workload here is all-success: every source answers inside the band, so none
 of the failure paths (timeout, circuit breaker, over-limit, refusal) was
 exercised. Under that workload:
 
-1. **Latency grows with source count and is bounded by `maxConcurrency`, not by
-   the slowest source.** The sources answer in at most 25 ms (8, 32) or 40 ms
+1. **Latency grows with source count, consistent with a concurrency-capped
+   fan-out plus a per-request cost that grows with source count; not
+   established.** The sources answer in at most 25 ms (8, 32) or 40 ms
    (100, 300), yet the call takes 30, 51, 103 and 190 ms (p50). With
    `maxConcurrency` 8, 16, 32, 64, the fan-out runs `ceil(sources / maxConcurrency)`
    waves of 1, 2, 4 and 5 (rounded up from 4.7). A rough check: the mean
@@ -128,7 +130,7 @@ exercised. Under that workload:
    show p50 near the slowest source's latency plus the fixed cost if the cap is
    lifted.
 2. **Throughput falls roughly in step with source count** (127, 77, 38, 20 calls
-   per second), with 4 workers and unpaced. Per source, the server did about
+   per second), with 4 workers and unpaced. The server did about
    1000 (8), 2500 (32), 3750 (100) and 5900 (300) source reads per second, which
    rises with size, so the cost is not simply per-source. With four workers and
    one host it is not possible to tell from this data whether the server, the
