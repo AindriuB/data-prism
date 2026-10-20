@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.security;
 
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException.Code;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
@@ -22,7 +23,10 @@ import java.util.UUID;
 /**
  * One admission check for an authenticated, authorised call: pauses, per-caller
  * rate limit, then human approval for high-impact tools. Any
- * {@link RuntimeException} from the backing state refuses the call.
+ * {@link RuntimeException} from the backing state refuses the call. A lock that timed out
+ * ({@code CLUSTER_LOCK_TIMEOUT}) and a cluster operation the cluster refused
+ * ({@code CLUSTER_OPERATION_REFUSED}) are refused with their own codes; every other failure is
+ * {@code OVERSIGHT_UNAVAILABLE}.
  */
 public class ToolAdmission {
 
@@ -81,6 +85,8 @@ public class ToolAdmission {
                     ? "TOO_MANY_PENDING" : "OVERSIGHT_UNAVAILABLE");
         } catch (ClusterLockTimeoutException e) {
             return AdmissionDecision.refuse(ClusterLockTimeoutException.CODE);
+        } catch (ClusterOperationRefusedException e) {
+            return AdmissionDecision.refuse(ClusterOperationRefusedException.CODE);
         } catch (RuntimeException e) {
             return AdmissionDecision.refuse("OVERSIGHT_UNAVAILABLE");
         }

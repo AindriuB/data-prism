@@ -3,6 +3,9 @@ package io.github.aindriub.dataprism.reidentification;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
+import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.InMemoryApprovalStore;
 import io.github.aindriub.dataprism.reidentification.ReidentificationOutcome.Approved;
 import io.github.aindriub.dataprism.reidentification.ReidentificationOutcome.PendingApproval;
@@ -11,6 +14,8 @@ import io.github.aindriub.dataprism.reidentification.ReidentificationOutcome.Res
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -310,5 +315,132 @@ class ReidentificationServiceTest {
         assertThat(s.request(alice, req("fraud-investigation"))).isEqualTo(new Refused("AUDIT_UNAVAILABLE"));
 
         assertThat(store.pending(now.get())).hasSize(1);
+    }
+
+    // ----- a cluster refusal reaches the caller as its own code
+
+    private static final String SENTINEL = "sentinel-key-x-1";
+
+    private static List<RuntimeException> clusterFailures() {
+        return List.of(new ClusterOperationRefusedException(new IllegalArgumentException(SENTINEL)),
+                new ClusterLockTimeoutException());
+    }
+
+    /** The shared in-memory store, except that the one named method throws {@code failure}. */
+    private ApprovalStore storeThrowingOn(String method, RuntimeException failure) {
+        return (ApprovalStore) Proxy.newProxyInstance(ApprovalStore.class.getClassLoader(),
+                new Class<?>[] {ApprovalStore.class}, (p, m, args) -> {
+                    if (m.getName().equals(method)) {
+                        throw failure;
+                    }
+                    try {
+                        return m.invoke(store, args);
+                    } catch (InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+    }
+
+    private ReidentificationService serviceOver(ApprovalStore approvals) {
+        ReidentificationPolicy policy = new ReidentificationPolicy(Set.of("fraud-investigation", "audit-review"),
+                ROLES, true, Duration.ofMinutes(10), ReidentificationPolicy.DEFAULT_MAX_PENDING_PER_REQUESTER);
+        return new ReidentificationService((scope, ns, synth) -> {
+            lookups++;
+            return found;
+        }, approvals, recorder, policy, clock);
+    }
+
+    private String approvedId() {
+        ReidentificationService real = service(true);
+        String id = ((PendingApproval) real.request(caller("alice", "supervisor"), req("fraud-investigation")))
+                .approvalId();
+        real.approve(caller("bob", "supervisor"), id);
+        events.clear();
+        return id;
+    }
+
+    @Test
+    void aClusterRefusalWhenOpeningARequestIsRefusedWithItsOwnCode() {
+        for (RuntimeException failure : clusterFailures()) {
+            events.clear();
+            String code = ((io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException) failure).code();
+            assertDenied(serviceOver(storeThrowingOn("create", failure))
+                    .request(caller("alice", "supervisor"), req("fraud-investigation")), code);
+            assertThat(lookups).isZero();
+        }
+    }
+
+    @Test
+    void aClusterRefusalWhenApprovingIsRefusedWithItsOwnCodeOnBothCalls() {
+        for (RuntimeException failure : clusterFailures()) {
+            String code = ((io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException) failure).code();
+            for (String method : new String[] {"find", "approve"}) {
+                String id = ((PendingApproval) service(true).request(caller("alice", "supervisor"),
+                        req("fraud-investigation"))).approvalId();
+                events.clear();
+                assertDenied(serviceOver(storeThrowingOn(method, failure)).approve(caller("bob", "supervisor"), id),
+                        code);
+            }
+        }
+    }
+
+    @Test
+    void aClusterRefusalWhenCollectingIsRefusedWithItsOwnCodeAndResolvesNothing() {
+        for (RuntimeException failure : clusterFailures()) {
+            String code = ((io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException) failure).code();
+            for (String method : new String[] {"find", "consumeApproved"}) {
+                String id = approvedId();
+                assertDenied(serviceOver(storeThrowingOn(method, failure)).collect(caller("alice", "supervisor"), id),
+                        code);
+            }
+        }
+        assertThat(lookups).isZero();
+    }
+
+    @Test
+    void aClusterRefusalInTheLookupWithoutFourEyesIsRefusedWithItsOwnCode() {
+        for (RuntimeException failure : clusterFailures()) {
+            String code = ((io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException) failure).code();
+            events.clear();
+            ReidentificationPolicy policy = new ReidentificationPolicy(Set.of("fraud-investigation"), ROLES, false,
+                    Duration.ofMinutes(10), ReidentificationPolicy.DEFAULT_MAX_PENDING_PER_REQUESTER);
+            var s = new ReidentificationService((scope, ns, synth) -> {
+                throw failure;
+            }, store, recorder, policy, clock);
+            assertDenied(s.request(caller("alice", "investigator"), req("fraud-investigation")), code);
+        }
+    }
+
+    @Test
+    void aClusterRefusalWithTheAuditSinkDownStillRefusesAndResolvesNothing() {
+        // The denial's audit write fails; the answer is the same refusal a generic failure gets, never a subject.
+        for (RuntimeException failure : clusterFailures()) {
+            String code = ((io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException) failure).code();
+            auditDown = true;
+            events.clear();
+            assertThat(serviceOver(storeThrowingOn("create", failure))
+                    .request(caller("alice", "supervisor"), req("fraud-investigation")))
+                    .isEqualTo(new Refused(code));
+            assertThat(events).isEmpty();
+        }
+        assertThat(lookups).isZero();
+    }
+
+    @Test
+    void anyOtherFailureIsStillReidentificationUnavailableOnEveryCall() {
+        RuntimeException other = new IllegalStateException(SENTINEL);
+        assertDenied(serviceOver(storeThrowingOn("create", other))
+                .request(caller("alice", "supervisor"), req("fraud-investigation")), "REIDENTIFICATION_UNAVAILABLE");
+        String pendingId = ((PendingApproval) service(true).request(caller("alice", "supervisor"),
+                req("fraud-investigation"))).approvalId();
+        assertDenied(serviceOver(storeThrowingOn("find", other)).approve(caller("bob", "supervisor"), pendingId),
+                "REIDENTIFICATION_UNAVAILABLE");
+        assertDenied(serviceOver(storeThrowingOn("approve", other)).approve(caller("bob", "supervisor"), pendingId),
+                "REIDENTIFICATION_UNAVAILABLE");
+        String approved = approvedId();
+        assertDenied(serviceOver(storeThrowingOn("find", other)).collect(caller("alice", "supervisor"), approved),
+                "REIDENTIFICATION_UNAVAILABLE");
+        assertDenied(serviceOver(storeThrowingOn("consumeApproved", other))
+                .collect(caller("alice", "supervisor"), approved), "REIDENTIFICATION_UNAVAILABLE");
     }
 }

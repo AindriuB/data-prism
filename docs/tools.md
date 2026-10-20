@@ -510,6 +510,7 @@ code. No source adapter is invoked.
 | `TOO_MANY_PENDING` | The caller already holds the maximum number of live pending tool-call approvals (`OversightPolicy.maxPendingPerRequester`, default 5). No approval is created. A matching retry still gets `APPROVAL_PENDING`. |
 | `OVERSIGHT_UNAVAILABLE` | Admission could not be evaluated, so the call is refused rather than let through. |
 | `CLUSTER_LOCK_TIMEOUT` | A cluster lock that admission needs was held by someone else for longer than `dataprism.hazelcast.lock-timeout` (default two seconds). Nothing was counted or changed; retry. A read refused for the same reason by the shared read budget returns this code too, not `SCOPE_READ_BUDGET`. |
+| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation that admission needs, such as a lock or its lease, so the call is refused rather than let through. Nothing was counted or changed. Retry later, and tell an operator if it persists. A read refused for the same reason by the shared read budget returns this code too, as `refused: CLUSTER_OPERATION_REFUSED at $`, not `SCOPE_READ_BUDGET`. |
 
 After a different person approves, the identical call succeeds once. "Identical"
 means the same entity type and subject, and also the same purpose, privacy

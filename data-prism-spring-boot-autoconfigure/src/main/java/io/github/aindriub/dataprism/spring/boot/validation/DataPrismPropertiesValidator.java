@@ -231,9 +231,10 @@ public final class DataPrismPropertiesValidator {
             return;
         }
         if (clusterSupplied) {
-            if (hazelcast.clusterSettingsSet()) {
-                refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.* and member.* "
-                        + "have no effect when the application supplies its own PrivacyCluster");
+            if (hazelcast.clusterSettingsSet() || hazelcast.approvalSweepIntervalSet()) {
+                refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.*, member.* and "
+                        + "approval-sweep-interval have no effect when the application supplies its own "
+                        + "PrivacyCluster");
             }
             return;
         }
@@ -556,6 +557,12 @@ public final class DataPrismPropertiesValidator {
                 || hazelcast.getLockTimeout().compareTo(java.time.Duration.ofSeconds(30)) > 0)) {
             refuse("INVALID_LOCK_TIMEOUT", "dataprism.hazelcast.lock-timeout must be between PT100MS and PT30S");
         }
+        if (hazelcast.approvalSweepIntervalSet() && (hazelcast.getApprovalSweepInterval() == null
+                || hazelcast.getApprovalSweepInterval().compareTo(java.time.Duration.ofSeconds(1)) < 0
+                || hazelcast.getApprovalSweepInterval().compareTo(java.time.Duration.ofDays(1)) > 0)) {
+            refuse("INVALID_APPROVAL_SWEEP_INTERVAL",
+                    "dataprism.hazelcast.approval-sweep-interval must be between PT1S and P1D");
+        }
         if (hazelcast.isPersistenceEnabled() || hazelcast.isMapStoreEnabled()) {
             refuse("UNSAFE_HAZELCAST_PERSISTENCE", "persistence and MapStore require a reviewed configuration");
         }
@@ -566,9 +573,11 @@ public final class DataPrismPropertiesValidator {
                     + "(network isolation: a private network or Kubernetes NetworkPolicy)");
         }
         if ("single-node".equals(hazelcast.getTopology())
-                && (hazelcast.clusterSettingsSet() || hazelcast.lockTimeoutSet())) {
+                && (hazelcast.clusterSettingsSet() || hazelcast.lockTimeoutSet()
+                || hazelcast.approvalSweepIntervalSet())) {
             refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.*, member.*, "
-                    + "approval-minimum-members and lock-timeout have no effect with topology single-node; "
+                    + "approval-minimum-members, lock-timeout and approval-sweep-interval have no effect with "
+                    + "topology single-node; "
                     + "remove them or use topology embedded");
         }
         if (hazelcast.isReidentificationEnabled() && blank(hazelcast.getReidentificationControlsReference())) {

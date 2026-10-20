@@ -90,6 +90,7 @@ applies, because the stores are built over that bean. Relaxed binding drops hyph
 | `dataprism.hazelcast.member.port` | Optional. Default 5701, never auto-incremented |
 | `dataprism.hazelcast.member.interface` | Optional. An IPv4 literal or wildcard such as `10.0.*.*` |
 | `dataprism.hazelcast.lock-timeout` | Optional. Default `PT2S`, from `PT100MS` to `PT30S`. How long a call waits for a cluster lock before it is refused. See [Failure behaviour](#failure-behaviour) |
+| `dataprism.hazelcast.approval-sweep-interval` | Optional `Duration`. Default `PT5M`, from `PT1S` to `P1D`. How often each member sweeps the pending-approval entries and approval-id claims it owns. Fixed when the cluster is built. See [Failure behaviour](#failure-behaviour) |
 | `dataprism.hazelcast.approval-minimum-members` | Optional integer, at least 1. The fewest members that must see each other for approvals to be created, decided or consumed. `tcp-ip`: unset means a majority of the distinct `join.members` entries, so the list must name every member, this one included. Members are counted after expanding entries separated by commas, semicolons or spaces and last-octet ranges such as `10.0.0.1-3`; an entry without a port is the configured `member.port`, so `10.0.0.1` and `10.0.0.1:5701` are one member only when `member.port` is 5701. `none`: 1, and the key is refused. The checks below apply only when approvals are in use, that is `dataprism.oversight.approval-required-tools` is not empty or `dataprism.reidentification.enabled` is true; otherwise no quorum is computed or required. A form that cannot be counted reliably (a wildcard, a range in another octet) is then refused with `INVALID_APPROVAL_QUORUM`. If any entry is a hostname, the count is unknown, because Hazelcast resolves a hostname to every address it has, so you must set the minimum (`MISSING_APPROVAL_QUORUM` otherwise). `kubernetes`: required when approvals are in use. Application code that builds its own `ToolAdmission` or `ReidentificationService` over the starter's `ApprovalStore`, without setting the starter properties that put approvals in use, should set `approval-minimum-members` explicitly: the starter applies no protection otherwise. See [Failure behaviour](#failure-behaviour) |
 
 `join.mode: none` is the explicit single-member choice: the member binds
@@ -126,6 +127,7 @@ leaves it running. The code is on the configuration failure.
 | `CLUSTER_PORT_SHARED` | `member.port` equals `server.port`, `management.server.port` or an enabled `dataprism.operator.port` |
 | `CLUSTER_SETTINGS_IGNORED` | Cluster settings with `single-node`, or with an application-supplied `PrivacyCluster` |
 | `INVALID_LOCK_TIMEOUT` | `lock-timeout` below `PT100MS`, above `PT30S`, zero or negative |
+| `INVALID_APPROVAL_SWEEP_INTERVAL` | `approval-sweep-interval` below `PT1S`, above `P1D`, zero or negative |
 | `INVALID_APPROVAL_QUORUM` | `approval-minimum-members` below 1, above the number of distinct `join.members` entries with `tcp-ip`, or set at all with `none`. Also, when approvals are in use, a `tcp-ip` entry that cannot be counted (wildcard, a range outside the last octet) |
 | `MISSING_APPROVAL_QUORUM` | Approvals in use (`dataprism.oversight.approval-required-tools` set or `dataprism.reidentification.enabled`) and either `tcp-ip` with a hostname among `join.members`, or `kubernetes`, with no `approval-minimum-members`: the member count is not known to the starter, so you must give it |
 | `HAZELCAST_TLS_UNSUPPORTED` | `tls-key-reference` or `tls-trust-reference` set, or a supplied Hazelcast `Config` that enables TLS or Hazelcast security |
@@ -298,7 +300,12 @@ committed the pending entry's lock), and ending a scope or forgetting its approv
   `CLUSTER_LOCK_TIMEOUT` and is audited as `DENY:CLUSTER_LOCK_TIMEOUT`. A held lock
   is therefore not reported as an exhausted budget. A budget failure that is not a
   lock timeout, such as an unreachable cluster, still refuses the read as before.
-- The operator API keeps answering `503 OVERSIGHT_UNAVAILABLE`.
+- Re-identification (request, approve and collect) answers `CLUSTER_LOCK_TIMEOUT`
+  as its refusal code, audited as `DENY:CLUSTER_LOCK_TIMEOUT`, and the operator API
+  answers it with `503` and `{"code":"CLUSTER_LOCK_TIMEOUT"}` for approve, reject,
+  the pause endpoints and the re-identification endpoints. Earlier versions answered
+  `REIDENTIFICATION_UNAVAILABLE` and `503 OVERSIGHT_UNAVAILABLE` there. Any other
+  store failure still gets those two codes.
 
 Every lock is leased for five times the lock timeout (ten seconds with the
 default), so none can be held for ever. A lock only bounds a wait. Every call
@@ -338,8 +345,25 @@ but a lock someone else holds on one of their keys still blocks them; those are
 not bounded yet.
 
 If Hazelcast rejects a lock or its lease, or an id-claim or pending-count
-operation fails, creation is refused with `CLUSTER_OPERATION_REFUSED`. The
-message names no key, scope, principal or approval id. A real duplicate id
+operation fails, the call is refused with `CLUSTER_OPERATION_REFUSED`. The
+message names no key, scope, principal or approval id, and the original cause is
+chained on the exception and logged once as its class name only, at `WARN`,
+never its message. Every caller sees the code itself, as it sees
+`CLUSTER_LOCK_TIMEOUT`:
+
+- A tool call refused at admission (the approval store or the caller rate limiter)
+  returns `CLUSTER_OPERATION_REFUSED` and is audited as
+  `DENY:CLUSTER_OPERATION_REFUSED`.
+- A read whose budget lock Hazelcast rejects is refused as
+  `refused: CLUSTER_OPERATION_REFUSED at $`, audited as
+  `DENY:CLUSTER_OPERATION_REFUSED`, and no source is called. A budget failure that
+  is not a rejected lock, such as an unreachable cluster, still refuses the read as
+  `SCOPE_READ_BUDGET`.
+- Re-identification answers it as its refusal code, and the operator API answers
+  `503` with `{"code":"CLUSTER_OPERATION_REFUSED"}` for approve, reject, the pause
+  endpoints and the re-identification endpoints.
+
+Treat it as retry later, and tell an operator if it persists. A real duplicate id
 still gets `IllegalArgumentException("duplicate approval id")`, and the two are
 never confused. One way to see the new code: set
 `hazelcast.lock.max.lease.time.seconds` below five times the lock timeout.
@@ -421,8 +445,9 @@ much, and they must never be dropped early. The two are handled differently.
   when its expiry plus one minute has passed, and removes the entry when it is empty. The
   sweep is handed the time, so running it twice changes nothing more. Retention is therefore
   bounded by the approval's expiry, plus one minute, plus the sweep interval. Set the interval
-  with the Hazelcast config property `dataprism.approval.pending.sweep-seconds` (1 to 86400,
-  default 300); anything else is refused at start. An entry the sweep cannot read is left in
+  with `dataprism.hazelcast.approval-sweep-interval` (`PT1S` to `P1D`, default `PT5M`);
+  anything else is refused at start with `INVALID_APPROVAL_SWEEP_INTERVAL`. From Java, pass it
+  to the `PrivacyCluster.embedded` or `using` overload that takes a `Duration`. An entry the sweep cannot read is left in
   place, so the cap keeps refusing. A member that has lost the write quorum cannot sweep and
   tries again at the next interval.
 

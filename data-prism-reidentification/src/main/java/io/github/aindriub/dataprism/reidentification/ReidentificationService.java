@@ -3,6 +3,8 @@ package io.github.aindriub.dataprism.reidentification;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
@@ -76,7 +78,7 @@ public final class ReidentificationService {
             }
             return resolve(caller, request, purpose, caseId, "", "");
         } catch (RuntimeException unavailable) {
-            return refuse(caller, request, purpose, caseId, "", "", "REIDENTIFICATION_UNAVAILABLE");
+            return refuse(caller, request, purpose, caseId, "", "", unavailableCode(unavailable));
         }
     }
 
@@ -85,7 +87,7 @@ public final class ReidentificationService {
         try {
             found = approvals.find(approvalId).filter(a -> a.kind() == Kind.REIDENTIFICATION);
         } catch (RuntimeException unavailable) {
-            return refuseApproval(caller, null, approvalId, "REIDENTIFICATION_UNAVAILABLE", true);
+            return refuseApproval(caller, null, approvalId, unavailableCode(unavailable), true);
         }
         if (!policy.grants(caller.roles(), Permission.APPROVE)) {
             return refuseApproval(caller, found.orElse(null), approvalId, "REIDENTIFICATION_NOT_PERMITTED", true);
@@ -105,7 +107,7 @@ public final class ReidentificationService {
                 case TOO_MANY_PENDING -> "REIDENTIFICATION_UNAVAILABLE";
             }, true);
         } catch (RuntimeException unavailable) {
-            return refuseApproval(caller, pending, approvalId, "REIDENTIFICATION_UNAVAILABLE", true);
+            return refuseApproval(caller, pending, approvalId, unavailableCode(unavailable), true);
         }
         try {
             record(pending, "ALLOW:APPROVED", pending.approvalId(), caller.principalId());
@@ -125,7 +127,7 @@ public final class ReidentificationService {
             }
             approval = found.get();
         } catch (RuntimeException unavailable) {
-            return refuseApproval(caller, null, approvalId, "REIDENTIFICATION_UNAVAILABLE", false);
+            return refuseApproval(caller, null, approvalId, unavailableCode(unavailable), false);
         }
         if (!approval.requesterPrincipalId().equals(caller.principalId())) {
             return refuseApproval(caller, approval, approvalId, "NOT_REQUESTER", false);
@@ -157,8 +159,23 @@ public final class ReidentificationService {
             return resolve(caller, original, approval.purpose(), approval.caseId(), approval.approvalId(),
                     approval.approverPrincipalId() == null ? "" : approval.approverPrincipalId());
         } catch (RuntimeException unavailable) {
-            return refuseApproval(caller, approval, approvalId, "REIDENTIFICATION_UNAVAILABLE", false);
+            return refuseApproval(caller, approval, approvalId, unavailableCode(unavailable), false);
         }
+    }
+
+    /**
+     * The code for a store or lookup failure: the cluster's own code when it refused the operation or a lock timed
+     * out, so a caller can tell a retry-later from a fault, and {@code REIDENTIFICATION_UNAVAILABLE} for anything
+     * else. Never the exception's message.
+     */
+    private static String unavailableCode(RuntimeException failure) {
+        if (failure instanceof ClusterOperationRefusedException) {
+            return ClusterOperationRefusedException.CODE;
+        }
+        if (failure instanceof ClusterLockTimeoutException) {
+            return ClusterLockTimeoutException.CODE;
+        }
+        return "REIDENTIFICATION_UNAVAILABLE";
     }
 
     private ReidentificationOutcome open(AuthenticatedCaller caller, ReidentificationRequest request,

@@ -4,6 +4,7 @@ import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +51,9 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     /**
      * @throws ClusterLockTimeoutException if the subject's lock is held and not released within the lock
      *                                     timeout. That is not an exhausted budget and is not reported as one.
+     * @throws ClusterOperationRefusedException if the cluster rejected the lock or its lease. That is a refusal of
+     *                                          the read with its own code, not an exhausted budget, and it is
+     *                                          already logged where it was made.
      */
     @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
@@ -65,6 +69,8 @@ public final class HazelcastScopeBudget implements ScopeBudget {
         } catch (ClusterLockTimeoutException held) {
             LOG.error("read budget lock not obtained within {}; refusing the read", lockTimeout);
             throw held;
+        } catch (ClusterOperationRefusedException rejected) {
+            throw rejected;
         } catch (RuntimeException clusterFailure) {
             return refuse(clusterFailure);
         }

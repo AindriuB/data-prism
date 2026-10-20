@@ -54,7 +54,9 @@ Each refusal writes an audit event whose decision is `DENY:<code>`.
 | `APPROVAL_NOT_PENDING` | `approve` on a request that was already decided |
 | `APPROVAL_NOT_APPROVED` | `collect` before approval, or after it was used |
 | `TOO_MANY_PENDING` | The requester already holds the maximum number of live pending re-identification approvals (`ReidentificationPolicy.maxPendingPerRequester`, default 5, counted apart from tool-call approvals). No approval is created, and the event carries no approval id |
-| `REIDENTIFICATION_UNAVAILABLE` | A store or lookup failed; the request fails closed |
+| `CLUSTER_LOCK_TIMEOUT` | A cluster lock the step needs was held for longer than `dataprism.hazelcast.lock-timeout`. Nothing was changed; retry. 503 on the operator API |
+| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the step needs, such as a lock or its lease. Nothing was changed; retry later, and tell an operator if it persists. 503 on the operator API |
+| `REIDENTIFICATION_UNAVAILABLE` | Any other store or lookup failure; the request fails closed |
 | `AUDIT_UNAVAILABLE` | The audit write failed; nothing is returned |
 
 Resolving a subject id to a person remains the source systems' job.
@@ -146,7 +148,7 @@ operator rate limit; the cap on pending approvals per requester is what bounds a
 
 Other codes: `OPERATOR_IDENTITY_UNAVAILABLE` (401, the token lacks a usable principal, client, purpose
 or case claim), `REIDENTIFICATION_DISABLED` (404, `dataprism.reidentification.enabled` is `false`),
-`OVERSIGHT_UNAVAILABLE` and `AUDIT_UNAVAILABLE` (503), `APPLIED_AUDIT_UNAVAILABLE` (503, from `pause` and
+`CLUSTER_LOCK_TIMEOUT`, `CLUSTER_OPERATION_REFUSED`, `OVERSIGHT_UNAVAILABLE` and `AUDIT_UNAVAILABLE` (503), `APPLIED_AUDIT_UNAVAILABLE` (503, from `pause` and
 `reject` only: the action took effect and could not be audited), `PAYLOAD_TOO_LARGE` (413).
 
 **The approver's view.** The approver sees what is being asked for: the re-identification entry in

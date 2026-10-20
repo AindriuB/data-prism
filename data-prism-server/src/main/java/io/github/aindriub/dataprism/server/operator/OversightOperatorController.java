@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.server.operator;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
@@ -82,7 +84,7 @@ final class OversightOperatorController {
                 case SCOPE -> state.pauseScope(target.name());
             }
         } catch (RuntimeException unavailable) {
-            throw unavailable(caller, "pause", target);
+            throw unavailable(caller, "pause", target, unavailable);
         }
         appliedAudit(() -> audit.record(caller, "pause", target.entityType(), target.scopeId(), "ALLOW:PAUSED",
                 "", ""));
@@ -101,7 +103,7 @@ final class OversightOperatorController {
                 case SCOPE -> state.resumeScope(target.name());
             }
         } catch (RuntimeException unavailable) {
-            throw unavailable(caller, "resume", target);
+            throw unavailable(caller, "resume", target, unavailable);
         }
         return Map.of("status", "RESUMED", "target", target.type().name());
     }
@@ -114,7 +116,7 @@ final class OversightOperatorController {
         try {
             snapshot = state.snapshot();
         } catch (RuntimeException unavailable) {
-            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, unavailableCode(unavailable));
         }
         return Map.of("allPaused", snapshot.allPaused(), "pausedTools", new TreeSet<>(snapshot.pausedTools()),
                 "pausedScopes", new TreeSet<>(snapshot.pausedScopes()));
@@ -128,7 +130,7 @@ final class OversightOperatorController {
         try {
             pending = approvals.pending(clock.instant());
         } catch (RuntimeException unavailable) {
-            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, unavailableCode(unavailable));
         }
         // Never the binding fingerprint, and never a subject id (an approval has no field for one).
         return Map.of("approvals", pending.stream().map(ApprovalView::of).toList());
@@ -141,8 +143,9 @@ final class OversightOperatorController {
         try {
             found = approvals.find(id).orElse(null);
         } catch (RuntimeException unavailable) {
-            audit.recordDenial(caller, "approval", "", "", "OVERSIGHT_UNAVAILABLE", "");
-            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+            String code = unavailableCode(unavailable);
+            audit.recordDenial(caller, "approval", "", "", code, "");
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
         if (found == null) {
             audit.recordDenial(caller, "approval", "", "", "APPROVAL_NOT_FOUND", "");
@@ -161,8 +164,9 @@ final class OversightOperatorController {
         } catch (ApprovalRefusedException refused) {
             throw denied(caller, "approve", found, refused);
         } catch (RuntimeException unavailable) {
-            audit.recordDenial(caller, "approve", found.tool(), found.scopeId(), "OVERSIGHT_UNAVAILABLE", id);
-            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+            String code = unavailableCode(unavailable);
+            audit.recordDenial(caller, "approve", found.tool(), found.scopeId(), code, id);
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
         try {
             audit.record(caller, "approve", found.tool(), found.scopeId(), "ALLOW:APPROVED", id,
@@ -183,8 +187,9 @@ final class OversightOperatorController {
         } catch (ApprovalRefusedException refused) {
             throw denied(caller, "reject", found, refused);
         } catch (RuntimeException unavailable) {
-            audit.recordDenial(caller, "reject", found.tool(), found.scopeId(), "OVERSIGHT_UNAVAILABLE", id);
-            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+            String code = unavailableCode(unavailable);
+            audit.recordDenial(caller, "reject", found.tool(), found.scopeId(), code, id);
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
         appliedAudit(() -> audit.record(caller, "reject", found.tool(), found.scopeId(), "ALLOW:REJECTED", id,
                 caller.principalId()));
@@ -221,8 +226,9 @@ final class OversightOperatorController {
         } catch (OperatorException e) {
             throw e;
         } catch (RuntimeException unavailable) {
-            audit.recordDenial(caller, action, "", "", "OVERSIGHT_UNAVAILABLE", "");
-            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+            String code = unavailableCode(unavailable);
+            audit.recordDenial(caller, action, "", "", code, "");
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
     }
 
@@ -251,9 +257,25 @@ final class OversightOperatorController {
         }
     }
 
-    private OperatorException unavailable(AuthenticatedCaller caller, String action, Target target) {
-        audit.recordDenial(caller, action, target.entityType(), target.scopeId(), "OVERSIGHT_UNAVAILABLE", "");
-        return new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "OVERSIGHT_UNAVAILABLE");
+    private OperatorException unavailable(AuthenticatedCaller caller, String action, Target target,
+                                          RuntimeException failure) {
+        String code = unavailableCode(failure);
+        audit.recordDenial(caller, action, target.entityType(), target.scopeId(), code, "");
+        return new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
+    }
+
+    /**
+     * The code for a store or state failure: the cluster's own code when it refused the operation or a lock timed
+     * out, and {@code OVERSIGHT_UNAVAILABLE} for anything else. Never the exception's message.
+     */
+    private static String unavailableCode(RuntimeException failure) {
+        if (failure instanceof ClusterOperationRefusedException) {
+            return ClusterOperationRefusedException.CODE;
+        }
+        if (failure instanceof ClusterLockTimeoutException) {
+            return ClusterLockTimeoutException.CODE;
+        }
+        return "OVERSIGHT_UNAVAILABLE";
     }
 
     private Target target(AuthenticatedCaller caller, String action, PauseRequest body) {

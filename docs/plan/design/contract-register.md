@@ -32,7 +32,7 @@ Collisions found: 21 (section 11). Document disagreements recorded: 13 (section 
 
 The findings that matter most before 0.8 starts:
 
-1. **`CLUSTER_OPERATION_REFUSED` (task 216) cannot be seen by any caller.** Tool calls turn it into `OVERSIGHT_UNAVAILABLE`, reads into `SCOPE_READ_BUDGET`, and nothing logs it (3.2, OD-200-2). `dataprism.approval.release.skipped` (task 232) is registered in section 5.
+1. **`CLUSTER_OPERATION_REFUSED` (task 216) could not be seen by any caller. Resolved by task 233** (OD-200-2 (b)): it reaches callers as its own code on the admission, read, re-identification and operator paths, with the cause chained and logged (3.2). `dataprism.approval.release.skipped` (task 232) is registered in section 5.
 2. **The unknown-status rule is recorded two ways** (D1, OD-200-1). The decision record, the code and the shipped page say "not answered"; only the later `PLAN.md` summary says "an error".
 3. **Length caps disagree between the link layout, the catalog schemas and the resolver grammar** (D3, OD-200-4), and catalog OD-C18 (c) lets a long source name through in 0.8 while the link layout says it is refused at startup.
 4. **A capability for `follow` is assumed by the batch design and defined nowhere** (OD-200-5).
@@ -292,7 +292,7 @@ Surface: the tool result text and `DENY:<code>`, checked after authorisation and
 | Code | State | Release | Source | Docs | Meaning, note |
 |---|---|---|---|---|---|
 | `CLUSTER_LOCK_TIMEOUT` | shipped* | 0.7.0* | core:ClusterLockTimeoutException.java:13 | yes | a cluster lock was held longer than `dataprism.hazelcast.lock-timeout` (t202) |
-| `CLUSTER_OPERATION_REFUSED` | shipped* | 0.7.0* | hazelcast:ClusterOperationRefusedException.java:16 | yes | Hazelcast rejected a lock, lease, index or entry-processor call during approval creation or another lock-taking cluster call (t216:125); see 3.2 |
+| `CLUSTER_OPERATION_REFUSED` | shipped* | 0.7.0* | core:ClusterOperationRefusedException.java:12 | yes | Hazelcast rejected a lock, lease, index or entry-processor call during approval creation or another lock-taking cluster call (t216:125); surfaced to callers on every path by task 233 (OD-200-2); see 3.2 |
 | `OVERSIGHT_UNAVAILABLE` | shipped | 0.4.0 | mcp:ToolCalls.java:32 | yes | admission could not be evaluated; refused, never let through |
 | `APPROVAL_REQUIRED` | shipped | 0.4.0 | security:ToolAdmission.java:106 | yes | a second person must approve; text carries `approvalId=` |
 | `APPROVAL_PENDING` | shipped | 0.4.0 | security:ToolAdmission.java:100 | yes | approval requested, not yet decided; text carries `approvalId=` |
@@ -302,20 +302,21 @@ Surface: the tool result text and `DENY:<code>`, checked after authorisation and
 | `SCOPE_PAUSED` | shipped | 0.4.0 | security:ToolAdmission.java:67 | yes | an operator paused the caller's scope |
 | `CALLER_RATE_LIMITED` | shipped | 0.4.0 | security:ToolAdmission.java:73 | yes | the caller used its request allowance |
 
-**`CLUSTER_OPERATION_REFUSED`, as task 216 introduced it.** Meaning: Hazelcast rejected a lock or its lease (for example a configured `hazelcast.lock.max.lease.time.seconds` below the lease the store asks for), or an index or entry-processor call failed, during approval creation. Nothing is reported as a duplicate id and nothing names a key, scope, principal or approval id (t216:125; class hazelcast:ClusterOperationRefusedException.java:16). It is a `PrivacyRefusedException` subclass and so carries the stable code; it lives in the hazelcast module, while its sibling `ClusterLockTimeoutException` lives in core (core:ClusterLockTimeoutException.java:13).
+**`CLUSTER_OPERATION_REFUSED`, as task 216 introduced it and task 233 surfaced it.** Meaning: Hazelcast rejected a lock or its lease (for example a configured `hazelcast.lock.max.lease.time.seconds` below the lease the store asks for), or an index or entry-processor call failed. Nothing is reported as a duplicate id and nothing names a key, scope, principal or approval id (t216:125). It is a `PrivacyRefusedException` subclass and so carries the stable code. Task 233 moved the class into core (core:ClusterOperationRefusedException.java:12), beside its sibling `ClusterLockTimeoutException` (core:ClusterLockTimeoutException.java:13), with no alias, because it was never released. Every throw site now chains the Hazelcast failure as the cause and writes one `WARN` line holding the code and the cause's simple class name, never its message or stack trace (hazelcast:ClusterRefusals.java).
 
-Where it surfaces today, read from the code, not from the brief:
+Where it surfaces, after task 233 (OD-200-2 (b)). `CLUSTER_LOCK_TIMEOUT` joined the re-identification and operator paths in the same task, so the two cluster codes behave the same on every path (D-0.7-HZ-3):
 
 | Path | What the caller sees | Source |
 |---|---|---|
-| Tool call, approval creation or caller rate limiter | `OVERSIGHT_UNAVAILABLE` (audit `DENY:OVERSIGHT_UNAVAILABLE`). `ToolAdmission.admit` has a catch for `ClusterLockTimeoutException` only; this exception falls into the generic `RuntimeException` catch. | security:ToolAdmission.java:82 and the next catch |
-| Tool call, cluster read budget | `SCOPE_READ_BUDGET`. `HazelcastScopeBudget` catches `RuntimeException` around the lock and refuses the read. | hazelcast:HazelcastScopeBudget.java:68 |
-| Re-identification request or approval | `REIDENTIFICATION_UNAVAILABLE`. | reidentification:ReidentificationService.java:79 |
-| Operator approve or reject | HTTP 503 `OVERSIGHT_UNAVAILABLE`, audited as a denial. | server:OversightOperatorController.java:164 |
+| Tool call, approval creation, `findPending`, `consumeApproved` or caller rate limiter | The code itself, audited `DENY:CLUSTER_OPERATION_REFUSED`. `ToolAdmission.admit` catches it beside `ClusterLockTimeoutException`. | security:ToolAdmission.java |
+| Tool call, cluster read budget | `refused: CLUSTER_OPERATION_REFUSED at $`, audited `DENY:CLUSTER_OPERATION_REFUSED` with `merged:<refused>` = `REFUSED`, and no source called. A rejected lock propagates; any other budget failure still refuses the read as `SCOPE_READ_BUDGET`. | hazelcast:HazelcastScopeBudget.java |
+| Re-identification request, approve or collect | The code itself as the refusal, audited `DENY:<code>`; any other store failure is still `REIDENTIFICATION_UNAVAILABLE`. If the denial's audit write fails the refusal stands with the same code. | reidentification:ReidentificationService.java |
+| Operator approve, reject, pause, resume, reads of state and approvals | HTTP 503 with `{"code":"<code>"}`, and the denial audited with that code; any other store or state failure is still 503 `OVERSIGHT_UNAVAILABLE`. | server:OversightOperatorController.java |
+| Operator re-identification endpoints | HTTP 503 with `{"code":"<code>"}` for either cluster code. | server:ReidentificationOperatorController.java |
 
-So the code is registered, tested and documented only in `docs/multiple-instances.md:341`, but no caller can observe it as a code today. `docs/tools.md` does not list it. The throw sites build the exception without a cause (hazelcast:HazelcastApprovalStore.java:311, hazelcast:ClusterLocks.java:63) and neither they nor `ToolAdmission` log anything, so the original Hazelcast failure is not recoverable from a log. Task 216 recorded the mapping as a migration item for task 201 (t216:174), but that task owns documents only, so the mapping is code that no open task owns. This is OD-200-2 (surface it, and where the class belongs).
+The code is listed in `docs/tools.md`, `docs/reidentification.md` and `docs/multiple-instances.md`. Task 233 also made `CLUSTER_LOCK_TIMEOUT` visible on the re-identification and operator paths, which changes responses that `docs/multiple-instances.md` documented as `503 OVERSIGHT_UNAVAILABLE` (task 201 records it as a changed line).
 
-Related shipped cluster names that task 216 and task 232 added (all internal to the hazelcast module unless stated): maps `dataprism.approval.id` and `dataprism.approval.pending` (hazelcast:PrivacyCluster.java:81), the metric `dataprism.approval.release.skipped` (section 5), the Hazelcast config property `dataprism.approval.pending.sweep-seconds` (section 6.3), and public constructors `HazelcastApprovalStore(cluster, timeout, PrivacyMetrics)` and `ScopeIdentityIndex(cluster, metrics, Duration)` (t232:253).
+Related shipped cluster names that task 216 and task 232 added (all internal to the hazelcast module unless stated): maps `dataprism.approval.id` and `dataprism.approval.pending` (hazelcast:PrivacyCluster.java:81), the metric `dataprism.approval.release.skipped` (section 5), the Spring property `dataprism.hazelcast.approval-sweep-interval` (section 6.1; it replaced the unreleased Hazelcast config property named in section 10), and public constructors `HazelcastApprovalStore(cluster, timeout, PrivacyMetrics)` and `ScopeIdentityIndex(cluster, metrics, Duration)` (t232:253).
 
 ### 3.3 Re-identification and approval codes
 
@@ -409,6 +410,7 @@ Surface: `DataPrismConfigurationException` / `PrivacyClusterRefusal` at context 
 | `HMAC_KEY_UNRESOLVED` | shipped | 0.1.0 | spring-boot-autoconfigure:PropertiesValidation.java:132 | no |  |
 | `HMAC_KEY_WEAK` | shipped | 0.1.0 | spring-boot-autoconfigure:PropertiesValidation.java:129 | no |  |
 | `INVALID_APPROVAL_QUORUM` | shipped* | 0.7.0* | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:325 | yes |  |
+| `INVALID_APPROVAL_SWEEP_INTERVAL` | shipped* | 0.7.0* | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:563 | yes | `dataprism.hazelcast.approval-sweep-interval` outside `PT1S` to `P1D`, zero or negative (t233; OD-200-14) |
 | `INVALID_AUDIT_CHECKPOINT_INTERVAL` | shipped | 0.4.0 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:509 | yes |  |
 | `INVALID_AUDIT_ENTITY_TYPE` | shipped | 0.5.0 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:158 | yes |  |
 | `INVALID_AUDIT_FIELD_PATH` | shipped | 0.5.0 | core:AuditFieldMapping.java:28 | yes |  |
@@ -826,77 +828,78 @@ Source of the list: the pinned names file `frozen-property-names.txt` (`Property
 | `dataprism.correlation.mdc-key` | shipped | 0.5.0 | FZ:30 | String | null | full |
 | `dataprism.correlation.outbound.header` | shipped | 0.5.0 | FZ:32 | String | null | full |
 | `dataprism.hazelcast.approval-minimum-members` | shipped* | 0.7.0* | FZ:34 | Integer | null | full |
-| `dataprism.hazelcast.cluster-name` | shipped | <=0.6.0 | FZ:35 | String | null | full |
-| `dataprism.hazelcast.identity-cache-ttl` | shipped | <=0.6.0 | FZ:36 | Duration | null | full |
-| `dataprism.hazelcast.join.kubernetes.namespace` | shipped | <=0.6.0 | FZ:39 | String | null | full |
-| `dataprism.hazelcast.join.kubernetes.service-dns` | shipped | <=0.6.0 | FZ:40 | String | null | full |
-| `dataprism.hazelcast.join.kubernetes.service-name` | shipped | <=0.6.0 | FZ:41 | String | null | full |
-| `dataprism.hazelcast.join.members` | shipped | <=0.6.0 | FZ:42 | List<String> | [] | full |
-| `dataprism.hazelcast.join.mode` | shipped | <=0.6.0 | FZ:43 | String | null | full |
-| `dataprism.hazelcast.lock-timeout` | shipped* | 0.7.0* | FZ:44 | Duration | PT2S | full |
-| `dataprism.hazelcast.map-store-enabled` | shipped | <=0.6.0 | FZ:45 | boolean | false | full |
-| `dataprism.hazelcast.member.interface` | shipped | <=0.6.0 | FZ:47 | String | null | full |
-| `dataprism.hazelcast.member.port` | shipped | <=0.6.0 | FZ:48 | Integer | null | full |
-| `dataprism.hazelcast.persistence-enabled` | shipped | <=0.6.0 | FZ:49 | boolean | false | full |
-| `dataprism.hazelcast.reidentification-controls-reference` | shipped | 0.4.0 | FZ:50 | String | null | full |
-| `dataprism.hazelcast.reidentification-enabled` | shipped | 0.4.0 | FZ:51 | boolean | false | full |
-| `dataprism.hazelcast.tls-key-reference` | shipped | <=0.6.0 | FZ:52 | String | null | full |
-| `dataprism.hazelcast.tls-trust-reference` | shipped | <=0.6.0 | FZ:53 | String | null | full |
-| `dataprism.hazelcast.topology` | shipped | 0.4.0 | FZ:54 | String | null | full |
-| `dataprism.identity.resolver` | shipped | 0.3.0 | FZ:56 | String | null | full |
-| `dataprism.limits.max-concurrency` | shipped* | 0.7.0* | FZ:58 | int | 4 | full |
-| `dataprism.limits.max-records` | shipped* | 0.7.0* | FZ:59 | int | 500 | full |
-| `dataprism.limits.max-response-size` | shipped* | 0.7.0* | FZ:60 | org.springframework.util.unit.DataSize | 524288B | full |
-| `dataprism.limits.max-sources` | shipped* | 0.7.0* | FZ:61 | int | 8 | full |
-| `dataprism.limits.per-source-timeout` | shipped* | 0.7.0* | FZ:62 | Duration | PT3S | full |
-| `dataprism.limits.scope-read-budget` | shipped* | 0.7.0* | FZ:63 | int | 100 | full |
-| `dataprism.metrics.registry-reference` | shipped | <=0.6.0 | FZ:65 | String | null | full |
-| `dataprism.metrics.sink` | shipped | <=0.6.0 | FZ:66 | String | null | full |
-| `dataprism.operator.address` | shipped | <=0.6.0 | FZ:68 | String | null | full |
-| `dataprism.operator.enabled` | shipped | 0.4.0 | FZ:69 | boolean | false | full |
-| `dataprism.operator.port` | shipped | <=0.6.0 | FZ:70 | Integer | null | full |
-| `dataprism.operator.required-audience` | shipped | <=0.6.0 | FZ:71 | String | null | full |
-| `dataprism.operator.required-scope` | shipped | <=0.6.0 | FZ:72 | String | null | name only |
-| `dataprism.oversight.approval-required-tools` | shipped | <=0.6.0 | FZ:74 | List<String> | [] | full |
-| `dataprism.oversight.approval-ttl` | shipped | <=0.6.0 | FZ:75 | Duration | PT15M | name only |
-| `dataprism.oversight.caller-rate-limit.requests` | shipped | <=0.6.0 | FZ:77 | Integer | null | name only |
-| `dataprism.oversight.caller-rate-limit.window` | shipped | <=0.6.0 | FZ:78 | Duration | PT1M | name only |
-| `dataprism.oversight.max-pending-per-requester` | shipped | <=0.6.0 | FZ:79 | int | 5 | name only |
-| `dataprism.privacy.descriptor-file` | shipped | <=0.6.0 | FZ:81 | String | null | full |
-| `dataprism.privacy.hmac-key.environment-variable` | shipped | <=0.6.0 | FZ:83 | String | null | full |
-| `dataprism.privacy.hmac-key.key-id` | shipped | <=0.6.0 | FZ:84 | String | null | full |
-| `dataprism.privacy.hmac-key.provider-reference` | shipped | <=0.6.0 | FZ:85 | String | null | full |
-| `dataprism.privacy.hmac-key.value` | shipped | <=0.6.0 | FZ:86 | String | null | full |
-| `dataprism.privacy.locale` | shipped | <=0.6.0 | FZ:87 | String | neutral | full |
-| `dataprism.privacy.profile` | shipped | <=0.6.0 | FZ:88 | String | null | full |
-| `dataprism.privacy.scope-lifetime` | shipped | <=0.6.0 | FZ:89 | Duration | null | full |
-| `dataprism.reidentification.approval-ttl` | shipped | <=0.6.0 | FZ:91 | Duration | PT15M | name only |
-| `dataprism.reidentification.enabled` | shipped | 0.4.0 | FZ:92 | boolean | false | full |
-| `dataprism.reidentification.four-eyes` | shipped | <=0.6.0 | FZ:93 | boolean | true | name only |
-| `dataprism.reidentification.max-pending-per-requester` | shipped | <=0.6.0 | FZ:94 | int | 5 | name only |
-| `dataprism.reidentification.purposes` | shipped | <=0.6.0 | FZ:95 | List<String> | [] | name only |
-| `dataprism.reidentification.roles` | shipped | <=0.6.0 | FZ:96 | Map<String,Set<enum[REQUEST, APPROVE]>> | {} | full |
-| `dataprism.security.caller-claims.investigation` | shipped | <=0.6.0 | FZ:99 | String | null | full |
-| `dataprism.security.caller-claims.principal` | shipped | <=0.6.0 | FZ:100 | String | null | full |
-| `dataprism.security.caller-claims.roles` | shipped | <=0.6.0 | FZ:101 | String | null | full |
-| `dataprism.security.jwt.audience` | shipped | 0.4.0 | FZ:103 | String | null | full |
-| `dataprism.security.jwt.issuer` | shipped | <=0.6.0 | FZ:104 | String | null | full |
-| `dataprism.security.jwt.issuer-discovery-uri` | shipped | <=0.6.0 | FZ:105 | String | null | full |
-| `dataprism.security.jwt.jwk-set-uri` | shipped | 0.1.0 | FZ:106 | String | null | full |
-| `dataprism.security-policy.purposes` | shipped | <=0.6.0 | FZ:108 | List<String> | [] | full |
-| `dataprism.security-policy.roles` | shipped | <=0.6.0 | FZ:109 | Map<String,List<String>> | {} | full |
-| `dataprism.sources` | shipped | 0.1.0 | FZ:110 | Map<String,bean> | {} | full |
-| `dataprism.sources.*.base-url` | shipped | <=0.6.0 | FZ:111 | String | null | full |
-| `dataprism.sources.*.mtls.key-reference` | shipped | <=0.6.0 | FZ:113 | String | null | full |
-| `dataprism.sources.*.mtls.trust-reference` | shipped | <=0.6.0 | FZ:114 | String | null | full |
-| `dataprism.sources.*.service-credential-reference` | shipped | <=0.6.0 | FZ:115 | String | null | full |
-| `dataprism.sources.*.timeout` | shipped | <=0.6.0 | FZ:116 | Duration | null | full |
-| `dataprism.transport.fixture-development` | shipped | 0.3.0 | FZ:118 | boolean | false | full |
-| `dataprism.transport.http.path` | shipped | <=0.6.0 | FZ:120 | String | /mcp | full |
-| `dataprism.transport.mode` | shipped | <=0.6.0 | FZ:121 | enum[HTTP, STDIO] | HTTP | full |
+| `dataprism.hazelcast.approval-sweep-interval` | shipped* | 0.7.0* | FZ:35 | Duration | PT5M | full |
+| `dataprism.hazelcast.cluster-name` | shipped | <=0.6.0 | FZ:36 | String | null | full |
+| `dataprism.hazelcast.identity-cache-ttl` | shipped | <=0.6.0 | FZ:37 | Duration | null | full |
+| `dataprism.hazelcast.join.kubernetes.namespace` | shipped | <=0.6.0 | FZ:40 | String | null | full |
+| `dataprism.hazelcast.join.kubernetes.service-dns` | shipped | <=0.6.0 | FZ:41 | String | null | full |
+| `dataprism.hazelcast.join.kubernetes.service-name` | shipped | <=0.6.0 | FZ:42 | String | null | full |
+| `dataprism.hazelcast.join.members` | shipped | <=0.6.0 | FZ:43 | List<String> | [] | full |
+| `dataprism.hazelcast.join.mode` | shipped | <=0.6.0 | FZ:44 | String | null | full |
+| `dataprism.hazelcast.lock-timeout` | shipped* | 0.7.0* | FZ:45 | Duration | PT2S | full |
+| `dataprism.hazelcast.map-store-enabled` | shipped | <=0.6.0 | FZ:46 | boolean | false | full |
+| `dataprism.hazelcast.member.interface` | shipped | <=0.6.0 | FZ:48 | String | null | full |
+| `dataprism.hazelcast.member.port` | shipped | <=0.6.0 | FZ:49 | Integer | null | full |
+| `dataprism.hazelcast.persistence-enabled` | shipped | <=0.6.0 | FZ:50 | boolean | false | full |
+| `dataprism.hazelcast.reidentification-controls-reference` | shipped | 0.4.0 | FZ:51 | String | null | full |
+| `dataprism.hazelcast.reidentification-enabled` | shipped | 0.4.0 | FZ:52 | boolean | false | full |
+| `dataprism.hazelcast.tls-key-reference` | shipped | <=0.6.0 | FZ:53 | String | null | full |
+| `dataprism.hazelcast.tls-trust-reference` | shipped | <=0.6.0 | FZ:54 | String | null | full |
+| `dataprism.hazelcast.topology` | shipped | 0.4.0 | FZ:55 | String | null | full |
+| `dataprism.identity.resolver` | shipped | 0.3.0 | FZ:57 | String | null | full |
+| `dataprism.limits.max-concurrency` | shipped* | 0.7.0* | FZ:59 | int | 4 | full |
+| `dataprism.limits.max-records` | shipped* | 0.7.0* | FZ:60 | int | 500 | full |
+| `dataprism.limits.max-response-size` | shipped* | 0.7.0* | FZ:61 | org.springframework.util.unit.DataSize | 524288B | full |
+| `dataprism.limits.max-sources` | shipped* | 0.7.0* | FZ:62 | int | 8 | full |
+| `dataprism.limits.per-source-timeout` | shipped* | 0.7.0* | FZ:63 | Duration | PT3S | full |
+| `dataprism.limits.scope-read-budget` | shipped* | 0.7.0* | FZ:64 | int | 100 | full |
+| `dataprism.metrics.registry-reference` | shipped | <=0.6.0 | FZ:66 | String | null | full |
+| `dataprism.metrics.sink` | shipped | <=0.6.0 | FZ:67 | String | null | full |
+| `dataprism.operator.address` | shipped | <=0.6.0 | FZ:69 | String | null | full |
+| `dataprism.operator.enabled` | shipped | 0.4.0 | FZ:70 | boolean | false | full |
+| `dataprism.operator.port` | shipped | <=0.6.0 | FZ:71 | Integer | null | full |
+| `dataprism.operator.required-audience` | shipped | <=0.6.0 | FZ:72 | String | null | full |
+| `dataprism.operator.required-scope` | shipped | <=0.6.0 | FZ:73 | String | null | name only |
+| `dataprism.oversight.approval-required-tools` | shipped | <=0.6.0 | FZ:75 | List<String> | [] | full |
+| `dataprism.oversight.approval-ttl` | shipped | <=0.6.0 | FZ:76 | Duration | PT15M | name only |
+| `dataprism.oversight.caller-rate-limit.requests` | shipped | <=0.6.0 | FZ:78 | Integer | null | name only |
+| `dataprism.oversight.caller-rate-limit.window` | shipped | <=0.6.0 | FZ:79 | Duration | PT1M | name only |
+| `dataprism.oversight.max-pending-per-requester` | shipped | <=0.6.0 | FZ:80 | int | 5 | name only |
+| `dataprism.privacy.descriptor-file` | shipped | <=0.6.0 | FZ:82 | String | null | full |
+| `dataprism.privacy.hmac-key.environment-variable` | shipped | <=0.6.0 | FZ:84 | String | null | full |
+| `dataprism.privacy.hmac-key.key-id` | shipped | <=0.6.0 | FZ:85 | String | null | full |
+| `dataprism.privacy.hmac-key.provider-reference` | shipped | <=0.6.0 | FZ:86 | String | null | full |
+| `dataprism.privacy.hmac-key.value` | shipped | <=0.6.0 | FZ:87 | String | null | full |
+| `dataprism.privacy.locale` | shipped | <=0.6.0 | FZ:88 | String | neutral | full |
+| `dataprism.privacy.profile` | shipped | <=0.6.0 | FZ:89 | String | null | full |
+| `dataprism.privacy.scope-lifetime` | shipped | <=0.6.0 | FZ:90 | Duration | null | full |
+| `dataprism.reidentification.approval-ttl` | shipped | <=0.6.0 | FZ:92 | Duration | PT15M | name only |
+| `dataprism.reidentification.enabled` | shipped | 0.4.0 | FZ:93 | boolean | false | full |
+| `dataprism.reidentification.four-eyes` | shipped | <=0.6.0 | FZ:94 | boolean | true | name only |
+| `dataprism.reidentification.max-pending-per-requester` | shipped | <=0.6.0 | FZ:95 | int | 5 | name only |
+| `dataprism.reidentification.purposes` | shipped | <=0.6.0 | FZ:96 | List<String> | [] | name only |
+| `dataprism.reidentification.roles` | shipped | <=0.6.0 | FZ:97 | Map<String,Set<enum[REQUEST, APPROVE]>> | {} | full |
+| `dataprism.security.caller-claims.investigation` | shipped | <=0.6.0 | FZ:100 | String | null | full |
+| `dataprism.security.caller-claims.principal` | shipped | <=0.6.0 | FZ:101 | String | null | full |
+| `dataprism.security.caller-claims.roles` | shipped | <=0.6.0 | FZ:102 | String | null | full |
+| `dataprism.security.jwt.audience` | shipped | 0.4.0 | FZ:104 | String | null | full |
+| `dataprism.security.jwt.issuer` | shipped | <=0.6.0 | FZ:105 | String | null | full |
+| `dataprism.security.jwt.issuer-discovery-uri` | shipped | <=0.6.0 | FZ:106 | String | null | full |
+| `dataprism.security.jwt.jwk-set-uri` | shipped | 0.1.0 | FZ:107 | String | null | full |
+| `dataprism.security-policy.purposes` | shipped | <=0.6.0 | FZ:109 | List<String> | [] | full |
+| `dataprism.security-policy.roles` | shipped | <=0.6.0 | FZ:110 | Map<String,List<String>> | {} | full |
+| `dataprism.sources` | shipped | 0.1.0 | FZ:111 | Map<String,bean> | {} | full |
+| `dataprism.sources.*.base-url` | shipped | <=0.6.0 | FZ:112 | String | null | full |
+| `dataprism.sources.*.mtls.key-reference` | shipped | <=0.6.0 | FZ:114 | String | null | full |
+| `dataprism.sources.*.mtls.trust-reference` | shipped | <=0.6.0 | FZ:115 | String | null | full |
+| `dataprism.sources.*.service-credential-reference` | shipped | <=0.6.0 | FZ:116 | String | null | full |
+| `dataprism.sources.*.timeout` | shipped | <=0.6.0 | FZ:117 | Duration | null | full |
+| `dataprism.transport.fixture-development` | shipped | 0.3.0 | FZ:119 | boolean | false | full |
+| `dataprism.transport.http.path` | shipped | <=0.6.0 | FZ:121 | String | /mcp | full |
+| `dataprism.transport.mode` | shipped | <=0.6.0 | FZ:122 | enum[HTTP, STDIO] | HTTP | full |
 | `dataprism.json-sources.config-location` | shipped | 0.1.0 | connectors-rest:ConfiguredJsonSourcesAutoConfiguration.java:98 | String | null | full |
 
-The release column is a lower bound: `<=0.6.0` means the pinned list or the configuration page first names it in 0.6.0. The seven keys added in 0.7.0* are `dataprism.limits.*` (six, D-070-4 (a), t189) and `dataprism.hazelcast.lock-timeout` and `dataprism.hazelcast.approval-minimum-members` (t202; D-070-15, D-070-17). `dataprism.sources.*.…` is written with `*` in the pinned list and `<name>` in `docs/configuration.md`; the register treats them as one pattern. Spelled out, the documents' forms are `dataprism.sources.<name>` with `dataprism.sources.<name>.base-url`, `dataprism.sources.<name>.mtls.key-reference`, `dataprism.sources.<name>.mtls.trust-reference`, `dataprism.sources.<name>.service-credential-reference` and `dataprism.sources.<name>.timeout`; `dataprism.audit.output.field-names.<field>` is one entry of the map `dataprism.audit.output.field-names`; `dataprism.audit.output.*` and `dataprism.security-policy.*` are the groups' wildcard spellings.
+The release column is a lower bound: `<=0.6.0` means the pinned list or the configuration page first names it in 0.6.0. The keys added in 0.7.0* are `dataprism.limits.*` (six, D-070-4 (a), t189) and `dataprism.hazelcast.lock-timeout` and `dataprism.hazelcast.approval-minimum-members` (t202; D-070-15, D-070-17), and `dataprism.hazelcast.approval-sweep-interval` (t233; OD-200-14). `dataprism.sources.*.…` is written with `*` in the pinned list and `<name>` in `docs/configuration.md`; the register treats them as one pattern. Spelled out, the documents' forms are `dataprism.sources.<name>` with `dataprism.sources.<name>.base-url`, `dataprism.sources.<name>.mtls.key-reference`, `dataprism.sources.<name>.mtls.trust-reference`, `dataprism.sources.<name>.service-credential-reference` and `dataprism.sources.<name>.timeout`; `dataprism.audit.output.field-names.<field>` is one entry of the map `dataprism.audit.output.field-names`; `dataprism.audit.output.*` and `dataprism.security-policy.*` are the groups' wildcard spellings.
 
 ### 6.2 Enumerated configuration values
 
@@ -920,7 +923,7 @@ The release column is a lower bound: `<=0.6.0` means the pinned list or the conf
 
 | Name | State | Release | Source | Note |
 |---|---|---|---|---|
-| `dataprism.approval.pending.sweep-seconds` | shipped* | 0.7.0* | hazelcast:PendingSweeper.java:35 | A *Hazelcast config property* (`Config.setProperty`), not a Spring property, so `PropertyNamesFrozenTest` does not see it. Integer seconds, 1 to 86400, default 300; documented in docs/multiple-instances.md:424 (t216). Breaks two naming rules: the unit is in the name, and the key lies under a map name (section 13) |
+| *(replaced)* the unreleased Hazelcast config property for the approval sweep interval | withdrawn | n/a | t233 | Now the Spring-bound `dataprism.hazelcast.approval-sweep-interval` (section 6.1; OD-200-14). A `Config` that still carries the old name is neither read nor refused; the old name is in section 10 |
 | `hazelcast.lock.max.lease.time.seconds` (Hazelcast's own) | not ours | n/a | docs/multiple-instances.md; t216 | If set below the lease the store asks for (five times `lock-timeout`), approval creation is refused with `CLUSTER_OPERATION_REFUSED` |
 | YAML file `sources:` (root keys `sources`, `tls`; entry keys `base-url`, `path`, `timeout`, `correlation-header`; tls keys `key-store`, `key-store-password-env`, `trust-store`, `trust-store-password-env`, `store-type`) | shipped | <=0.6.0 | connectors-rest:RestSources.java:34 | unknown keys refuse (`UNKNOWN_CONFIG_KEY`); kebab case |
 | YAML file `json-sources:` (root `json-sources`, `tls`; source keys `base-url`, `path`, `timeout`, `model-version`, `subject-json-path`, `fields`, `nested-catalogues`, `correlation-header`; field keys `identifier`, `nonSensitive`, `classifications`, `namespace`, `action`, `nested`) | shipped | <=0.6.0 | connectors-rest:ConfiguredJsonSources.java:54 | kebab case for source keys, camelCase for field keys (`nonSensitive`): section 13 |
@@ -1123,7 +1126,7 @@ Enums of any visibility whose constant names reach output: a tool result, the au
 | `OversightOperatorController.TargetType` | `ALL`, `TOOL`, `SCOPE` | **client-visible**: `target` of `POST /operator/pause` and `/resume`, accepted (server:OversightOperatorController.java:263) and returned (server:OversightOperatorController.java:89, server:OversightOperatorController.java:106); docs/reidentification.md:130. A private enum | server:OversightOperatorController.java:278 | 0.4.0 | not pinned |
 | `PrivacyScopeType` | `REQUEST`, `SESSION`, `INVESTIGATION`, `CASE` | scope types; not traced to a file or result | core:PrivacyScopeType.java:10 | 0.1.0 | not pinned |
 | `EffectivePrivacyPolicy.Decided` | `PROFILE_RULE`, `SPECIAL_CATEGORY_DEFAULT`, `ANNOTATION`, `SAFE_DEFAULT`, `DECLARED_NON_SENSITIVE`, `IDENTIFIER`, `UNCLASSIFIED` | not traced (policy provenance) | core:EffectivePrivacyPolicy.java:28 | 0.4.0 | not pinned |
-| `Permission` | `REQUEST`, `APPROVE` | `dataprism.reidentification.roles` values (FZ:96); the autoconfigure module has a second `ReidentificationProperties.Permission` with the same constants (spring-boot-autoconfigure:ReidentificationProperties.java:13) | reidentification:Permission.java:4 | 0.1.0 | not pinned |
+| `Permission` | `REQUEST`, `APPROVE` | `dataprism.reidentification.roles` values (FZ:97); the autoconfigure module has a second `ReidentificationProperties.Permission` with the same constants (spring-boot-autoconfigure:ReidentificationProperties.java:13) | reidentification:Permission.java:4 | 0.1.0 | not pinned |
 | `TransportProperties.Mode` | `HTTP`, `STDIO` | `dataprism.transport.mode` (section 6.2) | spring-boot-autoconfigure:TransportProperties.java:4 | 0.1.0 | `PropertyNamesFrozenTest` shows the enum |
 | `CorrelationRequirement` | `OPTIONAL`, `REQUIRED` | tool options only; not traced to a file or result | mcp:CorrelationRequirement.java:9 | 0.5.0 | not pinned |
 | `PoolKind` | `FIRST_NAME`, `LAST_NAME`, `STREET`, `TOWN`, `ORGANISATION` | synthetic-value pools; not traced to a result | pseudonymisation:PoolKind.java:4 | 0.1.0 | not pinned |
@@ -1228,6 +1231,7 @@ Not part of the freeze. Listed so no later brief reuses them with another meanin
 | `CLUSTER_SUBJECT_KEY_UNRESOLVED` | withdrawn | t212:68 | second subject key |
 | `CLUSTER_KEY_REUSES_PSEUDONYMISATION_KEY` | withdrawn | t212:68 | second subject key; the live variant for the audit key is `AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY` (211) |
 | `MISSING_REIDENTIFICATION_KEY` | withdrawn | t212:71 | plaintext re-identification alternative (task 205) |
+| `dataprism.approval.pending.sweep-seconds` | withdrawn | t216; t232 | unreleased Hazelcast config property (integer seconds, 1 to 86400, default 300), replaced by `dataprism.hazelcast.approval-sweep-interval` under OD-200-14 and implemented by t233; it was never released, so there is no migration entry |
 | `dataprism.hazelcast.security.lock-timeout` | withdrawn | design/cluster-security.md:498 and :685 | superseded by the shipped `dataprism.hazelcast.lock-timeout` (t202:349); the design rows are stale |
 | `isolation-only` value of `dataprism.hazelcast.security.mode` | withdrawn | design/cluster-security.md:480 | cluster-security OD-2 (i): not allowed |
 | link:id, link:attempts, links:issued, links:omitted, resolver:<name>, resolver:<name>:ms (audit disposition keys) | withdrawn | design/sealed-links.md:484; design/key-resolvers.md:239 | sealed-links OD-13 (C): counts, ids and timings are metrics, not dispositions |
@@ -1242,7 +1246,7 @@ Found by comparing every name in sections 1 to 8 against every other, exactly an
 | Id | Names | Kinds | Where | Resolution |
 |---|---|---|---|---|
 | C1 | `dataprism.reidentification` | metric, Hazelcast map, configuration group | core:Metric.java:23; hazelcast:PrivacyCluster.java:66; FZ `dataprism.reidentification.*` | Accepted. Three independent namespaces share the string prefix; a name must be unique within its kind only. Pin each kind separately (metrics: `PrivacyMetricsTest`; keys: the frozen list; map names: no pin today, section 15). |
-| C2 | `dataprism.oversight`, `dataprism.identity`, `dataprism.approval`, `dataprism.audit.retention`, `dataprism.approval.pending` | map or metric prefix against configuration group or leaf key | maps in 8.1; metrics in 5; `dataprism.audit.retention` is a leaf key (Period) and the parent of four metrics; `dataprism.approval.pending` is a map and the parent of the Hazelcast property `dataprism.approval.pending.sweep-seconds` | Accepted as C1, except `sweep-seconds`, which is a configuration knob living under a map name and outside the pinned list: OD-200-14. |
+| C2 | `dataprism.oversight`, `dataprism.identity`, `dataprism.approval`, `dataprism.audit.retention`, `dataprism.approval.pending` | map or metric prefix against configuration group or leaf key | maps in 8.1; metrics in 5; `dataprism.audit.retention` is a leaf key (Period) and the parent of four metrics; `dataprism.approval.pending` is a map. The Hazelcast property that once sat under it was replaced by `dataprism.hazelcast.approval-sweep-interval` (OD-200-14, t233), so the key no longer lies under a map name | Accepted as C1. Resolved by t233: the sweep knob no longer shares a name with a map. |
 | C3 | `CLUSTER_LOCK_TIMEOUT`, `dataprism.hazelcast.lock-timeout`, `dataprism.hazelcast.security.lock-timeout`, `dataprism.cluster.lock.timeout` | refusal code, key, stale key, proposed metric | section 3.2, 6.1, 10, 5 | The shipped key governs; the `security.lock-timeout` rows in the cluster design are stale (t202 superseded it; D7). The code and the metric are different kinds with one meaning on purpose. |
 | C4 | `KEY_UNRESOLVED`, `HMAC_KEY_UNRESOLVED`, `LINK_KEY_UNRESOLVED`, `AUDIT_HMAC_KEY_UNRESOLVED` | per-source status; three startup codes | sections 2 and 3.5 | Different fields, near spelling. The 191 and 197 documents ask this register to record both together or rename: OD-200-3 (and the family rule in OD-200-10). |
 | C5 | `RESPONSE_TOO_LARGE`, `REFUSED:RESPONSE_TOO_LARGE`, `RESPONSE_TOO_LARGE_TO_SCAN`, `RESPONSE_CAP`, `SIZE_CAP` | call refusal; per-source disposition and result; violation code; two truncation reasons | section 3.1, 3.6, 1.4 | Accepted. After batch OD-B18 (owner, 2026-10-19) the same code is used at call level (`DENY:`) and source level (`REFUSED:`), told apart by field. `TOO_MANY_RECORDS` has the same shape. The change alters what task 193 built (PLAN.md:95) and `docs/tools.md` must say so in 0.9. |
@@ -1279,7 +1283,7 @@ Recorded, not resolved by editing: this task may not edit the design documents o
 | D6 | `KeyNamespace` is missing from the key-resolvers closing table | `key-resolvers.md:49` (the SPI) against the closing table at `:222` | Registered in 7.3. Also absent from that table: the twelve `LINK_<REASON>` codes (expanded in 3.8). |
 | D7 | `dataprism.hazelcast.security.lock-timeout` against the shipped `dataprism.hazelcast.lock-timeout` | `cluster-security.md:498`, `:685` against `t202:349` and `PLAN.md:144` (D-070-17) | The shipped key governs (same default `PT2S`, same range). The design rows and the closing-table row are stale. |
 | D8 | Cluster `security.mode` allows `isolation-only` only if OD-2 allows it; OD-2 (i) does not | `cluster-security.md:480` against `:795` | The key would have one legal value (`sealed`); OD-200-9. Governs: sealed only. |
-| D9 | `CLUSTER_OPERATION_REFUSED` is registered and documented in one page but cannot be seen by any caller | `t216:174` (Migration note: "Map the new code in `ToolAdmission`…") against `security:ToolAdmission.java:84` and `docs/tools.md` | Section 3.2. Governs: the generic codes. OD-200-2. |
+| D9 | `CLUSTER_OPERATION_REFUSED` was registered and documented in one page but could not be seen by any caller | `t216:174` (Migration note: "Map the new code in `ToolAdmission`…") against `security:ToolAdmission.java:84` and `docs/tools.md` | Section 3.2. Resolved by t233: the code is surfaced on every path and listed in `docs/tools.md`. OD-200-2. |
 | D10 | `UNSAFE_HAZELCAST_DISCOVERY` and `INVALID_CLUSTER_PORT` are shipped but not string literals | `PrivacyClusterRefusal.java:14`, `:17` | Registered in 3.5. A literal-only extraction misses them (E2). E1c finds four more that E1 misses because the code starts a message: `SPECIAL_CATEGORY_EXPOSED`, `AUDIT_CHECKPOINT_UNAVAILABLE`, `AUDIT_LISTENER_DROPPED`, `AUDIT_LISTENER_FAILED`. |
 | D11 | The `FOLLOW` capability is cited, not defined | `batch-and-bulk-follow.md:1091` against all of `sealed-links.md` | OD-200-5. |
 | D12 | Option-(b)-only names remain in the 0.8 tables although option (a') was adopted | `sealed-links.md:500` (`dataprism.links.max-chain-depth`, "option b only"), `:250` (`DEPTH_EXCEEDED`) | OD-200-8. |
@@ -1316,7 +1320,7 @@ The rules are taken from what the shipped surface already does (a rule no shippe
 
 | Entry | Breach | Note |
 |---|---|---|
-| `dataprism.approval.pending.sweep-seconds` (shipped*) | unit in the name; not a Spring property; under a map name; not pinned | OD-200-14 |
+| the Hazelcast config property for the approval sweep interval (withdrawn) | unit in the name; not a Spring property; under a map name; not pinned | Replaced by `dataprism.hazelcast.approval-sweep-interval` (OD-200-14, t233); section 10 |
 | `dataprism.audit.hmac-key` (proposed) | no refusing `value` property, unlike `dataprism.privacy.hmac-key` and the cluster keys | A literal under it would be an unknown key. Accepted: unknown keys already refuse; no decision. |
 | `dataprism.security` and `dataprism.security-policy` (shipped) | two groups differing only by a hyphen | Pre-existing; renaming now would be a breaking change to a pinned name. Accepted; the new `allowed-clients` and `case-authorisation` join `security-policy`. |
 | `dataprism.transport.mode` values `HTTP`, `STDIO` | upper case where every other enumerated value is lower kebab (`hash-chained`, `tcp-ip`, `single-node`) | Pre-existing; the binding is by enum. Accepted; recorded so no new key copies it. |
