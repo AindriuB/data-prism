@@ -58,8 +58,11 @@ class ClusterRefusalOperatorTest {
 
     private final List<AuditEvent> audited = new ArrayList<>();
     private boolean auditDown;
+    private boolean denialAuditDown;
     private final OperatorAudit audit = new OperatorAudit(new AuditRecorder(event -> {
-        if (auditDown) throw new IllegalStateException("audit down");
+        if (auditDown || denialAuditDown && event.policyDecision().startsWith("DENY")) {
+            throw new IllegalStateException("audit down");
+        }
         audited.add(event);
     }, CLOCK, "operator-test"));
     private final InMemoryApprovalStore real = new InMemoryApprovalStore();
@@ -164,7 +167,8 @@ class ClusterRefusalOperatorTest {
     @Test
     void aClusterRefusalStaysARefusalWhenTheDenialCannotBeAudited() throws Exception {
         pending("d-1");
-        auditDown = true;
+        // An approve is audited before it is attempted, so only the denial is made unwritable here.
+        denialAuditDown = true;
         var controller = oversight(storeThrowingOn("approve",
                 new ClusterOperationRefusedException(new IllegalArgumentException(SENTINEL))));
         OperatorException thrown = catchThrowableOfType(OperatorException.class, () -> controller.approve("d-1"));
