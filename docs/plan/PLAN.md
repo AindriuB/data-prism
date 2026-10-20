@@ -51,12 +51,19 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 PRs #130 (`plan/0.7.0`) and #131 (task 193) have merged to `main`, and `main` is the integration base. `plan/0.7.0` carries, in addition, the verified results of tasks 194, 196, 198 and 217, not yet on `main`. See `reconciliation-2026-10-19.md` for task allocation. This section supersedes the older execution summary below.
 
-Open 0.7 tasks: 199, 200, 201 and 209. Task 216 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
+Open 0.7 tasks: 199, 200, 201 and 209. Tasks 216 and 232 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
 
 1. 209 (depends on 194, done) and 199 (depends on 193 and 196, done) can start together. 199 needs a quiet named machine and the owner's agreement before it runs.
-2. 200 now (its prerequisites, 193, 198 and 216, are done). It must register the new code `CLUSTER_OPERATION_REFUSED` (from 216).
-3. 201 after 209 (216 and 217 are done). It must take its CHANGELOG lines and migration note from the Outcome of the retired 216 (`docs/plan/tasks/retired/216-atomic-approval-creation-in-hazelcast.md`).
+2. 200 now (its prerequisites, 193, 198 and 216, are done). It must register the new code `CLUSTER_OPERATION_REFUSED` (from 216) and the new metric `dataprism.approval.release.skipped` (from 232).
+3. 201 after 209 (216 and 217 are done). It must take its CHANGELOG lines and migration note from the Outcome of the retired 216 (`docs/plan/tasks/retired/216-atomic-approval-creation-in-hazelcast.md`), and from the Outcome of the retired 232 (`docs/plan/tasks/retired/232-approval-creation-tokens-and-bounded-cleanup.md`) its CHANGELOG lines, migration note and value-format changes.
 4. 215 after 200.
+
+Follow-ups from 232 (found in its review and bug hunt, none scheduled):
+
+- `ReidentificationService` should re-read with `find` on an uncertain outcome before auditing DENY. This is the lost-response residual documented in `docs/multiple-instances.md`.
+- `endScope` and `forgetScope` have no production caller. Wire scope end to them, or note in the docs that they are unused.
+- The endScope wiring test relies on brittle `arg$1` reflection; replace it.
+- A forget during a split is undone by the heal.
 
 Follow-ups from the final review of 216 (all P3):
 
@@ -72,6 +79,7 @@ Owner decisions, all dated 2026-10-19:
 - D-1.0-5 rescheduling CONFIRMED by the owner: the 1.0 controls (case authorisation and client allowlist 203/210, keyed audit and segment caps 206/207/211, FREE_TEXT and recognisers 208, controls and rotation docs 213) ship in 0.8.0. The pattern-validator wiring (209) is a 0.7 correction. The annex (214) is 0.9 evidence. 1.0 remains a stability release, with the freeze at 0.9. Task 213 is blocked until 215 names concrete cluster implementation dependencies.
 - Task 214 legal scope is generic: the annex stays on the GDPR and the EU AI Act, and its only mention of other regimes is the line "Deployers whose processing falls under a separate law-enforcement or sector-specific regime must assess it themselves." The earlier jurisdiction-specific citation is removed.
 - D-0.7-HZ-1: Hazelcast approval creation is reworked to be atomic (task 216), and bounded leases are restored. The retained (infinite-lease) locks of commits 34adde0b and 08939a79 close real races but contradict `cluster-security.md` and task 202's "lease derived from the timeout", so 216 supersedes them (landed 2026-10-20).
+- D-0.7-HZ-2: after an external review of PR #134 found what our review missed, all findings from the whole-component bug hunt are fixed, with creation tokens on approval entries, claims and pending slots (task 232, landed 2026-10-20). Owner's words: "Fix all, with creation tokens".
 - Task 198 design (`design/batch-and-bulk-follow.md`): the owner decided OD-B12 in part (truncation option (i): off by default while links are off, never truncate without a `next` link; the default link `max-length` is raised to 1024, replacing the 768 task 191 decided), OD-B18 (a per-source `REFUSED:RESPONSE_TOO_LARGE` replaces task 193's whole-call refusal for a source that cannot be truncated, with the hard overall cap as backstop) and OD-B24 (b) (a bulk link whose target is `REFUSED` is audited `DENY:<code>`, aligned with `follow`). The owner delegated every other OD-B1 to OD-B24, and the mechanism part of OD-B12, to the recommendations.
 
 Follow-ups found in review, none yet scheduled:
