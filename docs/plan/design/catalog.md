@@ -3,6 +3,8 @@
 Status: design for 0.8 (`list_sources`, `describe_source`, the adapter description, targeting) and 0.9 (`describe_entity_model`; the surface freezes at the 0.9.0 release). Internal (`docs/plan/design/`, D-070-12 (a)); not published.
 Task 197. Companions: `sealed-links.md` and `key-resolvers.md` (task 191), whose names this document reuses and does not redefine. Nothing here is code, an SPI stub or a configuration property; every name is a proposal until the 0.8 or 0.9 task that builds it. Paging, batch and bulk follow are task 198's; where this design needs paging it says so and does not invent the mechanism.
 
+Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-4 (every source label `maxLength` is 64, key namespace grammar `[a-z][a-z0-9-]{0,31}`, field path 64), OD-200-6 (the annotation is `@Chainable(keyNamespace = "…")`), OD-200-7 (the metric formerly written `dataprism.catalog.source-names.nonconforming` is `dataprism.catalog.source_names.nonconforming`), OD-200-12 (audit key `names`, result field `labels`). No decision is changed here. Each edit cites its id on the line it changes.
+
 Every product choice in this text is an open decision (OD-C1 to OD-C19, section 9) with options and a recommendation. On 2026-10-09 the owner decided OD-C2 explicitly and delegated the rest to their recommendations; section 9 records each.
 
 All examples use an invented neutral domain: a logistics estate with a parcel service, a depot service and a courier-roster service (the domain of the two companion documents). No real system, organisation or data model is meant.
@@ -203,7 +205,7 @@ Aliases come from `SourceAliasing.nameFor`, unchanged, so the label for a source
 - A label of the wrong kind never resolves. If aliases are in effect, a real name passed as a label fails like any unknown label. Otherwise a caller could test whether a real name exists by whether the call succeeded.
 - If two sources produce the same label in one scope (an alias collision, improbable but possible) the call is refused with `SOURCE_LABEL_COLLISION` rather than listing an ambiguous label. The audit carries both real names in `sourceSystems`; the client learns only the code.
 
-The audit always records real names plus the effective setting (D-RM-10). Where the setting is recorded is a conflict with the closed disposition grammar and is OD-C2.
+The audit always records real names plus the effective setting (D-RM-10). Where the setting is recorded is a conflict with the closed disposition grammar and is OD-C2. The audit key `names` and the result field `labels` are one setting on two surfaces, the effective setting, and are deliberately given two words (OD-200-12).
 
 ### Authorisation (D-RM-11)
 
@@ -227,7 +229,7 @@ Scope, principal, purpose and case come from the session (rule 4); the reserved 
     "keyNamespace": {
       "description": "Only sources that accept a key in this namespace.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
     }
   }
 }
@@ -256,11 +258,11 @@ Both filters match exactly (no case folding, no prefix), as namespaces do everyw
   "required": ["correlationId", "labels", "sources"],
   "additionalProperties": false,
   "$defs": {
-    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
     "entry": {
       "type": "object",
       "properties": {
-        "source": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 64 },
         "description": { "type": "string", "minLength": 1, "maxLength": 240 },
         "entityTypes": {
           "type": "array",
@@ -370,7 +372,7 @@ Fields whose protection is `ABSENT` are not listed, with one exception that appl
 
 ### Chainable markers
 
-A field is described with `chainable: true` and its `keyNamespace` exactly as task 191 declared them (`key-resolvers.md` section 7). They are shown only when `dataprism.links.enabled` is `true`; with links off the flag is inert and is omitted, so the description never advertises a capability the server does not offer. `chainable` is metadata only; it changes no disposition (`key-resolvers.md`, "What `chainable: true` means").
+A field is described with `chainable: true` and its `keyNamespace` exactly as task 191 declared them (`key-resolvers.md` section 7). They are shown only when `dataprism.links.enabled` is `true`; with links off the flag is inert and is omitted, so the description never advertises a capability the server does not offer. In Java the marker is `@Chainable(keyNamespace = "…")` (OD-200-6). `chainable` is metadata only; it changes no disposition (`key-resolvers.md`, "What `chainable: true` means").
 
 ### Value namespace
 
@@ -398,7 +400,7 @@ Where `protection` is `SYNTHETIC` or `TOKEN`, the field also carries `valueNames
       "description": "A source label exactly as returned by list_sources.",
       "type": "string",
       "minLength": 1,
-      "maxLength": 128
+      "maxLength": 64
     }
   },
   "required": ["source"]
@@ -415,7 +417,7 @@ Where `protection` is `SYNTHETIC` or `TOKEN`, the field also carries `valueNames
   "properties": {
     "correlationId": { "type": "string" },
     "labels": { "enum": ["ALIAS", "REAL"] },
-    "source": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "source": { "type": "string", "minLength": 1, "maxLength": 64 },
     "description": { "type": "string", "minLength": 1, "maxLength": 240 },
     "entityTypes": {
       "type": "array",
@@ -442,13 +444,14 @@ Where `protection` is `SYNTHETIC` or `TOKEN`, the field also carries `valueNames
   "required": ["correlationId", "labels", "source", "description", "inputKeys", "undeclared", "fields"],
   "additionalProperties": false,
   "$defs": {
-    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
     "field": {
       "type": "object",
       "properties": {
         "path": {
           "description": "The field as it appears in a response; an array element is written with [].",
           "type": "string",
+          "maxLength": 64,
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\[\\])?(\\.[A-Za-z_][A-Za-z0-9_]*(\\[\\])?)*$"
         },
         "protection": { "enum": ["VERBATIM", "SYNTHETIC", "TOKEN", "MARKER", "BUCKET", "ABSENT"] },
@@ -579,13 +582,13 @@ Threat note: an agent steered by injected text that calls `describe_entity_model
   "required": ["correlationId", "labels", "entityType", "sources", "keyNamespaces"],
   "additionalProperties": false,
   "$defs": {
-    "label": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
     "sourceField": {
       "type": "object",
       "properties": {
         "source": { "$ref": "#/$defs/label" },
-        "field": { "type": "string", "minLength": 1, "maxLength": 256 }
+        "field": { "type": "string", "minLength": 1, "maxLength": 64 }
       },
       "required": ["source", "field"],
       "additionalProperties": false
@@ -698,7 +701,7 @@ Input schema change (the new property; `entityType` and `subjectId` are unchange
     "targetSources": {
       "description": "Source labels as returned by list_sources. When absent, every permitted source is asked, and the call is refused if there are too many.",
       "type": "array",
-      "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
       "minItems": 1,
       "uniqueItems": true
     }
@@ -771,7 +774,7 @@ Mutation-testable; the privacy modules are mutation-tested from 0.7 and gated in
 16. **Configuration.** A non-positive or non-integer `unselected-source-limit` and an `unselected-source-limit` greater than `max-sources`, and an invalid entry in the real-names setting chosen by OD-C3 (an unknown purpose, or a malformed scope pattern) refuse startup with `INVALID_CATALOG_SETTING`; defaults match this document.
 17. **Schemas.** The three tool schemas in this document are valid JSON Schema draft 2020-12 and each example validates against its schema (the validation command is in the Outcome of the task file). The served schemas are generated from the same definitions, and a build test compares them with the checked-in copies.
 18. **Architecture rules.** `mcp` and `connectors` do not depend on adapter classes; `core` contains no business-domain type.
-19. **Source-name grammar (OD-C18 (c)).** In 0.8 a non-conforming source name starts and works, the gauge `dataprism.catalog.source-names.nonconforming` equals the count of such names, and the single log line carries the count and no name (scanned). From the 0.9 freeze a non-conforming name refuses startup with `INVALID_SOURCE_NAME`. Boundary values: 64 characters conform, 65 do not; an uppercase letter, a leading digit and an underscore do not. Mutant: log the names.
+19. **Source-name grammar (OD-C18 (c)).** In 0.8 a non-conforming source name starts and works, the gauge `dataprism.catalog.source_names.nonconforming` equals the count of such names, and the single log line carries the count and no name (scanned). From the 0.9 freeze a non-conforming name refuses startup with `INVALID_SOURCE_NAME`. Boundary values: 64 characters conform, 65 do not; an uppercase letter, a leading digit and an underscore do not. Mutant: log the names.
 20. **Audit key `names` (OD-C2 (a)).** `names` accepts only `REAL` and `ALIAS`, and the value matches the effective setting in all four combinations of scope setting and capability; any other value for `names` is rejected by `AuditEvent`; the grammar stays closed for every other key (a test that a made-up key with `REAL` is still rejected); the verifier accepts the key in a chain and `docs/audit.md` documents it. Mutants: accept any value for `names`; accept `REAL` or `ALIAS` for other keys.
 
 ## 9. Open decisions for the owner
@@ -797,7 +800,7 @@ OD-C2 was decided explicitly by the owner on 2026-10-09. On the same date the ow
 | OD-C15 | The shape and extent of `describe_entity_model` | (a) namespace-centric with `comparableValues`; (b) namespace-centric only; (c) pairs of source relations; (d) not built (rely on `list_sources`, `describe_source` and `_links`) | (a), because design-review §B5's purpose includes value comparability and the pairs form grows quadratically. If the owner wants the smallest surface to freeze at 0.9, (b) **Decided (owner delegated, 2026-10-09): the recommendation.** |
 | OD-C16 | Does `list_sources` need paging in 0.8 | (a) yes, and task 198 specifies the page for `list_sources` first so 0.8 can build it; (b) no: ship unpaged with the two filters and reconsider at 0.9; (c) refuse above a hard size | (a). At several hundred sources an unpaged list is about 100 to 200 KB, too large for a model context. This is a cross-task point to settle in task 200 **Decided (owner delegated, 2026-10-09): the recommendation.** |
 | OD-C17 | `describe_entity_model` with links disabled | (a) registered, reports `acceptedBy` only; (b) not registered while links are off; (c) always full | (a), because a deployment on option (c) of the link design (human-supplied keys) still benefits from knowing which sources accept which namespace **Decided (owner delegated, 2026-10-09): the recommendation.** |
-| OD-C18 | A grammar for source names, which become labels and audit keys | (a) none (today); (b) `[a-z][a-z0-9-]{0,63}` refused at startup from 0.8. Cost of a rename for a non-conforming name: the `dataprism.sources.<name>` entry and any `json-sources` key are renamed; the real name in `sourceSystems` and in `<source>:` disposition keys changes, which breaks continuity with older audit records; the alias is derived from the name and so changes; and links issued before the restart stop resolving. (c) a startup warning in 0.8 (a gauge metric `dataprism.catalog.source-names.nonconforming` and one log line giving the count, no names), and refusal with `INVALID_SOURCE_NAME` from the 0.9 freeze; (d) an operator-mapped label, leaving the real name unchanged: the operator supplies the label shown and used in the catalog and the name keeps its current form in configuration and audit | (c). It is non-breaking in 0.8, gives operators one release to plan the rename and its audit break, and the grammar is in force at the freeze. (b) breaks upgrades; (d) adds a mapping to maintain and a second name per source **Decided (owner delegated, 2026-10-09): the recommendation.** |
+| OD-C18 | A grammar for source names, which become labels and audit keys | (a) none (today); (b) `[a-z][a-z0-9-]{0,63}` refused at startup from 0.8. Cost of a rename for a non-conforming name: the `dataprism.sources.<name>` entry and any `json-sources` key are renamed; the real name in `sourceSystems` and in `<source>:` disposition keys changes, which breaks continuity with older audit records; the alias is derived from the name and so changes; and links issued before the restart stop resolving. (c) a startup warning in 0.8 (a gauge metric `dataprism.catalog.source_names.nonconforming` and one log line giving the count, no names), and refusal with `INVALID_SOURCE_NAME` from the 0.9 freeze; (d) an operator-mapped label, leaving the real name unchanged: the operator supplies the label shown and used in the catalog and the name keeps its current form in configuration and audit | (c). It is non-breaking in 0.8, gives operators one release to plan the rename and its audit break, and the grammar is in force at the freeze. (b) breaks upgrades; (d) adds a mapping to maintain and a second name per source **Decided (owner delegated, 2026-10-09): the recommendation.** |
 | OD-C19 | A selection containing a label that does not resolve (unknown, wrong kind, not permitted, wrong entity type) | (a) refuse the whole call with `SOURCE_NOT_AVAILABLE` and call nothing; (b) drop the bad labels and answer for the rest, reporting nothing; (c) answer for the rest and mark each bad label `NOT_AVAILABLE` in the result. Option (c) tells the agent which labels failed but not why, and it widens the result shape | (a). Fail closed, and a partial answer would hide a typo. (b) hides it. Stated as a product choice, not a fact **Decided (owner delegated, 2026-10-09): the recommendation.** |
 
 ## 10. Proposed names (closing table)
@@ -835,7 +838,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `SOURCE_DESCRIPTION_LEAKS_NAME` | startup refusal code | 0.8 | none |
 | `INVALID_CATALOG_SETTING` | startup refusal code | 0.8 | `INVALID_REQUEST_LIMITS`, `INVALID_LINK_LIMIT` (siblings) |
 | `INVALID_SOURCE_NAME` | startup refusal code | from the 0.9 freeze (OD-C18 (c)) | none |
-| `dataprism.catalog.source-names.nonconforming` | metric (gauge, count of non-conforming source names) | 0.8 | `dataprism.catalog.descriptions.generated` (sibling) |
+| `dataprism.catalog.source_names.nonconforming` | metric (gauge, count of non-conforming source names) | 0.8 | `dataprism.catalog.descriptions.generated` (sibling) |
 | `catalog` | audit disposition key (values `REFUSED:CATALOG_<REASON>`) | 0.8 | `link` (task 191, sibling) |
 | `CATALOG_UNKNOWN_SOURCE`, `CATALOG_SOURCE_NOT_PERMITTED`, `CATALOG_ENTITY_TYPE_MISMATCH`, `CATALOG_UNKNOWN_ENTITY_TYPE`, `CATALOG_NO_PERMITTED_SOURCE` | audit-only reason codes (shape C) | 0.8; the last two 0.9 | `LINK_<REASON>` (task 191, sibling) |
 | `names` | reserved audit disposition key (values `REAL`, `ALIAS`) | 0.8 (OD-C2 (a), decided) | none |
