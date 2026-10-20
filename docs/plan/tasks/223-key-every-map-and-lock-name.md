@@ -16,6 +16,7 @@
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/seal/SealedWritesTest.java *(new)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/KeyedLockHoldTest.java *(new)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/KeyedScopeEndTest.java *(new)*
+- data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/SoloMemberKeysTest.java *(new)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/HazelcastStoredValueBoundaryTest.java
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/boundary/** *(new: one checker per area, `IdentityMapsBoundary`, `ApprovalMapsBoundary`, `OversightMapsBoundary`, `CounterMapsBoundary`, `MemberCardMapsBoundary`)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/**/*.java *(expressions that build a raw map key or lock key only)*
@@ -51,7 +52,7 @@ After this task no Hazelcast key, and no lock key, contains a scope id, subject 
 - [ ] T11 (keys share), in `KeyedLockHoldTest`: a Hazelcast client holding the lock on a budget key, an approval-id claim key and a caller-rate key, each computed as the keyed name, makes the matching operation refuse within `lock-timeout` with `CLUSTER_LOCK_TIMEOUT`, and no thread stays blocked.
 - [ ] Every write listed by 219 answer 10 as unbounded is bounded. The Outcome holds a call-site table in 232's format (`file:line`, call, bounded by), covering the identity, re-identification, oversight and scope-end writes that 202 left unbounded. `grep -n "\.lock(" data-prism-hazelcast/src/main` returns nothing.
 - [ ] `SealedWritesTest`, for both processor shapes: a run on a two-member cluster leaves byte-identical values on the primary and the backup. After the owner is killed mid-invocation, a retried compare-and-set finds its own bytes, and a retried computing processor is idempotent or over-counts, never under-counts. Mutating the backup processor to re-seal makes the byte-identity test fail (shown once in the Outcome).
-- [ ] Solo-member behaviour matches OD-215-8, and a test pins it.
+- [ ] Solo members (`join.mode: none`, OD-215-8 (a)), in `SoloMemberKeysTest`: `PrivacyCluster.embedded(...)` with a `none` membership and supplied `ClusterKeys` derives every keyed map key and lock key from the supplied name key (the test recomputes them from that key). With no `ClusterKeys`, it starts and generates a random cluster key and name key per process: two such members started one after the other give different keyed names for the same canonical inputs, no key in any map contains a canonical input as a substring, and no generated key material appears in any log line, exception message or `toString`. A joining membership never gets generated keys (222's `MISSING_CLUSTER_KEY` still applies).
 - [ ] `ClusterSecuritySettingsTest`: each default equals design 4.1 as amended by 218; each bound is checked at the bound, one unit inside and one unit outside; `clockSkewTolerance` above half of `pauseLease` is refused.
 - [ ] `./mvnw -B verify` exits 0 over the full reactor, twice. Report the counts.
 

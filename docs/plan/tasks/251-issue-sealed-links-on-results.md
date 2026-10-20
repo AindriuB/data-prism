@@ -39,7 +39,7 @@ When links are enabled, every `ANSWERED` source result carries one sealed link p
 - [ ] The response validators run over the response with links present. Issued tokens are added to the `emitted` exemption set; a token-shaped string that comes from a source record and was not issued still fails validation (test). No validator source file changes.
 - [ ] Leak tests: the chained value, in plain, base64, base64url, hex and URL-encoded forms, is in no response, log line, metric, exception or audit record, including under failure; a second test opens each payload with the test key and finds only the padded chained key.
 - [ ] Links count toward `max-response-size` (a response just under the cap without links is refused with them).
-- [ ] `compare_entity_sources` carries links or not, as OD-08-7 decides, and a test pins it.
+- [ ] `compare_entity_sources` carries no `_links` and no `_linksOmitted`, with links enabled (OD-08-7 (a)), and a test pins it.
 - [ ] `LinkBuilderArchitectureTest` (new file) fails when a class in `mcp` or `connectors` depends on `orchestration.links` raw-value accessors. A nested fixture proves it can fail.
 - [ ] Before merge, a whole-component hunt for privacy-boundary defects covers the builder and the assembled response; each finding is fixed or filed and named in the Outcome.
 - [ ] `./mvnw -B verify` (full reactor) passes.

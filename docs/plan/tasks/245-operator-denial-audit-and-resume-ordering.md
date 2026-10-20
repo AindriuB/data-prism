@@ -30,7 +30,7 @@ Finish the owner decision that 244 starts. `ReidentificationService.refuse` and 
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
 - [ ] Every `ReidentificationService` refusal whose audit write throws returns `Refused("AUDIT_UNAVAILABLE")` and increments the 244 metric once. A refusal whose audit succeeds returns its own code, as today.
 - [ ] Every operator denial whose audit write throws answers HTTP 503 with code `AUDIT_UNAVAILABLE` and increments the metric once; no operator endpoint answers its original denial code after a failed denial audit. Tests cover each endpoint that can deny.
-- [ ] `resume` behaves as OD-08-14 decides. Under its option (a): the ALLOW is written first; if applying the resume then throws, a linked `DENY:<code>` under the same correlation id is written, the state is unchanged, and the response is the failure; if that DENY write also fails, the response is 503 `AUDIT_UNAVAILABLE`. A test with a throwing custom `OversightState` covers both.
+- [ ] `resume` follows OD-08-14 (a): the ALLOW is written first; if applying the resume then throws, a linked `DENY:<code>` under the same correlation id is written, the state is unchanged, and the response is the failure; if that DENY write also fails, the response is 503 `AUDIT_UNAVAILABLE`. A test with a throwing custom `OversightState` covers both.
 - [ ] No sink exception text reaches any response body (sentinel test).
 - [ ] Existing tests under `data-prism-reidentification` and `data-prism-server` pass unmodified.
 - [ ] `./mvnw -B -pl data-prism-reidentification,data-prism-server -am verify` passes.
