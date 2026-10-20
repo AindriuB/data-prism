@@ -53,5 +53,6 @@ Expose the 0.8 core's new configuration through `dataprism.*` and start the cata
 
 ## Out of scope
 - `dataprism.links.enabled` and the other link, follow and key-resolver keys (255).
+- The `LinkAttemptLimiter` bean, its argument to `list_sources` and the `MISSING_SHARED_LINK_LIMITER` refusal, which applies when a link key is configured even with links off (255).
 - Catalog and link gauges (255).
 - Every `docs/` file other than `docs/configuration.md` (261).

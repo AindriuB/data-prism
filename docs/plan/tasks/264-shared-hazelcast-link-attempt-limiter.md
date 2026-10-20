@@ -25,7 +25,7 @@
 - docs/plan/design/contract-register.md *(the link-attempt map-name row in section 8.1 and the `MISSING_SHARED_LINK_LIMITER` row only)*
 
 ## Goal
-Sealed links count failed attempts per principal and scope and lock the principal out at the limit (sealed-links section 4, OD-8). Today the only limiter is in memory, so on a cluster a forger gets the limit once per member. This task adds a Hazelcast limiter that every member shares. It keeps its counts in a new sealed counter map, which joins the boundary inventory. Core 255 already refuses `dataprism.links.enabled=true` with `MISSING_SHARED_LINK_LIMITER` on an embedded member that joins a cluster and has no cluster-wide limiter. This task supplies that limiter as a bean, so the refusal no longer fires on a correctly configured cluster.
+Sealed links count failed attempts per principal and scope and lock the principal out at the limit (sealed-links section 4, OD-8). Today the only limiter is in memory, so on a cluster a forger gets the limit once per member. This task adds a Hazelcast limiter that every member shares. It keeps its counts in a new sealed counter map, which joins the boundary inventory. Page tokens from `list_sources` (core 250) count their failures in the same limiter, so the limiter is needed whenever any sealed-token consumer is active: `dataprism.links.enabled=true`, or a configured link key (core 254's link-codec bean, which makes `list_sources` issue page links; paging has no `enabled` property of its own). Core 255 already refuses startup with `MISSING_SHARED_LINK_LIMITER` on an embedded member that joins a cluster, has a sealed-token consumer active and has no cluster-wide limiter. This task supplies that limiter as a bean, so the refusal no longer fires on a correctly configured cluster.
 
 ## Context
 - docs/plan/design/sealed-links.md section 4 (limiter: counted reasons, lock including valid links, window from the stored start, "cluster-wide on a shared topology") and section 7 (obligations on the limiter), as corrected by 238.
@@ -42,7 +42,7 @@ Sealed links count failed attempts per principal and scope and lock the principa
 - The map key is the keyed name of `LinkKeys.attemptCounterKey(...)` under the name key. The stored value is sealed with its canonical parts, its count and its window start.
 - `HazelcastLinkAttemptLimiter implements LinkAttemptLimiter`, `clusterWide()` returns `true`. `recordFailure` is one computing processor from `SealedWrites` (open, check the window, add one, seal once on the primary, copy bytes to the backup). With `ClusterSecuritySettings.localFloorEnabled`, it also records into a member-local `InMemoryLinkAttemptLimiter`, and `locked` is true if either count is at the limit.
 - Fail closed: `locked` returns `true` in each of these cases. A stored value does not open (this also counts tamper through the 220 `TamperListener` with the map-name constant). A cluster operation is refused or times out. The serving gate is closed. A missing value counts as zero, which is why the local floor exists.
-- Spring: `ClusterBackedState` creates the bean when links are enabled and the member joins a cluster (`join.mode` `tcp-ip` or `kubernetes`). It reads its limit and window from `dataprism.links.invalid-attempt-limit` and `invalid-attempt-window` (255). On `single-node` and `join.mode: none` the 255 in-memory limiter stays. An application-supplied `LinkAttemptLimiter` bean still wins over both.
+- Spring: `ClusterBackedState` creates the bean when any sealed-token consumer is active (links enabled, or the link-codec bean exists so page links are issued; the same condition 255's refusal uses, read from one shared condition, not restated) and the member joins a cluster (`join.mode` `tcp-ip` or `kubernetes`). Links off with a link key configured is not a reason to skip the bean. It reads its limit and window from `dataprism.links.invalid-attempt-limit` and `invalid-attempt-window` (255). On `single-node` and `join.mode: none` the 255 in-memory limiter stays. An application-supplied `LinkAttemptLimiter` bean still wins over both.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
@@ -63,9 +63,12 @@ Sealed links count failed attempts per principal and scope and lock the principa
 - [ ] `SharedLinkAttemptLimiterConfigurationTest`, table-driven, one row per case:
   - `embedded` with `join.mode: tcp-ip` (and `kubernetes`), links enabled and keys configured: starts, and the `LinkAttemptLimiter` bean is the Hazelcast limiter.
   - The same with this task's bean removed: refused with `MISSING_SHARED_LINK_LIMITER` (255's check, now proven not to fire when the bean is present).
-  - `join.mode: none` with links enabled: starts with the in-memory limiter and is never refused.
-  - `single-node`: in-memory limiter.
-  - Links disabled: no limiter bean from this task.
+  - `embedded` with `join.mode: tcp-ip` (and `kubernetes`), links disabled and a link key configured (page links on): starts, and the bean is the Hazelcast limiter; `list_sources` page-link failures on two members lock the principal at `invalid-attempt-limit` in total.
+  - The same paging-only configuration with this task's bean removed: refused with `MISSING_SHARED_LINK_LIMITER`.
+  - `join.mode: none` with links enabled, and with links disabled and a link key configured: each starts with the in-memory limiter and is never refused.
+  - `single-node` with links enabled, and with links disabled and a link key configured: each starts with the in-memory limiter and is never refused.
+  - Links disabled and no link key (no sealed-token consumer): no limiter bean from this task, and no refusal on any topology.
+  - Fallback (c) configuration (this task's bean class absent from the context): a joining member with links enabled is refused, a joining member with links disabled and a link key configured is refused, and a joining member with neither starts; `join.mode: none` and `single-node` start in every combination.
   - An application-supplied limiter bean is kept.
 - [ ] `SharedLinkAttemptLimiterEndToEndTest`, on two servers sharing one cluster: invalid `follow` calls split between the servers lock the principal at `invalid-attempt-limit` in total. A following valid `follow` on either server is refused with `LINK_ATTEMPTS_EXHAUSTED` and reads nothing.
 - [ ] `cluster-security.md` lists the new map in the section 1 inventory and in the 2.3.1 failure table (a refusal locks, it never resets). `contract-register.md` 8.1 has the map name, and the register has a `MISSING_SHARED_LINK_LIMITER` row naming 255 as the check and this task as the bean.
@@ -74,9 +77,9 @@ Sealed links count failed attempts per principal and scope and lock the principa
 
 ## If this task is cut from 0.8: fallback (c)
 This is what ships instead (core OD-08-2 (c)). No code change is needed beyond 255, because 255's refusal fires whenever no cluster-wide limiter exists:
-- On a member that joins a cluster (`embedded` with `join.mode` `tcp-ip` or `kubernetes`), `dataprism.links.enabled=true` is refused at startup with `MISSING_SHARED_LINK_LIMITER`.
-- A solo embedded member (`join.mode: none`) and `single-node` are never refused. They use the in-memory limiter.
-- Whoever cuts the task removes 264 from the Depends-on lines of 263 and 213. Then 263 runs its three-member mix with links disabled and the link mix on a single node only, and 213 states the refusal in `docs/multiple-instances.md`.
+- On a member that joins a cluster (`embedded` with `join.mode` `tcp-ip` or `kubernetes`), every sealed-token consumer is refused at startup with `MISSING_SHARED_LINK_LIMITER`: `dataprism.links.enabled=true`, and a configured link key (page links), whether or not links are enabled. A joining member therefore runs with links off and no link key, so `list_sources` answers on one page (core 250), and an estate larger than the default page size is refused by core 254's `MISSING_PAGING_KEY`. Per-instance limiting (option (b)) is not a fallback for either consumer.
+- A solo embedded member (`join.mode: none`) and `single-node` are never refused. They use the in-memory limiter for both consumers.
+- Whoever cuts the task removes 264 from the Depends-on lines of 263 and 213. Then 263 runs its three-member mix with links disabled and no link key (no follow and no page links), and the link and paging mix on a single node only, and 213 states the refusal, for links and page links, in `docs/multiple-instances.md`.
 - The cut and the fallback are recorded in 215's Outcome and in the 0.8 release notes.
 
 ## Out of scope

@@ -28,6 +28,7 @@ Written 2026-10-20 with the 0.8 core briefs 238 to 263. All eighteen are decided
 Decided (2026-10-20, owner):
 
 - OD-08-2 (a): a shared Hazelcast limiter, brief 264, with startup refusal `MISSING_SHARED_LINK_LIMITER` when links are enabled on a shared topology without one. If 264 slips (the owner accepts it slipping to 0.9.0), fallback (c) is agreed: refuse links only on members joining via `tcp-ip` or `kubernetes`, never with `join.mode: none` or `single-node`. Option (b), weakening the limiter per instance, is excluded outright.
+  Extended 2026-10-20 after review of PR #141: applies to every sealed-token consumer (links and paging); option (b) stays excluded.
 - OD-08-3: `dataprism.limits.request-timeout` default `PT10S`; `dataprism.limits.scope-total-read-budget` default 50,000; `dataprism.limits.scope-read-budget` stays 100 and now counts source reads. This is a behaviour change for the migration notes (261).
 - OD-08-4 (a): remove `SKIPPED_OVER_LIMIT` from the status vocabulary before the 0.9 freeze; a Breaking entry in `CHANGELOG.md` when it is built.
 

@@ -88,7 +88,7 @@ Operator documentation: 213 (`docs/multiple-instances.md`, `docs/key-rotation.md
 ### Gaps, unresolved
 
 - The rotation soak under load and the environment packet capture (design 5.2) are core task 263's; 229 tests rotation in process only.
-- The Hazelcast failed-attempt limiter for sealed links is 264 (core OD-08-2 (a), OD-215-14 (a)). If 264 is cut from 0.8, fallback (c) ships: core 255's `MISSING_SHARED_LINK_LIMITER` refusal stops links on members that join a cluster, never on a solo member or `single-node`. 264's brief lists the edges to remove.
+- The Hazelcast failed-attempt limiter for sealed links is 264 (core OD-08-2 (a), OD-215-14 (a)). If 264 is cut from 0.8, fallback (c) ships: core 255's `MISSING_SHARED_LINK_LIMITER` refusal stops every sealed-token consumer (links, and page links from a configured link key) on members that join a cluster, never on a solo member or `single-node`. 264's brief lists the edges to remove.
 - Two 232 follow-ups stay open: `endScope` and `forgetScope` have no production caller, and a forget during a split is undone by the heal.
 - Boundary 7 stays partly enforced: metric names and health details are scanned by 231, but trace attributes are not.
 - `PUBLIC_MEMBER_INTERFACE` is not built (cluster-security OD-10 (ii)).
