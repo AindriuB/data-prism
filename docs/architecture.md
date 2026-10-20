@@ -523,6 +523,9 @@ all of these is in `design-review.md` under the section named.
   third-party verification would need the key, which also lets its holder
   forge. Tamper evidence rests on the unkeyed hash chain plus external
   checkpoints (task 97), with the checkpoints held under separate custody.
+- *The next seven entries (D-070-1 to D-070-7) are dated by the owner decision
+  of 2026-10-09, not by the day each landed; the tasks that built them landed
+  between 2026-10-09 and 2026-10-19.*
 - **2026-10-09 — `get_entity_context` returns each source's own scrubbed record
   and never merges them (D-070-1).** Each `sources` entry is
   `{status, entity}`, `entity` only for `ANSWERED`, and the top-level `entity` is
@@ -556,7 +559,7 @@ all of these is in `design-review.md` under the section named.
   status a breaking change. Cost: a client that ignores the rule may treat a new
   refusal-like status as data, so `migration-0.7.md` states the rule for client
   authors.
-- **2026-10-19 — Record and response-size caps refuse the whole call
+- **2026-10-09 — Record and response-size caps refuse the whole call
   (D-070-5, D-070-6).** `dataprism.limits.max-records` and `max-response-size`
   are enforced after validation and before ALLOW is audited: more than the cap
   refuses with `TOO_MANY_RECORDS` or `RESPONSE_TOO_LARGE` and one correlated
@@ -581,7 +584,7 @@ all of these is in `design-review.md` under the section named.
   property, and `connectors-rest` without the autoconfigure module falls back to
   a pinned copy of the defaults, refusing startup if any `dataprism.limits.*`
   property is set with no bean to take it.
-- **2026-10-19 — The key-shape scan is always on (D-070-7).** The two response
+- **2026-10-09 — The key-shape scan is always on (D-070-7).** The two response
   validators scan property names as well as values under every profile, with no
   switch and no SPI change; a flagged name and everything beneath it is
   reported as `<undeclared>`. Rejected: a property to turn it off, and scanning

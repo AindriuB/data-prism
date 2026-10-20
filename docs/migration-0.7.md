@@ -9,7 +9,8 @@ description: What changes when upgrading from 0.6.x to 0.7.0, by audience, cover
 returns, one change that refuses responses 0.6.x let through, and a Hazelcast
 upgrade that cannot be rolled. This page lists every change that can stop
 something working, who has to act, and what to do. The shorter version is the
-`0.7.0` section of the [changelog](changelog.md).
+unreleased 0.7 section of the `CHANGELOG.md` at the repository root (the
+[changelog](changelog.md) page shows it once the release is published).
 
 ## Who has to do what
 
@@ -49,6 +50,9 @@ something working, who has to act, and what to do. The shorter version is the
    the cause.
 9. **Hazelcast approval values changed and cannot be mixed.** Stop every member
    and start 0.7. There is no rolling upgrade.
+   (A hand-wired `PrivacyCluster.embedded(ClusterMembership, boolean)` now
+   applies the default approval quorum; see
+   [Extension authors](#extension-authors).)
 10. **A Hazelcast `tcp-ip` cluster now defaults to a majority quorum for
     approvals.** In a two-member cluster, losing either member stops
     approval-gated tools.
@@ -95,6 +99,10 @@ After, from the same file at 0.7.0 (shortened):
   "entityType": "CUSTOMER",
   "subject": "SUBJ-RVCTG7ZA",
   "sources": {
+    "ORGANISATION_IDENTITY-9SAP0WPN": {
+      "status": "ANSWERED",
+      "entity": { "orderId": "ORD-9", "...": "..." }
+    },
     "ORGANISATION_IDENTITY-J8DXZTGX": {
       "status": "ANSWERED",
       "entity": {
@@ -244,13 +252,14 @@ fields and the hash encoding are unchanged. See [the audit chain](audit.md).
 
 ### Hazelcast: stop every member, then start 0.7
 
-Do not roll. Approval entries, approval-id claims and pending entries written by
-0.6.x are unreadable by 0.7.0 and are refused: a creation token was added to the
-entry, the claim and the pending slot, and 0.7.0 accepts only the new forms. The
-maps are in memory only. Stop every member, start 0.7.0, and re-request any
-approval that was pending. A mixed cluster is not supported: an old member does
-not know the claims or tokens, so an approval id can be created twice. Two maps
-were added, `dataprism.approval.id` and `dataprism.approval.pending`.
+Do not roll. Approval entries written by 0.6.x are unreadable by 0.7.0 and are
+refused: a creation token was added to the entry, and 0.7.0 accepts only the new
+form. The maps are in memory only. Stop every member, start 0.7.0, and
+re-request any approval that was pending. 0.6.x had no id-claim or pending maps,
+so there is nothing to convert there. A mixed cluster is not supported: an old
+member does not know the claims or tokens, so an approval id can be created
+twice. Two maps were added, `dataprism.approval.id` and
+`dataprism.approval.pending`.
 
 Other changes you will see:
 
@@ -271,16 +280,19 @@ Other changes you will see:
   two scopes on either side of a split shares one slot after the heal, and both
   entries are then refused as ambiguous. A protected member refuses approval
   writes for about five seconds after it starts.
-- The new startup refusals apply only when approvals are in use
+- Startup refusals. Some apply only when approvals are in use
   (`dataprism.oversight.approval-required-tools` is not empty, or
-  `dataprism.reidentification.enabled` is true). A `tcp-ip` hostname member or
+  `dataprism.reidentification.enabled` is true): a `tcp-ip` hostname member or
   `kubernetes` without `approval-minimum-members` is refused with
-  `MISSING_APPROVAL_QUORUM`. A wildcard, other-octet range or bad-port member, or a
-  minimum below 1, above the countable members, or set with `none`, is refused with
-  `INVALID_APPROVAL_QUORUM`. `INVALID_LOCK_TIMEOUT` and
-  `INVALID_APPROVAL_SWEEP_INTERVAL` refuse a value outside its range, and the
-  sweep interval is refused with `CLUSTER_SETTINGS_IGNORED` under `single-node` and
-  beside an application-supplied `PrivacyCluster`.
+  `MISSING_APPROVAL_QUORUM`, and a wildcard, other-octet range or bad-port `tcp-ip`
+  member with `INVALID_APPROVAL_QUORUM`. Others apply always: an explicit
+  `approval-minimum-members` below 1, set with `join.mode: none`, or above the
+  counted members is refused with `INVALID_APPROVAL_QUORUM`, and a `lock-timeout`
+  outside `PT100MS` to `PT30S` or a sweep interval outside `PT1S` to `P1D` is
+  refused with `INVALID_LOCK_TIMEOUT` or `INVALID_APPROVAL_SWEEP_INTERVAL`.
+  `CLUSTER_SETTINGS_IGNORED` refuses `lock-timeout`, `approval-minimum-members`
+  and the sweep interval under `single-node`, and `approval-minimum-members` and
+  the sweep interval beside an application-supplied `PrivacyCluster`.
 - The operator API answers `503` with `{"code":"CLUSTER_LOCK_TIMEOUT"}` or
   `{"code":"CLUSTER_OPERATION_REFUSED"}` where it answered
   `503 OVERSIGHT_UNAVAILABLE` (approve, reject, pause, resume and the state and
@@ -326,10 +338,17 @@ See [Running more than one instance](multiple-instances.md).
   `ClusterOperationRefusedException` (both in `core.refusal`) to have the code
   reach the caller. `ClusterOperationRefusedException` was never released under
   the old `hazelcast` package name, so there is no alias.
-- **`PrivacyCluster`.** `embedded(...)` and `using(...)` gained the approval
-  minimum and sweep-interval inputs, and the store constructors take a lock
-  timeout. A `PrivacyCluster.using(instance)` you supply gets neither the merge
-  policy nor the quorum. Call sites need updating.
+- **`PrivacyCluster`.** `embedded(...)` and `using(...)` gained overloads that
+  take the approval minimum and sweep-interval, and the store constructors take a
+  lock timeout. Every 0.6 overload remains, so call sites compile unchanged. **But
+  `embedded(ClusterMembership, boolean)` now applies the default approval quorum
+  whether or not approvals are in use.** A hand-wired `tcp-ip` membership of
+  hostnames that started on 0.6 now throws `PrivacyClusterRefusal`
+  `MISSING_APPROVAL_QUORUM`, a wildcard entry gets `INVALID_APPROVAL_QUORUM`, and
+  an IP-only list now gets a majority write quorum on the approval map. Pass an
+  explicit minimum through the overload that takes one (`1` opts out). A
+  `PrivacyCluster.using(instance)` you supply gets neither the merge policy nor
+  the quorum.
 
 ## Verifying a release
 

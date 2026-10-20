@@ -41,13 +41,19 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
   `dataprism.limits.max-records` or `dataprism.limits.max-response-size` that
   0.6.x returned is now refused (see Changed).
 - **Hazelcast approvals cannot be upgraded in place.** Approval entries,
-  id claims and pending entries carry a creation token, and values written by
-  0.6.x are unreadable and refused. Stop every member and start 0.7; do not run
+  id claims and pending entries carry a creation token, and approval entries
+  written by 0.6.x are unreadable and refused. Stop every member and start 0.7; do not run
   old and new members together, and re-request approvals that were pending.
 - **Hazelcast `tcp-ip` approval quorum.** With approvals in use, the approval
   minimum defaults to a majority of the listed members, so a two-member cluster
   stops approval-gated tools while either member is down. Set
   `dataprism.hazelcast.approval-minimum-members: 1` to opt out.
+- **Hand-wired `PrivacyCluster.embedded(ClusterMembership, boolean)`.** The 0.6
+  overload now applies the default approval quorum whether or not approvals are in
+  use. A hand-wired `tcp-ip` membership of hostnames that started on 0.6 now throws
+  `PrivacyClusterRefusal` `MISSING_APPROVAL_QUORUM`, a wildcard entry gets
+  `INVALID_APPROVAL_QUORUM`, and an IP-only list now gets a majority write quorum
+  on the approval map. Pass an explicit minimum through the new overload.
 - **Cluster refusals now reach callers as their own codes** (see Changed): the
   operator API's `503 OVERSIGHT_UNAVAILABLE` and the re-identification
   `REIDENTIFICATION_UNAVAILABLE` become `CLUSTER_LOCK_TIMEOUT` or
@@ -65,10 +71,15 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
   refused with `INVALID_REQUEST_LIMITS` for a zero or negative limit or a
   response size that does not fit in an `int`.
 - `dataprism.hazelcast.lock-timeout` (default `PT2S`, `PT100MS` to `PT30S`;
-  startup code `INVALID_LOCK_TIMEOUT`).
+  startup code `INVALID_LOCK_TIMEOUT`, unconditional).
 - `dataprism.hazelcast.approval-minimum-members` and split-brain protection on
-  the approval map (startup codes `INVALID_APPROVAL_QUORUM` and
-  `MISSING_APPROVAL_QUORUM`, applied only when approvals are in use).
+  the approval map. Startup codes: `MISSING_APPROVAL_QUORUM` (applied only when
+  approvals are in use) and `INVALID_APPROVAL_QUORUM` (an explicit minimum below
+  1, set with `join.mode: none`, or above the counted members is refused
+  unconditionally; an uncountable `tcp-ip` member only when approvals are in use).
+  `lock-timeout` and `approval-minimum-members` are refused with
+  `CLUSTER_SETTINGS_IGNORED` under `single-node`, and `approval-minimum-members`
+  also beside an application-supplied `PrivacyCluster`.
 - `dataprism.hazelcast.approval-sweep-interval`, a `Duration` (default `PT5M`,
   `PT1S` to `P1D`) for how often each member sweeps pending approvals and
   approval-id claims. A value outside the range is refused with

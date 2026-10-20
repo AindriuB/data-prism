@@ -83,8 +83,15 @@ Written from the retired Outcomes of 188, 189, 190, 193, 194, 195, 196, 202, 209
 - `mkdocs build --strict` exit 0; every `docs-site/hooks/check_*.py` exit 0 with `DP_REQUIRE_NO_STUBS=true`.
 
 Gaps found, not fixed (outside Owns):
-- `docs/multiple-instances.md` has no stop-all upgrade caution (216 said a rolling upgrade was safe once all members run the new version; 232 made old values unreadable).
-- `LimitsProperties` Javadoc still says `maxResponseSize` is the "largest response one request may take from a source".
-- The two single-source HTTP blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) are still converted, not re-captured (190 follow-up, before release).
+- (Struck on review: `docs/multiple-instances.md:373-381` already has the stop-all upgrade caution.)
 - 188's five-step release checklist (cosign and attestation verification, SBOM in the bundle) has never been run; the CHANGELOG and migration page describe the pipeline as built.
 - The 0.9 migration notes must record OD-B18 (per-source `REFUSED:RESPONSE_TOO_LARGE` replacing the whole-call refusal).
+
+### Review round (coordinator findings, same branch)
+
+- Added the Breaking item for the 0.6 overload `PrivacyCluster.embedded(ClusterMembership, boolean)`, which now applies the default approval quorum whether or not approvals are in use, and corrected "call sites need updating": every 0.6 overload remains.
+- Corrected the startup-refusal scope in the CHANGELOG and the migration page: an explicit `approval-minimum-members` below 1, with `none`, or above the counted members, and `INVALID_LOCK_TIMEOUT`, are unconditional; `CLUSTER_SETTINGS_IGNORED` cases stated. Only 0.6 approval entries are unreadable (0.6 had no claim or pending maps). The "After" excerpt keeps source `9SAP0WPN`. D-070-1 to -7 are all dated by the 2026-10-09 owner decision, with a note.
+- `LimitsProperties` field Javadoc for `maxResponseSize` now matches `configuration.md` and `RequestLimits`.
+- BLOCKED (b): the two converted HTTP example blocks were not re-captured. The Docker daemon is not running here (OrbStack's socket is absent), and I did not start it; the from-source Compose build also needs network pulls. The blocks are still marked "Not re-captured for 0.7". Do it on a machine with the stack before release.
+
+**Release note.** 188's five-step supply-chain verification (its retired Outcome, "Release checklist for 0.7.0") must be run right after publishing and before announcing. If any step fails, correct the CHANGELOG Security and Build lines and the migration page's "Verifying a release" section.
