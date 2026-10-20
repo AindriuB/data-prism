@@ -521,6 +521,12 @@ and the earlier approval is left unconsumed. The approval id and the
 approver's id are written to the audit record of the call that ran under it.
 Neither is an argument: a caller cannot supply them.
 
+An approval is usable only after its `ALLOW:APPROVED` event (tool `operator:approve`) is
+written: the operator API writes that event first and commits the approval second. If the
+write fails, the approver gets 503 `AUDIT_UNAVAILABLE`, the approval is still `PENDING`,
+and the identical call is answered `APPROVAL_PENDING`. There is nothing for a failed undo
+to leave behind.
+
 A call that needs approval consumes one of the caller's rate-limit tokens before
 it is refused with `APPROVAL_REQUIRED` or `APPROVAL_PENDING`. That is the current
 behaviour: a caller that polls while waiting for an approval can rate-limit

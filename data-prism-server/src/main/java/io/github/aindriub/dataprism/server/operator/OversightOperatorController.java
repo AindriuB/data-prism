@@ -1,6 +1,8 @@
 package io.github.aindriub.dataprism.server.operator;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.oversight.ApprovalRefusedException;
@@ -10,6 +12,7 @@ import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.OversightSnapshot;
 import io.github.aindriub.dataprism.oversight.OversightState;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +26,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.UUID;
 
 /**
  * Kill switch, per-tool and per-scope pause, and tool-call approvals. Served only on the operator
@@ -30,7 +34,8 @@ import java.util.TreeSet;
  *
  * <p>Order matters for fail-closed: a restrictive action (pause, reject) takes effect and is then
  * audited; a permissive one (resume) is audited first and takes effect only if the event was
- * written; an approval is made, audited, and undone if the audit write fails.
+ * written; an approval is audited first and committed only if the event was written, with a
+ * linked {@code DENY} under the same correlation id when it then did not apply.
  */
 @RestController
 @ConditionalOnProperty(prefix = "dataprism.operator", name = "enabled", havingValue = "true")
@@ -43,9 +48,11 @@ final class OversightOperatorController {
     private final OversightState state;
     private final ApprovalStore approvals;
     private final Clock clock;
+    private final PrivacyMetrics metrics;
 
     OversightOperatorController(OperatorCallers callers, OperatorAudit audit, OversightState state,
-                                ApprovalStore approvals, Clock clock) {
+                                ApprovalStore approvals, Clock clock, ObjectProvider<PrivacyMetrics> metrics) {
+        this.metrics = metrics.getIfAvailable(PrivacyMetrics::none);
         this.callers = callers;
         this.audit = audit;
         this.state = state;
@@ -159,23 +166,80 @@ final class OversightOperatorController {
     Map<String, Object> approve(@PathVariable("id") String id) {
         AuthenticatedCaller caller = caller();
         ApprovalRequest found = toolCall(caller, "approve", id);
-        try {
-            approvals.approve(id, caller.principalId(), clock.instant());
-        } catch (ApprovalRefusedException refused) {
-            throw denied(caller, "approve", found, refused);
-        } catch (RuntimeException unavailable) {
-            String code = unavailableCode(unavailable);
-            audit.recordDenial(caller, "approve", found.tool(), found.scopeId(), code, id);
-            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
+        Instant now = clock.instant();
+        // Everything the store would refuse is refused here first, so a refusal is one DENY and no ALLOW.
+        ApprovalRefusedException.Code precheck = precheck(found, caller, now);
+        if (precheck != null) {
+            throw denied(caller, "approve", found, new ApprovalRefusedException(precheck));
         }
+        // Audit first: the decision can take effect only after its ALLOW:APPROVED is written. If the write
+        // fails nothing has been committed, so there is nothing to undo and nothing that could be used.
+        String correlationId = UUID.randomUUID().toString();
         try {
             audit.record(caller, "approve", found.tool(), found.scopeId(), "ALLOW:APPROVED", id,
-                    caller.principalId());
+                    caller.principalId(), correlationId);
         } catch (OperatorException auditDown) {
-            revoke(found);
+            metrics.increment(Metric.APPROVAL_DECISION_AUDIT_UNAVAILABLE);
             throw auditDown;
         }
+        try {
+            approvals.approve(id, caller.principalId(), now);
+        } catch (ApprovalRefusedException refused) {
+            throw deniedLinked(caller, found, refusalOf(refused), correlationId, false);
+        } catch (ClusterLockTimeoutException | ClusterOperationRefusedException beforeCommit) {
+            // Raised by the entry's lock, before the commit: the decision did not apply.
+            throw deniedLinked(caller, found, new OperatorException(HttpStatus.SERVICE_UNAVAILABLE,
+                    unavailableCode(beforeCommit)), correlationId, false);
+        } catch (RuntimeException unknown) {
+            // The outcome is unknown (a lost reply): read the approval back before deciding what to say.
+            if (!applied(id, caller.principalId())) {
+                throw deniedLinked(caller, found, new OperatorException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "OVERSIGHT_UNAVAILABLE"), correlationId, true);
+            }
+        }
         return Map.of("status", "APPROVED", "approvalId", id);
+    }
+
+    /** The code the store would refuse an approve with, judged on the value just read; null when it would not. */
+    private static ApprovalRefusedException.Code precheck(ApprovalRequest approval, AuthenticatedCaller caller,
+                                                          Instant now) {
+        if (approval.status() != ApprovalRequest.Status.PENDING) {
+            return ApprovalRefusedException.Code.NOT_PENDING;
+        }
+        if (!now.isBefore(approval.expiresAt())) {
+            return ApprovalRefusedException.Code.EXPIRED;
+        }
+        if (approval.requesterPrincipalId().equals(caller.principalId())) {
+            return ApprovalRefusedException.Code.SELF_APPROVAL;
+        }
+        return null;
+    }
+
+    /** Whether the approval now shows this caller's approval, so an approve whose reply was lost did apply. */
+    private boolean applied(String id, String approverId) {
+        try {
+            return approvals.find(id)
+                    .filter(a -> a.status() == ApprovalRequest.Status.APPROVED
+                            || a.status() == ApprovalRequest.Status.CONSUMED)
+                    .filter(a -> approverId.equals(a.approverPrincipalId()))
+                    .isPresent();
+        } catch (RuntimeException unreadable) {
+            return false;
+        }
+    }
+
+    /**
+     * The approve did not apply, or its outcome is unknown: writes the DENY under the correlation id of the
+     * ALLOW that preceded it. A DENY that cannot be written does not change the answer.
+     */
+    private OperatorException deniedLinked(AuthenticatedCaller caller, ApprovalRequest found,
+                                           OperatorException answer, String correlationId, boolean outcomeUnknown) {
+        boolean written = audit.recordDenial(caller, "approve", found.tool(), found.scopeId(), answer.code(),
+                found.approvalId(), correlationId);
+        if (outcomeUnknown || !written) {
+            metrics.increment(Metric.APPROVAL_DECISION_UNCONFIRMED);
+        }
+        return answer;
     }
 
     @PostMapping("/operator/approvals/{id}/reject")
@@ -234,6 +298,12 @@ final class OversightOperatorController {
 
     private OperatorException denied(AuthenticatedCaller caller, String action, ApprovalRequest found,
                                      ApprovalRefusedException refused) {
+        OperatorException answer = refusalOf(refused);
+        audit.recordDenial(caller, action, found.tool(), found.scopeId(), answer.code(), found.approvalId());
+        return answer;
+    }
+
+    private static OperatorException refusalOf(ApprovalRefusedException refused) {
         String code;
         HttpStatus status;
         switch (refused.code()) {
@@ -243,18 +313,7 @@ final class OversightOperatorController {
             case SELF_APPROVAL -> { code = "SELF_APPROVAL"; status = HttpStatus.CONFLICT; }
             default -> { code = "OVERSIGHT_UNAVAILABLE"; status = HttpStatus.SERVICE_UNAVAILABLE; }
         }
-        audit.recordDenial(caller, action, found.tool(), found.scopeId(), code, found.approvalId());
         return new OperatorException(status, code);
-    }
-
-    /** Undoes an approval whose audit write failed, so nothing unaudited stays usable. */
-    private void revoke(ApprovalRequest approval) {
-        try {
-            approvals.consumeApproved(Kind.TOOL_CALL, approval.requesterPrincipalId(), approval.scopeId(),
-                    approval.tool(), approval.bindingFingerprint(), clock.instant());
-        } catch (RuntimeException undoFailed) {
-            // nothing more can be done; the operator is told the step failed
-        }
     }
 
     private OperatorException unavailable(AuthenticatedCaller caller, String action, Target target,

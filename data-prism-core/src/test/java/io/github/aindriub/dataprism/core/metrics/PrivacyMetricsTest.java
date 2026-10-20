@@ -30,6 +30,8 @@ class PrivacyMetricsTest {
                 "dataprism.privacy.source.withheld",
                 "dataprism.reidentification",
                 "dataprism.approval.release.skipped",
+                "dataprism.approval.decision.audit_unavailable",
+                "dataprism.approval.decision.unconfirmed",
                 "dataprism.audit.retention.unverified",
                 "dataprism.audit.retention.anchor_failed",
                 "dataprism.audit.retention.delete_failed",

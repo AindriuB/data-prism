@@ -3,6 +3,8 @@ package io.github.aindriub.dataprism.reidentification;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
@@ -45,14 +47,26 @@ public final class ReidentificationService {
     private final AuditRecorder audit;
     private final ReidentificationPolicy policy;
     private final Clock clock;
+    private final PrivacyMetrics metrics;
 
     public ReidentificationService(ScopeIdentityIndex index, ApprovalStore approvals, AuditRecorder audit,
                                    ReidentificationPolicy policy, Clock clock) {
         this(Objects.requireNonNull(index, "index")::subjectFor, approvals, audit, policy, clock);
     }
 
+    public ReidentificationService(ScopeIdentityIndex index, ApprovalStore approvals, AuditRecorder audit,
+                                   ReidentificationPolicy policy, Clock clock, PrivacyMetrics metrics) {
+        this(Objects.requireNonNull(index, "index")::subjectFor, approvals, audit, policy, clock, metrics);
+    }
+
     public ReidentificationService(SubjectLookup lookup, ApprovalStore approvals, AuditRecorder audit,
                                    ReidentificationPolicy policy, Clock clock) {
+        this(lookup, approvals, audit, policy, clock, PrivacyMetrics.none());
+    }
+
+    public ReidentificationService(SubjectLookup lookup, ApprovalStore approvals, AuditRecorder audit,
+                                   ReidentificationPolicy policy, Clock clock, PrivacyMetrics metrics) {
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.lookup = Objects.requireNonNull(lookup, "lookup");
         this.approvals = Objects.requireNonNull(approvals, "approvals");
         this.audit = Objects.requireNonNull(audit, "audit");
@@ -96,26 +110,82 @@ public final class ReidentificationService {
             return refuseApproval(caller, null, approvalId, "APPROVAL_NOT_FOUND", true);
         }
         ApprovalRequest pending = found.get();
+        Instant now = clock.instant();
+        // Everything the store would refuse is refused here first, so a refusal is one DENY and no ALLOW.
+        String precheck = precheck(pending, caller, now);
+        if (precheck != null) {
+            return refuseApproval(caller, pending, approvalId, precheck, true);
+        }
+        // Audit first: the decision can take effect only after its ALLOW:APPROVED is written. If the write
+        // fails nothing has been committed, so there is nothing to undo and nothing that could be used.
+        String correlationId = UUID.randomUUID().toString();
         try {
-            approvals.approve(approvalId, caller.principalId(), clock.instant());
+            record(pending, "ALLOW:APPROVED", pending.approvalId(), caller.principalId(), correlationId);
+        } catch (RuntimeException auditDown) {
+            metrics.increment(Metric.APPROVAL_DECISION_AUDIT_UNAVAILABLE);
+            return new ReidentificationOutcome.Refused("AUDIT_UNAVAILABLE");
+        }
+        try {
+            approvals.approve(approvalId, caller.principalId(), now);
+            return new ReidentificationOutcome.Approved();
         } catch (ApprovalRefusedException e) {
-            return refuseApproval(caller, pending, approvalId, switch (e.code()) {
+            return denyLinked(caller, pending, approvalId, switch (e.code()) {
                 case UNKNOWN_APPROVAL -> "APPROVAL_NOT_FOUND";
                 case NOT_PENDING -> "APPROVAL_NOT_PENDING";
                 case EXPIRED -> "APPROVAL_EXPIRED";
                 case SELF_APPROVAL -> "SELF_APPROVAL";
                 case TOO_MANY_PENDING -> "REIDENTIFICATION_UNAVAILABLE";
-            }, true);
-        } catch (RuntimeException unavailable) {
-            return refuseApproval(caller, pending, approvalId, unavailableCode(unavailable), true);
+            }, correlationId, false);
+        } catch (ClusterLockTimeoutException | ClusterOperationRefusedException beforeCommit) {
+            // Raised by the entry's lock, before the commit: the decision did not apply.
+            return denyLinked(caller, pending, approvalId, unavailableCode(beforeCommit), correlationId, false);
+        } catch (RuntimeException unknown) {
+            // The outcome is unknown (a lost reply): read the approval back before deciding what to say.
+            if (applied(approvalId, caller.principalId())) {
+                return new ReidentificationOutcome.Approved();
+            }
+            return denyLinked(caller, pending, approvalId, "REIDENTIFICATION_UNAVAILABLE", correlationId, true);
         }
+    }
+
+    /** The code the store would refuse an approve with, judged on the value just read; null when it would not. */
+    private static String precheck(ApprovalRequest approval, AuthenticatedCaller caller, Instant now) {
+        if (approval.status() != Status.PENDING) {
+            return "APPROVAL_NOT_PENDING";
+        }
+        if (!now.isBefore(approval.expiresAt())) {
+            return "APPROVAL_EXPIRED";
+        }
+        if (approval.requesterPrincipalId().equals(caller.principalId())) {
+            return "SELF_APPROVAL";
+        }
+        return null;
+    }
+
+    /** Whether the approval now shows this caller's approval, so an approve whose reply was lost did apply. */
+    private boolean applied(String approvalId, String approverId) {
         try {
-            record(pending, "ALLOW:APPROVED", pending.approvalId(), caller.principalId());
-        } catch (RuntimeException auditDown) {
-            revoke(pending);
-            return new ReidentificationOutcome.Refused("AUDIT_UNAVAILABLE");
+            return approvals.find(approvalId)
+                    .filter(a -> a.status() == Status.APPROVED || a.status() == Status.CONSUMED)
+                    .filter(a -> approverId.equals(a.approverPrincipalId()))
+                    .isPresent();
+        } catch (RuntimeException unreadable) {
+            return false;
         }
-        return new ReidentificationOutcome.Approved();
+    }
+
+    /**
+     * The decision did not apply, or its outcome is unknown: refuse with its own code and write the DENY under the
+     * correlation id of the ALLOW that preceded it. A DENY that cannot be written does not change the answer.
+     */
+    private ReidentificationOutcome denyLinked(AuthenticatedCaller caller, ApprovalRequest approval,
+                                               String approvalId, String code, String correlationId,
+                                               boolean outcomeUnknown) {
+        boolean written = auditDeny(caller, approval, approvalId, code, true, correlationId);
+        if (outcomeUnknown || !written) {
+            metrics.increment(Metric.APPROVAL_DECISION_UNCONFIRMED);
+        }
+        return new ReidentificationOutcome.Refused(code);
     }
 
     public ReidentificationOutcome collect(AuthenticatedCaller caller, String approvalId) {
@@ -233,6 +303,12 @@ public final class ReidentificationService {
 
     private ReidentificationOutcome refuseApproval(AuthenticatedCaller caller, ApprovalRequest approval,
                                                    String approvalId, String code, boolean approving) {
+        auditDeny(caller, approval, approvalId, code, approving, UUID.randomUUID().toString());
+        return new ReidentificationOutcome.Refused(code);
+    }
+
+    private boolean auditDeny(AuthenticatedCaller caller, ApprovalRequest approval, String approvalId, String code,
+                              boolean approving, String correlationId) {
         String scope = approval == null ? "" : approval.scopeId();
         String namespace = approval == null ? "" : approval.namespace();
         String synthetic = approval == null ? "" : approval.syntheticValue();
@@ -240,12 +316,13 @@ public final class ReidentificationService {
         String caseId = approval == null ? "" : approval.caseId();
         try {
             audit.record(new AuditEntry(caller.principalId(), caller.clientId(), TOOL, namespace, synthetic, "",
-                    "", scope, purpose, caseId, "DENY:" + code, Set.of(), Set.of(), UUID.randomUUID().toString(),
+                    "", scope, purpose, caseId, "DENY:" + code, Set.of(), Set.of(), correlationId,
                     Map.of(), approvalId == null ? "" : approvalId, approving ? caller.principalId() : ""));
+            return true;
         } catch (RuntimeException auditDown) {
             // still a refusal
+            return false;
         }
-        return new ReidentificationOutcome.Refused(code);
     }
 
     private ReidentificationOutcome refuse(AuthenticatedCaller caller, ReidentificationRequest request,
@@ -260,11 +337,11 @@ public final class ReidentificationService {
     }
 
     private void record(ApprovalRequest approval, String decision, String approvalId,
-                        String approverId) {
+                        String approverId, String correlationId) {
         audit.record(new AuditEntry(approval.requesterPrincipalId(), approval.requesterClientId(), TOOL,
                 approval.namespace(), approval.syntheticValue(), approval.bindingFingerprint(), "",
                 approval.scopeId(), approval.purpose(), approval.caseId(), decision, Set.of(), Set.of(),
-                UUID.randomUUID().toString(), Map.of(), approvalId, approverId));
+                correlationId, Map.of(), approvalId, approverId));
     }
 
     private AuditEntry entry(AuthenticatedCaller caller, ReidentificationRequest request, String purpose,
@@ -280,16 +357,6 @@ public final class ReidentificationService {
         return new AuditEntry(caller.principalId(), caller.clientId(), TOOL, request.namespace().name(),
                 request.syntheticValue(), fingerprint, "", request.scopeId(), purpose, caseId, decision,
                 Set.of(), Set.of(), UUID.randomUUID().toString(), Map.of(), approvalId, approverId);
-    }
-
-    /** Undoes an approval whose audit write failed, so nothing unaudited stays usable. */
-    private void revoke(ApprovalRequest approval) {
-        try {
-            approvals.consumeApproved(Kind.REIDENTIFICATION, approval.requesterPrincipalId(), approval.scopeId(),
-                    approval.tool(), approval.bindingFingerprint(), clock.instant());
-        } catch (RuntimeException undoFailed) {
-            // nothing more can be done; the caller is told the step was refused
-        }
     }
 
     private static String fingerprint(String scopeId, String namespace, String synthetic, String purpose,

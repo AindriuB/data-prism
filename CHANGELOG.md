@@ -182,6 +182,13 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
   quickstart images) is signed keylessly with cosign, and images, jars and
   release assets carry GitHub build-provenance attestations. See
   `docs/verifying-releases.md`.
+- A failed audit write on an approve could leave a usable but unaudited approval,
+  because the undo could itself fail. Re-identification and tool-call approvals now
+  write `ALLOW:APPROVED` first and commit second, so a failed write leaves the
+  approval `PENDING`, and a decision that then does not apply is followed by a
+  `DENY` with the same `correlationId`. New metrics
+  `dataprism.approval.decision.audit_unavailable` and
+  `dataprism.approval.decision.unconfirmed`.
 
 ### Build
 

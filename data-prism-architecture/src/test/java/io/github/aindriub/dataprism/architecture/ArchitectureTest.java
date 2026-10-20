@@ -35,6 +35,7 @@ import io.github.aindriub.dataprism.mapper.fixture.PublicMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.SharedObtainedMapperFixture;
 import io.github.aindriub.dataprism.mapper.fixture.RebuildMapperFixture;
 import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
+import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.fixture.OversightDependsOnMcpFixture;
 import io.github.aindriub.dataprism.spring.boot.jwt.JwtCallerContextExtractor;
 import io.github.aindriub.dataprism.spring.boot.jwt.JwtDecoderSupport;
@@ -719,6 +720,51 @@ class ArchitectureTest {
         JavaClasses fixture = new ClassFileImporter().importClasses(SubjectForMethodReferenceFixture.class);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> ONLY_REIDENTIFICATION_CALLS_SUBJECT_FOR.check(fixture))
                 .isInstanceOf(AssertionError.class);
+    }
+
+    /**
+     * An approval becomes usable only through {@code ApprovalStore.approve}, and its two production callers audit the
+     * decision before they call it. Nothing else may call it, so an approved value with no {@code ALLOW:APPROVED}
+     * before it cannot be made.
+     */
+    private static final ArchRule ONLY_THE_AUDITING_APPROVERS_CALL_APPROVE = noClasses()
+            .that(new DescribedPredicate<JavaClass>("are not an auditing approver or an ApprovalStore") {
+                @Override
+                public boolean test(JavaClass origin) {
+                    return !origin.getName().equals(
+                                    "io.github.aindriub.dataprism.reidentification.ReidentificationService")
+                            && !origin.getName().equals(
+                                    "io.github.aindriub.dataprism.server.operator.OversightOperatorController")
+                            && !origin.isAssignableTo(ApprovalStore.class);
+                }
+            })
+            .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
+                    "is ApprovalStore.approve (call or method reference)") {
+                @Override
+                public boolean test(JavaAccess<?> access) {
+                    return access.getTarget().getOwner().isAssignableTo(ApprovalStore.class)
+                            && access.getTarget().getName().equals("approve");
+                }
+            })
+            .allowEmptyShould(true);
+
+    @Test
+    void onlyTheAuditingApproversCallApprove() {
+        ONLY_THE_AUDITING_APPROVERS_CALL_APPROVE.check(CLASSES);
+    }
+
+    @Test
+    void approveRuleCatchesACallFromAnotherClass() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(ApproveCallerFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> ONLY_THE_AUDITING_APPROVERS_CALL_APPROVE.check(fixture))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    /** What the rule above exists to stop: a class that is neither auditing approver nor store approves. */
+    static final class ApproveCallerFixture {
+        void approveWithoutAuditing(ApprovalStore store) {
+            store.approve("id", "approver", java.time.Instant.EPOCH);
+        }
     }
 
     /**
