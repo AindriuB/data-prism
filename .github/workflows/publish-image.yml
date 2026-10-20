@@ -518,7 +518,7 @@ jobs:
             echo "certs_init=$(cat "/tmp/digest-quickstart/certs-init-${ARCH}")"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
         if: >-
           github.event_name == 'workflow_dispatch' &&
           startsWith(github.ref, 'refs/tags/v')
@@ -790,7 +790,7 @@ jobs:
             echo "certs_init=$(docker buildx imagetools inspect "ghcr.io/aindriub/data-prism-quickstart-certs-init:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
 
       - name: Sign every manifest list
         env:
