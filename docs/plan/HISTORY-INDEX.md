@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-20 | recapture | Single-source HTTP examples in remote-http.md and protect-your-own-api.md re-captured against the Compose stack; tools/list is two tools; other fail-closed blocks not re-captured | `## 2026-10-20 — 0.7 HTTP examples re-captured` |
 | 2026-10-20 | 201 | 0.7 CHANGELOG `[Unreleased]` with 12 Breaking items, `docs/migration-0.7.md` by audience, architecture decisions; two review rounds (missed `embedded()` overload quorum, wrong startup-refusal scope); HTTP examples not re-captured | `## 2026-10-20 — 0.7 CHANGELOG, migration page and architecture entries (201)` |
 | 2026-10-20 | 233 | Cluster refusals surfaced: `CLUSTER_OPERATION_REFUSED` and `CLUSTER_LOCK_TIMEOUT` reach callers on tool, re-identification and operator paths; `ClusterOperationRefusedException` moved to core; `dataprism.hazelcast.approval-sweep-interval` (default `PT5M`) | `## 2026-10-20 — Cluster refusals reach callers and the approval sweep interval is bound (233)` |
 | 2026-10-20 | 200 | Contract register `docs/plan/design/contract-register.md`: 214 shipped codes, 30 enums, 251 closing-table names, 15 decisions (all decided), six successor tasks S1 to S6 | `## 2026-10-20 — Contract register for 0.7 to 0.9 (200)` |
