@@ -55,16 +55,24 @@ Every 0.7.0 task has landed on `plan/0.7.0`; task 201 (CHANGELOG, migration page
 
 #### 0.7.0 release gate
 
-Item 1 is done; the rest is not. The version bump must not happen without the owner's go.
+Item 1 is done; the rest is not. Item 6 (235) gates the release. The version bump must not happen without the owner's go.
 
 1. Done: the single-source HTTP example blocks in `docs/agents/remote-http.md` and `docs/protect-your-own-api.md` were re-captured against the Compose stack and the from-source walkthrough on 2026-10-20 (04720f98).
 2. Owner go/no-go for the version bump, tag and publish (D-0.6 rule: no version bump, tag, publish or release PR without the owner's explicit go).
 3. After publishing and before announcing, run task 188's five-step supply-chain verification (see its retired Outcome, "Release checklist for 0.7.0", and the checklist below). If any step fails, correct the CHANGELOG Security and Build lines and the migration page's "Verifying a release" section.
 4. The after-action report after the release, presented in chat and never committed.
 5. The version bump must also update the hard-coded jar version in `docs/protect-your-own-api.md` (`data-prism-connectors-rest-0.6.0.jar`, and "recorded against 0.6.0" in the paragraph under the captured block, which says 0.6.0 only because the version is not yet bumped) and the stale "0.3.0" proof-table row around line 590. Alternatively reword them to avoid a version. Required with the bump.
+6. Task 235 landed: unaudited approval decisions fixed before 0.7.0, per D-0.7-AUD-1 (below). Its plan branch `plan/235` (9c368b18) will be merged by the 235 record.
 
 Follow-ups from the re-capture (not release-blocking): the other fail-closed blocks on `docs/protect-your-own-api.md` (the `MISSING` and `UNSUPPORTED_IDENTITY_RESOLVER` refusals and the rest) were not re-captured against the real stack.
 
+
+Owner decision D-0.7-AUD-1 (accepted 2026-10-20): fix unaudited approval decisions before 0.7.0, through task 235, using design (a), audit-first. The plan branch `plan/235` (9c368b18) will be merged by the 235 record.
+
+Follow-ups from the cluster-refusal retry docs fix (0.8, none scheduled):
+
+- `forgetOne` aborts on `CLUSTER_OPERATION_REFUSED` while the other maps are already deleted. It fails closed, but unlike the `CLUSTER_LOCK_TIMEOUT` path.
+- `OversightOperatorController.resume` writes `ALLOW:RESUMED` before applying the resume, so a failure in a custom `OversightState` leaves a false `ALLOW` in the audit.
 
 Follow-ups from 234 (none scheduled):
 
