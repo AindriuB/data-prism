@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -37,15 +38,28 @@ class FailureScenarioTest {
     }
 
     @Test
-    void theTimeoutScenarioHasEverySourceSlowerThanThePerSourceTimeout() throws Exception {
+    void theTimeoutScenarioHasSomeSourcesSlowerThanThePerSourceTimeoutAndSomeFaster() throws Exception {
         Scenario scenario = scenario("failure-source-timeouts");
+        Duration timeout = seconds(scenario.limits().perSourceTimeout());
 
-        assertThat(Duration.ofMillis(scenario.sourceLatency().minMs()))
-                .isGreaterThan(seconds(scenario.limits().perSourceTimeout()));
+        assertThat(scenario.slowSources()).isPositive().isLessThan(scenario.sources());
+        assertThat(Duration.ofMillis(scenario.slowLatency().minMs())).isGreaterThan(timeout);
+        assertThat(Duration.ofMillis(scenario.sourceLatency().maxMs())).isLessThan(timeout);
         // The catalogue's own source timeout must not fire first, or the server-side limit is not what is measured.
-        assertThat(Duration.ofMillis(scenario.sourceLatency().maxMs())).isLessThan(Duration.ofSeconds(10));
-        assertThat(Duration.ofMillis(scenario.sourceLatency().maxMs()))
+        assertThat(Duration.ofMillis(scenario.slowLatency().maxMs())).isLessThan(Duration.ofSeconds(10));
+        assertThat(Duration.ofMillis(scenario.slowLatency().maxMs()))
                 .isLessThan(Duration.ofSeconds(scenario.load().callTimeoutSeconds()));
+        List<SourceDefinition> sources = SourceGenerator.generate(scenario);
+        assertThat(sources.stream().filter(s -> s.latencyMinMs() == scenario.slowLatency().minMs()).count())
+                .isEqualTo(scenario.slowSources());
+    }
+
+    @Test
+    void aCallInWhichEverySourceTimesOutIsRefusedAndReportsNoPerSourceStatus() {
+        CallOutcome outcome = ResponseClassifier.classify(error("refused: NO_SOURCE_DATA at PARCEL"), 1_000_000);
+
+        assertThat(outcome.refusalCode()).isEqualTo("NO_SOURCE_DATA");
+        assertThat(outcome.sourceStatuses()).isEmpty();
     }
 
     @Test
@@ -53,7 +67,7 @@ class FailureScenarioTest {
         scenario("failure-source-timeouts");
         ResultAggregator aggregator = new ResultAggregator();
         for (int call = 0; call < 3; call++) {
-            aggregator.record(ResponseClassifier.classify(sources(Map.of("s1", "TIMED_OUT", "s2", "TIMED_OUT")), 1_050_000));
+            aggregator.record(ResponseClassifier.classify(sources(Map.of("s1", "TIMED_OUT", "s2", "TIMED_OUT", "s3", "ANSWERED")), 1_050_000));
         }
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
@@ -61,6 +75,7 @@ class FailureScenarioTest {
         assertThat(summary.perSourceStatus().get("s1")).containsEntry("TIMED_OUT", 3L).containsEntry("ANSWERED", 0L);
         assertThat(summary.perSourceStatus().get("s2")).containsEntry("TIMED_OUT", 3L);
         assertThat(summary.totalStatus()).containsEntry("TIMED_OUT", 6L);
+        assertThat(summary.perSourceStatus().get("s3")).containsEntry("ANSWERED", 3L);
         assertThat(summary.sourcesNotAnswered()).isEqualTo(6);
         assertThat(summary.transportFailures()).isZero();
     }

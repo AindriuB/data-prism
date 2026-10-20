@@ -25,10 +25,15 @@ final class SourceGenerator {
         if (band.minMs() < 0 || band.maxMs() < band.minMs()) {
             throw new IllegalArgumentException("source latency band must satisfy 0 <= minMs <= maxMs");
         }
+        Scenario.Latency slow = scenario.slowLatency();
+        if (scenario.slowSources() > 0 && (slow.minMs() < 0 || slow.maxMs() < slow.minMs())) {
+            throw new IllegalArgumentException("slow latency band must satisfy 0 <= minMs <= maxMs");
+        }
         List<SourceDefinition> sources = new ArrayList<>(scenario.sources());
         for (int i = 1; i <= scenario.sources(); i++) {
             String name = String.format("depot-feed-%04d", i);
-            sources.add(new SourceDefinition(name, "/" + name + "/parcels/{subject}", band.minMs(), band.maxMs()));
+            Scenario.Latency own = i > scenario.sources() - scenario.slowSources() ? slow : band;
+            sources.add(new SourceDefinition(name, "/" + name + "/parcels/{subject}", own.minMs(), own.maxMs()));
         }
         return List.copyOf(sources);
     }

@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ResultWriterTest {
 
     private static final Scenario SCENARIO = new Scenario("t", 2, new Scenario.Latency(1, 2),
-            new Scenario.Load(1, 5, 0, 0, 0, 30, 0), Scenario.Limits.defaults(2), 1L);
+            new Scenario.Load(1, 5, 0, 0, 0, 30, 0), Scenario.Limits.defaults(2), 1L, 0, null);
 
     private static LoadDriver.Run run(ResultAggregator aggregator) {
         return new LoadDriver.Run(aggregator.summary(Duration.ofSeconds(10)), Duration.ofSeconds(12), 0,

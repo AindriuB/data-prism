@@ -140,6 +140,22 @@ class ScenarioTest {
     }
 
     @Test
+    void slowSourcesNeedABandAndMayNotExceedTheSourceCount() throws Exception {
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, """
+                {"name":"x","sources":5,"slowSources":2,"load":{"concurrency":1,"calls":3}}
+                """);
+        assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("slowLatency");
+
+        Files.writeString(file, """
+                {"name":"x","sources":5,"slowSources":6,"slowLatency":{"minMs":1,"maxMs":2},"load":{"concurrency":1,"calls":3}}
+                """);
+        assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("slowSources");
+    }
+
+    @Test
     void noShippedScenarioFileContainsAKeyOrToken() throws Exception {
         try (Stream<Path> files = Files.list(Path.of("scenarios"))) {
             for (Path file : files.toList()) {

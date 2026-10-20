@@ -23,8 +23,13 @@ import java.util.Map;
  * @param limits        the {@code dataprism.limits.*} the server is started with; omitted keys take the
  *                      framework default, except {@code max-sources}, which takes {@code sources}
  * @param seed          seeds the sources' latency sampling, so a run's source behaviour is reproducible
+ * @param slowSources   how many of the {@code sources} (the last ones) answer within {@code slowLatency} instead
+ *                      of {@code sourceLatency}; 0 means none. Lets a scenario time out some sources and not all
+ *                      (a call in which every source fails is refused, and reports no per-source statuses)
+ * @param slowLatency   the band the slow sources answer within; required when {@code slowSources} is above 0
  */
-public record Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed) {
+public record Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed,
+                       int slowSources, Latency slowLatency) {
 
     /** Uniform latency band, in milliseconds, each source responds within. */
     public record Latency(int minMs, int maxMs) { }
@@ -96,6 +101,12 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         }
         if (sourceLatency == null) {
             sourceLatency = new Latency(5, 25);
+        }
+        if (slowSources < 0 || slowSources > sources) {
+            throw new IllegalArgumentException("scenario slowSources must be between 0 and sources");
+        }
+        if (slowSources > 0 && slowLatency == null) {
+            throw new IllegalArgumentException("scenario slowSources needs a slowLatency band");
         }
         if (load == null || load.concurrency() <= 0) {
             throw new IllegalArgumentException("scenario load needs a concurrency of at least 1");
