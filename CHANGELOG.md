@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-20
+
 ### Breaking
 
 The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
@@ -1006,6 +1008,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.7.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.7.0
 [0.6.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.6.0
 [0.5.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.5.0
 [0.4.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.4.1
