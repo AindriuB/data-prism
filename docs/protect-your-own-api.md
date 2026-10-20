@@ -418,7 +418,7 @@ is redacted outright per its `action: REDACT`, and `status` passes through
 unchanged because the catalogue marked it `nonSensitive`. The subject itself
 (`SUBJ-VHK4SXCQ`) is a pseudonym too, not `1001`. This ran with
 `-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.7.0.jar`
-(recorded on 2026-10-20 against the 0.7.0 release source, before the version bump) alone — no second jar,
+(recorded on 2026-10-20 at commit 04720f98, on the pre-release 0.7 source; the jar was then named `-0.6.0.jar`, and the path above shows its 0.7.0 release name) alone — no second jar,
 no custom extension, no `IdentityResolver` bean compiled anywhere — and
 against the catalogue exactly as it is committed in
 `examples/json-sources/customer-api.yaml`, comments included: the transport
