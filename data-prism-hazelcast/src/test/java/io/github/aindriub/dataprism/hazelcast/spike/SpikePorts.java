@@ -14,7 +14,9 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 
 /**
- * Hands out loopback ports that no other build on this machine is given. Never derived from a clock.
+ * Hands out loopback ports that no other build on this machine is given. Never derived from a clock. A copy of the
+ * module's test helper, on 14000 to 18999 so it never overlaps the ports that helper hands out (20000 and up) in the
+ * same test JVM.
  */
 final class SpikePorts {
 
@@ -38,7 +40,7 @@ final class SpikePorts {
     private static synchronized int claimPorts(int count) {
         IOException last = null;
         for (int attempt = 0; attempt < 3; attempt++) {
-            int base = 20000 + PORT_CHOICE.nextInt(12000);
+            int base = 14000 + PORT_CHOICE.nextInt(5000);
             List<FileChannel> got = new ArrayList<>();
             try {
                 Files.createDirectories(PORT_CLAIMS);
