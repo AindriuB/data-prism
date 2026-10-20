@@ -304,8 +304,10 @@ committed the pending entry's lock), and ending a scope or forgetting its approv
   lock timeout, such as an unreachable cluster, still refuses the read as before.
 - Re-identification (request, approve and collect) answers `CLUSTER_LOCK_TIMEOUT`
   as its refusal code, audited as `DENY:CLUSTER_LOCK_TIMEOUT`, and the operator API
-  answers it with `503` and `{"code":"CLUSTER_LOCK_TIMEOUT"}` for approve, reject,
-  the pause endpoints and the re-identification endpoints. Earlier versions answered
+  answers it with `503` and `{"code":"CLUSTER_LOCK_TIMEOUT"}` for approve, reject
+  and the re-identification endpoints. The pause, resume, state and approval-read endpoints
+  can return it only with a custom `OversightState` or `ApprovalStore`: the shipped
+  Hazelcast pause state and the read paths take no lock. Earlier versions answered
   `REIDENTIFICATION_UNAVAILABLE` and `503 OVERSIGHT_UNAVAILABLE` there. Any other
   store failure still gets those two codes.
 
@@ -362,8 +364,9 @@ never its message. Every caller sees the code itself, as it sees
   is not a rejected lock, such as an unreachable cluster, still refuses the read as
   `SCOPE_READ_BUDGET`.
 - Re-identification answers it as its refusal code, and the operator API answers
-  `503` with `{"code":"CLUSTER_OPERATION_REFUSED"}` for approve, reject, the pause
-  endpoints and the re-identification endpoints.
+  `503` with `{"code":"CLUSTER_OPERATION_REFUSED"}` for approve, reject
+  and the re-identification endpoints. The pause, resume, state and approval-read
+  endpoints can return it only with a custom `OversightState` or `ApprovalStore`.
 
 Treat it as retry later, and tell an operator if it persists, after reading
 [what a cluster refusal leaves behind](#what-a-cluster-refusal-leaves-behind): not

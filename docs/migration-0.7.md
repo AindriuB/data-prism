@@ -295,8 +295,8 @@ Other changes you will see:
   the sweep interval beside an application-supplied `PrivacyCluster`.
 - The operator API answers `503` with `{"code":"CLUSTER_LOCK_TIMEOUT"}` or
   `{"code":"CLUSTER_OPERATION_REFUSED"}` where it answered
-  `503 OVERSIGHT_UNAVAILABLE` (approve, reject, pause, resume and the state and
-  approval reads) and `REIDENTIFICATION_UNAVAILABLE` (the re-identification
+  `503 OVERSIGHT_UNAVAILABLE` (approve and reject; pause, resume and the state and
+  approval reads can return them only with a custom `OversightState` or `ApprovalStore`) and `REIDENTIFICATION_UNAVAILABLE` (the re-identification
   endpoints). The denial is audited with that code. Any other failure keeps the
   old code. Update alerts and runbooks that match on `OVERSIGHT_UNAVAILABLE`.
 - Approving or rejecting no longer waits for ever, or reports failure after it
