@@ -153,8 +153,8 @@ separate application. Set `dataprism.operator.enabled=true` with `port`, `requir
 | `POST /operator/pause` | `{"target":"ALL"\|"TOOL"\|"SCOPE","name":"..."}`; `name` is required for `TOOL` and `SCOPE` and absent for `ALL` | 200 `{"status":"PAUSED","target":...}` | 400 `INVALID_REQUEST`, 503 `OVERSIGHT_UNAVAILABLE`, `AUDIT_UNAVAILABLE` |
 | `POST /operator/resume` | as `pause` | 200 `{"status":"RESUMED",...}` | as `pause` |
 | `GET /operator/state` | none | 200 `{"allPaused":bool,"pausedTools":[...],"pausedScopes":[...]}` | 503 |
-| `GET /operator/approvals` | none | 200 `{"approvals":[{approvalId, kind, requesterPrincipalId, requesterClientId, scopeId, tool, purpose, caseId, createdAt, expiresAt}]}`; a re-identification entry also carries `namespace` and `syntheticValue`. Never a subject id or a binding | 503 |
-| `GET /operator/approvals/{id}` | none | 200 the same view for one approval, of either kind | 404 `APPROVAL_NOT_FOUND`, 503 |
+| `GET /operator/approvals` | none | 200 `{"approvals":[{approvalId, kind, status, requesterPrincipalId, requesterClientId, scopeId, tool, purpose, caseId, createdAt, expiresAt}]}`; a re-identification entry also carries `namespace` and `syntheticValue`. Never a subject id or a binding | 503 |
+| `GET /operator/approvals/{id}` | none | 200 the same view for one approval, of either kind, whatever its status | 404 `APPROVAL_NOT_FOUND`, 503 |
 | `POST /operator/approvals/{id}/approve` | none | 200 `{"status":"APPROVED","approvalId":...}` for a tool-call approval | 404 `APPROVAL_NOT_FOUND`, 409 `APPROVAL_NOT_PENDING`, `APPROVAL_EXPIRED`, `SELF_APPROVAL`, 503 |
 | `POST /operator/approvals/{id}/reject` | none | 200 `{"status":"REJECTED",...}` | 404 `APPROVAL_NOT_FOUND`, 409 `APPROVAL_NOT_PENDING`, `APPROVAL_EXPIRED`, 503 |
 | `POST /operator/reidentifications` | `{"scopeId","namespace","syntheticValue","purpose","caseId"}`; `namespace` is a `PrivacyNamespace` name | 202 `{"status":"PENDING_APPROVAL","approvalId":...}`; 200 `{"status":"RESOLVED","subjectId":...}` with four-eyes off | 400 `INVALID_REQUEST`, `PURPOSE_REQUIRED`, `PURPOSE_NOT_ALLOWED`; 403 `REIDENTIFICATION_NOT_PERMITTED`; 404 `REIDENTIFICATION_NOT_FOUND`; 429 `TOO_MANY_PENDING`; 503 |
@@ -176,6 +176,13 @@ or case claim), `REIDENTIFICATION_DISABLED` (404, `dataprism.reidentification.en
 the approval list and in the detail carries the synthetic value and its namespace, with the requester,
 purpose, case and expiry. It never carries the subject id, which an approval has no field for. A
 tool-call approval carries neither a synthetic value nor a namespace.
+
+Every entry also carries `status`, the approval's effective status: `PENDING`, `APPROVED`,
+`REJECTED`, `CONSUMED` or `EXPIRED`. A request that is still stored as `PENDING` but whose expiry
+has passed is shown as `EXPIRED`, judged as the stores judge it (expired at the expiry instant
+itself). `GET /operator/approvals` lists only live pending approvals, so each entry there is
+`PENDING`; `GET /operator/approvals/{id}` shows an approval in any status, which is how an
+operator checks whether a decision applied. The view does not name the approver.
 
 The tool-call endpoints (`/operator/approvals/...`) act only on tool-call approvals; a
 re-identification approval is decided through `/operator/reidentifications/{id}/approve`, which

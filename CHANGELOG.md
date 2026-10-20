@@ -64,6 +64,7 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
 
 ### Added
 
+- The operator approval view (`GET /operator/approvals` and `GET /operator/approvals/{id}`) now carries `status`: `PENDING`, `APPROVED`, `REJECTED`, `CONSUMED` or `EXPIRED`. A stored `PENDING` past its expiry is shown as `EXPIRED`.
 - `dataprism.limits.max-sources`, `max-records`, `max-response-size`,
   `per-source-timeout`, `max-concurrency` and `scope-read-budget` set the request
   limits that were fixed at their defaults, which are unchanged. The per-source

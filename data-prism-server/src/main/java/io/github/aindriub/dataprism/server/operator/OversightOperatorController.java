@@ -66,14 +66,19 @@ final class OversightOperatorController {
      * What an approver sees. For a re-identification request that includes the synthetic value and its
      * namespace, so the approver can tell what is being asked for; the subject id is never part of an
      * approval and so never appears. Both are absent for a tool-call approval.
+     *
+     * <p>{@code status} is the effective status: a stored {@code PENDING} whose expiry has passed is shown as
+     * {@code EXPIRED}, judged as the stores judge it. The approver's identity is not part of the view.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record ApprovalView(String approvalId, String kind, String requesterPrincipalId, String requesterClientId,
-                        String scopeId, String tool, String purpose, String caseId, Instant createdAt,
-                        Instant expiresAt, String namespace, String syntheticValue) {
-        static ApprovalView of(ApprovalRequest a) {
+    record ApprovalView(String approvalId, String kind, String status, String requesterPrincipalId,
+                        String requesterClientId, String scopeId, String tool, String purpose, String caseId,
+                        Instant createdAt, Instant expiresAt, String namespace, String syntheticValue) {
+        static ApprovalView of(ApprovalRequest a, Instant now) {
             boolean reidentification = a.kind() == Kind.REIDENTIFICATION;
-            return new ApprovalView(a.approvalId(), a.kind().name(), a.requesterPrincipalId(),
+            boolean lapsed = a.status() == ApprovalRequest.Status.PENDING && !now.isBefore(a.expiresAt());
+            String status = lapsed ? ApprovalRequest.Status.EXPIRED.name() : a.status().name();
+            return new ApprovalView(a.approvalId(), a.kind().name(), status, a.requesterPrincipalId(),
                     a.requesterClientId(), a.scopeId(), a.tool(), a.purpose(), a.caseId(), a.createdAt(),
                     a.expiresAt(), reidentification ? a.namespace() : null,
                     reidentification ? a.syntheticValue() : null);
@@ -140,7 +145,8 @@ final class OversightOperatorController {
             throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, unavailableCode(unavailable));
         }
         // Never the binding fingerprint, and never a subject id (an approval has no field for one).
-        return Map.of("approvals", pending.stream().map(ApprovalView::of).toList());
+        Instant now = clock.instant();
+        return Map.of("approvals", pending.stream().map(a -> ApprovalView.of(a, now)).toList());
     }
 
     @GetMapping("/operator/approvals/{id}")
@@ -159,7 +165,7 @@ final class OversightOperatorController {
             throw new OperatorException(HttpStatus.NOT_FOUND, "APPROVAL_NOT_FOUND");
         }
         audit.record(caller, "approval", found.tool(), found.scopeId(), "ALLOW:READ", id, "");
-        return ApprovalView.of(found);
+        return ApprovalView.of(found, clock.instant());
     }
 
     @PostMapping("/operator/approvals/{id}/approve")
