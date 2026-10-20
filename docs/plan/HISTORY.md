@@ -17,6 +17,10 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-20 — 236: operator approval view carries status
+The operator `ApprovalView` now carries an effective `status` (PENDING, APPROVED, REJECTED, CONSUMED, EXPIRED). A stored PENDING at or past its expiry is shown as EXPIRED, so the retry check documented in `docs/multiple-instances.md` can actually be performed from `GET /operator/approvals`. This is owner decision D-0.7-OPS-1.
+**Cost:** Found by a PR #137 review of the retry guidance, which pointed at a field the view did not have. The status is computed at read time and the stored value is not changed, so do not expect EXPIRED to appear in the store or the cluster map. Verified on the merge: 2061 surefire and 17 failsafe tests, 0 failures; release package, load-test verify, strict docs build and the six docs hooks pass. The contract-register `ApprovalRequest.Kind` row now cites OversightOperatorController.java:81 and HazelcastApprovalStore.java:726.
+
 ## 2026-10-20 — 235: approval decisions are audit-first
 Approval decisions now follow D-0.7-AUD-1, design (a). `ALLOW:APPROVED` is written before the commit, and when the decision does not apply a `DENY` is written and linked to it by correlation id and approval id. The swallowed undo is removed, an unknown outcome is re-read with `find` before auditing, and there are two new metrics and an `ArchitectureTest` rule that enforces the order.
 **Cost:** Found while reviewing PR #137's docs. On the old code, an audit outage plus a failed undo let `collect` resolve the identity with no audit record of the approval. The bug hunt was clean, and two guard tests were added for the `applied()` filters and the cluster-refusal link. Three deviations were accepted (the `denialAuditDown` test flag, the `denied`/`refusalOf` split, a second `ReidentificationService` constructor), as was widening the approve row in `docs/multiple-instances.md`. Verified on the merge: 2001 surefire and 17 failsafe tests, 0 failures. Open follow-ups are listed in PLAN.md.

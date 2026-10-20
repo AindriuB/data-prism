@@ -69,6 +69,8 @@ Follow-ups from the re-capture (not release-blocking): the other fail-closed blo
 
 Owner decision D-0.7-AUD-1 (accepted 2026-10-20): fix unaudited approval decisions before 0.7.0, through task 235, using design (a), audit-first. Landed 2026-10-20.
 
+Owner decision D-0.7-OPS-1 (accepted 2026-10-20): the operator `ApprovalView` carries an effective `status`, with a stored PENDING at or past expiry shown as EXPIRED (task 236). It answers a PR #137 review finding and makes the retry check in `docs/multiple-instances.md` work. Landed 2026-10-20.
+
 Follow-ups from 235 (found in its review, none scheduled):
 
 - P3: a lease expiring mid-decide can make `committed()` false after a commit that applied, producing a `DENY:APPROVAL_NOT_PENDING` that understates what happened. This existed before 235.
