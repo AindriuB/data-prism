@@ -3,8 +3,8 @@
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 208 has merged
-**Depends on:** 208 (208 owns `SensitivePatternValidator.java` and the recogniser cases of `PatternValidatorWiringTest`)
-**Wave:** 1 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Depends on:** 208 (208 owns `SensitivePatternValidator.java` and the recogniser cases of `PatternValidatorWiringTest`), 223 (and through it 222)
+**Wave:** 5 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/RawValueLeakValidator.java *(the path-redaction step only)*
 - data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/SensitivePatternValidator.java *(the path-redaction step only)*
@@ -17,7 +17,7 @@
 Two small validation follow-ups. Task 194 made both leak validators scan property names, and each reports a flagged name as `<undeclared>`; but a violation path produced by one validator can still contain a name only the other flagged, and only `RefusalPaths.redact` in the orchestrator stops it reaching a refusal. Make each validator redact, in its own paths, every name either validator flags, so the guarantee holds without the orchestrator. Separately, task 209's two wiring tests assert a refusal but not that `SENSITIVE_PATTERN` is the first violation.
 
 ## Context
-- No dependency on sealed-cluster tasks 222 or 223 is needed, although their Owns globs cover `data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/*.java`. 222 edits only contexts that start a `tcp-ip` or `kubernetes` join, and 223 only expressions that build a raw map or lock key. `PatternValidatorWiringTest` starts `single-node` and builds no map key, and this task must add neither.
+- Serialised after 222 and 223 because their Owns globs cover `PatternValidatorWiringTest.java`.
 - docs/plan/HISTORY.md, "## 2026-10-19 — Key-shape scan in the leak validators (194)": the follow-up as recorded.
 - docs/plan/HISTORY.md, "## 2026-10-20 — Sensitive-pattern validator wired into every Spring-built orchestrator (209)": the missing first-violation assertion.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/refusal/RefusalPaths.java: the orchestrator-side redaction, which stays.

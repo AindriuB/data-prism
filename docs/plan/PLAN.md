@@ -63,11 +63,11 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 
 | Wave | Briefs |
 |---|---|
-| 1 | 218, 219, 238, 239, 243, 256, 258, 259 |
+| 1 | 218, 219, 238, 239, 243, 258, 259 |
 | 2 | 220, 221, 240 |
 | 3 | 222, 242, 244, 248, 257 |
 | 4 | 223, 241 |
-| 5 | 224, 225, 226, 227, 245 |
+| 5 | 224, 225, 226, 227, 245, 256 |
 | 6 | 228, 246, 262 |
 | 7 | 229, 247 |
 | 8 | 249, 250, 251 |
@@ -75,9 +75,9 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 10 | 253 |
 | 11 | 255 |
 | 12 | 230 |
-| 13 | 231, 260, 261, 264 |
-| 14 | 263 |
-| last | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
+| 13 | 231, 261, 264 |
+| 14 | 260, 263 |
+| last (14) | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
 
 Owner decisions that change behaviour and belong in `docs/migration-0.8.md`: the cutover is non-rolling and refuses `UNSEALED_CLUSTER_STATE` (cached state is fetched again, pending approvals must be requested again); `dataprism.limits.scope-read-budget` stays 100 but now counts source reads; the new defaults are `request-timeout` `PT10S` and `scope-total-read-budget` 50,000; `SKIPPED_OVER_LIMIT` is removed before the 0.9 freeze (Breaking in `CHANGELOG.md` when built); a missing shared link limiter refuses with `MISSING_SHARED_LINK_LIMITER`. Per-instance weakening of the link limiter is excluded.
 
