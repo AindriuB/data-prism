@@ -1,0 +1,15 @@
+{
+  "name": "failure-source-timeouts",
+  "sources": 8,
+  "sourceLatency": { "minMs": 2500, "maxMs": 3500 },
+  "load": { "concurrency": 4, "calls": 60, "warmupCalls": 4, "ratePerSecond": 0, "callTimeoutSeconds": 60 },
+  "limits": {
+    "maxSources": 8,
+    "maxRecords": 500,
+    "maxResponseSize": "512KB",
+    "perSourceTimeout": "1s",
+    "maxConcurrency": 8,
+    "scopeReadBudget": 100
+  },
+  "seed": 258
+}

@@ -12,7 +12,7 @@ class SourceGeneratorTest {
 
     private static Scenario scenario(int sources, int minMs, int maxMs) {
         return new Scenario("t", sources, new Scenario.Latency(minMs, maxMs),
-                new Scenario.Load(2, 10, 0, 0, 0, 30), Scenario.Limits.defaults(sources), 7L);
+                new Scenario.Load(2, 10, 0, 0, 0, 30, 0), Scenario.Limits.defaults(sources), 7L);
     }
 
     @Test

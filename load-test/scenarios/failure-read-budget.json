@@ -1,0 +1,16 @@
+{
+  "name": "failure-read-budget",
+  "sources": 4,
+  "sourceLatency": { "minMs": 5, "maxMs": 25 },
+  "load": { "concurrency": 2, "calls": 200, "warmupCalls": 0, "ratePerSecond": 0, "subjectPool": 5,
+            "callTimeoutSeconds": 60 },
+  "limits": {
+    "maxSources": 4,
+    "maxRecords": 500,
+    "maxResponseSize": "512KB",
+    "perSourceTimeout": "3s",
+    "maxConcurrency": 4,
+    "scopeReadBudget": 10
+  },
+  "seed": 258
+}

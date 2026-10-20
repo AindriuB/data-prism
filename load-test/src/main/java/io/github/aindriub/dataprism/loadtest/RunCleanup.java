@@ -3,6 +3,7 @@ package io.github.aindriub.dataprism.loadtest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
@@ -13,12 +14,21 @@ import java.util.Deque;
  */
 final class RunCleanup implements Runnable {
 
+    /** The longest any one thing may take to close before cleanup carries on without it. */
+    static final Duration CLOSE_BOUND = Duration.ofSeconds(30);
+
     private final Path dir;
+    private final Duration closeBound;
     private final Deque<AutoCloseable> started = new ArrayDeque<>();
     private boolean begun;
 
     RunCleanup(Path dir) {
+        this(dir, CLOSE_BOUND);
+    }
+
+    RunCleanup(Path dir, Duration closeBound) {
         this.dir = dir;
+        this.closeBound = closeBound;
     }
 
     /**
@@ -54,12 +64,15 @@ final class RunCleanup implements Runnable {
         }
     }
 
-    private static void closeQuietly(AutoCloseable closeable) {
-        try {
-            closeable.close();
-        } catch (Exception ignored) {
-            // Best effort: keep stopping the rest.
-        }
+    /** Best effort, and bounded: a close that hangs is abandoned so the rest still stop and the JVM can exit. */
+    private void closeQuietly(AutoCloseable closeable) {
+        Bounded.run(() -> {
+            try {
+                closeable.close();
+            } catch (Exception ignored) {
+                // Best effort: keep stopping the rest.
+            }
+        }, closeBound);
     }
 
     private synchronized AutoCloseable pop() {

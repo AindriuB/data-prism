@@ -30,7 +30,11 @@ final class ResponseClassifier {
         if (Boolean.TRUE.equals(result.isError())) {
             return CallOutcome.refused(latencyMicros, refusalCode(firstText(result)));
         }
-        return CallOutcome.completed(latencyMicros, sourceStatuses(result));
+        Map<String, String> statuses = sourceStatuses(result);
+        if (statuses == null) {
+            return CallOutcome.transportFailure("UnparseableBody", FailureCause.UNPARSEABLE_BODY);
+        }
+        return CallOutcome.completed(latencyMicros, statuses);
     }
 
     private static String refusalCode(String text) {
@@ -45,6 +49,7 @@ final class ResponseClassifier {
         return denial.matches() ? denial.group(1) : UNCLASSIFIED;
     }
 
+    /** The statuses, or {@code null} when the response holds no {@code sources} object to read them from. */
     private static Map<String, String> sourceStatuses(McpSchema.CallToolResult result) {
         JsonNode sources = null;
         if (result.structuredContent() != null) {
@@ -59,10 +64,11 @@ final class ResponseClassifier {
                 }
             }
         }
-        Map<String, String> statuses = new LinkedHashMap<>();
-        if (sources != null && sources.isObject()) {
-            sources.properties().forEach(entry -> statuses.put(entry.getKey(), entry.getValue().path("status").asString("")));
+        if (sources == null || !sources.isObject()) {
+            return null;
         }
+        Map<String, String> statuses = new LinkedHashMap<>();
+        sources.properties().forEach(entry -> statuses.put(entry.getKey(), entry.getValue().path("status").asString("")));
         return statuses;
     }
 

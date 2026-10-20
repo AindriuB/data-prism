@@ -50,8 +50,9 @@ public final class LoadTestMain {
             System.out.println("scenario " + scenario.name() + ": " + sources.size() + " sources, starting server");
             try (ServerProcess server = ServerProcess.start(repoRoot, workDir, resultsDir, catalogue, issuer, scenario, cleanup)) {
                 System.out.println("server healthy; driving " + scenario.load());
-                String token = issuer.mintToken(Duration.ofHours(12));
-                LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), token, scenario).run();
+                CredentialRotation credentials = new CredentialRotation(issuer::mintToken,
+                        TokenIssuer.TOKEN_LIFETIME, ServerProcess.SCOPE_LIFETIME, System::nanoTime);
+                LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), credentials, scenario).run();
                 Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
                         !git(repoRoot, "status", "--porcelain").isBlank(), run);
                 System.out.println("wrote " + file);

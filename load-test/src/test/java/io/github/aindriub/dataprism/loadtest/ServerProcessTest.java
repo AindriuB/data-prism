@@ -27,6 +27,21 @@ class ServerProcessTest {
     }
 
     @Test
+    void theLogMayListSeveralConnectorsInAnyOrder() throws Exception {
+        Path log = dir.resolve("server.log");
+        Files.writeString(log, "Tomcat started on ports 8443 (https), 41234 (http) with context path '/'\n");
+        assertThat(ServerProcess.logShowsPort(log, 41234)).isTrue();
+        assertThat(ServerProcess.logShowsPort(log, 8443)).isTrue();
+        assertThat(ServerProcess.logShowsPort(log, 4123)).isFalse();
+        assertThat(ServerProcess.logShowsPort(log, 443)).isFalse();
+
+        Files.writeString(log, "Tomcat started on ports 41234 (http), 8443 (https)\n");
+        assertThat(ServerProcess.logShowsPort(log, 41234)).isTrue();
+        assertThat(ServerProcess.logShowsPort(log, 8443)).isTrue();
+        assertThat(ServerProcess.logShowsPort(log, 9999)).isFalse();
+    }
+
+    @Test
     void aCommandThatNeverEndsIsAbandonedAtTheBoundAndKilled() {
         long started = System.nanoTime();
 

@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -25,6 +26,9 @@ import java.util.stream.Stream;
  * <p>The HMAC key is random per run and reaches the server only through the child's environment.
  */
 final class ServerProcess implements AutoCloseable {
+
+    /** The privacy scope lifetime the server is started with; a long run rotates its scope before this ends. */
+    static final Duration SCOPE_LIFETIME = Duration.ofHours(8);
 
     static final String HMAC_ENV = "DATAPRISM_LOADTEST_HMAC_KEY";
 
@@ -72,7 +76,7 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
                 "--dataprism.identity.resolver=pass-through",
                 "--dataprism.privacy.profile=DEFAULT",
-                "--dataprism.privacy.scope-lifetime=8h",
+                "--dataprism.privacy.scope-lifetime=" + SCOPE_LIFETIME.toHours() + "h",
                 "--dataprism.privacy.hmac-key.key-id=loadtest-v1",
                 "--dataprism.privacy.hmac-key.environment-variable=" + HMAC_ENV,
                 "--dataprism.audit.sink=slf4j",
@@ -211,10 +215,26 @@ final class ServerProcess implements AutoCloseable {
         throw new IOException("server not healthy within " + timeout + "; see " + logFile + "\n" + tail(40));
     }
 
-    /** Whether the server log says the web server started on {@code port}. */
+    private static final Pattern STARTED = Pattern.compile("started on ports?\\s+([^\\n]*)");
+    private static final Pattern CONNECTOR_PORT = Pattern.compile("(\\d+)\\s*\\(");
+
+    /**
+     * Whether the server log says the web server started on {@code port}. Spring Boot lists every connector on
+     * one line ({@code started on ports 8443 (https), 41234 (http)}), so a server with more than one connector
+     * is matched on any of them.
+     */
     static boolean logShowsPort(Path log, int port) {
         try {
-            return Pattern.compile("started on port\\s+" + port + "\\b").matcher(Files.readString(log)).find();
+            Matcher started = STARTED.matcher(Files.readString(log));
+            while (started.find()) {
+                Matcher connector = CONNECTOR_PORT.matcher(started.group(1));
+                while (connector.find()) {
+                    if (connector.group(1).equals(String.valueOf(port))) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         } catch (IOException | RuntimeException unreadable) {
             return false;
         }

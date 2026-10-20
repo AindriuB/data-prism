@@ -81,11 +81,33 @@ class ResponseClassifierTest {
     }
 
     @Test
-    void aResponseWithNoSourcesAndNoErrorIsAMalformedCompletion() {
+    void aResponseWithNoSourcesAndNoErrorIsAFailedCallWithAnUnparseableBody() {
         CallOutcome outcome = ResponseClassifier.classify(ok(Map.of("entityType", "PARCEL")), 1);
+
+        assertThat(outcome.completed()).isFalse();
+        assertThat(outcome.failureCause()).isEqualTo(FailureCause.UNPARSEABLE_BODY);
+    }
+
+    @Test
+    void textThatIsNotJsonIsAnUnparseableBody() {
+        McpSchema.CallToolResult result = McpSchema.CallToolResult.builder().addTextContent("not json at all").build();
+
+        assertThat(ResponseClassifier.classify(result, 1).failureCause()).isEqualTo(FailureCause.UNPARSEABLE_BODY);
+    }
+
+    @Test
+    void anEmptySourcesObjectIsAnAnsweredCallWithNoSources() {
+        CallOutcome outcome = ResponseClassifier.classify(ok(Map.of("sources", Map.of())), 1);
 
         assertThat(outcome.completed()).isTrue();
         assertThat(outcome.sourceStatuses()).isEmpty();
-        assertThat(outcome.refusalCode()).isNull();
+    }
+
+    @Test
+    void resolverFailedIsReadLikeAnyOtherStatus() {
+        CallOutcome outcome = ResponseClassifier.classify(
+                ok(Map.of("sources", Map.of("a", Map.of("status", "RESOLVER_FAILED")))), 1);
+
+        assertThat(outcome.sourceStatuses()).containsEntry("a", "RESOLVER_FAILED");
     }
 }

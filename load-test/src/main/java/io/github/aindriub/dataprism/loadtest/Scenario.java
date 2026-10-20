@@ -36,9 +36,11 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
      * @param ratePerSecond  target start rate across all callers; 0 means unpaced
      * @param durationSeconds measured run length; 0 means run for {@code calls}
      * @param callTimeoutSeconds how long the client waits for one call before counting a transport failure
+     * @param subjectPool    0 asks for a different subject on every call; above 0 the calls cycle through that many
+     *                       subjects, so the per-subject read budget is reached
      */
     public record Load(int concurrency, int calls, int warmupCalls, int ratePerSecond, int durationSeconds,
-                       int callTimeoutSeconds) {
+                       int callTimeoutSeconds, int subjectPool) {
         public Load {
             callTimeoutSeconds = callTimeoutSeconds <= 0 ? 30 : callTimeoutSeconds;
         }
@@ -79,6 +81,9 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         }
     }
 
+    /** The longest run: past it the credential rotation has not been shown to hold. */
+    public static final int MAX_DURATION_SECONDS = 24 * 60 * 60;
+
     private static final java.util.regex.Pattern SAFE_NAME = java.util.regex.Pattern.compile("[a-z0-9][a-z0-9-]*");
 
     public Scenario {
@@ -96,10 +101,15 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
             throw new IllegalArgumentException("scenario load needs a concurrency of at least 1");
         }
         for (var field : Map.of("calls", load.calls(), "warmupCalls", load.warmupCalls(),
-                "ratePerSecond", load.ratePerSecond(), "durationSeconds", load.durationSeconds()).entrySet()) {
+                "ratePerSecond", load.ratePerSecond(), "durationSeconds", load.durationSeconds(),
+                "subjectPool", load.subjectPool()).entrySet()) {
             if (field.getValue() < 0) {
                 throw new IllegalArgumentException("scenario load." + field.getKey() + " must not be negative");
             }
+        }
+        if (load.durationSeconds() > MAX_DURATION_SECONDS) {
+            throw new IllegalArgumentException("scenario load.durationSeconds must not exceed 24 hours ("
+                    + MAX_DURATION_SECONDS + " s)");
         }
         if (load.calls() <= 0 && load.durationSeconds() <= 0) {
             throw new IllegalArgumentException("scenario load needs calls or durationSeconds");
