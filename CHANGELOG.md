@@ -185,9 +185,10 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
   keyed by an email address or other identifier is refused even under a
   Java-built `PASS_THROUGH_UNSAFE` profile. A flagged name is reported as
   `<undeclared>`. A key that matches no known identifier shape still passes.
-- Every pushed image digest (including the manifest lists and the four
-  quickstart images) is signed keylessly with cosign, and images, jars and
-  release assets carry GitHub build-provenance attestations. See
+- For all five images (the server and the four quickstart images), each
+  image's manifest list and per-architecture build index are signed
+  keylessly with cosign, and images, jars and release assets carry GitHub
+  build-provenance attestations. See
   `docs/verifying-releases.md`.
 - A failed audit write on an approve could leave a usable but unaudited approval,
   because the undo could itself fail. Re-identification and tool-call approvals now

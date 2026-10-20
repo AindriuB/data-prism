@@ -368,9 +368,10 @@ See [Running more than one instance](multiple-instances.md).
 
 ## Verifying a release
 
-From 0.7.0 the release pipeline signs every pushed image digest keylessly with
-cosign, attaches GitHub build-provenance attestations to images, jars and
-release assets, and attaches a CycloneDX SBOM to every module published to
+From 0.7.0 the release pipeline signs each image's manifest list and
+per-architecture build index keylessly with cosign (v3 or later to verify),
+attaches GitHub build-provenance attestations to images, jars and release
+assets, and attaches a CycloneDX SBOM to every module published to
 Maven Central and to the GitHub Release. Images also carry BuildKit SBOM and
 provenance attestations. How to check each is in
 [Verifying a release](verifying-releases.md).
