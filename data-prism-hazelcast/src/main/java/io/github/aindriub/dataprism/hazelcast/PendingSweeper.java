@@ -1,6 +1,5 @@
 package io.github.aindriub.dataprism.hazelcast;
 
-import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
 import org.slf4j.Logger;
@@ -9,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -31,9 +31,13 @@ final class PendingSweeper implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(PendingSweeper.class);
 
-    /** The Hazelcast config property that sets the sweep interval, in seconds. */
-    static final String INTERVAL_PROPERTY = "dataprism.approval.pending.sweep-seconds";
+    /** The shortest interval between sweeps. */
+    static final Duration MIN_INTERVAL = Duration.ofSeconds(1);
 
+    /** The longest interval between sweeps. */
+    static final Duration MAX_INTERVAL = Duration.ofDays(1);
+
+    /** The interval when none is given. */
     static final Duration DEFAULT_INTERVAL = Duration.ofMinutes(5);
 
     /** How long past its expiry an id stays counted, which covers clock differences between callers. */
@@ -57,24 +61,18 @@ final class PendingSweeper implements AutoCloseable {
     }
 
     /**
-     * The interval a config asks for.
+     * The interval itself, once checked to lie in {@code PT1S..P1D}.
      *
-     * @throws IllegalArgumentException if the property is not a positive whole number of seconds
+     * @throws NullPointerException     if it is null
+     * @throws IllegalArgumentException if it is outside that range
      */
-    static Duration intervalOf(Config config) {
-        String raw = config.getProperty(INTERVAL_PROPERTY);
-        if (raw == null || raw.isBlank()) {
-            return DEFAULT_INTERVAL;
+    static Duration checked(Duration interval) {
+        Objects.requireNonNull(interval, "approvalSweepInterval");
+        if (interval.compareTo(MIN_INTERVAL) < 0 || interval.compareTo(MAX_INTERVAL) > 0) {
+            throw new IllegalArgumentException(
+                    "approval sweep interval must be between " + MIN_INTERVAL + " and " + MAX_INTERVAL);
         }
-        try {
-            long seconds = Long.parseLong(raw.strip());
-            if (seconds >= 1 && seconds <= Duration.ofDays(1).toSeconds()) {
-                return Duration.ofSeconds(seconds);
-            }
-        } catch (NumberFormatException notANumber) {
-            // fall through
-        }
-        throw new IllegalArgumentException(INTERVAL_PROPERTY + " must be a whole number of seconds from 1 to 86400");
+        return interval;
     }
 
     /** One sweep of the pending keys this member owns; returns how many ids it removed. */

@@ -362,7 +362,10 @@ class ApprovalRetentionTest {
             try (PrivacyCluster built = PrivacyCluster.embedded(membership, false, OptionalInt.empty(), good)) {
                 assertThat(built.approvalSweepInterval()).isEqualTo(good);
             }
-            try (PrivacyCluster wrapped = PrivacyCluster.using(cluster.instance(), false, good)) {
+            int otherPort = FreePorts.consecutive(1);
+            try (PrivacyCluster other = TestMembers.member(TestMembers.uniqueName("sweep-using"), otherPort,
+                    List.of("127.0.0.1:" + otherPort), OptionalInt.empty());
+                 PrivacyCluster wrapped = PrivacyCluster.using(other.instance(), false, good)) {
                 assertThat(wrapped.approvalSweepInterval()).isEqualTo(good);
             }
         }
