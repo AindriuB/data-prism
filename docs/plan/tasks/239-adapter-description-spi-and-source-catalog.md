@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main`
 **Depends on:** none
-**Wave:** 1 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
+**Wave:** 1 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/DataSourceAdapter.java *(the `description()` default method and its Javadoc only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/DataRequest.java *(the `keyNamespace` component, its default and its wither only)*

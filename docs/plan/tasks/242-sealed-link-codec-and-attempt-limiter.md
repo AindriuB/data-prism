@@ -4,7 +4,7 @@
 **Release:** 0.8.0 (links stay off by default through 0.9, sealed-links OD-7)
 **Base branch:** `origin/main` once task 220 (`plan/0.8-sealed-cluster`) has merged
 **Depends on:** 220 (`LabelledHkdf` in `core.crypto`, which 220 builds to serve the link design unchanged)
-**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
+**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/** *(new package)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/** *(new)*
@@ -27,7 +27,7 @@ A link is the one new authority object in 0.8 and the one place new cryptography
 - `FollowPayload`: link id, issue time, key namespace, optional resolver name, chained key, target label, relation. `CatalogPagePayload`: link id, issue time, entity-type filter, key-namespace filter, label kind, page size, last label, catalog tag.
 - `LinkKeys`: per-scope `fingerprint(byte[])` (12 bytes, for item ordering and duplicate collapse), `catalogTag(List<String> labels)` (16 bytes), `attemptCounterKey(scopeId, principalId)`; `heldKeyIds()` for health (255).
 - `LinkReason`: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED` (counted); `EXPIRED`, `ISSUED_IN_FUTURE`, `WRONG_TOOL`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `PAYLOAD_MISMATCH`, `ORIGIN_DRIFT`, `FILTER_MISMATCH`, `LABELS_CHANGED`, `CATALOG_CHANGED` (never counted). Each maps to the audit value `REFUSED:LINK_<REASON>`.
-- `LinkAttemptLimiter` SPI: `boolean locked(String counterKey)`, `void recordFailure(String counterKey)`; `InMemoryLinkAttemptLimiter(int limit, Duration window, Clock clock)`.
+- `LinkAttemptLimiter` SPI: `boolean locked(String counterKey)`, `void recordFailure(String counterKey)`, `default boolean clusterWide()` returning `false` (255's startup check reads it; the sealed-cluster Hazelcast limiter of task 264 returns `true`); `InMemoryLinkAttemptLimiter(int limit, Duration window, Clock clock)`, which is not cluster-wide.
 - `LinkSettings`: key id, lifetime (a duration or `scope`), max length, bind caller, clock skew; validated in its constructor (bound in 254 and 255).
 
 ## Acceptance
@@ -42,14 +42,14 @@ A link is the one new authority object in 0.8 and the one place new cryptography
 - [ ] Padding: chained keys of 1 and 64 bytes give tokens of equal length, 65 bytes gives the next bucket, and 257 bytes gives no link. The raw bytes before base64url contain neither the chained key nor any subject id. A test opens the payload with the test key and finds only the padded chained key.
 - [ ] Size: a test recomputes the worst-case follow link (616 characters) and the worst-case page link from the layout constants and asserts both are at most the 1024 default.
 - [ ] 100,000 seals under one derived key produce no repeated nonce.
-- [ ] Limiter: only counted reasons are recorded; at `limit` failures the counter key is locked, including for valid links; another principal's key and the same principal in another scope are unaffected; increments do not extend the window. Whether the window has ended is decided by comparing the stored window start with the injected `Clock`, never by an entry expiring. Sixteen threads recording concurrently lose no count and lock exactly at the limit. The counter key contains neither the scope id nor the principal id. Memory is bounded: an entry past its window is dropped on the next access or sweep.
+- [ ] Limiter: only counted reasons are recorded; at `limit` failures the counter key is locked, including for valid links; another principal's key and the same principal in another scope are unaffected; increments do not extend the window. Whether the window has ended is decided by comparing the stored window start with the injected `Clock`, never by an entry expiring. Sixteen threads recording concurrently lose no count and lock exactly at the limit. The counter key contains neither the scope id nor the principal id. Memory is bounded: an entry past its window is dropped on the next access or sweep. `clusterWide()` is `false` for `InMemoryLinkAttemptLimiter` and for an implementation that does not override it.
 - [ ] No token, payload, chained key, fingerprint or key byte appears in an exception message, `toString()` or log line (sentinel tests in every failure path).
 - [ ] `LinkArchitectureTest` (new file) fails when a class outside `core.link` and the cluster sealing package of task 220 calls `Cipher.getInstance` with an `AES/GCM` transformation; when `core.link` depends on `data-prism-reidentification` or `data-prism-hazelcast`; and when a class in `mcp` or `connectors` depends on `core.link`. Nested fixtures prove each rule can fail.
 - [ ] A whole-component bug hunt over `core.link` (concurrency of the limiter, oracle uniformity, boundary leaks) runs before merge; each finding is fixed or filed and named in the Outcome.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-architecture -am verify` passes.
 
 ## Out of scope
-- A shared, cluster-wide limiter (OD-08-2; cluster work).
+- A shared, cluster-wide limiter (OD-08-2 (a); sealed-cluster task 264, which implements this SPI).
 - Building links from records (251), following them (252), paging `list_sources` (250).
 - Spring properties and key resolution from configuration (254, 255).
 - The collection-page and group payloads (0.9).

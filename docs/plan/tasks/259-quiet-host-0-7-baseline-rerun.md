@@ -5,7 +5,7 @@
 **Executor:** the owner, or an agent on a dedicated host with no other workload. Not a shared CI runner.
 **Base branch:** `origin/main`; the measured code and harness are the `v0.7.0` tag
 **Depends on:** none
-**Wave:** 1 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
+**Wave:** 1 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - load-test/baselines/0.7-quiet/** *(new)*
 - docs/plan/perf/baseline-0.7-quiet.md *(new)*

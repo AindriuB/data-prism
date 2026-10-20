@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 239, 244 and 220 have merged
 **Depends on:** 239 (`KeyNamespace`), 244 (both insert into `Metric.java` and `PrivacyMetricsTest`), 220 (sealed-cluster plan; 220 inserts every `dataprism.cluster.*` constant into the same `Metric.java` and `PrivacyMetricsTest.java`, so the three insertions land in order)
-**Wave:** 4 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
+**Wave:** 4 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/KeyResolver.java *(new; `Resolution` is a nested record)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/ResolutionContext.java *(new)*

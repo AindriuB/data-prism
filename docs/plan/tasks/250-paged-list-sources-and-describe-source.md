@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 241, 242, 247, 248 and 203 have merged
 **Depends on:** 241 (the `PAGING_PAGES` constant), 242 (page links, limiter), 247 (labels, visibility, `names`), 248 (`describe`), 203 (203 owns `CapabilityKnownSetTest` and `ExampleApplication.java`)
-**Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
+**Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/catalog/CatalogQueries.java *(new)*
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/catalog/CatalogPage.java *(new)*
