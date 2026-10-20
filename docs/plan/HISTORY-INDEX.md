@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-20 | 200 | Contract register `docs/plan/design/contract-register.md`: 214 shipped codes, 30 enums, 251 closing-table names, 15 decisions (all decided), six successor tasks S1 to S6 | `## 2026-10-20 — Contract register for 0.7 to 0.9 (200)` |
 | 2026-10-20 | 199 | First load baseline, `docs/plan/perf/baseline-0.7.md`: p50 30/51/103/190 ms and 127/77/38/20 calls per second at 8/32/100/300 sources on an Apple M1, JDK 25.0.4, contended host | `## 2026-10-20 — First load-test baseline for 0.7 (199)` |
 | 2026-10-20 | 209 | 0.7 correction: `SensitivePatternValidator` registered as unconditional `PRIVACY_CRITICAL` bean `dataPrismSensitivePatternValidator`; Spring and configured-JSON-source orchestrators now refuse sensitive-shaped values with `SENSITIVE_PATTERN` | `## 2026-10-20 — Sensitive-pattern validator wired into every Spring-built orchestrator (209)` |
 | 2026-10-20 | 232 | Hazelcast approval creation tokens compared by every release, undo, withdraw, takeover, sweep, merge and forget; atomic decide with TTL; every lock-aware approval call bounded; skipped releases counted in `dataprism.approval.release.skipped`; old-format claims swept; D-0.7-HZ-2 | `## 2026-10-20 — Approval creation tokens and bounded cleanup in Hazelcast (232)` |

@@ -65,7 +65,9 @@ Built `docs/plan/design/contract-register.md` (about 1,440 lines) from the code 
 
 The register has 16 sections: tools, capabilities and arguments (1); status codes (2); codes by family (3); audit format (4); metrics (5); configuration (6); SPI types and changing constructors (7); cluster artefacts and the link wire format (8); task contracts (9); withdrawn names (10); 21 collisions (11); 13 document disagreements (12); naming rules and breaches (13); 15 open owner decisions (14); the freeze checklist (15); six successor tasks (16).
 
-**Review gate: NOT YET RUN.** A `reviewer` verdict (APPROVE, after re-running the extraction independently and checking the register against D-RM-1 to D-RM-15 and `docs/architecture.md`) has not been obtained; this task cannot spawn one. Verdict: pending. The commands below are written so a reviewer can re-run them unchanged. A first pass against D-RM-1 to D-RM-15 is recorded after them so the reviewer can check it, not accept it.
+**Review gate: APPROVE after three rounds (2026-10-20).** The reviewer re-ran every evidence command. Superseded text follows:
+
+~~**Review gate: NOT YET RUN.** A `reviewer` verdict (APPROVE, after re-running the extraction independently and checking the register against D-RM-1 to D-RM-15 and `docs/architecture.md`) has not been obtained; this task cannot spawn one. Verdict: pending.~~ The commands below are written so a reviewer can re-run them unchanged. A first pass against D-RM-1 to D-RM-15 is recorded after them so the reviewer can check it, not accept it.
 
 ### Acceptance
 
@@ -73,7 +75,7 @@ The register has 16 sections: tools, capabilities and arguments (1); status code
 - [x] `CLUSTER_OPERATION_REFUSED` (task 216) is registered with its meaning and where it surfaces (3.2): today it surfaces nowhere as a code (OD-200-2). `dataprism.approval.release.skipped` (task 232) is in section 5.
 - [x] Every name in the five closing tables (251 names, of which 250 are backticked and one is a plain-text health field; 170 rows) and every shipped tool, status code, refusal code and `dataprism.*` key appears; commands and counts below.
 - [x] Repeated and near-repeated names are listed with resolutions (section 11), or become owner decisions.
-- [ ] Review gate (pending, see above).
+- [x] Review gate (APPROVE, see above).
 
 ### Extraction commands and counts
 
@@ -103,7 +105,8 @@ grep -oE '\("dataprism[^"]+"\)' data-prism-core/src/main/java/io/github/aindriub
 grep -rhE --include='*.java' '^public (sealed )?interface ' */src/main
 grep -rhE --include='*.java' '^public @interface ' */src/main
 # E11 enums of any visibility (30; 27 public), and E11b every .name() call site; the constants that reach output are classified in 7.4
-grep -rnE --include='*.java' '^\s*(public |private |protected )?(static )?enum ' */src/main
+# Use /usr/bin/grep: ugrep, the grep in agent shells, drops private enums and returns 28 where the answer is 30. `grep -rnE --include='*.java' 'enum [A-Z]' */src/main` also works.
+/usr/bin/grep -rnE --include='*.java' '^\s*(public |private |protected )?(static )?enum ' */src/main
 grep -rnE --include='*.java' '\.name\(\)' */src/main
 # E10 configuration: pinned leaf keys (93), bean groups (28), and the 101 keys docs/configuration.md names
 F=data-prism-spring-boot-autoconfigure/src/test/resources/io/github/aindriub/dataprism/spring/boot/frozen-property-names.txt
@@ -182,6 +185,6 @@ S1 correct the design documents\' stale rows; S2 surface or log `CLUSTER_OPERATI
 - Nine pinned keys are named in `docs/configuration.md` only by their last segment (6.1 "name only").
 - `docs/tools.md:3` says both tools accept "exactly two arguments"; catalog adds `targetSources` to both in 0.8, so that sentence changes then.
 - Four shipped codes are written only as the start of a message and were missed by E1: `SPECIAL_CATEGORY_EXPOSED` (core PrivacyProfiles.java:95), `AUDIT_CHECKPOINT_UNAVAILABLE` (AuditRecorder.java:156), `AUDIT_LISTENER_DROPPED` and `AUDIT_LISTENER_FAILED` (AuditEventListeners.java:190, :221). They are registered in 3.5 and 3.7. **S3 (document them) and S4 (the code-extraction freeze test) must include them and must run E1c.** The three audit codes are log lines or exception messages, not tool results.
-- The metric API carries one closed tag, `source`, whose value is a configured (real) source name or a `PrivacyNamespace` name (section 5); the proposed `dataprism.paging.pages`, `dataprism.batch.items` and `dataprism.bulk.links` assume labels it cannot carry (N5, OD-200-7).
-- Six enums in 7.4 have exits that were not traced (`SensitivityLevel`, `PrivacyScopeType`, `ApprovalRequest.Status`, `Decided`, `CorrelationRequirement`, `PoolKind`); S4's frozen list must classify them.
+- The metric API carries one closed tag, `source`, whose value is a configured (real) source name or a `PrivacyNamespace` name (section 5); the proposed `dataprism.paging.pages`, `dataprism.batch.items` and `dataprism.bulk.links` assume labels it cannot carry (N5, OD-200-15).
+- Five enums in 7.4 have exits that were not traced (`SensitivityLevel`, `PrivacyScopeType`, `Decided`, `CorrelationRequirement`, `PoolKind`); `ApprovalRequest.Status` is traced, internal only (a cluster map value, not in the operator view); S4's frozen list must classify them.
 - The cluster design (4.2) lists `UNSAFE_HAZELCAST_DISCOVERY` as "unchanged"; it is an enum constant, not a literal (D10), so a literal-only audit of codes misses it.

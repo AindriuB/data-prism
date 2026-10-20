@@ -1271,7 +1271,7 @@ Recorded, not resolved by editing: this task may not edit the design documents o
 
 | Id | Subject | Where | Resolution, or what governs today |
 |---|---|---|---|
-| D1 | Unknown status code: "not answered" or "an error" | `docs/tools.md:141` ("Treat any code you do not recognise as 'not answered'"), `SourceResult.java:14`, `t190:13` (the owner decision as first recorded, commit f0fb5663), `design/batch-and-bulk-follow.md:43`, `:499`; against `PLAN.md:130` (D-070-3 summary: "as an error", commit 523fd730, later the same day) | The recorded decision, the shipped Javadoc and the shipped page all say "not answered"; the PLAN.md summary is the outlier. The register cannot tell from the record which the owner meant, so it is OD-200-1. Governs today: "not answered". |
+| D1 | Unknown status code: "not answered" or "an error" | `docs/tools.md:141` ("Treat any code you do not recognise as 'not answered'"), `SourceResult.java:14`, `t190:13` (the owner decision as first recorded, commit f0fb5663), `design/batch-and-bulk-follow.md:43`, `:499`; against `PLAN.md:130` (D-070-3 summary: "as an error", commit 523fd730, later the same day) | The recorded decision, the shipped Javadoc and the shipped page all say "not answered"; the PLAN.md summary is the outlier. The register cannot tell from the record which the owner meant, so it is OD-200-1. Governs today: "not answered". Decided 2026-10-20 (OD-200-1): "not answered"; `PLAN.md` corrected. |
 | D2 | Link `max-length` 768 or 1024 | `sealed-links.md:226` (narrative still names 768 as the earlier decision), `:467` (OD-12 row, amended), `batch-and-bulk-follow.md:609`; `PLAN.md:89` | No remaining conflict: the configuration table (`sealed-links.md:396`) already says 1024, with the 768 history kept. OD-B12 (owner, 2026-10-19) governs: default 1024, maximum 4096, floor 616 for option (a'). Registered as 1024 in 8.2. The batch worst-case collection link is 576 bytes, 768 characters, which fits 1024 with a margin of 256 characters. |
 | D3 | Label and identifier length caps differ between documents | see table below | OD-200-4. Governs today: nothing is built; the sealed layout (`sealed-links.md`) is the binding wire constraint. |
 | D4 | Relation bytes `0x02` to `0x04` | `sealed-links.md:185` documents only `0x00` and `0x01`; `batch-and-bulk-follow.md:617` to `621` has the table of five | No conflict, an extension: the combined table in 8.2 governs once the successor task S1 updates `sealed-links.md`. `0x05` to `0xFF` are reserved and invalid. |
@@ -1335,7 +1335,7 @@ The rules are taken from what the shipped surface already does (a rule no shippe
 
 ## 14. Open owner decisions
 
-None of these is decided here. Each has options and a recommendation; the owner chooses. "Needed by" says what is blocked until it is chosen. Fifteen decisions; five (1, 2, 4, 5, 8) change what 0.8 builds and should be taken before the 0.8 briefs are cut.
+All fifteen were decided on 2026-10-20: OD-200-1, -2 and -14 explicitly by the owner, the rest delegated to the owner's recommendation. The text of each decision below is the record; the options and recommendations are kept as written for the reasoning. Before the decisions each had options and a recommendation. "Needed by" says what is blocked until it is chosen. Fifteen decisions; five (1, 2, 4, 5, 8) change what 0.8 builds and should be taken before the 0.8 briefs are cut.
 
 ### OD-200-1. How a client treats an unrecognised per-source status
 
@@ -1343,6 +1343,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) "not answered": a client reads it as a gap; the recorder corrects `PLAN.md:130`. (b) "an error": a client fails on it; `SourceResult` Javadoc, `docs/tools.md:141`, the two design documents and t190 change.
 - **Recommendation.** (a). `status` is a `String` exactly so that a later code does not break an old client; an unknown status can only mean the source contributed no `entity` (only `ANSWERED` carries one), so reading it as a gap is the fail-closed reading. Under (b) every status added in 0.8 or 0.9 (`KEY_UNRESOLVED`) would break clients written before it, which defeats registering future codes.
 - **Needed by.** before 0.8 adds a status
+- **Decided (owner, explicit), 2026-10-20.** (a): "not answered" governs. A client reads an unrecognised status as a gap. The stale `PLAN.md` summary of D-070-3 ("as an error") is corrected to "not answered", citing OD-200-1.
 
 ### OD-200-2. Whether `CLUSTER_OPERATION_REFUSED` is visible to callers, and where its class lives
 
@@ -1350,6 +1351,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Keep it internal: register it as an exception code only, chain the cause and add a WARN log with the exception class and no identifiers, and do not list it in `docs/tools.md`. (b) Surface it like `CLUSTER_LOCK_TIMEOUT`: catch it in `ToolAdmission` (`DENY:CLUSTER_OPERATION_REFUSED`), `ReidentificationService` and `OversightOperatorController`, list it in `docs/tools.md` and `docs/multiple-instances.md`, and move `ClusterOperationRefusedException` into `core.refusal` beside the lock exception. (c) As (b) for tools only.
 - **Recommendation.** (b). The message names no key, scope or id, the sibling code is already client-visible, and an operator needs to tell a cluster fault from a paused or unavailable oversight state. The move is cheap now (the class is unreleased) and breaking after the freeze. Needs a code task no open task owns (S2).
 - **Needed by.** before 0.8; at the latest before the 0.9 freeze
+- **Decided (owner, explicit), 2026-10-20.** (b): `CLUSTER_OPERATION_REFUSED` is surfaced to callers in 0.7, like `CLUSTER_LOCK_TIMEOUT`. The cause is chained and logged, the message carries no data (no key, scope or id), and `ClusterOperationRefusedException` moves into `core.refusal`. A new 0.7 task implements it together with OD-200-14; task 201 waits for it.
 
 ### OD-200-3. Spelling of the new per-source status `KEY_UNRESOLVED`
 
@@ -1357,6 +1359,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Keep `KEY_UNRESOLVED` and rely on the kinds being different. (b) Rename it `RESOLVER_FAILED`, which says what happened, matches the past-tense statuses (`TIMED_OUT`, `FAILED`) and shares no stem with the startup codes.
 - **Recommendation.** (b). A status is read next to `TIMED_OUT` and `CIRCUIT_OPEN`; a log search for `*_KEY_UNRESOLVED` would otherwise mix a runtime outcome with start-up failures. A status spelling is permanent at the freeze, a rename now is free.
 - **Needed by.** before key-resolvers is built (0.8)
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (b) `RESOLVER_FAILED`.
 
 ### OD-200-4. One set of length caps for labels and identifiers
 
@@ -1364,6 +1367,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) The link layout governs: source labels 64 (schemas `maxLength` 64), namespace and resolver name 32 (grammar `{0,31}`), entity type 64 (fix the prose to 1 + 64, the sizing already uses 65), field path 64. A source name over 64 simply gets no links in 0.8 (counted as omitted), and `INVALID_SOURCE_NAME` refuses from 0.9. (b) Widen the layout to 128, 64, 64, 128: the worst-case direct link grows by about 160 bytes, to about 830 characters, and the collection-page link to about 985 characters against the 1024 default. (c) Keep each document's own cap and refuse at link issue only.
 - **Recommendation.** (a). It is the cheapest and matches the grammar the owner already chose for source names (catalog OD-C18); (b) spends most of the margin that OD-B12 (owner) bought for a future header field; (c) leaves a schema that promises more than a link can carry.
 - **Needed by.** before the 0.8 briefs for links and the catalog
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) the link layout governs.
 
 ### OD-200-5. The capability that authorises `follow`
 
@@ -1371,6 +1375,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) A new capability `FOLLOW`, granted per role and off until granted, with an upgrade note as for `COMPARE_ENTITY_SOURCES` in 0.2.0; `FOLLOW_BULK` likewise. (b) No new capability: `follow` needs `GET_ENTITY_CONTEXT`. (c) The capability of the tool that issued the link, carried in the link.
 - **Recommendation.** (a). Least privilege and the project's own rule that adding a tool grants nothing; the batch design already assumes it. It costs one frozen name and a documented upgrade step.
 - **Needed by.** before the 0.8 brief for `follow`
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) new capabilities `FOLLOW` and `FOLLOW_BULK`.
 
 ### OD-200-6. The attribute name of `@Chainable`
 
@@ -1378,6 +1383,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) `@Chainable(keyNamespace = "parcel-ref")`, matching the descriptor key. (b) Keep `namespace`.
 - **Recommendation.** (a). One word per meaning across annotation and descriptor; a different type under the same attribute name invites a wrong value that compiles.
 - **Needed by.** before the annotation is built (0.8)
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) `keyNamespace`.
 
 ### OD-200-7. Metric word separators and units
 
@@ -1385,6 +1391,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Rule: `_` inside a segment, a unit suffix allowed on a gauge; rename `dataprism.catalog.source-names.nonconforming` to `dataprism.catalog.source_names.nonconforming`. (b) `-` inside segments everywhere (renames four shipped metrics). (c) Leave mixed.
 - **Recommendation.** (a). It matches the shipped retention metrics and the cluster table, changes only an unbuilt name, and is the form a Prometheus registry produces anyway.
 - **Needed by.** before the catalog is built
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) `_` inside a segment.
 
 ### OD-200-8. Names that exist only for the rejected link option (b)
 
@@ -1392,6 +1399,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Drop both from the register and the 0.8 build; a depth or origin option, if ever wanted, is additive later. (b) Keep them as reserved names.
 - **Recommendation.** (a). A pinned key or audit reason that nothing can set or emit is a permanent promise with no behaviour. `LINK_ORIGIN_DRIFT` stays: task 198 reuses it for collection pages.
 - **Needed by.** before the links brief
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) drop both names.
 
 ### OD-200-9. Whether `dataprism.hazelcast.security.mode` exists
 
@@ -1399,6 +1407,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Keep it as an explicit, required opt-in. (b) Drop the key and both codes: a multi-member join is sealed by definition and `MISSING_CLUSTER_KEY` already refuses it without a key.
 - **Recommendation.** (b), with the security reviewer told, because the approved design changes by one key. One key and two codes fewer to freeze, and no ceremony that can only be answered one way. If the owner wants the explicit switch for readability, (a) is harmless.
 - **Needed by.** before the cluster briefs (215)
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (b) drop the key and both codes.
 
 ### OD-200-10. The vocabulary for key failures in new startup codes
 
@@ -1406,6 +1415,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) One family: `<AREA>_KEY_WEAK`, `<AREA>_KEY_UNRESOLVED`, `<AREA>_KEY_SHARED`; task 211 uses `AUDIT_HMAC_KEY_WEAK` and `AUDIT_HMAC_KEY_SHARED`. (b) Keep the briefed names.
 - **Recommendation.** (a). Operators grep these; three spellings of one failure is avoidable, and 211 is not built.
 - **Needed by.** before 211 starts
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) one family.
 
 ### OD-200-11. The `-izer` / `-ization` spelling of new security types
 
@@ -1413,6 +1423,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Accept the shipped spelling for the `Authoriz*` type family and name new types alike; record it as an exception to `docs/conventions.md`. (b) British for new types only (`CaseAuthoriser`), leaving a mixed family. (c) Rename the shipped types before the freeze.
 - **Recommendation.** (a). The shipped names echo Spring Security's `AuthorizationDecision`; (c) is a pure rename of public API for spelling; (b) is the worst of both.
 - **Needed by.** before 203 is built
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) accept the shipped spelling.
 
 ### OD-200-12. One word for the naming setting: audit key `names` or `labels`
 
@@ -1420,6 +1431,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Keep both: they are different surfaces. (b) Rename the audit key to `labels`.
 - **Recommendation.** (a). The owner chose the audit key explicitly; the two meanings are the same setting on different surfaces and the documents can say so. (b) is fine if the owner prefers one word.
 - **Needed by.** before the audit grammar change for `names`
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) keep both words.
 
 ### OD-200-13. Shipped near-synonym codes on different surfaces
 
@@ -1427,6 +1439,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Accept and document which surface emits which. (b) Unify before the freeze (a breaking change for re-identification clients, in 0.8).
 - **Recommendation.** (a). The surfaces are different audiences and the audit already distinguishes them by tool; unifying changes shipped client-visible text for no new information.
 - **Needed by.** before the 0.9 freeze
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (a) accept and document.
 
 ### OD-200-14. Where the approval sweep interval lives
 
@@ -1434,6 +1447,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Keep it, pin it in a new list and document it. (b) Replace it with a Spring property `dataprism.hazelcast.pending-sweep-interval` (`Duration`, default `PT5M`, bounds `PT1S` to `P1D`), pinned in the frozen list; no migration, nothing shipped. (c) Remove the knob; fix the interval.
 - **Recommendation.** (b). It follows N4, is visible to the existing frozen-name and metadata tests, and costs nothing to rename while unreleased. Needs a code task (S2 or its own).
 - **Needed by.** before the 0.7.0 release is cut
+- **Decided (owner, explicit), 2026-10-20.** Replace `dataprism.approval.pending.sweep-seconds` with a Spring-bound `Duration` property, `dataprism.hazelcast.approval-sweep-interval`, default `PT5M`, validated at startup and pinned in the frozen property list. This differs from option (b) as written in the name (`approval-sweep-interval`, not `pending-sweep-interval`). The bounds are set by the implementing task and refused at startup with a new code. The same 0.7 task implements it.
 
 ### OD-200-15. How a metric carries a closed label
 
@@ -1441,6 +1455,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Options.** (a) Add a closed-label overload to `PrivacyMetrics`: `increment(Metric, Label)` where each metric declares an enum of allowed values, so free text stays unrepresentable. (b) One `Metric` constant per outcome, as the cluster design does: `dataprism.batch.items.done`, `.deferred`, `.refused` and a constant per bulk status. (c) Totals only, no breakdown.
 - **Recommendation.** (b). It needs no API change, keeps `PrivacyMetricsTest` as the single pin, and the sets are small (three batch outcomes, seven statuses, one paging counter). (a) is justified only if the sets are expected to grow. Separate question, not decided here: the existing `source` tag carries a real source name (section 5); aliasing it is a distinct change.
 - **Needed by.** before the paging metric is built (0.8)
+- **Decided (owner delegated), 2026-10-20.** Following the recommendation: (b) one `Metric` constant per outcome.
 
 ## 15. Freeze checklist for 0.9.0
 
