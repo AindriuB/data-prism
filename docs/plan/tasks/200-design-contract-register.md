@@ -71,13 +71,13 @@ The register has 16 sections: tools, capabilities and arguments (1); status code
 
 - [x] Tasks 203, 206 to 208, 210 to 214 and the cluster design are registered as proposals with release and decision status from the reconciliation (section 9, with 7.2 and 7.3); task 209\'s merged bean behaviour is included.
 - [x] `CLUSTER_OPERATION_REFUSED` (task 216) is registered with its meaning and where it surfaces (3.2): today it surfaces nowhere as a code (OD-200-2). `dataprism.approval.release.skipped` (task 232) is in section 5.
-- [x] Every name in the five closing tables (250 names, 170 rows) and every shipped tool, status code, refusal code and `dataprism.*` key appears; commands and counts below.
+- [x] Every name in the five closing tables (251 names, of which 250 are backticked and one is a plain-text health field; 170 rows) and every shipped tool, status code, refusal code and `dataprism.*` key appears; commands and counts below.
 - [x] Repeated and near-repeated names are listed with resolutions (section 11), or become owner decisions.
 - [ ] Review gate (pending, see above).
 
 ### Extraction commands and counts
 
-Run from the repository root with `bash`. `E1`, `E2`, `E3`, `E4`, `E5`, `E6`, `E7`, `E10` list what the code and pinned files hold; `E8`, `E8b` and `E9` read the closing tables; each list is then checked against the register with `grep -F`.
+Run from the repository root with `bash`. `E1`, `E1c`, `E1r`, `E2`, `E3`, `E4`, `E5`, `E6`, `E7`, `E10`, `E11` list what the code and pinned files hold; `E8`, `E8b` and `E9` read the closing tables; each list is then checked against the register with `grep -F`.
 
 ```sh
 R=docs/plan/design/contract-register.md
@@ -87,6 +87,11 @@ while read c; do grep -qF "\`$c\`" $R || echo MISSING $c; done < /tmp/e1.txt
 # E2 constants of enum Code types that declare codes (15; 0 missing; 5 of them are not string literals)
 for f in $(find . -name PrivacyClusterRefusal.java -o -name ApprovalRefusedException.java | grep -v target); do
   awk '/enum Code/{p=1} p{print} /;|^    }/{if(p&&NR>1)exit}' $f; done | grep -oE '\b[A-Z][A-Z0-9_]{3,}\b' | grep -v '^Code$' | sort -u
+# E1c literals that begin with a code followed by ':' or other text (17 distinct; 4 not found by E1; 0 further missing)
+grep -rhoE --include='*.java' '"[A-Z][A-Z0-9]*(_[A-Z0-9]+)+[:= ,.-][^"]*"' */src/main | grep -oE '^"[A-Z0-9_]+' | tr -d '"' | sort -u > /tmp/e1c.txt
+while read c; do grep -qF "\`$c\`" $R || echo MISSING $c; done < /tmp/e1c.txt
+# E1r code-shaped tokens in src/main/resources (18 distinct; all are enum values listed in 7.4, codes already listed, capability names, or one example environment variable)
+grep -rhoE '\b[A-Z][A-Z0-9]*(_[A-Z0-9]+)+\b' */src/main/resources | sort -u > /tmp/e1r.txt
 # E3 tools (2) and capabilities (4)
 grep -rhoE --include='*.java' 'NAME = "[a-z_]+"' data-prism-mcp/src/main
 grep -hoE 'String [A-Z_]+ = "[A-Z_]+"' data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/Capability.java
@@ -97,6 +102,8 @@ grep -oE '\("dataprism[^"]+"\)' data-prism-core/src/main/java/io/github/aindriub
 # E6 public interfaces (24) and E7 public annotations (6)
 grep -rhE --include='*.java' '^public (sealed )?interface ' */src/main
 grep -rhE --include='*.java' '^public @interface ' */src/main
+# E11 public enums (27) whose constants are classified in 7.4
+grep -rnE --include='*.java' '^\s*public (static )?enum ' */src/main
 # E10 configuration: pinned leaf keys (93), bean groups (28), and the 101 keys docs/configuration.md names
 F=data-prism-spring-boot-autoconfigure/src/test/resources/io/github/aindriub/dataprism/spring/boot/frozen-property-names.txt
 grep -v '| bean' $F | cut -d'|' -f1 | sed 's/ *$//' | sort -u
@@ -151,7 +158,7 @@ awk '/^### 4.9 Closing table/{p=1;next} p&&/^---/{p=0} p&&/^\| (key|code|metric|
 
 ```
 
-Counts: E1 222 literals = 34 call + 10 admission + 12 re-identification + 8 operator + 128 startup + 3 violation + 11 audit-runtime codes + 4 status literals (the load harness\'s mirror of the enum) + 12 literals that are not codes (listed in 3.9). E2 adds `INVALID_CLUSTER_PORT` and `UNSAFE_HAZELCAST_DISCOVERY` to the startup codes (130) and three internal approval names. Operator HTTP adds `UNAUTHENTICATED` and `FORBIDDEN`, single words that E1 cannot see. 68 of the 206 call, admission, re-identification, operator, startup, violation and audit-runtime codes are not named in any shipped page (`docs/**/*.md` outside `docs/plan/`).
+Counts: E1 finds 222 literals = 34 call + 10 admission + 12 re-identification + 8 operator + 128 startup + 3 violation + 11 audit-runtime codes + 4 status literals (the load harness's mirror of the enum) + 12 literals that are not codes (3.9). E1c finds 17 literals; 13 are already E1 codes and **4 are new**: `SPECIAL_CATEGORY_EXPOSED` (startup, 3.5) and `AUDIT_CHECKPOINT_UNAVAILABLE`, `AUDIT_LISTENER_DROPPED`, `AUDIT_LISTENER_FAILED` (3.7). E1r finds no further code: its 18 tokens are enum values (7.4), `SPECIAL_CATEGORY_EXPOSED` again, capability names, `MISSING_SHARED_BUDGET` (already listed) and the example environment variable `DATAPRISM_EXAMPLE_HMAC_KEY` (3.9). E2 adds `INVALID_CLUSTER_PORT` and `UNSAFE_HAZELCAST_DISCOVERY` to the startup codes and three internal approval names. The operator surface adds `UNAUTHENTICATED` and `FORBIDDEN`, single words that E1 cannot see. **One count of shipped codes: 214** = 34 call + 10 admission + 12 re-identification + 10 operator + 131 startup + 3 violation + 14 audit-runtime (the E1 codes, the four E1c codes, the two E2 startup codes, `UNAUTHENTICATED` and `FORBIDDEN`); 68 of the 214 are not named in any shipped page (`docs/**/*.md` outside `docs/plan/`). E11 finds 27 public enums; section 7.4 classifies 24 of them and says why the rest are left out.
 
 ### First pass against D-RM-1 to D-RM-15 (for the reviewer to check)
 
@@ -173,4 +180,7 @@ S1 correct the design documents\' stale rows; S2 surface or log `CLUSTER_OPERATI
 - `dataprism.approval.pending.sweep-seconds` is documented in `docs/multiple-instances.md` only, not in `docs/configuration.md`, and `PropertyNamesFrozenTest` cannot see it.
 - Nine pinned keys are named in `docs/configuration.md` only by their last segment (6.1 "name only").
 - `docs/tools.md:3` says both tools accept "exactly two arguments"; catalog adds `targetSources` to both in 0.8, so that sentence changes then.
+- Four shipped codes are written only as the start of a message and were missed by E1: `SPECIAL_CATEGORY_EXPOSED` (core PrivacyProfiles.java:95), `AUDIT_CHECKPOINT_UNAVAILABLE` (AuditRecorder.java:156), `AUDIT_LISTENER_DROPPED` and `AUDIT_LISTENER_FAILED` (AuditEventListeners.java:190, :221). They are registered in 3.5 and 3.7. **S3 (document them) and S4 (the code-extraction freeze test) must include them and must run E1c.** The three audit codes are log lines or exception messages, not tool results.
+- The metric API carries one closed tag, `source`, whose value is a configured (real) source name or a `PrivacyNamespace` name (section 5); the proposed `dataprism.paging.pages`, `dataprism.batch.items` and `dataprism.bulk.links` assume labels it cannot carry (N5, OD-200-7).
+- Seven public enums in 7.4 have exits that were not traced (`SensitivityLevel`, `PrivacyScopeType`, `ApprovalRequest.Kind` and `Status`, `Decided`, `CorrelationRequirement`, `PoolKind`); S4's frozen list must classify them.
 - The cluster design (4.2) lists `UNSAFE_HAZELCAST_DISCOVERY` as "unchanged"; it is an enum constant, not a literal (D10), so a literal-only audit of codes misses it.
