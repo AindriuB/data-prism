@@ -22,13 +22,13 @@ The public surface freezes at the 0.9.0 release: public API, configuration prope
 | Per-source status codes | 7 | 1 | 2 |
 | Call, admission, re-identification, operator, startup, violation and audit-runtime codes | 214 (34 call, 10 admission, 12 re-identification, 10 operator, 131 startup, 3 violation, 14 audit runtime; literals, enum constants and the two single-word operator codes) | 80 startup/call/audit codes in tasks and designs | 3 |
 | Audit record fields / `policyDecision` forms | 25 / 6 | 0 changes to either; new disposition keys and values | 4 |
-| Closed vocabularies (public enums whose constants leave the process) | 24 | 0 | 7.4 |
+| Closed vocabularies (enums, any visibility, whose constants reach output) | 25 | 0 | 7.4 |
 | Metrics | 17 | 19 | 5 |
 | `dataprism.*` configuration keys | 94 | 55 (plus 10 descriptor and `json-sources` entry keys) | 6 |
 | SPI interfaces and annotations | 30 | 24 types | 7 |
 | Closing-table rows / distinct names in the five design documents | | 170 rows / 251 names (250 backticked, one plain-text health field), every one appearing in this register | 1 to 8 |
 
-Collisions found: 21 (section 11). Document disagreements recorded: 13 (section 12). Open owner decisions: 14 (section 14). Successor tasks named: 6 (section 16).
+Collisions found: 21 (section 11). Document disagreements recorded: 13 (section 12). Open owner decisions: 15 (section 14). Successor tasks named: 6 (section 16).
 
 The findings that matter most before 0.8 starts:
 
@@ -641,6 +641,7 @@ Kept here so the extraction can be re-run and reconciled to the last literal (Ou
 | `PERSON_NAME` | mcp:CompareEntitySourcesTool.java:284 | privacy namespace used as an example in Javadoc |
 | `SPRING_PROFILES_ACTIVE` | integration-tests:ExampleApplication.java:125 | environment variable name read by an example launcher |
 | `UNCLASSIFIED_ERROR` | load-test:ResponseClassifier.java:21 | result bucket of the load harness, not a product code |
+| `DATAPRISM_EXAMPLE_HMAC_KEY` | integration-tests:application.yaml:45 | environment variable name in the example application's configuration (found by E1r) |
 | `NO_DATA` | load-test:SourceStatuses.java:8 | status code, listed in section 2 (the literal that matched is the load harness's mirror of the enum, `SourceStatuses.ALL`) |
 | `TIMED_OUT` | load-test:SourceStatuses.java:8 | status code, listed in section 2 (the literal that matched is the load harness's mirror of the enum, `SourceStatuses.ALL`) |
 | `CIRCUIT_OPEN` | load-test:SourceStatuses.java:8 | status code, listed in section 2 (the literal that matched is the load harness's mirror of the enum, `SourceStatuses.ALL`) |
@@ -1099,12 +1100,12 @@ Superseded tasks 204, 205 and 212 proposed further types and bean behaviour (`Su
 
 ### 7.4 Closed vocabularies whose constant names leave the process
 
-Public enums whose constant names appear in a tool result, the audit, a metric tag, a token or alias, a file the verifier reads, or a configuration or descriptor value. They are contract the way a code is: renaming a constant is a breaking change. Found with the scan E11 (every `enum` in `*/src/main`; 27 are public, the rest are private or package-private). The Release column is the first tag containing the enum's longest constant name. "Not traced" means no exit was found in the time of this task; the freeze test must classify those too (section 15).
+Enums of any visibility whose constant names reach output: a tool result, the audit, a metric tag, a token or alias, a file the verifier reads, an operator HTTP body or a configuration or descriptor value. They are contract the way a code is: renaming a constant is a breaking change. Found with E11, which lists every `enum` in `*/src/main` (30; 27 public) and every `.name()` call site (E11b), because the earlier public-only scan missed a private enum that reaches the operator API. The Release column is the first tag containing the enum's longest constant name. "Not traced" means no exit was found in the time of this task; the freeze test must classify those too (section 15).
 
 | Enum | Constants | Leaves the process via | Source | Release | Pinned by |
 |---|---|---|---|---|---|
 | `PrivacyNamespace` | `NONE`, `PERSON_IDENTITY`, `PERSON_NAME`, `PERSON_FIRST_NAME`, `PERSON_LAST_NAME`, `ORGANISATION_IDENTITY`, `ORGANISATION_NAME`, `ACCOUNT_IDENTITY`, `ADDRESS`, `EMAIL`, `PHONE`, `GOVERNMENT_IDENTIFIER`, `FINANCIAL_VALUE`, `BANK_ACCOUNT`, `EMPLOYMENT_IDENTITY`, `CUSTOM` | `namespace` of every finding (orchestration:NamespaceCorrelationService.java:101); the prefix of every token (pseudonymisation:HmacValueTokenSource.java:50) and of every scope-local source alias (pseudonymisation:HmacSyntheticGenerator.java:101); the metric tag `source` (section 5); the `namespace` key of a descriptor, `json-sources` field or annotation | annotations:PrivacyNamespace.java:14 | 0.1.0 | none |
-| `DataClassification` | `PII`, `PHI`, `FINANCIAL`, `BANKING`, `TAX_IDENTIFIER`, `GOVERNMENT_IDENTIFIER`, `ADDRESS`, `CONTACT`, `CREDENTIAL`, `SECURITY`, `CONFIDENTIAL`, `BIOMETRIC`, `GENETIC`, `ETHNIC_ORIGIN`, `POLITICAL_OPINION`, `RELIGIOUS_BELIEF`, `TRADE_UNION`, `SEX_LIFE_ORIENTATION` | the `classifications` lists and rules of the profile YAML (`privacy-profiles-default.yaml`) and descriptor files; annotation values; `SPECIAL_CATEGORIES` is part of the contract | annotations:DataClassification.java:7 | 0.1.0 | none; proposed `FREE_TEXT` (task 208) |
+| `DataClassification` | `PII`, `PHI`, `FINANCIAL`, `BANKING`, `TAX_IDENTIFIER`, `GOVERNMENT_IDENTIFIER`, `ADDRESS`, `CONTACT`, `CREDENTIAL`, `SECURITY`, `CONFIDENTIAL`, `BIOMETRIC`, `GENETIC`, `ETHNIC_ORIGIN`, `POLITICAL_OPINION`, `RELIGIOUS_BELIEF`, `TRADE_UNION`, `SEX_LIFE_ORIENTATION` | the `classifications` lists and rules of the profile YAML (`privacy-profiles-default.yaml`) and descriptor files; annotation values; the name of the matched classification in a sensitive-pattern violation (validation:SensitivePatternValidator.java:64, operator-facing); `SPECIAL_CATEGORIES` is part of the contract | annotations:DataClassification.java:7 | 0.1.0 | none; proposed `FREE_TEXT` (task 208) |
 | `SensitivityLevel` | `INTERNAL`, `CONFIDENTIAL`, `RESTRICTED` | annotation attribute values; not traced to a file or result | annotations:SensitivityLevel.java:4 | 0.1.0 | none |
 | `UndeclaredFields` | `PROFILE_DEFAULT`, `NON_SENSITIVE`, `REDACT`, `DROP` | annotation attribute and the `undeclaredFields` descriptor key (core:ModelDescriptors.java:29) | annotations:UndeclaredFields.java:16 | 0.1.0 | none |
 | `PrivacyAction` | `PASS_THROUGH`, `REDACT`, `REMOVE`, `HASH`, `SYNTHESIZE`, `TOKENIZE`, `GENERALIZE` | disposition values in the audit (section 4.3); profile YAML `action` | annotations:PrivacyAction.java:10 | 0.1.0 | none |
@@ -1117,8 +1118,9 @@ Public enums whose constant names appear in a tool result, the audit, a metric t
 | `AuditCheckpoint.Kind` | `BOOT`, `PERIODIC`, `SHUTDOWN`, `RETENTION_ANCHOR` | `kind` of a checkpoint line (section 4.4) | core:AuditCheckpoint.java:36 | 0.4.0 | not pinned |
 | `AuditChainVerifier.AnomalyType` | `INTERRUPTED_WRITE_FRAGMENT`, `DUPLICATE_SEQUENCE`, `UNPARSEABLE_RECORD`, `RETENTION_ANCHOR_REJECTED`, `VERSION_REGRESSION`, `FIELD_COUNT_MISMATCH`, `TORN_CHECKPOINT_LINE` | verifier output (section 4.4) | core:AuditChainVerifier.java:702 | 0.3.0 | not pinned |
 | `AuditChainVerifier.CheckpointFindingType` | `TRUNCATED_BEFORE_CHECKPOINT`, `MISSING_WRITER` | verifier output (section 4.4) | core:AuditChainVerifier.java:771 | 0.4.0 | not pinned |
-| `ApprovalRequest.Kind` | `TOOL_CALL`, `REIDENTIFICATION` | approval records; operator views (not traced to a field) | core:ApprovalRequest.java:30 | 0.1.0 | not pinned |
-| `ApprovalRequest.Status` | `PENDING`, `APPROVED`, `REJECTED`, `CONSUMED`, `EXPIRED` | approval records; operator views (not traced to a field) | core:ApprovalRequest.java:32 | 0.4.0 | not pinned |
+| `ApprovalRequest.Kind` | `TOOL_CALL`, `REIDENTIFICATION` | **client-visible**: `kind` of every entry of `GET /operator/approvals` and `/{id}` (server:OversightOperatorController.java:67; docs/reidentification.md:133); also in the cluster map value (hazelcast:HazelcastApprovalStore.java:725) | core:ApprovalRequest.java:30 | 0.1.0 | not pinned |
+| `ApprovalRequest.Status` | `PENDING`, `APPROVED`, `REJECTED`, `CONSUMED`, `EXPIRED` | cluster map value only (hazelcast:HazelcastApprovalStore.java:729); not in the operator view | core:ApprovalRequest.java:32 | 0.4.0 | not pinned |
+| `OversightOperatorController.TargetType` | `ALL`, `TOOL`, `SCOPE` | **client-visible**: `target` of `POST /operator/pause` and `/resume`, accepted (server:OversightOperatorController.java:263) and returned (server:OversightOperatorController.java:89, server:OversightOperatorController.java:106); docs/reidentification.md:130. A private enum | server:OversightOperatorController.java:278 | 0.4.0 | not pinned |
 | `PrivacyScopeType` | `REQUEST`, `SESSION`, `INVESTIGATION`, `CASE` | scope types; not traced to a file or result | core:PrivacyScopeType.java:10 | 0.1.0 | not pinned |
 | `EffectivePrivacyPolicy.Decided` | `PROFILE_RULE`, `SPECIAL_CATEGORY_DEFAULT`, `ANNOTATION`, `SAFE_DEFAULT`, `DECLARED_NON_SENSITIVE`, `IDENTIFIER`, `UNCLASSIFIED` | not traced (policy provenance) | core:EffectivePrivacyPolicy.java:28 | 0.4.0 | not pinned |
 | `Permission` | `REQUEST`, `APPROVE` | `dataprism.reidentification.roles` values (FZ:96); the autoconfigure module has a second `ReidentificationProperties.Permission` with the same constants (spring-boot-autoconfigure:ReidentificationProperties.java:13) | reidentification:Permission.java:4 | 0.1.0 | not pinned |
@@ -1128,7 +1130,7 @@ Public enums whose constant names appear in a tool result, the audit, a metric t
 | `PrivacyExtensionPoints.Classification` | `REPLACEABLE`, `PRIVACY_CRITICAL` | bean classification; internal | spring-boot-autoconfigure:PrivacyExtensionPoints.java:31 | 0.1.0 | `AutoConfiguredBeanClassificationTest` |
 | `PrivacyExtensionPoints.Guard` | `NONE`, `PRIMARY`, `COMPETING_BEAN_REFUSAL` | bean guard; internal | spring-boot-autoconfigure:PrivacyExtensionPoints.java:33 | 0.1.0 | `AutoConfiguredBeanClassificationTest` |
 
-Not listed because the constants do not leave the process or are covered elsewhere: `ApprovalRefusedException.Code` (section 3.3), `PrivacyClusterRefusal.Code` (section 3.5), and the private or package-private enums (`InboundCorrelation.State`, `TargetType`, `SensitiveDataScanner.Detector`; the detector name does appear in a violation's detection method, which is operator-facing only).
+Not listed: `ApprovalRefusedException.Code` (internal, mapped in section 3.3), `PrivacyClusterRefusal.Code` (section 3.5), the second `Permission` enum in the autoconfigure module (same constants as the first), and two enums checked and found not to reach output: the private `InboundCorrelation.State` (compared, never written) and the package-private `SensitiveDataScanner.Detector` (its `classification` is written, not its name; the `shapeMethod` strings are separate text).
 
 ## 8. Cluster artefacts and the link wire format
 
@@ -1297,7 +1299,7 @@ Recorded, not resolved by editing: this task may not edit the design documents o
 
 The rules are taken from what the shipped surface already does (a rule no shipped name breaks is stated as a rule; where shipped names disagree, the majority is the rule and the exceptions are listed). Conventions: `docs/conventions.md` "Naming" (British spelling in identifiers, no abbreviations beyond `id`, `url`, `uri`, `api`, `dto`, `hmac`, `ttl`, `mcp`).
 
-**N1. Code format.** `[A-Z][A-Z0-9_]{0,63}` for every refusal, startup, violation, status and audit-reason code. Checked for all 80 proposed code names: none breaks it; the longest is `AUDIT_SEGMENT_SIZE_REQUIRES_DIRECTORY` (37 characters).
+**N1. Code format.** `[A-Z][A-Z0-9_]{0,63}` for every refusal, startup, violation, status and audit-reason code. Checked for all 80 proposed code names: none breaks it; the longest is `AUDIT_KEY_REUSES_PSEUDONYMISATION_KEY` (37 characters).
 
 **N2. Startup refusals.** Shape `<CLASS>_<NOUN>` with CLASS one of INVALID, MISSING, UNKNOWN, UNSUPPORTED, UNSAFE, DUPLICATE, EMPTY, BLANK, RESERVED, FORBIDDEN, or an area-prefixed condition (`AUDIT_JSON_DIRECTORY_UNUSABLE`, `CORRELATION_REQUIRED_WITHOUT_HEADER`, `REIDENTIFICATION_REQUIRES_CLUSTER`). Of 129 shipped startup codes, 34 `INVALID`, 22 `MISSING`, 7 `UNKNOWN`, 5 `UNSUPPORTED`, 3 `EMPTY`, 3 `BLANK`, 2 `DUPLICATE`, 2 `UNSAFE`, 2 `RESERVED`, 1 `FORBIDDEN` use a class prefix and 48 are area-prefixed.
 
@@ -1319,7 +1321,7 @@ The rules are taken from what the shipped surface already does (a rule no shippe
 | `dataprism.security` and `dataprism.security-policy` (shipped) | two groups differing only by a hyphen | Pre-existing; renaming now would be a breaking change to a pinned name. Accepted; the new `allowed-clients` and `case-authorisation` join `security-policy`. |
 | `dataprism.transport.mode` values `HTTP`, `STDIO` | upper case where every other enumerated value is lower kebab (`hash-chained`, `tcp-ip`, `single-node`) | Pre-existing; the binding is by enum. Accepted; recorded so no new key copies it. |
 
-**N5. Metrics.** `dataprism.<area>.<noun>[.<noun>]`, all lower case, no tag except the closed `source` tag of section 5 (its value is a configured source name or a `PrivacyNamespace` name). The proposed `dataprism.paging.pages`, `dataprism.batch.items` (label `outcome`) and `dataprism.bulk.links` (label `status`) assume labels that `PrivacyMetrics` cannot carry, and the cluster design makes each signal its own constant instead: a metrics API decision the 0.8 briefs must take (part of OD-200-7). Word separator inside a segment: four shipped names use `_` (`anchor_failed`, `delete_failed`), the rest use none (`failclosed`, `withheld`). The cluster proposals use `_` (`age_seconds`, `unsupported_format`, `salt_rejected`, `accepting_next`); the catalog proposals use `-` (`source-names.nonconforming`). Rule proposed: `_` inside a segment. Breaks: `dataprism.catalog.source-names.nonconforming`, and `dataprism.cluster.pause.age_seconds` carries a unit in the name. OD-200-7.
+**N5. Metrics.** `dataprism.<area>.<noun>[.<noun>]`, all lower case, no tag except the closed `source` tag of section 5 (its value is a configured source name or a `PrivacyNamespace` name). The proposed `dataprism.paging.pages`, `dataprism.batch.items` (label `outcome`) and `dataprism.bulk.links` (label `status`) assume labels that `PrivacyMetrics` cannot carry, and the cluster design makes each signal its own constant instead: a metrics API decision the 0.8 briefs must take (OD-200-15). Word separator inside a segment: four shipped names use `_` (`anchor_failed`, `delete_failed`), the rest use none (`failclosed`, `withheld`). The cluster proposals use `_` (`age_seconds`, `unsupported_format`, `salt_rejected`, `accepting_next`); the catalog proposals use `-` (`source-names.nonconforming`). Rule proposed: `_` inside a segment. Breaks: `dataprism.catalog.source-names.nonconforming`, and `dataprism.cluster.pause.age_seconds` carries a unit in the name. OD-200-7.
 
 **N6. Tools and capabilities.** Tool: lower snake case, verb first, object after (`get_entity_context`). Capability: the tool name upper-cased (`GET_ENTITY_CONTEXT`); `EXPOSE_SOURCE_NAMES` is a non-tool capability. Proposed tools follow it except `follow` (no object) and `follow_bulk` (qualifier after the verb); both are named by owner-delegated decisions (sealed-links §5; batch OD-B17 (a)) and are not reopened here.
 
@@ -1333,7 +1335,7 @@ The rules are taken from what the shipped surface already does (a rule no shippe
 
 ## 14. Open owner decisions
 
-None of these is decided here. Each has options and a recommendation; the owner chooses. "Needed by" says what is blocked until it is chosen. Fourteen decisions; five (1, 2, 4, 5, 8) change what 0.8 builds and should be taken before the 0.8 briefs are cut.
+None of these is decided here. Each has options and a recommendation; the owner chooses. "Needed by" says what is blocked until it is chosen. Fifteen decisions; five (1, 2, 4, 5, 8) change what 0.8 builds and should be taken before the 0.8 briefs are cut.
 
 ### OD-200-1. How a client treats an unrecognised per-source status
 
@@ -1379,7 +1381,7 @@ None of these is decided here. Each has options and a recommendation; the owner 
 
 ### OD-200-7. Metric word separators and units
 
-- **Context.** N5. Four shipped names use `_` inside a segment, others none; cluster proposals use `_`; the catalog proposal uses `-`; one cluster gauge carries `_seconds`; and three proposed metrics assume labels the metrics API cannot carry (N5).
+- **Context.** N5. Four shipped names use `_` inside a segment, others none; cluster proposals use `_`; the catalog proposal uses `-`; one cluster gauge carries `_seconds`; the metric-label question is OD-200-15.
 - **Options.** (a) Rule: `_` inside a segment, a unit suffix allowed on a gauge; rename `dataprism.catalog.source-names.nonconforming` to `dataprism.catalog.source_names.nonconforming`. (b) `-` inside segments everywhere (renames four shipped metrics). (c) Leave mixed.
 - **Recommendation.** (a). It matches the shipped retention metrics and the cluster table, changes only an unbuilt name, and is the form a Prometheus registry produces anyway.
 - **Needed by.** before the catalog is built
@@ -1433,6 +1435,13 @@ None of these is decided here. Each has options and a recommendation; the owner 
 - **Recommendation.** (b). It follows N4, is visible to the existing frozen-name and metadata tests, and costs nothing to rename while unreleased. Needs a code task (S2 or its own).
 - **Needed by.** before the 0.7.0 release is cut
 
+### OD-200-15. How a metric carries a closed label
+
+- **Context.** N5, section 5. `PrivacyMetrics` takes no label except the `source` tag. The proposals disagree: `dataprism.batch.items` is described with a closed label `outcome`, `dataprism.bulk.links` with `status`, `dataprism.paging.pages` with "closed labels" (design/batch-and-bulk-follow.md), while the cluster design makes every signal its own `Metric` constant because the API takes no tag (design/cluster-security.md:542).
+- **Options.** (a) Add a closed-label overload to `PrivacyMetrics`: `increment(Metric, Label)` where each metric declares an enum of allowed values, so free text stays unrepresentable. (b) One `Metric` constant per outcome, as the cluster design does: `dataprism.batch.items.done`, `.deferred`, `.refused` and a constant per bulk status. (c) Totals only, no breakdown.
+- **Recommendation.** (b). It needs no API change, keeps `PrivacyMetricsTest` as the single pin, and the sets are small (three batch outcomes, seven statuses, one paging counter). (a) is justified only if the sets are expected to grow. Separate question, not decided here: the existing `source` tag carries a real source name (section 5); aliasing it is a distinct change.
+- **Needed by.** before the paging metric is built (0.8)
+
 ## 15. Freeze checklist for 0.9.0
 
 For each kind: what must exist, what must be documented, what must pin it with a test, where it stands now (from sections 1 to 8) and the gap. "Pinned" means a failing test when a name is added, removed or renamed without editing the pinned list.
@@ -1444,7 +1453,7 @@ For each kind: what must exist, what must be documented, what must pin it with a
 | Reserved argument names | `ReservedArguments.NAMES` | `docs/tools.md` (arguments) | `ReservedArgumentsTest` | pinned | none |
 | Per-source status codes | section 2 table; OD-200-1 and -3 decided | `docs/tools.md` status table, with the unknown-status rule | `SourceStatusCodesTest` against `source-status-codes.txt` | pinned (7) | add the 0.8 codes in the same commit as the code |
 | Call, admission, re-identification and operator codes | section 3.1 to 3.4 | every code in `docs/tools.md` or `docs/reidentification.md`; "Docs: no" in section 3 is the gap list | a frozen resource listing every code, and a test that extracts string literals, message-prefix literals (`"CODE: …"`) and `Code` enum constants from `src/main`, and code-shaped tokens from `src/main/resources` (commands E1, E1c, E2, E1r), and compares them with the list; the same test checks each code against `RefusalCodes` format | format is tested (`RefusalCodesTest`); the set is not. Undocumented: 17 of 34 call, 0 of 10 admission, 0 of 12 re-identification, 1 of 10 operator | frozen list and extraction test; document the gaps (S3, S4) |
-| Closed vocabularies (public enums whose constant names leave the process) | section 7.4: every public enum classified as leaving the process or internal, each constant listed | `docs/` pages for the descriptor, profile and annotation values (`docs/configuration.md`, `docs/tools.md`) | an enum-constant scan (command E11) over public enums in `src/main`, compared with a frozen list that records, per enum, its constants and whether it leaves the process; a new enum or constant fails the test until classified | not pinned except `Metric` (`PrivacyMetricsTest`), `SourceOutcome.Status` (`SourceStatusCodesTest`), `Capability` and the profile enum shown in the pinned property list. 7.4 has 24 rows, and several exits are "not traced" | frozen list and scan (S4); trace the untraced exits |
+| Closed vocabularies (enums of any visibility whose constant names reach output) | section 7.4: every enum classified as reaching output or internal, each constant listed | `docs/` pages for the descriptor, profile and annotation values (`docs/configuration.md`, `docs/tools.md`) | an enum-constant scan (commands E11 and E11b) over enums of any visibility in `src/main` whose `name()` reaches output, compared with a frozen list that records, per enum, its constants and whether it leaves the process; a new enum or constant fails the test until classified | not pinned except `Metric` (`PrivacyMetricsTest`), `SourceOutcome.Status` (`SourceStatusCodesTest`), `Capability` and the profile enum shown in the pinned property list. 7.4 has 25 rows, and several exits are "not traced" | frozen list and scan (S4); trace the untraced exits |
 | Startup refusal codes | section 3.5 | `docs/configuration.md` or `docs/multiple-instances.md`, each with its cause | the same frozen resource and test, a second list | set not pinned. Undocumented: 40 of 131 | as above |
 | Validation violation codes | section 3.6 | `docs/tools.md` (the sensitive-pattern scan), `docs/faq.md` | a test beside `SensitivePatternValidator` | not pinned. Undocumented: 3 of 3 | small test and a paragraph |
 | Audit fields, record versions and `policyDecision` forms | 25 fields, version 3; no 0.8 change to either (tasks 206, 207, 211 leave them alone) | `docs/audit.md` (present) | `AuditRecordVersionTest`, `AuditFieldMappingTest`, `AuditEventHashTest` pinned literals | fields and hash pinned; `policyDecision` forms and the disposition grammar only partly (`AuditFieldDispositionTest`) | a test that lists the forms in `docs/audit.md` against code; the `names` grammar change (catalog OD-C2) lands with its test |
@@ -1457,7 +1466,7 @@ For each kind: what must exist, what must be documented, what must pin it with a
 | Hazelcast map names, protection names, health | section 8.1 | `docs/multiple-instances.md` | a frozen list of map names (they are a migration contract once keys are sealed) | not pinned | frozen list |
 | Link wire format | section 8.2: header, relation bytes, labels, version byte | `docs/` operator page (0.8) with key-destruction procedure (PLAN.md:107) | known-answer vectors (sealed-links §7 obligations) and a test that every relation byte is accepted by exactly one tool | not built | arrives with the 0.8 links brief |
 | Operator HTTP surface | 11 endpoints, error codes, `status` values (section 3.4) | `docs/reidentification.md` and the operator page | an endpoint-list test (Spring mapping scan) and the code test above | not pinned | endpoint-list test |
-| Decisions and register | OD-200-1 to -14 chosen; the stale rows in section 12 corrected (S1); every `proposed` name built or removed | this register updated in the same change as each addition | `docs/plan/design/contract-register.md` re-run of the extraction commands (E1 to E10, with E1c, E1r and E8b) shows no unexplained difference | this task | re-run at each 0.8 task, and at 0.9.0-rc |
+| Decisions and register | OD-200-1 to -15 chosen; the stale rows in section 12 corrected (S1); every `proposed` name built or removed | this register updated in the same change as each addition | `docs/plan/design/contract-register.md` re-run of the extraction commands (E1 to E10, with E1c, E1r and E8b) shows no unexplained difference | this task | re-run at each 0.8 task, and at 0.9.0-rc |
 
 The 0.8 tasks each add their names to the pinned lists in the same commit; the freeze checklist is satisfied when every row above has a test and every "Docs: no" row in sections 3 and 6 is "yes" or removed.
 
