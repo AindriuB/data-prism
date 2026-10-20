@@ -28,13 +28,16 @@ with the project release key (key ID `FC5E68A44A325696`). Check a jar:
 base=https://repo1.maven.org/maven2/io/github/aindriub/data-prism-core/<version>
 curl -fsSLO "$base/data-prism-core-<version>.jar"
 curl -fsSLO "$base/data-prism-core-<version>.jar.asc"
-gpg --keyserver keyserver.ubuntu.com --recv-keys FC5E68A44A325696
+gpg --keyserver hkps://keys.openpgp.org --recv-keys FC5E68A44A325696
 gpg --verify data-prism-core-<version>.jar.asc data-prism-core-<version>.jar
 ```
 
-Expected: `Good signature` from a key whose fingerprint ends in
-`FC5E68A44A325696`. A `BAD signature` or a different key means do not use the
-file.
+Expected: `Good signature` from the project release key. `gpg` prints
+`using RSA key FC2DB94A7891425639F53AEF697F862CDC47EBF1`, which is the signing
+subkey, and the primary key fingerprint is
+`7B633FA5CC84CDE87C1701A9FC5E68A44A325696` (its key ID, the last 16 digits, is
+`FC5E68A44A325696`). Check that the primary fingerprint matches. A
+`BAD signature` or a different key means do not use the file.
 
 ### SBOM
 
@@ -67,7 +70,8 @@ from the `v<version>` tag.
 
 The images are `ghcr.io/aindriub/data-prism-server` and
 `ghcr.io/aindriub/data-prism-quickstart-{server,fixtures,issuer,certs-init}`.
-Resolve a tag to its digest first, and verify the digest, not the tag:
+Resolve a tag to its digest first, and verify the digest, not the tag. That
+digest is the manifest list, and the manifest list is the object to verify:
 
 ```bash
 image=ghcr.io/aindriub/data-prism-server
@@ -77,8 +81,23 @@ digest=$(docker buildx imagetools inspect "$image:<version>" --format '{{json .M
 ### Signature
 
 Images are signed keylessly with cosign, using the GitHub Actions identity of
-the `publish-image.yml` workflow. Each per-architecture digest and each
-manifest list is signed.
+the `publish-image.yml` workflow. Cosign v3 or later is required: the
+signatures are stored only as sigstore bundle v0.3 OCI referrers, with no
+legacy `.sig` tags, and cosign v2 will not find them.
+
+Each image's manifest list and its per-architecture build indexes are signed.
+Verify the manifest list, which is the digest you get from the tag. It signs
+and attests the platform manifests it references.
+
+The per-architecture digests you can find from the tag (through
+`docker buildx imagetools inspect`, or in a registry UI) are different
+objects. Assembling the manifest list flattens the signed per-architecture
+build indexes into plain platform manifests, so those digests carry no cosign
+signature, attestation or SBOM of their own, and `cosign verify` on one fails.
+The signed per-architecture build indexes do exist. Their digests are recorded
+in the log of the `publish-image` run for the release, and they verify with
+the same command. Do not treat a failure on a flattened platform digest as a
+sign of tampering; verify the manifest list.
 
 ```bash
 cosign verify \
@@ -123,9 +142,10 @@ done
 Expected: a non-zero package count for each platform; a missing platform key
 fails loudly. For the provenance use `.Provenance` the same way.
 
-On a per-architecture digest (an index holding one platform plus its
-attestation manifest) buildx prints `.SBOM` and `.Provenance` unkeyed, so drop
-the `index`:
+On a signed per-architecture build index (its digest is in the
+`publish-image` run log; an index holding one platform plus its attestation
+manifest), buildx prints `.SBOM` and `.Provenance` unkeyed, so drop the
+`index`. The flattened platform digests found from the tag do not carry these:
 
 ```bash
 docker buildx imagetools inspect "$image@<per-arch-digest>" \

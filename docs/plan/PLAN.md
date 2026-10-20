@@ -47,22 +47,23 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 - `DataSourceAdapter` declares only `sourceName()`, `responseType()` and `fetch()` (`DataSourceAdapter.java:12-16`); there is no description or input-key declaration.
 
 
-### Open work and execution state (updated 2026-10-19)
+### Open work and execution state (updated 2026-10-20)
 
-PRs #130 (`plan/0.7.0`) and #131 (task 193) have merged to `main`, and `main` is the integration base. `plan/0.7.0` carries, in addition, the verified results of tasks 194, 196, 198 and 217, not yet on `main`. See `reconciliation-2026-10-19.md` for task allocation. This section supersedes the older execution summary below.
+0.7.0 is released (2026-10-20); see `HISTORY.md`, "0.7.0 released". Every 0.7.0 task has landed on `main`. The next work is task 215 (0.8 planning), which reads `docs/plan/design/contract-register.md`. No other task is open.
 
-Every 0.7.0 task has landed on `plan/0.7.0`; task 201 (CHANGELOG, migration page, architecture entries) landed on 2026-10-20 and is the last. Task 215 (0.8 planning) is open and can start now; it reads `docs/plan/design/contract-register.md`.
+#### 0.7.0 release gate: done
 
-#### 0.7.0 release gate
+All six items are done: the HTTP example re-capture, the owner's go, publication and task 188's five-step verification, the after-action report (presented in chat, not committed), the version-literal updates, and task 235. The verification found two documentation errors in `docs/verifying-releases.md` (the GPG keyserver command and the per-arch digests), corrected in the post-0.7.0 chore PR.
 
-Items 1 and 6 are done; the rest is not. The version bump must not happen without the owner's go.
+#### 0.8 backlog (carried from 0.7)
 
-1. Done: the single-source HTTP example blocks in `docs/agents/remote-http.md` and `docs/protect-your-own-api.md` were re-captured against the Compose stack and the from-source walkthrough on 2026-10-20 (04720f98).
-2. Owner go/no-go for the version bump, tag and publish (D-0.6 rule: no version bump, tag, publish or release PR without the owner's explicit go).
-3. After publishing and before announcing, run task 188's five-step supply-chain verification (see its retired Outcome, "Release checklist for 0.7.0", and the checklist below). If any step fails, correct the CHANGELOG Security and Build lines and the migration page's "Verifying a release" section.
-4. The after-action report after the release, presented in chat and never committed.
-5. The version bump must also update the hard-coded jar version in `docs/protect-your-own-api.md` (`data-prism-connectors-rest-0.6.0.jar`, and "recorded against 0.6.0" in the paragraph under the captured block, which says 0.6.0 only because the version is not yet bumped) and the stale "0.3.0" proof-table row around line 590. Alternatively reword them to avoid a version. Required with the bump.
-6. Done: task 235 landed on 2026-10-20. Approval decisions are audit-first, per D-0.7-AUD-1 (below).
+Follow-ups from the 0.7.0 release (none scheduled):
+
+- Sign and attest the per-arch platform manifests, or document the flattening. `imagetools create` flattens the signed per-arch indexes, so the per-arch digests discoverable from the tag carry no cosign signature or attestation. Today only the manifest list is verifiable from the tag; the per-arch index digests are recorded in the publish-image run.
+- Pin GitHub Actions by full version or SHA, and add a CI check that every `uses:` resolves. `sigstore/cosign-installer@v4` did not exist and was caught only by the real tag push.
+- Add a periodic dependency-tree advisory scan (the 234 follow-up below stands).
+- Consumers need `jackson-bom` until Spring Boot manages Jackson 3.1.7 or later.
+- The release SBOMs and the Central SBOMs differ because they come from two builds; consider building once.
 
 Follow-ups from the re-capture (not release-blocking): the other fail-closed blocks on `docs/protect-your-own-api.md` (the `MISSING` and `UNSUPPORTED_IDENTITY_RESOLVER` refusals and the rest) were not re-captured against the real stack.
 
@@ -117,8 +118,6 @@ Follow-ups from the final review of 216 (all P3):
 - `useLockTimeout` is last-store-wins; add a Javadoc note saying so.
 - The `PendingSet` CONFLICT sentinel `"\u0001conflict"` could collide with a scope ID. Prefer a null owner, or validate scope IDs.
 - With the quorum off (`approval-minimum-members` of 1), the docs should say that the same ID created in two scopes on either side of a split shares one slot after the heal. It fails closed, because both entries are then ambiguous to locate. Put this in `docs/multiple-instances.md` (task 201 or the next doc pass).
-
-Release cut, the two HTTP example re-captures and combined verification come after those tasks. No version bump, tag or publication is authorised by this plan.
 
 Owner decisions, all dated 2026-10-19:
 
@@ -212,13 +211,9 @@ The register (`docs/plan/design/contract-register.md`, section 16) names six suc
 - S5 (done): the D-070-3 line in `PLAN.md` is corrected by the OD-200-1 decision, recorded 2026-10-20.
 - S6 (0.9, before the 0.9 briefs): design the 0.9 contract with no name yet (register section 6.5): per-source role authorisation (D-RM-11), audit-entry size handling, and the `compare_entity_sources` review.
 
-### 0.7.0 release checklist additions (from task 188; CI-only paths, none exercised yet)
+### 0.7.0 release checklist additions: done
 
-1. After dispatching `publish-image.yml`, confirm `cosign verify` and `gh attestation verify` from `docs/verifying-releases.md` pass on the manifest list and one per-arch digest of every image.
-2. Confirm the manifest list assembled from the two per-arch indexes (which now carry attestation manifests) still lists amd64 and arm64, and that `imagetools inspect --format '{{json .SBOM}}'` returns an SBOM.
-3. Confirm the Central bundle lists `*-cyclonedx.json` with `.asc` files, and that `publish-central.yml`'s attest step finds `central-bundle.zip` after a real deploy.
-4. Confirm `gh attestation verify oci://ghcr.io/aindriub/<image>@<digest>` passes on both the manifest list and a per-arch digest (per-arch digests are now indexes).
-5. Confirm the GitHub Release shows the SBOM assets and `gh attestation verify` passes on them.
+Task 188's five-step verification ran against 0.7.0 on 2026-10-20 and passed (see `HISTORY.md`, "0.7.0 released"). Its CI-only paths are now exercised.
 
 ### 0.7.0 follow-ups found in review
 
