@@ -406,16 +406,10 @@ has real name `Fixture Person One` and real email
 bare JSON — one `id:`/`event:`/`data:` frame, the JSON-RPC response inside
 `data:`:
 
-!!! note "Not re-captured for 0.7"
-    The response below was converted by script from an earlier 0.6 capture to the 0.7 shape
-    (each `sources` entry is now `{status, entity}`; there is no top-level `entity`). It was not
-    re-run against a live stack. Values are unchanged by the shape change, but re-capture it
-    before the 0.7.0 release.
-
 ```
-id: 903eface-c8a4-4845-9631-aaa8fea1dc5d
+id: fa3d691c-e017-4e89-81d0-d8da7b7d73d3
 event: message
-data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-VHK4SXCQ\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":{\"status\":\"ANSWERED\",\"entity\":{\"customerName\":\"Casey Okafor (G2C8D3R4)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}},\"findings\":[]}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-VHK4SXCQ","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":{"status":"ANSWERED","entity":{"customerName":"Casey Okafor (G2C8D3R4)","email":"[REDACTED]","status":"ACTIVE"}}},"findings":[]}}}
+data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"entityType\":\"CUSTOMER\",\"subject\":\"SUBJ-VHK4SXCQ\",\"sources\":{\"ORGANISATION_IDENTITY-6BE1NJ46\":{\"status\":\"ANSWERED\",\"entity\":{\"customerName\":\"Casey Okafor (G2C8D3R4)\",\"email\":\"[REDACTED]\",\"status\":\"ACTIVE\"}}},\"findings\":[]}"}],"isError":false,"structuredContent":{"entityType":"CUSTOMER","subject":"SUBJ-VHK4SXCQ","sources":{"ORGANISATION_IDENTITY-6BE1NJ46":{"status":"ANSWERED","entity":{"customerName":"Casey Okafor (G2C8D3R4)","email":"[REDACTED]","status":"ACTIVE"}}},"findings":[]},"_meta":{"io.github.aindriub.dataprism/correlationId":"72819a63-c607-46c2-a079-3da81c87d664"}}}
 ```
 
 Neither raw value appears. `customerName` is a stable synthetic substitute in
@@ -423,8 +417,8 @@ the `PERSON_NAME` namespace (the catalogue's own `namespace:` above), `email`
 is redacted outright per its `action: REDACT`, and `status` passes through
 unchanged because the catalogue marked it `nonSensitive`. The subject itself
 (`SUBJ-VHK4SXCQ`) is a pseudonym too, not `1001`. This ran with
-`-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar`
-(recorded against 0.3.0) alone — no second jar,
+`-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.6.0.jar`
+(recorded against 0.6.0) alone — no second jar,
 no custom extension, no `IdentityResolver` bean compiled anywhere — and
 against the catalogue exactly as it is committed in
 `examples/json-sources/customer-api.yaml`, comments included: the transport
