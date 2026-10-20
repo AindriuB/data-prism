@@ -19,6 +19,7 @@ import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
+import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import io.github.aindriub.dataprism.validation.ValidationResult;
 import io.github.aindriub.dataprism.validation.Violation;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -89,6 +90,7 @@ class PrivacyExtensionPointsTest {
                     (List<LlmResponseValidator>) ReflectionTestUtils.getField(orchestrator, "validators");
             assertThat(validators).isNotNull();
             assertThat(validators).hasAtLeastOneElementOfType(RawValueLeakValidator.class);
+            assertThat(validators).hasAtLeastOneElementOfType(SensitivePatternValidator.class);
             assertThat(validators).contains(result.getBean("extraValidator", LlmResponseValidator.class));
 
             // The wired list is exactly what the orchestrator would evaluate:
