@@ -243,6 +243,75 @@ class ApprovalDecisionAuditTest {
     }
 
     @Test
+    void anotherApproversDecisionIsNotThisApproversSuccess() {
+        ApprovalStore racing = intercepting((method, delegate) -> {
+            if (method.equals("approve")) {
+                real.approve(pendingId[0], "carol", CLOCK.instant());
+                throw new IllegalStateException("reply lost");
+            }
+            return delegate.call();
+        });
+        String id = requested(admission(racing));
+        pendingId[0] = id;
+        OperatorException thrown = catchThrowableOfType(OperatorException.class,
+                () -> controller(racing).approve(id));
+        assertThat(statusOf(thrown)).isEqualTo(503);
+        assertThat(bodyCode(thrown)).isEqualTo("OVERSIGHT_UNAVAILABLE");
+        assertThat(decisionEvents(id)).extracting(AuditEvent::policyDecision)
+                .containsExactly("ALLOW:APPROVED", "DENY:OVERSIGHT_UNAVAILABLE");
+    }
+
+    private final String[] pendingId = new String[1];
+
+    @Test
+    void aDecidedStatusThatCarriesThisApproverIsNotSuccess() {
+        ApprovalStore rejecting = intercepting((method, delegate) -> {
+            if (method.equals("approve")) {
+                real.reject(pendingId[0], APPROVER.principalId(), CLOCK.instant());
+                throw new IllegalStateException("reply lost");
+            }
+            return delegate.call();
+        });
+        String id = requested(admission(rejecting));
+        pendingId[0] = id;
+        OperatorException thrown = catchThrowableOfType(OperatorException.class,
+                () -> controller(rejecting).approve(id));
+        assertThat(statusOf(thrown)).isEqualTo(503);
+        assertThat(bodyCode(thrown)).isEqualTo("OVERSIGHT_UNAVAILABLE");
+        assertThat(decisionEvents(id)).extracting(AuditEvent::policyDecision)
+                .containsExactly("ALLOW:APPROVED", "DENY:OVERSIGHT_UNAVAILABLE");
+    }
+
+    @Test
+    void aClusterRefusalBeforeTheCommitIsAllowThenALinkedDeny() {
+        for (RuntimeException failure : List.<RuntimeException>of(
+                new io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException(),
+                new io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException(
+                        new IllegalArgumentException("x")))) {
+            events.clear();
+            ApprovalStore refusing = intercepting((method, delegate) -> {
+                if (method.equals("approve")) {
+                    throw failure;
+                }
+                return delegate.call();
+            });
+            AuthenticatedCaller who = new AuthenticatedCaller("req-" + events.size() + failure.getClass()
+                    .getSimpleName(), "agent-client", Set.of("requester"), "fraud-review", "case-1", null);
+            String id = admission(refusing).admit(who, TOOL, SCOPE, "fp-" + failure.getClass().getSimpleName())
+                    .approvalId();
+            String code = failure instanceof io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException
+                    ? "CLUSTER_LOCK_TIMEOUT" : "CLUSTER_OPERATION_REFUSED";
+            OperatorException thrown = catchThrowableOfType(OperatorException.class,
+                    () -> controller(refusing).approve(id));
+            assertThat(bodyCode(thrown)).isEqualTo(code);
+            List<AuditEvent> pair = decisionEvents(id);
+            assertThat(pair).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED", "DENY:" + code);
+            assertThat(pair.get(1).correlationId()).isEqualTo(pair.get(0).correlationId());
+            assertThat(pair.get(1).approvalId()).isEqualTo(id);
+        }
+    }
+
+    @Test
     void aLinkedDenyThatCannotBeWrittenKeepsTheDecisionsCodeAndIsCounted() {
         ApprovalStore raced = intercepting((method, delegate) -> {
             if (method.equals("approve")) {

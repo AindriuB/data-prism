@@ -396,6 +396,59 @@ class ReidentificationServiceTest {
     }
 
     @Test
+    void anotherApproversDecisionIsNotThisApproversSuccess() {
+        ApprovalStore other = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                store.approve((String) args[0], "carol", now.get());
+                throw new IllegalStateException("reply lost");
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, other);
+        String id = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("REIDENTIFICATION_UNAVAILABLE"));
+        assertThat(decisionEvents(id)).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED",
+                "DENY:REIDENTIFICATION_UNAVAILABLE");
+    }
+
+    @Test
+    void aDecidedStatusThatCarriesThisApproverIsNotSuccess() {
+        ApprovalStore rejecting = intercepting((method, args, delegate) -> {
+            if (method.equals("approve")) {
+                store.reject((String) args[0], "bob", now.get());
+                throw new IllegalStateException("reply lost");
+            }
+            return delegate.call();
+        });
+        ReidentificationService s = service(true, 5, rejecting);
+        String id = requested(s);
+        assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused("REIDENTIFICATION_UNAVAILABLE"));
+    }
+
+    @Test
+    void aClusterRefusalBeforeTheCommitIsAllowThenALinkedDeny() {
+        for (RuntimeException failure : List.<RuntimeException>of(new ClusterLockTimeoutException(),
+                new ClusterOperationRefusedException(new IllegalArgumentException("x")))) {
+            events.clear();
+            ApprovalStore refusing = intercepting((method, args, delegate) -> {
+                if (method.equals("approve")) {
+                    throw failure;
+                }
+                return delegate.call();
+            });
+            ReidentificationService s = service(true, 5, refusing);
+            String id = requested(s);
+            String code = failure instanceof ClusterLockTimeoutException
+                    ? ClusterLockTimeoutException.CODE : ClusterOperationRefusedException.CODE;
+            assertThat(s.approve(caller("bob", "supervisor"), id)).isEqualTo(new Refused(code));
+            List<AuditEvent> pair = decisionEvents(id);
+            assertThat(pair).extracting(AuditEvent::policyDecision).containsExactly("ALLOW:APPROVED", "DENY:" + code);
+            assertThat(pair.get(1).correlationId()).isEqualTo(pair.get(0).correlationId());
+            assertThat(pair.get(1).approvalId()).isEqualTo(pair.get(0).approvalId()).isEqualTo(id);
+        }
+    }
+
+    @Test
     void aLinkedDenyThatCannotBeWrittenKeepsTheDecisionsCodeAndIsCounted() {
         ApprovalStore raced = intercepting((method, args, delegate) -> {
             if (method.equals("approve")) {

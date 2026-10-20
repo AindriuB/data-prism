@@ -269,3 +269,19 @@ fixture class nested in `ArchitectureTest` (`ApproveCallerFixture`, a class that
   `ALLOW:FORWARDED` event under `operator:reidentify-approve` before calling the service, and that write failing
   gives `AUDIT_UNAVAILABLE` before the service runs. It is outside `Owns` and unchanged.
 - The `Metric.java` register line and `reject`/`open` residuals are as listed in Out of scope.
+
+**Coordinator acceptance and follow-up (after test and review; bug hunt clean).** The three deviations above
+(the `denialAuditDown` flag in `ClusterRefusalOperatorTest`, the `denied`/`refusalOf` split, the extra
+`ReidentificationService` constructor) are accepted. Follow-up commit adds:
+- Guards for the `applied()` filters in both classes: `anotherApproversDecisionIsNotThisApproversSuccess` (another
+  approver's decision committed, then a raw exception: refused with a linked `DENY`) and
+  `aDecidedStatusThatCarriesThisApproverIsNotSuccess` (a `REJECTED` value carrying this approver is not success).
+  The reidentification and operator versions each fail with the approver filter removed (re-identification: assertion
+  at `ReidentificationServiceTest:409`; operator: approve returned success, `NullPointerException` in `statusOf`)
+  and with the status filter removed (`:425`; operator likewise). The filters are restored.
+  An `EXPIRED` variant was not added: an expiry commit does not record an approver.
+- `aClusterRefusalBeforeTheCommitIsAllowThenALinkedDeny` in both classes, for `ClusterLockTimeoutException` and
+  `ClusterOperationRefusedException`: `ALLOW:APPROVED` then `DENY:<code>`, one correlation id, the approval id.
+  It fails when the branch uses the unlinked denial (`ReidentificationServiceTest:446`,
+  `ApprovalDecisionAuditTest:309`). Restored.
+- `docs/multiple-instances.md` approve row: the audit pair is qualified for a linked `DENY` that could not be written.
