@@ -45,3 +45,14 @@ in a form 0.8 and 0.9 can repeat.
 ## Out of scope
 - Any code change, including to the harness (file a successor task instead).
 - Soak, cluster and 500-source runs (0.8/0.9).
+
+## Outcome
+Ran sources-8, -32, -100 and -300 (optional) three times each with `load-test/run.sh` at
+`558371184710ee673cb329edaee63e2a42092cf0` on an Apple M1 (8 cores, 16 GiB, macOS 27.0.1, JDK 25.0.4,
+no container); raw files in `load-test/baselines/0.7/`, write-up in `docs/plan/perf/baseline-0.7.md`.
+p50 ms (median of 3): 30 / 51 / 103 / 190; throughput per second: 127 / 77 / 38 / 20. All calls
+answered, no refusals, timeouts or transport failures (one FAILED source read in 90000 at 300 sources).
+Latency fits a concurrency-capped fan-out, not profiled. Failure paths and the named structural limits
+were not exercised (all-success workload). Host was not quiescent (sibling agents building); recorded
+in the document, and a first pass overlapped by sibling builds was discarded. `ps` after the runs
+showed no server or harness process left.
