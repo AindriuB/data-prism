@@ -174,3 +174,98 @@ pass `PrivacyMetrics.none()`. `ReidentificationWiring` passes the metrics it alr
   personal data, credentials or tokens.
 
 ## Outcome
+
+Decisions (owner): D-0.7-AUD-1, fix before 0.7.0. Design (a), audit-first, accepted 2026-10-20: an
+`ALLOW:APPROVED` took effect unless a `DENY` with the same correlation id and approval id follows it. Reject
+keeps commit-then-audit.
+
+Built on `c4fdbd86` (`origin/plan/0.7.0`, which includes `docs/cluster-refusal-retry`).
+
+**What changed.** Both `approve` methods now run: find and check, pre-check what the store would refuse (one
+`DENY`, no `ALLOW`, no store call), write `ALLOW:APPROVED` under one correlation id, then `ApprovalStore.approve`.
+A failed `ALLOW` write refuses `AUDIT_UNAVAILABLE` and never calls the store. `revoke` and its `consumeApproved`
+undo are gone from both classes (`ReidentificationService.collect` still calls `consumeApproved`; that is the
+requester's one use, not an undo). `ApprovalRefusedException`, `ClusterLockTimeoutException` and
+`ClusterOperationRefusedException` write a linked `DENY`. Any other `RuntimeException` re-reads with `find`: an
+`APPROVED` or `CONSUMED` value with the caller as approver is success with no `DENY`, anything else (including a
+failed re-read) is a linked `DENY:REIDENTIFICATION_UNAVAILABLE` or `DENY:OVERSIGHT_UNAVAILABLE`.
+`dataprism.approval.decision.unconfirmed` is incremented at most once per call (unknown outcome, or a linked
+`DENY` that could not be written). `dataprism.approval.decision.audit_unavailable` once per refused `ALLOW`.
+
+**Hazelcast check.** In `HazelcastApprovalStore.decide`, `ClusterLockTimeoutException` and
+`ClusterOperationRefusedException` come from `ClusterLocks.acquire` and the lookups before the commit. The commit's
+`executeOnKey` is not wrapped in `cluster(...)`, so a failure after it is a raw `RuntimeException` and takes the
+unknown-outcome path. Neither cluster code can be thrown after the commit, so the linked-`DENY` treatment is right.
+
+**Red evidence (before the fix).** The scaffolding commit `f5c051e7` adds only the metric constants, constructors
+and `OperatorAudit` overloads and has no behaviour change, so the new tests fail on it exactly as on `c4fdbd86`
+(they do not compile there). Failures, from `bb8293b9` (`ReidentificationServiceTest`, 7 of 32 failed, the 25 old
+tests passed):
+- `approveWithAuditDownLeavesTheApprovalPendingEvenWhenAnUndoWouldFail`: expected `Refused[APPROVAL_NOT_APPROVED]`
+  but was `Resolved[subjectId=<withheld>]` (the bug: a failed undo left a usable, unaudited approval).
+- `theApprovalIsStillPendingWhenItsAllowEventIsWritten`: expected `[PENDING]`, actual `[APPROVED]`.
+- `anApproveThatLosesARaceIsAuditedAsAllowThenALinkedDeny`: expected `[ALLOW:APPROVED, DENY:APPROVAL_NOT_PENDING]`,
+  actual `[DENY:APPROVAL_NOT_PENDING]`.
+- `anApproveWhoseReplyIsLostAfterItAppliedIsSuccessWithoutADeny`: `Refused[REIDENTIFICATION_UNAVAILABLE]` was not
+  `Approved`.
+- `anApproveThatCannotBeConfirmedIsRefusedWithALinkedDenyAndCounted`: expected `[ALLOW:APPROVED,
+  DENY:REIDENTIFICATION_UNAVAILABLE]`, actual `[DENY:REIDENTIFICATION_UNAVAILABLE]`.
+- `aLinkedDenyThatCannotBeWrittenKeepsTheDecisionsCodeAndIsCounted`: metrics `{}`, expected `UNCONFIRMED=1`.
+- `anApproveTheStoreWouldRefuseIsDeniedOnceWithoutAnAllowAndNeverReachesTheStore`: store `approve` calls expected 0
+  but was 3.
+
+From `400915ad` (`ApprovalDecisionAuditTest`, 7 of 8 failed; the happy-path test passed as a regression guard):
+- `approveWithAuditDownLeavesTheApprovalPendingEvenWhenAnUndoWouldFail`: the identical call was admitted
+  (`Expecting value to be false but was true`; the old undo failed as designed).
+- `theApprovalIsStillPendingWhenItsAllowEventIsWritten`: expected `[PENDING]`, actual `[APPROVED]`.
+- `anApproveThatLosesARaceIsAuditedAsAllowThenALinkedDeny`: actual `[DENY:APPROVAL_NOT_PENDING]` only.
+- `anApproveThatCannotBeConfirmedIsRefusedWithALinkedDenyAndCounted`: actual `[DENY:OVERSIGHT_UNAVAILABLE]` only.
+- `anApproveWhoseReplyIsLostAfterItAppliedIsSuccessWithoutADeny`: threw `OperatorException: OVERSIGHT_UNAVAILABLE`.
+- `aLinkedDenyThatCannotBeWrittenKeepsTheDecisionsCodeAndIsCounted`: metrics `{}`.
+- `anApproveTheStoreWouldRefuseIsDeniedOnceWithoutAnAllowAndNeverReachesTheStore`: store `approve` calls expected 0
+  but was 3.
+
+The failing-undo wrappers fail the first `consumeApproved` after an `approve` (not the first call overall, because
+tool-call admission itself calls `consumeApproved`). No sleeps or waits are used anywhere in the tests.
+
+**Owns widenings.**
+1. `docs/multiple-instances.md`, the approve row of "What a cluster refusal leaves behind" (coordinator-approved):
+   "Nothing from this call" became "No stored state from this call. For `approve`, the audit pair is already
+   written ... A refused `reject` writes a `DENY` only." The rest of that row, and the rest of the subsection, is
+   unchanged.
+2. `ClusterRefusalOperatorTest.aClusterRefusalStaysARefusalWhenTheDenialCannotBeAudited`: not only a constructor
+   call. It set `auditDown = true` and expected the cluster code. Under audit-first an unwritable `ALLOW` is
+   correctly `AUDIT_UNAVAILABLE`, so the test failed. The intent (a cluster refusal whose denial cannot be written
+   is still that refusal) is kept by a new `denialAuditDown` flag that fails only `DENY` events. The coordinator
+   should confirm or revert this.
+3. `ReidentificationServiceTest`: the existing fixture gained an `onEvent` hook, a recording `PrivacyMetrics`,
+   and `service(...)` now builds with the metrics constructor and an optional store. No existing assertion changed.
+4. `OversightOperatorController.denied`: its code mapping is untouched, but it was split into `denied` (audit) and
+   `refusalOf` (the mapping) so the linked path reuses the mapping. `reject` still calls `denied` as before.
+5. `ReidentificationService` gained a second public constructor `(ScopeIdentityIndex, ..., PrivacyMetrics)`, because
+   `ReidentificationWiring` may not name `ScopeIdentityIndex::subjectFor` (`ArchitectureTest`).
+
+**ArchitectureTest.** `onlyTheAuditingApproversCallApprove` passes on the real classes. The negative check is a
+fixture class nested in `ArchitectureTest` (`ApproveCallerFixture`, a class that calls `store.approve`), and
+`approveRuleCatchesACallFromAnotherClass` asserts the rule fails on it. This stands in for temporarily editing
+`ToolAdmission` (a separate fixture file would be outside `Owns`).
+
+**Verification.**
+- `./mvnw -B verify`: exit 0. Surefire XML: 1995 tests, 0 failures, 0 errors, 0 skipped. Failsafe XML: 17 tests,
+  0 failures, 0 errors, 0 skipped.
+- `./mvnw -B -Prelease -DskipTests package`: exit 0.
+- `mkdocs build --strict`: exit 0. The six `docs-site/hooks/check_*.py` with `DP_REQUIRE_NO_STUBS=true`: all exit 0
+  (they read the built `site/`, so mkdocs is run into the default `site/` first; `site/` is untracked and not
+  committed).
+- `git diff c4fdbd86 -- docs/multiple-instances.md` has two hunks: the approve row and the residual paragraph.
+
+**Noted, not fixed.**
+- `docs/plan/design/contract-register.md`: the new constants sit at `Metric.java:25-26`, so the `Metric.java:26-29`
+  line references of the four `audit.retention.*` rows are now two lines out. The task allowed insertions only.
+- An expired approval is now refused at the pre-check without calling the store, so the store no longer marks it
+  `EXPIRED` and frees its pending slot at that moment. It frees on its own expiry as before (live-pending counts are
+  expiry-aware).
+- The re-identification operator endpoint (`ReidentificationOperatorController.approve`) writes its own
+  `ALLOW:FORWARDED` event under `operator:reidentify-approve` before calling the service, and that write failing
+  gives `AUDIT_UNAVAILABLE` before the service runs. It is outside `Owns` and unchanged.
+- The `Metric.java` register line and `reject`/`open` residuals are as listed in Out of scope.
