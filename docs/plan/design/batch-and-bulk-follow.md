@@ -3,6 +3,8 @@
 Status: design. Part A (the `list_sources` page) is for 0.8, as decided in catalog OD-C16. Everything else (batch, collection paging, truncation markers, bulk follow) is for 0.9, and the surface freezes at the 0.9.0 release. Internal (`docs/plan/design/`, D-070-12 (a)); not published.
 Task 198. Companions: `catalog.md` (task 197), `sealed-links.md` and `key-resolvers.md` (task 191), whose names and mechanisms this document reuses and does not redefine. Nothing here is code, an SPI stub or a configuration property; every name and every number is a proposal until the 0.8 or 0.9 task that builds it.
 
+Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-3 (the status first drafted as `KEY_UNRESOLVED` is `RESOLVER_FAILED`), OD-200-4 (source labels at most 64, key namespace grammar `[a-z][a-z0-9-]{0,31}`, entity type 64, field path 64) and OD-200-5 (the `FOLLOW` capability is defined in `sealed-links.md`). The worst-case length figures of Part A and 3.2 are recomputed with those caps. No decision is changed here. Each edit cites its id on the line it changes.
+
 Every product choice in this text was an open decision (OD-B1 to OD-B24, section 9) with options and a recommendation. On 2026-10-19 the owner decided all of them; section 9 records each decision. Three were decided explicitly by the owner (OD-B12 in part, OD-B18, OD-B24 option (b)); the rest were delegated to the recommendations. Passages marked "(proposal, OD-Bn)" now follow the decision recorded for that OD. The text remains a design, not code, and the surface still freezes at 0.9.0. What was already decided (D-RM-7, D-RM-12, D-RM-15, OD-C16 and the earlier design decisions listed below) is cited and not reopened.
 
 All examples use an invented neutral domain: a logistics estate with a parcel service, a depot service and a courier-roster service (the domain of the three companion documents). No real system, organisation or data model is meant.
@@ -70,7 +72,7 @@ The schema replaces the one in `catalog.md` section 3 (the two filters are uncha
     "keyNamespace": {
       "description": "Only sources that accept a key in this namespace.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
     },
     "pageSize": {
       "description": "The most entries to return. Above the configured ceiling the ceiling applies and the response says so (OD-B6). Absent: the configured default, or the size recorded in the page link.",
@@ -117,11 +119,11 @@ The schema replaces the one in `catalog.md` section 3 by adding one required pro
   "required": ["correlationId", "labels", "sources", "page"],
   "additionalProperties": false,
   "$defs": {
-    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+    "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
     "entry": {
       "type": "object",
       "properties": {
-        "source": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 64 },
         "description": { "type": "string", "minLength": 1, "maxLength": 240 },
         "entityTypes": {
           "type": "array",
@@ -248,11 +250,11 @@ A page link is a sealed link in the envelope of `sealed-links.md` section 3: bas
 | target (cleartext header, in the AAD) | empty (length 0). A page link names no source |
 | scope, caller | in the AAD, from the session, never from the token (as for every link). `dataprism.links.bind-caller` applies |
 | expiry | in the header and the AAD; `min(now + lifetime, scope expiry, token expiry)` (A.8) |
-| sealed payload | link id (8 bytes); issue time (8); depth `0`; `entityType` filter (1 + up to 64, empty when absent); `keyNamespace` filter (1 + up to 64, empty when absent); effective label kind (1 byte: alias or real); page size (2); the last label returned (1 + up to 128); the catalog tag (16, below) |
+| sealed payload | link id (8 bytes); issue time (8); depth `0`; `entityType` filter (1 + up to 64, empty when absent); `keyNamespace` filter (1 + up to 32, empty when absent; OD-200-4); effective label kind (1 byte: alias or real); page size (2); the last label returned (1 + up to 64; OD-200-4); the catalog tag (16, below) |
 
 The catalog tag is `HMAC(fingerprintKey, label_1 | ... | label_n)` truncated to 16 bytes, over the labels of the entire visible, filtered list (not only the page), in byte order, length-prefixed. `fingerprintKey` is the per-scope key of `sealed-links.md` section 3. Every page recomputes it from the same list it is slicing, which costs one pass over an in-memory list. Its purpose is to make a catalog that changed between two pages detectable (A.6) without storing anything.
 
-A page link never holds a real source name unless the effective setting is real names, and then only inside the ciphertext, as the last label. Worst case size: header 56 bytes (1 + 17 + 8 + 1 + 1 + 12 + 16, no target) plus payload 8 + 8 + 1 + 65 + 65 + 1 + 2 + 129 + 16 = 295, so 351 bytes and 468 characters, inside the default `max-length` of 1024 (OD-B12, decided 2026-10-19) by a margin of 556 characters. The arithmetic is to be rechecked against whatever task 191's build fixes for the header.
+A page link never holds a real source name unless the effective setting is real names, and then only inside the ciphertext, as the last label. Worst case size: header 56 bytes (1 + 17 + 8 + 1 + 1 + 12 + 16, no target) plus payload 8 + 8 + 1 + 65 + 33 + 1 + 2 + 65 + 16 = 199 (entity type 1 + 64, key namespace 1 + 32, last label 1 + 64; OD-200-4), so 255 bytes and 340 characters, inside the default `max-length` of 1024 (OD-B12, decided 2026-10-19) by a margin of 684 characters. The arithmetic is to be rechecked against whatever task 191's build fixes for the header.
 
 Why a sealed link and not a bare `after=<label>` value. This is OD-B2. A bare label would be simpler and would leak nothing, because a listing is a filter over the caller's own visible set. The brief and D-RM-12 require sealed next links, and sealing gives three properties a bare label does not: the continuation is bound to the filters, label kind, scope and caller it was issued for (so a link pasted into another investigation or another caller's session is refused); it expires, which bounds how long a walk can be replayed; and it is one mechanism with the 0.9 collection links, which do need the sealer. The cost is that paging then needs a link key in 0.8 even where `dataprism.links.enabled` is `false`. What happens when there is no key, including a small `pageSize` that makes a small estate multi-page, is OD-B2.
 
@@ -357,7 +359,7 @@ Scope, principal, purpose and case come from the session (rule 4). The reserved 
   "$defs": {
     "targetSources": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
       "minItems": 1,
       "uniqueItems": true
     },
@@ -430,7 +432,7 @@ The result for item *i* is at `results[i]`; the array has exactly one element pe
     "truncation": {
       "type": "object",
       "properties": {
-        "path": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 64 },
         "kept": { "type": "integer", "minimum": 0 },
         "omitted": { "type": "integer", "minimum": 1 },
         "reason": { "enum": ["RECORD_CAP", "SIZE_CAP"] },
@@ -604,9 +606,9 @@ Mechanism (OD-B12 compares the options; this is the recommendation):
 3. Because the source may change between the first read and the page read, the link records a keyed fingerprint of the last kept record (the raw record, canonicalised, under the per-scope fingerprint key of `sealed-links.md` section 3, 12 bytes). On the re-read the server checks that the record at `offset - 1` has that fingerprint. If it does not (the collection changed ahead of the boundary), the follow is refused with the uniform refusal and the audit-only reason `LINK_ORIGIN_DRIFT` (the existing `ORIGIN_DRIFT` of task 191). The client starts again from the original call. A changed record behind the boundary does not matter; a change beyond the boundary appears in the later page. Records are never deduplicated, reordered or interpreted.
 4. The link contains the real key it needs, sealed as `sealed-links.md` OD-1 (a') seals a chained key: for a source result from the root call, the root `subjectId`; for a source result reached by `follow`, the sealed chained key. No new class of real identifier enters a link, and the residual risks T10 and T17 are the accepted ones.
 
-The collection page link is a sealed link (task 191 envelope) with relation byte `0x03`, "collection page", target the source label (as for a direct link), and a sealed payload that, beyond task 191's fixed fields, holds: the entity type (1 + 32); the sealed key (2 + 64k, at most 258); the key namespace (1 + 32); the field path of the collection (1 + up to 64); the offset (4); the fingerprint of the last kept record (12); and the number of records the page may keep (2).
+The collection page link is a sealed link (task 191 envelope) with relation byte `0x03`, "collection page", target the source label (as for a direct link), and a sealed payload that, beyond task 191's fixed fields, holds: the entity type (1 + 64; OD-200-4); the sealed key (2 + 64k, at most 258); the key namespace (1 + 32); the field path of the collection (1 + up to 64; OD-200-4); the offset (4); the fingerprint of the last kept record (12); and the number of records the page may keep (2).
 
-Size. Header 120 bytes (the target label is present, up to 64 bytes). Payload, worst case: link id 8, issue time 8, depth 1, key namespace 33, entity type 65 (the catalog pattern allows 64 characters), sealed key 258 (the 256-byte bucket and its length prefix), path 65, offset 4, record fingerprint 12, page record count 2, which is 456 bytes. Total 576 bytes, which is 768 characters in base64url: exactly the 768 that task 191 decided as the default `dataprism.links.max-length` (OD-12 of `sealed-links.md`), a margin of zero. A margin of zero is a defect. The owner decided on 2026-10-19 (OD-B12) to raise the default to 1024, a margin of 256 characters, which removes the defect: any later header field would make the worst-case link unissuable, and so (below) the collection unpageable. This document does not fix it; OD-B12 lists the fixes (a larger default `max-length`, or a startup limit on entity-type and path length for paged sources), and task 191's sizing must carry this link kind in its arithmetic. Until it is settled, the worst case is the only figure to design against. A link that cannot be issued is not issued (`sealed-links.md` rule 6) and the consequence for a collection is fail closed (section 4).
+Size. Header 120 bytes (the target label is present, up to 64 bytes). Payload, worst case: link id 8, issue time 8, depth 1, key namespace 33, entity type 65 (1 + 64, the cap of OD-200-4), sealed key 258 (the 256-byte bucket and its length prefix), path 65, offset 4, record fingerprint 12, page record count 2, which is 456 bytes (unchanged by the OD-200-4 recompute). Total 576 bytes, which is 768 characters in base64url, at most the 1024 default: exactly the 768 that task 191 decided as the default `dataprism.links.max-length` (OD-12 of `sealed-links.md`), a margin of zero. A margin of zero is a defect. The owner decided on 2026-10-19 (OD-B12) to raise the default to 1024, a margin of 256 characters, which removes the defect: any later header field would make the worst-case link unissuable, and so (below) the collection unpageable. This document does not fix it; OD-B12 lists the fixes (a larger default `max-length`, or a startup limit on entity-type and path length for paged sources), and task 191's sizing must carry this link kind in its arithmetic. Until it is settled, the worst case is the only figure to design against. A link that cannot be issued is not issued (`sealed-links.md` rule 6) and the consequence for a collection is fail closed (section 4).
 
 ### Relation bytes
 
@@ -661,7 +663,7 @@ The `follow` result of a page link is the same envelope as any `follow` (one ent
         "_page": {
           "type": "object",
           "properties": {
-            "path": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "path": { "type": "string", "minLength": 1, "maxLength": 64 },
             "offset": { "type": "integer", "minimum": 0 },
             "kept": { "type": "integer", "minimum": 0 },
             "last": { "type": "boolean" }
@@ -899,7 +901,7 @@ Results are per target source and are never summed across targets (D-RM-1: per-s
 }
 ```
 
-The status keys are the task 190 source status codes as merged (`ANSWERED`, `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `SKIPPED_OVER_LIMIT`, `REFUSED`) and `KEY_UNRESOLVED` of `key-resolvers.md`, with their meanings unchanged, plus two keys that exist only at this level because no source status can express them:
+The status keys are the task 190 source status codes as merged (`ANSWERED`, `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `SKIPPED_OVER_LIMIT`, `REFUSED`) and `RESOLVER_FAILED` of `key-resolvers.md` (OD-200-3), with their meanings unchanged, plus two keys that exist only at this level because no source status can express them:
 
 | Count key | Meaning |
 |---|---|
@@ -930,7 +932,7 @@ An example, 40 links followed against two targets:
 
 ### Drill-in links and the cap
 
-An exception is a followed element whose status is in `exceptionStatuses`. By default (OD-B15) that is every status except `ANSWERED`, so the agent sees the `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `REFUSED` and `KEY_UNRESOLVED` cases, which is where an investigation of where a record stopped looks. The caller can name the statuses it wants (including `ANSWERED`, for example to compare two services on the ones both hold). `SCOPE_READ_BUDGET`, `DEFERRED` and invalid links are not exceptions; they are counts only, and the client re-sends the links it still holds.
+An exception is a followed element whose status is in `exceptionStatuses`. By default (OD-B15) that is every status except `ANSWERED`, so the agent sees the `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `REFUSED` and `RESOLVER_FAILED` cases, which is where an investigation of where a record stopped looks. The caller can name the statuses it wants (including `ANSWERED`, for example to compare two services on the ones both hold). `SCOPE_READ_BUDGET`, `DEFERRED` and invalid links are not exceptions; they are counts only, and the client re-sends the links it still holds.
 
 The drill-in link must not extend a lifetime or mint a link that no declaration produced (D-RM-6, D-RM-14). The recommended rule (OD-B20):
 
@@ -1088,7 +1090,7 @@ All are decided as of 2026-10-19. The options and recommendations are kept for t
 | OD-B4 | A catalog (or label kind, or visible set) that changed between two pages | (a) refuse with the uniform refusal; the walk starts again (A.6); (b) continue by keyset from the last label regardless: entries added or removed during the walk may be missed or shown late, silently; (c) continue and add `page.changed: true` to the response, an extra field and a weaker end-of-list claim | (a). Fail closed, and a walk is either complete or refused. The cost is a restart after a deployment, a few pages at most. (b) hides a gap from the agent and (c) adds a field to the frozen surface **Decided (owner delegated), 2026-10-19: the recommendation.** |
 | OD-B5 | A `total` in the `list_sources` page | (a) none; (b) `page.total`, the number of visible, filtered sources, only on the first page; (c) on every page | (a). The count discloses nothing the walk does not, but it has to be computed and agree with the pages if the catalog moves; it can be added later as an optional field. Not needed to walk a list **Decided (owner delegated), 2026-10-19: the recommendation.** |
 | OD-B6 | A `pageSize` above the ceiling | (a) apply the ceiling and report it in `page.size`; (b) refuse with a new code | (a). A listing is metadata, the end marker is explicit, so nothing is silently lost; a refusal would add a code to freeze for no safety gain **Decided (owner delegated), 2026-10-19: the recommendation.** |
-| OD-B7 | The capability for `get_entity_contexts` and `follow_bulk` | (a) a new capability for each tool (`GET_ENTITY_CONTEXTS`, `FOLLOW_BULK`), granted per role, off until granted, with an upgrade note as for `compare_entity_sources` in 0.2.0; (b) reuse `GET_ENTITY_CONTEXT` for the batch and `FOLLOW` (task 191) for bulk, so existing grants carry over | (a). Oversight (pause, per-tool approval, rate limit) and role policy are per tool name; a batch is a bigger operation than a single read and should be granted on purpose. (b) widens existing grants silently **Decided (owner delegated), 2026-10-19: the recommendation.** |
+| OD-B7 | The capability for `get_entity_contexts` and `follow_bulk` | (a) a new capability for each tool (`GET_ENTITY_CONTEXTS`, `FOLLOW_BULK`), granted per role, off until granted, with an upgrade note as for `compare_entity_sources` in 0.2.0; (b) reuse `GET_ENTITY_CONTEXT` for the batch and `FOLLOW` (OD-200-5, defined in `sealed-links.md`) for bulk, so existing grants carry over | (a). Oversight (pause, per-tool approval, rate limit) and role policy are per tool name; a batch is a bigger operation than a single read and should be granted on purpose. (b) widens existing grants silently **Decided (owner delegated), 2026-10-19: the recommendation.** |
 | OD-B8 | The batch ceiling (key `dataprism.batch.ceiling`) and the rule for per-scope sizes | (a) ceiling 64, per-scope sizes by scope patterns (`dataprism.batch.scope-sizes`); (b) ceiling 32; (c) ceiling 128; (d) one global size, no per-scope setting (does not meet D-RM-7). The default 16 is decided in D-RM-7. At 5,000 items a call of 16 is 313 calls, 32 is 157, 64 is 79, 128 is 40 | (a). 64 limits the size of a single response and the time of one call while cutting calls by four against the default; the scope patterns reuse the grammar of OD-C3 (c). A starting value for the load harness **Decided (owner delegated), 2026-10-19: the recommendation.** |
 | OD-B9 | How a client learns its batch size | (a) `limits.batchSize` in every batch response (shown in the schema); (b) only through the static tool description (a ceiling, not the scope's size); (c) not at all: the client learns from `BATCH_TOO_LARGE` | (a). Without it an agent has to guess and fail. It discloses a configuration value to a caller who is authorised to use the tool **Decided (owner delegated), 2026-10-19: the recommendation.** |
 | OD-B10 | The rate-limit charge and the budget charge for a batch and for `follow_bulk` | Rate limit: (a) one token per item, and per followed element in `follow_bulk` (a batch of 16 uses 16 of the caller's allowance); (b) one per call; (c) one per call plus one per item beyond the first. Budget: both tools charge the read budget per source read, per item or element (a group link adds one read for the origin re-read); a separate bulk read allowance is not proposed | (a) for the rate limit. Otherwise a batch or a bulk call multiplies a caller's allowance by its size, and `follow_bulk` is the cheapest way to make many reads. Needs the oversight limiter to charge a number of tokens, which it may not support yet (`docs/tools.md` says oversight wiring is to be revisited); (b) is the fallback and then operators should read the allowance as per call. The budget rule follows from the 0.8 per-source charge and decides nothing new **Decided (owner delegated), 2026-10-19: the recommendation.** |
@@ -1124,7 +1126,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 | `dataprism.paging.pages` | metric (counter, closed labels) | 0.8 | `dataprism.links.keys.loaded` (sibling group) |
 | `get_entity_contexts` | MCP tool | 0.9 | `get_entity_context` (the singular tool; plural is the batch) |
 | `follow_bulk` | MCP tool | 0.9 | `follow` (task 191) |
-| `GET_ENTITY_CONTEXTS`, `FOLLOW_BULK` | capabilities | 0.9 | `GET_ENTITY_CONTEXT` (exists), `FOLLOW` (task 191) |
+| `GET_ENTITY_CONTEXTS`, `FOLLOW_BULK` | capabilities | 0.9 | `GET_ENTITY_CONTEXT` (exists), `FOLLOW` (OD-200-5; defined in `sealed-links.md`) |
 | `items`, `targetSources` (batch input) | input fields | 0.9 | `targetSources` of `catalog.md` (same name, same meaning); `items` is also the field of a one-to-many `follow` result, a different object in a different tool |
 | `limits`, `batchSize`, `summary`, `done`, `refused`, `deferred`, `results`, `index`, `outcome`, `code`, `deferredBy` | batch result fields | 0.9 | `RequestLimits` (Java, internal) and `dataprism.limits.*` (configuration): `limits` in a result is a different thing; `outcome` is also a class name in the orchestration module (`SourceOutcome`), never a result field there |
 | `DONE`, `DEFERRED` | batch `outcome` values | 0.9 | `REFUSED` is reused from the per-source codes with a related meaning at the item level, under a different field name (`outcome` against `status`) so the two never share a code space |
