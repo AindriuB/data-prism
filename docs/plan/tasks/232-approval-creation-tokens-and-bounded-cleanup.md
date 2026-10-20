@@ -442,3 +442,9 @@ caller to re-read the status (`find`) before treating the failure as final. Foll
 so the timeout wiring through `ReidentificationWiring` has no production effect yet; it is correct for when a caller
 is added.
 
+### Test counts after the re-review fixes
+
+`./mvnw -B verify`: exit 0, 1956 tests, 0 failures, 0 errors, 0 skipped (1939 surefire, 17 failsafe).
+`./mvnw -B -Prelease -DskipTests package`: exit 0. `./mvnw -B -pl data-prism-hazelcast -am verify`, twice: exit 0 both
+times, 204 tests in the module, 0 failures. (The counts in "Test counts" above are from before these fixes.)
+
