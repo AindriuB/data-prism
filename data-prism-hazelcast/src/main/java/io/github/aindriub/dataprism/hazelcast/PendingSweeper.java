@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -86,8 +85,17 @@ final class PendingSweeper implements AutoCloseable {
             return 0;
         }
         int removed = 0;
-        for (Object count : pending.executeOnKeys(owned, new PendingSet.Sweep(now, SLACK.toMillis())).values()) {
-            removed += (Integer) count;
+        PendingSet.Sweep sweep = new PendingSet.Sweep(now, SLACK.toMillis());
+        for (String key : owned) {
+            // A key someone holds is left until the next interval, so no sweep waits on a lock.
+            if (!ClusterLocks.tryAcquireNow(pending, key, lockTimeout)) {
+                continue;
+            }
+            try {
+                removed += pending.executeOnKey(key, sweep);
+            } finally {
+                ClusterLocks.release(pending, key);
+            }
         }
         return removed;
     }

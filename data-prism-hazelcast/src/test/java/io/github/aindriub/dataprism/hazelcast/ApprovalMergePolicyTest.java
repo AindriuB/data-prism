@@ -46,8 +46,15 @@ class ApprovalMergePolicyTest {
                 });
     }
 
+    private static final String TOKEN = "00000000-0000-0000-0000-000000000001";
+    private static final String OTHER_TOKEN = "00000000-0000-0000-0000-000000000002";
+
     private static String encoded(Status status) {
-        return HazelcastApprovalStore.Codec.encode(TestMembers.request("a-1", "s-1", status));
+        return encoded(status, TOKEN);
+    }
+
+    private static String encoded(Status status, String token) {
+        return HazelcastApprovalStore.Codec.encode(TestMembers.request("a-1", "s-1", status), token);
     }
 
     private static Status merged(Status merging, Status existing) throws Exception {
@@ -87,5 +94,38 @@ class ApprovalMergePolicyTest {
     void anUnreadableEntryIsDroppedRatherThanKept() throws Exception {
         assertThat(configuredPolicy().merge(entry("not an approval"), entry(encoded(Status.APPROVED)))).isNull();
         assertThat(configuredPolicy().merge(entry(encoded(Status.APPROVED)), entry("not an approval"))).isNull();
+    }
+
+    @Test
+    void differentTokensKeepTheExistingSideForEveryPairOfStatusesInBothOrders() throws Exception {
+        for (Status incoming : Status.values()) {
+            for (Status current : Status.values()) {
+                String merging = encoded(incoming, OTHER_TOKEN);
+                String existing = encoded(current, TOKEN);
+                assertThat(configuredPolicy().merge(entry(merging), entry(existing))).isEqualTo(existing);
+                assertThat(configuredPolicy().merge(entry(existing), entry(merging))).isEqualTo(merging);
+            }
+        }
+    }
+
+    @Test
+    void equalTokensApplyTheStatusRankInBothOrders() throws Exception {
+        for (Status incoming : Status.values()) {
+            for (Status current : Status.values()) {
+                Object result = configuredPolicy().merge(entry(encoded(incoming, OTHER_TOKEN)),
+                        entry(encoded(current, OTHER_TOKEN)));
+                Status expected = incoming.compareTo(current) == 0 ? current : merged(incoming, current);
+                assertThat(HazelcastApprovalStore.Codec.decode((String) result).status()).isEqualTo(expected);
+                assertThat(HazelcastApprovalStore.Codec.tokenOf((String) result)).isEqualTo(OTHER_TOKEN);
+            }
+        }
+    }
+
+    @Test
+    void aSideInTheOldSixteenFieldFormIsDropped() throws Exception {
+        String old = encoded(Status.APPROVED);
+        old = old.substring(0, old.lastIndexOf('\0'));
+        assertThat(configuredPolicy().merge(entry(old), entry(encoded(Status.APPROVED)))).isNull();
+        assertThat(configuredPolicy().merge(entry(encoded(Status.APPROVED)), entry(old))).isNull();
     }
 }

@@ -21,6 +21,7 @@ public enum Metric {
     PRIVACY_FAILCLOSED("dataprism.privacy.failclosed"),
     PRIVACY_SOURCE_WITHHELD("dataprism.privacy.source.withheld"),
     REIDENTIFICATION("dataprism.reidentification"),
+    APPROVAL_RELEASE_SKIPPED("dataprism.approval.release.skipped"),
     // One constant per refusal code, because PrivacyMetrics takes no free-form tag.
     AUDIT_RETENTION_CHAIN_UNVERIFIED("dataprism.audit.retention.unverified"),
     AUDIT_RETENTION_ANCHOR_FAILED("dataprism.audit.retention.anchor_failed"),

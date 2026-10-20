@@ -63,6 +63,10 @@ class ApprovalGuardMapsTest {
                 });
     }
 
+    private static String owner(String scope) {
+        return TestMembers.owner(scope, 1);
+    }
+
     private static String pending(String... idExpiryOwner) {
         return String.join("\0", idExpiryOwner);
     }
@@ -70,8 +74,8 @@ class ApprovalGuardMapsTest {
     @Test
     void healingNeverLowersARequestersPendingCount() {
         var policy = new PendingMergePolicy();
-        String left = pending("a", "2030-01-01T01:00:00Z", "s1", "b", "2030-01-01T01:00:00Z", "s1");
-        String right = pending("b", "2030-01-01T02:00:00Z", "s2", "c", "2030-01-01T01:00:00Z", "s2");
+        String left = pending("a", "2030-01-01T01:00:00Z", owner("s1"), "b", "2030-01-01T01:00:00Z", owner("s1"));
+        String right = pending("b", "2030-01-01T02:00:00Z", owner("s2"), "c", "2030-01-01T01:00:00Z", owner("s2"));
         Map<String, PendingSet.Member> merged = PendingSet.decode(policy.merge(entry(left), entry(right)));
         assertThat(merged).containsOnlyKeys("a", "b", "c");
         assertThat(merged.get("b").expiresAt()).isEqualTo(Instant.parse("2030-01-01T02:00:00Z"));
@@ -81,22 +85,51 @@ class ApprovalGuardMapsTest {
     @Test
     void whenTheSidesDisagreeOnAnIdsOwnerTheMemberStaysUnownedWithTheLaterExpiryInEitherOrder() {
         var policy = new PendingMergePolicy();
-        String left = pending("r-1", "2030-01-01T01:00:00Z", "scope-a");
-        String right = pending("r-1", "2030-01-01T02:00:00Z", "scope-b");
-        String same = pending("r-1", "2030-01-01T02:00:00Z", "scope-b");
+        String left = pending("r-1", "2030-01-01T01:00:00Z", owner("scope-a"));
+        String right = pending("r-1", "2030-01-01T02:00:00Z", owner("scope-b"));
+        String same = pending("r-1", "2030-01-01T02:00:00Z", owner("scope-b"));
         for (String[] pair : new String[][]{{left, right}, {right, left}}) {
             Map<String, PendingSet.Member> merged = PendingSet.decode(policy.merge(entry(pair[0]), entry(pair[1])));
             assertThat(merged).containsOnlyKeys("r-1");
             assertThat(merged.get("r-1").owner()).isEqualTo(PendingSet.CONFLICT);
             assertThat(merged.get("r-1").expiresAt()).isEqualTo(Instant.parse("2030-01-01T02:00:00Z"));
         }
-        assertThat(PendingSet.decode(policy.merge(entry(right), entry(same))).get("r-1").owner()).isEqualTo("scope-b");
+        assertThat(PendingSet.decode(policy.merge(entry(right), entry(same))).get("r-1").owner()).isEqualTo(owner("scope-b"));
+    }
+
+    @Test
+    void anOwnerThatDiffersOnlyByTokenGivesConflictWithTheLaterExpiryInEitherOrder() {
+        var policy = new PendingMergePolicy();
+        String left = pending("r-1", "2030-01-01T01:00:00Z", TestMembers.owner("scope-a", 1));
+        String right = pending("r-1", "2030-01-01T02:00:00Z", TestMembers.owner("scope-a", 2));
+        for (String[] pair : new String[][]{{left, right}, {right, left}}) {
+            Map<String, PendingSet.Member> merged = PendingSet.decode(policy.merge(entry(pair[0]), entry(pair[1])));
+            assertThat(merged.get("r-1").owner()).isEqualTo(PendingSet.CONFLICT);
+            assertThat(merged.get("r-1").expiresAt()).isEqualTo(Instant.parse("2030-01-01T02:00:00Z"));
+        }
+    }
+
+    @Test
+    void aMemberWithTheOldScopeOnlyOwnerIsUnreadable() {
+        String old = pending("a", "2030-01-01T01:00:00Z", "scope-a");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> PendingSet.decode(old))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aClaimMapHealWithDifferingValuesKeepsTheExistingClaim() throws Exception {
+        String existing = ClaimEntries.value(ScopeKeys.approval("s", "x"), TestMembers.token(1));
+        String merging = ClaimEntries.value(ScopeKeys.approval("s", "x"), TestMembers.token(2));
+        var policy = (com.hazelcast.spi.merge.SplitBrainMergePolicy) Class.forName(
+                "com.hazelcast.spi.merge.PutIfAbsentMergePolicy").getDeclaredConstructor().newInstance();
+        assertThat(policy.merge(entry(merging), entry(existing))).isEqualTo(existing);
+        assertThat(policy.merge(entry(existing), entry(merging))).isEqualTo(merging);
     }
 
     @Test
     void aSideWithNoCopyKeepsTheOtherSidesIdsAndAnUnreadableSideNeverLowersTheReadableOne() {
         var policy = new PendingMergePolicy();
-        String readable = pending("a", "2030-01-01T01:00:00Z", "s1");
+        String readable = pending("a", "2030-01-01T01:00:00Z", owner("s1"));
         assertThat(policy.merge(entry(readable), null)).isEqualTo(readable);
         assertThat(policy.merge(entry("garbage"), entry(readable))).isEqualTo(readable);
         assertThat(policy.merge(entry(readable), entry("garbage"))).isEqualTo(readable);
