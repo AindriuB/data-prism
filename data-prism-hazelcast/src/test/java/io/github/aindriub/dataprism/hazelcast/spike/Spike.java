@@ -28,6 +28,10 @@ final class Spike {
         config.getJetConfig().setEnabled(false);
         config.setProperty("hazelcast.phone.home.enabled", "false");
         config.setProperty("hazelcast.logging.type", "jdk");
+        // A refused or lost operation surfaces in seconds, not after the 2-minute defaults.
+        config.setProperty("hazelcast.operation.call.timeout.millis", "5000");
+        config.setProperty("hazelcast.operation.backup.timeout.millis", "5000");
+        config.setProperty("hazelcast.client.invocation.timeout.seconds", "10");
         config.getNetworkConfig().setPort(port).setPortAutoIncrement(false);
         var join = config.getNetworkConfig().getJoin();
         join.getAutoDetectionConfig().setEnabled(false);
@@ -84,6 +88,39 @@ final class Spike {
         client.setClusterName(clusterName);
         client.getNetworkConfig().addAddress("127.0.0.1:" + port);
         return HazelcastClient.newHazelcastClient(client);
+    }
+
+    /** A key of the form {@code prefix-n} whose primary replica lives on {@code owner}. */
+    static String keyOwnedBy(HazelcastInstance owner, String prefix) {
+        String uuid = owner.getCluster().getLocalMember().getUuid().toString();
+        // Partitions are assigned lazily, by the first operation that needs them.
+        owner.getMap("partition-warmup").size();
+        await(20, () -> owner.getPartitionService().getPartition("warm").getOwner() != null);
+        for (int i = 0; i < 10_000; i++) {
+            String key = prefix + "-" + i;
+            if (owner.getPartitionService().getPartition(key).getOwner().getUuid().toString().equals(uuid)) {
+                return key;
+            }
+        }
+        throw new IllegalStateException("no key owned by the member");
+    }
+
+    /**
+     * Two single-member clusters of one name that find each other and merge. The first lists both addresses and so
+     * keeps looking for the second; merge checks run every 5 seconds. Returns {first, second} configs; start
+     * the first, then the second.
+     */
+    static List<Config> splitPair(String clusterName) {
+        int first = SpikePorts.consecutive(2);
+        String a = "127.0.0.1:" + first;
+        String b = "127.0.0.1:" + (first + 1);
+        List<Config> configs = List.of(config(clusterName, first, List.of(a, b)),
+                config(clusterName, first + 1, List.of(b)));
+        configs.forEach(c -> {
+            c.setProperty("hazelcast.merge.first.run.delay.seconds", "5");
+            c.setProperty("hazelcast.merge.next.run.delay.seconds", "5");
+        });
+        return configs;
     }
 
     /** Polls {@code condition} every 50 ms for at most {@code seconds}; true if it held. */
