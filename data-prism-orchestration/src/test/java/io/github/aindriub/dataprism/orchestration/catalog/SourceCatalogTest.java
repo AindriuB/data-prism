@@ -177,7 +177,7 @@ class SourceCatalogTest {
     void ruleFiveRealName() {
         DataSourceAdapter<?> adapter = new DescribedAdapter("parcel-store", aliasText("Look in the PARCEL: Store, please."));
         assertRefused(LEAKS, 5, adapter);
-        assertThat(build(new DescribedAdapter("parcel-store", aliasText("Look in the parcel store, please."))))
+        assertThat(build(new DescribedAdapter("parcel-store", aliasText("Look in the store of parcels, please."))))
                 .isNotNull();
     }
 
