@@ -52,7 +52,7 @@ class ClusterBackedState {
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
                     Optional.ofNullable(h.getMember().getInterface()));
             return PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
-                    approvalMinimum(h, properties));
+                    approvalMinimum(h, properties), h.getApprovalSweepInterval());
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
             throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));

@@ -32,6 +32,7 @@ dataprism.correlation.outbound | bean | ro
 dataprism.correlation.outbound.header | java.lang.String | rw | null
 dataprism.hazelcast | bean | rw
 dataprism.hazelcast.approval-minimum-members | java.lang.Integer | rw | null
+dataprism.hazelcast.approval-sweep-interval | java.time.Duration | rw | PT5M
 dataprism.hazelcast.cluster-name | java.lang.String | rw | null
 dataprism.hazelcast.identity-cache-ttl | java.time.Duration | rw | null
 dataprism.hazelcast.join | bean | ro
