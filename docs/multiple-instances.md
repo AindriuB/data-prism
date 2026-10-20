@@ -55,9 +55,9 @@ backup. Maps are not written to disk and have no `MapStore`.
 | `dataprism.reidentification` | Pseudonym to subject, only with re-identification enabled. A store, not a cache | Yes | 1 |
 | `dataprism.budget` | Per-subject read counts | Yes | 1 |
 | `dataprism.oversight` | Pause flags: global, per tool, per scope. No eviction | No | 1 |
-| `dataprism.approval` | Approval requests, each until its expiry | No | 1 |
-| `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
-| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with their expiries and the scope that owns each, which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
+| `dataprism.approval` | Approval requests, each until its expiry, each with the random token of the creation that wrote it | No | 1 |
+| `dataprism.approval.id` | One claim per approval id, which keeps an id unique across scopes. It names the approval entry and the token of the creation that made it. A claim has no TTL and is valid while the approval entry it names exists; a swept or taken-over claim goes once that entry is gone. No eviction | No | 1 |
+| `dataprism.approval.pending` | Per (kind, requester): the ids of their pending approvals with their expiries and the owner of each (the scope and the token of the creation that reserved the slot), which the pending cap counts. Changed only by an entry processor. No TTL and no eviction; a periodic sweep removes ids long past their expiry | No | 1 |
 | `dataprism.callerrate` | Per-caller fixed-window request counts. No eviction | No | 1 |
 
 The other maps evict least-recently-used entries beyond 100,000 per member.
@@ -285,9 +285,14 @@ Scaling to zero loses everything held only in memory.
 Reading the budget, counting a caller's requests and creating or deciding an
 approval each take a short cluster lock on the entry they change. A lock that
 another member, a slow member or something on the member port holds no longer
-hangs the request thread. The call waits at most `dataprism.hazelcast.lock-timeout`
-(default two seconds) and then is refused with `CLUSTER_LOCK_TIMEOUT`, without
-changing any counter or approval:
+hangs the request thread. Each lock wait is at most `dataprism.hazelcast.lock-timeout`
+(default two seconds), after which the call is refused with `CLUSTER_LOCK_TIMEOUT`
+without changing any counter or approval. A call that takes several locks waits
+at most n times the timeout in total, for n locks. These calls take more than one:
+creating an approval (three: the id claim, the requester's pending entry and the
+approval entry), deciding an approval (the entry's lock, and after the decision has
+committed the pending entry's lock), and ending a scope or forgetting its approvals
+(up to three for each approval of the scope, one after another):
 
 - A tool call refused at admission, or a read refused by the budget, returns
   `CLUSTER_LOCK_TIMEOUT` and is audited as `DENY:CLUSTER_LOCK_TIMEOUT`. A held lock
@@ -296,16 +301,41 @@ changing any counter or approval:
 - The operator API keeps answering `503 OVERSIGHT_UNAVAILABLE`.
 
 Every lock is leased for five times the lock timeout (ten seconds with the
-default), so none can be held for ever. A lock only bounds a wait. Creating an
-approval takes bounded locks on the keys it writes (the id claim, the
-requester's pending entry and the approval entry), and none of its checks
-depends on still holding them: the id is claimed with `putIfAbsent` and the cap
-is enforced by one entry processor. An owner paused past its lease therefore
-cannot let a second approval with the same id, or a requester over the cap,
-through. Deciding an existing approval needs none of the creation locks. Writes
-to the identity and re-identification caches and to the pause flags take no
-lock of their own, but a lock someone else holds on one of their keys still
-blocks them; those are not bounded yet.
+default), so none can be held for ever. A lock only bounds a wait. Every call
+that changes an approval, an id claim or a pending entry runs while this thread
+holds that key's lock, taken with the timeout, so none of them waits for a lock
+another member holds beyond the timeout. None of the checks depends on still
+holding the locks: the id is claimed with `putIfAbsent`, the cap is enforced by
+one entry processor, and a decision is a compare-and-set. An owner paused past
+its lease therefore cannot let a second approval with the same id, or a requester
+over the cap, through.
+
+- **Approve and reject never wait unboundedly after they commit.** A decision
+  commits its new status and its expiry in one step, under the entry's lock. The
+  entry's lock is then released, and only after that does the call take the
+  requester's pending lock, for at most the timeout, to release the slot. If that
+  lock times out or the release fails, the decision still stands and is
+  returned. The slot stays counted until the sweep removes it, which only
+  over-counts: the requester may be refused a new approval for a little longer,
+  never allowed more. Each release skipped this way is counted in
+  `dataprism.approval.release.skipped`.
+- **Forget and end scope refuse rather than half-release.** Ending a scope (or
+  forgetting its approvals) takes each approval's lock, removes the approval, and
+  only then releases its pending slot and its id claim, each under its own bounded
+  lock and only if the token still matches. A guard is never released while its
+  approval exists. If an approval's lock times out, that approval, its claim and
+  its slot are left in place, the others are still handled, and at the end the
+  call is refused with `CLUSTER_LOCK_TIMEOUT`. Call it again once the lock is free. A
+  slot or claim whose lock times out after its approval was removed is skipped,
+  counted in `dataprism.approval.release.skipped`, and removed by the sweep; the call
+  does not fail for it.
+- The pending sweep and the claim sweep only take locks they get at once, and skip
+  the others until the next interval.
+
+Writes to the identity and re-identification caches, the budget and oversight
+entries and the pause flags that `endScope` deletes take no lock of their own,
+but a lock someone else holds on one of their keys still blocks them; those are
+not bounded yet.
 
 If Hazelcast rejects a lock or its lease, or an id-claim or pending-count
 operation fails, creation is refused with `CLUSTER_OPERATION_REFUSED`. The
@@ -316,13 +346,15 @@ never confused. One way to see the new code: set
 A lost write quorum keeps its own `SplitBrainProtectionException`, as
 described below.
 
-**Upgrade caution.** Do not create approvals while members of different versions
-run together. An older member does not know the id claims or the pending counts,
-so during the mix the same approval id can still be created twice, and a
-requester can exceed the cap. Roll all members to the new version before relying
-on either guarantee. Approvals created before the upgrade have no id claim and are not counted against
-the cap, so until they expire the same id can be created again and they do not
-use up a requester's slots.
+**Upgrade caution.** Approvals, id claims and pending entries written before
+this version are unreadable after it: the approval entry, the claim and the
+pending owner each carry a creation token that the old values lack. They are
+refused, never guessed. An old approval is unknown (re-request it), an old claim
+keeps its id unusable, and an old pending entry refuses new approvals for that
+requester, until the maps are emptied. The maps are not written to disk, so
+stopping every member and starting the new version empties them. No member of the
+old version may run together with members of the new one: an old member would
+write values the new members cannot read, and cannot honour the tokens.
 
 ### Approvals under a partition
 
@@ -333,11 +365,30 @@ them; they only bound the wait.
 
 An approval id is claimed by `putIfAbsent` in `dataprism.approval.id`, and the pending
 cap is one entry processor on the requester's entry in `dataprism.approval.pending`. A
-creation claims the id (taking over a claim whose entry is gone), then reserves the cap (each pending id records the scope that owns it, so a creator that lost its claim cannot release a slot the new owner relies on), then checks it still holds the claim, inserts the approval and checks again, and undoes in
+creation claims the id (taking over a claim whose entry is gone), then reserves the cap (each pending id records the owner of the slot), then checks it still holds the claim, inserts the approval and checks again, and undoes in
 reverse order when a step fails. An undo that fails can leave an id unusable, or a
 requester over-counted, until the approval expires; it never under-counts, with the clock tolerance stated under Retention below. An approval
 leaves the pending entry when it is approved, rejected or found expired, or when its scope
 ends. Consuming an approval leaves its id claimed while the consumed entry still exists.
+
+**The creation token.** Every creation generates a random token (a random UUID, which
+carries no personal data and is derived from nothing). The token is stored in the approval
+entry, in the id claim (the entry key and the token) and in the pending slot's owner (the scope
+and the token). Every release, removal, withdrawal, undo, takeover, sweep and merge compares the
+whole token, so a clean-up that belongs to one creation of an id cannot touch a later creation of
+the same id in the same scope, even when the two requests are identical. The principal, the
+approval id and the scope stay in clear in these maps, as before.
+
+**When an approval is usable.** An approval is usable by `find`, `findPending`, `approve`,
+`reject` and `consumeApproved` only while the claim for its id names its entry key and its token.
+Otherwise it is treated as unknown: `approve` and `reject` refuse with `UNKNOWN_APPROVAL`, and the
+reads skip it. This covers a withdrawal that failed, a claim lost after the insert, a heal that
+kept the entry of one creation and the claim of another, and entries in the old format. The claim
+is read with a call that never waits. If the claim cannot be read back after the insert, creation
+tries to remove its own entry by token while it still holds the entry's lock and refuses with
+`CLUSTER_OPERATION_REFUSED`. If that removal fails too, the entry stays, and it is usable only
+while its claim names it. In that case it is a `PENDING` approval that still needs an operator's
+decision, it counts against the requester's cap, and it ends on its expiry.
 
 **What the cap counts.** A pending approval stays counted until one of three things happens:
 it leaves `PENDING` (the entry that owns the slot releases it); its expiry has passed on the clock
@@ -383,16 +434,23 @@ insert when the sweep passes is refused, and can simply retry.
 A partition still leaves each side with its own copy of the entry. Two protections
 narrow what that allows.
 
-- **After the heal, a used approval stays used.** The approval map merges the two
-  copies by taking the one furthest along: consumed, then rejected, then expired,
-  then approved, then pending. Hazelcast's default would have kept the larger
+- **After the heal, a used approval stays used.** If the two copies carry the same
+  token, the approval map keeps the one furthest along: consumed, then rejected,
+  then expired, then approved, then pending. If the tokens differ, the two are two
+  creations of one id, one on each side; the copy already in the surviving cluster
+  is kept, whatever the statuses, and the other creation is never resurrected. A
+  copy that cannot be read is dropped. Hazelcast's default would have kept the larger
   side's copy, so an approval that one side had consumed could have become usable
   again. Budgets and rate windows are not merged this way: a merge can lose them
   or lower a count, so after a partition a caller may get more reads or requests
   than the limit. The id claims and pending entries merge so that a heal never
   frees a held claim and never lowers a requester's pending count: claims are
-  kept (`PutIfAbsentMergePolicy`) and pending ids are united, each with its later
-  expiry. Both maps take the same write quorum as the approval map. During the
+  kept (`PutIfAbsentMergePolicy`, which keeps the existing claim when the two values
+  differ) and pending ids are united, each with its later expiry; an id whose owner
+  (scope and token) differs between the sides keeps the later expiry and has no
+  owner, so neither creation can release it. A heal can pair an entry with another
+  creation's claim, because each map merges on its own; the entry is then not
+  usable, which fails closed. Both maps take the same write quorum as the approval map. During the
   partition each side can still admit up to the cap, so after the heal a requester
   may briefly hold more pending approvals than the cap, and no new one is
   admitted until the extra expire or are decided.
@@ -417,10 +475,11 @@ removes the protection and the cost, and accepts one use per side for the whole
 partition. A minimum of 1 applies no protection at all. A member also refuses
 approvals while it is the only one running of a cluster that needs more.
 
-Consuming, approving or rejecting changes the value and then restores the entry's
-expiry in a second step. A crash between the two leaves the entry without an
-expiry until it is evicted (least recently used), but the stored `expiresAt` is
-still checked on every use, so an expired approval is refused: it fails closed.
+Consuming, approving or rejecting changes the value and sets the entry's expiry in one
+entry-processor step, which compares the stored value with the one it read. It
+either commits the new value with its expiry or changes nothing, so no crash or
+failure can leave a status changed without its expiry or a call that reports
+failure for a change that happened. The stored `expiresAt` is checked on every use as well.
 
 A `PrivacyCluster` you build yourself with `PrivacyCluster.using(instance)` gets
 none of these map settings: not the merge policy, not the quorum and not the
