@@ -20,6 +20,7 @@ import io.github.aindriub.dataprism.pseudonymisation.vocabulary.Vocabulary;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
 import io.github.aindriub.dataprism.validation.RawValueLeakValidator;
+import io.github.aindriub.dataprism.validation.SensitivePatternValidator;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -164,4 +165,12 @@ class PrivacyEngineWiring {
      */
     @Bean
     LlmResponseValidator dataPrismRawValueLeakValidator() { return new RawValueLeakValidator(); }
+
+    /**
+     * Not {@code @ConditionalOnMissingBean}, for the same reason as the leak check above: the shape scan must
+     * run in every Spring-built orchestrator, and an application {@link LlmResponseValidator} bean adds to the
+     * collected list rather than replacing this one.
+     */
+    @Bean
+    LlmResponseValidator dataPrismSensitivePatternValidator() { return new SensitivePatternValidator(); }
 }
