@@ -49,11 +49,37 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 ### Open work and execution state (updated 2026-10-20)
 
-0.7.0 is released (2026-10-20); see `HISTORY.md`, "0.7.0 released". Every 0.7.0 task has landed on `main`. The next work is task 215 (0.8 planning), which reads `docs/plan/design/contract-register.md`. No other task is open.
+0.7.0 is released (2026-10-20); see `HISTORY.md`, "0.7.0 released". Every 0.7.0 task has landed on `main`. 0.8 is planned (task 215 and the core briefs); see "0.8 plan" below. No other task is open.
 
 #### 0.7.0 release gate: done
 
 All six items are done: the HTTP example re-capture, the owner's go, publication and task 188's five-step verification, the after-action report (presented in chat, not committed), the version-literal updates, and task 235. The verification found two documentation errors in `docs/verifying-releases.md` (the GPG keyserver command and the per-arch digests), corrected in the post-0.7.0 chore PR.
+
+#### 0.8 plan (agreed 2026-10-20)
+
+Task 215 (sealed cluster) and the core planning produced 42 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome has the sealed-cluster table. The combined graph counts 203 and 206 to 211 as landed. No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
+
+Order by wave (briefs in a wave can run in parallel when their owned files do not overlap):
+
+| Wave | Briefs |
+|---|---|
+| 1 | 218, 219, 238, 239, 243, 258, 259 |
+| 2 | 220, 221, 240 |
+| 3 | 222, 242, 244, 248, 257 |
+| 4 | 223, 241 |
+| 5 | 224, 225, 226, 227, 245, 256 |
+| 6 | 228, 246, 262 |
+| 7 | 229, 247 |
+| 8 | 249, 250, 251 |
+| 9 | 252, 254 |
+| 10 | 253 |
+| 11 | 255 |
+| 12 | 230 |
+| 13 | 231, 261, 264 |
+| 14 | 260, 263 |
+| last (14) | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
+
+Owner decisions that change behaviour and belong in `docs/migration-0.8.md`: the cutover is non-rolling and refuses `UNSEALED_CLUSTER_STATE` (cached state is fetched again, pending approvals must be requested again); `dataprism.limits.scope-read-budget` stays 100 but now counts source reads; the new defaults are `request-timeout` `PT10S` and `scope-total-read-budget` 50,000; `SKIPPED_OVER_LIMIT` is removed before the 0.9 freeze (Breaking in `CHANGELOG.md` when built); a missing shared link limiter refuses with `MISSING_SHARED_LINK_LIMITER`. Per-instance weakening of the link limiter is excluded.
 
 #### 0.8 backlog (carried from 0.7)
 

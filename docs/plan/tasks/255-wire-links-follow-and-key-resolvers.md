@@ -1,0 +1,55 @@
+# 255 — Wire links, follow, key resolvers and the attempt limiter into Spring, and scan the new surface for leaks
+
+**Repo:** `.`
+**Release:** 0.8.0 (`dataprism.links.enabled` stays `false` by default through 0.9)
+**Base branch:** the 0.8 integration branch once 254 and 253 have merged
+**Depends on:** 254 (serialised on the shared Spring files; `LinksProperties`), 253 (the `follow` tool), 241 (registry and invoker)
+**Decisions:** OD-08-2 (a, shared Hazelcast limiter, brief 264, `MISSING_SHARED_LINK_LIMITER`; fallback (c) agreed if 264 slips: refuse every sealed-token consumer, links and page links, only on members joining via `tcp-ip` or `kubernetes`, never `join.mode: none` or `single-node`; option (b) excluded; extended 2026-10-20 after review of PR #141 to every sealed-token consumer), OD-08-10 (a, else b given OD-215-5) and OD-08-16 (a, ceiling 16) are decided 2026-10-20.
+**Serialised with:** the sealed-cluster wiring tasks on the shared Spring files listed in 254: 222 lands before this task (through 254), and 230 after it (230 depends on 255). `PiiLogScanTest.java` is also edited by 231, which follows 230 and so this task. Sealed-cluster task 264 (the shared Hazelcast limiter) follows 230 and so this task; it edits `LinkWiring.java` (the in-memory limiter bean's condition only) and supplies the cluster-wide bean that this task's refusal looks for
+**Wave:** 11 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Owns:**
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinksProperties.java
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/KeyResolverProperties.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java *(the `key-resolvers` group only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinkWiring.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinkKeysHealth.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/OrchestrationWiring.java *(link, resolver and limiter options only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpTransportWiring.java *(the `follow` arguments and the limiter argument of `list_sources` only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/CatalogWiring.java *(the catalog signals of OD-08-10 only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/Preflights.java *(insertions only: the `MISSING_SHARED_LINK_LIMITER` check)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismPropertiesValidator.java *(new `validateLinks` and `validateKeyResolvers` methods only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(insertions only)*
+- data-prism-spring-boot-autoconfigure/src/main/resources/META-INF/additional-spring-configuration-metadata.json *(insertions only)*
+- data-prism-spring-boot-autoconfigure/src/test/resources/io/github/aindriub/dataprism/spring/boot/frozen-property-names.txt *(insertions only)*
+- data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/*.txt *(regenerated; only lines for beans this task adds)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/LinksConfigurationTest.java, KeyResolverConfigurationTest.java, LinkAttemptLimiterConfigurationTest.java, LinkKeysHealthTest.java *(new)*
+- data-prism-integration-tests/src/main/resources/application.yaml *(the links and catalog settings only)*
+- data-prism-integration-tests/src/main/java/io/github/aindriub/dataprism/example/*Dto.java, Stub*Adapter.java *(the `description()` overrides and `@Chainable` declarations only)*
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java, AuditFilePiiScanTest.java, AuditFieldDispositionTest.java *(new scenarios for `list_sources`, `describe_source`, `follow` and `_links` only)*
+- docs/configuration.md *(the rows for the keys this task adds and their startup codes only)*
+
+## Goal
+Turn the agent-led surface on through configuration: `dataprism.links.*` (sealed-links "Configuration keys", without the option-(b) key per OD-200-8), `dataprism.key-resolvers.*`, every application `KeyResolver` bean collected into the registry, the attempt limiter, and the `follow` tool registered only when links are enabled. Show which link keys a member holds, so rotation phase 1 can be confirmed (sealed-links section 3). Then prove, over the real HTTP example, that none of the new tools or links puts a real value into a log line or audit record.
+
+## Context
+- docs/plan/design/sealed-links.md section 3 ("Rotation", the held-key signal) and section 5 "Configuration keys", with register OD-200-8 and OD-200-10.
+- docs/plan/design/key-resolvers.md section 6 ("Registration": beans only, OD-R6) and section 9 OD-R1 ("configurable with a ceiling") and OD-R10.
+- docs/plan/design/batch-and-bulk-follow.md A.8 (`paging.lifetime` never exceeds `links.lifetime` when links are on).
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java and AuditFilePiiScanTest.java: the scans, and the conventions rule that each leak test is shown non-vacuous by a mutation.
+
+## Acceptance
+- [ ] Tests are written first and fail on the base commit; the Outcome names them.
+- [ ] `dataprism.links.enabled` defaults to `false`. With `false`, no result has `_links`, `follow` is not registered, and the HTTP example's `tools/list` equals the base commit's apart from `list_sources` and `describe_source`.
+- [ ] Each link key binds with its default and refuses as listed: `lifetime` (`PT30M`, a positive duration or `scope`; otherwise `INVALID_LINK_LIFETIME`); `max-per-response` (50; 1 to 500), `max-length` (1024; 616 to 4096), `invalid-attempt-limit` (20; positive), `invalid-attempt-window` (`PT10M`; positive), `clock-skew` (`PT5S`; 0 to `PT30S`), all otherwise `INVALID_LINK_LIMIT`; `bind-caller` (`true`). With links enabled and no link key, startup refuses with `LINK_KEY_UNRESOLVED`. With links enabled, a `dataprism.paging.lifetime` above `dataprism.links.lifetime` refuses with `INVALID_PAGING_SETTING`.
+- [ ] `dataprism.key-resolvers.max-targets` (5; at most 16, the ceiling of OD-08-16 (a)), `timeout` (`PT2S`) and `budget-cost` (1) bind and refuse out-of-range values with a code in the `INVALID_*` family named in `docs/configuration.md`. Application `KeyResolver` beans are collected in `@Order` order; `DUPLICATE_KEY_RESOLVER` and `INVALID_KEY_RESOLVER` refuse startup; unused pairs log one WARN with the count and pair names only.
+- [ ] The attempt limiter (OD-08-2 (a)). A sealed-token consumer is active when `dataprism.links.enabled=true` or a link key is configured (254's link-codec bean exists, so `list_sources` issues page links; paging has no `enabled` property of its own). That condition is defined once, in `LinkWiring.java`, and the limiter bean, the refusal and 264's shared bean all use it. While a consumer is active, the `LinkAttemptLimiter` bean is passed to `follow` and to `list_sources`, and an invalid page link on `list_sources` with links disabled is recorded in it (a lockout test). On `single-node` and on `embedded` with `join.mode: none` the bean is `InMemoryLinkAttemptLimiter` built from `invalid-attempt-limit` and `invalid-attempt-window`, declared `@ConditionalOnMissingBean`, and such a member is never refused for the limiter. On `embedded` with `join.mode` `tcp-ip` or `kubernetes` and a consumer active, startup refuses with `MISSING_SHARED_LINK_LIMITER` unless the `LinkAttemptLimiter` bean's `clusterWide()` is `true`; the message names the condition and never a value. The code keeps its name and covers page tokens as well as follow links: a page link is a sealed link (250), and `docs/configuration.md` says so. With no consumer active (links disabled and no link key) there is no refusal. `LinkAttemptLimiterConfigurationTest` has one row per case: on `tcp-ip` and on `kubernetes`, links on, and links off with a link key, each refused without a cluster-wide bean and started with a stub cluster-wide bean; the same two configurations on `join.mode: none` and on `single-node`, each started with the in-memory limiter; links off with no link key, started with no refusal on every topology. These rows are the fallback (c) configuration as it ships if 264 is cut. The cluster-wide bean itself is sealed-cluster task 264's; until 264 lands, or if it is cut from 0.8, this refusal is the shipped behaviour (OD-08-2 fallback (c)), so nothing here may depend on 264.
+- [ ] The held link key ids appear on a health contributor and as OD-08-10 decides for metrics; the catalog counts of 239 are published as OD-08-10 decides. No key material or reference appears in either.
+- [ ] Over the HTTP example with links enabled and one chainable field: `PiiLogScanTest` and `AuditFilePiiScanTest` cover calls to `list_sources` (two pages), `describe_source`, `get_entity_context` with `_links`, a valid `follow`, and an invalid `follow`, and find no raw identifier, link token or description text. Each scan is shown non-vacuous by a recorded mutation (for example, logging the token) that makes it fail. `AuditFieldDispositionTest` covers the `names`, `catalog` and `link` keys.
+- [ ] `docs/configuration.md` has a row for each new key with its default and every refusal code above.
+- [ ] `ConfigurationMetadataDocumentedTest`, `PropertyNamesFrozenTest`, `AutoConfiguredBeanClassificationTest`, `AutoConfiguredBeanInventoryTest` and `PrivacyExtensionPointsTest` pass, with only this task's lines in their lists.
+- [ ] `./mvnw -B verify` (full reactor) passes.
+
+## Out of scope
+- A Hazelcast limiter, its bean in `ClusterBackedState.java`, or any change under `data-prism-hazelcast` (sealed-cluster task 264).
+- The key-rotation and destruction procedure (213) and every `docs/` file other than `docs/configuration.md` (261).
+- `dataprism.links.max-chain-depth` (dropped, OD-200-8).
