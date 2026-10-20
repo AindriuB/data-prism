@@ -44,7 +44,7 @@ class Q06DuplicateUuidSpikeTest {
     }
 
     @Test
-    void aMemberWithALiveMembersUuidStartsAloneAndNeverJoinsThatCluster() {
+    void aMemberWithALiveMembersUuidStartsAloneAndDoesNotJoinWithinFifteenSeconds() {
         List<Config> configs = Spike.configs(Spike.name("q6"), 2);
         first = Spike.start(configs.get(0));
         UUID taken = first.getCluster().getLocalMember().getUuid();
