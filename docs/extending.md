@@ -560,6 +560,15 @@ depending on Data Prism:
 
   <dependencyManagement>
     <dependencies>
+      <!-- Spring Boot 4.1.1 manages Jackson 3 at 3.1.5, which is affected by the five GHSAs
+           listed in the changelog; remove this once Boot manages 3.1.7 or later. -->
+      <dependency>
+        <groupId>tools.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>3.1.8</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
@@ -624,7 +633,7 @@ into a pom whose only other content is `modelVersion`, `groupId`,
 `0.4.1` form. It resolved `data-prism-core`, `data-prism-annotations` and
 `data-prism-processor` `0.4.1`, `spring-web` `7.0.9` and
 `spring-boot-autoconfigure` `4.1.1` (Spring Boot `4.1.1`), and the build
-produced a jar. The `0.5.0`, `0.6.0` and `0.7.0` forms of the snippet differ from it only in
+produced a jar. The `0.5.0` and `0.6.0` forms of the snippet differ from it only in
 `data-prism.version`. The snippet's Spring dependencies were re-resolved
 against Spring Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1
 migration, at `data-prism.version` `0.4.1`; those Spring versions come from the
@@ -648,10 +657,13 @@ repository against a scratch file repository holding the `0.7.0` reactor build
 of this repository, not against Maven Central. It resolved `data-prism-core`,
 `data-prism-annotations` and `data-prism-processor` `0.7.0`, `spring-web`
 `7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. The
-`tools.jackson` artifacts it resolved were `3.1.5`, the version the imported
-Spring Boot BOM manages, because a consumer's own dependency management
-decides that and the `jackson-bom` override in this repository's parent pom
-does not reach it. Like the `0.6.0` run, it shows the snippet and the
+`0.7.0` form differs from the earlier ones in `data-prism.version` and in the
+`tools.jackson:jackson-bom` import ahead of the Spring Boot BOM, and the
+`tools.jackson` artifacts it resolved (`jackson-databind`, `jackson-core` and
+`jackson-dataformat-yaml`) were `3.1.8`. Without that import they resolve to
+`3.1.5`, the version the Spring Boot BOM manages, because a consumer's own
+dependency management decides it and this repository's parent pom does not
+reach it. Like the `0.6.0` run, it shows the snippet and the
 reactor's POMs agree and is not evidence about the artifacts Central will
 serve. Nothing here has been shown for any other version.
 

@@ -358,6 +358,13 @@ See [Running more than one instance](multiple-instances.md).
   explicit minimum through the overload that takes one (`1` opts out). A
   `PrivacyCluster.using(instance)` you supply gets neither the merge policy nor
   the quorum.
+- **Import `jackson-bom` yourself.** The Jackson 3 override (3.1.8) is in this
+  project's parent pom and does not reach your build. If your application or
+  extension imports the Spring Boot 4.1.1 BOM, it resolves Jackson 3 at 3.1.5,
+  which is affected by the advisories listed in the changelog. Import
+  `tools.jackson:jackson-bom` 3.1.8 or later (type `pom`, scope `import`) ahead
+  of the Boot BOM, as the snippet in [Extending Data Prism](extending.md) now
+  does.
 
 ## Verifying a release
 
