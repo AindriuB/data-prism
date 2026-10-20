@@ -404,3 +404,41 @@ Counted from the surefire and failsafe XML under every module's `target`, exit c
 - `pending(Instant)` now skips unreadable and unnamed entries instead of throwing on an unreadable one. The task did
   not list it among the validity rule's callers; it follows the same rule so the operator list shows only approvals
   that can be decided.
+
+### Re-review fixes (after 6ce0835e)
+
+- `decide` treats a commit that returned false as committed when the entry now holds exactly the value it wrote
+  (`committed`). This covers an invocation retried after the first attempt applied (member left, then retry). It is
+  not used in `consumeApproved`, where two consumers write the same value. Test: `Commit` run twice on the same key
+  (`StalledInsert.repeating`) for approve, reject and expire; a retried consume still refuses.
+- `leavePending` and `releaseClaim` look their map up inside the catch-and-count, so a shutdown after the commit does
+  not surface as failure (test: `getMap` fails after the commit; the decision returns and the metric is 1).
+- `forgetOne`: a `remove(key, raw)` that returns false for an entry that is gone releases the guards by token and
+  returns true instead of counting a lock timeout (test: remove run twice).
+- The claim sweep removes an old-form claim (a bare entry key, or `K NUL ~ NUL ...`) once its entry is absent, by
+  compare-and-set on the whole value; other unreadable claims and old-form claims whose entry is present are left.
+  Test: `theClaimSweepRemovesOldFormClaims...`.
+- All of the new tests fail against the previous commit's main code and pass now (the retried-consume control passes
+  on both).
+
+### Accepted residual
+
+When the response to the remote compare-and-set is lost or times out (`OperationTimeoutException`), `approve` or
+`reject` throws although the change may have happened. A retried call that finds its own value is recognised; a lost
+response cannot be. `docs/multiple-instances.md` and the `HazelcastApprovalStore` Javadoc now state this and tell the
+caller to re-read the status (`find`) before treating the failure as final. Follow-up for `ReidentificationService`
+(out of scope here): on an uncertain outcome from `approve`, re-read the approval before auditing DENY.
+
+### Decisions
+
+1. Old-format claims: they are not taken over or released by tokens, but the claim sweep removes one once its entry is
+   absent (see above), so a leftover bare claim no longer blocks an id for ever.
+2. The validity rule also applies to `pending(Instant)`, so the operator list shows only approvals that can be decided
+   and an unreadable old-format entry does not make the list throw.
+
+### Production reach
+
+`ScopeIdentityIndex.endScope` and `ApprovalStore.forgetScope` have no production caller today (only tests call them),
+so the timeout wiring through `ReidentificationWiring` has no production effect yet; it is correct for when a caller
+is added.
+

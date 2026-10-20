@@ -374,4 +374,62 @@ class ApprovalBoundedCleanupTest {
         assertThat(members[0].instance().<String, String>getMap(PrivacyCluster.APPROVAL_PENDING_MAP)
                 .containsKey(pendingKey())).isFalse();
     }
+
+    // ----- retried commits, removes and lookups after a commit
+
+    @ParameterizedTest
+    @ValueSource(strings = {"approve", "reject", "expire"})
+    void aDecisionWhoseCommitWasRetriedAfterItAppliedReportsSuccess(String decision) throws Exception {
+        StalledInsert injector = StalledInsert.passive().repeating(PrivacyCluster.APPROVAL_MAP, "executeOnKey");
+        var retried = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        retried.create(request("r-1", "scope-r", "alice"), 1);
+        injector.arm();
+        switch (decision) {
+            case "approve" -> assertThat(retried.approve("r-1", "bob", NOW.plusSeconds(1)).status())
+                    .isEqualTo(Status.APPROVED);
+            case "reject" -> assertThat(retried.reject("r-1", "bob", NOW.plusSeconds(1)).status())
+                    .isEqualTo(Status.REJECTED);
+            default -> assertThatThrownBy(() -> retried.approve("r-1", "bob", LONG_AFTER))
+                    .isInstanceOf(ApprovalRefusedException.class)
+                    .satisfies(failure -> assertThat(((ApprovalRefusedException) failure).code())
+                            .isEqualTo(Code.EXPIRED));
+        }
+        // The decision committed, so its slot was released.
+        assertThat(members[0].instance().<String, String>getMap(PrivacyCluster.APPROVAL_PENDING_MAP)
+                .containsKey(pendingKey())).isFalse();
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isZero();
+    }
+
+    @Test
+    void aRetriedConsumeStillRefusesBecauseTwoConsumersWriteTheSameValue() throws Exception {
+        StalledInsert injector = StalledInsert.passive().repeating(PrivacyCluster.APPROVAL_MAP, "executeOnKey");
+        var retried = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT);
+        retried.create(request("c-1", "scope-c", "alice"));
+        retried.approve("c-1", "bob", NOW.plusSeconds(1));
+        injector.arm();
+        assertThat(retried.consumeApproved(Kind.TOOL_CALL, "alice", "scope-c", "search", "fp-c-1",
+                NOW.plusSeconds(2))).isEmpty();
+    }
+
+    @Test
+    void aRemoveThatReportsFalseForAnEntryThatIsGoneReleasesItsGuardsAndIsNotATimeout() throws Exception {
+        StalledInsert injector = StalledInsert.passive().repeating(PrivacyCluster.APPROVAL_MAP, "remove");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("g-1", "scope-g", "alice"), 5);
+        injector.arm();
+        faulty.forgetScope("scope-g");
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).containsKey("g-1")).isFalse();
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP).containsKey(pendingKey()))
+                .isFalse();
+    }
+
+    @Test
+    void aMapLookupThatFailsAfterTheCommitDoesNotFailTheDecision() throws Exception {
+        StalledInsert injector = StalledInsert.passive().failing(PrivacyCluster.APPROVAL_PENDING_MAP, "getMap");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("m-1", "scope-m", "alice"), 5);
+        injector.arm();
+        assertThat(faulty.approve("m-1", "bob", NOW.plusSeconds(1)).status()).isEqualTo(Status.APPROVED);
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+    }
 }

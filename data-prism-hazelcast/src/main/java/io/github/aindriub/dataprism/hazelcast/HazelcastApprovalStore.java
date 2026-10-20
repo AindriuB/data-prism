@@ -54,7 +54,11 @@ import java.util.function.Supplier;
  * value and its expiry in one step on the entry, so it either takes effect with its expiry or not at all. After it
  * has committed, the release of the requester's pending slot is bounded too, and when it cannot be done the slot
  * stays counted (an over-count, which the sweep removes) and {@link Metric#APPROVAL_RELEASE_SKIPPED} is incremented;
- * a decision that committed is never reported as failed. Creation rests on
+ * a decision that committed is never reported as failed by this store's own steps. One residual remains: when the
+ * response of the remote compare-and-set is lost or times out (for example {@code OperationTimeoutException}), the
+ * call throws although the change may have happened. A retried call that finds its own value is recognised in
+ * {@code decide}, but a lost response cannot be. A caller must re-read the status with {@link #find} before treating
+ * a failed {@code approve} or {@code reject} as final. Creation rests on
  * {@code putIfAbsent} too: an id is claimed in {@link PrivacyCluster#APPROVAL_ID_MAP} (a claim is valid while the
  * entry it names exists, with no clock involved; see {@link ClaimEntries} for why a paused creator cannot get a
  * duplicate past a takeover), and the per-requester cap
@@ -339,8 +343,15 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      * stays counted (an over-count, which the sweep removes), the metric is incremented, and the decision stands.
      */
     private void leavePending(ApprovalRequest request, String token) {
-        IMap<String, String> pendingSets = pendingSets();
-        String key = pendingKey(request.kind(), request.requesterPrincipalId());
+        IMap<String, String> pendingSets;
+        String key;
+        try {
+            pendingSets = pendingSets();
+            key = pendingKey(request.kind(), request.requesterPrincipalId());
+        } catch (RuntimeException failed) {
+            metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            return;
+        }
         if (!lockOrSkip(pendingSets, key)) {
             return;
         }
@@ -356,7 +367,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
 
     /** Releases the claim of a deleted entry, bounded like {@link #leavePending}. */
     private void releaseClaim(String id, String entryKey, String token) {
-        IMap<String, String> claims = idClaims();
+        IMap<String, String> claims;
+        try {
+            claims = idClaims();
+        } catch (RuntimeException failed) {
+            metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
+            return;
+        }
         if (!lockOrSkip(claims, id)) {
             return;
         }
@@ -502,13 +519,15 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 stored = Codec.decodeStored(raw);
             } catch (RuntimeException unreadable) {
                 // No token, so nothing it guards can be released by token. Remove it; its claim and slot stay.
-                if (!approvals.remove(key, raw)) {
+                if (!approvals.remove(key, raw) && approvals.get(key) != null) {
                     return false;
                 }
                 metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
                 return true;
             }
-            if (!approvals.remove(key, raw)) {
+            // A remove that reports false for an entry that is gone (a retried call, or a change after the read)
+            // is not a lock timeout: the entry is gone, so its guards are released by token below.
+            if (!approvals.remove(key, raw) && approvals.get(key) != null) {
                 return false;
             }
         } finally {
@@ -537,13 +556,13 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             }
             if (!now.isBefore(request.expiresAt())) {
                 decided = null;
-                if (!commit(approvals, key, raw, request.withStatus(Status.EXPIRED), token, now)) {
+                if (!committed(approvals, key, raw, request.withStatus(Status.EXPIRED), token, now)) {
                     // Someone decided between the read and the commit; their release is the only one.
                     throw new ApprovalRefusedException(Code.NOT_PENDING);
                 }
             } else {
                 decided = next.apply(request);
-                if (!commit(approvals, key, raw, decided, token, now)) {
+                if (!committed(approvals, key, raw, decided, token, now)) {
                     // Someone changed the entry between the read and the commit: they decided first.
                     throw new ApprovalRefusedException(Code.NOT_PENDING);
                 }
@@ -624,6 +643,19 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         }
         return Boolean.TRUE.equals(approvals.executeOnKey(key,
                 new Commit(raw, Codec.encode(next, token), Math.max(1L, remaining.toMillis()))));
+    }
+
+    /**
+     * {@link #commit}, for a decision. A remote call can be retried after the first attempt already applied (a member
+     * left, then the invocation was retried against the backup), and the retry finds its own value and returns false.
+     * The caller holds the entry's lock, so only this decision could have written exactly that value: if the entry
+     * now holds it, the decision committed. Not used by {@link #consumeApproved}, where two consumers write the same
+     * value and a false must keep refusing.
+     */
+    private boolean committed(IMap<String, String> approvals, String key, String raw, ApprovalRequest next,
+                              String token, Instant now) {
+        return commit(approvals, key, raw, next, token, now)
+                || Codec.encode(next, token).equals(approvals.get(key));
     }
 
     /** Compares the stored value with the one read, and if equal sets the new value together with its expiry. */

@@ -31,6 +31,8 @@ final class StalledInsert {
     /** Calls that always throw once {@link #arm()} was called: {@code map + ":" + method}. */
     private final java.util.Set<String> failing = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private volatile boolean armed;
+    /** Calls that run twice once armed, returning the second result, as a retried invocation would. */
+    private final java.util.Set<String> repeating = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.Map<String, java.util.concurrent.atomic.AtomicInteger> counts =
             new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -48,6 +50,11 @@ final class StalledInsert {
     /** Stops the caller after its approval is inserted, just before it reads its claim to confirm it is still held. */
     static StalledInsert beforeSecondClaimCheck() {
         return new StalledInsert(PrivacyCluster.APPROVAL_ID_MAP, "get", 1, 2);
+    }
+
+    /** An injector that never stops a caller; only {@link #failing} and {@link #repeating} act, once armed. */
+    static StalledInsert passive() {
+        return new StalledInsert("none", "none", 0, 1);
     }
 
     /** Stops the caller at its first entry processor on the approval map, which is where a decision commits. */
@@ -81,6 +88,15 @@ final class StalledInsert {
         return this;
     }
 
+    /**
+     * Makes every call of {@code method} on {@code mapName} run twice once armed and return the second result, as an
+     * invocation retried after the first attempt already applied would.
+     */
+    StalledInsert repeating(String mapName, String method) {
+        repeating.add(mapName + ":" + method);
+        return this;
+    }
+
     /** Starts the failures registered with {@link #failing}. */
     void arm() {
         armed = true;
@@ -99,6 +115,9 @@ final class StalledInsert {
                         return invoke(method, real, args);
                     }
                     String name = (String) args[0];
+                    if (armed && failing.contains(name + ":getMap")) {
+                        throw new IllegalStateException("injected failure");
+                    }
                     IMap<?, ?> target = real.getMap(name);
                     return proxies.computeIfAbsent(name, ignored -> Proxy.newProxyInstance(
                             getClass().getClassLoader(), new Class<?>[]{IMap.class}, (mapProxy, call, callArgs) -> {
@@ -116,6 +135,9 @@ final class StalledInsert {
                                         throw new AssertionError("caller never resumed");
                                     }
                                     if (failOnResume) throw new IllegalStateException("injected failure");
+                                }
+                                if (armed && repeating.contains(name + ":" + call.getName())) {
+                                    invoke(call, target, callArgs);
                                 }
                                 return invoke(call, target, callArgs);
                             }));

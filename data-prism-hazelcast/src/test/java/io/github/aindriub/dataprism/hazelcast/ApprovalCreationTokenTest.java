@@ -333,4 +333,20 @@ class ApprovalCreationTokenTest {
         assertThat(java.util.UUID.fromString(first).toString()).isEqualTo(first);
         assertThat(first).doesNotContain("alice").doesNotContain("scope-a").doesNotContain("r-1");
     }
+
+    @Test
+    void theClaimSweepRemovesOldFormClaimsOnceTheirEntryIsAbsentAndLeavesOtherUnreadableOnes() {
+        String present = ScopeKeys.approval("scope-a", "p-1");
+        approvals.put(present, "old entry");
+        claims.put("p-1", present);
+        claims.put("a-1", ScopeKeys.approval("scope-a", "a-1"));
+        claims.put("a-2", ScopeKeys.approval("scope-a", "a-2") + "\0~\0" + ScopeKeys.approval("scope-b", "a-2"));
+        claims.put("a-3", "garbage");
+        int removed = members[0].sweepStaleClaims() + members[1].sweepStaleClaims();
+        assertThat(removed).isEqualTo(2);
+        assertThat(claims.containsKey("a-1")).isFalse();
+        assertThat(claims.containsKey("a-2")).isFalse();
+        assertThat(claims.containsKey("p-1")).isTrue();
+        assertThat(claims.containsKey("a-3")).isTrue();
+    }
 }

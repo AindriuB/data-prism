@@ -350,7 +350,7 @@ described below.
 this version are unreadable after it: the approval entry, the claim and the
 pending owner each carry a creation token that the old values lack. They are
 refused, never guessed. An old approval is unknown (re-request it), an old claim
-keeps its id unusable, and an old pending entry refuses new approvals for that
+keeps its id unusable until its entry is gone, when the claim sweep removes it, and an old pending entry refuses new approvals for that
 requester, until the maps are emptied. The maps are not written to disk, so
 stopping every member and starting the new version empties them. No member of the
 old version may run together with members of the new one: an old member would
@@ -478,8 +478,13 @@ approvals while it is the only one running of a cluster that needs more.
 Consuming, approving or rejecting changes the value and sets the entry's expiry in one
 entry-processor step, which compares the stored value with the one it read. It
 either commits the new value with its expiry or changes nothing, so no crash or
-failure can leave a status changed without its expiry or a call that reports
-failure for a change that happened. The stored `expiresAt` is checked on every use as well.
+failure can leave a status changed without its expiry. A decision retried by
+Hazelcast after it was already applied is recognised as committed. One residual
+remains: if the response to the remote compare-and-set is lost or times out
+(`OperationTimeoutException`), `approve` or `reject` throws although the change may
+have happened, and the approval is then `APPROVED` or `REJECTED`. A caller that gets a
+failure from a decision should re-read the status (`find`) before treating the
+failure as final. The stored `expiresAt` is checked on every use as well.
 
 A `PrivacyCluster` you build yourself with `PrivacyCluster.using(instance)` gets
 none of these map settings: not the merge policy, not the quorum and not the

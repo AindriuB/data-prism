@@ -142,11 +142,29 @@ final class ClaimEntries {
         return removed;
     }
 
+    /**
+     * A claim in the form earlier versions wrote (a bare entry key, or one marked with {@code NUL ~ NUL}) is removed
+     * once its entry is absent, by compare-and-set on the whole value. Entries of that form are unreadable and refused,
+     * and no new creator takes such a claim over, so nothing races with this. Any other unreadable value is left.
+     */
+    private static int sweepLegacy(IMap<String, String> claims, IMap<String, String> approvals, String id,
+                                   String value) {
+        if (value == null) {
+            return 0;
+        }
+        String[] parts = value.split(SEP, -1);
+        boolean legacy = parts.length == 2 || (parts.length >= 4 && parts[2].equals("~"));
+        if (!legacy || approvals.containsKey(parts[0] + SEP + parts[1])) {
+            return 0;
+        }
+        return claims.remove(id, value) ? 1 : 0;
+    }
+
     private static int sweepOne(IMap<String, String> claims, IMap<String, String> approvals, String id) {
         String value = claims.get(id);
         Optional<Named> named = read(value);
         if (named.isEmpty()) {
-            return 0;
+            return sweepLegacy(claims, approvals, id, value);
         }
         String plain = named.get().plain();
         if (approvals.containsKey(named.get().entryKey())) {
