@@ -7,6 +7,7 @@
 **Kind:** planning; no runtime code.
 **Owns:**
 - docs/plan/tasks/218-*.md through docs/plan/tasks/231-*.md (new briefs only; check unused ids before allocation)
+- docs/plan/tasks/264-*.md (new brief; id allocated by the coordinator under OD-215-14)
 - docs/plan/tasks/213-document-key-rotation-and-1-0-controls.md (replace descriptive dependencies with allocated ids only)
 - docs/plan/tasks/215-plan-sealed-cluster-implementation.md (Outcome)
 
@@ -37,6 +38,8 @@ Planning only. No design protection is implemented by this task.
 
 ### Briefs and order
 
+Waves are on the combined 0.8 graph of 213, 218 to 231 and 238 to 264, with 203 and 206 to 211 counted as landed; they match the core briefs' **Wave** lines.
+
 | Id | Title | Depends on | Wave |
 |---|---|---|---|
 | 218 | Align the cluster design and the contract register with the 0.8 decisions | none (blocked on OD-215-1 to -10) | 1 |
@@ -51,8 +54,9 @@ Planning only. No design protection is implemented by this task.
 | 227 | Member cards, sentinel at join, unverified members | 219, 220, 223 | 5 |
 | 228 | Sealed, sequenced, leased pause document | 219, 223, 227 | 6 |
 | 229 | Phased cluster-key rotation | 219, 224, 225, 226, 227, 228 | 7 |
-| 230 | Spring wiring of the remaining settings, `clusterSecurity` health, tamper reporting | 222, 229, 255 (core) | 8 |
-| 231 | End-to-end adversarial and integration verification | 230 | 9 |
+| 230 | Spring wiring of the remaining settings, `clusterSecurity` health, tamper reporting | 222, 229, 255 (core) | 12 |
+| 231 | End-to-end adversarial and integration verification | 230 | 13 |
+| 264 | Share the sealed-link failed-attempt limiter across a Hazelcast cluster | 229, 242 (core), 230 | 13 |
 
 Owner decisions: `docs/plan/tasks/OD-215-open-decisions.md` (OD-215-1 to -16).
 
@@ -84,7 +88,7 @@ Operator documentation: 213 (`docs/multiple-instances.md`, `docs/key-rotation.md
 ### Gaps, unresolved
 
 - The rotation soak under load and the environment packet capture (design 5.2) are core task 263's; 229 tests rotation in process only.
-- A Hazelcast failed-attempt limiter for sealed links has no brief (OD-215-14).
+- The Hazelcast failed-attempt limiter for sealed links is 264 (core OD-08-2 (a), OD-215-14 (a)). If 264 is cut from 0.8, fallback (c) ships: core 255's `MISSING_SHARED_LINK_LIMITER` refusal stops links on members that join a cluster, never on a solo member or `single-node`. 264's brief lists the edges to remove.
 - Two 232 follow-ups stay open: `endScope` and `forgetScope` have no production caller, and a forget during a split is undone by the heal.
 - Boundary 7 stays partly enforced: metric names and health details are scanned by 231, but trace attributes are not.
 - `PUBLIC_MEMBER_INTERFACE` is not built (cluster-security OD-10 (ii)).
@@ -94,4 +98,4 @@ Operator documentation: 213 (`docs/multiple-instances.md`, `docs/key-rotation.md
 
 ### Shared with the core plan (238 to 263)
 
-`Metric.java` and `PrivacyMetricsTest.java` (220 with 241, 244; insertions); `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json`, `docs/configuration.md` (222, 230 with 254, 255; 261 for `docs/configuration.md`); `PrivacyExtensionPoints.java` and `bean-inventory/*.txt` (230 with 254, 255); root `pom.xml` (221 `hazelcast.version` with 257 `jackson3.version`); `PiiLogScanTest.java` (231 with 255); `data-prism-server/src/test/**` (222's argument edits with 245's new files); 213's Depends-on line. 242 depends on 220; 246 depends on 226.
+`Metric.java` and `PrivacyMetricsTest.java` (220 with 241, 244; insertions); `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json`, `docs/configuration.md` (222, 230 with 254, 255; 261 for `docs/configuration.md`); `PrivacyExtensionPoints.java` and `bean-inventory/*.txt` (230 with 254, 255); root `pom.xml` (221 `hazelcast.version` with 257 `jackson3.version`); `PiiLogScanTest.java` (231 with 255); `ClusterBackedState.java`, `LinkWiring.java` and `bean-inventory/*.txt` (264 after 230 and 255); `contract-register.md` and `cluster-security.md` (264 after 218); `data-prism-server/src/test/**` (222's argument edits with 245's new files); 213's Depends-on line. 242 depends on 220; 246 depends on 226; 263 and 213 depend on 264.

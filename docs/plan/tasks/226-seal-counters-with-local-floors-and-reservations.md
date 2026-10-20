@@ -49,7 +49,7 @@ Budget and caller-rate counts become sealed, and a member that deletes or replay
 
 ## Out of scope
 - Calling `reserve` from the orchestrator (core 246) or configuring the scope total (core 254).
-- A Hazelcast failed-attempt limiter for sealed links (core OD-08-2; see OD-215-14). Not built here.
+- A Hazelcast failed-attempt limiter for sealed links (task 264, core OD-08-2 (a)). Not built here.
 - Spring binding of `local-floor.enabled` (230).
 - `TestMembers.java` is read only. `docs/` pages: facts for 213 in the Outcome.
 

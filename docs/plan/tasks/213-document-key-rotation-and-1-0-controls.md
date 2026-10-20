@@ -6,7 +6,7 @@ Renumbered from 198 on 2026-10-19. Reconciled with the pre-0.9 freeze; see `docs
 **Release:** 0.8.0
 **Executor:** `scribe` (docs only; no code)
 **Base branch:** the 0.8 integration branch once all dependencies have merged; otherwise `origin/main` after those merges.
-**Depends on:** 208, 210, 211, 261, and the sealed-cluster tasks 218 to 231 (231 depends on all of 218 to 230; their Outcomes and 231's fact list are this task's sources). Superseded tasks 204, 205 and 212 are not implementation prerequisites.
+**Depends on:** 208, 210, 211, 261, and the sealed-cluster tasks 218 to 231 (231 depends on all of 218 to 230; their Outcomes and 231's fact list are this task's sources), and 264 (the shared link limiter for `docs/multiple-instances.md`; if 264 is cut, remove this edge and document the `MISSING_SHARED_LINK_LIMITER` refusal instead). Superseded tasks 204, 205 and 212 are not implementation prerequisites.
 **Owns:**
 - docs/key-rotation.md (new)
 - docs/migration-0.8.md (new)
