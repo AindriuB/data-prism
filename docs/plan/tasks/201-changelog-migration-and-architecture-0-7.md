@@ -12,6 +12,8 @@
 - docs/configuration.md (the two "refusing the whole response" passages at
   `:132` and the `:448` diagram alt text only; and the
   `dataprism.limits.max-response-size` row at `:534` only)
+- data-prism-spring-boot-autoconfigure/.../LimitsProperties.java (the maxResponseSize field Javadoc only; coordinator-approved widening, 2026-10-20, a pre-release fix)
+- docs/agents/remote-http.md and docs/protect-your-own-api.md (the converted single-source HTTP example blocks only; coordinator-approved widening, re-capture pending)
 - docs/plan/tasks/201-changelog-migration-and-architecture-0-7.md (Outcome section only)
 
 ## Goal
