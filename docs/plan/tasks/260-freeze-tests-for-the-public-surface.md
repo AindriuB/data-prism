@@ -3,8 +3,8 @@
 **Repo:** `.`
 **Release:** 0.8.0 (must be in place before the 0.9.0 freeze)
 **Base branch:** the 0.8 integration branch once every 0.8 surface task has merged
-**Depends on:** 245, 250, 253, 255 (the 0.8 core surface), 221 (the `.s1` map names and interface codes), 227 (the member-card map and `CLUSTER_KEY_MISMATCH`), 230 (the remaining cluster settings, startup codes and the `clusterSecurity` health contributor)
-**Wave:** 13 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Depends on:** 245, 250, 253, 255 (the 0.8 core surface), 221 (the `.s1` map names and interface codes), 227 (the member-card map and `CLUSTER_KEY_MISMATCH`), 230 (the remaining cluster settings, startup codes and the `clusterSecurity` health contributor), 264 (sealed-cluster plan; adds the `dataprism.linkattempt.s1` constant to `PrivacyCluster`, which `freeze/map-names.txt` pins. If 264 is cut from 0.8, remove this edge), 256 (may add a public accessor to `SensitiveDataScanner` in the `validation` package, which `freeze/spi-signatures.txt` pins)
+**Wave:** 14 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/freeze/** *(new)*
 - data-prism-architecture/src/test/resources/freeze/** *(new)*

@@ -79,7 +79,7 @@ Sealed links count failed attempts per principal and scope and lock the principa
 This is what ships instead (core OD-08-2 (c)). No code change is needed beyond 255, because 255's refusal fires whenever no cluster-wide limiter exists:
 - On a member that joins a cluster (`embedded` with `join.mode` `tcp-ip` or `kubernetes`), every sealed-token consumer is refused at startup with `MISSING_SHARED_LINK_LIMITER`: `dataprism.links.enabled=true`, and a configured link key (page links), whether or not links are enabled. A joining member therefore runs with links off and no link key, so `list_sources` answers on one page (core 250), and an estate larger than the default page size is refused by core 254's `MISSING_PAGING_KEY`. Per-instance limiting (option (b)) is not a fallback for either consumer.
 - A solo embedded member (`join.mode: none`) and `single-node` are never refused. They use the in-memory limiter for both consumers.
-- Whoever cuts the task removes 264 from the Depends-on lines of 263 and 213. Then 263 runs its three-member mix with links disabled and no link key (no follow and no page links), and the link and paging mix on a single node only, and 213 states the refusal, for links and page links, in `docs/multiple-instances.md`.
+- Whoever cuts the task removes 264 from the Depends-on lines of 263, 213 and 260 (260 then pins the map names without `dataprism.linkattempt.s1`). Then 263 runs its three-member mix with links disabled and no link key (no follow and no page links), and the link and paging mix on a single node only, and 213 states the refusal, for links and page links, in `docs/multiple-instances.md`.
 - The cut and the fallback are recorded in 215's Outcome and in the 0.8 release notes.
 
 ## Out of scope
