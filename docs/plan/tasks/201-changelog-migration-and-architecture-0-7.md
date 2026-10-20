@@ -70,3 +70,21 @@ changes), and records the release's architecture decisions.
 ## Out of scope
 - Version bumps, `server.json`, tagging, publishing, the release itself.
 - Editing any task's code or other docs; a gap found becomes a successor task.
+
+## Outcome
+
+Written from the retired Outcomes of 188, 189, 190, 193, 194, 195, 196, 202, 209, 216, 217, 232 and 233, then checked against the code at `22c1ee6d` (defaults in `LimitsProperties`, the frozen property list diffed against `v0.6.0`, the two new `Metric` constants, `AuditEvent`, `LlmResponseValidator`, the registered `dataPrismSensitivePatternValidator`). Where an Outcome's proposed line was superseded the merged behaviour is written instead: the pending-entry TTL of 216 was reverted (a sweep bounds retention), 216's rolling-upgrade note is replaced by 232's stop-all upgrade, and `dataprism.approval.pending.sweep-seconds` was never released so it has no entry.
+
+- `CHANGELOG.md`: `[Unreleased]` now has Breaking, Added, Changed, Fixed, Security and Build; the three existing Build lines are kept. No version, date or tag.
+- `docs/migration-0.7.md`: by audience (agent or client authors, operators, extension authors), with the before/after excerpt from `get-entity-context.structured.json` at `37d5c2a9^` and `37d5c2a9`.
+- `docs/architecture.md`: dated entries for D-070-1, -2, -3, -4/-5/-6, -7, task 209 and the Hazelcast approval decisions.
+- `docs/configuration.md`: the `:132` FAIL_REQUEST passage, the diagram alt text and the `max-response-size` row only. `docs/faq.md`: the pattern-scan paragraph only.
+- `mkdocs.yml`: nav and `llmstxt` entries for `migration-0.7.md`.
+- `mkdocs build --strict` exit 0; every `docs-site/hooks/check_*.py` exit 0 with `DP_REQUIRE_NO_STUBS=true`.
+
+Gaps found, not fixed (outside Owns):
+- `docs/multiple-instances.md` has no stop-all upgrade caution (216 said a rolling upgrade was safe once all members run the new version; 232 made old values unreadable).
+- `LimitsProperties` Javadoc still says `maxResponseSize` is the "largest response one request may take from a source".
+- The two single-source HTTP blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) are still converted, not re-captured (190 follow-up, before release).
+- 188's five-step release checklist (cosign and attestation verification, SBOM in the bundle) has never been run; the CHANGELOG and migration page describe the pipeline as built.
+- The 0.9 migration notes must record OD-B18 (per-source `REFUSED:RESPONSE_TOO_LARGE` replacing the whole-call refusal).
