@@ -418,7 +418,7 @@ is redacted outright per its `action: REDACT`, and `status` passes through
 unchanged because the catalogue marked it `nonSensitive`. The subject itself
 (`SUBJ-VHK4SXCQ`) is a pseudonym too, not `1001`. This ran with
 `-Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.7.0.jar`
-(recorded against 0.7.0) alone — no second jar,
+(recorded on 2026-10-20 against the 0.7.0 release source, before the version bump) alone — no second jar,
 no custom extension, no `IdentityResolver` bean compiled anywhere — and
 against the catalogue exactly as it is committed in
 `examples/json-sources/customer-api.yaml`, comments included: the transport
@@ -587,7 +587,7 @@ Every code fence above was executed, not transcribed:
 | What it shows | Command that produced it |
 |---|---|
 | The two fixtures' health checks | `curl -sk https://127.0.0.1:8543/health` and `curl -sk https://127.0.0.1:8544/health`, against processes started with the `java -jar data-prism-quickstart-fixtures/...`/`data-prism-quickstart-issuer/...` commands in "Build the jars, then start the two fixtures" |
-| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.3.0.jar -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server/target/data-prism-server-0.3.0.jar ...` (recorded against 0.3.0; server log, "Started DataPrismServerApplication") |
+| Server starts, no `dataprism.sources.customer-api` entry anywhere on the command line | `java -Dloader.path=data-prism-connectors-rest/target/data-prism-connectors-rest-0.7.0.jar -Ddataprism.json-sources.config-location=file:examples/json-sources/customer-api.yaml -jar data-prism-server/target/data-prism-server-0.7.0.jar ...` (re-run on 2026-10-20 against the 0.7.0 jars built from the release branch; server log, "Started DataPrismServerApplication") |
 | `GET /health` | `curl -s http://127.0.0.1:8080/health` |
 | `MISSING_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=pass-through` removed |
 | `UNSUPPORTED_IDENTITY_RESOLVER` | the same server command with `--dataprism.identity.resolver=probabilistic-match` |

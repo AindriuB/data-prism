@@ -615,7 +615,7 @@ module's own smoke test starts as subprocesses and drives, and
 `spring-boot-test` for its `ApplicationContextRunner` test. A consumer's
 extension pom has no reason to carry the first five.)
 
-What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-09). The two XML
+What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-20). The two XML
 blocks in this section were extracted programmatically and pasted unmodified
 into a pom whose only other content is `modelVersion`, `groupId`,
 `artifactId`, `version` and `packaging`. Alongside a minimal
@@ -624,7 +624,7 @@ into a pom whose only other content is `modelVersion`, `groupId`,
 `0.4.1` form. It resolved `data-prism-core`, `data-prism-annotations` and
 `data-prism-processor` `0.4.1`, `spring-web` `7.0.9` and
 `spring-boot-autoconfigure` `4.1.1` (Spring Boot `4.1.1`), and the build
-produced a jar. The `0.5.0` and `0.6.0` forms of the snippet differ from it only in
+produced a jar. The `0.5.0`, `0.6.0` and `0.7.0` forms of the snippet differ from it only in
 `data-prism.version`. The snippet's Spring dependencies were re-resolved
 against Spring Boot `4.1.1` and `spring-web` `7.0.9` during the Spring Boot 4.1
 migration, at `data-prism.version` `0.4.1`; those Spring versions come from the
@@ -642,7 +642,18 @@ of this repository before the tag, not against Maven Central. It resolved `data-
 `data-prism-annotations` and `data-prism-processor` `0.6.0`, `spring-web`
 `7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. That run
 shows the snippet and the reactor's POMs agree; it is not evidence about the
-artifacts Central will serve. Nothing here has been shown for any other version.
+artifacts Central will serve. The same was done on 2026-10-20, before
+publication, for the `0.7.0` form: a full `mvn package` with an empty local
+repository against a scratch file repository holding the `0.7.0` reactor build
+of this repository, not against Maven Central. It resolved `data-prism-core`,
+`data-prism-annotations` and `data-prism-processor` `0.7.0`, `spring-web`
+`7.0.9` and `spring-boot-autoconfigure` `4.1.1`, and produced a jar. The
+`tools.jackson` artifacts it resolved were `3.1.5`, the version the imported
+Spring Boot BOM manages, because a consumer's own dependency management
+decides that and the `jackson-bom` override in this repository's parent pom
+does not reach it. Like the `0.6.0` run, it shows the snippet and the
+reactor's POMs agree and is not evidence about the artifacts Central will
+serve. Nothing here has been shown for any other version.
 
 The annotation processor is configured separately, and only here — with an
 explicit version, not `${project.version}`, for the reason above. If your
