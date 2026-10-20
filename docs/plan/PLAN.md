@@ -66,6 +66,14 @@ Item 1 is done; the rest is not. The version bump must not happen without the ow
 Follow-ups from the re-capture (not release-blocking): the other fail-closed blocks on `docs/protect-your-own-api.md` (the `MISSING` and `UNSUPPORTED_IDENTITY_RESOLVER` refusals and the rest) were not re-captured against the real stack.
 
 
+Follow-ups from 234 (none scheduled):
+
+- Dependabot cannot see BOM-managed versions. Add a CI check or a periodic `dependency:tree` audit for runtime advisories, for example OWASP dependency-check or osv-scanner on the resolved tree.
+- Add a pip ecosystem entry and a load-test entry to `dependabot.yml`.
+- Remove the `jackson-bom` override in the root `pom.xml` once Spring Boot manages Jackson 3.1.7 or later.
+- Dependabot PR #133 is superseded by 234; the owner can close it.
+- The stale Pillow alerts #1 to #36 should clear on rescan, or the owner can dismiss them as fixed (Pillow is 12.3.0 on `main`).
+
 Follow-ups from 233 (none scheduled):
 
 - 0.8 (owner decision): a denial whose audit write fails answers `AUDIT_UNAVAILABLE` and counts a metric, consistently across the re-identification, operator and tool paths. Today `ReidentificationService.refuse` and `refuseApproval` and the operator controller's `recordDenial` swallow the failed audit and still refuse. The 233 brief wrongly called the `AUDIT_UNAVAILABLE` answer existing behaviour; the owner waived that acceptance item.

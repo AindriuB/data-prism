@@ -17,6 +17,10 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-20 — 234: Jackson 3 managed at 3.1.8
+The root `pom.xml` now imports `tools.jackson:jackson-bom` 3.1.8 ahead of the Spring Boot BOM, and `load-test/pom.xml` moves from 3.1.4 to 3.1.8, so every `tools.jackson` artifact in the reactor resolves to 3.1.8 and the shipped jars and images no longer carry the Jackson advisories. The CHANGELOG has a Security line.
+**Cost:** Dependabot flagged only `load-test` (pinned 3.1.4, not shipped), while the reactor resolved 3.1.5 through the Boot BOM, which Dependabot does not resolve; the shipped jars and images carried 5 advisories (3 high). Triage found one possibly reachable path, GHSA-wv8q-qhhj-9h54, through the MCP SDK's polymorphic types, and only for an authenticated caller. Do not trust the Dependabot list as the runtime picture; read `dependency:tree`. The 36 Pillow alerts (#1 to #36) are stale: Pillow has been 12.3.0 on `main` since 7406b647, in docs asset scripts that are build-only. Verified on the merge: 2030 surefire and 17 failsafe tests, 0 failures; release package, load-test verify and strict docs build pass.
+
 ## 2026-10-20 — 0.7 HTTP examples re-captured
 The single-source HTTP example blocks in `docs/agents/remote-http.md` and `docs/protect-your-own-api.md` now show output captured from the real Compose stack and the from-source walkthrough, and the "Not re-captured for 0.7" notes are gone. The real `tools/list` returns two tools, so the "exactly one" prose became "exactly two", and real results carry a `result._meta` correlation id.
 **Cost:** The page's other fail-closed blocks (`MISSING`, `UNSUPPORTED_IDENTITY_RESOLVER` and others) were still not re-captured. The captured block names `data-prism-connectors-rest-0.6.0.jar` because the version is not yet bumped, so the bump must update it (see the release gate in PLAN.md).
