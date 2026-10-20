@@ -160,8 +160,8 @@ source, in ascending key order, that holds it. A refused source has no entity.
 |---|---|---|
 | `TOO_MANY_RECORDS` | The response would carry more than `dataprism.limits.max-records` records (default 500). The whole call is refused. | Narrow the request. An operator can raise the limit if the larger answer is intended. |
 | `RESPONSE_TOO_LARGE` | The compact response body would be larger than `dataprism.limits.max-response-size` (default 512KB). The whole call is refused. | Narrow the request. An operator can raise the limit. |
-| `CLUSTER_LOCK_TIMEOUT` | A cluster lock the call needs was held for longer than `dataprism.hazelcast.lock-timeout` (default two seconds). Nothing was counted or changed. | Retry. |
-| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the call needs, such as a lock or its lease. Nothing was counted or changed. | Retry later. Tell an operator if it persists. |
+| `CLUSTER_LOCK_TIMEOUT` | A cluster lock the call needs was held for longer than `dataprism.hazelcast.lock-timeout` (default two seconds). The failed lock wait changes nothing, but earlier steps of the same call are not undone: a rate-limit allowance is already used if the limiter had already admitted the call, and an approval consumed by admission is not restored. | Retry. After a refused read of an approval-gated tool, request a fresh approval first. |
+| `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the call needs, such as a lock or its lease. The failed step changes nothing, but earlier steps are not undone, and a failed approval creation may leave a pending approval or count until it expires. | Retry later. Tell an operator if it persists. See [what a cluster refusal leaves behind](multiple-instances.md#what-a-cluster-refusal-leaves-behind) before you retry an approval or re-identification call. |
 
 `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` also now reach
 re-identification callers (request, approve and collect) as their refusal
@@ -295,8 +295,8 @@ Other changes you will see:
   the sweep interval beside an application-supplied `PrivacyCluster`.
 - The operator API answers `503` with `{"code":"CLUSTER_LOCK_TIMEOUT"}` or
   `{"code":"CLUSTER_OPERATION_REFUSED"}` where it answered
-  `503 OVERSIGHT_UNAVAILABLE` (approve, reject, pause, resume and the state and
-  approval reads) and `REIDENTIFICATION_UNAVAILABLE` (the re-identification
+  `503 OVERSIGHT_UNAVAILABLE` (approve and reject; pause, resume and the state and
+  approval reads can return them only with a custom `OversightState` or `ApprovalStore`) and `REIDENTIFICATION_UNAVAILABLE` (the re-identification
   endpoints). The denial is audited with that code. Any other failure keeps the
   old code. Update alerts and runbooks that match on `OVERSIGHT_UNAVAILABLE`.
 - Approving or rejecting no longer waits for ever, or reports failure after it

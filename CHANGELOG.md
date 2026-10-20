@@ -109,7 +109,11 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
   from a returned response is counted in `dataprism.privacy.source.withheld`.
 - A call that waits for a cluster lock now refuses after two seconds by default
   with `CLUSTER_LOCK_TIMEOUT` instead of waiting, including a read blocked on the
-  shared read budget.
+  shared read budget. The failed lock wait changes nothing, but steps that ran
+  earlier in the same call are not undone: an approval consumed by admission is
+  not restored, so a retry of an approval-gated tool after a refused read needs a
+  fresh approval. See "What a cluster refusal leaves behind" in
+  `docs/multiple-instances.md`.
 - A tool call that the cluster refuses an operation for returns
   `CLUSTER_OPERATION_REFUSED` (audited `DENY:CLUSTER_OPERATION_REFUSED`) instead
   of `OVERSIGHT_UNAVAILABLE`, and a read whose cluster budget lock the cluster
@@ -119,8 +123,9 @@ The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
 - Re-identification (request, approve and collect) answers
   `CLUSTER_OPERATION_REFUSED` or `CLUSTER_LOCK_TIMEOUT` instead of
   `REIDENTIFICATION_UNAVAILABLE`, and the operator API answers `503` with
-  `{"code":"<code>"}` instead of `503 OVERSIGHT_UNAVAILABLE` (approve, reject,
-  pause, resume and the state and approval reads) and instead of
+  `{"code":"<code>"}` instead of `503 OVERSIGHT_UNAVAILABLE` (approve and reject;
+  pause, resume and the state and approval reads can return them only with a
+  custom `OversightState` or `ApprovalStore`) and instead of
   `REIDENTIFICATION_UNAVAILABLE` (the re-identification endpoints). Any other
   failure keeps the old code. The cause is logged once at `WARN` with the cause's
   class name only.

@@ -288,8 +288,10 @@ Reading the budget, counting a caller's requests and creating or deciding an
 approval each take a short cluster lock on the entry they change. A lock that
 another member, a slow member or something on the member port holds no longer
 hangs the request thread. Each lock wait is at most `dataprism.hazelcast.lock-timeout`
-(default two seconds), after which the call is refused with `CLUSTER_LOCK_TIMEOUT`
-without changing any counter or approval. A call that takes several locks waits
+(default two seconds), after which the call is refused with `CLUSTER_LOCK_TIMEOUT`.
+The failed lock wait changes nothing, but a call is several steps, and a step that ran
+before it stays done: see [what a cluster refusal leaves behind](#what-a-cluster-refusal-leaves-behind)
+before you retry. A call that takes several locks waits
 at most n times the timeout in total, for n locks. These calls take more than one:
 creating an approval (three: the id claim, the requester's pending entry and the
 approval entry), deciding an approval (the entry's lock, and after the decision has
@@ -302,8 +304,10 @@ committed the pending entry's lock), and ending a scope or forgetting its approv
   lock timeout, such as an unreachable cluster, still refuses the read as before.
 - Re-identification (request, approve and collect) answers `CLUSTER_LOCK_TIMEOUT`
   as its refusal code, audited as `DENY:CLUSTER_LOCK_TIMEOUT`, and the operator API
-  answers it with `503` and `{"code":"CLUSTER_LOCK_TIMEOUT"}` for approve, reject,
-  the pause endpoints and the re-identification endpoints. Earlier versions answered
+  answers it with `503` and `{"code":"CLUSTER_LOCK_TIMEOUT"}` for approve, reject
+  and the re-identification endpoints. The pause, resume, state and approval-read endpoints
+  can return it only with a custom `OversightState` or `ApprovalStore`: the shipped
+  Hazelcast pause state and the read paths take no lock. Earlier versions answered
   `REIDENTIFICATION_UNAVAILABLE` and `503 OVERSIGHT_UNAVAILABLE` there. Any other
   store failure still gets those two codes.
 
@@ -360,15 +364,42 @@ never its message. Every caller sees the code itself, as it sees
   is not a rejected lock, such as an unreachable cluster, still refuses the read as
   `SCOPE_READ_BUDGET`.
 - Re-identification answers it as its refusal code, and the operator API answers
-  `503` with `{"code":"CLUSTER_OPERATION_REFUSED"}` for approve, reject, the pause
-  endpoints and the re-identification endpoints.
+  `503` with `{"code":"CLUSTER_OPERATION_REFUSED"}` for approve, reject
+  and the re-identification endpoints. The pause, resume, state and approval-read
+  endpoints can return it only with a custom `OversightState` or `ApprovalStore`.
 
-Treat it as retry later, and tell an operator if it persists. A real duplicate id
+Treat it as retry later, and tell an operator if it persists, after reading
+[what a cluster refusal leaves behind](#what-a-cluster-refusal-leaves-behind): not
+every call can simply be repeated. A real duplicate id
 still gets `IllegalArgumentException("duplicate approval id")`, and the two are
 never confused. One way to see the new code: set
 `hazelcast.lock.max.lease.time.seconds` below five times the lock timeout.
 A lost write quorum keeps its own `SplitBrainProtectionException`, as
 described below.
+
+#### What a cluster refusal leaves behind
+
+`CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` say that one step could not take
+or use a cluster lock. The step that failed changed nothing. Steps that ran earlier in
+the same call are not undone, so "nothing was changed" is not true of the call as a
+whole. This is what may already have happened when each path returns either code, with
+the shipped Hazelcast stores:
+
+| Path and step that failed | Already done by the same call | What to do |
+|---|---|---|
+| Tool call, the caller rate limiter's lock | Nothing. The pause checks only read. | Retry. |
+| Tool call, approval-gated tool, consuming an approval | One allowance of the caller's rate limit was used, if a per-caller limit is set. No approval was consumed: a consume that cannot take its lock does not commit. | Retry. The approval, if there was one, is still usable. |
+| Tool call, approval-gated tool, creating the approval | The rate-limit allowance was used. A lock refusal comes before anything is written. A `CLUSTER_OPERATION_REFUSED` can come after the id claim, the requester's pending count or the entry was written; some are undone; the rest, and any undo that fails, stay until expiry or the sweep. | Retry. A pending approval that was left is found and answered as `APPROVAL_PENDING` with its id. A count that was left can answer `TOO_MANY_PENDING` until it expires. |
+| Tool call, the read budget (after admission) | The rate-limit allowance was used. If the tool is approval-gated, admission consumed the approval, and an approval that was consumed is not restored. The budget did not count this read. No source was called. | Retry. An approval-gated tool needs a fresh approval first: repeat the call to get `APPROVAL_REQUIRED`, and have a different person approve it. |
+| Re-identification `request` (four-eyes), creating the approval | As for creating a tool-call approval. No `ALLOW:REQUESTED` event is written for a refused request. | Retry. A pending request that was left counts against `maxPendingPerRequester` until it expires. |
+| Re-identification `approve` and operator `approve` or `reject` | Nothing from this call. These two codes come from the entry's lock, before the decision commits, and the pending-count release after a commit never refuses (see "Approve and reject never wait unboundedly after they commit" above). Another operator may have decided it meanwhile. | Re-read the approval (`find`, or `GET /operator/approvals/{id}`) and retry only if it is still `PENDING`. A different failure of an approve, such as a timeout that loses the reply, can follow a decision that did commit (see the residual under [Approvals under a partition](#approvals-under-a-partition)); re-read for that too. |
+| Re-identification `collect`, consuming the approval | Nothing. A consume that cannot take its lock does not commit. | Retry the same `collect`. Once a consume has committed, `collect` does not return either code; a later failure (the lookup or the audit write) leaves the approval consumed, and a new request is needed. |
+| Operator `pause`, `resume`, `state`, approvals list and read | The shipped Hazelcast pause state and the approval reads take no lock, so they do not return these codes. A custom `OversightState` could. `resume` writes its audit event before it changes the state, so an event `ALLOW:RESUMED` does not prove the resume took effect. | Read `GET /operator/state` before retrying a pause or a resume. |
+| Ending a scope or forgetting its approvals | The scope's identity, re-identification, budget and pause entries were deleted first. Approvals handled before the failure were removed. Their claims and slots are released on a best effort basis: a release that cannot take its lock is skipped, so a claim or slot can stay until the sweep or its expiry even when the call succeeds, and each skip is counted in `dataprism.approval.release.skipped`. A lock timeout leaves only the approvals it hit and the call carries on with the rest. A `CLUSTER_OPERATION_REFUSED` stops at the approval it hit, and the approvals after it are not tried. | Call it again once the cluster accepts locks. It removes what is left. |
+
+What a failed step leaves behind errs towards refusing: a pending count or an id claim
+is left too high, never too low, and until the sweep or the expiry removes it, the
+requester may be refused a new approval a little longer.
 
 **Upgrade caution.** Approvals, id claims and pending entries written before
 this version are unreadable after it: the approval entry, the claim and the
