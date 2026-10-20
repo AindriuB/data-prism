@@ -5,6 +5,7 @@
 **Kind:** planning documents only; no code, no shipped page.
 **Base branch:** `origin/main`
 **Depends on:** none
+**Wave:** 1 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - docs/plan/design/sealed-links.md
 - docs/plan/design/key-resolvers.md

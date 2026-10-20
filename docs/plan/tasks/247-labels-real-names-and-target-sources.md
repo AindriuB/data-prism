@@ -5,6 +5,7 @@
 **Base branch:** `origin/main` once 239, 246 and 206 have merged
 **Depends on:** 239 (`SourceCatalog`, `SourceVisibility`), 246 (both edit `DefaultContextOrchestrator` and its call sites), 206 (206 owns new test files under `data-prism-core/src/test/java/io/github/aindriub/dataprism/audit/**`)
 **Blocked on:** OD-08-6 (which tools record the `names` key)
+**Wave:** 7 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceAliasing.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/catalog/SourceLabels.java *(new)*

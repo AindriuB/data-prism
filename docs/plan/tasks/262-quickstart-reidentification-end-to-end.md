@@ -2,8 +2,9 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** the 0.8 integration branch once 210 and 245 have merged, and the sealed-cluster tasks that make an embedded single-member cluster start with its keys
-**Depends on:** 210 (210 owns `docker/server/application.yaml`), 245 (the operator denial behaviour the walkthrough shows), and the sealed-cluster wiring tasks that require cluster and name keys for an embedded member (222 and the solo-member rule of OD-215-8; ids to be confirmed by the coordinator)
+**Base branch:** the 0.8 integration branch once 210, 245, 222 and 223 have merged
+**Depends on:** 210 (210 owns `docker/server/application.yaml`), 245 (the operator denial behaviour the walkthrough shows), 222 (cluster and name keys, and the keyless multi-member refusal), 223 (the solo-member keys of OD-215-8, which decide what an embedded single member needs configured)
+**Wave:** 6 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - docs/quickstart.md
 - docker/server/application.yaml *(the `dataprism.reidentification`, `dataprism.hazelcast` and operator settings only)*

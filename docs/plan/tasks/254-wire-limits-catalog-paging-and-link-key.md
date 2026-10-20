@@ -2,10 +2,11 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** the 0.8 integration branch once 211, 246, 247, 249 and 250 have merged, and 242
-**Depends on:** 211 (serialised with 210, 208, 211 and the cluster wiring tasks on the shared Spring files below), 242 (link codec), 246 (new limits), 247 (labels, real names, `OrchestrationOptions`), 249 (configured-source descriptions and hosts), 250 (catalog tools)
+**Base branch:** the 0.8 integration branch once 211, 222, 242, 246, 247, 249 and 250 have merged
+**Depends on:** 211 (serialised with 210, 208 and 211 on the shared Spring files below), 222 (sealed-cluster plan; 222 edits `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json` and `docs/configuration.md` first), 242 (link codec), 246 (new limits), 247 (labels, real names, `OrchestrationOptions`), 249 (configured-source descriptions and hosts), 250 (catalog tools)
 **Blocked on:** OD-08-3 (limit names and defaults), OD-08-9 (the missing-key code), OD-08-18 (how link-key material is referenced)
-**Serialised with:** 255 and the sealed-cluster wiring tasks (222 and later), on `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, `additional-spring-configuration-metadata.json`, `frozen-property-names.txt`, `bean-inventory/*.txt`, `docs/configuration.md`
+**Serialised with:** 222 (before this task, by the edge above), 255 (after), and 230 (after 255, because 230 depends on 255; no edge from 222 or 230 to this task, which would close the cycle 254, 246, 226, 223, 222), on `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, `additional-spring-configuration-metadata.json`, `frozen-property-names.txt`, `bean-inventory/*.txt`, `docs/configuration.md`
+**Wave:** 9 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LimitsProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/CatalogProperties.java *(new)*

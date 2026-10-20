@@ -5,6 +5,7 @@
 **Base branch:** `origin/main` once 239, 240, 246, 247 and 248 have merged
 **Depends on:** 239, 240, 248 (the SPI pieces it implements), 246 and 247 (both edit `ConfiguredJsonSourcesAutoConfiguration`)
 **Blocked on:** OD-08-8 (how sources are split across files)
+**Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSource.java

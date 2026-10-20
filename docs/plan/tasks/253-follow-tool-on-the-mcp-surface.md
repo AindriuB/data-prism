@@ -4,6 +4,7 @@
 **Release:** 0.8.0 (registered only when links are enabled)
 **Base branch:** `origin/main` once 250 and 252 have merged
 **Depends on:** 252 (`ContextOrchestrator.follow`), 250 (both edit `DataPrismMcpServer` and `ExampleApplication`)
+**Wave:** 10 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/FollowTool.java *(new)*
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServer.java *(the `follow` registration and its factory parameter only)*

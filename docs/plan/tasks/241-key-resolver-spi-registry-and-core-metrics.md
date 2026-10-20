@@ -2,8 +2,9 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` once 239 and 244 have merged
-**Depends on:** 239 (`KeyNamespace`), 244 (both insert into `Metric.java` and `PrivacyMetricsTest`)
+**Base branch:** `origin/main` once 239, 244 and 220 have merged
+**Depends on:** 239 (`KeyNamespace`), 244 (both insert into `Metric.java` and `PrivacyMetricsTest`), 220 (sealed-cluster plan; 220 inserts every `dataprism.cluster.*` constant into the same `Metric.java` and `PrivacyMetricsTest.java`, so the three insertions land in order)
+**Wave:** 4 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/KeyResolver.java *(new; `Resolution` is a nested record)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/ResolutionContext.java *(new)*
@@ -27,7 +28,7 @@ Translation between key namespaces happens only through a declared resolver (D-R
 - docs/plan/design/key-resolvers.md section 6 (SPI, declarations, cardinality, failure table, budget, audit, `IdentityResolver` adapter) and the test obligations 1, 2, 6, 8 to 12; amended by register OD-200-3 (`RESOLVER_FAILED`), OD-200-4 (resolver name at most 32) and OD-200-15 (one `Metric` constant per outcome).
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/IdentityResolver.java: unchanged and undeprecated (OD-R8).
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/metrics/Metric.java:27: "One constant per refusal code, because PrivacyMetrics takes no free-form tag."
-- Task 220 on `plan/0.8-sealed-cluster` adds the cluster constants to the same enum; see the RISK list.
+- Task 220 on `plan/0.8-sealed-cluster` adds the cluster constants to the same enum; this task depends on 220 so the insertions are serialised.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.

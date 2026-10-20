@@ -4,7 +4,8 @@
 **Release:** 0.8.0 (evidence)
 **Executor:** the owner, or an agent on a dedicated host; not a shared CI runner.
 **Base branch:** the 0.8 integration branch once every dependency has merged
-**Depends on:** 258 (soak mode), 252 (`LinkTimingSoakTest`), 255 (links and catalog wired), 257 (257 owns `.github/workflows/*.yml`), and the sealed-cluster tasks that make a three-member sealed cluster run (ids to be named by the coordinator)
+**Depends on:** 258 (soak mode), 252 (`LinkTimingSoakTest`), 255 (links and catalog wired), 257 (257 owns `.github/workflows/*.yml`), and 231 (sealed-cluster plan; 231 follows 230 and through it every sealed-cluster task 218 to 229, so a three-member sealed cluster runs)
+**Wave:** 14 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - load-test/soak/** *(new: scenario files and a Compose overlay for the three-member run)*
 - docs/plan/perf/soak-0.8.md *(new)*

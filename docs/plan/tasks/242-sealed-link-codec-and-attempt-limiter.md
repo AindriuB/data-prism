@@ -4,6 +4,7 @@
 **Release:** 0.8.0 (links stay off by default through 0.9, sealed-links OD-7)
 **Base branch:** `origin/main` once task 220 (`plan/0.8-sealed-cluster`) has merged
 **Depends on:** 220 (`LabelledHkdf` in `core.crypto`, which 220 builds to serve the link design unchanged)
+**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/** *(new package)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/** *(new)*

@@ -2,9 +2,10 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main`
-**Depends on:** none
+**Base branch:** `origin/main` once 221 has merged
+**Depends on:** 221 (sealed-cluster plan; 221 edits the `hazelcast.version` property of the same root `pom.xml`, so the two edits land in order)
 **Blocked on:** OD-08-11 (per-arch signing), OD-08-12 (one SBOM build), OD-08-17 (whether the advisory scan fails the run)
+**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - .github/workflows/*.yml
 - .github/workflows/supply-chain.yml *(new)*

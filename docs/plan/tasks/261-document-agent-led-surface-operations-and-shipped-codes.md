@@ -4,7 +4,8 @@
 **Release:** 0.8.0
 **Executor:** `scribe` (docs only; no code)
 **Base branch:** the 0.8 integration branch once every dependency has merged
-**Depends on:** 238, 244, 245, 246, 247, 249, 250, 253, 255, 256
+**Depends on:** 238, 244, 245, 246, 247, 249, 250, 253, 255, 256, 230 (sealed-cluster plan; 230 adds rows to `docs/configuration.md` and otherwise could run alongside this task, since both follow 255; its startup codes also belong in the startup-refusal index)
+**Wave:** 13 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - docs/tools.md
 - docs/audit.md *(the disposition keys and values these tasks add, and the resolver-failure statement only)*

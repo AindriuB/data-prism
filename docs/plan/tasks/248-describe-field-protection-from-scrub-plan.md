@@ -4,6 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 240 has merged
 **Depends on:** 240 (`ChainableFields`)
+**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/ScrubbingEngine.java *(the `describe` default method only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/ModelDescription.java *(new)*

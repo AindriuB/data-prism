@@ -5,7 +5,8 @@
 **Base branch:** the 0.8 integration branch once 254 and 253 have merged
 **Depends on:** 254 (serialised on the shared Spring files; `LinksProperties`), 253 (the `follow` tool), 241 (registry and invoker)
 **Blocked on:** OD-08-2 (the limiter on a shared topology), OD-08-10 (link-key and catalog signals), OD-08-16 (the `max-targets` ceiling)
-**Serialised with:** the sealed-cluster wiring tasks on the shared Spring files listed in 254
+**Serialised with:** the sealed-cluster wiring tasks on the shared Spring files listed in 254: 222 lands before this task (through 254), and 230 after it (230 depends on 255). `PiiLogScanTest.java` is also edited by 231, which follows 230 and so this task
+**Wave:** 11 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinksProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/KeyResolverProperties.java *(new)*

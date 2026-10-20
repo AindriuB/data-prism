@@ -2,9 +2,10 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` once 243, 244 and 203 have merged, and the sealed-cluster brief that implements `ScopeBudget.reserve` on `HazelcastScopeBudget` (OD-08-1)
-**Depends on:** 243 (reservation SPI), 244 (both edit `DefaultContextOrchestrator`), 203 (203 owns existing `data-prism-mcp` test files), and the 215 successor that owns `HazelcastScopeBudget`'s reservation (id to be named by the coordinator; see OD-08-1)
+**Base branch:** the 0.8 integration branch once 243, 244, 203 and 226 have merged
+**Depends on:** 243 (reservation SPI), 244 (both edit `DefaultContextOrchestrator`), 203 (203 owns existing `data-prism-mcp` test files), 226 (sealed-cluster plan; 226 implements `reserve` and `release` on `HazelcastScopeBudget`, assuming OD-08-1 option (a). If OD-08-1 is decided otherwise this edge is re-cut with the decision)
 **Blocked on:** OD-08-1, OD-08-3, OD-08-4, OD-08-5
+**Wave:** 6 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceFanOut.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceFanOutOptions.java

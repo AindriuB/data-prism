@@ -4,6 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 239 has merged
 **Depends on:** 239 (`KeyNamespace`)
+**Wave:** 2 (combined 0.8 graph of 213, 218 to 231 and 238 to 263; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-annotations/src/main/java/io/github/aindriub/dataprism/annotations/Chainable.java *(new)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/ModelDescriptors.java *(the `chainable` and `keyNamespace` field keys and their validation only)*
