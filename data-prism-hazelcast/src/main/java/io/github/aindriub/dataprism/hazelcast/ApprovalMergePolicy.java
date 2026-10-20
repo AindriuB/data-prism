@@ -9,7 +9,11 @@ import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
 /**
  * What the approval map keeps when two halves of a split cluster heal and both hold the same entry.
  *
- * <p>The state that is further along wins: {@code CONSUMED}, then {@code REJECTED}, then {@code EXPIRED},
+ * <p>Each creation of an approval carries a random token. If the two sides carry different tokens they are two
+ * creations of one id (a same-scope re-creation on each side), and the entry already in the surviving cluster is
+ * kept, whatever the statuses: the other creation is never resurrected, and its claim and pending slot, which
+ * name its own token, cannot be mistaken for the kept one's. If the tokens are equal, the state that is further
+ * along wins: {@code CONSUMED}, then {@code REJECTED}, then {@code EXPIRED},
  * then {@code APPROVED}, then {@code PENDING}. An approval either side used therefore cannot be used again
  * after the heal, which Hazelcast's default policy would allow by keeping the larger side's {@code APPROVED}.
  * A tie keeps the entry already in the surviving cluster. An entry that cannot be read is dropped, so the
@@ -28,6 +32,12 @@ public final class ApprovalMergePolicy implements SplitBrainMergePolicy<String, 
         Status incoming;
         Status current;
         try {
+            if (!HazelcastApprovalStore.Codec.tokenOf(merging.getValue())
+                    .equals(HazelcastApprovalStore.Codec.tokenOf(existing.getValue()))) {
+                HazelcastApprovalStore.Codec.decode(merging.getValue());
+                HazelcastApprovalStore.Codec.decode(existing.getValue());
+                return existing.getValue();
+            }
             incoming = HazelcastApprovalStore.Codec.decode(merging.getValue()).status();
             current = HazelcastApprovalStore.Codec.decode(existing.getValue()).status();
         } catch (RuntimeException unreadable) {

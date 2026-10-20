@@ -96,7 +96,8 @@ class HazelcastStoredValueBoundaryTest {
 
         Map<String, IMap<Object, Object>> maps = allPrivacyMaps();
         assertThat(maps.keySet()).containsExactlyInAnyOrder(PrivacyCluster.OVERSIGHT_MAP,
-                PrivacyCluster.APPROVAL_MAP, PrivacyCluster.CALLER_RATE_MAP);
+                PrivacyCluster.APPROVAL_MAP, PrivacyCluster.APPROVAL_ID_MAP, PrivacyCluster.APPROVAL_PENDING_MAP,
+                PrivacyCluster.CALLER_RATE_MAP);
         assertThat(List.copyOf(maps.values())).allSatisfy(map -> assertThat(map.size()).isPositive());
         assertRawValueIsAbsent(maps);
         maps.forEach((name, map) -> {
@@ -185,6 +186,21 @@ class HazelcastStoredValueBoundaryTest {
                 var request = HazelcastApprovalStore.Codec.decode((String) value);
                 assertThat(request.approvalId()).isEqualTo(parts[1]);
                 assertThat(request.scopeId()).isEqualTo(parts[0]);
+            });
+            case PrivacyCluster.APPROVAL_ID_MAP -> map.forEach((key, value) -> {
+                // A bare approval id, claiming the approval entry key (scope, NUL, the same id) and the random
+                // token of the creation, which carries no personal data.
+                assertThat(key).isInstanceOf(String.class);
+                assertThat((String) key).doesNotContain("\0");
+                var named = ClaimEntries.read((String) value).orElseThrow();
+                assertThat(named.entryKey()).isEqualTo(SCOPE_ID + "\0" + key);
+                assertThat(named.marked()).isFalse();
+                assertThat(java.util.UUID.fromString(named.token()).toString()).isEqualTo(named.token());
+            });
+            case PrivacyCluster.APPROVAL_PENDING_MAP -> map.forEach((key, value) -> {
+                parts(key, 2, name);
+                assertThat(value).isInstanceOf(String.class);
+                assertThat(PendingSet.decode((String) value)).isNotEmpty().containsOnlyKeys("ap-1");
             });
             case PrivacyCluster.CALLER_RATE_MAP -> map.forEach((key, value) -> {
                 assertThat(key).as("%s key", name).isInstanceOf(String.class);

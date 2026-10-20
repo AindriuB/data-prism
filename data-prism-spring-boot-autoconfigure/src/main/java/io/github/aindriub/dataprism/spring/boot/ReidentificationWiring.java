@@ -68,8 +68,10 @@ class ReidentificationWiring {
 
     @Bean
     ReidentificationService dataPrismReidentificationService(PrivacyCluster cluster, ApprovalStore approvals,
-            AuditRecorder audit, ReidentificationPolicy policy, PrivacyMetrics metrics, Clock clock) {
-        return new ReidentificationService(new ScopeIdentityIndex(cluster, metrics), approvals, audit, policy,
-                clock);
+            AuditRecorder audit, ReidentificationPolicy policy, PrivacyMetrics metrics, Clock clock,
+            DataPrismProperties properties) {
+        return new ReidentificationService(
+                new ScopeIdentityIndex(cluster, metrics, properties.getHazelcast().getLockTimeout()),
+                approvals, audit, policy, clock);
     }
 }

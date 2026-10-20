@@ -20,6 +20,8 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-20 | 232 | Hazelcast approval creation tokens compared by every release, undo, withdraw, takeover, sweep, merge and forget; atomic decide with TTL; every lock-aware approval call bounded; skipped releases counted in `dataprism.approval.release.skipped`; old-format claims swept; D-0.7-HZ-2 | `## 2026-10-20 — Approval creation tokens and bounded cleanup in Hazelcast (232)` |
+| 2026-10-20 | 216 | Hazelcast approval creation made atomic: clock-free ID claims, owner-tagged pending sets, no TTL on pending entries, sweep, bounded leases, new code `CLUSTER_OPERATION_REFUSED`; supersedes 34adde0b and 08939a79 | `## 2026-10-20 — Atomic approval creation in Hazelcast (216)` |
 | 2026-10-19 | 194, 196 | Key scan honours the match cap and character budget; load-test cleanup closes late-tracked resources and waits for in-flight launches; paced dispatch stops at the real clock; ten harness P3s fixed after a whole-harness bug hunt | `## 2026-10-19 — PR #132 review fixes` |
 | 2026-10-19 | 194 | Leak validators scan property names as well as values; a flagged key is reported as `<undeclared>` | `## 2026-10-19 — Key-shape scan in the leak validators (194)` |
 | 2026-10-19 | 196 | Standalone `load-test/` project: MCP Java SDK driver, synthetic HTTPS sources, one-command runner | `## 2026-10-19 — Load-test harness (196)` |

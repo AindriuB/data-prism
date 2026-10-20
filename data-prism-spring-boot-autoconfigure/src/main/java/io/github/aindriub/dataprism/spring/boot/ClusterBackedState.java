@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
 import io.github.aindriub.dataprism.hazelcast.HazelcastApprovalStore;
 import io.github.aindriub.dataprism.hazelcast.HazelcastCallerRateLimiter;
@@ -105,8 +106,10 @@ class ClusterBackedState {
     }
 
     @Bean @ConditionalOnMissingBean
-    ApprovalStore dataPrismClusterApprovalStore(PrivacyCluster cluster, DataPrismProperties properties) {
-        return new HazelcastApprovalStore(cluster, properties.getHazelcast().getLockTimeout());
+    ApprovalStore dataPrismClusterApprovalStore(PrivacyCluster cluster, DataPrismProperties properties,
+            ObjectProvider<PrivacyMetrics> metrics) {
+        return new HazelcastApprovalStore(cluster, properties.getHazelcast().getLockTimeout(),
+                metrics.getIfAvailable(PrivacyMetrics::none));
     }
 
     @Bean @ConditionalOnMissingBean

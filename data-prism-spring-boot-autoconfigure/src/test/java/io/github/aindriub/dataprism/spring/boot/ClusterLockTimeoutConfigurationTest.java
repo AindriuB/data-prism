@@ -6,12 +6,15 @@ import io.github.aindriub.dataprism.core.limits.ScopeBudget;
 import io.github.aindriub.dataprism.spring.boot.validation.DataPrismPropertiesValidator;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+import io.github.aindriub.dataprism.hazelcast.ScopeIdentityIndex;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
+import io.github.aindriub.dataprism.reidentification.ReidentificationService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.assertj.AssertableWebApplicationContext;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -153,7 +156,7 @@ class ClusterLockTimeoutConfigurationTest {
                 ApprovalRequest request = new ApprovalRequest("ctx-1", ApprovalRequest.Kind.TOOL_CALL, "alice", "c",
                         "scope-1", "search", "fp", null, null, "p", "case", now, now.plusSeconds(60),
                         ApprovalRequest.Status.PENDING, null, null);
-                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP), "ctx-1",
+                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP), "ctx-1",
                         () -> refusesWithinTheTimeoutAndHalfASecond(() -> approvals.create(request), caller));
                 holdWhile(cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP), "alice",
                         () -> refusesWithinTheTimeoutAndHalfASecond(
@@ -165,6 +168,37 @@ class ClusterLockTimeoutConfigurationTest {
                 holdWhile(counts, counts.keySet().iterator().next(),
                         () -> refusesWithinTheTimeoutAndHalfASecond(
                                 () -> budget.tryRead("scope-1", "subject-1", 5), caller));
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            } finally {
+                caller.shutdownNow();
+            }
+        });
+    }
+
+    @Test void the_configured_lock_timeout_reaches_the_scope_end_of_the_reidentification_index() {
+        OversightConfigurationTest.runner("embedded", join(OPERATOR, REIDENTIFICATION,
+                new String[] {"dataprism.hazelcast.lock-timeout=PT0.2S"})).run(result -> {
+            assertThat(result).hasNotFailed();
+            ExecutorService caller = Executors.newSingleThreadExecutor();
+            try {
+                PrivacyCluster cluster = result.getBean(PrivacyCluster.class);
+                ApprovalStore approvals = result.getBean(ApprovalStore.class);
+                // The service keeps the index only inside its lookup, a method reference that captures it.
+                Object lookup = ReflectionTestUtils.getField(result.getBean(ReidentificationService.class), "lookup");
+                ScopeIdentityIndex index = (ScopeIdentityIndex) ReflectionTestUtils.getField(lookup, "arg$1");
+                Instant now = Instant.now();
+                approvals.create(new ApprovalRequest("end-1", ApprovalRequest.Kind.TOOL_CALL, "alice", "c",
+                        "scope-end", "search", "fp", null, null, "p", "case", now, now.plusSeconds(60),
+                        ApprovalRequest.Status.PENDING, null, null));
+                String entry = "scope-end\0end-1";
+                // A held approval lock refuses the scope end within the configured 0.2 s, not the default 2 s.
+                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP), entry,
+                        () -> refusesWithinTheTimeoutAndHalfASecond(() -> {
+                            index.endScope("scope-end");
+                            return null;
+                        }, caller));
+                assertThat(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP).containsKey(entry)).isTrue();
             } catch (Exception e) {
                 throw new AssertionError(e);
             } finally {

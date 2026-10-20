@@ -50,8 +50,16 @@ class ApprovalSplitBrainHealTest {
 
         var onFirst = new HazelcastApprovalStore(first);
         var onSecond = new HazelcastApprovalStore(second);
+        // One creation that both sides hold, as if made before the split: the second side gets copies of the
+        // first side's entry, claim and pending slot, token included. (Two separate creations of one id would
+        // keep the surviving side's entry whatever the statuses; see ApprovalMergePolicyTest.)
+        onFirst.create(TestMembers.request("heal-1", "scope-1", Status.PENDING));
+        for (String map : List.of(PrivacyCluster.APPROVAL_MAP, PrivacyCluster.APPROVAL_ID_MAP,
+                PrivacyCluster.APPROVAL_PENDING_MAP)) {
+            first.instance().<String, String>getMap(map).forEach(
+                    (key, value) -> second.instance().<String, String>getMap(map).put(key, value));
+        }
         for (var store : List.of(onFirst, onSecond)) {
-            store.create(TestMembers.request("heal-1", "scope-1", Status.PENDING));
             store.approve("heal-1", "bob", NOW);
         }
         assertThat(onSecond.consumeApproved(io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind.TOOL_CALL,
