@@ -6,7 +6,8 @@ Renumbered from 198 on 2026-10-19. Reconciled with the pre-0.9 freeze; see `docs
 **Release:** 0.8.0
 **Executor:** `scribe` (docs only; no code)
 **Base branch:** the 0.8 integration branch once all dependencies have merged; otherwise `origin/main` after those merges.
-**Depends on:** 208, 210, 211, and every sealed-cluster implementation successor planned by 215.
+**Depends on:** 208, 210, 211, 261, and every sealed-cluster implementation successor planned by 215.
+*(261 added 2026-10-20 by the 0.8 core plan: 261 edits `docs/tools.md`, `docs/audit.md`, `docs/extending.md`, `docs/reidentification.md`, `docs/multiple-instances.md`, `CHANGELOG.md` and `mkdocs.yml` first and creates `docs/migration-0.8.md` with the core sections, to which this task adds its own; through 261 this task also follows the link-key wiring of 254 and 255 that its link-key procedure documents.)*
 **Blocked on:** 215 must replace the descriptive cluster dependency with concrete task ids before this task starts. Superseded tasks 204, 205 and 212 are not implementation prerequisites.
 **Owns:**
 - docs/key-rotation.md (new)

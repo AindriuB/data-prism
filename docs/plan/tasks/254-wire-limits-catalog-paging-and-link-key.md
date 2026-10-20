@@ -1,0 +1,56 @@
+# 254 — Wire the new limits, the catalog, list paging and the link key into Spring, and close the raw FactoryBean preflight gap
+
+**Repo:** `.`
+**Release:** 0.8.0
+**Base branch:** the 0.8 integration branch once 211, 246, 247, 249 and 250 have merged, and 242
+**Depends on:** 211 (serialised with 210, 208, 211 and the cluster wiring tasks on the shared Spring files below), 242 (link codec), 246 (new limits), 247 (labels, real names, `OrchestrationOptions`), 249 (configured-source descriptions and hosts), 250 (catalog tools)
+**Blocked on:** OD-08-3 (limit names and defaults), OD-08-9 (the missing-key code), OD-08-18 (how link-key material is referenced)
+**Serialised with:** 255 and the sealed-cluster wiring tasks (222 and later), on `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, `additional-spring-configuration-metadata.json`, `frozen-property-names.txt`, `bean-inventory/*.txt`, `docs/configuration.md`
+**Owns:**
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LimitsProperties.java
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/CatalogProperties.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PagingProperties.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinksProperties.java *(new: the key fields only; 255 adds the rest)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismProperties.java *(the three new groups only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/CatalogWiring.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinkKeyResolution.java *(new)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/OrchestrationWiring.java
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpTransportWiring.java *(the catalog arguments of `dataPrismHttpTransport` only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/Preflights.java *(`dataPrismPrivacyPolicyResolverPreflight` only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismPropertiesValidator.java *(the limits checks and new `validateCatalog` and `validatePaging` methods only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(insertions only)*
+- data-prism-spring-boot-autoconfigure/src/main/resources/META-INF/additional-spring-configuration-metadata.json *(insertions only)*
+- data-prism-spring-boot-autoconfigure/src/test/resources/io/github/aindriub/dataprism/spring/boot/frozen-property-names.txt *(insertions only)*
+- data-prism-spring-boot-autoconfigure/src/test/resources/configuration-metadata-gaps.txt *(insertions only, for map sub-keys)*
+- data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/*.txt *(regenerated; only lines for beans this task adds)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/LimitsConfigurationTest.java, CatalogConfigurationTest.java, PagingConfigurationTest.java, LinkKeyConfigurationTest.java, FactoryBeanPreflightTest.java *(new)*
+- docs/configuration.md *(the rows for the keys this task adds and their startup codes only)*
+
+## Goal
+Expose the 0.8 core's new configuration through `dataprism.*` and start the catalog: the request deadline and per-scope total of 246, `dataprism.catalog.unselected-source-limit` and `real-names-scopes` (OD-C7, OD-C3), `dataprism.paging.*` (OD-B1), and the link key that page links need even while links are off (OD-B2 (a)). Build the `SourceCatalog` at startup and refuse to start on a description that breaks the catalog rules. Register `list_sources` and `describe_source` on the HTTP transport. Close the 0.7 review finding that a raw `FactoryBean` with `allowEagerInit=false` escapes both the `RequestLimits` and the `PrivacyPolicyResolver` guards.
+
+## Context
+- docs/plan/design/catalog.md section 6 ("The estate-size limit") and section 8 item 16; docs/plan/design/batch-and-bulk-follow.md A.8 and OD-B2 (a); docs/plan/design/sealed-links.md "Configuration keys" (`key-id` rules) and register OD-200-10 (the `LINK_KEY_*` family).
+- docs/plan/PLAN.md, "0.7.0 follow-ups found in review": the raw `FactoryBean` finding.
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/OrchestrationWiring.java:40-74 (`dataPrismRequestLimitsPreflight`) and Preflights.java (`dataPrismPrivacyPolicyResolverPreflight`): the two guards.
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/HmacKeyReferenceResolver.java and PropertiesValidation.java:129-132: the key-reference resolver to reuse and the 32-byte rule.
+- ConfigurationMetadataDocumentedTest, PropertyNamesFrozenTest, AutoConfiguredBeanClassificationTest, AutoConfiguredBeanInventoryTest: the guards every new key and bean must satisfy.
+
+## Acceptance
+- [ ] Tests are written first and fail on the base commit; the Outcome names them.
+- [ ] The two limit keys OD-08-3 names bind, with the decided defaults, and reach `RequestLimits`. A non-positive value, or a deadline below `per-source-timeout`, refuses startup with `INVALID_REQUEST_LIMITS`; the message names the property, not the value.
+- [ ] `dataprism.catalog.unselected-source-limit` (default 8) and `dataprism.catalog.real-names-scopes` (default empty) bind and reach `OrchestrationOptions`. A non-positive limit, a limit above `dataprism.limits.max-sources`, and a malformed scope pattern refuse with `INVALID_CATALOG_SETTING`.
+- [ ] `dataprism.paging.list-sources.page-size` (25), `.max-page-size` (100) and `dataprism.paging.lifetime` (`PT15M`) bind. A non-positive value or a page size above the maximum refuses with `INVALID_PAGING_SETTING`.
+- [ ] The link key binds as OD-08-18 decides. An unresolvable reference refuses with `LINK_KEY_UNRESOLVED`, material under 32 bytes with `LINK_KEY_WEAK`, and the same id or the same bytes (compared in constant time) as the pseudonymisation key with `LINK_KEY_SHARED`. No message contains a reference value or key byte.
+- [ ] When the registered estate is larger than the default page size and no link key is configured, startup refuses with the code OD-08-9 decides; at exactly the default page size it starts. Both edges are tested.
+- [ ] `dataPrismSourceCatalog` is built once from every `DataSourceAdapter` bean and every configured source's base-url host. A description that breaks a rule refuses startup with `INVALID_SOURCE_DESCRIPTION` or `SOURCE_DESCRIPTION_LEAKS_NAME`; a bad chainable declaration with `INVALID_CHAINABLE_FIELD`. One INFO line gives the count and the real names of sources using the generated fallback; one WARN line gives only the count of non-conforming source names. Neither line contains description text (scanned).
+- [ ] `list_sources` and `describe_source` are in the HTTP transport's `tools/list`. The new beans have `PrivacyExtensionPoints` rows; the catalog, catalog-query and link-codec beans are `PRIVACY_CRITICAL` with `COMPETING_BEAN_REFUSAL`, and `PrivacyExtensionPointsTest` proves the guard.
+- [ ] The `RequestLimits` and `PrivacyPolicyResolver` guards refuse a competing bean registered as a raw `FactoryBean` (no generic type) with `allowEagerInit=false`; `FactoryBeanPreflightTest` shows both escaping on the base commit and refused after.
+- [ ] `docs/configuration.md` has a row for each new key with its default and every refusal code above.
+- [ ] `ConfigurationMetadataDocumentedTest`, `PropertyNamesFrozenTest`, `AutoConfiguredBeanClassificationTest`, `AutoConfiguredBeanInventoryTest` and `PrivacyExtensionPointsTest` pass, and the diffs to their checked-in lists contain only this task's lines.
+- [ ] `./mvnw -B verify` (full reactor) passes.
+
+## Out of scope
+- `dataprism.links.enabled` and the other link, follow and key-resolver keys (255).
+- Catalog and link gauges (255).
+- Every `docs/` file other than `docs/configuration.md` (261).
