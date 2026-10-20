@@ -40,7 +40,14 @@ as a note — for values that look like an IBAN, a payment card number, an
 Irish PPSN, a US Social Security Number, an email address, an international
 phone number, a JWT, or a known API-key prefix, at any depth up to a size
 budget, and refuses the response if it finds one that is not already one of
-the scope's own emitted pseudonyms. This is shape-based matching for a fixed
+the scope's own emitted pseudonyms. It reads property names as well as values,
+so a map keyed by an email address is refused too. A source whose record is
+refused is withheld and marked `REFUSED`; the call is refused when every
+source that answered is refused, or when the final check over the assembled
+response finds a match. This scan first runs in the Spring starter, the
+packaged server and the configured-JSON-sources mode in 0.7.0: through 0.6.x
+only the raw-value check was registered there, so a scan-shaped value in a
+`@NonSensitive` field passed. See [Migrating to 0.7.0](migration-0.7.md). This is shape-based matching for a fixed
 list of formats, not open-ended named-entity recognition, so it will not
 catch, for example, a bare name typed into a note; the repository does not
 document a reason for that scope beyond it being what shipped. The check

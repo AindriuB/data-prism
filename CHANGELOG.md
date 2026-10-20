@@ -7,8 +7,184 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+The full list, grouped by who has to act, is in `docs/migration-0.7.md`.
+
+- **`get_entity_context` response shape.** Each `sources` entry is now
+  `{ "status": "<CODE>", "entity": { ... } }`, with `entity` present only for
+  `ANSWERED`, and the top-level `entity` field is removed. Sources are no longer
+  merged, so two sources that use the same field name for different values are
+  both returned. `ContextResponse.sources()` is `Map<String, SourceResult>`;
+  `ContextResponse.entity()` and the constructors that took it are removed.
+- **Per-source refusal and a new status.** A source whose scrub or validation
+  refuses is withheld and marked `REFUSED`, and the other sources are returned.
+  The call is refused only when every source that answered is refused, or the
+  final check over the assembled response fails. The seven status codes are a
+  documented contract, and a client must treat an unknown code as "not answered".
+- **Audit logs.** A refused source is recorded as `REFUSED:<code>` under
+  `<source>:<refused>` (it was `REFUSED`) and is listed as `<source>:REFUSED`
+  among the source systems. A log written by 0.7 cannot be read by a reader or
+  verifier older than 0.7. Logs written before 0.7 still verify with the new one.
+- **`LlmResponseValidator`.** The final pass now receives a JSON array of the
+  returned sources' trees, not an object. A custom validator that assumes an
+  object root throws, and the call fails closed (`DENY:REQUEST_FAILED`).
+  Per-source calls still pass one object.
+- **`SensitivePatternValidator` is always on in Spring.** The starter, the
+  packaged server and the configured-JSON-sources orchestrator now register it
+  as the `PRIVACY_CRITICAL` bean `dataPrismSensitivePatternValidator`. Before,
+  only `RawValueLeakValidator` ran there. A sensitive-shaped value, for example
+  an email-shaped one, in a `@NonSensitive` field is now refused with
+  `VALIDATION_FAILED` / `SENSITIVE_PATTERN`. Classify such fields correctly;
+  there is no opt-out property.
+- **Record and response-size caps are enforced.** A response over
+  `dataprism.limits.max-records` or `dataprism.limits.max-response-size` that
+  0.6.x returned is now refused (see Changed).
+- **Hazelcast approvals cannot be upgraded in place.** Approval entries,
+  id claims and pending entries carry a creation token, and approval entries
+  written by 0.6.x are unreadable and refused. Stop every member and start 0.7; do not run
+  old and new members together, and re-request approvals that were pending.
+- **Hazelcast `tcp-ip` approval quorum.** With approvals in use, the approval
+  minimum defaults to a majority of the listed members, so a two-member cluster
+  stops approval-gated tools while either member is down. Set
+  `dataprism.hazelcast.approval-minimum-members: 1` to opt out.
+- **Hand-wired `PrivacyCluster.embedded(ClusterMembership, boolean)`.** The 0.6
+  overload now applies the default approval quorum whether or not approvals are in
+  use. A hand-wired `tcp-ip` membership of hostnames that started on 0.6 now throws
+  `PrivacyClusterRefusal` `MISSING_APPROVAL_QUORUM`, a wildcard entry gets
+  `INVALID_APPROVAL_QUORUM`, and an IP-only list now gets a majority write quorum
+  on the approval map. Pass an explicit minimum through the new overload.
+- **Cluster refusals now reach callers as their own codes** (see Changed): the
+  operator API's `503 OVERSIGHT_UNAVAILABLE` and the re-identification
+  `REIDENTIFICATION_UNAVAILABLE` become `CLUSTER_LOCK_TIMEOUT` or
+  `CLUSTER_OPERATION_REFUSED` when the cluster was the cause.
+- **`RequestLimits` bean.** An application that supplied its own `RequestLimits`
+  bean is refused at startup with `FORBIDDEN_PRIVACY_OVERRIDE`; use
+  `dataprism.limits.*`.
+
+### Added
+
+- `dataprism.limits.max-sources`, `max-records`, `max-response-size`,
+  `per-source-timeout`, `max-concurrency` and `scope-read-budget` set the request
+  limits that were fixed at their defaults, which are unchanged. The per-source
+  timeout is measured from the start of the fan-out, not per call. Startup is
+  refused with `INVALID_REQUEST_LIMITS` for a zero or negative limit or a
+  response size that does not fit in an `int`.
+- `dataprism.hazelcast.lock-timeout` (default `PT2S`, `PT100MS` to `PT30S`;
+  startup code `INVALID_LOCK_TIMEOUT`, unconditional).
+- `dataprism.hazelcast.approval-minimum-members` and split-brain protection on
+  the approval map. Startup codes: `MISSING_APPROVAL_QUORUM` (applied only when
+  approvals are in use) and `INVALID_APPROVAL_QUORUM` (an explicit minimum below
+  1, set with `join.mode: none`, or above the counted members is refused
+  unconditionally; an uncountable `tcp-ip` member only when approvals are in use).
+  `lock-timeout` and `approval-minimum-members` are refused with
+  `CLUSTER_SETTINGS_IGNORED` under `single-node`, and `approval-minimum-members`
+  also beside an application-supplied `PrivacyCluster`.
+- `dataprism.hazelcast.approval-sweep-interval`, a `Duration` (default `PT5M`,
+  `PT1S` to `P1D`) for how often each member sweeps pending approvals and
+  approval-id claims. A value outside the range is refused with
+  `INVALID_APPROVAL_SWEEP_INTERVAL`, and the key is refused with
+  `CLUSTER_SETTINGS_IGNORED` under `single-node` and beside an
+  application-supplied `PrivacyCluster`.
+- Refusal codes `TOO_MANY_RECORDS`, `RESPONSE_TOO_LARGE`,
+  `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED`.
+- Metrics `dataprism.privacy.source.withheld` and
+  `dataprism.approval.release.skipped`.
+- `docs/verifying-releases.md`: how to verify the GPG signatures, SBOMs, image
+  signatures and build provenance of a release.
+- `docs/migration-0.7.md`.
+
+### Changed
+
+- Enforce the configured record and response-size caps before returning a
+  context. Exceeding either refuses the whole call with `TOO_MANY_RECORDS` or
+  `RESPONSE_TOO_LARGE` and one correlated `DENY:<code>` audit event. Equality is
+  allowed. The size cap bounds the compact body returned to the client,
+  including statuses and findings, and for `compare_entity_sources` its
+  projection; it is not a per-source limit and does not count the MCP envelope.
+- Audit: a refused source is recorded as `REFUSED:<code>`; see Breaking.
+- `compare_entity_sources`: `identity` takes each field from the first answered
+  source, in ascending key order, that holds it.
+- `dataprism.privacy.failclosed` counts refused calls only; each source withheld
+  from a returned response is counted in `dataprism.privacy.source.withheld`.
+- A call that waits for a cluster lock now refuses after two seconds by default
+  with `CLUSTER_LOCK_TIMEOUT` instead of waiting, including a read blocked on the
+  shared read budget.
+- A tool call that the cluster refuses an operation for returns
+  `CLUSTER_OPERATION_REFUSED` (audited `DENY:CLUSTER_OPERATION_REFUSED`) instead
+  of `OVERSIGHT_UNAVAILABLE`, and a read whose cluster budget lock the cluster
+  rejects returns `refused: CLUSTER_OPERATION_REFUSED at $` instead of
+  `SCOPE_READ_BUDGET`. Any other budget failure still refuses the read as
+  `SCOPE_READ_BUDGET`.
+- Re-identification (request, approve and collect) answers
+  `CLUSTER_OPERATION_REFUSED` or `CLUSTER_LOCK_TIMEOUT` instead of
+  `REIDENTIFICATION_UNAVAILABLE`, and the operator API answers `503` with
+  `{"code":"<code>"}` instead of `503 OVERSIGHT_UNAVAILABLE` (approve, reject,
+  pause, resume and the state and approval reads) and instead of
+  `REIDENTIFICATION_UNAVAILABLE` (the re-identification endpoints). Any other
+  failure keeps the old code. The cause is logged once at `WARN` with the cause's
+  class name only.
+- A Hazelcast approval create that the cluster rejects (for example a configured
+  `hazelcast.lock.max.lease.time.seconds` below the lease) is refused with
+  `CLUSTER_OPERATION_REFUSED` instead of an `IllegalArgumentException` that
+  looked like a duplicate id. Two maps are added, `dataprism.approval.id` and
+  `dataprism.approval.pending`.
+- `ClusterOperationRefusedException` is in `io.github.aindriub.dataprism.core.refusal`.
+  It was never released, so there is no alias.
+
+### Fixed
+
+- An approval can no longer be consumed twice across members: consumption is a
+  compare-and-set, not a lock followed by a check.
+- After a split cluster heals, an approval either side consumed, rejected or
+  expired stays so (a merge policy on the approval map). Previously the larger
+  side's `APPROVED` could win.
+- A cluster lock held by another member or by something on the member port no
+  longer hangs request threads. Every wait is bounded and refuses with
+  `CLUSTER_LOCK_TIMEOUT`.
+- Hazelcast approval creation no longer relies on locks that never expire. The
+  pending cap per requester and the uniqueness of an approval id across scopes
+  hold through atomic map operations, so a creating member that stalls past its
+  lock lease can no longer let a requester exceed the cap or one id exist in two
+  scopes. Every cluster lock is leased for five times
+  `dataprism.hazelcast.lock-timeout`. Pending entries carry no TTL; a periodic
+  sweep bounds their retention.
+- Every Hazelcast approval creation carries a random token that every release,
+  removal, withdrawal, undo, takeover, sweep and merge compares, so a clean-up
+  that belongs to one creation of an id can no longer strip the claim or pending
+  slot of a later creation of the same id in the same scope. An approval is
+  usable only while the claim for its id names its entry and token.
+- Hazelcast approvals: approving or rejecting no longer waits for ever, or
+  reports failure after it has committed, when the requester's pending entry is
+  locked; the release is bounded and an over-count is left for the sweep. A
+  decision commits its new value and its expiry in one step. Ending a scope or
+  forgetting its approvals is bounded and refuses with `CLUSTER_LOCK_TIMEOUT`,
+  leaving the approvals it could not lock in place. The pending sweep skips keys
+  that are locked.
+- The key scan in the leak validators honours the match cap and the character
+  budget; 1,000 sensitive keys no longer give 1,000 matches.
+
+### Security
+
+- The response leak validators scan property names as well as values, so a map
+  keyed by an email address or other identifier is refused even under a
+  Java-built `PASS_THROUGH_UNSAFE` profile. A flagged name is reported as
+  `<undeclared>`. A key that matches no known identifier shape still passes.
+- Every pushed image digest (including the manifest lists and the four
+  quickstart images) is signed keylessly with cosign, and images, jars and
+  release assets carry GitHub build-provenance attestations. See
+  `docs/verifying-releases.md`.
+
 ### Build
 
+- Release builds attach a CycloneDX SBOM to every module published to Maven
+  Central and to the GitHub Release. Images are pushed with BuildKit SBOM and
+  provenance attestations.
+- Added a report-only `mutation` Maven profile (PIT) and a weekly and manual
+  `mutation` workflow over the core, pseudonymisation, validation and
+  orchestration modules; it sets no threshold and never fails a build.
+- Added `load-test/`, a standalone load-test harness (outside the root reactor)
+  with scenarios for 8, 32, 100 and 300 sources and a `load-test` workflow.
 - Pin the build to Maven 3.9.16 through the Maven Wrapper; CI and release workflows now call `./mvnw`. Maven 3.10.0 on the runner image broke the Central bundle.
 - The Central publish workflow now fails unless Maven is 3.9.x, in both the `stage` and `publish` jobs.
 - Dependabot no longer proposes moving the Maven Wrapper to Maven 3.10 or later.

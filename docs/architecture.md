@@ -523,3 +523,105 @@ all of these is in `design-review.md` under the section named.
   third-party verification would need the key, which also lets its holder
   forge. Tamper evidence rests on the unkeyed hash chain plus external
   checkpoints (task 97), with the checkpoints held under separate custody.
+- *The next seven entries (D-070-1 to D-070-7) are dated by the owner decision
+  of 2026-10-09, not by the day each landed; the tasks that built them landed
+  between 2026-10-09 and 2026-10-19.*
+- **2026-10-09 — `get_entity_context` returns each source's own scrubbed record
+  and never merges them (D-070-1).** Each `sources` entry is
+  `{status, entity}`, `entity` only for `ANSWERED`, and the top-level `entity` is
+  gone. Rejected: keeping the merged `entity`, which overwrote a field when two
+  sources used the same name for different values and hid exactly the
+  inconsistency the product exists to show. Cost: this is the one response-shape
+  break before 1.0, and every client that read `entity` changes; the old and new
+  shapes are side by side in `migration-0.7.md`.
+- **2026-10-09 — A source that is refused is withheld while the others are
+  returned; the call is refused when every answered source is refused or the
+  final check fails (D-070-2).** A source whose scrub or validation refuses is
+  marked `REFUSED` and contributes nothing: no tree, no field, no consistency
+  finding, no raw record for correlation, no synthetic value in the emitted
+  allowlist, and its raw values stay prohibited. A final pass over all returned
+  trees together can still refuse the whole call (`VALIDATION_FAILED`).
+  Rejected: refusing the whole call for one bad source, which in a hundred-source
+  estate lets one misclassified system take the others down. Cost: the model
+  learns that a source refused, because its status is in the response, and which
+  sources refuse is a signal about the data behind them. The status is a fixed
+  code and carries no path, field name or value. The audit records it as
+  `REFUSED:<code>` under `<source>:<refused>` (D-070-13), so a log written by
+  0.7 is not readable by a verifier older than 0.7 (an older log still verifies
+  with the new one).
+- **2026-10-09 — Seven per-source status codes are a contract, and an unknown
+  code means "not answered" (D-070-3, OD-200-1).** `ANSWERED`, `NO_DATA`,
+  `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`, `SKIPPED_OVER_LIMIT`, `REFUSED`, pinned
+  against `source-status-codes.txt`. A client reads any other value as a gap
+  (the owner decided this explicitly on 2026-10-20; the first wording said "an
+  error"), so a later release can add a code without breaking a client.
+  Rejected: telling clients to fail on an unknown code, which makes every added
+  status a breaking change. Cost: a client that ignores the rule may treat a new
+  refusal-like status as data, so `migration-0.7.md` states the rule for client
+  authors.
+- **2026-10-09 — Record and response-size caps refuse the whole call
+  (D-070-5, D-070-6).** `dataprism.limits.max-records` and `max-response-size`
+  are enforced after validation and before ALLOW is audited: more than the cap
+  refuses with `TOO_MANY_RECORDS` or `RESPONSE_TOO_LARGE` and one correlated
+  `DENY:<code>` event; equality is allowed. A record is a source's root object
+  plus each object that is an array element. The size is a conservative upper
+  bound on the compact body, measured in the orchestrator with no mapper, so no
+  second serialiser can disagree with the one that writes the response, and a
+  comparison request is measured against both its bodies. Rejected: truncating
+  (a partial answer the client cannot tell from a complete one, deferred to 0.9
+  with a `next` link), and counting the MCP envelope. Cost: a response that
+  0.6 returned can now be refused, and surrogate-heavy text may be refused a
+  little before its exact size reaches the cap. The owner has decided that 0.9
+  replaces the whole-call refusal with a per-source one for a source that cannot
+  be truncated, keeping the whole-call cap as the backstop.
+- **2026-10-09 — The request limits are one `PRIVACY_CRITICAL` bean bound from
+  `dataprism.limits.*` (D-070-4).** Six keys, defaults unchanged, positive only
+  (`INVALID_REQUEST_LIMITS`), bean `dataPrismRequestLimits`; an application
+  `RequestLimits` bean is refused with `FORBIDDEN_PRIVACY_OVERRIDE`. Rejected:
+  letting an application replace the bean, which would let a deployment lift the
+  cap that bounds an agent in a retry loop without anyone seeing it in
+  configuration. Cost: a deployment that needs a different limit must set a
+  property, and `connectors-rest` without the autoconfigure module falls back to
+  a pinned copy of the defaults, refusing startup if any `dataprism.limits.*`
+  property is set with no bean to take it.
+- **2026-10-09 — The key-shape scan is always on (D-070-7).** The two response
+  validators scan property names as well as values under every profile, with no
+  switch and no SPI change; a flagged name and everything beneath it is
+  reported as `<undeclared>`. Rejected: a property to turn it off, and scanning
+  only under strict profiles, which leaves the Java-built `PASS_THROUGH_UNSAFE`
+  path as the one place an email-shaped key reaches the model. Cost: a key that
+  matches no known shape still passes verbatim, and the scan shares the match
+  and character budgets with the value scan (a review found it had bypassed
+  them).
+- **2026-10-20 — The sensitive-pattern scan is registered on every Spring path
+  (task 209).** `SensitivePatternValidator` is the unconditional
+  `PRIVACY_CRITICAL` bean `dataPrismSensitivePatternValidator`. Before 0.7 the
+  only framework validator the starter, the packaged server and the
+  configured-JSON-sources mode registered was `RawValueLeakValidator`, although
+  the documentation said the scan always ran; it ran only in hand-wired
+  assemblies. Rejected: an opt-out property, which would put the fix behind the
+  setting a careless deployer leaves off. Cost: an email-shaped value in a
+  `@NonSensitive` field, which 0.6 returned, is now refused with
+  `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; the deployer classifies the field
+  correctly instead. This is a correction that landed in 0.7, not the later
+  recogniser feature.
+- **2026-10-20 — Hazelcast approvals rest on atomic map operations, tokens and
+  bounded locks, not on clocks or held locks (D-070-14 to D-070-17,
+  D-0.7-HZ-1, D-0.7-HZ-2).** Consumption is a compare-and-set, the approval map
+  merges consumed-wins, split-brain protection follows
+  `approval-minimum-members`, and every lock wait is bounded by
+  `dataprism.hazelcast.lock-timeout` (`CLUSTER_LOCK_TIMEOUT`), with a lease of
+  five times it. Creation uses an id-claim map and a per-requester pending set;
+  a claim is valid exactly while the entry it names exists, and every release,
+  undo, takeover, sweep and merge compares a random per-creation token. The
+  pending set carries no TTL; a sweep (`approval-sweep-interval`) bounds its
+  retention. Rejected: locks with an infinite lease, which a crashed member
+  holds for ever; TTLs on the pending entry and the claim, which under-count
+  the cap when Hazelcast copies the merging side's TTL after a heal or when
+  members' clocks differ; and a rolling upgrade, since an old member does not
+  know the claims or tokens. Cost: values written by 0.6 are unreadable and
+  refused, so all members stop and start together; a two-member `tcp-ip`
+  cluster stops approval-gated tools while either member is down; and a failed
+  or skipped release only over-counts until the sweep. D-0.7-HZ-3 (owner,
+  2026-10-20): `CLUSTER_LOCK_TIMEOUT` and `CLUSTER_OPERATION_REFUSED` reach
+  callers on every path, including re-identification and the operator API.

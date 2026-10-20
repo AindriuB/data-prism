@@ -16,7 +16,7 @@ public class LimitsProperties {
     private int maxSources = 8;
     /** Most records one request may take from sources. */
     private int maxRecords = 500;
-    /** Largest response one request may take from a source. Must fit in an int number of bytes. */
+    /** Largest compact body returned to the client for one request, not one source's response. Must fit in an int number of bytes. */
     private DataSize maxResponseSize = DataSize.ofKilobytes(512);
     /** Time allowed to the sources of one request, measured from the start of the fan-out and not per call. */
     private Duration perSourceTimeout = Duration.ofSeconds(3);

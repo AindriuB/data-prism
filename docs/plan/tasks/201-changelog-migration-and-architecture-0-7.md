@@ -12,6 +12,8 @@
 - docs/configuration.md (the two "refusing the whole response" passages at
   `:132` and the `:448` diagram alt text only; and the
   `dataprism.limits.max-response-size` row at `:534` only)
+- data-prism-spring-boot-autoconfigure/.../LimitsProperties.java (the maxResponseSize field Javadoc only; coordinator-approved widening, 2026-10-20, a pre-release fix)
+- docs/agents/remote-http.md and docs/protect-your-own-api.md (the converted single-source HTTP example blocks only; coordinator-approved widening, re-capture pending)
 - docs/plan/tasks/201-changelog-migration-and-architecture-0-7.md (Outcome section only)
 
 ## Goal
@@ -70,3 +72,28 @@ changes), and records the release's architecture decisions.
 ## Out of scope
 - Version bumps, `server.json`, tagging, publishing, the release itself.
 - Editing any task's code or other docs; a gap found becomes a successor task.
+
+## Outcome
+
+Written from the retired Outcomes of 188, 189, 190, 193, 194, 195, 196, 202, 209, 216, 217, 232 and 233, then checked against the code at `22c1ee6d` (defaults in `LimitsProperties`, the frozen property list diffed against `v0.6.0`, the two new `Metric` constants, `AuditEvent`, `LlmResponseValidator`, the registered `dataPrismSensitivePatternValidator`). Where an Outcome's proposed line was superseded the merged behaviour is written instead: the pending-entry TTL of 216 was reverted (a sweep bounds retention), 216's rolling-upgrade note is replaced by 232's stop-all upgrade, and `dataprism.approval.pending.sweep-seconds` was never released so it has no entry.
+
+- `CHANGELOG.md`: `[Unreleased]` now has Breaking, Added, Changed, Fixed, Security and Build; the three existing Build lines are kept. No version, date or tag.
+- `docs/migration-0.7.md`: by audience (agent or client authors, operators, extension authors), with the before/after excerpt from `get-entity-context.structured.json` at `37d5c2a9^` and `37d5c2a9`.
+- `docs/architecture.md`: dated entries for D-070-1, -2, -3, -4/-5/-6, -7, task 209 and the Hazelcast approval decisions.
+- `docs/configuration.md`: the `:132` FAIL_REQUEST passage, the diagram alt text and the `max-response-size` row only. `docs/faq.md`: the pattern-scan paragraph only.
+- `mkdocs.yml`: nav and `llmstxt` entries for `migration-0.7.md`.
+- `mkdocs build --strict` exit 0; every `docs-site/hooks/check_*.py` exit 0 with `DP_REQUIRE_NO_STUBS=true`.
+
+Gaps found, not fixed (outside Owns):
+- (Struck on review: `docs/multiple-instances.md:373-381` already has the stop-all upgrade caution.)
+- 188's five-step release checklist (cosign and attestation verification, SBOM in the bundle) has never been run; the CHANGELOG and migration page describe the pipeline as built.
+- The 0.9 migration notes must record OD-B18 (per-source `REFUSED:RESPONSE_TOO_LARGE` replacing the whole-call refusal).
+
+### Review round (coordinator findings, same branch)
+
+- Added the Breaking item for the 0.6 overload `PrivacyCluster.embedded(ClusterMembership, boolean)`, which now applies the default approval quorum whether or not approvals are in use, and corrected "call sites need updating": every 0.6 overload remains.
+- Corrected the startup-refusal scope in the CHANGELOG and the migration page: an explicit `approval-minimum-members` below 1, with `none`, or above the counted members, and `INVALID_LOCK_TIMEOUT`, are unconditional; `CLUSTER_SETTINGS_IGNORED` cases stated. Only 0.6 approval entries are unreadable (0.6 had no claim or pending maps). The "After" excerpt keeps source `9SAP0WPN`. D-070-1 to -7 are all dated by the 2026-10-09 owner decision, with a note.
+- `LimitsProperties` field Javadoc for `maxResponseSize` now matches `configuration.md` and `RequestLimits`.
+- BLOCKED (b): the two converted HTTP example blocks were not re-captured. The Docker daemon is not running here (OrbStack's socket is absent), and I did not start it; the from-source Compose build also needs network pulls. The blocks are still marked "Not re-captured for 0.7". Do it on a machine with the stack before release.
+
+**Release note.** 188's five-step supply-chain verification (its retired Outcome, "Release checklist for 0.7.0") must be run right after publishing and before announcing. If any step fails, correct the CHANGELOG Security and Build lines and the migration page's "Verifying a release" section.
