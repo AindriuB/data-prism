@@ -37,6 +37,16 @@ Four-eyes is configured by `ReidentificationPolicy.fourEyes`; the owner decision
 for this project is that deployments default it to on. If the audit sink fails,
 no subject id is returned and the outcome is `REFUSED("AUDIT_UNAVAILABLE")`.
 
+An approval is usable only after its `ALLOW:APPROVED` event is written. `approve`
+checks everything the store would refuse (not pending, expired, the requester
+approving their own request) and refuses with one `DENY:<code>` event. Otherwise it
+writes `ALLOW:APPROVED` and only then commits the approval. If that write fails,
+nothing was committed: the outcome is `REFUSED("AUDIT_UNAVAILABLE")`, the approval
+stays `PENDING`, and there is nothing to undo. If the commit then does not apply
+(another approver decided first, or the store refused), `approve` refuses with the
+decision's own code and writes a `DENY:<code>` under the same `correlationId` as the
+`ALLOW:APPROVED`. See [the audit log](audit.md) for how to read that pair.
+
 ## Refusal codes
 
 Each refusal writes an audit event whose decision is `DENY:<code>`.
@@ -57,7 +67,7 @@ Each refusal writes an audit event whose decision is `DENY:<code>`.
 | `CLUSTER_LOCK_TIMEOUT` | A cluster lock the step needs was held for longer than `dataprism.hazelcast.lock-timeout`. The failed lock wait changes nothing, but a step that ran earlier stays done. `collect` and `approve` return this code before they consume or decide, so re-read the request first (see below), then retry. 503 on the operator API |
 | `CLUSTER_OPERATION_REFUSED` | The cluster rejected an operation the step needs, such as a lock or its lease. The failed step changes nothing, but earlier steps stay done: a `request` that fails while creating its approval may leave a pending request that counts against the cap until it expires. Retry later, and tell an operator if it persists. 503 on the operator API |
 | `REIDENTIFICATION_UNAVAILABLE` | Any other store or lookup failure; the request fails closed |
-| `AUDIT_UNAVAILABLE` | The audit write failed; nothing is returned |
+| `AUDIT_UNAVAILABLE` | The audit write failed; nothing is returned. For `approve`, the approval was not committed and is still `PENDING` |
 
 Resolving a subject id to a person remains the source systems' job.
 
@@ -120,7 +130,10 @@ separate application. Set `dataprism.operator.enabled=true` with `port`, `requir
 - **Audit.** Every endpoint writes one event with tool `operator:<action>`, the operator's principal
   and client ids and the target in `scopeId` or `entityType`. A refusal is `DENY:<code>`. If the event
   cannot be written the call fails with 503 `AUDIT_UNAVAILABLE`, and a resume, an approval or any
-  re-identification step does not take effect. A pause or a rejection takes effect first and is then
+  re-identification step does not take effect. An approval is audited first and committed only after
+  its `ALLOW:APPROVED` event is written, so an approval that was refused for `AUDIT_UNAVAILABLE` is
+  still `PENDING`. If the decision then does not apply, a `DENY:<code>` event with the same
+  `correlationId` follows the `ALLOW:APPROVED`. A pause or a rejection takes effect first and is then
   audited; if that audit write fails the answer is 503 `APPLIED_AUDIT_UNAVAILABLE`, which means the
   pause or rejection **is in force** but unaudited. Do not retry it as if it had failed.
 - **Errors.** Every error body is `{"code":"<CODE>"}`. No exception message and no request value is

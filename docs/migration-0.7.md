@@ -303,6 +303,15 @@ Other changes you will see:
   committed, when the requester's pending entry is locked. If the response to a
   decision is lost, `approve` or `reject` can throw although the change happened;
   read the status again before treating it as failed.
+- `ALLOW:APPROVED` is now written before the approval is committed, for
+  re-identification approvals and for tool-call approvals (tool `operator:approve`).
+  Read it as "the approver submitted the decision": it took effect unless a
+  `DENY:<code>` event with the same `correlationId` and approval id follows. If you
+  match each `ALLOW:APPROVED` against a later use of the approval, also look for that
+  linked `DENY`. See [the audit log](audit.md). Two new metrics,
+  `dataprism.approval.decision.audit_unavailable` and
+  `dataprism.approval.decision.unconfirmed`, count the refusals and the unconfirmed
+  outcomes.
 
 See [Running more than one instance](multiple-instances.md).
 
