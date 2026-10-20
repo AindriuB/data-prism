@@ -1,8 +1,8 @@
 package io.github.aindriub.dataprism.core.limits;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A per-instance read counter.
@@ -25,49 +25,140 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class InMemoryScopeBudget implements ScopeBudget {
 
     /**
-     * Joins the two halves of a key. NUL because it cannot occur in an
-     * identifier, so no scope id can be crafted to collide with another
-     * scope's subject. Declared as a constant rather than written inline:
-     * an escape for it is invisible in source and easy to mangle.
+     * One scope's counters and the lock that makes them one unit. {@code dead}
+     * is set by {@link #forget} under the lock, so an operation that fetched the
+     * state just before it was dropped notices and starts again on a fresh one.
      */
-    private static final char SEPARATOR = 0;
+    private static final class ScopeState {
+        private final Object lock = new Object();
+        private final Map<String, Integer> subjects = new HashMap<>();
+        private int total;
+        private boolean dead;
+    }
 
-    private final Map<String, AtomicInteger> reads = new ConcurrentHashMap<>();
+    private final Map<String, ScopeState> scopes = new ConcurrentHashMap<>();
 
     /**
      * @return whether this read is within budget. A refused read is not counted,
      *         so a caller that keeps asking after being refused does not push the
-     *         count somewhere it can never recover from
+     *         count somewhere it can never recover from. A granted read also
+     *         counts toward the scope total, which it does not check.
      */
     @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
-        AtomicInteger count = reads.computeIfAbsent(key(scopeId, subjectId), k -> new AtomicInteger());
         while (true) {
-            int current = count.get();
-            if (current >= budget) {
-                return false;
-            }
-            if (count.compareAndSet(current, current + 1)) {
+            ScopeState state = scopes.computeIfAbsent(scopeId, k -> new ScopeState());
+            synchronized (state.lock) {
+                if (state.dead) {
+                    continue;
+                }
+                int current = state.subjects.getOrDefault(subjectId, 0);
+                if (current >= budget) {
+                    return false;
+                }
+                state.subjects.put(subjectId, current + 1);
+                state.total++;
                 return true;
             }
         }
     }
 
     @Override
-    public int reads(String scopeId, String subjectId) {
-        AtomicInteger count = reads.get(key(scopeId, subjectId));
-        return count == null ? 0 : count.get();
+    public ReadReservation reserve(
+            String scopeId, String subjectId, int reads, int subjectBudget, int scopeTotalBudget) {
+        if (reads <= 0 || subjectBudget <= 0 || scopeTotalBudget <= 0) {
+            throw new IllegalArgumentException("reads and both budgets must be positive");
+        }
+        while (true) {
+            ScopeState state = scopes.computeIfAbsent(scopeId, k -> new ScopeState());
+            synchronized (state.lock) {
+                if (state.dead) {
+                    continue;
+                }
+                int current = state.subjects.getOrDefault(subjectId, 0);
+                int newSubject;
+                int newTotal;
+                try {
+                    newSubject = Math.addExact(current, reads);
+                    newTotal = Math.addExact(state.total, reads);
+                } catch (ArithmeticException e) {
+                    throw new IllegalArgumentException("reservation overflows a counter", e);
+                }
+                if (newSubject > subjectBudget) {
+                    return ReadReservation.refused(scopeId, subjectId, reads, ReadReservation.Refusal.SUBJECT);
+                }
+                if (newTotal > scopeTotalBudget) {
+                    return ReadReservation.refused(scopeId, subjectId, reads, ReadReservation.Refusal.SCOPE_TOTAL);
+                }
+                state.subjects.put(subjectId, newSubject);
+                state.total = newTotal;
+                return ReadReservation.grantedBy(state, scopeId, subjectId, reads);
+            }
+        }
     }
 
-    /** Drops the counters for a scope. Called when a scope ends. */
+    @Override
+    public void release(ReadReservation reservation, int unused) {
+        if (unused < 0) {
+            throw new IllegalArgumentException("unused must not be negative");
+        }
+        // The state the reservation was granted from, not whatever the scope id
+        // names now: after forget a later scope with the same id is a different one.
+        if (!(reservation.origin() instanceof ScopeState state)) {
+            return;
+        }
+        synchronized (state.lock) {
+            if (state.dead) {
+                return;
+            }
+            // Taken under the scope lock, so a release that loses a race with
+            // forget returns nothing and cannot be applied to a later scope.
+            int give = reservation.takeUnused(unused);
+            if (give == 0) {
+                return;
+            }
+            Integer current = state.subjects.get(reservation.subjectId());
+            int subject = current == null ? 0 : current;
+            int back = Math.min(give, Math.min(subject, state.total));
+            if (back > 0) {
+                state.subjects.put(reservation.subjectId(), subject - back);
+                state.total -= back;
+            }
+        }
+    }
+
+    @Override
+    public int reads(String scopeId, String subjectId) {
+        ScopeState state = scopes.get(scopeId);
+        if (state == null) {
+            return 0;
+        }
+        synchronized (state.lock) {
+            return state.subjects.getOrDefault(subjectId, 0);
+        }
+    }
+
+    @Override
+    public int scopeReads(String scopeId) {
+        ScopeState state = scopes.get(scopeId);
+        if (state == null) {
+            return 0;
+        }
+        synchronized (state.lock) {
+            return state.total;
+        }
+    }
+
+    /** Drops the subject counters and the scope total. Called when a scope ends. */
     @Override
     public void forget(String scopeId) {
-        reads.keySet().removeIf(key -> key.startsWith(scopeId + SEPARATOR));
-    }
-
-    private static String key(String scopeId, String subjectId) {
-        // NUL separator: a scope id containing the separator could otherwise be
-        // made to collide with another scope's subject.
-        return scopeId + SEPARATOR + subjectId;
+        ScopeState state = scopes.remove(scopeId);
+        if (state != null) {
+            synchronized (state.lock) {
+                state.dead = true;
+                state.subjects.clear();
+                state.total = 0;
+            }
+        }
     }
 }
