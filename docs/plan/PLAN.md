@@ -51,12 +51,18 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 PRs #130 (`plan/0.7.0`) and #131 (task 193) have merged to `main`, and `main` is the integration base. `plan/0.7.0` carries, in addition, the verified results of tasks 194, 196, 198 and 217, not yet on `main`. See `reconciliation-2026-10-19.md` for task allocation. This section supersedes the older execution summary below.
 
-Open 0.7 tasks: 199, 200, 201 and 209. Tasks 216 and 232 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
+Open 0.7 tasks: 200, then 201. Tasks 199, 209, 216 and 232 landed on `plan/0.7.0` on 2026-10-20. Task 215 is open planning for 0.8. Next-wave order, by Depends on:
 
-1. 209 (depends on 194, done) and 199 (depends on 193 and 196, done) can start together. 199 needs a quiet named machine and the owner's agreement before it runs.
-2. 200 now (its prerequisites, 193, 198 and 216, are done). It must register the new code `CLUSTER_OPERATION_REFUSED` (from 216) and the new metric `dataprism.approval.release.skipped` (from 232).
-3. 201 after 209 (216 and 217 are done). It must take its CHANGELOG lines and migration note from the Outcome of the retired 216 (`docs/plan/tasks/retired/216-atomic-approval-creation-in-hazelcast.md`), and from the Outcome of the retired 232 (`docs/plan/tasks/retired/232-approval-creation-tokens-and-bounded-cleanup.md`) its CHANGELOG lines, migration note and value-format changes.
-4. 215 after 200.
+1. 200 now (its prerequisites, 193, 198 and 216, are done). It must register the new code `CLUSTER_OPERATION_REFUSED` (from 216) and the new metric `dataprism.approval.release.skipped` (from 232).
+2. 201 after 200 (209, 216, 217 and 232 are done). It must take its CHANGELOG lines and migration note from the Outcome of the retired 216 (`docs/plan/tasks/retired/216-atomic-approval-creation-in-hazelcast.md`), and from the Outcome of the retired 232 (`docs/plan/tasks/retired/232-approval-creation-tokens-and-bounded-cleanup.md`) its CHANGELOG lines, migration note and value-format changes. It must also include 209's `### Breaking` line and migration note from the Outcome of `docs/plan/tasks/retired/209-wire-pattern-validator-and-recognisers.md`: Spring-built and configured-JSON-source orchestrators now run `SensitivePatternValidator`, so sensitive-shaped values in `@NonSensitive` fields are refused with `VALIDATION_FAILED` / `SENSITIVE_PATTERN`; deployers must classify such fields correctly, and there is no opt-out property.
+3. 215 (0.8 planning) after 200, and so in parallel with 201.
+
+Follow-ups from 199 and 209 (none scheduled):
+
+- Rerun the baseline on a quiet host before 0.8 compares against it, at least the 300-source scenario. Per `docs/conventions.md`, re-measure rather than inherit the contended 0.7 numbers in `docs/plan/perf/baseline-0.7.md`.
+- Failure-path load scenarios (timeouts, the read budget, `SKIPPED_OVER_LIMIT`) as a successor task; the 0.7 baseline is all-success.
+- The load-test result file should record the cause of a FAILED source read; today it counts one without saying why.
+- Task 209: assert "first `SENSITIVE_PATTERN`" in `PatternValidatorWiringTest` and `ConfiguredJsonSourcesPatternValidatorTest`.
 
 Follow-ups from 232 (found in its review and bug hunt, none scheduled):
 
@@ -85,7 +91,6 @@ Owner decisions, all dated 2026-10-19:
 Follow-ups found in review, none yet scheduled:
 
 - Task 194: defence in depth. Each leak validator should also redact the keys flagged by the other. `RefusalPaths.redact` covers it today.
-- For task 199: the load-test `perSourceStatus` keys are per-scope aliases, not generated source names (see the load-test README).
 - For task 200 (from 198): relation bytes `0x02` to `0x04` extend task 191's header table; the link `max-length` is now 1024 (OD-B12); `docs/tools.md` says an unknown status is "not answered" while D-070-3 says "an error"; the catalog schema allows 128-character labels where task 191 caps them at 64.
 - For task 201 (from 193): the `docs/configuration.md` wording of `dataprism.limits.max-response-size` (already in 201's brief); and the per-source `REFUSED:RESPONSE_TOO_LARGE` direction of OD-B18 changes what 193 built, for the 0.9 migration notes.
 
@@ -93,7 +98,7 @@ Follow-ups found in review, none yet scheduled:
 
 Follow-ups from task 190: re-capture the two converted HTTP example blocks (`docs/agents/remote-http.md`, `docs/protect-your-own-api.md`) against the Compose stack before the 0.7.0 release. For task 201's migration notes: a 0.7 log carrying `REFUSED:<code>` cannot be read by a pre-0.7 verifier, while old logs verify with the new one. The custom-validator SPI change (the final pass validates an array root, not an object) is Breaking and belongs in the same notes.
 
-Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts), then on 2026-10-19 tasks 193, 194, 196, 198 and 217, and on 2026-10-20 task 216 (atomic approval creation). Open: tasks 199, 200, 201 and 209. Tasks 200 and 201 depend on 202, which has landed: 200 registers its new keys and codes, 201 writes its CHANGELOG lines and migration note (both in the retired 202 outcome, `docs/plan/tasks/retired/202-hazelcast-approval-consume-and-lock-timeouts.md`).
+Landed on `plan/0.7.0`: task 188 (supply chain), task 189 (limits from configuration), task 191 (sealed-links and key-resolver design), task 192 (cluster-security design) and task 195 (mutation testing, report only) task 197 (catalog design), task 190 (per-source results) and task 202 (Hazelcast approval consume, split-brain protection, lock timeouts), then on 2026-10-19 tasks 193, 194, 196, 198 and 217, and on 2026-10-20 task 216 (atomic approval creation). Open: tasks 200 and 201. Tasks 200 and 201 depend on 202, which has landed: 200 registers its new keys and codes, 201 writes its CHANGELOG lines and migration note (both in the retired 202 outcome, `docs/plan/tasks/retired/202-hazelcast-approval-consume-and-lock-timeouts.md`).
 
 Coordinator interpretation of D-070-15: "approvals in use" means `dataprism.oversight.approval-required-tools` is not empty OR `dataprism.reidentification.enabled` (re-identification four-eyes uses the same approval store). The kubernetes rule and every quorum check apply only then; otherwise no quorum is computed or required.
 
