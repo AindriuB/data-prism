@@ -39,6 +39,8 @@ class Q05SubsystemSwitchesSpikeTest {
         reading.put("userCodeDeployment", String.valueOf(config.getUserCodeDeploymentConfig().isEnabled()));
         reading.put("userCodeNamespaces", String.valueOf(config.getNamespacesConfig().isEnabled()));
         reading.put("phoneHome", String.valueOf(config.getProperty("hazelcast.phone.home.enabled")));
+        // With the hazelcast-sql module absent from the classpath (as here) a query fails whatever the config says;
+        // with Jet off the Jet check comes first.
         reading.put("sql", Spike.attempt(() -> instance.getSql().execute("SELECT 1").close()));
         return reading;
     }
@@ -81,7 +83,7 @@ class Q05SubsystemSwitchesSpikeTest {
         Config config = everythingOn(Spike.config(Spike.name("q5b"), SpikePorts.consecutive(1), List.of()));
         cluster = PrivacyCluster.embedded(config, false);
         assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "true", "userCodeDeployment", "true",
-                "userCodeNamespaces", "false", "phoneHome", "false", "sql", "allowed"));
+                "userCodeNamespaces", "false", "phoneHome", "false", "sql", "HazelcastSqlException"));
     }
 
     @Test
@@ -89,6 +91,6 @@ class Q05SubsystemSwitchesSpikeTest {
         supplied = Spike.start(everythingOn(Spike.config(Spike.name("q5c"), SpikePorts.consecutive(1), List.of())));
         cluster = PrivacyCluster.using(supplied, false);
         assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "true", "userCodeDeployment", "true",
-                "userCodeNamespaces", "false", "phoneHome", "true", "sql", "allowed"));
+                "userCodeNamespaces", "false", "phoneHome", "true", "sql", "HazelcastSqlException"));
     }
 }
