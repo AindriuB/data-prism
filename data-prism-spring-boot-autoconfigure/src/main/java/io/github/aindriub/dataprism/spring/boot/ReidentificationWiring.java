@@ -72,6 +72,6 @@ class ReidentificationWiring {
             DataPrismProperties properties) {
         ScopeIdentityIndex index = new ScopeIdentityIndex(cluster, metrics,
                 properties.getHazelcast().getLockTimeout());
-        return new ReidentificationService(index::subjectFor, approvals, audit, policy, clock, metrics);
+        return new ReidentificationService(index, approvals, audit, policy, clock, metrics);
     }
 }

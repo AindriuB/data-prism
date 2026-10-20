@@ -54,6 +54,11 @@ public final class ReidentificationService {
         this(Objects.requireNonNull(index, "index")::subjectFor, approvals, audit, policy, clock);
     }
 
+    public ReidentificationService(ScopeIdentityIndex index, ApprovalStore approvals, AuditRecorder audit,
+                                   ReidentificationPolicy policy, Clock clock, PrivacyMetrics metrics) {
+        this(Objects.requireNonNull(index, "index")::subjectFor, approvals, audit, policy, clock, metrics);
+    }
+
     public ReidentificationService(SubjectLookup lookup, ApprovalStore approvals, AuditRecorder audit,
                                    ReidentificationPolicy policy, Clock clock) {
         this(lookup, approvals, audit, policy, clock, PrivacyMetrics.none());
