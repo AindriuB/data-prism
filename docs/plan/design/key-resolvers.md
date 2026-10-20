@@ -1,7 +1,9 @@
 # Key resolvers: SPI contract and the direct-versus-translated rule
 
 Status: design for 0.8, reviewed externally in 0.9. Internal (`docs/plan/design/`, D-070-12 (a)); not published.
-Task 191. Companion: `sealed-links.md` (the link format, refusal, `follow` and `_links`). No code, SPI stub or configuration property is created by this task; every name is a proposal.
+Task 191. Companion: `sealed-links.md` (the link format, refusal, `follow` and `_links`).
+
+Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-3 (status renamed), OD-200-4 (name and namespace caps), OD-200-6 (annotation attribute), D5 and OD-13 shape C (failure table, closing table), D6 (`KeyNamespace` in the closing table). No decision is changed here. Each edit cites its id on the line it changes. No code, SPI stub or configuration property is created by this task; every name is a proposal.
 
 Examples use an invented neutral domain: a parcel service keyed by a parcel reference, a depot service keyed by a depot code, a courier-roster service keyed by a route code.
 
@@ -22,7 +24,7 @@ Terms: a **namespace** here is a string label for an identifier type, for exampl
 ```java
 public interface KeyResolver {
 
-    /** Stable name; appears in the audit, never to the client. [a-z][a-z0-9-]{0,63} */
+    /** Stable name; appears in the audit, never to the client. [a-z][a-z0-9-]{0,31} (OD-200-4) */
     String name();
 
     /** The namespace of the keys this resolver accepts. */
@@ -47,7 +49,7 @@ public interface KeyResolver {
 
     /** Never null; never a real name or key. */
     record KeyNamespace(String value) {
-        // [a-z][a-z0-9-]{0,63}; validated like RefusalCodes validates codes
+        // [a-z][a-z0-9-]{0,31} (at most 32 bytes, OD-200-4); validated like RefusalCodes validates codes
     }
 }
 ```
@@ -82,19 +84,19 @@ The outer status of the source and the handling of refused items and of budget e
 
 ### Failure semantics (fail closed)
 
-| Event | Result |
+| Event | Result and audit (shape C: a failure is the target's `name:RESOLVER_FAILED` entry plus a metric; OD-13, D5) |
 |---|---|
-| Resolver throws `UNAVAILABLE`, `TIMEOUT`, `REJECTED` | The translated follow returns the target source with a per-source status `KEY_UNRESOLVED` and no `entity`; audit `resolver:<name>` = `FAILED:<REASON>` |
-| Resolver returns more than `maxResults` keys | Treated as `TOO_MANY`; no entities returned; status `KEY_UNRESOLVED` |
+| Resolver throws `UNAVAILABLE`, `TIMEOUT`, `REJECTED` | The translated follow returns the target source with a per-source status `RESOLVER_FAILED` and no `entity` (OD-200-3). Audit: the target's `name:RESOLVER_FAILED` entry; the reason (`UNAVAILABLE`, `TIMEOUT`, `REJECTED`) is a metric label, not a disposition |
+| Resolver returns more than `maxResults` keys | Treated as `TOO_MANY`; no entities returned; status `RESOLVER_FAILED`. Audit as above; reason `TOO_MANY` is a metric label |
 | Resolver returns `more = true` | Not a failure: the keys returned are read and `itemsTruncated` is set |
-| Resolver returns `more = true` with no keys | Contract violation; `INVALID_OUTPUT`, status `KEY_UNRESOLVED` |
-| Resolver returns an empty list | Status `NO_DATA` (a truthful "nothing known"), audit `resolver:<name>` = `EMPTY` |
-| Resolver returns a blank or over-long key (over 256 bytes) | `KEY_UNRESOLVED`; audit `INVALID_OUTPUT` |
+| Resolver returns `more = true` with no keys | Contract violation; status `RESOLVER_FAILED`. Audit as above; reason `INVALID_OUTPUT` is a metric label, not a disposition value |
+| Resolver returns an empty list | Status `NO_DATA` (a truthful "nothing known"); the audit carries the target's ordinary `name:NO_DATA` entry and no resolver entry (`EMPTY` is not a disposition value) |
+| Resolver returns a blank or over-long key (over 256 bytes) | Status `RESOLVER_FAILED`; reason `INVALID_OUTPUT` is a metric label, not a disposition value |
 | Resolver runtime exception of any other type | Same as `UNAVAILABLE`, never propagated with its message |
 | Resolver exceeds `dataprism.key-resolvers.timeout` (default `PT2S`) | `TIMEOUT` |
 | Resolver bean missing at follow time (configuration changed since issue) | The link is `LINK_INVALID`, audit reason `RELATION_UNDECLARED` |
 
-A resolver failure never falls back to a direct read, to a different resolver, or to the untranslated key. `KEY_UNRESOLVED` is a new per-source status code and must be entered in task 200's register before 0.8 (its spelling is close to the existing startup code `HMAC_KEY_UNRESOLVED`; they are different kinds, but task 200 should record both together or rename this one); clients treat an unknown status as "not answered" (D-070-3).
+A resolver failure never falls back to a direct read, to a different resolver, or to the untranslated key. `RESOLVER_FAILED` is a new per-source status code, registered in the contract register; it was first drafted as `KEY_UNRESOLVED` and is renamed under OD-200-3, which also removes the near-collision with the startup code `HMAC_KEY_UNRESOLVED`. Clients treat an unknown status as "not answered" (D-070-3, OD-200-1).
 
 The status is returned only to a holder of a valid, authenticated link, so it opens no oracle for a forger.
 
@@ -108,7 +110,7 @@ The audit disposition grammar is closed (`AuditEvent.isValidAction`: a `PrivacyA
 
 | Key | Information | Shape under shape C |
 |---|---|---|
-| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:KEY_UNRESOLVED` entry, and the reason is a metric (`reason` label, resolver name label) and an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
+| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:RESOLVER_FAILED` entry (OD-200-3), and the reason is a metric (`reason` label, resolver name label) and an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
 | `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; a metric labelled by resolver name and outcome |
 
 A refused one-to-many item is audited `REFUSED:<code>` under `<target>[<i>]:<refused>`, per D-070-13.
@@ -156,7 +158,7 @@ Annotation (proposed, in the `annotations` module):
 
 ```java
 @InternalIdentifier
-@Chainable(namespace = "parcel-ref")
+@Chainable(keyNamespace = "parcel-ref")
 String parcelRef;
 ```
 
@@ -172,7 +174,7 @@ models:
         keyNamespace: parcel-ref
 ```
 
-`chainable: true` without `keyNamespace` is an error in the descriptor. The Java annotation takes `namespace` as its single attribute; its presence is the `true`. The names `@Chainable`, `chainable` and `keyNamespace` are proposals (table below). The existing descriptor key `namespace` already means `PrivacyNamespace`, so a different key is used to avoid ambiguity.
+`chainable: true` without `keyNamespace` is an error in the descriptor. The Java annotation takes `keyNamespace` as its single attribute, the same word as the descriptor key (OD-200-6); its presence is the `true`. The names `@Chainable`, `chainable` and `keyNamespace` are proposals (table below). The existing descriptor key `namespace` already means `PrivacyNamespace`, so a different key is used to avoid ambiguity.
 
 A source's **input keys** are declared on the adapter (the adapter-description SPI, task 197's catalog): each with a namespace. That declaration is also what makes `list_sources` and the human-supplied-key fallback (option (c)) work.
 
@@ -181,7 +183,7 @@ A source's **input keys** are declared on the adapter (the adapter-description S
 1. **Nothing reaches `mcp` unscrubbed.** The resolver sits in `orchestration`/`core`, outside `mcp`. Its output is consumed by the fetch path and goes through the same scrub and validate steps as a direct read. The `ResolutionContext` is deliberately narrow. A new architecture rule forbids `mcp` and `connectors` classes from depending on `KeyResolver`.
 2. **Boundary 5 (re-identification).** A resolver is not given, and must not call, `ScopeIdentityIndex.subjectFor`. The module providing resolvers must not depend on `data-prism-reidentification`. A resolver translating a pseudonym back to a real key would be exactly the re-identification path this boundary closes; the SPI takes real keys only because the server, not the model, calls it with raw keys obtained from sources.
 3. **Boundary 6 (Hazelcast).** No resolver result is cached in Hazelcast. A resolver implementation that caches internally is the operator's code; the project's reference implementations (if any) cache nothing. The read-budget counter is an integer and already allowed.
-4. **Boundary 7 (no sensitive value in logs, audit, exceptions).** Resolver input and output keys are never logged or audited, nor are they in `KeyResolutionException` messages. `resolver:<name>` is a name validated against a pattern. Metrics may label by resolver name and outcome only.
+4. **Boundary 7 (no sensitive value in logs, audit, exceptions).** Resolver input and output keys are never logged or audited, nor are they in `KeyResolutionException` messages. The resolver name is validated against a pattern. Metrics may label by resolver name and outcome only.
 
 Also: fail closed (rule 2) in every row of the failure table; real source names and resolver names reach the client only under D-RM-10 and then only source names, never resolver names.
 
@@ -194,9 +196,9 @@ Mutation-testable; PIT gates link checks in 0.9.
 3. Direct preferred over translated for the same source.
 4. `chainable` on a non-identifier, unclassified or `@NonSensitive` field refuses startup. A descriptor cannot remove a chainable flag or change its namespace.
 5. A chainable field's value is never in output: with the flag set the disposition is unchanged (existing scrubbing tests are re-run with the flag set and produce identical output).
-6. Fail closed: for each exception type, timeout, blank key, over-long key, over-count result and missing bean, the outcome is `KEY_UNRESOLVED` or `LINK_INVALID` as the table says and no target read happens. Mutants: catch and continue with the untranslated key; truncate over-count instead of refusing.
+6. Fail closed: for each exception type, timeout, blank key, over-long key, over-count result and missing bean, the outcome is `RESOLVER_FAILED` or `LINK_INVALID` as the table says and no target read happens. Mutants: catch and continue with the untranslated key; truncate over-count instead of refusing.
 7. Budget: a resolver call and each target read are charged on both budget implementations; an unaffordable call is not made. Mutant: charge after the call, or not at all.
-8. One-to-many: a stub resolver with 12 keys and `maxResults` 5 returns 5 keys with `more = true`, and the response has 5 items and `itemsTruncated: true`; a stub that returns 5 keys with `more = false` has no flag; a stub returning 6 keys for `maxResults` 5 is `TOO_MANY`; a stub with `more = true` and no keys is `INVALID_OUTPUT`. The number of target reads never exceeds `max-targets`. Order is ascending keyed fingerprint regardless of the order the resolver used. Mutants: ignore `more`; truncate an over-long result silently; sort by the real key.
+8. One-to-many: a stub resolver with 12 keys and `maxResults` 5 returns 5 keys with `more = true`, and the response has 5 items and `itemsTruncated: true`; a stub that returns 5 keys with `more = false` has no flag; a stub returning 6 keys for `maxResults` 5 is `TOO_MANY`; a stub with `more = true` and no keys is `RESOLVER_FAILED` with metric reason `INVALID_OUTPUT`. The number of target reads never exceeds `max-targets`. Order is ascending keyed fingerprint regardless of the order the resolver used. Mutants: ignore `more`; truncate an over-long result silently; sort by the real key.
 9. Leak tests: resolver input and output values do not appear in any audit record, log line, metric, exception message or response (plaintext and encoded forms), including on failure. A resolver that throws an exception whose message contains the key must not leak it.
 10. Architecture rules: `mcp` and `connectors` do not depend on `KeyResolver`; no resolver depends on `data-prism-reidentification`.
 11. `IdentityResolver` implementations from the existing test suites run unchanged; the adapter returns exactly the keys `expand` returns for the pair.
@@ -210,7 +212,7 @@ On 2026-10-09 the owner delegated every decision in this section to its recommen
 |---|---|---|---|
 | OD-R1 | One-to-many cap default | 5, 16 (matching the batch default, D-RM-7), or unbounded with paging | 5 for `follow`; larger sets belong to bulk follow and paging (task 198). Configurable with a ceiling **Decided (owner delegated, 2026-10-09): 5 for `follow`, configurable with a ceiling.** |
 | OD-R2 | Timing of resolution: at follow (proposed) or at issue | At follow: no I/O at issue, the link may later turn out empty. At issue: the agent sees only links that resolve, but every result costs resolver calls and a mapping is observable through the number of links | At follow. Issuing links is then cheap and leaks no mapping **Decided (owner delegated, 2026-10-09): resolve at follow.** |
-| OD-R3 | New per-source status for resolver failure | New `KEY_UNRESOLVED`; or reuse `FAILED` | New code, entered in task 200's register, because "the target failed" and "we could not form the key" differ for the agent's next step **Decided (owner delegated, 2026-10-09): new status `KEY_UNRESOLVED`, registered in task 200.** |
+| OD-R3 | New per-source status for resolver failure | New resolver-failure status (drafted as `KEY_UNRESOLVED`); or reuse `FAILED` | New code, entered in task 200's register, because "the target failed" and "we could not form the key" differ for the agent's next step **Decided (owner delegated, 2026-10-09): new status, registered in task 200. Spelling decided by OD-200-3 (2026-10-20): `RESOLVER_FAILED`.** |
 | OD-R4 | Where the namespace vocabulary lives | Free-form validated labels (proposed); or a registry declared once per deployment | Free-form with a startup check that every namespace used appears on at least one field and one input key. A typo otherwise silently yields no link **Decided (owner delegated, 2026-10-09): free-form validated labels with a startup usage check.** |
 | OD-R5 | Opt-in adapter from `IdentityResolver` | Provide it; or require a hand-written `KeyResolver` | Provide it, opt-in per pair, so no existing mapping is written twice **Decided (owner delegated, 2026-10-09): provide the opt-in adapter.** |
 | OD-R7 | Direct link wins over a translated link to the same source | Issue only the direct link (as drafted); or issue both | Only the direct link. A translated link to a source that already accepts the key directly adds a path that may disagree with the direct one and costs a resolver call **Decided (owner delegated, 2026-10-09): only the direct link.** |
@@ -229,15 +231,16 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `KeyResolutionException` | SPI exception | 0.8 |
 | `ResolutionContext` | SPI record | 0.8 |
 | `Resolution` | SPI record (`keys`, `more`) | 0.8 |
-| `@Chainable` | annotation | 0.8 |
+| `KeyNamespace` | SPI record (nested in `KeyResolver`; D6) | 0.8 |
+| `@Chainable(keyNamespace = "…")` | annotation (OD-200-6) | 0.8 |
 | `chainable`, `keyNamespace` | model descriptor keys | 0.8 |
 | `IdentityResolverKeyResolvers` | adapter class | 0.8 |
-| `KEY_UNRESOLVED` | per-source status code | 0.8 (register in task 200) |
+| `RESOLVER_FAILED` | per-source status code (OD-200-3) | 0.8 (register in task 200) |
 | `INVALID_CHAINABLE_FIELD` | startup refusal code | 0.8 |
 | `DUPLICATE_KEY_RESOLVER` | startup refusal code | 0.8 |
 | `INVALID_KEY_RESOLVER` | startup refusal code | 0.8 |
-| `resolver:<name>` | audit disposition key | 0.8 |
-| `resolver:<name>:ms` | audit disposition key (or metric, OD-13) | 0.8 |
 | `dataprism.key-resolvers.max-targets` | configuration key (default 5) | 0.8 |
 | `dataprism.key-resolvers.timeout` | configuration key (default `PT2S`) | 0.8 |
 | `dataprism.key-resolvers.budget-cost` | configuration key (default 1) | 0.8 |
+
+Withdrawn (OD-13 shape C, D5): the audit disposition keys `resolver:<name>` and `resolver:<name>:ms`. A resolver failure is the target's `name:RESOLVER_FAILED` entry plus a metric; timings are metrics.
