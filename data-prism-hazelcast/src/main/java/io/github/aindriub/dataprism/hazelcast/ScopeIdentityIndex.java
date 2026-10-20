@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -30,14 +31,27 @@ public final class ScopeIdentityIndex {
 
     private final PrivacyCluster cluster;
     private final PrivacyMetrics metrics;
+    private final HazelcastApprovalStore approvals;
 
+    /** With the default lock timeout of two seconds. */
     public ScopeIdentityIndex(PrivacyCluster cluster) {
         this(cluster, PrivacyMetrics.none());
     }
 
+    /** With the default lock timeout of two seconds. */
     public ScopeIdentityIndex(PrivacyCluster cluster, PrivacyMetrics metrics) {
+        this(cluster, metrics, ClusterLocks.DEFAULT_TIMEOUT);
+    }
+
+    /**
+     * @param lockTimeout how long ending a scope waits for each approval lock it needs before it refuses,
+     *                    {@code PT100MS} to {@code PT30S}; use the timeout the approval store was given
+     * @throws IllegalArgumentException if the timeout is outside that range
+     */
+    public ScopeIdentityIndex(PrivacyCluster cluster, PrivacyMetrics metrics, Duration lockTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.approvals = HazelcastApprovalStore.forScopeEnd(cluster, lockTimeout, metrics);
     }
 
     /**
@@ -61,6 +75,13 @@ public final class ScopeIdentityIndex {
      * <p>Keys lead with the scope so this is a prefix match. It is also the reason
      * an investigation ending is a real event rather than a matter of waiting for
      * a TTL: the mapping stops existing when someone says it should.
+     *
+     * <p>The identity, reverse, budget and oversight maps are deleted without a lock bound, as before: a key
+     * another member holds makes that delete wait. The approvals of the scope are bounded: each of their locks waits
+     * at most the lock timeout.
+     *
+     * @throws io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException if the lock of an approval of the
+     *         scope timed out; that approval, its id claim and its pending slot are left in place
      */
     public void endScope(String scopeId) {
         String prefix = ScopeKeys.scopePrefix(scopeId);
@@ -73,6 +94,6 @@ public final class ScopeIdentityIndex {
                     .forEach(entries::delete);
         }
         // Approvals go with their id claims and pending counts, so those ids and slots are free again.
-        HazelcastApprovalStore.forget(cluster, scopeId);
+        approvals.forgetScope(scopeId);
     }
 }

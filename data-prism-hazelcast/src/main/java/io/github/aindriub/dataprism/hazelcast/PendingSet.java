@@ -13,7 +13,10 @@ import java.util.Map;
  * <p>The owner matters because an id claim can be taken over (see {@link ClaimEntries}): a paused creator that lost
  * its claim must not release a slot that the new owner of the id now relies on. {@link Reserve} by a different owner
  * takes the slot over without changing the count, and {@link Release} removes a member only for the owner it names.
- * The owner is the scope, which with the id is the approval's entry key; a null scope is the empty string.
+ * The owner is the scope plus the random token of the creation that reserved the slot ({@link #ownerOf}), so a
+ * release or a clean-up that belongs to an earlier creation of the same id in the same scope leaves the slot of the
+ * later one alone. A member whose owner is in any other form (the bare scope that earlier versions wrote) is
+ * unreadable, and so is the whole entry.
  *
  * <p>The entry has no TTL: any lifetime could drop a live id and let the cap be passed, which fails open. Retention
  * is bounded by {@link Sweep}, which removes only ids that are past their expiry by a fixed slack. Stored as a string
@@ -32,8 +35,26 @@ final class PendingSet {
     record Member(Instant expiresAt, String owner) {
     }
 
-    static String ownerOf(String scopeId) {
-        return scopeId == null ? "" : scopeId;
+    /** Between the scope and the token in an owner. Not NUL, which separates the fields of the entry. */
+    private static final char OWNER_SEP = '\u001f';
+
+    /** The length of a token ({@code UUID.randomUUID().toString()}). */
+    private static final int TOKEN_LENGTH = 36;
+
+    /** The owner of the slot a creation reserves: its scope (a null scope is empty) and its token. */
+    static String ownerOf(String scopeId, String token) {
+        if (token.length() != TOKEN_LENGTH) {
+            throw new IllegalArgumentException("unreadable creation token");
+        }
+        return (scopeId == null ? "" : scopeId) + OWNER_SEP + token;
+    }
+
+    private static boolean readableOwner(String owner) {
+        if (owner.equals(CONFLICT)) {
+            return true;
+        }
+        int at = owner.length() - TOKEN_LENGTH - 1;
+        return at >= 0 && owner.charAt(at) == OWNER_SEP && owner.indexOf(OWNER_SEP, at + 1) < 0;
     }
 
     static Map<String, Member> decode(String raw) {
@@ -46,6 +67,9 @@ final class PendingSet {
             throw new IllegalStateException("unreadable pending entry");
         }
         for (int i = 0; i < parts.length; i += 3) {
+            if (!readableOwner(parts[i + 2])) {
+                throw new IllegalStateException("unreadable pending entry");
+            }
             ids.put(parts[i], new Member(Instant.parse(parts[i + 1]), parts[i + 2]));
         }
         return ids;

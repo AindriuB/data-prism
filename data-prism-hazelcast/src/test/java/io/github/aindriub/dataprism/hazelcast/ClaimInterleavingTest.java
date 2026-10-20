@@ -29,6 +29,10 @@ class ClaimInterleavingTest {
     private static final String ID = "inter-1";
     private static final String KEY_A = ScopeKeys.approval("scope-a", ID);
     private static final String KEY_B = ScopeKeys.approval("scope-b", ID);
+    private static final String TOKEN_A = "00000000-0000-0000-0000-00000000000a";
+    private static final String TOKEN_B = "00000000-0000-0000-0000-00000000000b";
+    private static final String CLAIM_A = ClaimEntries.value(KEY_A, TOKEN_A);
+    private static final String CLAIM_B = ClaimEntries.value(KEY_B, TOKEN_B);
 
     private PrivacyCluster cluster;
     private IMap<String, String> approvals;
@@ -63,7 +67,7 @@ class ClaimInterleavingTest {
     }
 
     private void ownerClaimsButHasNotInserted() {
-        assertThat(claims.putIfAbsent(ID, KEY_A)).isNull();
+        assertThat(claims.putIfAbsent(ID, CLAIM_A)).isNull();
     }
 
     @Test
@@ -73,14 +77,14 @@ class ClaimInterleavingTest {
         IMap<String, String> seenByTaker = approvalsThatRun(() -> {
             // The owner inserts, then reads its claim: it is marked, so the owner withdraws.
             approvals.put(KEY_A, "owner-entry");
-            ownerKept[0] = KEY_A.equals(claims.get(ID));
+            ownerKept[0] = CLAIM_A.equals(claims.get(ID));
             if (!ownerKept[0]) approvals.remove(KEY_A, "owner-entry");
         });
 
-        assertThat(ClaimEntries.claim(claims, seenByTaker, ID, KEY_B)).isTrue();
+        assertThat(ClaimEntries.claim(claims, seenByTaker, ID, KEY_B, TOKEN_B)).isTrue();
 
         assertThat(ownerKept[0]).isFalse();
-        assertThat(claims.get(ID)).isEqualTo(KEY_B);
+        assertThat(claims.get(ID)).isEqualTo(CLAIM_B);
         assertThat(approvals.containsKey(KEY_A)).isFalse();
     }
 
@@ -90,10 +94,10 @@ class ClaimInterleavingTest {
         IMap<String, String> seenByTaker = approvalsThatRun(() -> approvals.put(KEY_A, "owner-entry"));
 
         // The taker marked the claim, then finds the owner's entry, puts the claim back and refuses.
-        assertThat(ClaimEntries.claim(claims, seenByTaker, ID, KEY_B)).isFalse();
+        assertThat(ClaimEntries.claim(claims, seenByTaker, ID, KEY_B, TOKEN_B)).isFalse();
 
         // The owner's read of its claim now succeeds, so its entry stays.
-        assertThat(claims.get(ID)).isEqualTo(KEY_A);
+        assertThat(claims.get(ID)).isEqualTo(CLAIM_A);
         assertThat(approvals.containsKey(KEY_A)).isTrue();
         assertThat(approvals.containsKey(KEY_B)).isFalse();
     }
@@ -122,7 +126,8 @@ class ClaimInterleavingTest {
                 assertThat(stalled.get(10, TimeUnit.SECONDS)).isEqualTo(a);
                 IMap<String, String> claimMap = members[1].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
                 IMap<String, String> entries = members[1].instance().getMap(PrivacyCluster.APPROVAL_MAP);
-                assertThat(claimMap.get(ID)).isEqualTo(KEY_A);
+                assertThat(ClaimEntries.read(claimMap.get(ID))).hasValueSatisfying(
+                        named -> assertThat(named.entryKey()).isEqualTo(KEY_A));
                 assertThat(entries.keySet().stream().filter(key -> ScopeKeys.approvalId(key).equals(ID)))
                         .containsExactly(KEY_A);
             } finally {

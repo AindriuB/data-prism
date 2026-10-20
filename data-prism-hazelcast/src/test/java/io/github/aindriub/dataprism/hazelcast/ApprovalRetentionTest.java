@@ -83,11 +83,21 @@ class ApprovalRetentionTest {
         return ScopeKeys.approval(scope, id);
     }
 
+    /** A claim for a creation that is not running: the entry key of {@code scope} and {@code id}, and a token. */
+    private static String claim(String scope, String id) {
+        return ClaimEntries.value(ScopeKeys.approval(scope, id), TestMembers.token(9));
+    }
+
+    /** The entry key a claim names. */
+    private static String named(String claim) {
+        return ClaimEntries.read(claim).orElseThrow().entryKey();
+    }
+
     @Test
     void aClaimHasNoLifetimeOfItsOwn() {
         store.create(TestMembers.request("r-1", "scope-a", Status.PENDING), 5);
         assertThat(ttl(claims, "r-1")).isEqualTo(Long.MAX_VALUE);
-        assertThat(claims.get("r-1")).isEqualTo(entryKey("scope-a", "r-1"));
+        assertThat(named(claims.get("r-1"))).isEqualTo(entryKey("scope-a", "r-1"));
     }
 
     @Test
@@ -97,7 +107,7 @@ class ApprovalRetentionTest {
         store.reject("r-2", "bob", NOW.minus(Duration.ofHours(2)));
         assertThatThrownBy(() -> store.create(TestMembers.request("r-2", "scope-b", Status.PENDING)))
                 .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("duplicate approval id");
-        assertThat(claims.get("r-2")).isEqualTo(entryKey("scope-a", "r-2"));
+        assertThat(named(claims.get("r-2"))).isEqualTo(entryKey("scope-a", "r-2"));
     }
 
     @Test
@@ -108,16 +118,16 @@ class ApprovalRetentionTest {
         assertThat(approvals.containsKey(entryKey("scope-a", "o-1"))).isTrue();
         assertThatThrownBy(() -> store.create(TestMembers.request("o-1", "scope-b", Status.PENDING)))
                 .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("duplicate approval id");
-        assertThat(claims.get("o-1")).isEqualTo(entryKey("scope-a", "o-1"));
+        assertThat(named(claims.get("o-1"))).isEqualTo(entryKey("scope-a", "o-1"));
     }
 
     @Test
     void createTakesOverAClaimWhoseEntryIsGone() {
-        claims.put("c-1", entryKey("scope-x", "c-1"));
+        claims.put("c-1", claim("scope-x", "c-1"));
         assertThat(approvals.containsKey(entryKey("scope-x", "c-1"))).isFalse();
         ApprovalRequest request = TestMembers.request("c-1", "scope-a", Status.PENDING);
         assertThat(store.create(request, 5)).isEqualTo(request);
-        assertThat(claims.get("c-1")).isEqualTo(entryKey("scope-a", "c-1"));
+        assertThat(named(claims.get("c-1"))).isEqualTo(entryKey("scope-a", "c-1"));
         assertThat(store.find("c-1")).contains(request);
     }
 
@@ -126,15 +136,15 @@ class ApprovalRetentionTest {
         var shortLived = pending("e-1", "scope-a", "alice", NOW, Duration.ofSeconds(2));
         store.create(shortLived);
         awaitTrue(() -> !approvals.containsKey(entryKey("scope-a", "e-1")));
-        assertThat(claims.get("e-1")).isEqualTo(entryKey("scope-a", "e-1"));
+        assertThat(named(claims.get("e-1"))).isEqualTo(entryKey("scope-a", "e-1"));
         ApprovalRequest again = TestMembers.request("e-1", "scope-b", Status.PENDING);
         assertThat(store.create(again)).isEqualTo(again);
-        assertThat(claims.get("e-1")).isEqualTo(entryKey("scope-b", "e-1"));
+        assertThat(named(claims.get("e-1"))).isEqualTo(entryKey("scope-b", "e-1"));
     }
 
     @Test
     void aStaleClaimOfTheSameScopeCanBeCreatedAgain() {
-        claims.put("c-2", entryKey("scope-a", "c-2"));
+        claims.put("c-2", claim("scope-a", "c-2"));
         ApprovalRequest request = TestMembers.request("c-2", "scope-a", Status.PENDING);
         assertThat(store.create(request)).isEqualTo(request);
         assertThat(store.find("c-2")).contains(request);
@@ -142,7 +152,7 @@ class ApprovalRetentionTest {
 
     @Test
     void aMarkedClaimIsHeldByItsTakerAndRefusesEveryoneElse() {
-        String marked = entryKey("scope-x", "c-3") + "\0~\0" + entryKey("scope-y", "c-3");
+        String marked = claim("scope-x", "c-3") + "\0~\0" + claim("scope-y", "c-3");
         claims.put("c-3", marked);
         assertThatThrownBy(() -> store.create(TestMembers.request("c-3", "scope-a", Status.PENDING)))
                 .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("duplicate approval id");
@@ -158,7 +168,7 @@ class ApprovalRetentionTest {
     void creatorsOnOneMemberRacingForAStaleClaimAreSerialisedByTheIdLockAndGiveExactlyOneWinner() throws Exception {
         for (int round = 0; round < 5; round++) {
             String id = "race-" + round;
-            claims.put(id, entryKey("scope-gone", id));
+            claims.put(id, claim("scope-gone", id));
             int creators = 6;
             var ready = new java.util.concurrent.CountDownLatch(creators);
             var go = new java.util.concurrent.CountDownLatch(1);
@@ -187,7 +197,7 @@ class ApprovalRetentionTest {
             }
             assertThat(wins.get()).as("round %d", round).isEqualTo(1);
             assertThat(approvals.keySet().stream().filter(key -> ScopeKeys.approvalId(key).equals(id))).hasSize(1);
-            assertThat(claims.get(id)).isEqualTo(approvals.keySet().stream()
+            assertThat(named(claims.get(id))).isEqualTo(approvals.keySet().stream()
                     .filter(key -> ScopeKeys.approvalId(key).equals(id)).findFirst().orElseThrow());
         }
     }
@@ -195,24 +205,24 @@ class ApprovalRetentionTest {
     @Test
     void theClaimSweepRemovesOnlyClaimsWhoseEntryIsGone() {
         store.create(TestMembers.request("live-1", "scope-a", Status.PENDING));
-        claims.put("stale-1", entryKey("scope-x", "stale-1"));
-        claims.put("stale-2", entryKey("scope-x", "stale-2") + "\0~\0" + entryKey("scope-y", "stale-2"));
+        claims.put("stale-1", claim("scope-x", "stale-1"));
+        claims.put("stale-2", claim("scope-x", "stale-2") + "\0~\0" + claim("scope-y", "stale-2"));
         store.create(TestMembers.request("live-2", "scope-a", Status.PENDING));
         // A marked claim whose named entry exists is put back, never removed.
-        claims.put("live-2", entryKey("scope-a", "live-2") + "\0~\0" + entryKey("scope-z", "live-2"));
+        claims.put("live-2", claim("scope-a", "live-2") + "\0~\0" + claim("scope-z", "live-2"));
 
         assertThat(cluster.sweepStaleClaims()).isEqualTo(2);
         assertThat(claims.containsKey("stale-1")).isFalse();
         assertThat(claims.containsKey("stale-2")).isFalse();
-        assertThat(claims.get("live-1")).isEqualTo(entryKey("scope-a", "live-1"));
-        assertThat(claims.get("live-2")).isEqualTo(entryKey("scope-a", "live-2"));
+        assertThat(named(claims.get("live-1"))).isEqualTo(entryKey("scope-a", "live-1"));
+        assertThat(named(claims.get("live-2"))).isEqualTo(entryKey("scope-a", "live-2"));
         assertThat(cluster.sweepStaleClaims()).isZero();
         assertThat(store.find("live-1")).isPresent();
     }
 
     @Test
     void theClaimSweepSkipsAnIdWhoseLockIsHeldAndTakesItOnceItIsFree() throws Exception {
-        claims.put("busy-1", entryKey("scope-x", "busy-1"));
+        claims.put("busy-1", claim("scope-x", "busy-1"));
         var locked = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
         Thread holder = new Thread(() -> {
@@ -230,7 +240,7 @@ class ApprovalRetentionTest {
         try {
             assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
             assertThat(cluster.sweepStaleClaims()).isZero();
-            assertThat(claims.get("busy-1")).isEqualTo(entryKey("scope-x", "busy-1"));
+            assertThat(named(claims.get("busy-1"))).isEqualTo(entryKey("scope-x", "busy-1"));
         } finally {
             release.countDown();
             holder.join();
@@ -251,7 +261,7 @@ class ApprovalRetentionTest {
                 assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
                 // While the creator holds the id lock the sweep leaves its claim alone.
                 assertThat(cluster.sweepStaleClaims()).isZero();
-                assertThat(claims.get("mid-1")).isEqualTo(entryKey("scope-a", "mid-1"));
+                assertThat(named(claims.get("mid-1"))).isEqualTo(entryKey("scope-a", "mid-1"));
                 // Once its lease ran out, the claim names an entry that is not there, so the sweep removes it.
                 StalledInsert.awaitFree(cluster, PrivacyCluster.APPROVAL_ID_MAP, "mid-1");
                 assertThat(cluster.sweepStaleClaims()).isEqualTo(1);

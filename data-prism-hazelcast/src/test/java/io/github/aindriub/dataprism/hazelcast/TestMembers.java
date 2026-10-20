@@ -34,6 +34,16 @@ final class TestMembers {
         return new PrivacyCluster[]{a, b};
     }
 
+    /** A well-formed creation token, distinct per {@code n}. */
+    static String token(int n) {
+        return String.format("00000000-0000-0000-0000-%012d", n);
+    }
+
+    /** The pending-slot owner of the creation with {@link #token(int)} {@code n} in {@code scope}. */
+    static String owner(String scope, int n) {
+        return PendingSet.ownerOf(scope, token(n));
+    }
+
     static String uniqueName(String prefix) {
         return prefix + "-" + System.nanoTime();
     }

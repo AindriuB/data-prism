@@ -22,6 +22,10 @@ class PendingOwnershipTest {
     private static final Duration TIMEOUT = Duration.ofMillis(300);
     private static final Instant LATER = NOW.plus(Duration.ofHours(1));
 
+    private static String owner(String scope) {
+        return TestMembers.owner(scope, 1);
+    }
+
     private static String reserve(String current, String id, String owner, int cap) {
         Map.Entry<String, String> entry = new AbstractMap.SimpleEntry<>("k", current);
         new PendingSet.Reserve(id, owner, NOW, LATER, cap).process(entry);
@@ -36,31 +40,31 @@ class PendingOwnershipTest {
 
     @Test
     void aReserveByAnotherOwnerTakesTheSlotOverWithoutChangingTheCount() {
-        String one = reserve(null, "r-1", "scope-a", 1);
-        String taken = reserve(one, "r-1", "scope-b", 1);
+        String one = reserve(null, "r-1", owner("scope-a"), 1);
+        String taken = reserve(one, "r-1", owner("scope-b"), 1);
         assertThat(PendingSet.decode(taken)).containsOnlyKeys("r-1");
-        assertThat(PendingSet.decode(taken).get("r-1").owner()).isEqualTo("scope-b");
+        assertThat(PendingSet.decode(taken).get("r-1").owner()).isEqualTo(owner("scope-b"));
         // The same owner again is idempotent.
-        assertThat(reserve(taken, "r-1", "scope-b", 1)).isEqualTo(taken);
+        assertThat(reserve(taken, "r-1", owner("scope-b"), 1)).isEqualTo(taken);
     }
 
     @Test
     void aLateReserveOfAShorterApprovalKeepsTheLongerExpiryAndTheLatestWriterOwns() {
-        String longer = reserve(null, "r-1", "scope-b", 1);
+        String longer = reserve(null, "r-1", owner("scope-b"), 1);
         Map.Entry<String, String> entry = new AbstractMap.SimpleEntry<>("k", longer);
-        new PendingSet.Reserve("r-1", "scope-a", NOW, NOW.plus(Duration.ofMinutes(10)), 1).process(entry);
+        new PendingSet.Reserve("r-1", owner("scope-a"), NOW, NOW.plus(Duration.ofMinutes(10)), 1).process(entry);
         PendingSet.Member member = PendingSet.decode(entry.getValue()).get("r-1");
         assertThat(member.expiresAt()).isEqualTo(LATER);
-        assertThat(member.owner()).isEqualTo("scope-a");
+        assertThat(member.owner()).isEqualTo(owner("scope-a"));
         assertThat(PendingSet.decode(entry.getValue())).hasSize(1);
     }
 
     @Test
     void aReleaseByAFormerOwnerLeavesTheSlotAlone() {
-        String taken = reserve(reserve(null, "r-1", "scope-a", 1), "r-1", "scope-b", 1);
-        assertThat(release(taken, "r-1", "scope-a")).isEqualTo(taken);
-        assertThat(release(taken, "r-1", "scope-b")).isNull();
-        assertThat(release(null, "r-1", "scope-b")).isNull();
+        String taken = reserve(reserve(null, "r-1", owner("scope-a"), 1), "r-1", owner("scope-b"), 1);
+        assertThat(release(taken, "r-1", owner("scope-a"))).isEqualTo(taken);
+        assertThat(release(taken, "r-1", owner("scope-b"))).isNull();
+        assertThat(release(null, "r-1", owner("scope-b"))).isNull();
     }
 
     @Test
