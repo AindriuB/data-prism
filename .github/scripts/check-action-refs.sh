@@ -13,17 +13,27 @@
 # Exits non-zero, naming each reference that is malformed or does not resolve.
 set -euo pipefail
 
-# Prints "file:line owner/repo@ref" for every remote `uses:` in the directory.
+# Limitation: only block-style `uses:` lines (`uses: x` or `- uses: x`, with an
+# optional quote) are read. A flow mapping such as `- { uses: x@v1 }` is not
+# seen; the repository does not use that form.
+#
+# Prints "file:line ref" for every `uses:` in the directory, local ones
+# (./path) excluded.
 list_refs() {
-  grep -HnE '^[[:space:]-]*uses:[[:space:]]*[^[:space:]]+' "$1"/*.yml |
-    sed -E 's/^([^:]+):([0-9]+):[[:space:]-]*uses:[[:space:]]*([^[:space:]#]+).*/\1:\2 \3/' |
-    grep -vE ' (\./|docker://)' || true
+  grep -HnE "^[[:space:]-]*uses:[[:space:]]*[^[:space:]]+" "$1"/*.yml "$1"/*.yaml 2>/dev/null |
+    sed -E "s/^([^:]+):([0-9]+):[[:space:]-]*uses:[[:space:]]*[\"']?([^[:space:]#\"']+).*/\1:\2 \3/" |
+    grep -vE ' \./' || true
 }
 
 check_dir() {
   local dir="$1" bad=0 where ref repo name tag
   while read -r where ref; do
     [ -n "${ref:-}" ] || continue
+    if [[ "$ref" == docker://* ]]; then
+      # A docker:// action must be pinned to an immutable digest.
+      [[ "$ref" =~ @sha256:[0-9a-f]{64}$ ]] || { echo "UNPINNED DOCKER   $where  $ref (pin to @sha256:<digest>)" >&2; bad=1; }
+      continue
+    fi
     repo="${ref%@*}"
     name="${ref##*@}"
     if [ "$repo" = "$ref" ]; then
@@ -58,11 +68,12 @@ jobs:
       - uses: actions/checkout@v999.0.0
       - uses: actions/setup-java@v6
       - uses: ./local-action
+      - uses: docker://alpine:3.20
 YML
   if out="$(check_dir "$fixture" 2>&1)"; then
     echo "self-test FAILED: bad references were accepted" >&2; exit 1
   fi
-  for want in 'UNRESOLVED.*v999.0.0' 'FLOATING.*setup-java@v6'; do
+  for want in 'UNRESOLVED.*v999.0.0' 'FLOATING.*setup-java@v6' 'UNPINNED DOCKER.*alpine'; do
     echo "$out" | grep -qE "$want" || { echo "self-test FAILED: no report for $want" >&2; echo "$out" >&2; exit 1; }
   done
   if echo "$out" | grep -qE 'v7.0.0|local-action'; then

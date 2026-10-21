@@ -854,7 +854,7 @@ jobs:
           platform_digest() {
             local image="$1" arch="$2" found
             found="$(docker manifest inspect "ghcr.io/aindriub/${image}:${VERSION}" \
-              | jq -r --arg arch "$arch" '.manifests[] | select(.platform.architecture == $arch) | .digest')"
+              | jq -r --arg arch "$arch" '.manifests[] | select(.platform.os != "unknown" and .platform.architecture == $arch and ((.annotations["vnd.docker.reference.type"] // "") != "attestation-manifest")) | .digest')"
             if [ "$(printf '%s\n' "$found" | grep -c '^sha256:')" -ne 1 ]; then
               echo "::error::${image}:${VERSION} must list exactly one ${arch} manifest, got: ${found}" >&2
               exit 1
@@ -862,16 +862,26 @@ jobs:
             printf '%s' "$found"
           }
           {
-            echo "dist_amd64=$(platform_digest data-prism-server amd64)"
-            echo "dist_arm64=$(platform_digest data-prism-server arm64)"
-            echo "server_amd64=$(platform_digest data-prism-quickstart-server amd64)"
-            echo "server_arm64=$(platform_digest data-prism-quickstart-server arm64)"
-            echo "fixtures_amd64=$(platform_digest data-prism-quickstart-fixtures amd64)"
-            echo "fixtures_arm64=$(platform_digest data-prism-quickstart-fixtures arm64)"
-            echo "issuer_amd64=$(platform_digest data-prism-quickstart-issuer amd64)"
-            echo "issuer_arm64=$(platform_digest data-prism-quickstart-issuer arm64)"
-            echo "certs_init_amd64=$(platform_digest data-prism-quickstart-certs-init amd64)"
-            echo "certs_init_arm64=$(platform_digest data-prism-quickstart-certs-init arm64)"
+            d="$(platform_digest data-prism-server amd64)" || exit 1
+            echo "dist_amd64=$d"
+            d="$(platform_digest data-prism-server arm64)" || exit 1
+            echo "dist_arm64=$d"
+            d="$(platform_digest data-prism-quickstart-server amd64)" || exit 1
+            echo "server_amd64=$d"
+            d="$(platform_digest data-prism-quickstart-server arm64)" || exit 1
+            echo "server_arm64=$d"
+            d="$(platform_digest data-prism-quickstart-fixtures amd64)" || exit 1
+            echo "fixtures_amd64=$d"
+            d="$(platform_digest data-prism-quickstart-fixtures arm64)" || exit 1
+            echo "fixtures_arm64=$d"
+            d="$(platform_digest data-prism-quickstart-issuer amd64)" || exit 1
+            echo "issuer_amd64=$d"
+            d="$(platform_digest data-prism-quickstart-issuer arm64)" || exit 1
+            echo "issuer_arm64=$d"
+            d="$(platform_digest data-prism-quickstart-certs-init amd64)" || exit 1
+            echo "certs_init_amd64=$d"
+            d="$(platform_digest data-prism-quickstart-certs-init arm64)" || exit 1
+            echo "certs_init_arm64=$d"
           } >> "$GITHUB_OUTPUT"
 
       - name: Sign every per-architecture digest reachable from the manifest lists
@@ -978,7 +988,12 @@ jobs:
                        data-prism-quickstart-fixtures data-prism-quickstart-issuer \
                        data-prism-quickstart-certs-init; do
             list="$(docker buildx imagetools inspect "ghcr.io/aindriub/${image}:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)"
-            digests="$list $(docker manifest inspect "ghcr.io/aindriub/${image}:${VERSION}" | jq -r '.manifests[].digest')"
+            # Only real platform manifests: the lists also reference buildx
+            # attestation manifests (platform unknown/unknown, reference type
+            # attestation-manifest). Those are the SBOM and provenance payloads
+            # the signed digests cover; nothing signs them on their own.
+            digests="$list $(docker manifest inspect "ghcr.io/aindriub/${image}:${VERSION}" \
+              | jq -r '.manifests[] | select(.platform.os != "unknown" and ((.annotations["vnd.docker.reference.type"] // "") != "attestation-manifest")) | .digest')"
             for d in $digests; do
               cosign verify \
                 --certificate-identity "$IDENTITY" \
