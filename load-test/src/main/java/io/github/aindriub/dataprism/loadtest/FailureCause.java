@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.loadtest;
 
+import io.modelcontextprotocol.client.transport.McpHttpClientTransportAuthorizationException;
 import io.modelcontextprotocol.spec.McpError;
 import tools.jackson.core.JacksonException;
 
@@ -45,6 +46,11 @@ enum FailureCause {
     HTTP_STATUS_5XX,
     /** Any other HTTP status. */
     HTTP_STATUS_OTHER,
+    /**
+     * The SDK refused a non-success response (a 5xx, 1xx or 3xx) with {@code Failed to send message:
+     * AggregateResponseEvent[...]}, a message that carries no status. The status cannot be read, so this is its own cause.
+     */
+    HTTP_STATUS_UNREPORTED,
     /** The response body could not be parsed, or held no {@code sources} object. */
     UNPARSEABLE_BODY,
     /** Connection refused, reset or closed. */
@@ -53,6 +59,7 @@ enum FailureCause {
     OTHER;
 
     private static final Pattern STATUS = Pattern.compile("(?i)(?:status code|with code)\\W{0,3}(\\d{3})");
+    private static final Pattern UNREPORTED = Pattern.compile("^Failed to send message: AggregateResponseEvent");
     private static final Pattern BODY = Pattern.compile("(?i)error (?:deserializing|parsing) JSON-RPC message");
 
     private record Rule(Function<Throwable, FailureCause> match) { }
@@ -63,6 +70,8 @@ enum FailureCause {
             new Rule(t -> t instanceof McpError error && error.getJsonRpcError() != null
                     && error.getJsonRpcError().code() != null ? mcp(error.getJsonRpcError().code()) : null),
             new Rule(FailureCause::httpStatus),
+            new Rule(t -> t.getMessage() != null && UNREPORTED.matcher(t.getMessage()).find()
+                    ? HTTP_STATUS_UNREPORTED : null),
             new Rule(t -> t instanceof JacksonException || (t.getMessage() != null && BODY.matcher(t.getMessage()).find())
                     ? UNPARSEABLE_BODY : null),
             new Rule(t -> t instanceof IOException ? CONNECTION_FAILED : null));
@@ -100,6 +109,9 @@ enum FailureCause {
     }
 
     private static FailureCause httpStatus(Throwable t) {
+        if (t instanceof McpHttpClientTransportAuthorizationException denied && denied.getResponseInfo() != null) {
+            return ofStatus(denied.getResponseInfo().statusCode());
+        }
         if (t.getMessage() == null) {
             return null;
         }
@@ -107,7 +119,10 @@ enum FailureCause {
         if (!matcher.find()) {
             return null;
         }
-        int status = Integer.parseInt(matcher.group(1));
+        return ofStatus(Integer.parseInt(matcher.group(1)));
+    }
+
+    private static FailureCause ofStatus(int status) {
         return status >= 400 && status < 500 ? HTTP_STATUS_4XX : status >= 500 && status < 600 ? HTTP_STATUS_5XX
                 : HTTP_STATUS_OTHER;
     }

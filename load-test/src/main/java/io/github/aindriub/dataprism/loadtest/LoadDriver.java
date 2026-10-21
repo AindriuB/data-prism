@@ -96,18 +96,36 @@ final class LoadDriver {
     }
 
     private McpSyncClient newClient(Scenario.Load load) {
-        // The token is read on every request, so one replaced during a long run is the one that is sent.
+        return openClient(baseUrl, credentials::token, Duration.ofSeconds(load.callTimeoutSeconds()));
+    }
+
+    /**
+     * An initialised MCP session. The token is read on every request, so one replaced during a long run is the
+     * one that is sent. A session whose initialisation fails is closed before the failure is rethrown.
+     */
+    static McpSyncClient openClient(String baseUrl, java.util.function.Supplier<String> token, Duration timeout) {
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(baseUrl)
                 .endpoint("/mcp")
                 .customizeClient(LoadDriver::boundConnect)
                 .httpRequestCustomizer((request, method, uri, body, context) ->
-                        request.setHeader("Authorization", "Bearer " + credentials.token()))
+                        request.setHeader("Authorization", "Bearer " + token.get()))
                 .build();
         McpSyncClient client = McpClient.sync(transport)
                 .clientInfo(new McpSchema.Implementation("data-prism-load-test", "1.0.0"))
-                .requestTimeout(Duration.ofSeconds(load.callTimeoutSeconds()))
+                .requestTimeout(timeout)
                 .build();
-        client.initialize();
+        try {
+            client.initialize();
+        } catch (RuntimeException failed) {
+            Bounded.run(() -> {
+                try {
+                    client.close();
+                } catch (RuntimeException ignored) {
+                    // The initialisation failure is the one to report.
+                }
+            }, CLOSE_BOUND);
+            throw failed;
+        }
         return client;
     }
 
@@ -123,9 +141,11 @@ final class LoadDriver {
         for (McpSyncClient client : clients) {
             Thread worker = new Thread(() -> workerLoop(next, dispatched, calls, start, ratePerSecond,
                     end, System::nanoTime, LockSupport::parkNanos, (index, due) -> {
+                // The scope is read before the call: a rotation landing mid-call can mislabel that one call.
+                int scope = credentials.scopeNumber();
                 CallOutcome outcome = call(client, subjectFor(subjectPrefix, index, subjectPool), due);
                 if (recordTo != null) {
-                    recordTo.record(outcome, System.nanoTime() >= end);
+                    recordTo.record(outcome, System.nanoTime() >= end, scope);
                 }
             }), "load-worker");
             workers.add(worker);

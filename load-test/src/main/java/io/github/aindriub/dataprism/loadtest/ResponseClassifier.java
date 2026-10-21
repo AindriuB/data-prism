@@ -32,7 +32,7 @@ final class ResponseClassifier {
         }
         Map<String, String> statuses = sourceStatuses(result);
         if (statuses == null) {
-            return CallOutcome.transportFailure("UnparseableBody", FailureCause.UNPARSEABLE_BODY);
+            return CallOutcome.slowFailure("UnparseableBody", FailureCause.UNPARSEABLE_BODY, latencyMicros);
         }
         return CallOutcome.completed(latencyMicros, statuses);
     }

@@ -89,6 +89,15 @@ class ResponseClassifierTest {
     }
 
     @Test
+    void anUnparseableBodyIsTimedSoItsLatencyIsNotLost() {
+        CallOutcome outcome = ResponseClassifier.classify(ok(Map.of("entityType", "PARCEL")), 7_000);
+
+        assertThat(outcome.latencyMicros()).isEqualTo(7_000);
+        assertThat(outcome.timed()).isTrue();
+        assertThat(outcome.timedOut()).isFalse();
+    }
+
+    @Test
     void textThatIsNotJsonIsAnUnparseableBody() {
         McpSchema.CallToolResult result = McpSchema.CallToolResult.builder().addTextContent("not json at all").build();
 

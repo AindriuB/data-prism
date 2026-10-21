@@ -39,7 +39,15 @@ final class ResultAggregator {
      * @param afterDeadline whether the call finished after the run's deadline (the in-flight drain). It is still
      *                      counted and timed, but is kept out of throughput, which is calls finished in the window.
      */
-    synchronized void record(CallOutcome outcome, boolean afterDeadline) {
+    void record(CallOutcome outcome, boolean afterDeadline) {
+        record(outcome, afterDeadline, 1);
+    }
+
+    /**
+     * @param scope the number of the privacy scope the call ran in. A source's name in a response is an alias that
+     *              is stable only within one scope, so the per-source tally is keyed {@code scope-<n>/<name>}.
+     */
+    synchronized void record(CallOutcome outcome, boolean afterDeadline, int scope) {
         attempted++;
         if (!outcome.completed()) {
             // The failed total and each cause are counted separately, from the outcome's own fields, so that a
@@ -64,7 +72,7 @@ final class ResultAggregator {
             refusalCodes.merge(outcome.refusalCode(), 1L, Long::sum);
         }
         outcome.sourceStatuses().forEach((source, status) -> {
-            Map<String, Long> tally = perSource.computeIfAbsent(source, ignored -> zeroed());
+            Map<String, Long> tally = perSource.computeIfAbsent("scope-" + scope + "/" + source, ignored -> zeroed());
             tally.merge(status, 1L, Long::sum);
         });
     }

@@ -8,7 +8,8 @@ import java.util.function.LongSupplier;
  * scope 8 h, so a run of up to 24 h would otherwise start failing mid-way. The scope is named by the token's
  * case id, so rotating the scope means minting a token with a new case id.
  *
- * <p>Both are replaced when three quarters of their lifetime has passed. The reissues and rotations are
+ * <p>{@link #tokenReissues} counts every re-mint after the first; {@link #scopeRotations} those that also
+ * changed the scope. Both are replaced when three quarters of their lifetime has passed. The reissues and rotations are
  * counted, and the result file reports them: a soak that rotated nothing did not exercise this.
  */
 final class CredentialRotation {
@@ -55,10 +56,9 @@ final class CredentialRotation {
             scopeStartedAt = now;
             scopeRotations++;
         }
-        if (tokenDue) {
-            tokenReissues++;
-        }
         if (scopeDue || tokenDue) {
+            // Every re-mint is a reissue, whichever lifetime asked for it: a scope rotation replaces the token too.
+            tokenReissues++;
             mint(now);
         }
         return token;
@@ -71,6 +71,11 @@ final class CredentialRotation {
             throw new IllegalStateException("could not mint a token", failure);
         }
         tokenMintedAt = now;
+    }
+
+    /** The number of the scope the current token is for, from 1. */
+    synchronized int scopeNumber() {
+        return scopeNumber;
     }
 
     synchronized long tokenReissues() {

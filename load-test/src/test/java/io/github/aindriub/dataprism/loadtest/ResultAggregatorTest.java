@@ -119,10 +119,10 @@ class ResultAggregatorTest {
 
         assertThat(SourceStatuses.ALL).containsExactly("ANSWERED", "NO_DATA", "TIMED_OUT", "FAILED",
                 "CIRCUIT_OPEN", "SKIPPED_OVER_LIMIT", "REFUSED", "RESOLVER_FAILED");
-        assertThat(summary.perSourceStatus().get("s1"))
+        assertThat(summary.perSourceStatus().get("scope-1/s1"))
                 .containsEntry("ANSWERED", 1L).containsEntry("TIMED_OUT", 1L).containsEntry("REFUSED", 0L)
                 .containsKeys(SourceStatuses.ALL.toArray(String[]::new));
-        assertThat(summary.perSourceStatus().get("s2")).containsEntry("REFUSED", 2L).containsEntry("ANSWERED", 0L);
+        assertThat(summary.perSourceStatus().get("scope-1/s2")).containsEntry("REFUSED", 2L).containsEntry("ANSWERED", 0L);
         assertThat(summary.totalStatus()).containsEntry("REFUSED", 2L).containsEntry("ANSWERED", 1L);
     }
 
@@ -131,7 +131,7 @@ class ResultAggregatorTest {
         ResultAggregator aggregator = new ResultAggregator();
         aggregator.record(CallOutcome.completed(1000, Map.of("s1", "SOMETHING_NEW")));
 
-        assertThat(aggregator.summary(Duration.ofSeconds(1)).perSourceStatus().get("s1"))
+        assertThat(aggregator.summary(Duration.ofSeconds(1)).perSourceStatus().get("scope-1/s1"))
                 .containsEntry("SOMETHING_NEW", 1L);
     }
 
@@ -178,6 +178,20 @@ class ResultAggregatorTest {
     }
 
     @Test
+    void aliasesAreKeyedByTheScopeTheyWereIssuedIn() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record(CallOutcome.completed(1000, Map.of("alias-a", "ANSWERED")), false, 1);
+        aggregator.record(CallOutcome.completed(1000, Map.of("alias-a", "TIMED_OUT")), false, 2);
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
+
+        assertThat(summary.perSourceStatus().keySet()).containsExactly("scope-1/alias-a", "scope-2/alias-a");
+        assertThat(summary.perSourceStatus().get("scope-2/alias-a")).containsEntry("TIMED_OUT", 1L)
+                .containsEntry("ANSWERED", 0L);
+        assertThat(summary.totalStatus()).containsEntry("ANSWERED", 1L).containsEntry("TIMED_OUT", 1L);
+    }
+
+    @Test
     void anEmptyRunHasZeroPercentilesRatherThanFailing() {
         ResultAggregator.Summary summary = new ResultAggregator().summary(Duration.ofSeconds(1));
 
@@ -204,6 +218,6 @@ class ResultAggregatorTest {
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
         assertThat(summary.completed()).isEqualTo(8000);
-        assertThat(summary.perSourceStatus().get("s")).containsEntry("ANSWERED", 8000L);
+        assertThat(summary.perSourceStatus().get("scope-1/s")).containsEntry("ANSWERED", 8000L);
     }
 }

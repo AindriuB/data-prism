@@ -72,10 +72,10 @@ class FailureScenarioTest {
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
 
-        assertThat(summary.perSourceStatus().get("s1")).containsEntry("TIMED_OUT", 3L).containsEntry("ANSWERED", 0L);
-        assertThat(summary.perSourceStatus().get("s2")).containsEntry("TIMED_OUT", 3L);
+        assertThat(summary.perSourceStatus().get("scope-1/s1")).containsEntry("TIMED_OUT", 3L).containsEntry("ANSWERED", 0L);
+        assertThat(summary.perSourceStatus().get("scope-1/s2")).containsEntry("TIMED_OUT", 3L);
         assertThat(summary.totalStatus()).containsEntry("TIMED_OUT", 6L);
-        assertThat(summary.perSourceStatus().get("s3")).containsEntry("ANSWERED", 3L);
+        assertThat(summary.perSourceStatus().get("scope-1/s3")).containsEntry("ANSWERED", 3L);
         assertThat(summary.sourcesNotAnswered()).isEqualTo(6);
         assertThat(summary.transportFailures()).isZero();
     }
@@ -94,8 +94,8 @@ class FailureScenarioTest {
         scenario("failure-read-budget");
         ResultAggregator aggregator = new ResultAggregator();
         aggregator.record(ResponseClassifier.classify(sources(Map.of("s1", "ANSWERED")), 1000));
-        aggregator.record(ResponseClassifier.classify(error("SCOPE_READ_BUDGET"), 1000));
-        aggregator.record(ResponseClassifier.classify(error("SCOPE_READ_BUDGET"), 1000));
+        aggregator.record(ResponseClassifier.classify(error("refused: SCOPE_READ_BUDGET at PARCEL"), 1000));
+        aggregator.record(ResponseClassifier.classify(error("refused: SCOPE_READ_BUDGET at PARCEL"), 1000));
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
 

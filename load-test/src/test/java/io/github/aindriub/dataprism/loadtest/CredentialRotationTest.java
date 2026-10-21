@@ -12,8 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** A soak outlives the 12 h token and 8 h scope: the credentials are replaced before either ends. */
 class CredentialRotationTest {
 
-    private static final Duration TOKEN = Duration.ofHours(12);
-    private static final Duration SCOPE = Duration.ofHours(8);
+    private static final Duration TOKEN = TokenIssuer.TOKEN_LIFETIME;
+    private static final Duration SCOPE = ServerProcess.SCOPE_LIFETIME;
 
     private final AtomicLong now = new AtomicLong();
     private final List<String> minted = new ArrayList<>();
@@ -50,6 +50,7 @@ class CredentialRotationTest {
         String second = rotation.token();
 
         assertThat(rotation.scopeRotations()).isEqualTo(1);
+        assertThat(rotation.tokenReissues()).isEqualTo(1);
         assertThat(minted).hasSize(2);
         assertThat(minted.get(1)).isNotEqualTo(minted.get(0));
         assertThat(second).contains(minted.get(1));
@@ -91,6 +92,9 @@ class CredentialRotationTest {
             advance(Duration.ofMinutes(1));
         }
 
-        assertThat(rotation.scopeRotations()).isGreaterThanOrEqualTo(3);
+        // Mints at 0, 6, 12, 18 and 24 h: every re-mint is a reissue, and each one here also rotates the scope.
+        assertThat(minted).hasSize(5);
+        assertThat(rotation.tokenReissues()).isEqualTo(4);
+        assertThat(rotation.scopeRotations()).isEqualTo(4);
     }
 }
