@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Executor:** `scribe` (docs only; no code)
 **Base branch:** the 0.8 integration branch once every dependency has merged
-**Depends on:** 238, 244, 245, 246, 247, 249, 250, 253, 255, 256, 230 (sealed-cluster plan; 230 adds rows to `docs/configuration.md` and otherwise could run alongside this task, since both follow 255; its startup codes also belong in the startup-refusal index)
+**Depends on:** 266 (serialised on `CHANGELOG.md`: 266 forward-ports the `[0.7.1]` section to `main` directly below `[Unreleased]`), 238, 244, 245, 246, 247, 249, 250, 253, 255, 256, 230 (sealed-cluster plan; 230 adds rows to `docs/configuration.md` and otherwise could run alongside this task, since both follow 255; its startup codes also belong in the startup-refusal index)
 **Wave:** 13 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - docs/tools.md
@@ -39,6 +39,7 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - [ ] `mkdocs build --strict` and every `docs-site/hooks/check_*.py` pass with `DP_REQUIRE_NO_STUBS=true`.
 
 ## Out of scope
+- CHANGELOG entries for 265, 244, 245 and 257. They shipped in `[0.7.1]` (task 266) and are not repeated under `[Unreleased]`. Their user docs (`docs/tools.md`, `docs/reidentification.md`) are still this task's.
 - Key-rotation procedures, the 1.0 controls and their migration sections (213).
 - `docs/quickstart.md` (262).
 - `docs/data-protection.md` (214).

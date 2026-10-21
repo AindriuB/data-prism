@@ -1,10 +1,10 @@
 # 265 — Follow a type argument only for JDK collections, optionals and maps
 
 **Repo:** `.`
-**Release:** 0.8.0 (owner decision 2026-10-21: there is no 0.7.1 patch; the fix ships in 0.8.0)
+**Release:** 0.8.0, and backported to 0.7.1 by cherry-pick as its Security fix (task 266; owner decision 2026-10-21, which replaces the earlier "no 0.7.1" note)
 **Base branch:** `origin/main` once PR #144 (record/0.8-wave2, which lands 240's `ChainableFields`) has merged
-**Depends on:** 240 (`ChainableFields` reads `FieldMetadata.elementType()`, and this task changes what that returns)
-**Wave:** 3 (combined 0.8 graph). 248 is also wave 3 and edits `JsonTreeScrubbingEngine.java`. Its describer has to copy the corrected nested-type rule, so 248 should gain `Depends on: 265` and move to wave 4. Until the scribe adds that edge, do not run 265 and 248 at the same time.
+**Depends on:** 240 (`ChainableFields` reads `FieldMetadata.elementType()`, and this task changes what that returns). Only the main-only commit needs 240; see "0.7.1 backport" in Context.
+**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 266; 203 and 206 to 211 counted as landed). 248 depends on 265 since 2026-10-21 and is wave 4.
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/DefaultFieldMetadataResolver.java *(`elementType` and its Javadoc only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceModels.java
@@ -48,6 +48,10 @@ The fix fails closed and stays small:
 - `ChainableFieldsTest` already has `Holder<T extends Leaf>`, `MapOfRoutes` and `MapOfList`. Those tests call `ChainableFields.of` without `SourceModels.require`, so they stay valid.
 - docs/plan/design/contract-register.md section 3 (line 249, `SOURCE_MODEL_NOT_A_RECORD`, marked "yes") and section 11 (naming notes).
 - docs/conventions.md: privacy rules for diffs, and the rule that messages never carry values.
+- **0.7.1 backport.** Task 266 cherry-picks this task onto `release/0.7.1`, cut from `v0.7.0`, as the 0.7.1 Security fix. `ChainableField`, `ChainableFields`, `ChainableFieldsTest` and `ChainableDispositionParityTest` come from 240 and do not exist at `v0.7.0`. Split the work into two commit groups, in this order:
+  - **Core fix (backported).** `DefaultFieldMetadataResolver.elementType`, `FieldMetadata` Javadoc, `SourceModels` with `SOURCE_MODEL_GENERIC` and `SOURCE_MODEL_MAP_OF_RECORD`, `JsonTreeScrubbingEngine` `apply` and `scrubNestedObject`, `SourceValues`, `ConfiguredJsonNestedLeafShapeGuard.descendType`, the `ConfiguredJsonFieldMetadataResolver` Javadoc, `SourceModelsTest`, `DefaultFieldMetadataResolverTest`, `NestedTypeArgumentTest`, the adopted `GenericElementTypeCollisionTest`, `docs/extending.md` and `docs/developer-guide/write-an-adapter.md`. These commits must not name any `Chainable*` type or any type or constant added after `v0.7.0` (check each new import with `git grep <type> v0.7.0`). The owned main and doc files were unchanged between `v0.7.0` and `origin/main` at filing. PR #144 changes none of them except by adding `ChainableFields`.
+  - **Main-only (not backported).** The `ChainableFields` comment, the new `ChainableFieldsTest` case and the `docs/plan/design/contract-register.md` rows. These go in one or more commits whose subject starts `265 (main only):`. The register rows say `shipped | 0.7.1`.
+  - On `main`, the full suite must pass after the core-fix commits alone, as well as at the head. That way 240's existing tests are proved to pass under the corrected rule before the main-only commit adds to them.
 
 ## Decisions taken in this brief
 - **Map of records: refuse at startup, do not walk entries.** Walking entries needs a rule for map keys, and keys are data. Today a key becomes an output property name with no classification. Walking would mean deciding how a key is disposed of (placeholder, redaction or classification), then copying that decision into `SourceValues`, into 248's describer and into configured JSON. 248's path grammar also cannot name map entries; 240 found the same thing for chainables. That is a design question, not a security fix. The shape has never been scrubbed correctly, so refusing it removes nothing that worked. Walking map entries is a 0.9 follow-up for the scribe to log.
@@ -106,16 +110,17 @@ The fix fails closed and stays small:
   Every existing `ChainableFieldsTest` and `ChainableDispositionParityTest` case passes unmodified.
 - [ ] The docs say that a source model must not be generic and that a map's values must not be records:
   - `docs/extending.md` (the shape bullet; drop "maps ... of those" for records) and `docs/developer-guide/write-an-adapter.md:24` both name the two codes.
-  - `docs/plan/design/contract-register.md` gains two rows: `SOURCE_MODEL_GENERIC` and `SOURCE_MODEL_MAP_OF_RECORD`, both `shipped | 0.8.0 | core:SourceModels.java:<line>`.
+  - `docs/plan/design/contract-register.md` gains two rows: `SOURCE_MODEL_GENERIC` and `SOURCE_MODEL_MAP_OF_RECORD`, both `shipped | 0.7.1 | core:SourceModels.java:<line>`.
 - [ ] The Outcome lists every existing fixture or test across the reactor that is now refused, and how it was changed. It also confirms that `DescriptorFieldMetadataResolver` and `ConfiguredJsonFieldMetadataResolver` needed no logic change.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-validation,data-prism-connectors-rest -am verify` passes, and the full reactor `./mvnw -B verify` passes.
+- [ ] The commits are split as "0.7.1 backport" in Context describes. `git log --format=%s` shows every commit that touches a `Chainable*` file or `docs/plan/**` with a subject starting `265 (main only):`, and no other commit touches those files. The Outcome names the last core-fix commit and gives the full-reactor result at that commit. After 266 cherry-picks the core-fix commits onto `release/0.7.1`, `./mvnw -B -pl data-prism-core,data-prism-validation,data-prism-connectors-rest -am verify` passes there, including `GenericElementTypeCollisionTest`, `NestedTypeArgumentTest` and the new `SourceModelsTest` cases.
 
 ## Out of scope
 - Walking `Map<String, Record>` entries with the value type's rules (logged as a 0.9 follow-up; see Decisions).
-- `CHANGELOG.md`. The release task (213, or 261 for core entries) owns `[Unreleased]`. The notes it needs are:
-  - a **Security** entry: a user generic field was scrubbed, and its prohibited values collected, with the type argument's rules, which released values under the DEFAULT profile past both validators; fixed in 0.8.0 with no 0.7.1;
-  - the two new startup codes;
-  - the behaviour change that a `Map` of records and a JDK wrapper such as `AtomicReference<X>` are now refused or unclassified.
+- `CHANGELOG.md`. Task 266 writes the entry in `[0.7.1]` on the release branch and forward-ports it to `main`. 261 and 213 do not repeat it under `[Unreleased]`. What 266 needs, recorded here:
+  - a **Security** entry: a field of a user generic type was scrubbed, and its prohibited values collected, using the type argument's rules instead of the field's own type. When the argument's type declared the same field names as `@NonSensitive`, values could be released under the DEFAULT profile past both validators. A `Map` of records was scrubbed as if the map were a record. Present in every release up to and including 0.7.0, and fixed in 0.7.1;
+  - two new startup refusal codes, `SOURCE_MODEL_GENERIC` and `SOURCE_MODEL_MAP_OF_RECORD`;
+  - the behaviour changes: a source model that is generic, or that has a map whose values are records, is now refused at startup. A JDK wrapper outside the collection, optional and map list (for example `AtomicReference<X>`) is no longer scrubbed with `X`'s rules and takes the unclassified-structure path.
 - 248's `ScrubPlanDescriber` and `describe` override. 248 copies the corrected rule after this task.
 - 249's configured-JSON files (`ConfiguredJsonSources.java` and the rest).
 - `RawValueLeakValidator`, `SensitivePatternValidator` and `SensitiveDataScanner` (208 and 256 own them). The fix is in what they are given, not in them.

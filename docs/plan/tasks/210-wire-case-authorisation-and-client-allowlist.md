@@ -27,6 +27,7 @@ Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClientAllowlistConfigurationTest.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/*.java *(existing tests: the property sets or beans that start a context only)*
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/** *(configuration arguments only)*
+  - Task 245's three new test files (`DenialAuditUnavailableServiceTest`, `DenialAuditUnavailableOperatorTest`, `ResumeAuditOrderingTest`) are narrowed to carry none of these. If 245 has merged first, this task's sweep updates `OperatorHarness` and the shared fixtures and leaves those three files alone. There is no edge, by decision of 2026-10-21 for the 0.7.1 backport.
 - data-prism-integration-tests/src/main/resources/application.yaml
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/StarterStartupFailureTest.java *(configuration only)*
 - data-prism-quickstart-extension/src/test/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartSmokeIT.java *(configuration only)*
