@@ -17,7 +17,7 @@ Not for publication before 0.9. No compliance or certification claim.
 
 This was a laptop, not a dedicated host. The owner approved running on it with
 every other agent of the session stopped and the owner away. Still open: the
-Claude desktop app, an editor, a browser and an idle Citrix client. The desktop
+Claude desktop app, an editor, a browser and an idle remote-desktop client. The desktop
 UI alone holds the one-minute load average around 2 to 4 on this 8-core machine
 (idle readings just before the first run: 2.4 to 3.5). Before and after every
 run a process listing was checked for java, Maven/surefire, a simulator, a video
@@ -28,8 +28,8 @@ one-minute load exceeds 4 (half the cores) or a heavy process is running.
 Builds were done once beforehand (`package`, never `install`), so the load
 figures cover only the run itself, not Maven. The measured command is the last
 line of `load-test/run.sh` (`java -jar target/data-prism-load-test.jar <scenario>
---repo-root <checkout> --results-dir <dir>`). Runs were made one at a time, after waiting
-for the one-minute load to fall to 3.5 or lower.
+--repo-root <checkout> --results-dir <dir>`). The counted runs were made one at a time, after waiting
+for the one-minute load to fall to 3.5 or lower. The discarded first pass was not gated.
 
 ## Run log and repeats
 
@@ -59,21 +59,26 @@ run. "Used" means the file is one of the three counted for the scenario.
 | sources-300-20261021T173706Z | 3.34 | 6.73 | yes, exceeds | after > 4 |
 | sources-300-20261021T173959Z | 3.13 | 7.77 | extra | repeat; after > 4 again |
 
-The discarded first-pass files (the six rows marked discarded: before or after > 4
-and run back-to-back) are not committed. Every run in that pass, bar the 8-source
-ones, started or ended above 4 because the runs followed each other with no gap.
+The six discarded first-pass files exist and are committed unedited under
+`load-test/baselines/0.7-quiet/discarded/` for the record; they are not in any
+table below. Every run in that pass, bar the 8-source ones, started or ended
+above 4 because the runs followed each other with no gap.
 
-Why some "after" figures still exceed 4: with no heavy process present, repeating
-did not bring them down. The 300-source scenario (and one of three 100-source
-runs) itself drives the CPU for 40 to 60 seconds with four driver workers, the
-server and the synthetic source listener on 8 cores, so the one-minute average at
-its end reflects the run's own load as much as the host's. Each repeat (the extra
-100-source and 300-source files) ended above 4 as well, with before-load at or
-below 3.4 and no other heavy process. Repeating further would not have changed
-that, so the rule was not pushed to a fourth, fifth, etc. repeat. Treat the
-300-source and one 100-source figure as measured with "after" load above the
-threshold, caused mainly by the run. The "extra" files are committed unedited for
-completeness and are not in the tables below.
+The before-load of `sources-100-20261021T173429Z` (2.93) equals that of
+`sources-100-20261021T173347Z` (2.93). I checked it against the recorded
+`uptime` output of the run script: it is what was read, not a copy slip (the
+preceding run ended at 4.64 and the gate then waited for the load to fall).
+
+Some "after" figures exceed 4. Observed: the before-loads of all counted and
+extra runs were 3.44 or lower for the gated set, no heavy process was present in
+any check, and the after-load was above 4 on all four 300-source runs and on two
+100-source runs (4.64 and 4.68, the second being a repeat of the first). A repeat
+of each did the same, so I stopped repeating. The cause is not established. The
+run's own load (four driver workers, the server and the source listener on 8
+cores, runs of about 5 seconds each) is one plausible contributor; background
+desktop load is another. Treat those rows as measured with an end-of-run load
+above the threshold. The "extra" files are committed unedited and are not in the
+tables below.
 
 ## Results
 
@@ -102,22 +107,23 @@ three runs the spread is only the min to max range, not a confidence interval.
 | 100 | 103.2 / 105.0 | 125.1 / 127.1 | 136.5 / 146.6 | 37.5 / 36.9 |
 | 300 | 190.3 / 184.8 | 287.7 / 272.7 | 341.8 / 324.5 | 19.7 / 19.9 |
 
-The medians (p50) and throughput agree within about 3 percent in all four
+The 32-source tail latency is higher than the original baseline and this is
+unexplained: p95 was 62.8 to 63.2 then and is 66.8 to 68.3 now, and p99 was 66.7 to
+69.2 then and is 71.8 to 78.3 now; the ranges do not overlap. The medians (p50) and throughput agree within about 3 percent in all four
 scenarios, in either direction. So the earlier host load did not visibly move the
 median or throughput. The 300-source tail (p95, p99) is 5 percent lower now and
 its p50 spread is narrower (178 to 199 against 168 to 208 ms), consistent with
-less contention but not proof of it, given three runs each. The 32- and
-100-source p99 figures are higher now (78.3 against 67.5, 146.6 against
-136.5), which is within the spread of the two sets and is not explained. This
+less contention but not proof of it, given three runs each. The 100-source p99 is higher now (146.6 against
+136.5), which is within the spread of the two sets. This
 run also did not profile anything, so it adds no evidence on where the time goes.
 
 ## What 0.8 compares against
 
 0.8 compares against this file for the four scenarios, p50, p95, p99 and
 throughput, on this same machine and JDK. Quote the median and the range, and
-note the 300-source rows were taken with the run's own end-of-run load above 4.
+note that the 300-source rows and the 100-source run `173347Z` (after-load 4.64) were taken with an end-of-run load above 4.
 `baseline-0.7.md` stays as the earlier, contended record; where the two differ
-(the 32- and 100-source p99), use this file.
+(the 32-source p95 and p99), use this file.
 
 ## Not measured
 
