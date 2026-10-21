@@ -109,6 +109,64 @@ class ScenarioTest {
     }
 
     @Test
+    void aSoakMayRunUpToTwentyFourHoursAndNoLonger() throws Exception {
+        Path ok = dir.resolve("soak24.json");
+        Files.writeString(ok, """
+                {"name":"soak24","sources":8,"load":{"concurrency":4,"durationSeconds":86400,"ratePerSecond":5}}
+                """);
+        assertThat(Scenario.load(ok).load().durationSeconds()).isEqualTo(86_400);
+
+        Path tooLong = dir.resolve("soak25.json");
+        Files.writeString(tooLong, """
+                {"name":"soak25","sources":8,"load":{"concurrency":4,"durationSeconds":86401,"ratePerSecond":5}}
+                """);
+        assertThatThrownBy(() -> Scenario.load(tooLong)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("durationSeconds").hasMessageContaining("24");
+    }
+
+    @Test
+    void aCallTimeoutBelowTheConnectTimeoutIsRefused() throws Exception {
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, """
+                {"name":"x","sources":5,"load":{"concurrency":1,"calls":3,"callTimeoutSeconds":5}}
+                """);
+
+        assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("callTimeoutSeconds").hasMessageContaining("connect");
+    }
+
+    @Test
+    void aSubjectPoolDefaultsToDistinctSubjectsAndMustNotBeNegative() throws Exception {
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, """
+                {"name":"x","sources":5,"load":{"concurrency":1,"calls":3}}
+                """);
+        assertThat(Scenario.load(file).load().subjectPool()).isZero();
+
+        Files.writeString(file, """
+                {"name":"x","sources":5,"load":{"concurrency":1,"calls":3,"subjectPool":-1}}
+                """);
+        assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("subjectPool");
+    }
+
+    @Test
+    void slowSourcesNeedABandAndMayNotExceedTheSourceCount() throws Exception {
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, """
+                {"name":"x","sources":5,"slowSources":2,"load":{"concurrency":1,"calls":3}}
+                """);
+        assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("slowLatency");
+
+        Files.writeString(file, """
+                {"name":"x","sources":5,"slowSources":6,"slowLatency":{"minMs":1,"maxMs":2},"load":{"concurrency":1,"calls":3}}
+                """);
+        assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("slowSources");
+    }
+
+    @Test
     void noShippedScenarioFileContainsAKeyOrToken() throws Exception {
         try (Stream<Path> files = Files.list(Path.of("scenarios"))) {
             for (Path file : files.toList()) {

@@ -34,7 +34,11 @@ final class TokenIssuer implements AutoCloseable {
     static final String ISSUER = "https://issuer.loadtest.invalid";
     static final String AUDIENCE = "data-prism-load-test";
     static final String PURPOSE = "investigation";
-    static final String CASE_ID = "CASE-LOADTEST-1";
+    /** The case id names the privacy scope; a long run rotates it by numbering it: {@code CASE-LOADTEST-1}, -2... */
+    static final String CASE_ID_PREFIX = "CASE-LOADTEST-";
+    static final Duration TOKEN_LIFETIME = Duration.ofHours(12);
+    /** Longest any one {@code keytool} call may take. */
+    static final Duration KEYTOOL_BOUND = Duration.ofSeconds(60);
 
     private static final Base64.Encoder B64URL = Base64.getUrlEncoder().withoutPadding();
 
@@ -110,11 +114,11 @@ final class TokenIssuer implements AutoCloseable {
                 + "\"e\":\"" + B64URL.encodeToString(unsigned(publicKey.getPublicExponent().toByteArray())) + "\"}]}";
     }
 
-    /** A token for the run's one caller, valid for {@code lifetime}. */
-    String mintToken(Duration lifetime) throws Exception {
+    /** A token for the run's one caller, valid for {@code lifetime}, in the privacy scope named by {@code caseId}. */
+    String mintToken(Duration lifetime, String caseId) throws Exception {
         String header = "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"" + keyId + "\"}";
         String claims = "{\"sub\":\"load-test-principal\",\"azp\":\"load-test-client\",\"roles\":[\"investigator\"],"
-                + "\"purpose\":\"" + PURPOSE + "\",\"case_id\":\"" + CASE_ID + "\","
+                + "\"purpose\":\"" + PURPOSE + "\",\"case_id\":\"" + caseId + "\","
                 + "\"iss\":\"" + ISSUER + "\",\"aud\":\"" + AUDIENCE + "\","
                 + "\"exp\":" + Instant.now().plus(lifetime).getEpochSecond() + "}";
         String signingInput = B64URL.encodeToString(header.getBytes(StandardCharsets.UTF_8)) + "."
@@ -138,10 +142,10 @@ final class TokenIssuer implements AutoCloseable {
         String[] command = new String[arguments.length + 1];
         command[0] = Path.of(System.getProperty("java.home"), "bin", "keytool").toString();
         System.arraycopy(arguments, 0, command, 1, arguments.length);
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (process.waitFor() != 0) {
-            throw new IOException("keytool " + arguments[0] + " failed: " + output);
+        try {
+            Bounded.command(java.util.List.of(command), KEYTOOL_BOUND);
+        } catch (IOException failed) {
+            throw new IOException("keytool " + arguments[0] + " failed: " + failed.getMessage(), failed);
         }
     }
 

@@ -65,6 +65,23 @@ class RunCleanupTest {
     }
 
     @Test
+    void aCloseThatNeverReturnsIsAbandonedAtTheBoundAndTheRestStillRun() throws Exception {
+        Path dir = Files.createDirectory(parent.resolve("run"));
+        List<String> closes = new ArrayList<>();
+        RunCleanup cleanup = new RunCleanup(dir, java.time.Duration.ofMillis(300));
+        cleanup.track(() -> closes.add("later"));
+        java.util.concurrent.CountDownLatch never = new java.util.concurrent.CountDownLatch(1);
+        cleanup.track(never::await);
+        long started = System.nanoTime();
+
+        cleanup.run();
+
+        assertThat(java.time.Duration.ofNanos(System.nanoTime() - started)).isLessThan(java.time.Duration.ofSeconds(20));
+        assertThat(closes).containsExactly("later");
+        assertThat(dir).doesNotExist();
+    }
+
+    @Test
     void closesAThingTrackedAfterCleanupHasRunInsteadOfQueueingIt() throws Exception {
         Path dir = Files.createDirectory(parent.resolve("run"));
         List<String> closes = new ArrayList<>();

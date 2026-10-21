@@ -110,7 +110,7 @@ class ResultAggregatorTest {
     }
 
     @Test
-    void talliesPerSourceStatusesAndKeepsAllSevenCodesVisibleAtZero() {
+    void talliesPerSourceStatusesAndKeepsAllEightCodesVisibleAtZero() {
         ResultAggregator aggregator = new ResultAggregator();
         aggregator.record(CallOutcome.completed(1000, Map.of("s1", "ANSWERED", "s2", "REFUSED")));
         aggregator.record(CallOutcome.completed(1000, Map.of("s1", "TIMED_OUT", "s2", "REFUSED")));
@@ -118,11 +118,11 @@ class ResultAggregatorTest {
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
 
         assertThat(SourceStatuses.ALL).containsExactly("ANSWERED", "NO_DATA", "TIMED_OUT", "FAILED",
-                "CIRCUIT_OPEN", "SKIPPED_OVER_LIMIT", "REFUSED");
-        assertThat(summary.perSourceStatus().get("s1"))
+                "CIRCUIT_OPEN", "SKIPPED_OVER_LIMIT", "REFUSED", "RESOLVER_FAILED");
+        assertThat(summary.perSourceStatus().get("scope-1/s1"))
                 .containsEntry("ANSWERED", 1L).containsEntry("TIMED_OUT", 1L).containsEntry("REFUSED", 0L)
                 .containsKeys(SourceStatuses.ALL.toArray(String[]::new));
-        assertThat(summary.perSourceStatus().get("s2")).containsEntry("REFUSED", 2L).containsEntry("ANSWERED", 0L);
+        assertThat(summary.perSourceStatus().get("scope-1/s2")).containsEntry("REFUSED", 2L).containsEntry("ANSWERED", 0L);
         assertThat(summary.totalStatus()).containsEntry("REFUSED", 2L).containsEntry("ANSWERED", 1L);
     }
 
@@ -131,8 +131,64 @@ class ResultAggregatorTest {
         ResultAggregator aggregator = new ResultAggregator();
         aggregator.record(CallOutcome.completed(1000, Map.of("s1", "SOMETHING_NEW")));
 
-        assertThat(aggregator.summary(Duration.ofSeconds(1)).perSourceStatus().get("s1"))
+        assertThat(aggregator.summary(Duration.ofSeconds(1)).perSourceStatus().get("scope-1/s1"))
                 .containsEntry("SOMETHING_NEW", 1L);
+    }
+
+    @Test
+    void everyStatusButAnsweredAndNoDataIsNotAnsweredIncludingAnUnknownOne() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record(CallOutcome.completed(1000, Map.of("s1", "ANSWERED", "s2", "NO_DATA", "s3", "RESOLVER_FAILED",
+                "s4", "SOMETHING_NEW", "s5", "TIMED_OUT", "s6", "")));
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
+
+        assertThat(summary.sourcesNotAnswered()).isEqualTo(4);
+        assertThat(summary.totalStatus()).containsEntry("RESOLVER_FAILED", 1L).containsEntry("SOMETHING_NEW", 1L);
+    }
+
+    @Test
+    void callsFinishedAfterTheDeadlineAreCountedButDoNotInflateThroughput() {
+        ResultAggregator aggregator = new ResultAggregator();
+        for (int i = 0; i < 10; i++) {
+            aggregator.record(CallOutcome.completed(1000, Map.of()));
+        }
+        for (int i = 0; i < 5; i++) {
+            aggregator.record(CallOutcome.completed(1000, Map.of()), true);
+        }
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(5));
+
+        assertThat(summary.completed()).isEqualTo(15);
+        assertThat(summary.completedAfterDeadline()).isEqualTo(5);
+        assertThat(summary.throughputPerSecond()).isEqualTo(10 / 5.0);
+    }
+
+    @Test
+    void aSlowFailureIsTimedButAFastOneIsNot() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record(CallOutcome.completed(1000, Map.of()));
+        aggregator.record(CallOutcome.slowFailure("HttpConnectTimeoutException", FailureCause.CONNECT_TIMEOUT, 10_000_000));
+        aggregator.record(CallOutcome.transportFailure("ConnectException", FailureCause.CONNECTION_FAILED));
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
+
+        assertThat(summary.maxMs()).isCloseTo(10_000.0, org.assertj.core.data.Percentage.withPercentage(0.01));
+        assertThat(summary.failureCauses()).containsEntry("CONNECT_TIMEOUT", 1L).containsEntry("CONNECTION_FAILED", 1L);
+    }
+
+    @Test
+    void aliasesAreKeyedByTheScopeTheyWereIssuedIn() {
+        ResultAggregator aggregator = new ResultAggregator();
+        aggregator.record(CallOutcome.completed(1000, Map.of("alias-a", "ANSWERED")), false, 1);
+        aggregator.record(CallOutcome.completed(1000, Map.of("alias-a", "TIMED_OUT")), false, 2);
+
+        ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
+
+        assertThat(summary.perSourceStatus().keySet()).containsExactly("scope-1/alias-a", "scope-2/alias-a");
+        assertThat(summary.perSourceStatus().get("scope-2/alias-a")).containsEntry("TIMED_OUT", 1L)
+                .containsEntry("ANSWERED", 0L);
+        assertThat(summary.totalStatus()).containsEntry("ANSWERED", 1L).containsEntry("TIMED_OUT", 1L);
     }
 
     @Test
@@ -162,6 +218,6 @@ class ResultAggregatorTest {
 
         ResultAggregator.Summary summary = aggregator.summary(Duration.ofSeconds(1));
         assertThat(summary.completed()).isEqualTo(8000);
-        assertThat(summary.perSourceStatus().get("s")).containsEntry("ANSWERED", 8000L);
+        assertThat(summary.perSourceStatus().get("scope-1/s")).containsEntry("ANSWERED", 8000L);
     }
 }

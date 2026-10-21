@@ -36,8 +36,17 @@ Everything runs on loopback in one run, and is stopped when the run ends:
 
 ## Scenario files
 
-`scenarios/sources-8.json`, `-32`, `-100` and `-300`. The format also takes a
-500-source scenario and a soak run (0.8/0.9 work):
+`scenarios/sources-8.json`, `-32`, `-100` and `-300` are all-success baselines.
+Three more drive a failure path on purpose; what each should produce is in the
+table, and `FailureScenarioTest` asserts it over recorded responses:
+
+| Scenario | What it drives | Expected in the result file |
+|---|---|---|
+| `failure-source-timeouts` | Eight sources, four of them (`slowSources`) answering in 2.5 to 3.5 s (`slowLatency`) against a `perSourceTimeout` of `1s` | `TIMED_OUT` for four sources of every call and `ANSWERED` for the rest; no transport failure. Were every source slow the call would be refused `NO_SOURCE_DATA` and report no per-source status |
+| `failure-read-budget` | Five subjects read 40 times each against a `scopeReadBudget` of 10 (`load.subjectPool`) | `SCOPE_READ_BUDGET` in `refusalCodes` once a subject is past its budget |
+| `failure-over-limit` | 16 sources against a `maxSources` of 8 | on a 0.7 server `SKIPPED_OVER_LIMIT` per source; after the fan-out rewrite the `SOURCE_SELECTION_TOO_LARGE` refusal |
+
+The format also takes a 500-source scenario and a soak run of up to 24 hours:
 
 ```json
 {
@@ -55,7 +64,12 @@ Everything runs on loopback in one run, and is stopped when the run ends:
 - `name` must match the file name; it prefixes the result file.
 - `sourceLatency` is the uniform band every generated source responds within;
   the sampling is seeded by `seed`, so the same scenario behaves the same way.
-- `load.calls` and `load.durationSeconds`: a run ends at whichever is set and
+- `slowSources` and `slowLatency`: the last `slowSources` sources answer within
+  `slowLatency` instead of `sourceLatency`. Absent, all sources use `sourceLatency`.
+- `load.subjectPool`: 0 (the default) asks for a different subject on every
+  call. Above 0 the calls cycle through that many subjects, so the same subject
+  is read again and the per-subject `scope-read-budget` is reached.
+- `load.calls` and `load.durationSeconds` (at most 86400, 24 hours): a run ends at whichever is set and
   reached first; at least one is required. `warmupCalls` run first and are
   discarded. `ratePerSecond` of 0 means as fast as the workers go; above 0,
   call *i* is due at `start + i / rate` and its latency is measured from that
@@ -75,29 +89,63 @@ Everything runs on loopback in one run, and is stopped when the run ends:
   `sources` so the fan-out is not silently skipped. Pass a smaller `maxSources`
   to measure `SKIPPED_OVER_LIMIT`, or a small `maxRecords` or `maxResponseSize`
   to measure `TOO_MANY_RECORDS` and `RESPONSE_TOO_LARGE`.
-- Every call asks for a different subject, so the per-subject
-  `scope-read-budget` is not what a run measures.
+- Unless `load.subjectPool` is set, every call asks for a different subject, so
+  the per-subject `scope-read-budget` is not what a run measures.
+
+## Soak runs
+
+A run of up to 24 hours outlives the 12 hour token and the 8 hour privacy
+scope. The harness therefore presents its token through a `CredentialRotation`:
+the token is read on every request, and once three quarters of its lifetime
+(9 h) has passed a new one is minted, and once three quarters of the scope's
+lifetime (6 h) has passed the scope is rotated, by minting a token with a new
+case id (`CASE-LOADTEST-2`, ...). Both are counted in the result file under
+`credentials`: `tokenReissues` is every re-mint after the first (a scope rotation
+mints a new token too, so with the real 12 h and 8 h lifetimes a 24 h run shows 3 or 4
+reissues and 3 or 4 rotations: the 4th, due 24 h after the first mint, happens
+only if a call lands between that moment and the measured deadline, so 3 is not a failure), and `scopeRotations` is those that changed the scope.
+If the server process exits during a run the run stops at once, the result
+records `server.diedDuringRun` and its `exitCode`, the server log is kept in the
+results directory, and the harness exits with an error. The server's own log is a
+rolling file (10 MB per file, 2 rolled files, 30 MB in all, console appender off, so the separate console file holds only what the JVM itself prints),
+so a 24 h soak keeps the tail of the log rather than all of it. Throughput divides the calls finished by the deadline by the
+configured duration (`measuredSeconds`); the calls still in flight at the
+deadline are counted (`calls.completedAfterDeadline`) and timed, but do not
+raise it. A failure that is not a timeout but took one second or more (for
+example a connect timeout under high concurrency) is timed too, so it cannot
+hide from the tail; a quick failure is only counted.
+
+Every wait is bounded: opening a connection (10 s), one call (`callTimeoutSeconds`),
+each `keytool` call (60 s), the server's launch and health check (180 s), the
+closing of the sessions (30 s in total) and the closing of each started thing
+at cleanup (30 s each). Something that does not finish is abandoned, not waited for.
 
 ## The result file
 
-`calls` (attempted, completed, transport failures by exception class, and
-`notDispatched`: paced calls scheduled within the duration but never made
+`calls` (attempted, completed, transport failures by exception class, the
+`failureCauses` of those failures, `completedAfterDeadline`, and `notDispatched`: paced calls scheduled within the duration but never made
 because the driver could not keep up; a non-zero value means the offered rate
 was not reached),
 `latencyMs` (p50, p95, p99, max, mean, over completed and timed-out calls; p50 to
 max are exact up to about 262 ms and within 0.002 % above; values over six
 hours are recorded as six hours and counted in `clamped`, which is 0 in any
-run that is not badly overloaded), `throughputPerSecond` (completed calls over the
-measured wall time), `refusalCodes` (count by code of calls the server
-refused or denied), `sourceStatusTotals` and `perSourceStatus` (all seven
+run that is not badly overloaded), `throughputPerSecond` (calls completed within the
+window, over `measuredSeconds`; the run's full wall time is `elapsedSeconds`), `refusalCodes` (count by code of calls the server
+refused or denied), `sourceStatusTotals` and `perSourceStatus` (all eight
 statuses, `ANSWERED`, `NO_DATA`, `TIMED_OUT`, `FAILED`, `CIRCUIT_OPEN`,
-`SKIPPED_OVER_LIMIT`, `REFUSED`, always present and zero when they did not
-occur), plus `commit` (and `workingTreeDirty`), `jdk`, `host`, the scenario
+`SKIPPED_OVER_LIMIT`, `REFUSED`, `RESOLVER_FAILED`, always present and zero when
+they did not occur; a status this list does not know is tallied under its own
+name), `sourcesNotAnswered` (source readings whose status is neither
+`ANSWERED` nor `NO_DATA`, an unknown status included), `credentials` (`tokenReissues`
+and `scopeRotations`), plus `commit` (and `workingTreeDirty`), `jdk`, `host`, the scenario
 `parameters` and the `effectiveLimits` the server was started with.
 
-Source keys in `perSourceStatus` are the names the server returns, which are
-aliases that are stable within the run's one privacy scope and unrelated to
-the generated source names. Error text from a response is never recorded: a
+Source keys in `perSourceStatus` are `scope-<n>/<name>`, where `<name>` is the
+name the server returns. Those are aliases that are stable only within one
+privacy scope and unrelated to the generated source names, and a soak rotates
+the scope (see Soak runs), so the same source has a different alias in each
+scope; `<n>` is the scope number (from 1) the call was made in. The scope is
+read just before a call, so a rotation landing mid-call can mislabel that one call. Error text from a response is never recorded: a
 refusal is tallied by its code, and anything unrecognised is the fixed code
 `UNCLASSIFIED_ERROR`.
 
@@ -105,9 +153,34 @@ The host described is the one the driver ran on. The synthetic sources, the
 driver and the server share it, so a result measures that combination; treat a
 number as meaningful only against another run on the same host.
 
+### Why a call failed
+
+A call that never reached a tool result is a failed call (`calls.transportFailures`).
+Each one carries exactly one cause from this closed set, and the counts in
+`calls.failureCauses` (every cause present, zero when it did not occur) add up to
+`transportFailures`; the writer refuses to write a file where they do not.
+Each cause is counted from its own branch of the classifier, in this order:
+
+| Cause | When |
+|---|---|
+| `CONNECT_TIMEOUT` | the connection was not established within 10 s. A scenario's `callTimeoutSeconds` must be at least 10 (it is validated), so a connect timeout is never cut short into a `READ_TIMEOUT` |
+| `READ_TIMEOUT` | the request timed out, or the call waited `callTimeoutSeconds` with no better cause |
+| `MCP_PARSE_ERROR`, `MCP_INVALID_REQUEST`, `MCP_METHOD_NOT_FOUND`, `MCP_INVALID_PARAMS`, `MCP_INTERNAL_ERROR` | the JSON-RPC error code `-32700`, `-32600`, `-32601`, `-32602`, `-32603` |
+| `MCP_ERROR_OTHER` | any other JSON-RPC error code |
+| `HTTP_STATUS_4XX`, `HTTP_STATUS_5XX`, `HTTP_STATUS_OTHER` | the HTTP status the SDK reported: read from the response of a 401 or 403 (`McpHttpClientTransportAuthorizationException`), or from the "Status code: N" in the message of a 400 or 429 |
+| `HTTP_STATUS_UNREPORTED` | a 5xx, 1xx or 3xx: SDK 2.0.1 throws `Failed to send message: AggregateResponseEvent[...]`, which carries no status, so none can be read |
+| `UNPARSEABLE_BODY` | the tool result's content could not be parsed, or held no `sources` object. It is timed from its scheduled time. It does not cover a malformed JSON-RPC body: with SDK 2.0.1 a malformed body on a 200 is never delivered and the call ends as `READ_TIMEOUT` after `callTimeoutSeconds` |
+| `CONNECTION_FAILED` | connection refused, reset or closed |
+| `OTHER` | none of the above |
+
+No exception text is recorded; only the status or code is read from it. This is
+the cause of a failed call. The cause of a source's `FAILED` status inside a
+response is not in the response, so it cannot be recorded here.
+
 ## Tests
 
 `./mvnw -f load-test/pom.xml test` runs the harness's own unit tests: source
 generation, exact percentiles of a known sample, status and refusal-code
 tallies from canned responses, and scenario loading (including every shipped
-scenario file).
+scenario file), failure-cause classification, credential rotation, the failure
+scenarios' expected classification, and a bound for each wait.
