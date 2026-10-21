@@ -167,5 +167,7 @@ class ResumeAuditOrderingTest {
         assertThat(code(thrown)).isEqualTo("AUDIT_UNAVAILABLE");
         assertStateUnchanged();
         assertThat(events).isEmpty();
+        // An attempted DENY would fail too (every write is down), so it shows only as a counted denial.
+        assertThat(counts).doesNotContainKey(Metric.DENIAL_AUDIT_UNAVAILABLE);
     }
 }
