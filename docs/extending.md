@@ -624,6 +624,48 @@ module's own smoke test starts as subprocesses and drives, and
 `spring-boot-test` for its `ApplicationContextRunner` test. A consumer's
 extension pom has no reason to carry the first five.)
 
+Every application that embeds `data-prism-spring-boot-starter` must manage its
+own embedded Tomcat version, unless its pom inherits `io.github.aindriub:data-prism`.
+The `dependencyManagement` of this repository's parent pom is not published to
+consumers of the starter (Maven 3 does not apply a dependency's own management
+to the consumer), so a bare consumer resolves whatever its own Spring Boot BOM
+manages, as it does for Jackson, whose `jackson-bom` import the snippet above
+also carries for that reason. Spring Boot 4.1.1 manages Tomcat `11.0.24`, which
+is affected by GHSA-9xv2-5v5q-p794 (CVE-2026-65905), GHSA-gcx9-497g-6cp6
+(CVE-2026-65182) and GHSA-h3x4-894j-xpx5 (CVE-2026-68525), fixed in `11.0.25`.
+Until Spring Boot manages a fixed version, manage the `org.apache.tomcat.embed`
+artifacts at `11.0.25` or later, ahead of the Spring Boot BOM import:
+
+```xml
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-core</artifactId>
+        <version>11.0.27</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-el</artifactId>
+        <version>11.0.27</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-websocket</artifactId>
+        <version>11.0.27</version>
+      </dependency>
+      <!-- then the spring-boot-dependencies import, as above -->
+    </dependencies>
+  </dependencyManagement>
+```
+
+An application that inherits `spring-boot-starter-parent` can instead set the
+`tomcat.version` property. The adapter jar built from the snippet above is not
+affected, because it resolves no Tomcat.
+
+The Tomcat fragment above is not one of the two blocks described as checked
+below; it was not extracted or built.
+
 What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-20). The two XML
 blocks in this section were extracted programmatically and pasted unmodified
 into a pom whose only other content is `modelVersion`, `groupId`,
