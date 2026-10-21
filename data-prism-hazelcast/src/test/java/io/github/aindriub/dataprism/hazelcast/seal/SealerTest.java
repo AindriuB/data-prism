@@ -289,46 +289,87 @@ class SealerTest {
         assertThat(failing.open(MAP, KEY, envelope).outcome()).isNotEqualTo(Opened.Outcome.AUTHENTIC);
     }
 
-    @Test
-    @DisplayName("the salt cache is bounded: a spray of distinct salts counts salt_rejected and is unsupported")
-    void saltSpray() {
-        Clock fixed = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
-        Sealer reader = Sealer.builder(keys(), metrics).clock(fixed).saltCacheBound(64).build();
-        Sealer stranger = Sealer.builder(keys(), metrics).build();
-        int unsupported = 0;
-        int tampered = 0;
-        for (int i = 0; i < 10_000; i++) {
-            String env = stranger.seal(MAP, KEY, PLAIN);
-            String[] f = env.split("\\.", -1);
-            f[2] = b64(java.nio.ByteBuffer.allocate(16).putLong(i).putLong(0x5A5A).array());
-            Opened opened = reader.open(MAP, KEY, String.join(".", f));
-            if (opened.outcome() == Opened.Outcome.UNSUPPORTED) {
-                unsupported++;
-            } else {
-                tampered++;
-            }
-            assertThat(reader.saltCacheSize()).isLessThanOrEqualTo(64);
-        }
-        assertThat(reader.saltCacheSize()).isEqualTo(64);
-        assertThat(metrics.count(Metric.CLUSTER_SEAL_SALT_REJECTED)).isEqualTo(unsupported).isGreaterThan(9_000);
-        assertThat(tampered).isGreaterThan(0);
+    private static String forgedSalt(String envelope, int i) {
+        String[] f = envelope.split("\\.", -1);
+        f[2] = b64(java.nio.ByteBuffer.allocate(16).putLong(i).putLong(0x5A5A).array());
+        return String.join(".", f);
     }
 
     @Test
-    @DisplayName("the salt cache admits new salts again once the clock moves on, and a valid peer then opens")
-    void saltCacheRecovers() {
+    @DisplayName("a spray of forged salts never enters or evicts the cache, and the derivation limiter bounds the work")
+    void forgedSaltSpray() {
         MutableClock clock = new MutableClock();
-        Sealer reader = Sealer.builder(keys(), metrics).clock(clock).saltCacheBound(4).build();
-        for (int i = 0; i < 100; i++) {
-            String[] f = Sealer.builder(keys(), metrics).build().seal(MAP, KEY, PLAIN).split("\\.", -1);
-            f[2] = b64(java.nio.ByteBuffer.allocate(16).putLong(i).putLong(1).array());
-            reader.open(MAP, KEY, String.join(".", f));
-        }
+        Sealer reader = Sealer.builder(keys(), metrics).clock(clock).saltCacheBound(2)
+                .saltDerivationsPerWindow(50).build();
         Sealer peer = Sealer.builder(keys(), metrics).build();
-        String envelope = peer.seal(MAP, KEY, PLAIN);
-        assertThat(reader.open(MAP, KEY, envelope).outcome()).isEqualTo(Opened.Outcome.UNSUPPORTED);
+        String real = peer.seal(MAP, KEY, PLAIN);
+        assertThat(reader.open(MAP, KEY, real).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        assertThat(reader.saltCacheSize()).isEqualTo(1);
+
+        int rejected = 0;
+        for (int i = 0; i < 10_000; i++) {
+            Opened opened = reader.open(MAP, KEY, forgedSalt(real, i));
+            if (opened.outcome() == Opened.Outcome.UNSUPPORTED) {
+                rejected++;
+            }
+        }
+        assertThat(reader.saltCacheSize()).as("forged salts never enter the cache").isEqualTo(1);
+        assertThat(metrics.count(Metric.CLUSTER_SEAL_SALT_REJECTED)).isEqualTo(rejected).isGreaterThan(9_900);
+        assertThat(metrics.count(Metric.CLUSTER_SEAL_TAMPER)).as("derivations are bounded").isLessThanOrEqualTo(50);
+        assertThat(reader.open(MAP, KEY, real).outcome()).as("the authenticated peer salt is still cached")
+                .isEqualTo(Opened.Outcome.AUTHENTIC);
+    }
+
+    @Test
+    @DisplayName("an unknown real salt is refused over the limit, and admitted again in the next window")
+    void limiterRecovers() {
+        MutableClock clock = new MutableClock();
+        Sealer reader = Sealer.builder(keys(), metrics).clock(clock).saltDerivationsPerWindow(3).build();
+        String real = Sealer.builder(keys(), metrics).build().seal(MAP, KEY, PLAIN);
+        for (int i = 0; i < 3; i++) {
+            reader.open(MAP, KEY, forgedSalt(real, i));
+        }
+        assertThat(reader.open(MAP, KEY, real).outcome()).isEqualTo(Opened.Outcome.UNSUPPORTED);
         clock.advance(java.time.Duration.ofMinutes(5));
-        assertThat(reader.open(MAP, KEY, envelope).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        assertThat(reader.open(MAP, KEY, real).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+    }
+
+    @Test
+    @DisplayName("a clock stepped back resets the limiter window")
+    void clockStepBack() {
+        MutableClock clock = new MutableClock();
+        Sealer reader = Sealer.builder(keys(), metrics).clock(clock).saltDerivationsPerWindow(1).build();
+        String real = Sealer.builder(keys(), metrics).build().seal(MAP, KEY, PLAIN);
+        clock.advance(java.time.Duration.ofHours(1));
+        reader.open(MAP, KEY, forgedSalt(real, 1));
+        assertThat(reader.open(MAP, KEY, real).outcome()).isEqualTo(Opened.Outcome.UNSUPPORTED);
+        clock.advance(java.time.Duration.ofHours(-2));
+        assertThat(reader.open(MAP, KEY, real).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+    }
+
+    @Test
+    @DisplayName("a policy that throws a runtime fault is a blocked write with no policy text")
+    void throwingPolicy() {
+        Sealer s = Sealer.builder(keys(), metrics)
+                .writeKeyPolicy(k -> { throw new IllegalStateException("POLICY-SECRET"); }).build();
+        assertThatThrownBy(() -> s.seal(MAP, KEY, PLAIN)).isInstanceOf(ClusterOperationRefusedException.class)
+                .satisfies(e -> {
+                    assertThat(e.getMessage()).doesNotContain("POLICY-SECRET");
+                    assertThat(e.getCause().getMessage()).doesNotContain("POLICY-SECRET");
+                });
+        assertThat(metrics.count(Metric.CLUSTER_ROTATION_BLOCKED)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a key from another ClusterKeys with a held id is refused: only held material seals")
+    void foreignKeyWithHeldId() {
+        ClusterKeys.Key foreign = new ClusterKeys("k1", bytes(9, 32), null, null, null, null, NAME_ID, nameKey())
+                .current();
+        Sealer s = Sealer.builder(keys(), metrics).writeKeyPolicy(k -> foreign).build();
+        assertThatThrownBy(() -> s.seal(MAP, KEY, PLAIN)).isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(metrics.count(Metric.CLUSTER_ROTATION_BLOCKED)).isEqualTo(1);
+        Sealer honest = Sealer.builder(keys(), metrics).build();
+        assertThat(honest.open(MAP, KEY, honest.seal(MAP, KEY, PLAIN)).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
     }
 
     static final class MutableClock extends Clock {

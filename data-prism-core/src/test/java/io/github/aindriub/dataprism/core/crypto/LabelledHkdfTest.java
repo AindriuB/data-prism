@@ -67,12 +67,15 @@ class LabelledHkdfTest {
     }
 
     @Test
-    @DisplayName("a changed byte of the expected OKM makes the case-1 check fail")
+    @DisplayName("a changed byte of the expected OKM is detected by the comparison used in case 1")
     void changedByteFailsTheCheck() {
         byte[] ikm = HEX.parseHex("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
         byte[] okm = LabelledHkdf.expand(LabelledHkdf.extract(seq(0x00, 0x0c), ikm), seq(0xf0, 0xf9), 42);
-        String wrong = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185866";
-        assertThat(HEX.formatHex(okm)).isNotEqualTo(wrong);
+        String expected = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865";
+        assertThat(HEX.formatHex(okm)).isEqualTo(expected);
+        String mutated = expected.substring(0, expected.length() - 1) + "6";
+        assertThatThrownBy(() -> assertThat(HEX.formatHex(okm)).isEqualTo(mutated))
+                .isInstanceOf(AssertionError.class);
     }
 
     @Test

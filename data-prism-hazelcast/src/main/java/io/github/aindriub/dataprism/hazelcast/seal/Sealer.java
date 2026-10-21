@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p><b>Failure.</b> {@link #open} never throws for a bad input. An envelope that does not authenticate is
  * {@link Opened.Outcome#TAMPERED} (counted as {@code seal.tamper}, reported to the {@link TamperListener});
- * an unknown version, key id or a refused salt is {@link Opened.Outcome#UNSUPPORTED} (counted). A fault inside
+ * an unknown version, key id or a salt refused by the derivation limiter is {@link Opened.Outcome#UNSUPPORTED} (counted). A fault inside
  * the provider is caught at this boundary and reported the same way as a tamper, with a constant message: no
  * exception text, key, map key or input is kept. {@link #seal} refuses with
  * {@link ClusterOperationRefusedException} when it cannot seal, which is fail-closed. A closed
@@ -78,7 +78,7 @@ public final class Sealer {
         this.cipherSource = b.cipherSource;
         this.salt = b.salt != null ? b.salt.clone() : randomSalt();
         this.counter = new AtomicLong(b.initialCounter);
-        this.saltCache = new SaltCache(b.saltCacheBound, b.clock);
+        this.saltCache = new SaltCache(b.saltCacheBound, b.saltDerivationsPerWindow, b.clock);
     }
 
     public static Builder builder(ClusterKeys keys, PrivacyMetrics metrics) {
@@ -100,6 +100,7 @@ public final class Sealer {
         private ServingGate servingGate = ServingGate.open();
         private Clock clock = Clock.systemUTC();
         private int saltCacheBound = 1024;
+        private int saltDerivationsPerWindow = 256;
         private CipherSource cipherSource = () -> Cipher.getInstance("AES/GCM/NoPadding");
         private byte[] salt;
         private long initialCounter;
@@ -132,6 +133,12 @@ public final class Sealer {
 
         public Builder saltCacheBound(int bound) {
             this.saltCacheBound = bound;
+            return this;
+        }
+
+        /** At most this many subkeys are derived for unknown salts per one-minute window; default 256. */
+        public Builder saltDerivationsPerWindow(int limit) {
+            this.saltDerivationsPerWindow = limit;
             return this;
         }
 
@@ -233,44 +240,55 @@ public final class Sealer {
             return tampered(map);
         }
         SecretKeySpec subkey;
+        String cacheKey = null;
+        boolean unknownSalt = false;
         if (Arrays.equals(saltIn, salt)) {
             subkey = ownSubkeys.computeIfAbsent(key.id() + '\0' + map,
                     k -> new SecretKeySpec(deriveSubkey(key, salt, map), "AES"));
         } else {
-            String cacheKey = fields[2] + '\0' + key.id() + '\0' + map;
+            cacheKey = fields[2] + '\0' + key.id() + '\0' + map;
             subkey = saltCache.get(cacheKey);
             if (subkey == null) {
-                if (!saltCache.reserve()) {
+                if (!saltCache.tryDerive()) {
                     count(Metric.CLUSTER_SEAL_SALT_REJECTED);
                     return Opened.unsupported();
                 }
                 subkey = new SecretKeySpec(deriveSubkey(key, saltIn, map), "AES");
-                saltCache.put(cacheKey, subkey);
+                unknownSalt = true;
             }
         }
         Cipher cipher = cipherSource.newCipher();
         cipher.init(Cipher.DECRYPT_MODE, subkey, new GCMParameterSpec(TAG_BITS, nonce));
         cipher.updateAAD(associatedData(key.id(), saltIn, map, mapKey));
         try {
-            return Opened.authentic(key.id(), cipher.doFinal(sealed));
+            byte[] plain = cipher.doFinal(sealed);
+            if (unknownSalt) {
+                saltCache.put(cacheKey, subkey);
+            }
+            return Opened.authentic(key.id(), plain);
         } catch (AEADBadTagException badTag) {
             return tampered(map);
         }
     }
 
     private ClusterKeys.Key chooseWriteKey() {
-        ClusterKeys.Key key;
+        ClusterKeys.Key chosen;
         try {
-            key = writeKeyPolicy.choose(keys);
+            chosen = writeKeyPolicy.choose(keys);
         } catch (ClusterOperationRefusedException blocked) {
             count(Metric.CLUSTER_ROTATION_BLOCKED);
             throw blocked;
-        }
-        if (key == null || keys.find(key.id()).isEmpty()) {
+        } catch (RuntimeException fault) {
             count(Metric.CLUSTER_ROTATION_BLOCKED);
             throw refusal("no held key is acceptable");
         }
-        return key;
+        // Seal only with the material this sealer holds: a Key from another ClusterKeys is refused.
+        ClusterKeys.Key held = chosen == null ? null : keys.find(chosen.id()).orElse(null);
+        if (held == null || !java.security.MessageDigest.isEqual(held.bytes(), chosen.bytes())) {
+            count(Metric.CLUSTER_ROTATION_BLOCKED);
+            throw refusal("no held key is acceptable");
+        }
+        return held;
     }
 
     private void requireServing() {

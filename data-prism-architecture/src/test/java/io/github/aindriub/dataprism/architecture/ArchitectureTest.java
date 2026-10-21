@@ -752,6 +752,44 @@ class ArchitectureTest {
                 .hasMessageContaining("SealDependentFixture");
     }
 
+    /**
+     * The Sealer test seams fix the salt and the nonce counter. A production class that called them could
+     * reuse a (subkey, nonce) pair, so no class may call them except tests (this rule imports main classes only).
+     */
+    private static ArchRule noCallsToSealerBuilder(String... methods) {
+        return noClasses()
+                .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
+                        "is a call to Sealer.Builder " + String.join("/", methods)) {
+                    @Override
+                    public boolean test(JavaAccess<?> access) {
+                        return access instanceof JavaMethodCall
+                                && access.getTarget().getOwner().getName()
+                                .equals("io.github.aindriub.dataprism.hazelcast.seal.Sealer$Builder")
+                                && List.of(methods).contains(access.getTarget().getName());
+                    }
+                })
+                .allowEmptyShould(true);
+    }
+
+    @Test
+    void productionCodeDoesNotCallTheSealerSeams() {
+        noCallsToSealerBuilder("salt", "initialCounter").check(CLASSES);
+    }
+
+    @Test
+    void sealerSeamRuleCatchesACaller() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(SealerSeamCallerFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> noCallsToSealerBuilder("clock").check(fixture))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    /** Calls a public builder method, standing in for the package-private seams the real rule forbids. */
+    static final class SealerSeamCallerFixture {
+        Object call(io.github.aindriub.dataprism.hazelcast.seal.Sealer.Builder b) {
+            return b.clock(java.time.Clock.systemUTC());
+        }
+    }
+
     /** What the rule above exists to stop: a class outside the cluster stores reaching for the sealer. */
     static final class SealDependentFixture {
         Object reachForTheSealer() {

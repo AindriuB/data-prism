@@ -29,7 +29,7 @@ public enum Metric {
     AUDIT_RETENTION_ANCHOR_FAILED("dataprism.audit.retention.anchor_failed"),
     AUDIT_RETENTION_DELETE_FAILED("dataprism.audit.retention.delete_failed"),
     AUDIT_RETENTION_FAILED("dataprism.audit.retention.failed"),
-    // Cluster security (docs/plan/design/cluster-security.md 4.4). Counters first, then gauges.
+    // Cluster security (docs/plan/design/cluster-security.md 4.4).
     CLUSTER_SEAL_TAMPER("dataprism.cluster.seal.tamper"),
     CLUSTER_SEAL_UNSUPPORTED_FORMAT("dataprism.cluster.seal.unsupported_format"),
     CLUSTER_SEAL_SALT_REJECTED("dataprism.cluster.seal.salt_rejected"),
