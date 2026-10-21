@@ -104,7 +104,18 @@ final class Spike {
         String uuid = owner.getCluster().getLocalMember().getUuid().toString();
         // Partitions are assigned lazily, by the first operation that needs them.
         // A put, not size(): size() is a partition-iterating call that hung intermittently under the Q4 filter.
-        owner.getMap("partition-warmup").put("w", "w");
+        // Retried: under the Q4 filter a transient WrongTargetException reply is itself refused, so the first call can
+        // time out instead of being retried by Hazelcast.
+        for (int attempt = 0; attempt < 5; attempt++) {
+            try {
+                owner.getMap("partition-warmup").put("w", "w");
+                break;
+            } catch (RuntimeException timedOut) {
+                if (attempt == 4) {
+                    throw timedOut;
+                }
+            }
+        }
         await(20, () -> owner.getPartitionService().getPartition("warm").getOwner() != null);
         for (int i = 0; i < 10_000; i++) {
             String key = prefix + "-" + i;

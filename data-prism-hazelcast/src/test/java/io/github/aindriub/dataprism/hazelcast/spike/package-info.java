@@ -36,7 +36,9 @@
  * itself owns the key, the processor applies on the primary, the backup is refused, and the call still returns
  * success after the backup times out (observed about 6 s, not pinned); after the primary is killed the promoted backup holds the old
  * value, so primary and backup silently diverge. The split-brain merge ran with only the three classes: each
- * side's unique key survived under PutIfAbsentMergePolicy (a DiscardMergePolicy mutation fails the test). Separately, {@code IMap.size()} (a partition-iterating
+ * side's unique key survived under PutIfAbsentMergePolicy (a DiscardMergePolicy mutation fails the test). Also under the filter, the first calls on a freshly formed pair intermittently timed out, the log showing
+ * "Resolving class WrongTargetException is not allowed": Hazelcast's retryable error replies are refused too, so a
+ * transient routing error becomes a timeout (observed, not pinned; the allowlist would need those exception classes). Separately, {@code IMap.size()} (a partition-iterating
  * call) hung intermittently under the three-class filter while writing these tests; not pinned, avoid it there.</td>
  * <td>{@code Q04SerializationFilterSpikeTest}</td><td>221</td></tr>
  * <tr><td>5</td><td>Jet: {@code JetConfig.setEnabled(false)}; the default of an untouched {@code Config} is off.
