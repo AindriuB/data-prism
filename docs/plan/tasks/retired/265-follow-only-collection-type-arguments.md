@@ -4,7 +4,7 @@
 **Release:** 0.8.0, and backported to 0.7.1 by cherry-pick as its Security fix (task 266; owner decision 2026-10-21, which replaces the earlier "no 0.7.1" note)
 **Base branch:** `origin/main` once PR #144 (record/0.8-wave2, which lands 240's `ChainableFields`) has merged
 **Depends on:** 240 (`ChainableFields` reads `FieldMetadata.elementType()`, and this task changes what that returns). Only the main-only commit needs 240; see "0.7.1 backport" in Context.
-**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 266; 203 and 206 to 211 counted as landed). 248 depends on 265 since 2026-10-21 and is wave 4.
+**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 267; 203 and 206 to 211 counted as landed). 248 depends on 265 since 2026-10-21. 267 depends on 265 (wave 4), and 248 also depends on 267 (wave 5).
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/DefaultFieldMetadataResolver.java *(`elementType` and its Javadoc only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceModels.java
@@ -103,6 +103,8 @@ The fix fails closed and stays small:
   - `List<Leaf>`, `Set<Leaf>`, `Leaf[]` and `Optional<Leaf>` are scrubbed with `Leaf`'s rules;
   - `Map<String, String>` and `Map<String, Object>` take the unclassified-structure path;
   - `Optional<List<Leaf>>` and `List<List<Leaf>>` keep their current outcome.
+
+  Task 267 (filed 2026-10-21) later replaces the `List<List<Leaf>>` pin in `nestedContainersKeepTheirOutcome`, because that pin asserts a leaking output. This task still ships the pin as written.
 - [ ] `ChainableFields`:
   - its comment no longer says "other wrappers" take the type argument;
   - a new `ChainableFieldsTest` case shows that a `@Chainable` identifier declared on `Envelope` and reached through a `Box<Leaf>`-style user generic field is found at `Envelope`'s path, never at `Leaf`'s.
@@ -126,3 +128,22 @@ The fix fails closed and stays small:
 - `RawValueLeakValidator`, `SensitivePatternValidator` and `SensitiveDataScanner` (208 and 256 own them). The fix is in what they are given, not in them.
 - Map-key classification (the 0.6 follow-up about `keyUsing` keys written as field names).
 - Any other `ChainableFields` route or refusal rule (240 is closed).
+- An array inside an array, and a record inside one (task 267, which depends on this task and replaces the `List<List<Leaf>>` pin).
+
+## Outcome
+
+Landed 2026-10-21 on branch `task/265-follow-only-collection-type-arguments`, merged with a merge commit in PR record/0.7.1-wave2-265-267 so that 266 can cherry-pick the original commits. Core-fix commits, in pick order: `484cf7c7`, `7c23172a`, `d4469c7e`. Main-only commit (skipped by 266): `5445c0b8`. Tester PASS: full `./mvnw -B verify` at `5445c0b8` (core 662 tests, 0 failures). The three core-fix commits cherry-pick onto `v0.7.0`, and core, validation, connectors-rest, mcp and integration-tests pass there. Code review clean; reviewer APPROVE.
+
+**Failing-first tests.** Written before the fix and red on the base: four `SourceModelsTest` cases, `DefaultFieldMetadataResolverTest.elementTypeIsNullOtherwise`, two `NestedTypeArgumentTest` cases, and all seven `GenericElementTypeCollisionTest` cases.
+
+**Last core-fix commit.** `d4469c7e` changes Javadoc only. `7c23172a` is the last commit with code and it passed the full reactor.
+
+**Fixtures now refused.** In `SourceModelsTest`, `Allowed`'s map value was narrowed so it no longer holds a record. `Recursive` and `Boxed` are now refused as `SOURCE_MODEL_GENERIC`. No other existing fixture changed.
+
+**No change needed.** `DescriptorFieldMetadataResolver` and `ConfiguredJsonFieldMetadataResolver` needed no change.
+
+**Walk-order change.** The startup walk now checks the generic and map shapes before it descends, so a refused shape is reported before its members are visited.
+
+**Accepted deviation.** `ChainableFieldsTest` asserts `INVALID_CHAINABLE_FIELD`, not a generic-specific code, because 240's route rule already refuses user generics before 265's rule is reached.
+
+**Follow-up (0.9).** Walk the entries of a `Map<String, Record>` properly instead of refusing it.

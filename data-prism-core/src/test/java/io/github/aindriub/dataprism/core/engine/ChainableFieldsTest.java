@@ -1155,6 +1155,41 @@ class ChainableFieldsTest {
                 new ChainableField("inner.id", new KeyNamespace("crm"), false));
     }
 
+    @SensitiveObject
+    record ArgLeaf(@InternalIdentifier @Chainable(keyNamespace = "leaf-ref") String ref) {
+    }
+
+    @SensitiveObject
+    record GenericEnvelope<T>(@InternalIdentifier @Chainable(keyNamespace = "envelope-ref") String ref,
+                              @NonSensitive(reason = "structure") T item) {
+    }
+
+    @SensitiveObject
+    record PlainEnvelope<T>(@NonSensitive(reason = "structure") T item,
+                            @NonSensitive(reason = "x") String label) {
+    }
+
+    @LlmExposedModel
+    record HoldsGenericEnvelope(@NonSensitive(reason = "structure") GenericEnvelope<ArgLeaf> env) {
+    }
+
+    @LlmExposedModel
+    record HoldsPlainEnvelope(@NonSensitive(reason = "structure") PlainEnvelope<ArgLeaf> env) {
+    }
+
+    @Test
+    @DisplayName("a chainable on a user generic is refused at the generic's declaration, never found at its type argument's")
+    void userGenericIsWalkedAsItself() {
+        // The path grammar cannot name a user generic, so a chainable on one is refused (240); the
+        // refusal is about the envelope's declaration, never the type argument's.
+        assertThatThrownBy(() -> ChainableFields.of(HoldsGenericEnvelope.class))
+                .hasMessageStartingWith(CODE)
+                .hasMessageContaining("GenericEnvelope.ref")
+                .hasMessageNotContaining("ArgLeaf");
+        // A chainable only on the type argument is still refused (the route check, 240), not reported.
+        assertThatThrownBy(() -> ChainableFields.of(HoldsPlainEnvelope.class)).hasMessageStartingWith(CODE);
+    }
+
     @Test
     @DisplayName("byte[] and char[] chainable fields are refused")
     void byteAndCharArrays() {

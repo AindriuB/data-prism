@@ -40,7 +40,7 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - [ ] `mkdocs build --strict` and every `docs-site/hooks/check_*.py` pass with `DP_REQUIRE_NO_STUBS=true`.
 
 ## Out of scope
-- CHANGELOG entries for 265, 244, 245 and 257. They shipped in `[0.7.1]` (task 266) and are not repeated under `[Unreleased]`. Their user docs (`docs/tools.md`, `docs/reidentification.md`) are still this task's.
+- CHANGELOG entries for 265, 267, 244, 245, 257 and 268. They shipped in `[0.7.1]` (task 266) and are not repeated under `[Unreleased]`. Their user docs (`docs/tools.md`, `docs/reidentification.md`) are still this task's.
 - Key-rotation procedures, the 1.0 controls and their migration sections (213).
 - `docs/quickstart.md` (262).
 - `docs/data-protection.md` (214).

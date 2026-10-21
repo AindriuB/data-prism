@@ -118,7 +118,9 @@ public final class ChainableFields {
             Class<?> valueType = field.valueType();
             boolean map = Map.class.isAssignableFrom(valueType);
             boolean collection = valueType.isArray() || Iterable.class.isAssignableFrom(valueType);
-            // Optional<X> and other wrappers take the plain path; the type they hold is the last argument.
+            // Only an array, a JDK collection or Optional, or a JDK map's value has an element type. A user
+            // generic has none, so its own type is walked, as the scrubber does: its fields are not its
+            // type argument's.
             Class<?> inner = field.elementType() != null ? field.elementType() : valueType;
             if (namespace != null) {
                 if (refusal != null) {

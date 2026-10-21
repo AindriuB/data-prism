@@ -344,11 +344,23 @@ fixture source shares a single id:
     The response type, and every user type nested inside it, must be a Java
     `record`. Enums, JDK types (`String`, numbers, `Instant`, `UUID`, ...),
     `JsonNode`, and collections, maps (with String, enum, number, UUID, date or
-    similar keys), `Optional`s and arrays of those are also fine. A record is read
+    similar keys, and values that are not records), `Optional`s and arrays of
+    those are also fine. A record is read
     by its components only; an extra `getX()` on it is not emitted. Any other
     class (a bean or POJO, a subclass of a collection, a `Throwable`), at any
     depth, is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`, and again at
     runtime if one turns up behind an `Object`- or interface-typed component.
+    A source model must not be generic: a record that declares type parameters,
+    or a component of a parameterized user type (`Envelope<Leaf>`), is refused
+    with `SOURCE_MODEL_GENERIC`, because the fields it holds are its own and not
+    its type argument's. A map's values must not be records, at any depth
+    (`Map<String, Leaf>`, `Map<String, List<Leaf>>`): that is refused with
+    `SOURCE_MODEL_MAP_OF_RECORD`, since the keys are data and are not classified.
+    Use a list of records, or a record with named fields, instead.
+    A record must not sit inside a collection inside a collection
+    (`List<List<Leaf>>`, `Leaf[][]`, `List<Leaf[]>`, `Set<List<Leaf>>`): that is
+    refused with `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`, since a field's own
+    policy cannot tell what the inner arrays hold. Wrap the inner list in a record.
     A `@JsonSerialize(using=...)` on a record or its components, `@JsonAnyGetter`
     and `@JsonValue` are the model author's explicit choice and stay allowed (the
     engine still classifies what they produce); `@JsonProperty` or `@JsonGetter` on
