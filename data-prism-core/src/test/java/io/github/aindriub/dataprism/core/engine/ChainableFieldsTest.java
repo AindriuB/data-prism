@@ -211,6 +211,49 @@ class ChainableFieldsTest {
     record HasNonGetter(@NonSensitive(reason = "structure") NonGetter o) {
     }
 
+    static class Base {
+        @InternalIdentifier
+        @Chainable(keyNamespace = "parcel-ref")
+        String id;
+    }
+
+    @SensitiveObject
+    static class Child extends Base {
+        @InternalIdentifier
+        String own;
+    }
+
+    interface HasId {
+        @Chainable(keyNamespace = "parcel-ref")
+        String id();
+    }
+
+    @SensitiveObject
+    record Impl(@InternalIdentifier String id) implements HasId {
+    }
+
+    @SensitiveObject
+    static class Creator {
+        @InternalIdentifier
+        String id;
+
+        Creator(@Chainable(keyNamespace = "parcel-ref") String id) {
+            this.id = id;
+        }
+    }
+
+    @LlmExposedModel
+    record HasChild(@NonSensitive(reason = "structure") Child c) {
+    }
+
+    @LlmExposedModel
+    record HasImpl(@NonSensitive(reason = "structure") Impl i) {
+    }
+
+    @LlmExposedModel
+    record HasCreator(@NonSensitive(reason = "structure") Creator c) {
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -423,5 +466,21 @@ class ChainableFieldsTest {
                 .hasMessageStartingWith(CODE).hasMessageContaining(StaticMember.class.getName() + ".shared");
         assertThatThrownBy(() -> ChainableFields.of(HasNonGetter.class))
                 .hasMessageStartingWith(CODE).hasMessageContaining(NonGetter.class.getName() + ".compute");
+    }
+
+    @Test
+    @DisplayName("a @Chainable on a superclass or interface member, which the resolver does not read, is refused")
+    void inheritedDeclarations() {
+        assertThatThrownBy(() -> ChainableFields.of(HasChild.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Base.class.getName() + ".id");
+        assertThatThrownBy(() -> ChainableFields.of(HasImpl.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(HasId.class.getName() + ".id");
+    }
+
+    @Test
+    @DisplayName("a @Chainable on a plain class constructor parameter is refused")
+    void constructorParameter() {
+        assertThatThrownBy(() -> ChainableFields.of(HasCreator.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Creator.class.getName());
     }
 }

@@ -80,6 +80,7 @@ public final class ChainableFields {
         }
         Map<String, List<AnnotatedElement>> declarations = declarations(type);
         refuseOrphans(type, declarations);
+        refuseUnreadMembers(type);
         ModelDescriptor descriptor = descriptors.get(type.getName());
         for (FieldMetadata field : resolver.resolve(type)) {
             String name = field.fieldName();
@@ -136,6 +137,52 @@ public final class ChainableFields {
             if (!method.isSynthetic() && method.isAnnotationPresent(Chainable.class)
                     && !consumed.contains(method)) {
                 throw invalid(type, method.getName(), "is declared chainable but is not a readable property");
+            }
+        }
+    }
+
+    /**
+     * The resolver reads only the members a type declares itself, so a {@code @Chainable} on a superclass
+     * or an implemented interface is never read: refuse it. The same holds for any constructor parameter
+     * other than a record's canonical one, whose annotations repeat those of the component.
+     */
+    private static void refuseUnreadMembers(Class<?> type) {
+        Set<Class<?>> supertypes = new java.util.LinkedHashSet<>();
+        collectSupertypes(type, supertypes);
+        for (Class<?> supertype : supertypes) {
+            for (Field field : supertype.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Chainable.class)) {
+                    throw invalid(supertype, field.getName(), "is declared chainable on a supertype of "
+                            + type.getName() + ", which the scrubber does not read");
+                }
+            }
+            for (Method method : supertype.getDeclaredMethods()) {
+                if (!method.isSynthetic() && method.isAnnotationPresent(Chainable.class)) {
+                    throw invalid(supertype, method.getName(), "is declared chainable on a supertype of "
+                            + type.getName() + ", which the scrubber does not read");
+                }
+            }
+        }
+        if (!type.isRecord()) {
+            for (java.lang.reflect.Constructor<?> constructor : type.getDeclaredConstructors()) {
+                for (java.lang.reflect.Parameter parameter : constructor.getParameters()) {
+                    if (parameter.isAnnotationPresent(Chainable.class)) {
+                        throw invalid(type, parameter.getName(),
+                                "is declared chainable on a constructor parameter, which the scrubber does not read");
+                    }
+                }
+            }
+        }
+    }
+
+    private static void collectSupertypes(Class<?> type, Set<Class<?>> out) {
+        List<Class<?>> direct = new ArrayList<>(List.of(type.getInterfaces()));
+        if (type.getSuperclass() != null) {
+            direct.add(type.getSuperclass());
+        }
+        for (Class<?> supertype : direct) {
+            if (supertype != Object.class && supertype != Record.class && out.add(supertype)) {
+                collectSupertypes(supertype, out);
             }
         }
     }
