@@ -168,6 +168,49 @@ class ChainableFieldsTest {
     record InInterface(@NonSensitive(reason = "structure") Keyed k) {
     }
 
+    @SensitiveObject
+    static class OrphanGetter {
+        @InternalIdentifier
+        String id;
+
+        @Chainable(keyNamespace = "parcel-ref")
+        public String getNothing() {
+            return null;
+        }
+    }
+
+    @SensitiveObject
+    static class StaticMember {
+        @InternalIdentifier
+        String id;
+
+        @Chainable(keyNamespace = "parcel-ref")
+        static String shared;
+    }
+
+    @SensitiveObject
+    static class NonGetter {
+        @InternalIdentifier
+        String id;
+
+        @Chainable(keyNamespace = "parcel-ref")
+        public String compute(int n) {
+            return null;
+        }
+    }
+
+    @LlmExposedModel
+    record HasOrphan(@NonSensitive(reason = "structure") OrphanGetter o) {
+    }
+
+    @LlmExposedModel
+    record HasStatic(@NonSensitive(reason = "structure") StaticMember o) {
+    }
+
+    @LlmExposedModel
+    record HasNonGetter(@NonSensitive(reason = "structure") NonGetter o) {
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -369,5 +412,16 @@ class ChainableFieldsTest {
     void interfaceMethod() {
         assertThatThrownBy(() -> ChainableFields.of(InInterface.class))
                 .hasMessageStartingWith(CODE).hasMessageContaining(Keyed.class.getName() + ".ref");
+    }
+
+    @Test
+    @DisplayName("a @Chainable member the walk did not turn into a field is refused, never ignored")
+    void orphanedDeclarations() {
+        assertThatThrownBy(() -> ChainableFields.of(HasOrphan.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(OrphanGetter.class.getName() + ".getNothing");
+        assertThatThrownBy(() -> ChainableFields.of(HasStatic.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(StaticMember.class.getName() + ".shared");
+        assertThatThrownBy(() -> ChainableFields.of(HasNonGetter.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(NonGetter.class.getName() + ".compute");
     }
 }

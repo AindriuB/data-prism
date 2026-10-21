@@ -78,15 +78,8 @@ public final class ChainableFields {
         if (!inProgress.add(type)) {
             return;
         }
-        if (type.isInterface()) {
-            for (Method method : type.getDeclaredMethods()) {
-                if (method.isAnnotationPresent(Chainable.class)) {
-                    throw invalid(type, method.getName(), "is declared chainable on an interface, which the"
-                            + " scrubber cannot read");
-                }
-            }
-        }
         Map<String, List<AnnotatedElement>> declarations = declarations(type);
+        refuseOrphans(type, declarations);
         ModelDescriptor descriptor = descriptors.get(type.getName());
         for (FieldMetadata field : resolver.resolve(type)) {
             String name = field.fieldName();
@@ -124,6 +117,27 @@ public final class ChainableFields {
             }
         }
         inProgress.remove(type);
+    }
+
+    /**
+     * Refuses any {@code @Chainable} member declared on the type that no field consumes: a getter matching
+     * no property, a static field, a method that is not an accessor, an interface method. A declaration the
+     * walk cannot reach must never be silently ignored.
+     */
+    private static void refuseOrphans(Class<?> type, Map<String, List<AnnotatedElement>> declarations) {
+        Set<AnnotatedElement> consumed = new HashSet<>();
+        declarations.values().forEach(consumed::addAll);
+        for (Field field : type.getDeclaredFields()) {
+            if (field.isAnnotationPresent(Chainable.class) && !consumed.contains(field)) {
+                throw invalid(type, field.getName(), "is declared chainable but is not a readable property");
+            }
+        }
+        for (Method method : type.getDeclaredMethods()) {
+            if (!method.isSynthetic() && method.isAnnotationPresent(Chainable.class)
+                    && !consumed.contains(method)) {
+                throw invalid(type, method.getName(), "is declared chainable but is not a readable property");
+            }
+        }
     }
 
     /**
