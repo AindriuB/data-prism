@@ -50,17 +50,20 @@ class Q05SubsystemSwitchesSpikeTest {
     private static Config everythingOn(Config config) {
         config.getJetConfig().setEnabled(true);
         config.getUserCodeDeploymentConfig().setEnabled(true);
-        config.setProperty("hazelcast.phone.home.enabled", "true");
+        // Phone-home is never enabled here: a started member would post telemetry on every build.
+        config.setProperty("dataprism.spike.marker", "kept");
         return config;
     }
 
     @Test
-    void anUntouchedConfigHasJetAndUserCodeOffButPhoneHomeUnsetWhichMeansOn() {
+    void anUntouchedConfigHasJetAndUserCodeOffButPhoneHomeEffectivelyOn() {
         Config config = new Config();
+        // Read, never started. Unset means on (the HZ_PHONE_HOME_ENABLED environment variable was not tested).
+        assertThat(new com.hazelcast.spi.properties.HazelcastProperties(config)
+                .getBoolean(com.hazelcast.spi.properties.ClusterProperty.PHONE_HOME_ENABLED)).isTrue();
         assertThat(config.getJetConfig().isEnabled()).isFalse();
         assertThat(config.getUserCodeDeploymentConfig().isEnabled()).isFalse();
         assertThat(config.getNamespacesConfig().isEnabled()).isFalse();
-        assertThat(config.getProperty("hazelcast.phone.home.enabled")).isNull();
     }
 
     @Test
@@ -106,18 +109,31 @@ class Q05SubsystemSwitchesSpikeTest {
     }
 
     @Test
-    void aSuppliedConfigKeepsJetAndUserCodeDeploymentOnButHasPhoneHomeForcedOff() {
+    void aSuppliedConfigKeepsJetAndUserCodeDeploymentAsSuppliedAndPhoneHomeReadsOff() {
         Config config = everythingOn(Spike.config(Spike.name("q5b"), SpikePorts.consecutive(1), List.of()));
+        Spike.requirePhoneHomeOff(config);
         cluster = PrivacyCluster.embedded(config, false);
         assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "true", "userCodeDeployment", "true",
                 "userCodeNamespaces", "false", "phoneHome", "false", "sql", "HazelcastSqlException"));
     }
 
     @Test
-    void aSuppliedInstanceKeepsEverythingItWasStartedWithIncludingPhoneHome() {
+    void aSuppliedInstanceIsLeftAsItWasStartedIncludingACustomProperty() {
         supplied = Spike.start(everythingOn(Spike.config(Spike.name("q5c"), SpikePorts.consecutive(1), List.of())));
         cluster = PrivacyCluster.using(supplied, false);
         assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "true", "userCodeDeployment", "true",
-                "userCodeNamespaces", "false", "phoneHome", "true", "sql", "HazelcastSqlException"));
+                "userCodeNamespaces", "false", "phoneHome", "false", "sql", "HazelcastSqlException"));
+        assertThat(cluster.instance().getConfig().getProperty("dataprism.spike.marker")).isEqualTo("kept");
+    }
+
+    @Test
+    void theSpikeHelperRefusesToStartAMemberWithPhoneHomeOn() {
+        Config on = new Config();
+        on.setProperty("hazelcast.phone.home.enabled", "true");
+        // Refused before any member exists, so this test sends nothing.
+        assertThat(Spike.attempt(() -> Spike.start(on))).isEqualTo("IllegalStateException");
+        assertThat(new com.hazelcast.spi.properties.HazelcastProperties(
+                Spike.config("guard", 1, List.of()))
+                .getBoolean(com.hazelcast.spi.properties.ClusterProperty.PHONE_HOME_ENABLED)).isFalse();
     }
 }

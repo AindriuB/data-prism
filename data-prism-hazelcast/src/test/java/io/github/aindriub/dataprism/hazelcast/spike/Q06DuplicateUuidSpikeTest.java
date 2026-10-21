@@ -30,6 +30,7 @@ class Q06DuplicateUuidSpikeTest {
     }
 
     private static HazelcastInstance startWithUuid(Config config, UUID uuid) {
+        Spike.requirePhoneHomeOff(config);
         return HazelcastInstanceFactory.newHazelcastInstance(config, null, new DefaultNodeContext() {
             @Override
             public NodeExtension createNodeExtension(Node node) {

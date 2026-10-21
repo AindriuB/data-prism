@@ -44,14 +44,13 @@ class Q01InboundAllowlistSpikeTest {
     }
 
     private int joined(String source) {
-        String hostOfFirst = source;
         int ports = SpikePorts.consecutive(2);
         Config a = Spike.config(Spike.name("q1"), ports, List.of());
         a.getNetworkConfig().getJoin().getTcpIpConfig().setMembers(List.of());
         // Listen on every address so the joiner can arrive from a non-loopback one.
         a.setProperty("hazelcast.socket.bind.any", "true");
         first = Spike.start(a);
-        Config b = Spike.config(a.getClusterName(), ports + 1, List.of(hostOfFirst + ":" + ports));
+        Config b = Spike.config(a.getClusterName(), ports + 1, List.of(source + ":" + ports));
         // The joiner binds its outgoing connection to its own interface, so it arrives from `source`.
         b.getNetworkConfig().getInterfaces().clear().addInterface(source);
         second = Spike.start(b);

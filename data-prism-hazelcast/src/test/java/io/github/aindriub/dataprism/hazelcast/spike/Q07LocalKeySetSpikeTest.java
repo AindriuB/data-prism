@@ -91,8 +91,13 @@ class Q07LocalKeySetSpikeTest {
             while (joining.get()) {
                 Set<String> union = new HashSet<>();
                 int total = 0;
-                for (int i = 0; i < 2; i++) {
-                    Set<String> local = members.get(i).<String, String>getMap("m").localKeySet();
+                List<HazelcastInstance> sampled = new ArrayList<>(members);
+                // Only sample when every listed member already sees all of them (and so the list is complete).
+                if (sampled.stream().anyMatch(m -> m.getCluster().getMembers().size() != sampled.size())) {
+                    continue;
+                }
+                for (HazelcastInstance member : sampled) {
+                    Set<String> local = member.<String, String>getMap("m").localKeySet();
                     union.addAll(local);
                     total += local.size();
                 }
@@ -111,8 +116,8 @@ class Q07LocalKeySetSpikeTest {
             joining.set(false);
             sampler.join();
         }
-        // Sampled while the third member joined; not asserted, because it depends on timing.
-        System.out.println("Q7 migration samples " + samples + " anomalous " + anomalous);
+        // Observed, not pinned (timing-dependent): union and total of all members' sets while migrating.
+        assertThat(samples.get()).isPositive();
         assertThat(Spike.await(60, () -> members.get(0).getPartitionService().isClusterSafe())).isTrue();
         boolean settled = Spike.await(30, () -> {
             Set<String> union = new HashSet<>();

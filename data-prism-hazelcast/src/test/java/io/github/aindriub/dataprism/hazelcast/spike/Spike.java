@@ -57,7 +57,16 @@ final class Spike {
     }
 
     static HazelcastInstance start(Config config) {
+        requirePhoneHomeOff(config);
         return Hazelcast.newHazelcastInstance(config);
+    }
+
+    /** No spike member may ever start with phone-home on: it would post telemetry from every build. */
+    static void requirePhoneHomeOff(Config config) {
+        if (new com.hazelcast.spi.properties.HazelcastProperties(config)
+                .getBoolean(com.hazelcast.spi.properties.ClusterProperty.PHONE_HOME_ENABLED)) {
+            throw new IllegalStateException("refusing to start a member with phone-home enabled");
+        }
     }
 
     static void shutdown(HazelcastInstance... instances) {

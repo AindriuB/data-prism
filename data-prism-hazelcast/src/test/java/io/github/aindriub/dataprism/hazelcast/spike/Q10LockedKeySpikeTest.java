@@ -56,9 +56,12 @@ class Q10LockedKeySpikeTest {
         HazelcastInstance locker = holder == Holder.MEMBER ? otherMember : client;
         IMap<String, String> held = locker.getMap("m");
         held.lock(key);
+        long start = System.nanoTime();
         Future<Object> result = executor.submit(call);
         try {
-            return "returned " + result.get(8, TimeUnit.SECONDS);
+            Object returned = result.get(8, TimeUnit.SECONDS);
+            elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            return "returned " + returned;
         } catch (TimeoutException stillWaiting) {
             held.forceUnlock(key);
             Object afterUnlock = result.get(20, TimeUnit.SECONDS);
@@ -70,6 +73,8 @@ class Q10LockedKeySpikeTest {
         }
     }
 
+    private long elapsedMillis;
+
     private IMap<String, String> map() {
         return caller.getMap("m");
     }
@@ -78,12 +83,14 @@ class Q10LockedKeySpikeTest {
     void tryPutReturnsFalseWithinItsTimeoutOnAKeyAMemberHoldsLocked() throws Exception {
         assertThat(probe(Holder.MEMBER, () -> map().tryPut(key, "new", 300, TimeUnit.MILLISECONDS)))
                 .isEqualTo("returned false");
+        assertThat(elapsedMillis).as("a 300 ms timeout returned within 2 s").isLessThan(2000);
     }
 
     @Test
     void tryRemoveReturnsFalseWithinItsTimeoutOnAKeyAMemberHoldsLocked() throws Exception {
         assertThat(probe(Holder.MEMBER, () -> map().tryRemove(key, 300, TimeUnit.MILLISECONDS)))
                 .isEqualTo("returned false");
+        assertThat(elapsedMillis).as("a 300 ms timeout returned within 2 s").isLessThan(2000);
     }
 
     @Test
@@ -101,12 +108,14 @@ class Q10LockedKeySpikeTest {
     void tryPutReturnsFalseWithinItsTimeoutOnAKeyAClientHoldsLocked() throws Exception {
         assertThat(probe(Holder.CLIENT, () -> map().tryPut(key, "new", 300, TimeUnit.MILLISECONDS)))
                 .isEqualTo("returned false");
+        assertThat(elapsedMillis).as("a 300 ms timeout returned within 2 s").isLessThan(2000);
     }
 
     @Test
     void tryRemoveReturnsFalseWithinItsTimeoutOnAKeyAClientHoldsLocked() throws Exception {
         assertThat(probe(Holder.CLIENT, () -> map().tryRemove(key, 300, TimeUnit.MILLISECONDS)))
                 .isEqualTo("returned false");
+        assertThat(elapsedMillis).as("a 300 ms timeout returned within 2 s").isLessThan(2000);
     }
 
     @Test

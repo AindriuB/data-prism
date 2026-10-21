@@ -27,14 +27,14 @@
  * <tr><td>4</td><td>With {@code defaults-disabled} and only String, Integer and Boolean listed: members join, maps,
  * locks and a split-brain merge work. An entry processor is refused, and the refusal is not an exception at the
  * caller but a timeout: the owner's error reply is a Java-serialised exception that the caller's filter then
- * refuses ("Resolving class HazelcastSerializationException is not allowed" in the log), so the call ends with
- * {@code OperationTimeoutException}. Data Prism's processors (Serializable records) need the prefix
- * {@code io.github.aindriub.dataprism.hazelcast.}; a processor with an {@code Instant} field also needs
- * {@code java.time.Ser}. A keyless client sending a disallowed class gets
+ * refuses (observed in the log, not asserted: "Resolving class HazelcastSerializationException is not allowed"), so the call ends with
+ * {@code OperationTimeoutException}. A Serializable record processor in the spike package runs once that
+ * package prefix is allowlisted (Data Prism's own processors would need their own package prefix on the allowlist;
+ * not tested with them); one with an {@code Instant} field also needs {@code java.time.Ser}. A keyless client sending a disallowed class gets
  * {@code HazelcastSerializationException} caused by {@code SecurityException: Resolving class ... is not allowed}.
  * The design assumed a {@code SecurityException} on every path; between members it is a timeout. When the caller
  * itself owns the key, the processor applies on the primary, the backup is refused, and the call still returns
- * success after the backup times out (about 6 s); after the primary is killed the promoted backup holds the old
+ * success after the backup times out (observed about 6 s, not pinned); after the primary is killed the promoted backup holds the old
  * value, so primary and backup silently diverge. The split-brain merge ran with only the three classes: each
  * side's unique key survived under PutIfAbsentMergePolicy (a DiscardMergePolicy mutation fails the test). Separately, {@code IMap.size()} (a partition-iterating
  * call) hung intermittently under the three-class filter while writing these tests; not pinned, avoid it there.</td>
@@ -44,13 +44,16 @@
  * cannot be enabled on OSS (start fails with "requires Hazelcast Enterprise Edition"). Phone-home: property
  * {@code hazelcast.phone.home.enabled=false}; unset means ON, and {@code Config.getProperty} and
  * {@code HazelcastProperties} (what the table reads) fall back to the {@code -D} system property, with a config
- * property winning; environment variables were not tested. SQL has no switch of its own: with
+ * property winning; the {@code HZ_PHONE_HOME_ENABLED} environment variable was not tested. SQL has no switch of its own: with
  * Jet off a query fails with {@code JetDisabledException}, and in this build the {@code hazelcast-sql} module is not
  * on the classpath so any query fails with {@code HazelcastSqlException}. Read-back works on all three paths with
  * {@code instance.getConfig()}. {@code ClusterMembership.toConfig} reads back Jet off, user code off, phone-home
  * false. A supplied Config keeps Jet and user-code deployment as supplied and has phone-home forced to false by
- * {@code PrivacyCluster.embedded}. A supplied running instance is left entirely as it was, phone-home included:
- * it reads back true, Jet true, user code true, and cannot be switched off after start.</td>
+ * {@code PrivacyCluster.embedded}. A supplied running instance is left as it was started: Jet true, user code true and a custom
+ * property are unchanged after {@code PrivacyCluster.using}. No test starts a member with phone-home on (a started
+ * member posts telemetry), so phone-home on a supplied instance and the forcing off by
+ * {@code PrivacyCluster.embedded} were not observed; the supplied Config here already had it off, and
+ * {@code Spike.start} refuses any config where it is effectively on.</td>
  * <td>{@code Q05SubsystemSwitchesSpikeTest}</td><td>221</td></tr>
  * <tr><td>6</td><td>A member started with the UUID of a live member does not join: each side takes the other for
  * itself ("Packet send task is rejected. Target is this node!") and both stay clusters of one, observed for 15
@@ -60,9 +63,8 @@
  * <td>227</td></tr>
  * <tr><td>7</td><td>{@code IMap.localKeySet()} is exactly the keys this member owns as primary: across members the
  * sets are disjoint, their union is every key, and backups are excluded. After a member joins and migration
- * settles the sets again partition the keys exactly. Sampled continuously from before a third member joined until
- * {@code isClusterSafe()}, the first two members' sets were never incomplete or overlapping; that is
- * timing-dependent and not asserted, so do not rely on it during migration. {@code IMap} has no
+ * settles the sets again partition the keys exactly. Sets of all members were sampled while a third member joined until
+ * {@code isClusterSafe()}; that is timing-dependent and not asserted, so do not rely on it during migration. {@code IMap} has no
  * partition-local iterator: its only iterators are {@code iterator()} and {@code iterator(fetchSize)}, both over
  * the whole cluster. The design's {@code localKeySet} is available.</td>
  * <td>{@code Q07LocalKeySetSpikeTest}</td><td>229</td></tr>
@@ -88,7 +90,7 @@
  * <tr><td>10</td><td>Against a key another member or a client holds locked: {@code tryPut(.., timeout)} and
  * {@code tryRemove(.., timeout)} return false within the timeout. {@code replace(key, old, new)} and
  * {@code remove(key, value)} wait without bound (still waiting after 8 s, past the 5 s call timeout the members were given, completed after the unlock). Same for a
- * member and a client as the holder.</td>
+ * member and a client as the holder; the two try-calls returned in under 2 s with a 300 ms timeout.</td>
  * <td>{@code Q10LockedKeySpikeTest}</td><td>223, 228</td></tr>
  * <tr><td>11</td><td>On the smaller side after a heal the lifecycle listener gets {@code MERGING}, then the merge
  * policy runs for the smaller side's entries, then {@code MERGED}; the policy has finished by {@code MERGED}. The
