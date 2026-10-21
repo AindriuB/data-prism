@@ -512,7 +512,8 @@ class SourceModelsTest {
 
     @Test
     void aRecursiveTypeVariableBoundTerminatesAndAnObjectShapedEnumIsRefusedAtStartup() {
-        assertThatCode(() -> SourceModels.require(Recursive.class)).doesNotThrowAnyException();
+        // Task 265: a record declaring type parameters is refused outright, so the bound is never walked.
+        assertRefusedWith(() -> SourceModels.require(Recursive.class), "SOURCE_MODEL_GENERIC", "Recursive");
         assertRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
     }
 
@@ -523,7 +524,8 @@ class SourceModelsTest {
 
     @Test
     void aTypeVariableBoundIsWalkedAtStartup() {
-        assertRefused(() -> SourceModels.require(Boxed.class));
+        // Task 265: refused as generic before the bound (a Bean) is reached.
+        assertRefusedWith(() -> SourceModels.require(Boxed.class), "SOURCE_MODEL_GENERIC", "Boxed");
     }
 
     public record Tree(String name, List<Tree> children) {

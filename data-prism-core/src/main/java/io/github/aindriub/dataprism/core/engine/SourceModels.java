@@ -75,7 +75,7 @@ public final class SourceModels {
         if (!type.isRecord()) {
             throw refusal(type);
         }
-        walk(type, new HashSet<>());
+        walk(type, new HashSet<>(), null);
     }
 
     /**
@@ -97,6 +97,9 @@ public final class SourceModels {
      */
     static void refuseSerializer(Class<?> type, ValueSerializer<?> serializer) {
         if (type.isRecord()) {
+            if (type.getTypeParameters().length > 0) {
+                throw genericRefusal(null, type);
+            }
             refuseForeignProperties(type, serializer);
             return;
         }
@@ -212,17 +215,25 @@ public final class SourceModels {
         return loader == null || loader == ClassLoader.getPlatformClassLoader();
     }
 
-    private static void walk(Type type, Set<Object> seen) {
+    /**
+     * @param where the {@code Model.field} being walked, or null at the top level; it prefixes the
+     *              message of a refusal so the author can find the component
+     */
+    private static void walk(Type type, Set<Object> seen, String where) {
         if (type instanceof Class<?> c) {
             if (c.isArray()) {
-                walk(c.getComponentType(), seen);
+                walk(c.getComponentType(), seen, where);
             } else if (c.isRecord()) {
+                if (c.getTypeParameters().length > 0) {
+                    throw genericRefusal(where, c);
+                }
                 if (seen.add(c)) {
-                    // Ask the reader to build it: the serializer modifier compares its properties.
-                    SourceTree.refuseIfReadByGetters(c);
+                    // Components first, so a refusal names the component; then ask the reader to
+                    // build it: the serializer modifier compares its properties.
                     for (RecordComponent component : c.getRecordComponents()) {
-                        walk(component.getGenericType(), seen);
+                        walk(component.getGenericType(), seen, simpleName(c) + "." + component.getName());
                     }
+                    SourceTree.refuseIfReadByGetters(c);
                 }
             } else if (c.isEnum() && objectShaped(c)) {
                 throw refusal(c);
@@ -235,21 +246,71 @@ public final class SourceModels {
                 SourceTree.refuseIfReadByGetters(c);
             }
         } else if (type instanceof ParameterizedType p) {
-            walk(p.getRawType(), seen);
+            if (p.getRawType() instanceof Class<?> raw) {
+                if (!platform(raw)) {
+                    // Envelope<Leaf>, Box<Leaf>: what it holds is its own, not its argument's.
+                    throw genericRefusal(where, raw);
+                }
+                Type[] arguments = p.getActualTypeArguments();
+                if (java.util.Map.class.isAssignableFrom(raw) && arguments.length == 2
+                        && containsRecord(arguments[1], new HashSet<>())) {
+                    throw mapOfRecordRefusal(where, raw);
+                }
+            }
+            walk(p.getRawType(), seen, where);
             for (Type argument : p.getActualTypeArguments()) {
-                walk(argument, seen);
+                walk(argument, seen, where);
             }
         } else if (type instanceof GenericArrayType g) {
-            walk(g.getGenericComponentType(), seen);
+            walk(g.getGenericComponentType(), seen, where);
         } else if (type instanceof TypeVariable<?> v) {
             for (Type bound : seen.add(v) ? v.getBounds() : new Type[0]) {
-                walk(bound, seen);
+                walk(bound, seen, where);
             }
         } else if (type instanceof WildcardType w) {
             for (Type bound : w.getUpperBounds()) {
-                walk(bound, seen);
+                walk(bound, seen, where);
             }
         }
+    }
+
+    /** Whether a record appears anywhere in {@code type}: its arguments, array components and bounds. */
+    private static boolean containsRecord(Type type, Set<Object> seen) {
+        if (type instanceof Class<?> c) {
+            return c.isArray() ? containsRecord(c.getComponentType(), seen) : c.isRecord();
+        }
+        if (type instanceof ParameterizedType p) {
+            if (containsRecord(p.getRawType(), seen)) {
+                return true;
+            }
+            for (Type argument : p.getActualTypeArguments()) {
+                if (containsRecord(argument, seen)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (type instanceof GenericArrayType g) {
+            return containsRecord(g.getGenericComponentType(), seen);
+        }
+        if (type instanceof TypeVariable<?> v) {
+            if (seen.add(v)) {
+                for (Type bound : v.getBounds()) {
+                    if (containsRecord(bound, seen)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (type instanceof WildcardType w) {
+            for (Type bound : w.getUpperBounds()) {
+                if (containsRecord(bound, seen)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean allowedLeaf(Class<?> c) {
@@ -271,6 +332,20 @@ public final class SourceModels {
         }
         String name = type.getName();
         return name.substring(name.lastIndexOf('.') + 1);
+    }
+
+    private static String at(String where) {
+        return where == null ? "" : where + ": ";
+    }
+
+    private static PrivacyRefusedException genericRefusal(String where, Class<?> type) {
+        return new PrivacyRefusedException(GENERIC_CODE, "$",
+                at(where) + simpleName(type) + " is generic; source models must not be");
+    }
+
+    private static PrivacyRefusedException mapOfRecordRefusal(String where, Class<?> map) {
+        return new PrivacyRefusedException(MAP_OF_RECORD_CODE, "$",
+                at(where) + simpleName(map) + " values must not be records; source models must not hold them");
     }
 
     private static PrivacyRefusedException refusal(Class<?> type) {
