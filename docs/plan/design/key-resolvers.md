@@ -86,12 +86,12 @@ The outer status of the source and the handling of refused items and of budget e
 
 | Event | Result and audit (shape C: a failure is the target's `name:RESOLVER_FAILED` entry plus a metric; OD-13, D5) |
 |---|---|
-| Resolver throws `UNAVAILABLE`, `TIMEOUT`, `REJECTED` | The translated follow returns the target source with a per-source status `RESOLVER_FAILED` and no `entity` (OD-200-3). Audit: the target's `name:RESOLVER_FAILED` entry; the reason (`UNAVAILABLE`, `TIMEOUT`, `REJECTED`) is counted by one metric per reason (`RESOLVER_UNAVAILABLE`, `RESOLVER_TIMEOUT`, `RESOLVER_REJECTED`; OD-200-15), not a disposition |
-| Resolver returns more than `maxResults` keys | Treated as `TOO_MANY`; no entities returned; status `RESOLVER_FAILED`. Audit as above; reason `TOO_MANY` is counted by one metric per reason (`RESOLVER_TOO_MANY`; OD-200-15) |
+| Resolver throws `UNAVAILABLE`, `TIMEOUT`, `REJECTED` | The translated follow returns the target source with a per-source status `RESOLVER_FAILED` and no `entity` (OD-200-3). Audit: the target's `name:RESOLVER_FAILED` entry; the reason (`UNAVAILABLE`, `TIMEOUT`, `REJECTED`) is counted by one metric per reason (OD-200-15); the constant names are set by task 241, not a disposition |
+| Resolver returns more than `maxResults` keys | Treated as `TOO_MANY`; no entities returned; status `RESOLVER_FAILED`. Audit as above; reason `TOO_MANY` is counted by one metric per reason (OD-200-15); the constant names are set by task 241 |
 | Resolver returns `more = true` | Not a failure: the keys returned are read and `itemsTruncated` is set |
-| Resolver returns `more = true` with no keys | Contract violation; status `RESOLVER_FAILED`. Audit as above; reason `INVALID_OUTPUT` is counted by one metric per reason (OD-200-15), not a disposition value |
+| Resolver returns `more = true` with no keys | Contract violation; status `RESOLVER_FAILED`. Audit as above; reason `INVALID_OUTPUT` is counted by one metric per reason (OD-200-15); the constant names are set by task 241, not a disposition value |
 | Resolver returns an empty list | Status `NO_DATA` (a truthful "nothing known"); the audit carries the target's ordinary `name:NO_DATA` entry and no resolver entry (`EMPTY` is not a disposition value) |
-| Resolver returns a blank or over-long key (over 256 bytes) | Status `RESOLVER_FAILED`; reason `INVALID_OUTPUT` is counted by one metric per reason (OD-200-15), not a disposition value |
+| Resolver returns a blank or over-long key (over 256 bytes) | Status `RESOLVER_FAILED`; reason `INVALID_OUTPUT` is counted by one metric per reason (OD-200-15); the constant names are set by task 241, not a disposition value |
 | Resolver runtime exception of any other type | Same as `UNAVAILABLE`, never propagated with its message |
 | Resolver exceeds `dataprism.key-resolvers.timeout` (default `PT2S`) | `TIMEOUT` |
 | Resolver bean missing at follow time (configuration changed since issue) | The link is `LINK_INVALID`, audit reason `RELATION_UNDECLARED` |
@@ -110,7 +110,7 @@ The audit disposition grammar is closed (`AuditEvent.isValidAction`: a `PrivacyA
 
 | Key | Information | Shape under shape C |
 |---|---|---|
-| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:RESOLVER_FAILED` entry (OD-200-3), and the reason is counted by one metric per reason (`RESOLVER_UNAVAILABLE`, `RESOLVER_TIMEOUT`, `RESOLVER_REJECTED`, `RESOLVER_TOO_MANY`; OD-200-15) and is an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
+| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:RESOLVER_FAILED` entry (OD-200-3), and the reason is counted by one metric per reason (OD-200-15); the constant names are set by task 241, and is an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
 | `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; counted by one metric per outcome (OD-200-15) |
 
 A refused one-to-many item is audited `REFUSED:<code>` under `<target>[<i>]:<refused>`, per D-070-13.
