@@ -97,3 +97,24 @@ The fix fails closed. A field's own policy applies only to the scalars in its va
 - `ChainableFields` (240, closed), and 249's configured-JSON files.
 - `RawValueLeakValidator`, `SensitivePatternValidator` and `SensitiveDataScanner`. The fix is in what they are given.
 - Map-key classification and walking map entries (265's follow-up).
+
+## Outcome
+
+Landed 2026-10-21 on branch `task/267-refuse-records-inside-nested-containers`, stacked on 265, merged with a merge commit in PR record/0.7.1-wave2-265-267. Core-fix commits, in pick order after 265's: `82329385`, `34a6a0e3`, `f2090cae`, `096a823e`. Main-only commit (skipped by 266): `2d5e5c30`. Tester PASS: full `./mvnw -B verify` at `5dd88b39`, 2,169 tests. The head `2d5e5c30` differs from that only by one test file in `data-prism-validation`, which passed the implementer's targeted verify. The core-fix commits cherry-pick onto `v0.7.0` after 265's and pass there. Code review clean; reviewer APPROVE after the both-validators fix.
+
+**Last core-fix commit.** `096a823e`, which adds `thePatternValidatorCatchesTheEmailButNotTheName` to document that the raw-value validator closes the gap the pattern validator leaves.
+
+**Accepted behaviour changes.**
+- An unannotated `List<List<Leaf>>` and a `REDACT` one are now refused at startup as `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`. With startup validation skipped, the `REDACT` one becomes `UNCLASSIFIED_STRUCTURE` at request time.
+- `REDACT` (and any non-pass-through action) on nested scalars now applies to each scalar, not to each inner array whole. Pass-through output is unchanged.
+
+**Existing fixtures.** No existing fixture is refused. `ChainableFields`, `DescriptorFieldMetadataResolver` and `ConfiguredJsonFieldMetadataResolver` needed no functional change.
+
+**Test-first depth inputs were off by one.** The failing-first tests in `82329385` used a nesting depth one too shallow in two cases; `34a6a0e3` corrected them with the fix.
+
+**Accepted scope deviation (`f2090cae`).** Javadoc in `FieldMetadata` and `DefaultFieldMetadataResolver`, two `SourceModelsTest` renames, and checkable values in the request-time generic fixture. These were outside the Owns list and were made on the coordinator's instruction.
+
+**Follow-ups.**
+- 0.9: descend into records inside nested containers, which needs `FieldMetadata` widened.
+- 0.9: wildcard lower bounds in `recordBeyondFirstArray`. It fails closed today.
+- Open: whether `Optional` shapes should be refused at startup.

@@ -60,16 +60,22 @@ All six items are done: the HTTP example re-capture, the owner's go, publication
 Found after 0.7.0: a user-generic element type (a collection whose type argument is a user generic class) lets the scrubbing engine treat fields as unclassified in a way that fails open. The owner decided:
 
 - Task 265 fixes it, and the fix ships in 0.7.1. This replaces the earlier note that there would be no 0.7.1.
-- 0.7.1 is cut from `v0.7.0` with 265, 244, 245 and 257, through the release brief 266. Everything else stays in 0.8.0. The four tasks are cherry-picked from `main` after they merge there; their briefs carry a "0.7.1 backport" note.
+- 0.7.1 is cut from `v0.7.0` with 265, 267, 244, 245, 257 and 268, through the release brief 266. Everything else stays in 0.8.0. 267 (records inside nested containers) was added by a second owner decision and 268 (embedded Tomcat 11.0.27, for three CRITICAL Tomcat advisories) by the coordinator, both on 2026-10-21. The tasks are cherry-picked from `main` after they merge there; their briefs carry a "0.7.1 backport" note.
 - Open owner decision, for the 0.7.1 release: whether to publish a GitHub security advisory for 0.7.0.
 
-Order: 265, 244 and 257 in parallel; then 245; then 266. 244 and 257 are done (2026-10-21, PR record/0.7.1-wave1-244); 245 is unblocked; 265 is still open. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
+Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266, which also waits for 268 (wave 1, running). 244 and 257 are done (2026-10-21, PR record/0.7.1-wave1-244); 265 and 267 are done (2026-10-21, PR record/0.7.1-wave2-265-267); 245 is unblocked; 268 is running. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
 
 0.7.1 backport commits recorded so far (cherry-pick onto `release/0.7.1` in this order, 266):
 
 - 244: `1ffc0531`, `2c4ba907`, `4c561c4a`.
 - 257: `34bcce2b`, `4c8a070b`, `e5864921`, `9118afc7`, `61ec2f94` (docs only), `00810a75`, `752d867a` (docs only), `f456a12b`. Pick `e34a738c` (the post-tag correction to `docs/verifying-releases.md`) before `61ec2f94`.
-- 265 and 245: not yet merged.
+- 265 (core-fix commits only, pick first): `484cf7c7`, `7c23172a`, `d4469c7e`. Skip `5445c0b8` (main only).
+- 267 (core-fix commits only, pick after 265's): `82329385`, `34a6a0e3`, `f2090cae`, `096a823e`. Skip `2d5e5c30` (main only).
+- 245 and 268: not yet merged.
+
+Pick order for 266: 265 core, 267 core, 244, 245, the `e34a738c` docs carry, 257, 268 (its `pom.xml` and `docs/extending.md` commits only).
+
+CHANGELOG `[0.7.1]` carries three Security entries (265, 267, 268), plus Changed entries for 265 and 267 and the Fixed and Build entries. The drafted text is in 266's Context.
 
 Documentation owed by 244 (2026-10-21), for 266 (the `[0.7.1]` CHANGELOG, on the release branch) and 261 (the user pages, on `main`):
 
@@ -80,7 +86,7 @@ Documentation owed by 244 (2026-10-21), for 266 (the `[0.7.1]` CHANGELOG, on the
 - `docs/eu-ai-act.md:114-117` and `docs/configuration.md:359-361` say denials answer `AUDIT_CHECKPOINT_UNAVAILABLE` when a checkpoint write fails; after 244 a denial answers `AUDIT_UNAVAILABLE`. Correct the pages, or flag it as an owner decision whether to map the checkpoint code through. 261.
 - CHANGELOG `[0.7.1]` Changed: clients that got an MCP protocol error or "the request could not be completed" when a denial's audit write failed now get an `isError` tool result `refused: AUDIT_UNAVAILABLE`; the new metric `dataprism.audit.denial_unavailable`; `AuditUnavailableException` is deprecated for removal. 266.
 
-Related, not fixed in 0.7.1: a Map of a record type has a similar element-type bug. 265 refuses it; proper support is planned for 0.9.
+Related, not fixed in 0.7.1: a Map of a record type has a similar element-type bug. 265 refuses it; proper support (walking `Map<String, Record>` entries) is planned for 0.9. 267 refuses records inside nested containers; descending into them needs `FieldMetadata` widened (0.9), and wildcard lower bounds in `recordBeyondFirstArray` also wait for 0.9 (they fail closed). Open: whether `Optional` shapes should be refused at startup.
 
 #### 0.8 plan (agreed 2026-10-20)
 
@@ -90,11 +96,11 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 
 | Wave | Briefs |
 |---|---|
-| 1 | 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
+| 1 | 268 (Tomcat 11.0.27 override; running, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
-| 3 | 222, 242, 265 (265 also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
-| 4 | 223, 241, 245, 248 (245 also goes to 0.7.1) |
-| 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 244, 245, 257) |
+| 3 | 222, 242; 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
+| 4 | 223, 241, 245, 248 (245 also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
+| 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 267, 244, 245, 257, 268) |
 | 6 | 228, 246 |
 | 7 | 229, 247 |
 | 8 | 249, 250, 251 |

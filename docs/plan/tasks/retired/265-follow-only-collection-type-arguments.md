@@ -129,3 +129,21 @@ The fix fails closed and stays small:
 - Map-key classification (the 0.6 follow-up about `keyUsing` keys written as field names).
 - Any other `ChainableFields` route or refusal rule (240 is closed).
 - An array inside an array, and a record inside one (task 267, which depends on this task and replaces the `List<List<Leaf>>` pin).
+
+## Outcome
+
+Landed 2026-10-21 on branch `task/265-follow-only-collection-type-arguments`, merged with a merge commit in PR record/0.7.1-wave2-265-267 so that 266 can cherry-pick the original commits. Core-fix commits, in pick order: `484cf7c7`, `7c23172a`, `d4469c7e`. Main-only commit (skipped by 266): `5445c0b8`. Tester PASS: full `./mvnw -B verify` at `5445c0b8` (core 662 tests, 0 failures). The three core-fix commits cherry-pick onto `v0.7.0`, and core, validation, connectors-rest, mcp and integration-tests pass there. Code review clean; reviewer APPROVE.
+
+**Failing-first tests.** Written before the fix and red on the base: four `SourceModelsTest` cases, `DefaultFieldMetadataResolverTest.elementTypeIsNullOtherwise`, two `NestedTypeArgumentTest` cases, and all seven `GenericElementTypeCollisionTest` cases.
+
+**Last core-fix commit.** `d4469c7e` changes Javadoc only. `7c23172a` is the last commit with code and it passed the full reactor.
+
+**Fixtures now refused.** In `SourceModelsTest`, `Allowed`'s map value was narrowed so it no longer holds a record. `Recursive` and `Boxed` are now refused as `SOURCE_MODEL_GENERIC`. No other existing fixture changed.
+
+**No change needed.** `DescriptorFieldMetadataResolver` and `ConfiguredJsonFieldMetadataResolver` needed no change.
+
+**Walk-order change.** The startup walk now checks the generic and map shapes before it descends, so a refused shape is reported before its members are visited.
+
+**Accepted deviation.** `ChainableFieldsTest` asserts `INVALID_CHAINABLE_FIELD`, not a generic-specific code, because 240's route rule already refuses user generics before 265's rule is reached.
+
+**Follow-up (0.9).** Walk the entries of a `Map<String, Record>` properly instead of refusing it.
