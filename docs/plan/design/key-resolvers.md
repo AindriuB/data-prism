@@ -110,8 +110,8 @@ The audit disposition grammar is closed (`AuditEvent.isValidAction`: a `PrivacyA
 
 | Key | Information | Shape under shape C |
 |---|---|---|
-| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:RESOLVER_FAILED` entry (OD-200-3), and the reason is counted by one metric per reason (OD-200-15); the constant names are set by task 241, and is an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
-| `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; counted by one metric per outcome (OD-200-15) |
+| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:RESOLVER_FAILED` entry (OD-200-3), and the reason is counted by one metric per reason (OD-200-15); the constant names are set by task 241. The reason is also an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
+| `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; measured by a timer (OD-200-15) |
 
 A refused one-to-many item is audited `REFUSED:<code>` under `<target>[<i>]:<refused>`, per D-070-13.
 

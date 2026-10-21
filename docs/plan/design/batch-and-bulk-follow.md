@@ -254,7 +254,7 @@ A page link is a sealed link in the envelope of `sealed-links.md` section 3: bas
 
 The catalog tag is `HMAC(fingerprintKey, label_1 | ... | label_n)` truncated to 16 bytes, over the labels of the entire visible, filtered list (not only the page), in byte order, length-prefixed. `fingerprintKey` is the per-scope key of `sealed-links.md` section 3. Every page recomputes it from the same list it is slicing, which costs one pass over an in-memory list. Its purpose is to make a catalog that changed between two pages detectable (A.6) without storing anything.
 
-A page link never holds a real source name unless the effective setting is real names, and then only inside the ciphertext, as the last label. A page whose last label is a source name over 64 characters (possible in 0.8 under OD-C18 (c)) gets no page link: it is not issued and counts as omitted, the same rule as rule 6 of `sealed-links.md`. Worst case size: header 56 bytes (1 + 17 + 8 + 1 + 1 + 12 + 16, no target) plus payload 8 + 8 + 1 + 65 + 33 + 1 + 2 + 65 + 16 = 199 (entity type 1 + 64, key namespace 1 + 32, last label 1 + 64; OD-200-4), so 255 bytes and 340 characters, inside the default `max-length` of 1024 (OD-B12, decided 2026-10-19) by a margin of 684 characters. The arithmetic is to be rechecked against whatever task 191's build fixes for the header.
+A page link never holds a real source name unless the effective setting is real names, and then only inside the ciphertext, as the last label. With real names in effect, a page never ends, with more entries after it, at an entry whose label is longer than 64 bytes (possible in 0.8 under OD-C18 (c)). The page ends at the previous entry instead, so it holds fewer than the page size; when the over-long entry is the first entry of its page, the page extends past it and ends at the next entry whose label fits, or at the end of the list (`last: true`). Every page therefore ends at `last: true` or at a label the page link can carry. The page size is a target in this case only; the extension is bounded by the number of over-long names, which the OD-C18 (c) startup warning already reports. From 0.9 `INVALID_SOURCE_NAME` refuses such names and the rule no longer applies. Example: page size 2, real names `a-depot`, a 70-character name `b…`, and `c-depot`: the first page would end at the second entry, so it ends at `a-depot` alone (`last: false`, link carries `a-depot`); the next page begins at the 70-character name, which is its first entry, so it extends past it and ends at `c-depot` (`last: true`, no link). Rule 2 of the ordering list still holds: `last` is true exactly when no visible, filtered entry follows the last one returned, and the extension to the end of the list gives `last: true` with no entry left over. Worst case size: header 56 bytes (1 + 17 + 8 + 1 + 1 + 12 + 16, no target) plus payload 8 + 8 + 1 + 65 + 33 + 1 + 2 + 65 + 16 = 199 (entity type 1 + 64, key namespace 1 + 32, last label 1 + 64; OD-200-4), so 255 bytes and 340 characters, inside the default `max-length` of 1024 (OD-B12, decided 2026-10-19) by a margin of 684 characters. The arithmetic is to be rechecked against whatever task 191's build fixes for the header.
 
 Why a sealed link and not a bare `after=<label>` value. This is OD-B2. A bare label would be simpler and would leak nothing, because a listing is a filter over the caller's own visible set. The brief and D-RM-12 require sealed next links, and sealing gives three properties a bare label does not: the continuation is bound to the filters, label kind, scope and caller it was issued for (so a link pasted into another investigation or another caller's session is refused); it expires, which bounds how long a walk can be replayed; and it is one mechanism with the 0.9 collection links, which do need the sealer. The cost is that paging then needs a link key in 0.8 even where `dataprism.links.enabled` is `false`. What happens when there is no key, including a small `pageSize` that makes a small estate multi-page, is OD-B2.
 
@@ -421,7 +421,7 @@ The result for item *i* is at `results[i]`; the array has exactly one element pe
       "properties": {
         "rel": { "enum": ["direct", "translated", "page"] },
         "target": { "type": "string" },
-        "field": { "type": "string" },
+        "field": { "type": "string", "$comment": "the concrete indexed path (for example depots[2]), not the declared path capped by OD-200-4, so no maxLength" },
         "namespace": { "type": "string" },
         "toNamespace": { "type": "string" },
         "link": { "type": "string", "maxLength": 1024 },
@@ -649,7 +649,7 @@ The `follow` result of a page link is the same envelope as any `follow` (one ent
       "properties": {
         "rel": { "enum": ["direct", "translated", "page"] },
         "target": { "type": "string" },
-        "field": { "type": "string" },
+        "field": { "type": "string", "$comment": "the concrete indexed path (for example depots[2]), not the declared path capped by OD-200-4, so no maxLength" },
         "link": { "type": "string", "maxLength": 1024 },
         "expiresAt": { "type": "string", "format": "date-time" }
       },

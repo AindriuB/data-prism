@@ -348,7 +348,7 @@ Output: the same envelope as `get_entity_context` (D-070-1), with exactly one en
       "properties": {
         "rel": { "enum": ["direct", "translated"] },
         "target": { "type": "string", "maxLength": 64 },
-        "field": { "type": "string" },
+        "field": { "type": "string", "$comment": "the concrete indexed path (for example depots[2]), not the declared path capped by OD-200-4, so no maxLength" },
         "namespace": { "type": "string", "maxLength": 32 },
         "toNamespace": { "type": "string", "maxLength": 32 },
         "link": { "type": "string", "maxLength": 1024 },
