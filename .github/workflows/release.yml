@@ -10,12 +10,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Job-level: only this job attests, and a job-level block replaces the
-    # workflow-level one, so contents: write is restated.
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -29,8 +23,8 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # The release profile adds the CycloneDX SBOMs (task 188). Signing is
-      # Central's concern (publish-central.yml), so GPG is skipped here.
+      # Signing is Central's concern (publish-central.yml), so GPG is skipped
+      # here. The SBOMs this build also makes are not used (task 257).
       - name: Build and test
         run: ./mvnw -B --no-transfer-progress -Prelease -Dgpg.skip=true verify
 
@@ -50,41 +44,17 @@ jobs:
           fi
           .github/scripts/check-class-version.sh 65 "${jars[@]}"
 
-      # One SBOM per module deployed to Central, named as Central names it
-      # (<artifactId>-<version>-cyclonedx.json). Modules that are not deployed
-      # build no SBOM, so a missing file is not an error but an empty set is.
-      - name: Collect SBOMs
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version="${TAG#v}"
-          mkdir -p sbom
-          for bom in target/bom.json data-prism-*/target/bom.json; do
-            [ -f "$bom" ] || continue
-            module="$(basename "$(dirname "$(dirname "$bom")")")"
-            [ "$module" = "." ] && module=data-prism
-            cp "$bom" "sbom/${module}-${version}-cyclonedx.json"
-          done
-          ls -l sbom
-          if [ -z "$(ls -A sbom)" ]; then
-            echo "::error::no SBOMs produced"
-            exit 1
-          fi
-
-      # Provenance for every file uploaded to the release below.
-      - name: Attest build provenance of the release assets
-        uses: actions/attest-build-provenance@v4.2.2
-        with:
-          subject-path: sbom/*-cyclonedx.json
-
-      # This workflow only turns a pushed tag into a GitHub Release (with the
-      # SBOMs attached). It does not publish to Maven Central (task 36) and does not build an image
-      # (task 37).
+      # This workflow only turns a pushed tag into a GitHub Release, after the
+      # build above has proven the tag. It does not publish to Maven Central
+      # (task 36) and does not build an image (task 37). It builds no SBOM
+      # and attaches none: the CycloneDX files on the release are the very
+      # files in the Central bundle, copied there by the attach-sboms job of
+      # publish-central.yml after the publish, so the two sets cannot differ
+      # (task 257, OD-08-12).
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes \
-            sbom/*-cyclonedx.json
+            --generate-notes
