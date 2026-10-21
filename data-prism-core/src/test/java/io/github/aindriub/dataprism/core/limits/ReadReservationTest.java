@@ -45,4 +45,16 @@ class ReadReservationTest {
 
         assertThatThrownBy(() -> r.takeUnused(-1)).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("a reservation can carry an opaque origin; plain ones and refusals have none")
+    void origin() {
+        var token = new Object();
+
+        assertThat(ReadReservation.granted("CASE-A", "s-1", 2, token).origin()).isSameAs(token);
+        assertThat(ReadReservation.granted("CASE-A", "s-1", 2).origin()).isNull();
+        assertThat(ReadReservation.refused("CASE-A", "s-1", 2, ReadReservation.Refusal.SUBJECT).origin()).isNull();
+        assertThatThrownBy(() -> ReadReservation.granted("CASE-A", "s-1", 2, null))
+                .isInstanceOf(NullPointerException.class);
+    }
 }

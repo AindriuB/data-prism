@@ -209,6 +209,14 @@ class InMemoryScopeBudgetTest {
     @Test
     @DisplayName("32 threads on one subject and one scope never pass either budget; counts equal granted sum")
     void singleSubjectProperty() throws Exception {
+        // Second run: the scope total is below the subject budget, so SCOPE_TOTAL
+        // refusals happen under contention too.
+        for (int scopeTotal : new int[] {1000, 300}) {
+            singleSubjectRun(scopeTotal);
+        }
+    }
+
+    private static void singleSubjectRun(int scopeTotal) throws Exception {
         var budget = new InMemoryScopeBudget();
         var pool = Executors.newFixedThreadPool(32);
         try {
@@ -220,7 +228,7 @@ class InMemoryScopeBudgetTest {
                     int got = 0;
                     for (int i = 0; i < 200; i++) {
                         int n = 1 + rnd.nextInt(5);
-                        if (budget.reserve("S", "a", n, 1000, 1000).granted()) {
+                        if (budget.reserve("S", "a", n, 1000, scopeTotal).granted()) {
                             got += n;
                         }
                     }
@@ -231,7 +239,7 @@ class InMemoryScopeBudgetTest {
             for (Future<Integer> f : pool.invokeAll(tasks)) {
                 granted += f.get();
             }
-            assertThat(granted).isLessThanOrEqualTo(1000);
+            assertThat(granted).isLessThanOrEqualTo(scopeTotal);
             assertThat(budget.reads("S", "a")).isEqualTo(granted);
             assertThat(budget.scopeReads("S")).isEqualTo(granted);
         } finally {

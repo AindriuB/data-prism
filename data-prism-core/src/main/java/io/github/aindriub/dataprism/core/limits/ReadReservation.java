@@ -44,17 +44,29 @@ public final class ReadReservation {
         return new ReadReservation(scopeId, subjectId, reads, null, null);
     }
 
-    /** Granted by an implementation that must recognise its own reservations later. */
-    static ReadReservation grantedBy(Object origin, String scopeId, String subjectId, int reads) {
-        return new ReadReservation(scopeId, subjectId, reads, null, origin);
+    /**
+     * A granted reservation tied to {@code origin}, an opaque token the
+     * implementation chooses to identify the live counters that granted it (for
+     * example a per-scope state object or a generation number).
+     */
+    public static ReadReservation granted(String scopeId, String subjectId, int reads, Object origin) {
+        if (reads <= 0) {
+            throw new IllegalArgumentException("reads must be positive");
+        }
+        return new ReadReservation(scopeId, subjectId, reads, null, Objects.requireNonNull(origin, "origin"));
     }
 
-    Object origin() {
+    /**
+     * Opaque and owned by the implementation that granted this reservation;
+     * {@code null} for one made without an origin and for refusals. Nothing else
+     * should interpret it.
+     *
+     * <p>Contract: an implementation must ignore (no-op) a release whose origin
+     * it does not recognise as live, so a release made after {@code forget} and a
+     * later recreation of the same scope id returns nothing to the new scope.
+     */
+    public Object origin() {
         return origin;
-    }
-
-    public static ReadReservation refused(String scopeId, String subjectId, int reads, Refusal refusedBy) {
-        return new ReadReservation(scopeId, subjectId, reads, Objects.requireNonNull(refusedBy, "refusedBy"), null);
     }
 
     public boolean granted() {

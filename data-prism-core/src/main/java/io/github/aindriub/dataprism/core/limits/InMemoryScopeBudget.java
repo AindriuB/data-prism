@@ -102,7 +102,7 @@ public final class InMemoryScopeBudget implements ScopeBudget {
                 }
                 state.subjects.put(subjectId, newSubject);
                 state.total = newTotal;
-                return ReadReservation.grantedBy(state, scopeId, subjectId, reads);
+                return ReadReservation.granted(scopeId, subjectId, reads, state);
             }
         }
     }
