@@ -38,7 +38,9 @@ class Q05SubsystemSwitchesSpikeTest {
         reading.put("jet", String.valueOf(config.getJetConfig().isEnabled()));
         reading.put("userCodeDeployment", String.valueOf(config.getUserCodeDeploymentConfig().isEnabled()));
         reading.put("userCodeNamespaces", String.valueOf(config.getNamespacesConfig().isEnabled()));
-        reading.put("phoneHome", String.valueOf(config.getProperty("hazelcast.phone.home.enabled")));
+        // The effective value: config property, else -D system property, else the default (on).
+        reading.put("phoneHome", String.valueOf(new com.hazelcast.spi.properties.HazelcastProperties(config)
+                .getBoolean(com.hazelcast.spi.properties.ClusterProperty.PHONE_HOME_ENABLED)));
         // With the hazelcast-sql module absent from the classpath (as here) a query fails whatever the config says;
         // with Jet off the Jet check comes first.
         reading.put("sql", Spike.attempt(() -> instance.getSql().execute("SELECT 1").close()));
@@ -59,6 +61,31 @@ class Q05SubsystemSwitchesSpikeTest {
         assertThat(config.getUserCodeDeploymentConfig().isEnabled()).isFalse();
         assertThat(config.getNamespacesConfig().isEnabled()).isFalse();
         assertThat(config.getProperty("hazelcast.phone.home.enabled")).isNull();
+    }
+
+    @Test
+    void anUnsetPhoneHomePropertyReadsBackAsTheSystemPropertyAndAConfigPropertyWinsOverIt() {
+        String key = "hazelcast.phone.home.enabled";
+        String before = System.getProperty(key);
+        try {
+            // Set to false, never true, so that no test ever phones home.
+            System.setProperty(key, "false");
+            Config config = new Config();
+            // Config.getProperty itself falls back to the system property when the config sets none.
+            assertThat(config.getProperty(key)).isEqualTo("false");
+            assertThat(new com.hazelcast.spi.properties.HazelcastProperties(config)
+                    .getBoolean(com.hazelcast.spi.properties.ClusterProperty.PHONE_HOME_ENABLED)).isFalse();
+            // A property in the config wins over the system property.
+            config.setProperty(key, "true");
+            assertThat(new com.hazelcast.spi.properties.HazelcastProperties(config)
+                    .getBoolean(com.hazelcast.spi.properties.ClusterProperty.PHONE_HOME_ENABLED)).isTrue();
+        } finally {
+            if (before == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, before);
+            }
+        }
     }
 
     @Test

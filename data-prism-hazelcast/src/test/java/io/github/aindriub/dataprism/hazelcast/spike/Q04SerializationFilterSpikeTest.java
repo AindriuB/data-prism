@@ -96,6 +96,24 @@ class Q04SerializationFilterSpikeTest {
     }
 
     @Test
+    void aProcessorOnAKeyTheCallerOwnsAppliesOnThePrimaryWhileTheBackupIsRefusedSoTheyDiverge() {
+        startPair(THREE, List.of());
+        IMap<String, String> map = first.getMap("m");
+        String local = Spike.keyOwnedBy(first, "k");
+        map.put(local, "a");
+        // Succeeds, though only after the backup times out; nothing tells the caller the backup refused it.
+        assertThat(map.executeOnKey(local, new Fields("a", "b", 1))).isEqualTo(true);
+        assertThat(map.get(local)).isEqualTo("b");
+        first.getLifecycleService().terminate();
+        String survivor = second.getCluster().getLocalMember().getUuid().toString();
+        assertThat(Spike.await(30, () -> {
+            var owner = second.getPartitionService().getPartition(local).getOwner();
+            return owner != null && owner.getUuid().toString().equals(survivor);
+        })).isTrue();
+        assertThat(second.getMap("m").get(local)).as("the promoted backup never saw the write").isEqualTo("a");
+    }
+
+    @Test
     void aProcessorOfStringsAndLongsRunsOnceItsPackagePrefixIsListed() {
         startPair(THREE, List.of(SPIKE_PACKAGE));
         IMap<String, String> map = first.getMap("m");
@@ -123,7 +141,7 @@ class Q04SerializationFilterSpikeTest {
     }
 
     @Test
-    void aDisallowedClassFromAKeylessClientFailsWithASecurityException() {
+    void aDisallowedClassFromAKeylessClientFailsWithAHazelcastSerializationExceptionCausedByASecurityException() {
         startPair(THREE, List.of());
         client = Spike.client(first.getConfig().getClusterName(), first.getConfig().getNetworkConfig().getPort());
         IMap<String, String> map = client.getMap("m");
@@ -143,12 +161,17 @@ class Q04SerializationFilterSpikeTest {
         first = Spike.start(configs.get(0));
         second = Spike.start(configs.get(1));
         first.getMap("m").put("k", "on-first");
+        first.getMap("m").put("only-first", "x");
         second.getMap("m").put("k", "on-second");
+        second.getMap("m").put("only-second", "y");
         assertThat(Spike.await(60, () -> first.getCluster().getMembers().size() == 2
                 && second.getCluster().getMembers().size() == 2)).as("the clusters merged").isTrue();
         assertThat(Spike.await(30, () -> first.getMap("m").get("k").equals(second.getMap("m").get("k"))))
                 .as("both members agree on one value").isTrue();
         assertThat(first.getMap("m").get("k")).isIn("on-first", "on-second");
+        // The merging side's own key must have gone through the policy and survived (a discard policy fails this).
+        assertThat(Spike.await(30, () -> first.getMap("m").containsKey("only-first")
+                && first.getMap("m").containsKey("only-second"))).as("both unique keys survive").isTrue();
     }
 
     private static String describe(Throwable t) {

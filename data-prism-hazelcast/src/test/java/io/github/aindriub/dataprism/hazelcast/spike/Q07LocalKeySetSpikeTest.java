@@ -25,7 +25,7 @@ class Q07LocalKeySetSpikeTest {
 
     private static final int KEYS = 500;
 
-    private final List<HazelcastInstance> members = new ArrayList<>();
+    private final List<HazelcastInstance> members = new java.util.concurrent.CopyOnWriteArrayList<>();
     private List<Config> configs;
 
     @AfterEach
@@ -105,6 +105,8 @@ class Q07LocalKeySetSpikeTest {
         sampler.start();
         try {
             members.add(Spike.start(configs.get(2)));
+            // Keep sampling until migration has finished.
+            assertThat(Spike.await(60, () -> members.get(0).getPartitionService().isClusterSafe())).isTrue();
         } finally {
             joining.set(false);
             sampler.join();

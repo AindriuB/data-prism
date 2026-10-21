@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Question 10: against a key that another member or a client holds locked, which of {@code tryPut(.., timeout)},
  * {@code tryRemove(.., timeout)}, {@code replace(key, old, new)} and {@code remove(key, value)} wait without bound
- * and which return within their timeout? "Without bound" is shown as still waiting after 3 seconds, with a timeout
- * of 300 ms, and completing once the lock is released.
+ * and which return within their timeout? "Without bound" is shown as still waiting after 8 seconds, past the 5 s
+ * {@code hazelcast.operation.call.timeout.millis} these members are configured with and with a timeout of 300 ms, and completing once the lock is released.
  */
 class Q10LockedKeySpikeTest {
 
@@ -51,14 +51,14 @@ class Q10LockedKeySpikeTest {
 
     private enum Holder { MEMBER, CLIENT }
 
-    /** "returned X" if the call returned within 3 s while the key stayed locked; else "waits" once it finished after the unlock. */
+    /** "returned X" if the call returned within 8 s while the key stayed locked; else "waits" once it finished after the unlock. */
     private String probe(Holder holder, Callable<Object> call) throws Exception {
         HazelcastInstance locker = holder == Holder.MEMBER ? otherMember : client;
         IMap<String, String> held = locker.getMap("m");
         held.lock(key);
         Future<Object> result = executor.submit(call);
         try {
-            return "returned " + result.get(3, TimeUnit.SECONDS);
+            return "returned " + result.get(8, TimeUnit.SECONDS);
         } catch (TimeoutException stillWaiting) {
             held.forceUnlock(key);
             Object afterUnlock = result.get(20, TimeUnit.SECONDS);

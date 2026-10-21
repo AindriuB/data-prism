@@ -43,16 +43,13 @@ class Q01InboundAllowlistSpikeTest {
         return null;
     }
 
-    private int joined(String source, boolean allowSource) {
+    private int joined(String source) {
         String hostOfFirst = source;
         int ports = SpikePorts.consecutive(2);
         Config a = Spike.config(Spike.name("q1"), ports, List.of());
         a.getNetworkConfig().getJoin().getTcpIpConfig().setMembers(List.of());
         // Listen on every address so the joiner can arrive from a non-loopback one.
         a.setProperty("hazelcast.socket.bind.any", "true");
-        if (allowSource) {
-            a.getNetworkConfig().getInterfaces().addInterface(source);
-        }
         first = Spike.start(a);
         Config b = Spike.config(a.getClusterName(), ports + 1, List.of(hostOfFirst + ":" + ports));
         // The joiner binds its outgoing connection to its own interface, so it arrives from `source`.
@@ -66,7 +63,7 @@ class Q01InboundAllowlistSpikeTest {
     void aMemberOutsideTheInterfacesIsAccepted() throws Exception {
         String source = nonLoopbackAddress();
         assumeTrue(source != null, "this host has no non-loopback IPv4 address");
-        assertThat(joined(source, false))
+        assertThat(joined(source))
                 .as("the first member lists only 127.0.0.1 yet the second, arriving from %s, joined", source)
                 .isEqualTo(2);
     }
