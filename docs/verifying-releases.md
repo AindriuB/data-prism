@@ -12,7 +12,7 @@ check that what you run is what the project built:
 |---|---|---|
 | Maven jars | Maven Central, group `io.github.aindriub` | GPG signature (`.asc`), CycloneDX SBOM, build provenance |
 | Container images | `ghcr.io/aindriub/data-prism-server` and the four `data-prism-quickstart-*` images | keyless cosign signature, build provenance, SBOM attestation |
-| SBOM files | the GitHub Release page and Maven Central | build provenance |
+| SBOM files | the GitHub Release page and Maven Central (the same files from 0.7.1) | build provenance |
 
 All commands below use placeholders in angle brackets. Replace `<version>`
 with the release version without the leading `v` (for example `0.7.0`).
@@ -85,25 +85,38 @@ the `publish-image.yml` workflow. Cosign v3 or later is required: the
 signatures are stored only as sigstore bundle v0.3 OCI referrers, with no
 legacy `.sig` tags, and cosign v2 will not find them.
 
-Each image's manifest list and its per-architecture build indexes are signed.
-Verify the manifest list, which is the digest you get from the tag. It signs
-and attests the platform manifests it references.
+Each image's manifest list is signed and attested, and from 0.7.1 so is every
+per-architecture digest reachable from a published tag. Verify the digest you
+resolved from the tag (the manifest list), or any platform digest listed in it
+(`docker buildx imagetools inspect "$image:<version>"` shows them), with the
+same command. The release workflow runs this verification for all of them and
+fails the release if one is unsigned.
 
-The per-architecture digests you can find from the tag (through
-`docker buildx imagetools inspect`, or in a registry UI) are different
-objects. Assembling the manifest list flattens the signed per-architecture
-build indexes into plain platform manifests, so those digests carry no cosign
+Releases up to and including 0.7.0 are different. Assembling their manifest
+list flattened the signed per-architecture build indexes into plain platform
+manifests, so the platform digests found from the tag carry no cosign
 signature, attestation or SBOM of their own, and `cosign verify` on one fails.
-The signed per-architecture build indexes do exist. Their digests are recorded
-in the log of the `publish-image` run for the release, and they verify with
-the same command. Do not treat a failure on a flattened platform digest as a
-sign of tampering; verify the manifest list.
+The signed build indexes exist, and their digests are recorded in the log of
+the `publish-image` run. For those releases, verify the manifest list; do not
+treat a failure on a platform digest as a sign of tampering.
 
 ```bash
 cosign verify \
   --certificate-identity-regexp '^https://github\.com/AindriuB/data-prism/\.github/workflows/publish-image\.yml@refs/tags/v.+$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$image@$digest"
+```
+
+To verify one platform manifest (from 0.7.1), take its digest from the list
+and use the same command:
+
+```bash
+platform=$(docker manifest inspect "$image:<version>" \
+  | jq -r '.manifests[] | select(.platform.architecture == "arm64") | .digest')
+cosign verify \
+  --certificate-identity-regexp '^https://github\.com/AindriuB/data-prism/\.github/workflows/publish-image\.yml@refs/tags/v.+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$image@$platform"
 ```
 
 Expected identity: the workflow
@@ -142,10 +155,10 @@ done
 Expected: a non-zero package count for each platform; a missing platform key
 fails loudly. For the provenance use `.Provenance` the same way.
 
-On a signed per-architecture build index (its digest is in the
+On a per-architecture build index (for 0.7.0 and earlier, its digest is in the
 `publish-image` run log; an index holding one platform plus its attestation
 manifest), buildx prints `.SBOM` and `.Provenance` unkeyed, so drop the
-`index`. The flattened platform digests found from the tag do not carry these:
+`index`. The plain platform digests found from the tag do not carry these:
 
 ```bash
 docker buildx imagetools inspect "$image@<per-arch-digest>" \
@@ -159,18 +172,22 @@ the manifest list's signature covers them.
 
 ## GitHub Release assets
 
-The SBOM files attached to the GitHub Release have build provenance from the
-`release.yml` workflow:
+From 0.7.1 the SBOM files attached to the GitHub Release are the very files in
+the Central bundle: the `publish-central.yml` workflow copies them from the
+bundle it uploaded and asserts the SHA-256 of each matches. They carry the
+build provenance of that workflow:
 
 ```bash
 gh release download v<version> --repo AindriuB/data-prism --pattern '*-cyclonedx.json'
 gh attestation verify data-prism-core-<version>-cyclonedx.json \
   --repo AindriuB/data-prism \
-  --signer-workflow AindriuB/data-prism/.github/workflows/release.yml
+  --signer-workflow AindriuB/data-prism/.github/workflows/publish-central.yml
 ```
 
-Expected identity: the `release.yml` workflow of `AindriuB/data-prism`, run
-from the `v<version>` tag.
+Expected identity: the `publish-central.yml` workflow of `AindriuB/data-prism`,
+run from the `v<version>` tag. For 0.7.0 and earlier the release assets came
+from a second build in `release.yml` and differ byte for byte from Central's;
+verify them with `--signer-workflow AindriuB/data-prism/.github/workflows/release.yml`.
 
 ## What this does and does not prove
 
