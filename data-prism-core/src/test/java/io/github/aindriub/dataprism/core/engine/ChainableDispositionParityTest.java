@@ -1,6 +1,13 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import io.github.aindriub.dataprism.annotations.Chainable;
 import io.github.aindriub.dataprism.annotations.DataClassification;
+import io.github.aindriub.dataprism.annotations.InternalIdentifier;
+import io.github.aindriub.dataprism.annotations.LlmExposedModel;
+import io.github.aindriub.dataprism.annotations.NonSensitive;
+import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.annotations.SensitiveData;
+import io.github.aindriub.dataprism.annotations.SubjectIdentifier;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
@@ -90,5 +97,64 @@ class ChainableDispositionParityTest {
                 .scrub(new ScrubbingFixtures.Declared("s-1", "A Name", "a@example.invalid", "n", "OPEN"), context());
 
         assertThat(result.dispositions()).containsEntry("/subjectRef", PrivacyAction.REMOVE);
+    }
+
+    /** {@link ScrubbingFixtures.Declared} with the annotation on its identifier. */
+    @LlmExposedModel
+    record AnnotatedDeclared(
+            @InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String subjectRef,
+            @SensitiveData(classifications = DataClassification.PII,
+                    namespace = PrivacyNamespace.PERSON_NAME,
+                    suggestedAction = PrivacyAction.SYNTHESIZE)
+            String fullName,
+            @SensitiveData(classifications = DataClassification.CONTACT,
+                    namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT)
+            String contact,
+            @SensitiveData(classifications = DataClassification.CONFIDENTIAL,
+                    suggestedAction = PrivacyAction.REMOVE)
+            String note,
+            @NonSensitive(reason = "Enumerated state, no free text")
+            String state) {
+    }
+
+    /** {@link ScrubbingFixtures.TwoSubjects} with the annotation on both identifiers. */
+    @LlmExposedModel
+    record AnnotatedTwoSubjects(
+            @InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String applicationRef,
+            @SubjectIdentifier(role = "guarantor") @Chainable(keyNamespace = "party-ref")
+            String guarantorRef,
+            @SensitiveData(classifications = DataClassification.PII,
+                    namespace = PrivacyNamespace.PERSON_NAME,
+                    suggestedAction = PrivacyAction.SYNTHESIZE)
+            String applicantName,
+            @SensitiveData(classifications = DataClassification.PII,
+                    namespace = PrivacyNamespace.PERSON_NAME,
+                    suggestedAction = PrivacyAction.SYNTHESIZE,
+                    subject = "guarantorRef")
+            String guarantorName) {
+    }
+
+    private static void assertSame(ScrubResult with, ScrubResult without) {
+        assertThat(with.tree()).isEqualTo(without.tree());
+        assertThat(with.dispositions()).isEqualTo(without.dispositions());
+        assertThat(with.emitted()).isEqualTo(without.emitted());
+    }
+
+    @Test
+    @DisplayName("Declared: identical with the annotation on its identifier")
+    void annotatedDeclared() {
+        var r = engine(new DefaultFieldMetadataResolver());
+        assertSame(r.scrub(new AnnotatedDeclared("s-1", "A Name", "a@example.invalid", "n", "OPEN"), context()),
+                r.scrub(new ScrubbingFixtures.Declared("s-1", "A Name", "a@example.invalid", "n", "OPEN"),
+                        context()));
+    }
+
+    @Test
+    @DisplayName("TwoSubjects: identical with the annotation on both identifiers")
+    void annotatedTwoSubjects() {
+        var r = engine(new DefaultFieldMetadataResolver());
+        assertSame(r.scrub(new AnnotatedTwoSubjects("a-1", "g-1", "A Name", "G Name"), context()),
+                r.scrub(new ScrubbingFixtures.TwoSubjects("a-1", "g-1", "A Name", "G Name"), context()));
     }
 }

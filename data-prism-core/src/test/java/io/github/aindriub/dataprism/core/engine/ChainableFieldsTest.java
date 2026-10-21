@@ -6,6 +6,7 @@ import io.github.aindriub.dataprism.annotations.InternalIdentifier;
 import io.github.aindriub.dataprism.annotations.LlmExposedModel;
 import io.github.aindriub.dataprism.annotations.NonSensitive;
 import io.github.aindriub.dataprism.annotations.SensitiveData;
+import io.github.aindriub.dataprism.annotations.SensitiveObject;
 import io.github.aindriub.dataprism.annotations.SubjectIdentifier;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.model.ChainableField;
@@ -38,6 +39,7 @@ class ChainableFieldsTest {
     record KeyList(@InternalIdentifier @Chainable(keyNamespace = "depot-ref") List<String> keys) {
     }
 
+    @SensitiveObject
     record Route(@InternalIdentifier @Chainable(keyNamespace = "depot-ref") String depot,
                  @NonSensitive(reason = "x") String label) {
     }
@@ -46,6 +48,7 @@ class ChainableFieldsTest {
     record Routes(@NonSensitive(reason = "structure") List<Route> routes) {
     }
 
+    @SensitiveObject
     record Inner(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String b) {
     }
 
@@ -80,6 +83,55 @@ class ChainableFieldsTest {
 
     @LlmExposedModel
     record Annotated(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String ref) {
+    }
+
+
+    record Hidden(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String b) {
+    }
+
+    @LlmExposedModel
+    record InHidden(@NonSensitive(reason = "structure") Hidden h) {
+    }
+
+    @LlmExposedModel
+    record Opt(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") java.util.Optional<String> ref) {
+    }
+
+    @LlmExposedModel
+    record OptRoute(@NonSensitive(reason = "structure") java.util.Optional<Route> opt) {
+    }
+
+    @LlmExposedModel
+    record MapField(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") Map<String, String> m) {
+    }
+
+    @LlmExposedModel
+    record MapOfRoutes(@NonSensitive(reason = "structure") Map<String, Route> m) {
+    }
+
+    @LlmExposedModel
+    record Both(@InternalIdentifier @SensitiveData(classifications = DataClassification.PII)
+                @Chainable(keyNamespace = "parcel-ref") String ref) {
+    }
+
+    @LlmExposedModel
+    record Long64(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    }
+
+    @LlmExposedModel
+    record Long65(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    }
+
+    @LlmExposedModel
+    record Long63List(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") List<String> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    }
+
+    @LlmExposedModel
+    record Long63Array(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String[] aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    }
+
+    @LlmExposedModel
+    record Long64List(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") List<String> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
     }
 
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
@@ -220,5 +272,46 @@ class ChainableFieldsTest {
     void descriptorRestates() {
         assertThat(ChainableFields.of(Annotated.class, descriptor(Annotated.class, "ref", true, "parcel-ref")))
                 .containsExactly(new ChainableField("ref", new KeyNamespace("parcel-ref"), false));
+    }
+
+    @Test
+    @DisplayName("an Optional is the plain path, not an element")
+    void optional() {
+        assertThat(ChainableFields.of(Opt.class)).containsExactly(
+                new ChainableField("ref", new KeyNamespace("parcel-ref"), false));
+        assertThat(ChainableFields.of(OptRoute.class)).containsExactly(
+                new ChainableField("opt.depot", new KeyNamespace("depot-ref"), false));
+    }
+
+    @Test
+    @DisplayName("a chainable map, or a chainable inside a map value, is refused")
+    void maps() {
+        assertThatThrownBy(() -> ChainableFields.of(MapField.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining("m");
+        assertThatThrownBy(() -> ChainableFields.of(MapOfRoutes.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Route.class.getName());
+    }
+
+    @Test
+    @DisplayName("a chainable inside a type the scrubber does not descend into is refused")
+    void notDescendable() {
+        assertThatThrownBy(() -> ChainableFields.of(InHidden.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Hidden.class.getName());
+    }
+
+    @Test
+    @DisplayName("an identifier that is also @SensitiveData may be chainable")
+    void identifierAndSensitive() {
+        assertThat(ChainableFields.of(Both.class)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a path of 64 bytes passes and 65 is refused, counting the [] suffix")
+    void pathCap() {
+        assertThat(ChainableFields.of(Long64.class)).hasSize(1);
+        assertThatThrownBy(() -> ChainableFields.of(Long65.class)).hasMessageStartingWith(CODE);
+        assertThat(ChainableFields.of(Long63List.class)).hasSize(1);
+        assertThat(ChainableFields.of(Long63Array.class)).hasSize(1);
+        assertThatThrownBy(() -> ChainableFields.of(Long64List.class)).hasMessageStartingWith(CODE);
     }
 }

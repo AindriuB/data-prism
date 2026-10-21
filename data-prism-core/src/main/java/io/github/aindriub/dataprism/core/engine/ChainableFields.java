@@ -32,10 +32,23 @@ import java.util.Set;
  * flag but may not remove one the annotation declared, nor change its namespace. Every violation throws
  * {@link IllegalStateException} whose message starts {@value #CODE}, naming the model and field and never
  * a namespace or a value.
+ *
+ * <p>Only the graph the scrubber walks is walked: collections, arrays, wrappers such as {@code Optional}
+ * and nested records the resolver says are descendable. A chainable declaration on a map, inside a map
+ * value, or inside a type the scrubber does not descend into is refused, because no link could be built
+ * from it. A declared path over {@value #MAX_PATH_BYTES} UTF-8 bytes is refused.
+ *
+ * <p>The annotation and the descriptor are deliberately not symmetric: a descriptor that restates the
+ * annotation's {@code keyNamespace} without {@code chainable} is accepted, but {@code chainable: true}
+ * with no {@code keyNamespace} is always refused. A field that is both an identifier and
+ * {@code @SensitiveData} is accepted, since it is already classified as an identifier.
  */
 public final class ChainableFields {
 
     public static final String CODE = "INVALID_CHAINABLE_FIELD";
+
+    /** The longest declared path, in UTF-8 bytes (OD-200-4). */
+    public static final int MAX_PATH_BYTES = 64;
 
     private ChainableFields() {
     }
@@ -54,14 +67,14 @@ public final class ChainableFields {
         FieldMetadataResolver resolver = new DescriptorFieldMetadataResolver(
                 new DefaultFieldMetadataResolver(), Objects.requireNonNull(descriptors, "descriptors"));
         List<ChainableField> out = new ArrayList<>();
-        walk(model, "", false, resolver, descriptors, new HashSet<>(), out);
+        walk(model, "", false, null, resolver, descriptors, new HashSet<>(), out);
         out.sort(Comparator.comparing(ChainableField::path));
         return List.copyOf(out);
     }
 
-    private static void walk(Class<?> type, String prefix, boolean underElement, FieldMetadataResolver resolver,
-                             Map<String, ModelDescriptor> descriptors, Set<Class<?>> inProgress,
-                             List<ChainableField> out) {
+    private static void walk(Class<?> type, String prefix, boolean underElement, String refusal,
+                             FieldMetadataResolver resolver, Map<String, ModelDescriptor> descriptors,
+                             Set<Class<?>> inProgress, List<ChainableField> out) {
         if (!inProgress.add(type)) {
             return;
         }
@@ -71,17 +84,35 @@ public final class ChainableFields {
             String name = field.fieldName();
             ModelDescriptor.FieldDescriptor stated = descriptor == null ? null : descriptor.field(name);
             KeyNamespace namespace = declared(type, name, declarations.getOrDefault(name, List.of()), stated);
-            boolean collection = field.elementType() != null;
+            Class<?> valueType = field.valueType();
+            boolean map = Map.class.isAssignableFrom(valueType);
+            boolean collection = valueType.isArray() || Iterable.class.isAssignableFrom(valueType);
+            // Optional<X> and other wrappers take the plain path; the type they hold is the last argument.
+            Class<?> inner = field.elementType() != null ? field.elementType() : valueType;
             if (namespace != null) {
+                if (refusal != null) {
+                    throw invalid(type, name, refusal);
+                }
+                if (map) {
+                    throw invalid(type, name, "is chainable inside a map, which the path grammar cannot name");
+                }
                 if (!field.identifier()) {
                     throw invalid(type, name, "is not classified as an identifier");
                 }
-                out.add(new ChainableField(prefix + name + (collection ? "[]" : ""), namespace,
-                        underElement || collection));
-            } else if (collection && field.elementType().isRecord()) {
-                walk(field.elementType(), prefix + name + "[].", true, resolver, descriptors, inProgress, out);
-            } else if (!collection && field.valueType().isRecord()) {
-                walk(field.valueType(), prefix + name + ".", underElement, resolver, descriptors, inProgress, out);
+                String path = prefix + name + (collection ? "[]" : "");
+                if (path.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_PATH_BYTES) {
+                    throw invalid(type, name, "has a path longer than " + MAX_PATH_BYTES + " bytes");
+                }
+                out.add(new ChainableField(path, namespace, underElement || collection));
+            } else if (inner != null && inner.isRecord()) {
+                String next = refusal;
+                if (next == null && map) {
+                    next = "is chainable inside a map value, which the path grammar cannot name";
+                } else if (next == null && !resolver.descendable(inner)) {
+                    next = "is chainable in a type the scrubber does not descend into";
+                }
+                walk(inner, prefix + name + (collection ? "[]." : "."), underElement || collection, next,
+                        resolver, descriptors, inProgress, out);
             }
         }
         inProgress.remove(type);
