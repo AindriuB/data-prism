@@ -111,7 +111,7 @@ class NestedContainerTest {
     @Test
     @DisplayName("an array nested 17 levels deep under one field is refused with TOO_DEEP")
     void aSeventeenthLevelIsTooDeep() throws Exception {
-        Throwable thrown = catchThrowable(() -> defaultEngine().scrub(new Anything("r", asList(nested(16))), context()));
+        Throwable thrown = catchThrowable(() -> defaultEngine().scrub(new Anything("r", asList(nested(17))), context()));
 
         assertThat(thrown).isInstanceOfSatisfying(PrivacyRefusedException.class,
                 e -> assertThat(e.code()).isEqualTo("TOO_DEEP"));
@@ -120,7 +120,7 @@ class NestedContainerTest {
     @Test
     @DisplayName("sixteen levels are still released")
     void sixteenLevelsAreAllowed() throws Exception {
-        ScrubResult result = defaultEngine().scrub(new Anything("r", asList(nested(15))), context());
+        ScrubResult result = defaultEngine().scrub(new Anything("r", asList(nested(16))), context());
 
         assertThat(result.tree().get("v").toString()).contains("invented-scalar");
     }

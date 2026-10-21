@@ -69,14 +69,26 @@ public final class SourceValues {
         }
         if (value.isArray()) {
             Class<?> nested = nestedType(md, true);
-            if (nested == null || !resolver.descendable(nested)) {
-                return;
-            }
+            boolean follow = nested != null && resolver.descendable(nested);
             value.forEach(element -> {
-                if (element.isObject()) {
+                if (element.isObject() && follow) {
                     collect((ObjectNode) element, nested, resolver, out, depth + 1);
+                } else if (element.isArray()) {
+                    addScalarsOfObjects(element, out);
                 }
             });
+        }
+    }
+
+    /**
+     * An object inside an array nested in the field's array has no type that can be determined, and
+     * the scrubber treats it as an unclassified structure. So every scalar under it is prohibited.
+     */
+    private static void addScalarsOfObjects(JsonNode node, Set<String> out) {
+        if (node.isObject()) {
+            addScalars(node, out);
+        } else if (node.isArray()) {
+            node.forEach(child -> addScalarsOfObjects(child, out));
         }
     }
 
