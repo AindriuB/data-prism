@@ -2,12 +2,14 @@ package io.github.aindriub.dataprism.server;
 
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.function.DoubleSupplier;
 
 /** Fail-safe Micrometer binding; source is the only permitted metric tag. */
 final class ServerPrivacyMetrics implements PrivacyMetrics {
@@ -32,6 +34,11 @@ final class ServerPrivacyMetrics implements PrivacyMetrics {
     public void record(Metric metric, String source, Duration duration) {
         safely(() -> Timer.builder(metric.metricName()).tag("source", source)
                 .register(registry).record(duration));
+    }
+
+    @Override
+    public void gauge(Metric metric, DoubleSupplier supplier) {
+        safely(() -> Gauge.builder(metric.metricName(), supplier::getAsDouble).register(registry));
     }
 
     private static void safely(Runnable emission) {

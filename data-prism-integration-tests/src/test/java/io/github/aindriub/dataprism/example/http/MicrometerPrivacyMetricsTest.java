@@ -86,4 +86,20 @@ class MicrometerPrivacyMetricsTest {
 
         assertThatCode(() -> metrics.increment(Metric.MCP_REQUESTS)).doesNotThrowAnyException();
     }
+
+    @Test
+    @DisplayName("a gauge reads its supplier at scrape time, untagged, and a failing supplier is contained")
+    void gaugeReadsTheSupplierBack() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        PrivacyMetrics metrics = new MicrometerPrivacyMetrics(registry);
+        double[] value = {3.0};
+
+        metrics.gauge(Metric.CLUSTER_MEMBERS_UNVERIFIED, () -> value[0]);
+        value[0] = 5.0;
+
+        io.micrometer.core.instrument.Gauge gauge = registry.get("dataprism.cluster.members.unverified").gauge();
+        assertThat(gauge.value()).isEqualTo(5.0);
+        assertThat(gauge.getId().getTags()).isEmpty();
+        assertThatCode(() -> metrics.gauge(Metric.CLUSTER_PAUSE_FRESH, null)).doesNotThrowAnyException();
+    }
 }
