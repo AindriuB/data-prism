@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.function.DoubleSupplier;
 
 /**
  * A {@link PrivacyMetrics} that cannot fail its caller, no matter what the
@@ -49,6 +50,11 @@ final class FailSafeMetrics implements PrivacyMetrics {
     @Override
     public void record(Metric metric, String sourceName, Duration duration) {
         guard(() -> delegate.record(metric, sourceName, duration));
+    }
+
+    @Override
+    public void gauge(Metric metric, DoubleSupplier supplier) {
+        guard(() -> delegate.gauge(metric, supplier));
     }
 
     private static void guard(Runnable call) {

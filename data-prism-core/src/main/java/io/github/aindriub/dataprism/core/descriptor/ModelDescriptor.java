@@ -43,6 +43,9 @@ public record ModelDescriptor(
     /**
      * Classification for one field. Every part is optional; what is absent is
      * simply not stated, and whatever the annotations say stands.
+     *
+     * @param chainable    whether the identifier is a key another source accepts; metadata only
+     * @param keyNamespace the namespace of that key, required with {@code chainable: true}
      */
     public record FieldDescriptor(
             List<DataClassification> classifications,
@@ -50,10 +53,20 @@ public record ModelDescriptor(
             PrivacyAction action,
             String subjectField,
             String nonSensitiveReason,
-            String identifierRole) {
+            String identifierRole,
+            Boolean chainable,
+            String keyNamespace) {
 
         public FieldDescriptor {
             classifications = classifications == null ? List.of() : List.copyOf(classifications);
+        }
+
+        /** A field descriptor that states nothing about chainability. */
+        public FieldDescriptor(List<DataClassification> classifications, PrivacyNamespace namespace,
+                               PrivacyAction action, String subjectField, String nonSensitiveReason,
+                               String identifierRole) {
+            this(classifications, namespace, action, subjectField, nonSensitiveReason, identifierRole,
+                    null, null);
         }
 
         public boolean sensitive() {

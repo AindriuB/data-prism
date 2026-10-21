@@ -22,6 +22,7 @@
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java and SourceModels.java: how the plan is built and applied.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/EffectivePrivacyPolicy.java and PrivacyProfiles.java: profile tightening; the profile comes from the `PrivacyContext`.
 - data-prism-annotations/src/main/java/io/github/aindriub/dataprism/annotations/PrivacyAction.java: seven values, three implemented.
+- From 240 (2026-10-21): `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
 
 ## Required shape (later tasks read these)
 - `Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled)` on `ScrubbingEngine`; the default returns empty, which callers treat as "cannot describe" and refuse (fail closed). `ConfiguredJsonScrubbingEngine` overrides it in 249.

@@ -2,12 +2,14 @@ package io.github.aindriub.dataprism.example.http;
 
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.function.DoubleSupplier;
 import java.util.Objects;
 
 /**
@@ -55,6 +57,11 @@ public final class MicrometerPrivacyMetrics implements PrivacyMetrics {
                 .tag(SOURCE_TAG, sourceName)
                 .register(registry)
                 .record(duration));
+    }
+
+    @Override
+    public void gauge(Metric metric, DoubleSupplier supplier) {
+        guard(() -> Gauge.builder(metric.metricName(), supplier::getAsDouble).register(registry));
     }
 
     private static void guard(Runnable call) {

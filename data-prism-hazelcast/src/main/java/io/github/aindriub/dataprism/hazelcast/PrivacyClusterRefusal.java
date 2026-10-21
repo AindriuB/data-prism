@@ -16,7 +16,11 @@ public final class PrivacyClusterRefusal extends IllegalStateException {
         HAZELCAST_TLS_UNSUPPORTED,
         UNSAFE_HAZELCAST_DISCOVERY,
         INVALID_APPROVAL_QUORUM,
-        MISSING_APPROVAL_QUORUM
+        MISSING_APPROVAL_QUORUM,
+        MISSING_MEMBER_INTERFACE,
+        UNBOUNDED_MEMBER_INTERFACE,
+        UNSAFE_HAZELCAST_SERIALIZATION,
+        UNSEALED_CLUSTER_STATE
     }
 
     private final Code code;

@@ -28,7 +28,8 @@ public final class ModelDescriptors {
     private static final Set<String> ROOT_KEYS = Set.of("models");
     private static final Set<String> MODEL_KEYS = Set.of("exposed", "descendable", "undeclaredFields", "fields");
     private static final Set<String> FIELD_KEYS =
-            Set.of("classifications", "namespace", "action", "subject", "nonSensitive", "identifier");
+            Set.of("classifications", "namespace", "action", "subject", "nonSensitive", "identifier",
+                    "chainable", "keyNamespace");
 
     private ModelDescriptors() {
     }
@@ -116,6 +117,8 @@ public final class ModelDescriptors {
                 StrictYaml.optionalEnum(PrivacyAction.class, body, "action", where + ".action"),
                 StrictYaml.optionalString(body, "subject", fieldWhere),
                 nonSensitive,
-                StrictYaml.optionalString(body, "identifier", fieldWhere));
+                StrictYaml.optionalString(body, "identifier", fieldWhere),
+                StrictYaml.optionalBoolean(body, "chainable", fieldWhere),
+                StrictYaml.optionalString(body, "keyNamespace", fieldWhere));
     }
 }

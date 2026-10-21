@@ -253,6 +253,19 @@ class ClusterConfigurationTest {
 
     // ---- application-supplied cluster ----------------------------------------------------------
 
+    /**
+     * What an integrator must hand to {@code PrivacyCluster.using}: phone-home, Jet and user-code deployment off and an
+     * allowlisting serialisation filter. Phone-home is off for every member these tests start.
+     */
+    static Config hardened(Config config) {
+        config.setProperty("hazelcast.phone.home.enabled", "false");
+        config.getJetConfig().setEnabled(false);
+        config.getUserCodeDeploymentConfig().setEnabled(false);
+        config.getSerializationConfig().setJavaSerializationFilterConfig(PrivacyCluster.requiredSerializationFilter());
+        config.getManagementCenterConfig().setTrustedInterfaces(java.util.Set.of("255.255.255.255"));
+        return config;
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class SuppliedCluster {
         @Bean(destroyMethod = "close") PrivacyCluster suppliedCluster() {
@@ -260,7 +273,7 @@ class ClusterConfigurationTest {
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-            return PrivacyCluster.using(Hazelcast.newHazelcastInstance(config), false);
+            return PrivacyCluster.using(Hazelcast.newHazelcastInstance(hardened(config)), false);
         }
     }
 
@@ -271,7 +284,7 @@ class ClusterConfigurationTest {
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(true);
-            HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+            HazelcastInstance instance = Hazelcast.newHazelcastInstance(hardened(config));
             return PrivacyCluster.using(instance, false);
         }
     }

@@ -723,6 +723,96 @@ class ArchitectureTest {
     }
 
     /**
+     * T14: the cluster sealing code (envelope, keyed names) is reachable only from the cluster stores. A tool-side
+     * class (mcp, orchestration, connectors) that touched it could read or forge a sealed entry without the
+     * privacy engine in between.
+     */
+    private static ArchRule noSealDependencyFrom(String... subjectPackages) {
+        return noClasses()
+                .that().resideInAnyPackage(subjectPackages)
+                .should().dependOnClassesThat().resideInAPackage("io.github.aindriub.dataprism.hazelcast.seal..")
+                .allowEmptyShould(true);
+    }
+
+    private static final ArchRule NO_TOOL_SIDE_DEPENDS_ON_SEAL =
+            noSealDependencyFrom("..mcp..", "..orchestration..", "..connectors..");
+
+    @Test
+    void noToolSideClassDependsOnTheSealPackage() {
+        NO_TOOL_SIDE_DEPENDS_ON_SEAL.check(CLASSES);
+    }
+
+    /** The fixture lives in this package, so the rule is pointed at it; the dependency test is the same. */
+    @Test
+    void sealRuleCatchesADependencyOnTheSealPackage() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(SealDependentFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> noSealDependencyFrom("io.github.aindriub.dataprism.architecture").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("SealDependentFixture");
+    }
+
+    /**
+     * The Sealer test seams fix the salt and the nonce counter. A production class that called them could
+     * reuse a (subkey, nonce) pair, so no class may call them except tests (this rule imports main classes only).
+     */
+    private static final String SEALER_BUILDER = "io.github.aindriub.dataprism.hazelcast.seal.Sealer$Builder";
+
+    private static ArchRule noCallsToBuilder(String ownerName, String... methods) {
+        return noClasses()
+                .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
+                        "is a call to Sealer.Builder " + String.join("/", methods)) {
+                    @Override
+                    public boolean test(JavaAccess<?> access) {
+                        return access instanceof JavaMethodCall
+                                && access.getTarget().getOwner().getName().equals(ownerName)
+                                && List.of(methods).contains(access.getTarget().getName());
+                    }
+                })
+                .allowEmptyShould(true);
+    }
+
+    @Test
+    void productionCodeDoesNotCallTheSealerSeams() {
+        noCallsToBuilder(SEALER_BUILDER, "salt", "initialCounter").check(CLASSES);
+    }
+
+    /**
+     * The real seams are package-private and cannot be called from this module, so the fixture calls a stand-in
+     * with the same method names; the rule's predicate is the same, only the owner name differs.
+     */
+    @Test
+    void sealerSeamRuleCatchesACaller() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(SealerSeamCallerFixture.class);
+        String owner = FakeSealerBuilder.class.getName();
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> noCallsToBuilder(owner, "salt", "initialCounter").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("SealerSeamCallerFixture")
+                .hasMessageContaining("salt")
+                .hasMessageContaining("initialCounter");
+    }
+
+    static final class FakeSealerBuilder {
+        FakeSealerBuilder salt(byte[] salt) { return this; }
+        FakeSealerBuilder initialCounter(long first) { return this; }
+    }
+
+    /** Calls the seams by name, as a production class that fixed a salt or counter would. */
+    static final class SealerSeamCallerFixture {
+        Object call(FakeSealerBuilder b) {
+            return b.salt(new byte[16]).initialCounter(1);
+        }
+    }
+
+    /** What the rule above exists to stop: a class outside the cluster stores reaching for the sealer. */
+    static final class SealDependentFixture {
+        Object reachForTheSealer() {
+            return io.github.aindriub.dataprism.hazelcast.seal.Sealer.class;
+        }
+    }
+
+    /**
      * An approval becomes usable only through {@code ApprovalStore.approve}, and its two production callers audit the
      * decision before they call it. Nothing else may call it, so an approved value with no {@code ALLOW:APPROVED}
      * before it cannot be made.

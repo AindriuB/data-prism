@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.core.metrics;
 
 import java.time.Duration;
+import java.util.function.DoubleSupplier;
 
 /**
  * Counts and times what happens, without ever taking a value to label it with.
@@ -24,6 +25,15 @@ public interface PrivacyMetrics {
      * @param sourceName see {@link #increment(Metric, String)}
      */
     void record(Metric metric, String sourceName, Duration duration);
+
+    /**
+     * Registers a gauge whose value the registry reads at scrape time. The owner of the value calls this once.
+     * A gauge has no tag, like every other signal. The default does nothing, so an implementation written
+     * before this method existed compiles unchanged and simply exports no gauges.
+     *
+     * @param supplier must be cheap, thread-safe and must not throw; it is called from the scrape thread
+     */
+    default void gauge(Metric metric, DoubleSupplier supplier) {}
 
     static PrivacyMetrics none() {
         return new PrivacyMetrics() {
