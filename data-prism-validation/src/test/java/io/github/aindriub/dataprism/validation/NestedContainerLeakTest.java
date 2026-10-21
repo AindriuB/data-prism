@@ -37,7 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A field's own policy must never be applied to an array nested inside its array (task 267). Runs the
- * shipped DEFAULT profile, the real engine, the startup model check and both validators. Adopted
+ * shipped DEFAULT profile, the real engine, the startup model check and both validators: the
+ * raw-value validator, which closes the gap once the prohibited set is right, and the pattern validator,
+ * which sees only pattern-shaped values and is shown not to. Adopted
  * from a probe that found a {@code @NonSensitive List<List<Leaf>>} releasing every record raw.
  * All values are invented.
  */
@@ -256,5 +258,25 @@ class NestedContainerLeakTest {
         var result = new RawValueLeakValidator().validate(leaking, prohibited, Set.of(), context());
 
         assertThat(result.valid()).isFalse();
+    }
+
+    @Test
+    @DisplayName("the pattern validator catches only the email-shaped value, so the raw-value validator closes the gap")
+    void thePatternValidatorCatchesTheEmailButNotTheName() {
+        JsonNode both = new ObjectMapper().readTree(
+                "{\"v\":[[{\"name\":\"" + NAME + "\",\"email\":\"" + EMAIL + "\"}]]}");
+        JsonNode nameOnly = new ObjectMapper().readTree("{\"v\":[[{\"name\":\"" + NAME + "\"}]]}");
+        Set<String> prohibited = SourceValues.prohibited(
+                new ListList("r", List.of(List.of(leaf()))), new DefaultFieldMetadataResolver());
+
+        var withEmail = new SensitivePatternValidator().validate(both, prohibited, Set.of(), context());
+        var withoutEmail = new SensitivePatternValidator().validate(nameOnly, prohibited, Set.of(), context());
+
+        assertThat(withEmail.valid()).isFalse();
+        assertThat(withEmail.violations()).hasSize(1);
+        assertThat(withEmail.violations().get(0).path()).contains("email");
+        assertThat(withoutEmail.valid()).isTrue();
+        assertThat(new RawValueLeakValidator().validate(nameOnly, prohibited, Set.of(), context()).valid())
+                .isFalse();
     }
 }
