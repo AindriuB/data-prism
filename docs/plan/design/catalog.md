@@ -28,7 +28,7 @@ Decisions this design inherits and does not reopen:
 - D-RM-13 (a): `compare_entity_sources` is kept.
 - D-RM-1, D-RM-4, D-RM-5, D-RM-14: generic tools only, links only for `chainable: true` fields, exact namespace match, one-step links built from declarations.
 - D-070-1 to D-070-3 and D-070-13: per-source `{status, entity}` result, `REFUSED` omission, seven status codes, `REFUSED:<code>` audit values.
-- From task 191, as recorded in its documents: the audit disposition grammar stays closed under shape C (`REFUSED:<code>`-shaped values only; OD-13 of `sealed-links.md`); `dataprism.links.enabled` is `false` by default; a source's input keys are declared on the adapter and are what this design specifies; `KEY_UNRESOLVED` is a per-source status; namespaces are free-form validated labels (`[a-z][a-z0-9-]{0,63}`).
+- From task 191, as recorded in its documents: the audit disposition grammar stays closed under shape C (`REFUSED:<code>`-shaped values only; OD-13 of `sealed-links.md`); `dataprism.links.enabled` is `false` by default; a source's input keys are declared on the adapter and are what this design specifies; `RESOLVER_FAILED` (OD-200-3) is a per-source status; namespaces are free-form validated labels (`[a-z][a-z0-9-]{0,63}`).
 
 Facts about the current code that this design rests on (checked 2026-10-09 on branch `plan/0.7.0`):
 
