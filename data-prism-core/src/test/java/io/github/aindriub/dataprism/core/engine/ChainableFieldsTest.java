@@ -123,15 +123,49 @@ class ChainableFieldsTest {
     }
 
     @LlmExposedModel
-    record Long63List(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") List<String> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    record Long62List(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") List<String> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
     }
 
     @LlmExposedModel
-    record Long63Array(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String[] aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    record Long62Array(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String[] aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    }
+
+    @LlmExposedModel
+    record Long63List(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") List<String> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
     }
 
     @LlmExposedModel
     record Long64List(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") List<String> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {
+    }
+
+    @SensitiveObject
+    static class Box {
+        @InternalIdentifier
+        @Chainable(keyNamespace = "parcel-ref")
+        String ref;
+    }
+
+    static class PlainBox {
+        @InternalIdentifier
+        @Chainable(keyNamespace = "parcel-ref")
+        String ref;
+    }
+
+    interface Keyed {
+        @Chainable(keyNamespace = "parcel-ref")
+        String ref();
+    }
+
+    @LlmExposedModel
+    record InBox(@NonSensitive(reason = "structure") Box b) {
+    }
+
+    @LlmExposedModel
+    record InPlainBox(@NonSensitive(reason = "structure") PlainBox b) {
+    }
+
+    @LlmExposedModel
+    record InInterface(@NonSensitive(reason = "structure") Keyed k) {
     }
 
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
@@ -287,7 +321,7 @@ class ChainableFieldsTest {
     @DisplayName("a chainable map, or a chainable inside a map value, is refused")
     void maps() {
         assertThatThrownBy(() -> ChainableFields.of(MapField.class))
-                .hasMessageStartingWith(CODE).hasMessageContaining("m");
+                .hasMessageStartingWith(CODE).hasMessageContaining(MapField.class.getName() + ".m");
         assertThatThrownBy(() -> ChainableFields.of(MapOfRoutes.class))
                 .hasMessageStartingWith(CODE).hasMessageContaining(Route.class.getName());
     }
@@ -310,8 +344,30 @@ class ChainableFieldsTest {
     void pathCap() {
         assertThat(ChainableFields.of(Long64.class)).hasSize(1);
         assertThatThrownBy(() -> ChainableFields.of(Long65.class)).hasMessageStartingWith(CODE);
-        assertThat(ChainableFields.of(Long63List.class)).hasSize(1);
-        assertThat(ChainableFields.of(Long63Array.class)).hasSize(1);
+        assertThat(ChainableFields.of(Long62List.class)).hasSize(1);
+        assertThat(ChainableFields.of(Long62Array.class)).hasSize(1);
+        assertThatThrownBy(() -> ChainableFields.of(Long63List.class)).hasMessageStartingWith(CODE);
         assertThatThrownBy(() -> ChainableFields.of(Long64List.class)).hasMessageStartingWith(CODE);
+    }
+
+    @Test
+    @DisplayName("a descendable plain class is walked like a record")
+    void plainClassDescended() {
+        assertThat(ChainableFields.of(InBox.class)).containsExactly(
+                new ChainableField("b.ref", new KeyNamespace("parcel-ref"), false));
+    }
+
+    @Test
+    @DisplayName("a chainable in a non-descendable plain class is refused, never ignored")
+    void plainClassNotDescendable() {
+        assertThatThrownBy(() -> ChainableFields.of(InPlainBox.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(PlainBox.class.getName() + ".ref");
+    }
+
+    @Test
+    @DisplayName("a chainable declared on an interface method is refused, never ignored")
+    void interfaceMethod() {
+        assertThatThrownBy(() -> ChainableFields.of(InInterface.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Keyed.class.getName() + ".ref");
     }
 }

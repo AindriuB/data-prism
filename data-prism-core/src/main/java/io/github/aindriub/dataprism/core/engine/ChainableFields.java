@@ -78,6 +78,14 @@ public final class ChainableFields {
         if (!inProgress.add(type)) {
             return;
         }
+        if (type.isInterface()) {
+            for (Method method : type.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(Chainable.class)) {
+                    throw invalid(type, method.getName(), "is declared chainable on an interface, which the"
+                            + " scrubber cannot read");
+                }
+            }
+        }
         Map<String, List<AnnotatedElement>> declarations = declarations(type);
         ModelDescriptor descriptor = descriptors.get(type.getName());
         for (FieldMetadata field : resolver.resolve(type)) {
@@ -104,7 +112,7 @@ public final class ChainableFields {
                     throw invalid(type, name, "has a path longer than " + MAX_PATH_BYTES + " bytes");
                 }
                 out.add(new ChainableField(path, namespace, underElement || collection));
-            } else if (inner != null && inner.isRecord()) {
+            } else if (inner != null && userType(inner)) {
                 String next = refusal;
                 if (next == null && map) {
                     next = "is chainable inside a map value, which the path grammar cannot name";
@@ -116,6 +124,17 @@ public final class ChainableFields {
             }
         }
         inProgress.remove(type);
+    }
+
+    /**
+     * Whether a nested type may carry declarations to look at: anything but a primitive, an enum, an
+     * annotation or a JDK type. The walk looks inside every such type, descendable or not, so a
+     * declaration it cannot reach is refused rather than silently ignored.
+     */
+    private static boolean userType(Class<?> type) {
+        String name = type.getName();
+        return !type.isPrimitive() && !type.isEnum() && !type.isAnnotation()
+                && !name.startsWith("java.") && !name.startsWith("javax.");
     }
 
     /** The effective namespace, or null when the field is not declared chainable. */

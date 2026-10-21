@@ -157,4 +157,22 @@ class ChainableDispositionParityTest {
         assertSame(r.scrub(new AnnotatedTwoSubjects("a-1", "g-1", "A Name", "G Name"), context()),
                 r.scrub(new ScrubbingFixtures.TwoSubjects("a-1", "g-1", "A Name", "G Name"), context()));
     }
+
+    /** {@link ScrubbingFixtures.PlainClass} with the annotation on its identifier. */
+    @LlmExposedModel
+    record AnnotatedPlainClass(
+            @InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String subjectRef,
+            @SensitiveData(classifications = DataClassification.PII,
+                    namespace = PrivacyNamespace.PERSON_NAME,
+                    suggestedAction = PrivacyAction.SYNTHESIZE) String fullName,
+            @NonSensitive(reason = "Enumerated state, no free text") String state) {
+    }
+
+    @Test
+    @DisplayName("PlainClass: identical with the annotation on its identifier")
+    void annotatedPlainClass() {
+        var r = engine(new DefaultFieldMetadataResolver());
+        assertSame(r.scrub(new AnnotatedPlainClass("s-1", "A Name", "OPEN"), context()),
+                r.scrub(new ScrubbingFixtures.PlainClass("s-1", "A Name", "OPEN"), context()));
+    }
 }
