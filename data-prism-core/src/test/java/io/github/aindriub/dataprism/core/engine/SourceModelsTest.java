@@ -743,4 +743,76 @@ class SourceModelsTest {
         assertRefusedWith(() -> SourceTree.of(new HoldsAny(new Envelope<>(new Inner("n", Tier.GOLD), "e"))),
                 "SOURCE_MODEL_GENERIC", "Envelope");
     }
+
+    public record ListOfList(List<List<Inner>> v) {
+    }
+
+    public record ArrOfArr(Inner[][] v) {
+    }
+
+    public record ListOfArr(List<Inner[]> v) {
+    }
+
+    public record ArrOfList(List<Inner>[] v) {
+    }
+
+    public record SetOfList(java.util.Set<List<Inner>> v) {
+    }
+
+    public record ListOfSet(List<java.util.Set<Inner>> v) {
+    }
+
+    public record ListOfListOfList(List<List<List<Inner>>> v) {
+    }
+
+    public record OptionalOfListOfList(Optional<List<List<Inner>>> v) {
+    }
+
+    public record WildListOfList(List<? extends List<Inner>> v) {
+    }
+
+    public record HoldsListOfList(ListOfList inner) {
+    }
+
+    public record NestedScalars(List<List<String>> a, String[][] b, byte[][] c, List<int[]> d) {
+    }
+
+    public record OptionalShapes(Optional<List<Inner>> a, Optional<Inner[]> b, List<Optional<Inner>> c) {
+    }
+
+    public record MapOfListOfListOfRecord(Map<String, List<List<Inner>>> byKey) {
+    }
+
+    @Test
+    void theNestedCollectionCodeIsAValidRefusalToken() {
+        String code = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
+        assertThat(io.github.aindriub.dataprism.core.refusal.RefusalCodes.sanitise(code)).isEqualTo(code);
+    }
+
+    @Test
+    void aRecordInsideACollectionInsideACollectionIsRefusedAtStartup() {
+        String code = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
+        assertRefusedWith(() -> SourceModels.require(ListOfList.class), code, "ListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(ArrOfArr.class), code, "ArrOfArr.v");
+        assertRefusedWith(() -> SourceModels.require(ListOfArr.class), code, "ListOfArr.v");
+        assertRefusedWith(() -> SourceModels.require(ArrOfList.class), code, "ArrOfList.v");
+        assertRefusedWith(() -> SourceModels.require(SetOfList.class), code, "SetOfList.v");
+        assertRefusedWith(() -> SourceModels.require(ListOfSet.class), code, "ListOfSet.v");
+        assertRefusedWith(() -> SourceModels.require(ListOfListOfList.class), code, "ListOfListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(OptionalOfListOfList.class), code, "OptionalOfListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(WildListOfList.class), code, "WildListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(HoldsListOfList.class), code, "ListOfList.v");
+    }
+
+    @Test
+    void scalarsAndOneLevelOfRecordsInsideOptionalsStillPass() {
+        assertThatCode(() -> SourceModels.require(NestedScalars.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(OptionalShapes.class)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aMapOfNestedCollectionsOfRecordsStaysAMapOfRecord() {
+        assertRefusedWith(() -> SourceModels.require(MapOfListOfListOfRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "MapOfListOfListOfRecord.byKey");
+    }
 }
