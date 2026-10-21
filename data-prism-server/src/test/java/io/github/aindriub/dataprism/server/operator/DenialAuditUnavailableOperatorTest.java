@@ -133,7 +133,7 @@ class DenialAuditUnavailableOperatorTest {
     // ---- oversight endpoints ---------------------------------------------------------------------
 
     @Test
-    void invalidPauseAndResumeBodies() {
+    void invalidPauseAndResumeBodiesAreAnsweredAuditUnavailableWhenTheirDenyCannotBeWritten() {
         denyDown = true;
         var invalid = new OversightOperatorController.PauseRequest("NOPE", "x");
         assertUnavailable(() -> oversight().pause(invalid), "pause");
@@ -141,7 +141,7 @@ class DenialAuditUnavailableOperatorTest {
     }
 
     @Test
-    void pauseWhoseStateWriteFails() {
+    void aPauseWhoseStateWriteFailsIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         denyDown = true;
         OversightState broken = (OversightState) Proxy.newProxyInstance(OversightState.class.getClassLoader(),
                 new Class<?>[] {OversightState.class}, (p, m, args) -> {
@@ -152,7 +152,7 @@ class DenialAuditUnavailableOperatorTest {
     }
 
     @Test
-    void approvalViewUnknownAndUnreadable() {
+    void anApprovalViewThatIsUnknownOrUnreadableIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         denyDown = true;
         assertUnavailable(() -> oversight().approval("no-such"), "approval not found");
         storeDown = true;
@@ -160,7 +160,7 @@ class DenialAuditUnavailableOperatorTest {
     }
 
     @Test
-    void approveUnknownUnreadableAndPrechecked() {
+    void anApproveRefusedBeforeOrDuringTheStoreCallIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         String id = pendingToolApproval();
         denyDown = true;
         assertUnavailable(() -> oversight().approve("no-such"), "approve not found");
@@ -172,7 +172,7 @@ class DenialAuditUnavailableOperatorTest {
     }
 
     @Test
-    void rejectUnknownUnreadableAndRefused() {
+    void aRejectRefusedOrFailedIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         String id = pendingToolApproval();
         denyDown = true;
         assertUnavailable(() -> oversight().reject("no-such"), "reject not found");
@@ -204,7 +204,7 @@ class DenialAuditUnavailableOperatorTest {
     }
 
     @Test
-    void disabledAndInvalidReidentification() {
+    void aDisabledOrInvalidReidentificationCallIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         denyDown = true;
         var body = new ReidentificationOperatorController.ReidentificationBody("scope-1", "PERSON_NAME",
                 "Alex Murphy 7QF2", "fraud-investigation", "CASE-1");

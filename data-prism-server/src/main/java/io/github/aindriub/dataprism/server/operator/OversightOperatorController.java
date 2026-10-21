@@ -34,8 +34,11 @@ import java.util.UUID;
  *
  * <p>Order matters for fail-closed: a restrictive action (pause, reject) takes effect and is then
  * audited; a permissive one (resume) is audited first and takes effect only if the event was
- * written; an approval is audited first and committed only if the event was written, with a
- * linked {@code DENY} under the same correlation id when it then did not apply.
+ * written. If applying the resume then fails, a linked {@code DENY} is written under the same
+ * correlation id as the {@code ALLOW:RESUMED}, the state is unchanged and the answer is the failure;
+ * if that {@code DENY} cannot be written either, the answer is 503 {@code AUDIT_UNAVAILABLE}. An
+ * approval is audited first and committed only if the event was written, with a linked {@code DENY}
+ * under the same correlation id when it then did not apply.
  */
 @RestController
 @ConditionalOnProperty(prefix = "dataprism.operator", name = "enabled", havingValue = "true")

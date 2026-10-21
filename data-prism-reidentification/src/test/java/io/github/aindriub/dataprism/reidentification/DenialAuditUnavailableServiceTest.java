@@ -114,25 +114,25 @@ class DenialAuditUnavailableServiceTest {
     // ---- request -------------------------------------------------------------------------------
 
     @Test
-    void notPermittedWithAuditDown() {
+    void aRequestRefusedAsNotPermittedIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         auditDown = true;
         assertUnavailableAndCounted(service(false).request(caller("v", "viewer"), req("fraud-investigation")));
     }
 
     @Test
-    void purposeRequiredWithAuditDown() {
+    void aRequestRefusedForNoPurposeIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         auditDown = true;
         assertUnavailableAndCounted(service(false).request(caller("a", "investigator"), req("")));
     }
 
     @Test
-    void purposeNotAllowedWithAuditDown() {
+    void aRequestRefusedForADisallowedPurposeIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         auditDown = true;
         assertUnavailableAndCounted(service(false).request(caller("a", "investigator"), req("marketing")));
     }
 
     @Test
-    void notFoundWithAuditDown() {
+    void aRequestForAnUnknownSyntheticValueIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         found = Optional.empty();
         auditDown = true;
         assertUnavailableAndCounted(service(false).request(caller("a", "investigator"),
@@ -140,7 +140,7 @@ class DenialAuditUnavailableServiceTest {
     }
 
     @Test
-    void unavailableLookupWithAuditDown() {
+    void aRequestWhoseLookupFailsIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         ReidentificationPolicy policy = new ReidentificationPolicy(Set.of("fraud-investigation"), ROLES, false,
                 Duration.ofMinutes(10), 5);
         var service = new ReidentificationService((scope, ns, synth) -> {
@@ -151,7 +151,7 @@ class DenialAuditUnavailableServiceTest {
     }
 
     @Test
-    void tooManyPendingWithAuditDownIsCounted() {
+    void aRequestRefusedForTooManyPendingIsAnsweredAuditUnavailableAndCountedWhenItsDenyCannotBeWritten() {
         ReidentificationService service = service(true, 1);
         pending(service);
         auditDown = true;
@@ -161,7 +161,7 @@ class DenialAuditUnavailableServiceTest {
     // ---- approve -------------------------------------------------------------------------------
 
     @Test
-    void approveNotPermittedWithAuditDown() {
+    void anApproveRefusedAsNotPermittedIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         ReidentificationService service = service(true);
         String id = pending(service);
         auditDown = true;
@@ -169,13 +169,13 @@ class DenialAuditUnavailableServiceTest {
     }
 
     @Test
-    void approveNotFoundWithAuditDown() {
+    void anApproveOfAnUnknownApprovalIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         auditDown = true;
         assertUnavailableAndCounted(service(true).approve(caller("bob", "supervisor"), "no-such-approval"));
     }
 
     @Test
-    void approveSelfApprovalWithAuditDown() {
+    void aSelfApprovalIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         ReidentificationService service = service(true);
         String id = pending(service);
         auditDown = true;
@@ -183,7 +183,7 @@ class DenialAuditUnavailableServiceTest {
     }
 
     @Test
-    void approveStoreUnavailableWithAuditDown() {
+    void anApproveWhoseStoreIsUnreadableIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         ReidentificationService service = service(true);
         String id = pending(service);
         storeDown = true;
@@ -194,13 +194,13 @@ class DenialAuditUnavailableServiceTest {
     // ---- collect -------------------------------------------------------------------------------
 
     @Test
-    void collectNotFoundWithAuditDown() {
+    void aCollectOfAnUnknownApprovalIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         auditDown = true;
         assertUnavailableAndCounted(service(true).collect(caller("alice", "investigator"), "no-such-approval"));
     }
 
     @Test
-    void collectNotRequesterWithAuditDown() {
+    void aCollectByAnotherPrincipalIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         ReidentificationService service = service(true);
         String id = pending(service);
         auditDown = true;
@@ -208,7 +208,7 @@ class DenialAuditUnavailableServiceTest {
     }
 
     @Test
-    void collectNotApprovedWithAuditDown() {
+    void aCollectOfAnUnapprovedApprovalIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         ReidentificationService service = service(true);
         String id = pending(service);
         auditDown = true;
@@ -216,7 +216,7 @@ class DenialAuditUnavailableServiceTest {
     }
 
     @Test
-    void collectStoreUnavailableWithAuditDown() {
+    void aCollectWhoseStoreIsUnreadableIsAnsweredAuditUnavailableWhenItsDenyCannotBeWritten() {
         ReidentificationService service = service(true);
         String id = pending(service);
         storeDown = true;
