@@ -456,6 +456,121 @@ class ChainableFieldsTest {
     record D0(@NonSensitive(reason = "structure") D1 a, @NonSensitive(reason = "structure") D1 b) {
     }
 
+    @SensitiveObject
+    record PlainNoAnn(String id) {
+    }
+
+    @LlmExposedModel
+    record DPrimaryOnly(@NonSensitive(reason = "structure") PlainNoAnn primary) {
+    }
+
+    @LlmExposedModel
+    record DNested(@NonSensitive(reason = "structure") PlainNoAnn primary, @NonSensitive(reason = "structure") List<List<PlainNoAnn>> n) {
+    }
+
+    @LlmExposedModel
+    record DArray(@NonSensitive(reason = "structure") PlainNoAnn primary, @NonSensitive(reason = "structure") PlainNoAnn[][] n) {
+    }
+
+    @LlmExposedModel
+    record DOptList(@NonSensitive(reason = "structure") PlainNoAnn primary, @NonSensitive(reason = "structure") java.util.Optional<List<PlainNoAnn>> n) {
+    }
+
+    @LlmExposedModel
+    record DWild(@NonSensitive(reason = "structure") PlainNoAnn primary, @NonSensitive(reason = "structure") List<? extends PlainNoAnn> n) {
+    }
+
+    record DTv<T extends PlainNoAnn>(@NonSensitive(reason = "structure") PlainNoAnn primary, @NonSensitive(reason = "structure") T n) {
+    }
+
+    static class LeafList extends java.util.ArrayList<Leaf> {
+    }
+
+    interface Leaves extends Iterable<Leaf> {
+    }
+
+    static class LeafIndex extends java.util.HashMap<String, Leaf> {
+    }
+
+    static class GBase<T> {
+        T item;
+    }
+
+    static class Sub extends GBase<Leaf> {
+    }
+
+    static class BaseLeaf {
+        Leaf item;
+    }
+
+    static class SubLeaf extends BaseLeaf {
+    }
+
+    @LlmExposedModel
+    record MLeafList(@NonSensitive(reason = "structure") Leaf primary, @NonSensitive(reason = "structure") LeafList others) {
+    }
+
+    @LlmExposedModel
+    record MLeaves(@NonSensitive(reason = "structure") Leaf primary, @NonSensitive(reason = "structure") Leaves others) {
+    }
+
+    @LlmExposedModel
+    record MLeafIndex(@NonSensitive(reason = "structure") Leaf primary, @NonSensitive(reason = "structure") LeafIndex others) {
+    }
+
+    @LlmExposedModel
+    record MSub(@NonSensitive(reason = "structure") Leaf primary, @NonSensitive(reason = "structure") Sub other) {
+    }
+
+    @LlmExposedModel
+    record MSubLeaf(@NonSensitive(reason = "structure") Leaf primary, @NonSensitive(reason = "structure") SubLeaf other) {
+    }
+
+    record GBox<T>(@NonSensitive(reason = "structure") T v) {
+    }
+
+    record Page<T>(@NonSensitive(reason = "structure") List<T> items) {
+    }
+
+    @LlmExposedModel
+    record MBox(@NonSensitive(reason = "structure") GBox<Leaf> box) {
+    }
+
+    @LlmExposedModel
+    record MPage(@NonSensitive(reason = "structure") Page<Leaf> page) {
+    }
+
+    sealed interface Shape permits Circle {
+    }
+
+    record Circle(@InternalIdentifier @Chainable(keyNamespace = "shape") String id) implements Shape {
+    }
+
+    @LlmExposedModel
+    record MShape(@NonSensitive(reason = "structure") Shape shape) {
+    }
+
+    static class Outer<X> {
+        class Inner {
+            X x;
+        }
+    }
+
+    @LlmExposedModel
+    record MInner(@NonSensitive(reason = "structure") Leaf primary, @NonSensitive(reason = "structure") Outer<Leaf>.Inner inner) {
+    }
+
+    @LlmExposedModel
+    record Arr(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String[] arr) {
+    }
+
+    private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
+                                                           Boolean chainable, String namespace, String role) {
+        return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
+                Map.of(field, new ModelDescriptor.FieldDescriptor(List.of(), null, null, null, null, role,
+                        chainable, namespace))));
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -780,5 +895,58 @@ class ChainableFieldsTest {
     void deepDiamond() {
         assertThatThrownBy(() -> ChainableFields.of(D0.class))
                 .hasMessageStartingWith(CODE).hasMessageContaining("model too deep to analyse");
+    }
+
+    private static Map<String, ModelDescriptor> plainDescriptor() {
+        return descriptor(PlainNoAnn.class, "id", true, "plain-ref", "self");
+    }
+
+    @Test
+    @DisplayName("a descriptor-declared chainable counts on an inexpressible route")
+    void descriptorRoutes() {
+        assertThat(ChainableFields.of(DPrimaryOnly.class, plainDescriptor())).hasSize(1);
+        for (Class<?> type : List.of(DNested.class, DArray.class, DOptList.class, DWild.class, DTv.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type, plainDescriptor()))
+                    .as(type.getSimpleName()).hasMessageStartingWith(CODE);
+        }
+    }
+
+    @Test
+    @DisplayName("a chainable reachable from a field type only through supertypes is refused")
+    void supertypeRoutes() {
+        for (Class<?> type : List.of(MLeafList.class, MLeaves.class, MLeafIndex.class, MSub.class,
+                MSubLeaf.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type))
+                    .as(type.getSimpleName()).hasMessageStartingWith(CODE);
+        }
+    }
+
+    @Test
+    @DisplayName("a user generic is inexpressible, so a reachable chainable is refused")
+    void userGenerics() {
+        for (Class<?> type : List.of(MBox.class, MPage.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type))
+                    .as(type.getSimpleName()).hasMessageStartingWith(CODE);
+        }
+    }
+
+    @Test
+    @DisplayName("sealed permits and owner types are followed")
+    void sealedAndOwner() {
+        assertThatThrownBy(() -> ChainableFields.of(MShape.class)).hasMessageStartingWith(CODE);
+        assertThatThrownBy(() -> ChainableFields.of(MInner.class)).hasMessageStartingWith(CODE);
+    }
+
+    @Test
+    @DisplayName("the expressible acceptance shapes are still listed")
+    void acceptanceShapesStillWork() {
+        assertThat(ChainableFields.of(KeyList.class)).extracting(ChainableField::path).containsExactly("keys[]");
+        assertThat(ChainableFields.of(Routes.class)).extracting(ChainableField::path)
+                .containsExactly("routes[].depot");
+        assertThat(ChainableFields.of(Nested.class)).extracting(ChainableField::path).containsExactly("a.b");
+        assertThat(ChainableFields.of(Opt.class)).extracting(ChainableField::path).containsExactly("ref");
+        assertThat(ChainableFields.of(OptRoute.class)).extracting(ChainableField::path)
+                .containsExactly("opt.depot");
+        assertThat(ChainableFields.of(Arr.class)).extracting(ChainableField::path).containsExactly("arr[]");
     }
 }

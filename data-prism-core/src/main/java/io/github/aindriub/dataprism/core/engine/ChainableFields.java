@@ -84,6 +84,9 @@ public final class ChainableFields {
         List<ChainableField> out = new ArrayList<>();
         Set<AnnotatedElement> consumed = new HashSet<>();
         Set<String> consumedFields = new HashSet<>();
+        Reached rootSupertypes = new Reached();
+        collectSupertypes(model, rootSupertypes);
+        refuseReached(model, "<supertypes>", rootSupertypes, descriptors);
         walk(model, "", false, null, resolver, descriptors, new HashSet<>(), out, consumed, consumedFields,
                 new int[1]);
         refuseUnconsumed(model, descriptors, consumed, consumedFields);
@@ -110,7 +113,7 @@ public final class ChainableFields {
             String name = field.fieldName();
             ModelDescriptor.FieldDescriptor stated = descriptor == null ? null : descriptor.field(name);
             KeyNamespace namespace = declared(type, name, declarations.getOrDefault(name, List.of()), stated);
-            refuseInexpressibleRoute(type, name, genericType(type, name));
+            refuseInexpressibleRoute(type, name, genericType(type, name), descriptors);
             Class<?> valueType = field.valueType();
             boolean map = Map.class.isAssignableFrom(valueType);
             boolean collection = valueType.isArray() || Iterable.class.isAssignableFrom(valueType);
@@ -266,18 +269,55 @@ public final class ChainableFields {
      */
     private static boolean expressible(java.lang.reflect.Type type) {
         if (type instanceof Class<?> c) {
-            return !c.isArray() || !c.getComponentType().isArray();
+            Class<?> element = c;
+            int dimensions = 0;
+            while (element.isArray()) {
+                element = element.getComponentType();
+                dimensions++;
+            }
+            // A user subclass of a JDK collection or map hides its element type in its supertypes.
+            boolean hiddenContainer = !element.getName().startsWith("java.")
+                    && (Iterable.class.isAssignableFrom(element) || Map.class.isAssignableFrom(element));
+            return dimensions <= 1 && !hiddenContainer;
         }
         if (type instanceof java.lang.reflect.ParameterizedType p && p.getRawType() instanceof Class<?> raw) {
             java.lang.reflect.Type[] arguments = p.getActualTypeArguments();
-            return !Map.class.isAssignableFrom(raw) && arguments.length == 1
+            return EXPRESSIBLE_GENERICS.contains(raw) && p.getOwnerType() == null && arguments.length == 1
                     && arguments[0] instanceof Class<?> argument && !argument.isArray();
         }
         return false;
     }
 
+    /** The only generic types the path grammar names: a list or set of one plain class, or an Optional. */
+    private static final Set<Class<?>> EXPRESSIBLE_GENERICS = Set.of(java.util.List.class,
+            java.util.Collection.class, java.util.Set.class, Iterable.class, java.util.Optional.class);
+
+    /** The plain class an expressible type holds, or null. */
+    private static Class<?> heldClass(java.lang.reflect.Type type) {
+        java.lang.reflect.Type held = type;
+        if (type instanceof java.lang.reflect.ParameterizedType p && p.getActualTypeArguments().length == 1) {
+            held = p.getActualTypeArguments()[0];
+        }
+        if (held instanceof Class<?> c) {
+            Class<?> element = c;
+            while (element.isArray()) {
+                element = element.getComponentType();
+            }
+            return element;
+        }
+        return null;
+    }
+
     /** The first {@code @Chainable} member declared on the type, as {@code "member"}, or null. */
-    private static String chainableMember(Class<?> type) {
+    private static String chainableMember(Class<?> type, Map<String, ModelDescriptor> descriptors) {
+        ModelDescriptor descriptor = descriptors.get(type.getName());
+        if (descriptor != null) {
+            for (Map.Entry<String, ModelDescriptor.FieldDescriptor> entry : descriptor.fields().entrySet()) {
+                if (Boolean.TRUE.equals(entry.getValue().chainable())) {
+                    return entry.getKey();
+                }
+            }
+        }
         if (type.isRecord()) {
             for (RecordComponent component : type.getRecordComponents()) {
                 if (component.isAnnotationPresent(Chainable.class)) {
@@ -318,17 +358,38 @@ public final class ChainableFields {
      * chainable declaration reachable through it is refused, even if the same declaration is consumed on
      * another, ordinary route.
      */
-    private static void refuseInexpressibleRoute(Class<?> owner, String field, java.lang.reflect.Type type) {
-        if (type == null || expressible(type)) {
+    private static void refuseInexpressibleRoute(Class<?> owner, String field, java.lang.reflect.Type type,
+                                                 Map<String, ModelDescriptor> descriptors) {
+        if (type == null) {
             return;
         }
         Reached reached = new Reached();
-        collect(type, reached);
+        if (!expressible(type)) {
+            collect(type, reached);
+        } else {
+            // The scrubber reads declared fields only, so whatever the held type inherits is unreachable.
+            Class<?> held = heldClass(type);
+            if (held != null && userType(held)) {
+                collectSupertypes(held, reached);
+            }
+        }
+        refuseReached(owner, field, reached, descriptors);
+    }
+
+    private static void collectSupertypes(Class<?> type, Reached out) {
+        collect(type.getGenericSuperclass(), out);
+        for (java.lang.reflect.Type supertype : type.getGenericInterfaces()) {
+            collect(supertype, out);
+        }
+    }
+
+    private static void refuseReached(Class<?> owner, String field, Reached reached,
+                                      Map<String, ModelDescriptor> descriptors) {
         for (Class<?> candidate : reached) {
-            String member = chainableMember(candidate);
+            String member = chainableMember(candidate, descriptors);
             if (member != null) {
                 throw invalid(owner, field, "reaches the chainable declaration " + candidate.getName() + "."
-                        + member + " through a type the path grammar cannot express");
+                        + member + " through a route the path grammar cannot express");
             }
         }
     }
@@ -354,9 +415,12 @@ public final class ChainableFields {
         if (!collectable(type) || type == Record.class || !out.add(type)) {
             return;
         }
-        collect(type.getGenericSuperclass(), out);
-        for (java.lang.reflect.Type supertype : type.getGenericInterfaces()) {
-            collect(supertype, out);
+        collectSupertypes(type, out);
+        Class<?>[] permitted = type.getPermittedSubclasses();
+        if (permitted != null) {
+            for (Class<?> subclass : permitted) {
+                collect(subclass, out);
+            }
         }
         for (Field field : type.getDeclaredFields()) {
             if (Modifier.isStatic(field.getModifiers())) {
@@ -390,6 +454,7 @@ public final class ChainableFields {
             }
             case java.lang.reflect.ParameterizedType p -> {
                 collect(p.getRawType(), out);
+                collect(p.getOwnerType(), out);
                 for (java.lang.reflect.Type argument : p.getActualTypeArguments()) {
                     collect(argument, out);
                 }
