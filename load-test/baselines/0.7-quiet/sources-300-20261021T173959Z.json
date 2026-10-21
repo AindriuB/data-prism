@@ -1,0 +1,2770 @@
+{
+  "scenario" : "sources-300",
+  "startedAt" : "2026-10-21T17:39:59.358168Z",
+  "commit" : "64752993858c74cd6cb3e53491f2fe242255c6a7",
+  "workingTreeDirty" : false,
+  "jdk" : "Homebrew 25.0.4",
+  "host" : "Mac OS X 27.0.1 aarch64, 8 processors, 4096 MiB max heap of the driver",
+  "parameters" : {
+    "name" : "sources-300",
+    "sources" : 300,
+    "sourceLatency" : {
+      "minMs" : 5,
+      "maxMs" : 40
+    },
+    "load" : {
+      "concurrency" : 4,
+      "calls" : 100,
+      "warmupCalls" : 10,
+      "ratePerSecond" : 0,
+      "durationSeconds" : 0,
+      "callTimeoutSeconds" : 60
+    },
+    "limits" : {
+      "maxSources" : 300,
+      "maxRecords" : 20000,
+      "maxResponseSize" : "16MB",
+      "perSourceTimeout" : "10s",
+      "maxConcurrency" : 64,
+      "scopeReadBudget" : 100
+    },
+    "seed" : 196
+  },
+  "effectiveLimits" : {
+    "dataprism.limits.max-sources" : "300",
+    "dataprism.limits.max-records" : "20000",
+    "dataprism.limits.max-response-size" : "16MB",
+    "dataprism.limits.per-source-timeout" : "10s",
+    "dataprism.limits.max-concurrency" : "64",
+    "dataprism.limits.scope-read-budget" : "100"
+  },
+  "calls" : {
+    "attempted" : 100,
+    "completed" : 100,
+    "transportFailures" : 0,
+    "transportFailureKinds" : { },
+    "notDispatched" : 0
+  },
+  "latencyMs" : {
+    "p50" : 181.108,
+    "p95" : 266.037,
+    "p99" : 298.715,
+    "max" : 347.419,
+    "mean" : 190.17333,
+    "clamped" : 0
+  },
+  "elapsedSeconds" : 4.8109875,
+  "throughputPerSecond" : 20.785753444589076,
+  "refusalCodes" : { },
+  "sourceStatusTotals" : {
+    "ANSWERED" : 30000,
+    "NO_DATA" : 0,
+    "TIMED_OUT" : 0,
+    "FAILED" : 0,
+    "CIRCUIT_OPEN" : 0,
+    "SKIPPED_OVER_LIMIT" : 0,
+    "REFUSED" : 0
+  },
+  "perSourceStatus" : {
+    "ORGANISATION_IDENTITY-055JVC7X" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-06EGXK68" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0BK3T248" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0BN52MAF" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0DQGSZQG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0G5X200Y" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0J6TMR9N" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0KQAYEH4" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0M1AA6ZB" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0PMKBG69" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0VWHS8N3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-0ZNR4WXY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-13KMXQ14" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-16HP66PF" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-18H0F554" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-1CHHZ74V" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-1HK6AEG3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-1P5G0XEM" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-1Q1D4VZ6" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-1ZZ881GG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-22BFFTD5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-2CFAN6ZA" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-2E95GJWT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-2H5BQQQN" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-2JQ15QBR" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-2V49Z3K2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-2V5BW1XV" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-2VVK994K" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-30VSN49G" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-31N8AMY6" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-331FJ3AT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-33W3STS2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-39Y9PZ2C" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3BDXMRPM" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3F2E0S16" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3G4A5NEY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3H31HTFE" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3JSM712R" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3Q6JAP68" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3XZ9PVC0" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-3YHN9B6D" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-40DMA011" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-4EEKTNEH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-4FYABPF6" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-4MWTQNKZ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-4MX7Q3W4" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-4X3XSD58" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-4XJ654PE" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-517QX1B5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-52ZDDA34" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-53XNHEGZ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-55EKHMGR" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-574M4NFG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-58FBRAB0" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-5DYTW6ZJ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-5JKMTVF5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-624QXBA5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-64Z80ZV8" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-655DABFR" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-6698N8F8" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-6M50ZVQE" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-6NKNNRZG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-6RHAVTKV" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-702Z1QV3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-76ANTM2Z" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-7SFVB2QN" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-7YK5PNCT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-83T7GVPE" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-86K0BXQ2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-8HM1YZWD" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-8NHFMFW0" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-8V6PQ0XC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-8VJ4C7TY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-94TJNM78" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9A6CG5Z8" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9F1BJDV6" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9J9XG4GG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9K8EE3VV" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9KZ04PNH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9MY0S20A" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9NY729N3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9QX876XT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9T0C8QK3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9YB8GEHY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-9Z9TNYN2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-A2K6XXYE" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-A53RBTA6" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-A6C31PRW" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-AN073M13" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-AT1QJES1" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ATP44XMQ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-AWBTZZYS" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-AZ1S7DYX" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-B5SM27TY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-B8KQA05X" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-BEP8QAA2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-BPK4VN6Y" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-BSG2E3PC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-BVPNV1D5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-BW0TCJV9" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-BZEXB38F" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-BZPK39HP" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-C3GVX643" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-C76ZVP2B" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-C7YA38XR" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-CFR0NF29" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-CH21N6XK" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-CKDMY69Y" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-CNDJF04V" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-CTXVX0EQ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-CZ4VZRXA" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-D25RDX97" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-DAKYSW5E" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-DAYJD8WC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-DDBKCM52" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-DFGE2DB3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-DHJJH1CJ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-DS1BPQBP" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-DYMAHPRT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-E52A6MMR" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-EG3ZCX0T" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-EHWVT7T7" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-EMWNA6N9" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-EV0HXNB5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-F30QTXZ2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-F5KVWDDV" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-F6MYB63G" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-FC0A5ECK" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-FCK9JDYP" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-FD7V01EB" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-FDJVT63Z" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-FJGVKNCN" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-G051RCE1" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-G2YRXH68" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-G3652WY6" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-G4P66PBK" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-G7NZJR52" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-G7Z31JXD" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GD9KJ51G" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GG1GSR03" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GRXA8BZT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GRZFH2ZV" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GS3ZYWXC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GVPQR2RT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GX7VWQ2P" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-GY0RN3QD" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-H2C446XN" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-H9SJ98EZ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-HFF2X21Z" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-HHJB85H0" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-HKCDZT9V" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-HMA6YA0C" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-HPERSH7Z" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-HT4NXMMG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-HTR92DPT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-J0RHB6Y1" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-J265DDXH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-J5YTXGDA" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-J6S3Q981" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JAXX2Y6E" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JCQNZFMP" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JCSV7FGF" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JJ7MAVW1" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JNNYQ14Y" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JNT42HSB" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JQPV0B6N" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JV33VBS0" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-JZ52HBME" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-K5CMRPWX" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-K6Q79X9H" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-K8FWAP3V" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-K8N24EHH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-KBR0XG0T" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-KFD529TM" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-KFYTFN8M" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-KJKXQ690" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-KRVQ05KR" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-KTWJNRCN" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-KVNEWH48" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-M66594Z7" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-M7NKJ1GT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-MA0Y30DH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-MC8GD0J8" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-MEZVGWF3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-MK6X66T3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-MRM8GVGT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-N1N5NVXZ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-N27XHQQX" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-N3MVC7MH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-N4FSKX8R" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-N5AYFEGT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NCXMSXC0" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NJ5SAY4H" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NJ9WV5RS" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NNC86B3S" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NNFTN8CM" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NQDPWHAK" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NQSH1NZG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NVPR9E8K" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-NW7TSPR7" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-P7FA5ARQ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-PCBGMM0G" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-PJYB90YJ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-PKAFMW3B" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-PMWDGXN5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-PV80G21P" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-PYRZ6EQ8" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Q3636X1V" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Q4SMNJ56" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Q5E61HKH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Q6A63JYW" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Q81PHCZP" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Q8DQKRYC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Q97CS9RN" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-QDAVJ0XC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-QJXQHE60" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-QMR59RA9" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-QMZMV45Y" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-QVF92BP1" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-QXK4F3EW" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-QY66K3N9" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-R38K4E0D" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-R5BHMY6K" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-R75BZHVQ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-R9EJ8SHQ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-RG97XHH1" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-RGF66XXX" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-RGQGZANB" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-RH3PWP27" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-S2BRJMJG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-S83NVF36" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-S8M0ACZ0" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-SGH1PWJ8" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-SPPRCSGF" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-SRKTMHTF" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-SS1YJE4F" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-STGWC66V" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-SYADRMJZ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-SZWQ4C46" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-T5QS7TZQ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-T706DNW3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-T9AB5QZN" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TDX9NPEM" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TFRM6884" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TG7NZTDV" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-THJ8378J" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TJ8KMT9B" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TPZ08YEJ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TX50QXP1" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TY6JPYE9" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-TYS9CCM7" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V0NHHR2G" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V1NG16GY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V1T7BY8C" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V2DCTRY8" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V6FKAHAS" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V6JHZEYC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V6PN80YT" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-V9WD5XD5" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VBSFVRDB" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VCYG6DVF" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VHKCGENJ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VKAF2CWC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VN1MVNEZ" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VVCG7JJE" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VY2MEXKA" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-VZVSCA8B" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-W6Z4VSA3" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WAKA8BT2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WG407J25" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WGHVXE6W" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WPDWKJGY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WPP12M9F" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WQMJH2WS" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WVD7DB9W" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-WYB1HRZB" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-X5DMTZ8X" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XM5PM88M" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XN10T6FD" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XRHQYV7R" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XTR79FXA" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XW9BSEGH" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-XZ6JA7K2" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Y6MYM6BC" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-Y9STQJ89" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-YGCB9BG9" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-YHYP7F8J" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-YMF8MS7Q" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-YSJBR35A" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-YYPQR141" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZDMFPH47" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZDXFE61Q" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZM3K6RXG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZP8R0V9V" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZRB5C26Z" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZRM9JJB4" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZS6DD0GG" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZT4G5A2K" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZTAYA0AY" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    },
+    "ORGANISATION_IDENTITY-ZZWF94PM" : {
+      "ANSWERED" : 100,
+      "NO_DATA" : 0,
+      "TIMED_OUT" : 0,
+      "FAILED" : 0,
+      "CIRCUIT_OPEN" : 0,
+      "SKIPPED_OVER_LIMIT" : 0,
+      "REFUSED" : 0
+    }
+  }
+}
