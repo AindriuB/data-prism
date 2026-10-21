@@ -166,14 +166,12 @@ class NestedTypeArgumentTest {
     }
 
     @Test
-    @DisplayName("Optional<List<Leaf>> and List<List<Leaf>> keep their outcome: unclassified")
+    @DisplayName("Optional<List<Leaf>> and List<List<Leaf>> are both unclassified")
     void nestedContainersKeepTheirOutcome() {
         assertThat(code(new OptionalList("s-1", Optional.of(List.of(new Leaf(PII))))))
                 .isEqualTo("UNCLASSIFIED_STRUCTURE");
-        // Pinned only to show task 265 leaves it alone: an array inside an array is not descended into,
-        // and the field's own @NonSensitive decides. That is a separate gap, not changed here.
-        assertThat(engine().scrub(new ListList("s-1", List.of(List.of(new Leaf(PII)))), context()).tree()
-                .get("v").toString()).isEqualTo("[[{\"name\":\"" + PII + "\"}]]");
+        assertThat(code(new ListList("s-1", List.of(List.of(new Leaf(PII))))))
+                .isEqualTo("UNCLASSIFIED_STRUCTURE");
     }
 
     @Test
