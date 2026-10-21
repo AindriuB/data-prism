@@ -26,7 +26,6 @@ import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTranspor
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
-import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -175,19 +174,21 @@ class AuditSinkFailureAbortsResponseTest {
     }
 
     @Test
-    @DisplayName("a denial that must be audited fails the call rather than returning a result, when the sink throws")
+    @DisplayName("a denial that must be audited answers refused: AUDIT_UNAVAILABLE, when the sink throws")
     void auditSinkFailureAbortsTheResponse() throws Exception {
         String token = mintToken(UNCONFIGURED_PURPOSE);
         McpSyncClient client = clientWithToken(token);
         try {
-            assertThatThrownBy(() -> client.callTool(new McpSchema.CallToolRequest(
-                    "get_entity_context", Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
-                    .as("the sink's failure must surface as a call failure, never a successful result "
-                            + "carrying an unaudited decision, and the client learns only the stable "
-                            + "refusal code — never the sink's own exception message")
-                    .isInstanceOf(McpError.class)
-                    .hasMessageContaining("AUDIT_UNAVAILABLE")
-                    .hasMessageNotContaining("simulated sink failure, for this test only");
+            McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
+                    "get_entity_context", Map.of("entityType", "CUSTOMER", "subjectId", "123")));
+            assertThat(result.isError())
+                    .as("the sink's failure must never surface as a successful result carrying an "
+                            + "unaudited decision")
+                    .isEqualTo(Boolean.TRUE);
+            assertThat(result.toString())
+                    .as("the client learns only the stable refusal code, never the sink's own message")
+                    .contains("refused: AUDIT_UNAVAILABLE")
+                    .doesNotContain("simulated sink failure, for this test only");
         } finally {
             client.closeGracefully();
         }
@@ -202,7 +203,7 @@ class AuditSinkFailureAbortsResponseTest {
      * exception task 74's own analysis names as the one that carries the
      * path (unlike the plain {@code UncheckedIOException} the first failed
      * write throws). The same denial is then driven through the real
-     * transport, and the client-visible {@code McpError} is asserted to name
+     * transport, and the client-visible tool result is asserted to name
      * neither the temporary directory nor the file within it — anywhere,
      * including its cause chain as the client observes it.
      */
@@ -233,33 +234,19 @@ class AuditSinkFailureAbortsResponseTest {
         String token = mintToken(UNCONFIGURED_PURPOSE);
         McpSyncClient client = clientWithFileAuditSink(fileSink, token);
         try {
-            assertThatThrownBy(() -> client.callTool(new McpSchema.CallToolRequest(
-                    "get_entity_context", Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
-                    .as("neither the temporary directory nor the audit file's own name may reach the "
-                            + "client, in the message or anywhere in the cause chain it observes")
-                    .isInstanceOf(McpError.class)
-                    .satisfies(thrown -> {
-                        String rendered = renderedIncludingCauses((McpError) thrown);
-                        assertThat(rendered).contains("AUDIT_UNAVAILABLE");
-                        assertThat(rendered).doesNotContain(auditFile.toString());
-                        assertThat(rendered).doesNotContain(auditFile.getFileName().toString());
-                        assertThat(rendered).doesNotContain(auditFile.getParent().toString());
-                    });
+            McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
+                    "get_entity_context", Map.of("entityType", "CUSTOMER", "subjectId", "123")));
+            String rendered = result.toString();
+            assertThat(result.isError()).isEqualTo(Boolean.TRUE);
+            assertThat(rendered).as("neither the temporary directory nor the audit file's own name may "
+                    + "reach the client").contains("refused: AUDIT_UNAVAILABLE");
+            assertThat(rendered).doesNotContain(auditFile.toString());
+            assertThat(rendered).doesNotContain(auditFile.getFileName().toString());
+            assertThat(rendered).doesNotContain(auditFile.getParent().toString());
         } finally {
             client.closeGracefully();
             java.nio.file.Files.deleteIfExists(auditFile);
         }
-    }
-
-    private static String renderedIncludingCauses(Throwable thrown) {
-        StringBuilder rendered = new StringBuilder();
-        for (Throwable current = thrown; current != null; current = current.getCause()) {
-            rendered.append(current).append('\n');
-            if (current.getCause() == current) {
-                break;
-            }
-        }
-        return rendered.toString();
     }
 
     /**
