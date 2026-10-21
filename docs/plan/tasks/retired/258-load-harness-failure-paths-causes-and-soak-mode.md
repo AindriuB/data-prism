@@ -41,6 +41,28 @@ The 0.7 baseline is all-success, so 0.8's fan-out rewrite, per-source budget and
 ## Outcome (2026-10-21, 0.8 wave 1)
 Merged onto `record/0.8-wave1a` (task branch head 0ea1585e; tester PASS, 112 tests; reviewer APPROVE). The load harness has three failure scenarios, a closed `FailureCause` set (including `HTTP_STATUS_UNREPORTED` for the 5xx responses SDK 2.0.1 does not report), `RESOLVER_FAILED` and not-answered tallies, and a 24 h soak mode with credential rotation (3 or 4 rotations) and bounded waits. `ServerWatch` halts the run and keeps the logs if the server dies. The server log is rolling and capped, with a separate `server-console.log`, and the harness passes `--logging.threshold.console=OFF` because an empty console pattern produced a Logback error.
 
-Red runs: 176 compile errors on the base; `SdkFailureCauseTest` red against the real SDK; mutating the REFUSED regex failed 3 tests.
+Red runs: 176 compile errors on the base; `SdkFailureCauseTest` red against the real SDK (401, 403, 429 and 500 all classified OTHER); mutating the REFUSED regex failed 3 `FailureScenarioTest` tests.
 
-Bug hunt: the fixed findings include the server watch, the capped server log, usage errors, connect and call timeout validation, and the separate console file (the later commits on the branch). The filed findings are the 263 follow-ups in PLAN.md. The implementer's full fixed and filed lists were not passed to the scribe, so this summary is from the branch history and the coordinator's follow-up list.
+Bug hunt, fixed:
+
+- A response with no `sources` object was counted as completed; it is now FAILED/UNPARSEABLE_BODY and timed.
+- Unbounded waits: keytool, session close and cleanup closes.
+- The health-log regex missed multi-connector lines.
+- Throughput was inflated by the in-flight drain.
+- Slow non-timeout failures were untimed.
+- 401, 403 and 5xx were classified OTHER.
+- Re-mints were not counted as token reissues.
+- Per-source aliases were not scoped across rotations.
+- A dead server went unnoticed for the rest of a run.
+- The server log grew without bound.
+- A half-built client leaked when `initialize()` failed.
+- A missing option value threw ArrayIndexOutOfBounds.
+- The JVM's crash output shared the server log's path.
+- `callTimeoutSeconds` below 10 could turn a connect timeout into a read timeout; it is now rejected.
+
+Bug hunt, filed (not fixed):
+
+- A source's own FAILED status carries no cause in the response (needs a server change).
+- A malformed JSON-RPC body on a 200 ends as READ_TIMEOUT with SDK 2.0.1 (documented).
+- A scope rotation landing mid-call can mislabel that one call's scope number.
+- On server death `main` ends with an uncaught `IllegalStateException` (clear message, unclean exit).
