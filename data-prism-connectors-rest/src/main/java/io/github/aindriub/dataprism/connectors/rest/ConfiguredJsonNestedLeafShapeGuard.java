@@ -110,16 +110,33 @@ final class ConfiguredJsonNestedLeafShapeGuard {
         }
     }
 
-    /** @return the index of the first object element, or -1 if the array contains none */
+    /**
+     * @return the index, in this array, of the first element that is an object or holds one at any
+     * array depth, or -1 if there is none
+     */
     private static int firstObjectIndex(JsonNode array) {
         int index = 0;
         for (JsonNode element : array) {
-            if (element.isObject()) {
+            if (holdsObject(element)) {
                 return index;
             }
             index++;
         }
         return -1;
+    }
+
+    private static boolean holdsObject(JsonNode node) {
+        if (node.isObject()) {
+            return true;
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                if (holdsObject(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

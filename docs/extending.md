@@ -357,6 +357,10 @@ fixture source shares a single id:
     (`Map<String, Leaf>`, `Map<String, List<Leaf>>`): that is refused with
     `SOURCE_MODEL_MAP_OF_RECORD`, since the keys are data and are not classified.
     Use a list of records, or a record with named fields, instead.
+    A record must not sit inside a collection inside a collection
+    (`List<List<Leaf>>`, `Leaf[][]`, `List<Leaf[]>`, `Set<List<Leaf>>`): that is
+    refused with `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`, since a field's own
+    policy cannot tell what the inner arrays hold. Wrap the inner list in a record.
     A `@JsonSerialize(using=...)` on a record or its components, `@JsonAnyGetter`
     and `@JsonValue` are the model author's explicit choice and stay allowed (the
     engine still classifies what they produce); `@JsonProperty` or `@JsonGetter` on

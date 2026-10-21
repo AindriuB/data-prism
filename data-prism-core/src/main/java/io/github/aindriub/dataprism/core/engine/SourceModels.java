@@ -63,6 +63,9 @@ public final class SourceModels {
     /** A JDK map whose value type contains a record at any depth. */
     public static final String MAP_OF_RECORD_CODE = "SOURCE_MODEL_MAP_OF_RECORD";
 
+    /** A record at array level two or deeper: inside a collection or array that is itself inside one. */
+    public static final String NESTED_COLLECTION_OF_RECORD_CODE = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
+
     private SourceModels() {
     }
 
@@ -231,7 +234,12 @@ public final class SourceModels {
                     // Components first, so a refusal names the component; then ask the reader to
                     // build it: the serializer modifier compares its properties.
                     for (RecordComponent component : c.getRecordComponents()) {
-                        walk(component.getGenericType(), seen, simpleName(c) + "." + component.getName());
+                        String componentWhere = simpleName(c) + "." + component.getName();
+                        walk(component.getGenericType(), seen, componentWhere);
+                        // After the walk, so a generic or a map of records keeps its own code.
+                        if (recordBeyondFirstArray(component.getGenericType(), 0, new HashSet<>())) {
+                            throw nestedCollectionRefusal(componentWhere);
+                        }
                     }
                     SourceTree.refuseIfReadByGetters(c);
                 }
@@ -313,6 +321,54 @@ public final class SourceModels {
         return false;
     }
 
+    /**
+     * Whether a record sits at array level two or deeper in {@code type}. An array class, a generic
+     * array and a parameterized JDK {@code Iterable} each add a level; an {@code Optional} adds none;
+     * type variables and wildcards are read through their upper bounds. Counting restarts inside each
+     * record, which {@link #walk} handles on its own.
+     */
+    private static boolean recordBeyondFirstArray(Type type, int level, Set<Object> seen) {
+        if (type instanceof Class<?> c) {
+            if (c.isArray()) {
+                return recordBeyondFirstArray(c.getComponentType(), level + 1, seen);
+            }
+            return c.isRecord() && level >= 2;
+        }
+        if (type instanceof ParameterizedType p) {
+            int inner = level;
+            if (p.getRawType() instanceof Class<?> raw && Iterable.class.isAssignableFrom(raw)) {
+                inner = level + 1;
+            }
+            for (Type argument : p.getActualTypeArguments()) {
+                if (recordBeyondFirstArray(argument, inner, seen)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (type instanceof GenericArrayType g) {
+            return recordBeyondFirstArray(g.getGenericComponentType(), level + 1, seen);
+        }
+        if (type instanceof TypeVariable<?> v) {
+            if (seen.add(v)) {
+                for (Type bound : v.getBounds()) {
+                    if (recordBeyondFirstArray(bound, level, seen)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (type instanceof WildcardType w) {
+            for (Type bound : w.getUpperBounds()) {
+                if (recordBeyondFirstArray(bound, level, seen)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean allowedLeaf(Class<?> c) {
         if (c.isPrimitive() || c.isEnum() || (c.getSuperclass() != null && c.getSuperclass().isEnum())
                 || JsonNode.class.isAssignableFrom(c)) {
@@ -346,6 +402,12 @@ public final class SourceModels {
     private static PrivacyRefusedException mapOfRecordRefusal(String where, Class<?> map) {
         return new PrivacyRefusedException(MAP_OF_RECORD_CODE, "$",
                 at(where) + simpleName(map) + " values must not be records; source models must not hold them");
+    }
+
+    private static PrivacyRefusedException nestedCollectionRefusal(String where) {
+        return new PrivacyRefusedException(NESTED_COLLECTION_OF_RECORD_CODE, "$",
+                at(where) + "a record must not sit inside a collection inside a collection;"
+                        + " source models must not hold one");
     }
 
     private static PrivacyRefusedException refusal(Class<?> type) {
