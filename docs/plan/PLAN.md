@@ -63,7 +63,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 
 | Wave | Briefs |
 |---|---|
-| 1 | 218, 219, 238, 239, 243, 258, 259 |
+| 1 | 218, 219, 259 open; 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a) |
 | 2 | 220, 221, 240 |
 | 3 | 222, 242, 244, 248, 257 |
 | 4 | 223, 241 |
@@ -78,6 +78,15 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 13 | 231, 261, 264 |
 | 14 | 260, 263 |
 | last (14) | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
+
+Follow-ups from wave 1 (landed 2026-10-21), each belonging to the brief named:
+
+- 263: the load-test `consoleTail` reads the whole console file and should be bounded. The kept `.console.log` path is not named in the startup-failure message. The 8 h scope lifetime is not a hard limit because `ScopeResolver` extends it per request, so scope rotation changes what a soak measures; decide whether to keep it. A FAILED source status carries no cause (needs a server change). Server death ends `main` with an uncaught `IllegalStateException`.
+- 226: repeat the "no-op a release you cannot match" rule on the `ScopeBudget#release` Javadoc. A reservation released through a different budget instance changes the issuing instance's counters.
+- 249: document "description failed", that "e.g." and "i.e." are refused by rule 3, the rule 4 eager-construction errors, and that the duplicate-source-name refusal has no stable code.
+- 250: add test obligation 1 cases for over-long real names in paging: `[L1,L2,a,b]` with page size 2, and all-long with page size 1.
+- New small 0.8 follow-up (no brief yet): `ScopeIdentityIndex.endScope` deletes `BUDGET_MAP` keys with `IMap.delete`, which waits on another member's key lock bounded only by that lock's lease, not the lock timeout. Switch to a timed delete (`tryRemove`).
+- Tooling: `.claude/scripts/wt-new.sh` bases branches on local `main`, not `origin/main`.
 
 Owner decisions that change behaviour and belong in `docs/migration-0.8.md`: the cutover is non-rolling and refuses `UNSEALED_CLUSTER_STATE` (cached state is fetched again, pending approvals must be requested again); `dataprism.limits.scope-read-budget` stays 100 but now counts source reads; the new defaults are `request-timeout` `PT10S` and `scope-total-read-budget` 50,000; `SKIPPED_OVER_LIMIT` is removed before the 0.9 freeze (Breaking in `CHANGELOG.md` when built); a missing shared link limiter refuses with `MISSING_SHARED_LINK_LIMITER`. Per-instance weakening of the link limiter is excluded.
 

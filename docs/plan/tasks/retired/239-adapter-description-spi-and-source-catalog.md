@@ -59,3 +59,16 @@ An agent that knows nothing about the estate needs each source to say what it ho
 - Labels, aliases, real names and `targetSources` (247); the `list_sources` and `describe_source` tools (250).
 - `@Chainable` (240) and `KeyResolver` (241).
 - Any per-source authorisation pattern: that is 0.9 (D-RM-11, register successor S6).
+
+## Outcome (2026-10-21, 0.8 wave 1)
+Merged onto `record/0.8-wave1a` (task branch head c0e5a886; tester PASS, about 2079 tests; reviewer APPROVE). Adds the adapter description SPI and an immutable `SourceCatalog` in orchestration enforcing rules 1 to 6, with `SourceNames` and `SourceVisibility`.
+
+Coordinator decisions:
+
+- Rule 3 uses broad fail-closed host, URL and IP detection after NFKC normalisation. As a result "e.g." and "i.e." are refused; operators must avoid them in descriptions.
+- `CatalogArchitectureTest` uses an explicit allow-list: `ConfiguredJsonDataSourceAdapter` to `RestDataSourceAdapter`, and `ConfiguredJsonSourcesInitializer` to `ConfiguredJsonDataSourceAdapter`.
+- Rule 1 counts code points.
+- A non-grammar exception thrown by `description()` is reported as "description failed".
+- The fixture IBAN and PPSN values have invalid check digits.
+
+Tests first: the first round had no recorded red run (stated plainly). Before the round-1 fixes five tests failed: IP literals, other host shapes, NFKC and proxy names.

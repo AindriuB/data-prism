@@ -37,3 +37,10 @@ The 0.7 baseline is all-success, so 0.8's fan-out rewrite, per-source budget and
 - `load-test/baselines/**` and `load-test/soak/**`.
 - `.github/workflows/load-test.yml` (257 owns the workflows; 263 adds the new scenarios to its choice list).
 - Any change to the server under test.
+
+## Outcome (2026-10-21, 0.8 wave 1)
+Merged onto `record/0.8-wave1a` (task branch head 0ea1585e; tester PASS, 112 tests; reviewer APPROVE). The load harness has three failure scenarios, a closed `FailureCause` set (including `HTTP_STATUS_UNREPORTED` for the 5xx responses SDK 2.0.1 does not report), `RESOLVER_FAILED` and not-answered tallies, and a 24 h soak mode with credential rotation (3 or 4 rotations) and bounded waits. `ServerWatch` halts the run and keeps the logs if the server dies. The server log is rolling and capped, with a separate `server-console.log`, and the harness passes `--logging.threshold.console=OFF` because an empty console pattern produced a Logback error.
+
+Red runs: 176 compile errors on the base; `SdkFailureCauseTest` red against the real SDK; mutating the REFUSED regex failed 3 tests.
+
+Bug hunt: the fixed findings include the server watch, the capped server log, usage errors, connect and call timeout validation, and the separate console file (the later commits on the branch). The filed findings are the 263 follow-ups in PLAN.md. The implementer's full fixed and filed lists were not passed to the scribe, so this summary is from the branch history and the coordinator's follow-up list.

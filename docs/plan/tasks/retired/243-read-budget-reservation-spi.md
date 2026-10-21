@@ -46,3 +46,15 @@ The read budget is charged once per request (`DefaultContextOrchestrator.java:17
 - Calling `reserve` from the orchestrator (246) or from `follow` (252).
 - Configuration keys and defaults for the scope total (OD-08-3; 246 and 254).
 - Removing `tryRead`.
+
+## Outcome (2026-10-21, 0.8 wave 1)
+Merged onto `record/0.8-wave1a` (task branch head 426b15c2; tester PASS, reviewer APPROVE). `ScopeBudget` gains `reserve`, `release` and `scopeReads` with fail-closed defaults. `InMemoryScopeBudget` takes one lock per scope and keeps an identity set of issued reservations, so a forged or repeated release is a no-op.
+
+Coordinator decisions:
+
+- `tryRead` counts toward the scope total but is not capped by it. Task 246 moves fan-out to `reserve`.
+- `ReadReservation` has a public opaque `origin`. The origin is not proof of issue.
+
+Tests were written first and did not compile on the base: `ScopeBudgetDefaultsTest`, `ReadReservationTest`, and additions to `InMemoryScopeBudgetTest` (subjectBoundary, scopeBoundary, invalidArguments, releaseIsBounded, releaseNoOps, tryReadCountsInScope, forgetDropsTotal, singleSubjectProperty, multiSubjectProperty, forgetRacingReserve, tryReadDoesNotOverflowTotal, nullSubjectChargesNothing, defaultValidates, origin, forgedReservationIsNoOp, emptiedReservationReleasesNothing). Mutating the lock to per subject made `multiSubjectProperty` and `forgetRacingReserve` fail.
+
+Known limits: `forgetRacingReserve` does not prove the dead re-check, and `emptiedReservationReleasesNothing` documents the behaviour rather than guarding it.

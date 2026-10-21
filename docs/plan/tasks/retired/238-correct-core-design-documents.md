@@ -38,3 +38,15 @@ The contract register (`docs/plan/design/contract-register.md`, sections 12 and 
 - `docs/plan/design/cluster-security.md` and `docs/plan/design/contract-register.md`: task 218 owns the cluster rows; the register is re-run at 0.9.0-rc.
 - Any shipped page under `docs/` (task 261 and 213).
 - Code, tests, or any name not already decided.
+
+## Outcome (2026-10-21, 0.8 wave 1)
+Merged onto `record/0.8-wave1a` (task branch head 49a57829; tester PASS, reviewer APPROVE after four rounds). `sealed-links.md`, `key-resolvers.md`, `catalog.md` and `batch-and-bulk-follow.md` now apply the OD-200 decisions: the renames and caps, the shape C closing tables (withdrawn disposition keys moved to notes), the `FOLLOW` capability, the combined relation-byte table (`0x00` to `0x04`, the rest invalid) and the 11 link reasons.
+
+Coordinator decisions made during the task:
+
+- Source-label schemas carry `maxLength` 128 in 0.8 and 64 from 0.9, with the refusal `INVALID_SOURCE_NAME` (OD-200-4, OD-C18 (c)). The register's OD-200-4 (a) wording says 64. The owner was told this and did not object.
+- With real names in effect, a page with entries after it ends at the last entry within the page size whose label fits 64 bytes; if none fits, it extends to the next one that does, or to `last:true`.
+- Metric constant names are left to task 241 ("one metric per reason, OD-200-15").
+- `_links.field` and indexed paths carry no `maxLength`.
+
+Schema check: `Draft202012Validator` over the touched schemas, catalog 7 schemas and 3 examples, batch 7 and 5, sealed-links 3 blocks, all valid; across the four documents 14 schemas and 8 examples validated, and `mkdocs --strict` passed.
