@@ -33,7 +33,7 @@ jobs:
   stage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # No server-id/server-username/server-password here: `stage` stops at
       # `verify`, one phase short of `deploy`, and never talks to Central, so
@@ -43,7 +43,7 @@ jobs:
       # job below — which requests that environment — can read them at all.
       # Do not add them back here; a job that can read the Central token no
       # longer needs a human in the loop to reach Central.
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6.1.0
         with:
           java-version: "25"
           distribution: temurin
@@ -110,7 +110,7 @@ jobs:
       - name: List staged artifacts and signatures
         run: find . -path '*/target/*' -name '*.asc' | sort
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: central-staged-artifacts
           retention-days: 14
@@ -133,9 +133,9 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6.1.0
         with:
           java-version: "25"
           distribution: temurin
@@ -183,6 +183,19 @@ jobs:
             exit 1
           fi
 
+      # attach-sboms (below) needs the GitHub release release.yml makes from
+      # this tag. Find out it is missing now, not after the deploy that cannot
+      # be undone.
+      - name: Guard the GitHub release for this tag exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null; then
+            echo "::error::no GitHub release for ${GITHUB_REF_NAME}; wait for release.yml to finish (or create it) before publishing to Central"
+            exit 1
+          fi
+
       # Deploys only the reactor's deployable modules: the six modules this
       # task marks non-deployable set skipPublishing (and maven.deploy.skip)
       # to true in their own poms, so the Central Portal bundle this produces
@@ -209,8 +222,62 @@ jobs:
           unzip -q target/central-publishing/central-bundle.zip -d /tmp/bundle
 
       - name: Attest build provenance of the published jars and SBOMs
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: |
             /tmp/bundle/**/*.jar
             /tmp/bundle/**/*-cyclonedx.json
+
+      # The SBOMs exactly as sent to Central, for the attach-sboms job. One
+      # copy, one build: the GitHub release gets these same bytes (task 257,
+      # OD-08-12), not the output of a second build.
+      - name: Collect the SBOMs from the bundle
+        run: |
+          mkdir -p sbom
+          find /tmp/bundle -name '*-cyclonedx.json' -exec cp {} sbom/ \;
+          ls -l sbom
+          if [ -z "$(ls -A sbom)" ]; then
+            echo "::error::no SBOMs in the Central bundle"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: central-sboms
+          retention-days: 14
+          if-no-files-found: error
+          path: sbom/*-cyclonedx.json
+
+  # Attaches the Central bundle's SBOMs to the GitHub release that release.yml
+  # created from the same tag, then asserts the release assets are
+  # byte-identical (SHA-256) to the bundle's. A separate job so that the job
+  # holding the Central token never gets contents: write.
+  attach-sboms:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: central-sboms
+          path: sbom
+
+      - name: Attach to the release and assert identical to the Central bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The release is created by release.yml on the same tag push.
+          gh release view "$TAG" > /dev/null
+          gh release upload "$TAG" sbom/*-cyclonedx.json --clobber
+          mkdir released
+          gh release download "$TAG" --pattern '*-cyclonedx.json' --dir released
+          (cd sbom && sha256sum -- *-cyclonedx.json) | sort > bundle.sha256
+          (cd released && sha256sum -- *-cyclonedx.json) | sort > release.sha256
+          cat bundle.sha256
+          if ! diff bundle.sha256 release.sha256; then
+            echo "::error::release SBOMs differ from the Central bundle"
+            exit 1
+          fi

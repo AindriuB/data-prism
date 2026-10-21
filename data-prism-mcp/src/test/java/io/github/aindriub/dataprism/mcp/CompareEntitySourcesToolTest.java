@@ -66,7 +66,6 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Drives {@link CompareEntitySourcesTool#specification()}'s call handler
@@ -212,9 +211,9 @@ class CompareEntitySourcesToolTest {
     }
 
     @Test
-    @DisplayName("a throwing audit sink aborts an unauthenticated denial as AuditUnavailableException, "
+    @DisplayName("a throwing audit sink answers an unauthenticated denial as AUDIT_UNAVAILABLE, "
             + "carrying no substring of the sink's own message")
-    void auditFailureOnUnauthenticatedDenyAbortsWithNoCauseText() {
+    void auditFailureOnUnauthenticatedDenyIsAuditUnavailableWithNoCauseText() {
         String secretSinkMessage = "sink failure message that must never reach a client";
         AuditSink throwingSink = event -> {
             throw new IllegalStateException(secretSinkMessage);
@@ -225,18 +224,18 @@ class CompareEntitySourcesToolTest {
                 authorizationService(policyGranting("investigator", Set.of("COMPARE_ENTITY_SOURCES"))),
                 scopeResolver(), metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
-        assertThatThrownBy(() -> tool.specification().callHandler().apply(
-                exchangeFor(null), request(Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
-                .isInstanceOf(AuditUnavailableException.class)
-                .hasMessage(AuditUnavailableException.CODE)
-                .hasMessageNotContaining(secretSinkMessage);
+        McpSchema.CallToolResult result = tool.specification().callHandler().apply(
+                exchangeFor(null), request(Map.of("entityType", "CUSTOMER", "subjectId", "123")));
+        assertThat(result.isError()).isEqualTo(Boolean.TRUE);
+        assertThat(soleText(result)).isEqualTo("refused: AUDIT_UNAVAILABLE")
+                .doesNotContain(secretSinkMessage);
         assertThat(orchestrator.requests).isEmpty();
     }
 
     @Test
-    @DisplayName("a throwing audit sink aborts an authorisation denial as AuditUnavailableException, "
+    @DisplayName("a throwing audit sink answers an authorisation denial as AUDIT_UNAVAILABLE, "
             + "carrying no substring of the sink's own message")
-    void auditFailureOnAuthorisationDenyAbortsWithNoCauseText() {
+    void auditFailureOnAuthorisationDenyIsAuditUnavailableWithNoCauseText() {
         String secretSinkMessage = "another sink failure message that must never reach a client";
         AuditSink throwingSink = event -> {
             throw new IllegalStateException(secretSinkMessage);
@@ -247,12 +246,12 @@ class CompareEntitySourcesToolTest {
                 authorizationService(policyGranting("investigator", Set.of("GET_ENTITY_CONTEXT"))),
                 scopeResolver(), metrics, throwingAudit, FIXED, null, ToolOptions.defaults().noAdmission().build());
 
-        assertThatThrownBy(() -> tool.specification().callHandler().apply(
+        McpSchema.CallToolResult result = tool.specification().callHandler().apply(
                 exchangeFor(caller(Set.of("investigator"))),
-                request(Map.of("entityType", "CUSTOMER", "subjectId", "123"))))
-                .isInstanceOf(AuditUnavailableException.class)
-                .hasMessage(AuditUnavailableException.CODE)
-                .hasMessageNotContaining(secretSinkMessage);
+                request(Map.of("entityType", "CUSTOMER", "subjectId", "123")));
+        assertThat(result.isError()).isEqualTo(Boolean.TRUE);
+        assertThat(soleText(result)).isEqualTo("refused: AUDIT_UNAVAILABLE")
+                .doesNotContain(secretSinkMessage);
         assertThat(orchestrator.requests).isEmpty();
     }
 

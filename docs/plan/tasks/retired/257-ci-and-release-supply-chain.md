@@ -49,3 +49,19 @@ Close the 0.7.0 release follow-ups that are about the build and the release, not
 - Version bumps, tags and publication (the release cut).
 - The Hazelcast version property in `pom.xml` (sealed-cluster task 221).
 - The mutation-testing workflow's gate (0.9).
+
+## Outcome
+
+Landed 2026-10-21 on branch `task/257-ci-supply-chain` at `f456a12b`, merged with a merge commit in PR record/0.7.1-wave1-244 so that 266 can cherry-pick the commits. Commits, in order: `34bcce2b`, `4c8a070b`, `e5864921`, `9118afc7`, `61ec2f94` (docs only), `00810a75`, `752d867a` (docs only), `f456a12b`. On `release/0.7.1`, commit `e34a738c` (the post-tag correction to `docs/verifying-releases.md`) must be picked before `61ec2f94`.
+
+What it does. Every `uses:` is pinned to a full version or SHA, and `check-action-refs.sh` (with a `--self-test` mode) resolves each reference in the new `action-refs.yml` on every pull request touching `.github/`. `supply-chain.yml` runs weekly and on dispatch: it builds the CycloneDX SBOMs of the resolved Maven trees and scans them with osv-scanner; HIGH, CRITICAL and unrated advisories fail, moderate ones warn, and every ignore in `.github/osv-scanner.toml` must carry a reason and an `ignoreUntil`, which a check enforces. Dependabot gains the pip files and `load-test`. The release builds once and attaches to the GitHub release the same SBOM files that go in the Central bundle, with a step asserting equal SHA-256. `publish-image` signs and attests each per-architecture digest reachable from a published manifest list, and its last step fails if any list or platform digest is unsigned. `publish-central` is guarded by the GitHub release existing. `docs/verifying-releases.md` shows the per-architecture and release-SBOM checks.
+
+Verification. actionlint and `check-action-refs.sh` (both modes) pass. Tester PASS at `f456a12b`: `./mvnw -B verify` green; the scan's SBOM build produces 21 `bom.json` files including `data-prism-server` (86 components, containing `spring-boot-actuator-autoconfigure` and `micrometer-core`) and `load-test`; the ignore-list check passes. The reviewer ran osv-scanner v2.7.0 (checksum-verified binary) against 0.7.0's real SBOMs and a vulnerable test SBOM: empty SBOMs are skipped, HIGH, CRITICAL, label-only HIGH and unrated advisories fail, moderate warns. The `publish-image` jq filters were checked against the live GHCR 0.7.0 lists and pick exactly the amd64 and arm64 entries.
+
+Jackson. Spring Boot 4.1.1 GA manages Jackson 3.1.5, below 3.1.7, so the 3.1.8 `jackson-bom` override stays and `pom.xml` is unchanged.
+
+**Code review found, and the implementer fixed:** attestation-manifest entries in the image list broke the unsigned-digest check; empty SBOMs made osv-scanner exit 128; a label-only HIGH advisory slipped through; no digest guard; `.yaml` and `docker://` references were not checked; `skipNotDeployed` hid `data-prism-server` from the scan; Central deploy was not guarded by the GitHub release existing; ignores needed an enforced reason and expiry.
+
+**Coordinator decision:** unrated advisories fail the scan (fail closed).
+
+**Not runnable here** (Docker down, no workflow triggers): the real `publish-image`, `attach-sboms`, the cosign identity check and the docker osv-scanner image. Their first real run is the 0.7.1 release. The `--sbom=` form of osv-scanner is used; the `-L` form is untested.

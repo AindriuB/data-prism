@@ -23,7 +23,11 @@ package io.github.aindriub.dataprism.mcp;
  * SDK's cause-chain walk — so the diagnostic detail survives for the
  * server's own logs without crossing the boundary this exception exists to
  * hold.
+ *
+ * @deprecated nothing throws this any more: a denial whose audit write fails is answered as a
+ *             {@code refused: AUDIT_UNAVAILABLE} tool result. It will be removed in a later minor release.
  */
+@Deprecated(since = "0.7.1", forRemoval = true)
 public final class AuditUnavailableException extends RuntimeException {
 
     public static final String CODE = "AUDIT_UNAVAILABLE";

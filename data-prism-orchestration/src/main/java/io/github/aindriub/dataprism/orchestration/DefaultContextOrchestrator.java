@@ -264,8 +264,17 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
                 // Not when every source was refused: each already has its own key and code.
                 dispositions.put("merged:<refused>", "REFUSED");
             }
-            audit(request, subjectToken, fingerprint, context, investigationContext, denyDecision(failure), sources,
-                    correlationId, dispositions);
+            try {
+                audit(request, subjectToken, fingerprint, context, investigationContext, denyDecision(failure),
+                        sources, correlationId, dispositions);
+            } catch (RuntimeException auditFailure) {
+                // Full detail, which can name the sink's own file path, stays in the server's log;
+                // the exception that leaves here carries only its stable code.
+                // The refusal's code is safe to log; its message can carry payload and is not.
+                LOG.error("audit record failed for a denial with code {}; refusing the call without an "
+                        + "audit event", denyCode(failure), auditFailure);
+                throw new DenialAuditFailedException(auditFailure);
+            }
             // The DENY event is written; hand its id to the caller so a refusal can
             // be joined to it. Still a PrivacyRefusedException, so existing catches hold.
             if (failure instanceof PrivacyRefusedException refused) {
@@ -324,10 +333,14 @@ public final class DefaultContextOrchestrator implements ContextOrchestrator {
      * is never copied into the operator-facing audit file.
      */
     private static String denyDecision(RuntimeException failure) {
+        return "DENY:" + denyCode(failure);
+    }
+
+    private static String denyCode(RuntimeException failure) {
         if (failure instanceof PrivacyRefusedException refused) {
-            return "DENY:" + RefusalCodes.sanitise(refused.code());
+            return RefusalCodes.sanitise(refused.code());
         }
-        return "DENY:" + AuditedRefusalException.REQUEST_FAILED;
+        return AuditedRefusalException.REQUEST_FAILED;
     }
 
     /**

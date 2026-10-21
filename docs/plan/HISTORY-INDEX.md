@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-21 | 244, 257 | Tool denials answer `refused: AUDIT_UNAVAILABLE` and count `dataprism.audit.denial_unavailable` on every path; pinned and checked action refs, weekly advisory scan, one SBOM build, per-arch image signing; both go to 0.7.1 | `## 2026-10-21 — 244 and 257: tool denials answer AUDIT_UNAVAILABLE; CI and release supply chain` |
 | 2026-10-21 | 259, 265, 266 | Quiet-host 0.7 baseline (laptop, loads above 4 flagged; 32-source tail unexplained) and the 0.7.1 plan: 265 fail-open fix, backport of 244/245/257/265, release brief 266 | `## 2026-10-21 — 259: quiet-host 0.7 baseline and the 0.7.1 plan` |
 | 2026-10-21 | 220, 221, 240 | Sealing primitives (dps1 Sealer, HKDF, keyed names), hardened Hazelcast config and `using()` refusals, `@Chainable` fields | `## 2026-10-21 — 0.8 wave 2: sealing primitives, hardened cluster configuration, chainable fields` |
 | 2026-10-21 | 218, 219 | 0.8 wave 1b: cluster design and register aligned with OD-215-1 to -10 plus the 0.7 fence decision; Hazelcast capability spike with 13 questions answered in a test package; phone-home incident in the spike recorded | `## 2026-10-21 — 0.8 wave 1b: cluster design aligned, Hazelcast capability spike` |

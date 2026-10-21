@@ -17,6 +17,7 @@ import io.github.aindriub.dataprism.core.correlation.CorrelationMdc;
 import io.github.aindriub.dataprism.core.correlation.ExternalCorrelationId;
 import io.github.aindriub.dataprism.core.correlation.InboundCorrelation;
 import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
+import io.github.aindriub.dataprism.orchestration.DenialAuditFailedException;
 import io.github.aindriub.dataprism.orchestration.ContextOrchestrator;
 import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
@@ -251,6 +252,9 @@ public final class CompareEntitySourcesTool {
         } catch (AuditedRefusalException refused) {
             // Already audited as DENY by the orchestrator: return that event's id.
             return ToolCalls.refused(refused);
+        } catch (DenialAuditFailedException denialUnaudited) {
+            // The orchestrator refused the call but could not write the DENY event; it logged why.
+            return ToolCalls.auditUnavailable(metrics);
         } catch (PrivacyRefusedException refused) {
             // The code and path are safe to return; the value that caused it was
             // never put in the exception in the first place.
@@ -343,8 +347,8 @@ public final class CompareEntitySourcesTool {
     /**
      * No identity to attribute the attempt to, so audited under a fixed sentinel
      * rather than left silent. A failure to record is not caught and continued
-     * past — it is rethrown as {@link AuditUnavailableException} so the call
-     * still aborts, carrying no text from the audit sink's own exception.
+     * past — the call answers {@code refused: AUDIT_UNAVAILABLE}, counts
+     * {@link Metric#DENIAL_AUDIT_UNAVAILABLE} and carries no text from the audit sink's own exception.
      */
     private McpSchema.CallToolResult denyUnauthenticated(String entityType, Set<String> rejectedArguments,
                                                        String externalId) {
@@ -356,20 +360,19 @@ public final class CompareEntitySourcesTool {
                     rejectedArguments, correlationId, Map.of(), "", "", externalId));
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
-            // the server's own log; only the stable code below crosses to the
-            // client, via AuditUnavailableException's own message.
-            LOG.error("audit record failed for an unauthenticated denial; aborting the call rather than "
-                    + "serving an unaudited decision", auditFailure);
-            throw new AuditUnavailableException(auditFailure);
+            // the server's own log; only the stable code crosses to the client.
+            LOG.error("audit record failed for an unauthenticated denial; refusing the call as "
+                    + "AUDIT_UNAVAILABLE rather than serving an unaudited decision", auditFailure);
+            return ToolCalls.auditUnavailable(metrics);
         }
         return denied(NO_AUTHENTICATED_CALLER, correlationId);
     }
 
     /**
      * A denial carries only its code — never a value from the request that
-     * triggered it. A failure to record is not caught and continued past — it
-     * is rethrown as {@link AuditUnavailableException} so the call still
-     * aborts, carrying no text from the audit sink's own exception.
+     * triggered it. A failure to record is not continued past: the call answers
+     * {@code refused: AUDIT_UNAVAILABLE}, counts {@link Metric#DENIAL_AUDIT_UNAVAILABLE} and carries no
+     * text from the audit sink's own exception.
      */
     private McpSchema.CallToolResult deny(AuthenticatedCaller caller, String code, String entityType,
                                           Set<String> rejectedArguments, String externalId) {
@@ -390,11 +393,10 @@ public final class CompareEntitySourcesTool {
                     Map.of(), audited, "", externalId));
         } catch (RuntimeException auditFailure) {
             // Full detail — which can name the sink's own file path — stays in
-            // the server's own log; only the stable code below crosses to the
-            // client, via AuditUnavailableException's own message.
-            LOG.error("audit record failed for a denial; aborting the call rather than serving an "
-                    + "unaudited decision", auditFailure);
-            throw new AuditUnavailableException(auditFailure);
+            // the server's own log; only the stable code crosses to the client.
+            LOG.error("audit record failed for a denial; refusing the call as AUDIT_UNAVAILABLE "
+                    + "rather than serving an unaudited decision", auditFailure);
+            return ToolCalls.auditUnavailable(metrics);
         }
         return denied(ToolCalls.refusalText(code, approvalId), correlationId);
     }

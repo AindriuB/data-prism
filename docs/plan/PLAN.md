@@ -63,7 +63,22 @@ Found after 0.7.0: a user-generic element type (a collection whose type argument
 - 0.7.1 is cut from `v0.7.0` with 265, 244, 245 and 257, through the release brief 266. Everything else stays in 0.8.0. The four tasks are cherry-picked from `main` after they merge there; their briefs carry a "0.7.1 backport" note.
 - Open owner decision, for the 0.7.1 release: whether to publish a GitHub security advisory for 0.7.0.
 
-Order: 265, 244 and 257 in parallel; then 245; then 266. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
+Order: 265, 244 and 257 in parallel; then 245; then 266. 244 and 257 are done (2026-10-21, PR record/0.7.1-wave1-244); 245 is unblocked; 265 is still open. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
+
+0.7.1 backport commits recorded so far (cherry-pick onto `release/0.7.1` in this order, 266):
+
+- 244: `1ffc0531`, `2c4ba907`, `4c561c4a`.
+- 257: `34bcce2b`, `4c8a070b`, `e5864921`, `9118afc7`, `61ec2f94` (docs only), `00810a75`, `752d867a` (docs only), `f456a12b`. Pick `e34a738c` (the post-tag correction to `docs/verifying-releases.md`) before `61ec2f94`.
+- 265 and 245: not yet merged.
+
+Documentation owed by 244 (2026-10-21), for 266 (the `[0.7.1]` CHANGELOG, on the release branch) and 261 (the user pages, on `main`):
+
+- `docs/tools.md`: the new tool result (error result, exact text `refused: AUDIT_UNAVAILABLE`, no `_meta` correlation id) and its correlation section. 261.
+- `docs/audit.md`: list the metric `dataprism.audit.denial_unavailable`. 261.
+- `docs/conventions.md:74-77`: stop naming `AuditUnavailableException` as client-visible; add the orchestrator log site. 261.
+- `docs/plan/design/contract-register.md:253`: point `AUDIT_UNAVAILABLE` at `DenialAuditFailedException` and `ToolCalls`; add the metric row and the deprecation. 261.
+- `docs/eu-ai-act.md:114-117` and `docs/configuration.md:359-361` say denials answer `AUDIT_CHECKPOINT_UNAVAILABLE` when a checkpoint write fails; after 244 a denial answers `AUDIT_UNAVAILABLE`. Correct the pages, or flag it as an owner decision whether to map the checkpoint code through. 261.
+- CHANGELOG `[0.7.1]` Changed: clients that got an MCP protocol error or "the request could not be completed" when a denial's audit write failed now get an `isError` tool result `refused: AUDIT_UNAVAILABLE`; the new metric `dataprism.audit.denial_unavailable`; `AuditUnavailableException` is deprecated for removal. 266.
 
 Related, not fixed in 0.7.1: a Map of a record type has a similar element-type bug. 265 refuses it; proper support is planned for 0.9.
 
@@ -77,7 +92,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 |---|---|
 | 1 | 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
-| 3 | 222, 242, 244, 257, 265 (244, 257 and 265 also go to 0.7.1) |
+| 3 | 222, 242, 265 (265 also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
 | 4 | 223, 241, 245, 248 (245 also goes to 0.7.1) |
 | 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 244, 245, 257) |
 | 6 | 228, 246 |
