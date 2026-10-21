@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ScopeBudgetDefaultsTest {
 
@@ -44,5 +45,15 @@ class ScopeBudgetDefaultsTest {
         legacy.release(r, 1);
 
         assertThat(legacy.scopeReads("CASE-A")).isZero();
+    }
+
+    @Test
+    @DisplayName("the default validates its arguments before refusing")
+    void defaultValidates() {
+        ScopeBudget legacy = new LegacyBudget();
+
+        assertThatThrownBy(() -> legacy.reserve("S", "a", 0, 5, 5)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> legacy.reserve("S", "a", 1, 0, 5)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> legacy.reserve("S", null, 1, 5, 5)).isInstanceOf(NullPointerException.class);
     }
 }

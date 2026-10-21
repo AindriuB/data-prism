@@ -3,12 +3,17 @@ package io.github.aindriub.dataprism.core.limits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class InMemoryScopeBudgetTest {
 
@@ -127,17 +132,17 @@ class InMemoryScopeBudgetTest {
     @DisplayName("invalid arguments are rejected before any counter changes")
     void invalidArguments() {
         var budget = new InMemoryScopeBudget();
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> budget.reserve("S", "a", 0, 5, 5))
+        assertThatThrownBy(() -> budget.reserve("S", "a", 0, 5, 5))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> budget.reserve("S", "a", -1, 5, 5))
+        assertThatThrownBy(() -> budget.reserve("S", "a", -1, 5, 5))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> budget.reserve("S", "a", 1, 0, 5))
+        assertThatThrownBy(() -> budget.reserve("S", "a", 1, 0, 5))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> budget.reserve("S", "a", 1, 5, -1))
+        assertThatThrownBy(() -> budget.reserve("S", "a", 1, 5, -1))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(budget.reserve("S", "a", Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE).granted())
                 .isTrue();
-        org.assertj.core.api.Assertions.assertThatThrownBy(
+        assertThatThrownBy(
                         () -> budget.reserve("S", "a", 1, Integer.MAX_VALUE, Integer.MAX_VALUE))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(budget.reads("S", "a")).isEqualTo(Integer.MAX_VALUE);
@@ -207,11 +212,11 @@ class InMemoryScopeBudgetTest {
         var budget = new InMemoryScopeBudget();
         var pool = Executors.newFixedThreadPool(32);
         try {
-            List<Callable<Integer>> tasks = new java.util.ArrayList<>();
+            List<Callable<Integer>> tasks = new ArrayList<>();
             for (int t = 0; t < 32; t++) {
                 long seed = t;
                 tasks.add(() -> {
-                    var rnd = new java.util.Random(seed);
+                    var rnd = new Random(seed);
                     int got = 0;
                     for (int i = 0; i < 200; i++) {
                         int n = 1 + rnd.nextInt(5);
@@ -241,9 +246,9 @@ class InMemoryScopeBudgetTest {
         final int subjectBudget = 40; // 64 * 40 far exceeds the scope total
         var budget = new InMemoryScopeBudget();
         var pool = Executors.newFixedThreadPool(33);
-        var stop = new java.util.concurrent.atomic.AtomicBoolean();
-        var maxSeen = new java.util.concurrent.atomic.AtomicInteger();
-        var subjectOver = new java.util.concurrent.atomic.AtomicBoolean();
+        var stop = new AtomicBoolean();
+        var maxSeen = new AtomicInteger();
+        var subjectOver = new AtomicBoolean();
         try {
             var sampler = pool.submit(() -> {
                 while (!stop.get()) {
@@ -255,11 +260,11 @@ class InMemoryScopeBudgetTest {
                     }
                 }
             });
-            List<Callable<Integer>> tasks = new java.util.ArrayList<>();
+            List<Callable<Integer>> tasks = new ArrayList<>();
             for (int t = 0; t < 32; t++) {
                 long seed = 100 + t;
                 tasks.add(() -> {
-                    var rnd = new java.util.Random(seed);
+                    var rnd = new Random(seed);
                     int net = 0;
                     for (int i = 0; i < 2000; i++) {
                         String subject = "s" + rnd.nextInt(64);
@@ -306,7 +311,7 @@ class InMemoryScopeBudgetTest {
         try {
             for (int round = 0; round < 200; round++) {
                 var budget = new InMemoryScopeBudget();
-                List<Callable<Object>> tasks = new java.util.ArrayList<>();
+                List<Callable<Object>> tasks = new ArrayList<>();
                 for (int t = 0; t < 6; t++) {
                     int id = t;
                     tasks.add(() -> {
@@ -336,6 +341,29 @@ class InMemoryScopeBudgetTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @DisplayName("tryRead refuses rather than wrapping the scope total")
+    void tryReadDoesNotOverflowTotal() {
+        var budget = new InMemoryScopeBudget();
+        assertThat(budget.reserve("S", "a", Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE).granted())
+                .isTrue();
+
+        assertThat(budget.tryRead("S", "b", 5)).isFalse();
+
+        assertThat(budget.scopeReads("S")).isEqualTo(Integer.MAX_VALUE);
+        // Never granted: the counter is full, so the sum overflows and is rejected.
+        assertThatThrownBy(() -> budget.reserve("S", "c", 5, 5, 10)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("a null subject is rejected before anything is charged")
+    void nullSubjectChargesNothing() {
+        var budget = new InMemoryScopeBudget();
+        assertThatThrownBy(() -> budget.reserve("T", null, 3, 5, 5)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> budget.reserve(null, "a", 3, 5, 5)).isInstanceOf(NullPointerException.class);
+        assertThat(budget.scopeReads("T")).isZero();
     }
 
     private static boolean get(Future<Boolean> future) {

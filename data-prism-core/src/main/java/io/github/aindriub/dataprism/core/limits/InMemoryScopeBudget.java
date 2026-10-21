@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.core.limits;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -46,6 +47,8 @@ public final class InMemoryScopeBudget implements ScopeBudget {
      */
     @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
+        Objects.requireNonNull(scopeId, "scopeId");
+        Objects.requireNonNull(subjectId, "subjectId");
         while (true) {
             ScopeState state = scopes.computeIfAbsent(scopeId, k -> new ScopeState());
             synchronized (state.lock) {
@@ -54,6 +57,11 @@ public final class InMemoryScopeBudget implements ScopeBudget {
                 }
                 int current = state.subjects.getOrDefault(subjectId, 0);
                 if (current >= budget) {
+                    return false;
+                }
+                if (current == Integer.MAX_VALUE || state.total == Integer.MAX_VALUE) {
+                    // A wrapped total would read as nearly empty and let reserve
+                    // grant past its budget. Refuse instead.
                     return false;
                 }
                 state.subjects.put(subjectId, current + 1);
@@ -66,6 +74,8 @@ public final class InMemoryScopeBudget implements ScopeBudget {
     @Override
     public ReadReservation reserve(
             String scopeId, String subjectId, int reads, int subjectBudget, int scopeTotalBudget) {
+        Objects.requireNonNull(scopeId, "scopeId");
+        Objects.requireNonNull(subjectId, "subjectId");
         if (reads <= 0 || subjectBudget <= 0 || scopeTotalBudget <= 0) {
             throw new IllegalArgumentException("reads and both budgets must be positive");
         }
@@ -102,6 +112,7 @@ public final class InMemoryScopeBudget implements ScopeBudget {
         if (unused < 0) {
             throw new IllegalArgumentException("unused must not be negative");
         }
+        Objects.requireNonNull(reservation, "reservation");
         // The state the reservation was granted from, not whatever the scope id
         // names now: after forget a later scope with the same id is a different one.
         if (!(reservation.origin() instanceof ScopeState state)) {
@@ -129,6 +140,7 @@ public final class InMemoryScopeBudget implements ScopeBudget {
 
     @Override
     public int reads(String scopeId, String subjectId) {
+        Objects.requireNonNull(scopeId, "scopeId");
         ScopeState state = scopes.get(scopeId);
         if (state == null) {
             return 0;
@@ -140,6 +152,7 @@ public final class InMemoryScopeBudget implements ScopeBudget {
 
     @Override
     public int scopeReads(String scopeId) {
+        Objects.requireNonNull(scopeId, "scopeId");
         ScopeState state = scopes.get(scopeId);
         if (state == null) {
             return 0;
@@ -152,6 +165,7 @@ public final class InMemoryScopeBudget implements ScopeBudget {
     /** Drops the subject counters and the scope total. Called when a scope ends. */
     @Override
     public void forget(String scopeId) {
+        Objects.requireNonNull(scopeId, "scopeId");
         ScopeState state = scopes.remove(scopeId);
         if (state != null) {
             synchronized (state.lock) {

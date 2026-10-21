@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.core.limits;
 
+import java.util.Objects;
+
 /**
  * Counts how often one subject has been read inside one scope.
  *
@@ -16,6 +18,11 @@ package io.github.aindriub.dataprism.core.limits;
 public interface ScopeBudget {
 
     /**
+     * <p>A granted read counts toward the scope total but is not capped by it:
+     * only {@link #reserve} enforces the scope total, so {@code tryRead} can only
+     * make a later {@code reserve} stricter. The 0.8 fan-out call sites move to
+     * {@code reserve} (task 246).
+     *
      * @return whether this read is within budget. A refused read is not counted,
      *         so a caller that keeps asking after being refused does not push the
      *         count somewhere a later budget increase could never recover from
@@ -39,7 +46,11 @@ public interface ScopeBudget {
      * {@link #tryRead} meet the same contract for the counters they touch.
      * Correctness depends on no clock, time-to-live or eviction.
      *
-     * <p>The default refuses, so an implementation that has not been updated
+     * <p>The scope total is enforced here and only here; reads counted by
+     * {@link #tryRead} count toward it without being capped by it. Task 246 moves
+     * the fan-out call sites to {@code reserve}.
+     *
+     * <p>The default validates its arguments and then refuses, so an implementation that has not been updated
      * refuses every read rather than reading uncounted.
      *
      * @throws IllegalArgumentException if {@code reads} or either budget is not
@@ -47,6 +58,11 @@ public interface ScopeBudget {
      */
     default ReadReservation reserve(
             String scopeId, String subjectId, int reads, int subjectBudget, int scopeTotalBudget) {
+        Objects.requireNonNull(scopeId, "scopeId");
+        Objects.requireNonNull(subjectId, "subjectId");
+        if (reads <= 0 || subjectBudget <= 0 || scopeTotalBudget <= 0) {
+            throw new IllegalArgumentException("reads and both budgets must be positive");
+        }
         return ReadReservation.refused(scopeId, subjectId, reads, ReadReservation.Refusal.SUBJECT);
     }
 
