@@ -27,6 +27,7 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - docs/plan/design/catalog.md, sealed-links.md, key-resolvers.md, batch-and-bulk-follow.md Part A, as corrected by 238.
 - docs/plan/design/contract-register.md section 3, "Docs" column: the 68 shipped codes no shipped page lists, to be re-derived by re-running E1, E1c, E2 and E1r on this base.
 - docs/migration-0.7.md and docs/tools.md: the existing structure, the status table and the unknown-status rule (OD-200-1: "not answered").
+- Recorded 2026-10-21 (244 merged): the pages 244 leaves to this task are listed in `PLAN.md`, "Documentation owed by 244": `docs/tools.md`, `docs/audit.md`, `docs/conventions.md:74-77`, `contract-register.md:253`, and `docs/eu-ai-act.md:114-117` and `docs/configuration.md:359-361` (checkpoint failures: `AUDIT_UNAVAILABLE`, not `AUDIT_CHECKPOINT_UNAVAILABLE`, or an owner decision to map it through).
 - docs-site/hooks/check_*.py: the documentation checks, including captured examples.
 
 ## Acceptance

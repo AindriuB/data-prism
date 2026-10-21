@@ -45,3 +45,29 @@ Owner decision (follow-up of 233): a denial whose audit write fails answers `AUD
 - Re-identification and operator paths, and the resume ordering (245).
 - An ALLOW whose audit write fails. Record what it does today in the Outcome; changing it needs an owner decision.
 - `docs/tools.md` (261).
+
+## Outcome
+
+Landed 2026-10-21 on branch `task/244-tool-denial-audit-unavailable` (commits `1ffc0531`, `2c4ba907`, `4c561c4a` on `a911b9b2`), merged with a merge commit in PR record/0.7.1-wave1-244 so that 266 can cherry-pick the three commits onto `release/0.7.1`. Tester PASS: full `./mvnw -B verify`, 2,348 tests, 0 failures, at `832fb777`, whose tree is byte-identical to `4c561c4a`. Code review clean; reviewer APPROVE. Every commit compiles on its own. All three cherry-pick onto `v0.7.0` without conflicts and pass there (core, orchestration and mcp verify; `AuditSinkFailureAbortsResponseTest` 3 of 3).
+
+**Every place a denial is audited, and what a failed audit write returned.** Found by a whole-component search of `data-prism-mcp/src/main` and `data-prism-orchestration/src/main`.
+
+| Site | Before | After |
+|---|---|---|
+| `GetEntityContextTool.denyUnauthenticated` and `CompareEntitySourcesTool.denyUnauthenticated` | threw `AuditUnavailableException`, which reached the client as an MCP protocol error | error result `refused: AUDIT_UNAVAILABLE` |
+| `GetEntityContextTool.deny` and `CompareEntitySourcesTool.deny` (both overloads; used for correlation id required or invalid, authorisation denied, scope resolution refused, admission denied) | threw `AuditUnavailableException`, an MCP protocol error | error result `refused: AUDIT_UNAVAILABLE` |
+| `DefaultContextOrchestrator.buildContext` catch block, the DENY `audit(...)` call (orchestrator refusal) | the sink's own exception escaped; the client saw "the request could not be completed" | throws `DenialAuditFailedException` (no cause text in its message); each tool catches it and answers `refused: AUDIT_UNAVAILABLE` |
+| `DefaultContextOrchestrator.buildContext`, the ALLOW `audit(...)` call | audit failure aborts the response (fails closed) | unchanged; still fails closed |
+
+After the change every denial path answers an error result whose text is exactly `refused: AUDIT_UNAVAILABLE`, counts `DENIAL_AUDIT_UNAVAILABLE` (`dataprism.audit.denial_unavailable`) once, returns no data, no sentinel and no correlation id, and makes no orchestrator or adapter call afterwards. The sink's exception message, class name and stack trace appear in no result.
+
+**Tests written first and their red runs on the base.** `PrivacyMetricsTest.exactMetricNameSet` (the new name was absent), `DenialAuditFailureTest.denyAuditFailureThrowsDenialAuditFailed`, all 14 cases of `DenialAuditUnavailableToolTest` (one per denial path of both tools, plus the exact-text, sentinel, no-downstream-call and metric-once assertions), and the logging test (the failed-DENY log line carries only the sanitised refusal code).
+
+**Coordinator decisions.**
+- Six existing tests outside the Owns list were rewritten because they pinned the replaced abort behaviour: three in `AuditSinkFailureAbortsResponseTest` and the matching cases in `GetEntityContextToolTest` and `CompareEntitySourcesToolTest`. The acceptance line "every existing test passes unmodified" held only for refusals whose audit write succeeds.
+- `AuditUnavailableException` stays as `@Deprecated(since = "0.7.1", forRemoval = true)`. Nothing throws it any more. Removing a public class from `data-prism-mcp` in a patch release would break API.
+- The failed-DENY log line in the orchestrator carries only the sanitised refusal code, not the request. The tools keep the reviewed `LOG.error(msg, auditFailure)`.
+- `ToolCalls.AUDIT_UNAVAILABLE` references `DenialAuditFailedException.CODE`, so the code has one definition.
+- History was rewritten before review so that every commit compiles on its own.
+
+**Documentation owed.** Not in this task's Owns; recorded as follow-ups in `PLAN.md` for 266 and 261.
