@@ -1,7 +1,7 @@
 # 257 — Harden CI and the release supply chain: resolvable action refs, an advisory scan, Dependabot coverage, one SBOM build, per-arch signing
 
 **Repo:** `.`
-**Release:** 0.8.0
+**Release:** 0.8.0, and backported to 0.7.1 by cherry-pick (task 266; owner decision 2026-10-21)
 **Base branch:** `origin/main` once 221 has merged
 **Depends on:** 221 (sealed-cluster plan; 221 edits the `hazelcast.version` property of the same root `pom.xml`, so the two edits land in order)
 **Decisions:** OD-08-11 (a, sign and attest each per-arch digest), OD-08-12 (a, build once, publish the same SBOM files to both) and OD-08-17 (a, scheduled scan fails on HIGH or CRITICAL) are decided 2026-10-20.
@@ -25,6 +25,12 @@ Close the 0.7.0 release follow-ups that are about the build and the release, not
 - .github/workflows/release.yml:54-90 and publish-central.yml:216: the two SBOM sets.
 - pom.xml:76-80 and :112-118: the override and the condition for removing it.
 - docs/verifying-releases.md: what a consumer can verify today.
+- **0.7.1 backport.** Task 266 cherry-picks this task's commits onto `release/0.7.1`, cut from `v0.7.0`. `.github/` and `pom.xml` were unchanged between `v0.7.0` and `origin/main` at filing. PR #144 leaves `pom.xml` unchanged too. For the pick to work:
+  - No workflow step may build, scan or sign a module, image or path that exists only on 0.8. The scans and signing must work over the 0.7.0 reactor and `load-test/` as they are.
+  - `docs/verifying-releases.md` on `main` carries a correction made after the tag (commit `e34a738c`, "Record 0.7.0 release; correct release-verification docs"), and the tag does not. 266 brings that correction onto the release branch before this task's change to the same file. Keep this task's edit to that page in its own commit so the pick stays clean.
+  - The Jackson hunk in `pom.xml` sits within three lines of `hazelcast.version` (:74). If 221 or a dependency update has moved that line by the time this merges, the backport keeps `v0.7.0`'s `hazelcast.version` and applies only the Jackson change.
+  - If the Jackson override is removed because of a Spring Boot bump that is on `main` but not on `v0.7.0`, the backport keeps the override, and 266 confirms that `dependency:tree` on the branch shows `tools.jackson.core:jackson-databind` at 3.1.7 or later.
+  - `dependabot.yml` is read only from the default branch. On the release branch it is inert, but it is picked anyway so the two branches stay aligned.
 - docker/*/Dockerfile base images and `docs-site/requirements.txt`, `docs-site/logo/requirements.txt`, `docs-site/social-card/requirements.txt`, `examples/correlation-header/requirements.txt`, `load-test/pom.xml`: what Dependabot should watch.
 
 ## Acceptance
@@ -37,6 +43,7 @@ Close the 0.7.0 release follow-ups that are about the build and the release, not
 - [ ] Per-arch digests as OD-08-11 decides. Under its option (a): each per-arch digest reachable from a published tag is signed and attested, and `docs/verifying-releases.md` shows the command that verifies one; under (b), the page states plainly that only the manifest list is verifiable and why.
 - [ ] `actionlint` passes on every workflow file.
 - [ ] `./mvnw -B verify` passes.
+- [ ] No step added to a workflow names a module, path or image that is absent at `v0.7.0` (`git ls-tree -r --name-only v0.7.0` holds each one). The change to `docs/verifying-releases.md` is its own commit. After 266 cherry-picks the commits onto `release/0.7.1`, `.github/scripts/check-action-refs.sh` (with and without `--self-test`), `actionlint` and `./mvnw -B verify` pass on that branch.
 
 ## Out of scope
 - Version bumps, tags and publication (the release cut).

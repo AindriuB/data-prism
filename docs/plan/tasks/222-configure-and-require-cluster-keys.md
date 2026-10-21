@@ -19,6 +19,7 @@
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterKeyConfigurationTest.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/*.java *(existing tests: the cluster-key and name-key properties of contexts that start a `tcp-ip` or `kubernetes` join, and `member.interface` where 221 now requires it, only)*
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/** *(cluster-key, name-key and member-interface arguments only)*
+  - Task 245's three new test files (`DenialAuditUnavailableServiceTest`, `DenialAuditUnavailableOperatorTest`, `ResumeAuditOrderingTest`) are narrowed to carry none of these. If 245 has merged first, this task's sweep updates `OperatorHarness` and the shared fixtures and leaves those three files alone. There is no edge, by decision of 2026-10-21 for the 0.7.1 backport.
 - docker/multi-instance/compose.yaml, docker/multi-instance/kubernetes.yaml *(cluster-key and name-key settings only)*
 - docs/configuration.md *(new rows for `dataprism.hazelcast.security.cluster-key.*` and `.name-key.*`, the startup codes this task adds, and the `member.interface` row only)*
 

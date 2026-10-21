@@ -47,28 +47,40 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 - `DataSourceAdapter` declares only `sourceName()`, `responseType()` and `fetch()` (`DataSourceAdapter.java:12-16`); there is no description or input-key declaration.
 
 
-### Open work and execution state (updated 2026-10-20)
+### Open work and execution state (updated 2026-10-21)
 
-0.7.0 is released (2026-10-20); see `HISTORY.md`, "0.7.0 released". Every 0.7.0 task has landed on `main`. 0.8 is planned (task 215 and the core briefs); see "0.8 plan" below. No other task is open.
+0.7.0 is released (2026-10-20); see `HISTORY.md`, "0.7.0 released". Every 0.7.0 task has landed on `main`. 0.8 is planned (task 215 and the core briefs); see "0.8 plan" below. A 0.7.1 security patch is planned from `v0.7.0`; see "0.7.1 plan" below.
 
 #### 0.7.0 release gate: done
 
 All six items are done: the HTTP example re-capture, the owner's go, publication and task 188's five-step verification, the after-action report (presented in chat, not committed), the version-literal updates, and task 235. The verification found two documentation errors in `docs/verifying-releases.md` (the GPG keyserver command and the per-arch digests), corrected in the post-0.7.0 chore PR.
 
+#### 0.7.1 plan (owner decisions 2026-10-21)
+
+Found after 0.7.0: a user-generic element type (a collection whose type argument is a user generic class) lets the scrubbing engine treat fields as unclassified in a way that fails open. The owner decided:
+
+- Task 265 fixes it, and the fix ships in 0.7.1. This replaces the earlier note that there would be no 0.7.1.
+- 0.7.1 is cut from `v0.7.0` with 265, 244, 245 and 257, through the release brief 266. Everything else stays in 0.8.0. The four tasks are cherry-picked from `main` after they merge there; their briefs carry a "0.7.1 backport" note.
+- Open owner decision, for the 0.7.1 release: whether to publish a GitHub security advisory for 0.7.0.
+
+Order: 265, 244 and 257 in parallel; then 245; then 266. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
+
+Related, not fixed in 0.7.1: a Map of a record type has a similar element-type bug. 265 refuses it; proper support is planned for 0.9.
+
 #### 0.8 plan (agreed 2026-10-20)
 
 Task 215 (sealed cluster) and the core planning produced 42 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome has the sealed-cluster table. The combined graph counts 203 and 206 to 211 as landed. No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
 
-Order by wave (briefs in a wave can run in parallel when their owned files do not overlap):
+Order by wave (briefs in a wave can run in parallel when their owned files do not overlap; recomputed 2026-10-21 for the 0.7.1 edges: 245 moved to 4, 248 to 4, 262 to 5, 265 added at 3, 266 added at 5):
 
 | Wave | Briefs |
 |---|---|
-| 1 | 259 open; 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a) |
+| 1 | 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
-| 3 | 222, 242, 244, 248, 257 |
-| 4 | 223, 241 |
-| 5 | 224, 225, 226, 227, 245, 256 |
-| 6 | 228, 246, 262 |
+| 3 | 222, 242, 244, 257, 265 (244, 257 and 265 also go to 0.7.1) |
+| 4 | 223, 241, 245, 248 (245 also goes to 0.7.1) |
+| 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 244, 245, 257) |
+| 6 | 228, 246 |
 | 7 | 229, 247 |
 | 8 | 249, 250, 251 |
 | 9 | 252, 254 |
@@ -98,6 +110,13 @@ Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (a
 - 248, 249, 251: `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
 - Release note required for 0.8 (Breaking in `CHANGELOG.md`): `PrivacyCluster.using()` refuses instances it used to accept.
 - Known residual of 240: an enum constant body's `@Chainable` is not visited.
+
+Follow-ups from the 0.7.1 planning review (2026-10-21), each belonging to the brief named:
+
+- Done: `expressible(null)` hardening.
+- 248 and 251: the `ChainableFields` loop tests prove only the first case, and the refusal tests do not assert the reason text. Strengthen both.
+- 222: the `PrivacyCluster` blacklist check refuses ancestor packages that Hazelcast would not block (over-refusal, so safe); there is no test for a blacklisted subpackage under a required prefix; and the embedded-path message names the wrong fix for a blacklist collision.
+- `ClusterMembership`: the `getDistributedObjects`-based check assumes the maps were opened on the instance (document this), and `legacyEntryCounts` reads zero on a solo supplied instance.
 
 - Tooling: `.claude/scripts/wt-new.sh` bases branches on local `main`, not `origin/main`.
 
