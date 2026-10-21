@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast.spike;
 
+import com.hazelcast.client.impl.protocol.codec.MCChangeClusterStateCodec;
+import com.hazelcast.client.impl.protocol.codec.MCShutdownClusterCodec;
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
@@ -45,10 +47,28 @@ class Q03AdministrationSpikeTest {
     }
 
     @Test
-    void aClientCannotChangeTheClusterState() {
+    void theJavaClientApiRefusesAClusterStateChangeLocally() {
         assertThat(Spike.attempt(() -> client.getCluster().changeClusterState(ClusterState.FROZEN)))
                 .isEqualTo("UnsupportedOperationException");
         assertThat(victim.getCluster().getClusterState()).isEqualTo(ClusterState.ACTIVE);
+    }
+
+    @Test
+    void aKeylessClientCanChangeTheClusterStateWithAManagementCenterMessage() {
+        // The refusal above is thrown by the Java client proxy, before anything is sent. The member itself accepts
+        // the protocol message from a client that knows only the cluster name.
+        assertThat(Spike.sendManagementMessage(client, MCChangeClusterStateCodec
+                .encodeRequest(ClusterState.FROZEN.getId()))).isEqualTo("allowed");
+        assertThat(victim.getCluster().getClusterState()).isEqualTo(ClusterState.FROZEN);
+    }
+
+    @Test
+    void aKeylessClientCanShutDownTheClusterWithAManagementCenterMessage() {
+        // The reply may be lost because the cluster is already going down (TargetDisconnectedException).
+        assertThat(Spike.sendManagementMessage(client, MCShutdownClusterCodec.encodeRequest()))
+                .isIn("allowed", "TargetDisconnectedException");
+        assertThat(Spike.await(30, () -> !victim.getLifecycleService().isRunning()
+                && !keylessMember.getLifecycleService().isRunning())).isTrue();
     }
 
     @Test
@@ -58,7 +78,7 @@ class Q03AdministrationSpikeTest {
     }
 
     @Test
-    void aClientCannotShutDownTheCluster() {
+    void theJavaClientApiRefusesAClusterShutdownLocally() {
         assertThat(Spike.attempt(() -> client.getCluster().shutdown())).isEqualTo("UnsupportedOperationException");
         assertThat(victim.getLifecycleService().isRunning()).isTrue();
     }

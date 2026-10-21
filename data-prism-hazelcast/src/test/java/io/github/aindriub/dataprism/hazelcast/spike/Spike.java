@@ -123,6 +123,24 @@ final class Spike {
         return configs;
     }
 
+    /**
+     * Sends a raw Management Center protocol message through the client's own connection, the way the Java client
+     * API never does. Returns "allowed" or the simple name of what the invocation failed with.
+     */
+    static String sendManagementMessage(HazelcastInstance client,
+                                        com.hazelcast.client.impl.protocol.ClientMessage message) {
+        var impl = ((com.hazelcast.client.impl.clientside.HazelcastClientProxy) client).client;
+        try {
+            new com.hazelcast.client.impl.spi.impl.ClientInvocation(impl, message, null).invoke()
+                    .get(20, TimeUnit.SECONDS);
+            return "allowed";
+        } catch (java.util.concurrent.ExecutionException e) {
+            return e.getCause().getClass().getSimpleName();
+        } catch (Exception e) {
+            return e.getClass().getSimpleName();
+        }
+    }
+
     /** Polls {@code condition} every 50 ms for at most {@code seconds}; true if it held. */
     static boolean await(long seconds, BooleanSupplier condition) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
