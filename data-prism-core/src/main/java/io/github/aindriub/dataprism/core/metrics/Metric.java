@@ -28,7 +28,22 @@ public enum Metric {
     AUDIT_RETENTION_CHAIN_UNVERIFIED("dataprism.audit.retention.unverified"),
     AUDIT_RETENTION_ANCHOR_FAILED("dataprism.audit.retention.anchor_failed"),
     AUDIT_RETENTION_DELETE_FAILED("dataprism.audit.retention.delete_failed"),
-    AUDIT_RETENTION_FAILED("dataprism.audit.retention.failed");
+    AUDIT_RETENTION_FAILED("dataprism.audit.retention.failed"),
+    // Cluster security (docs/plan/design/cluster-security.md 4.4). Counters first, then gauges.
+    CLUSTER_SEAL_TAMPER("dataprism.cluster.seal.tamper"),
+    CLUSTER_SEAL_UNSUPPORTED_FORMAT("dataprism.cluster.seal.unsupported_format"),
+    CLUSTER_SEAL_SALT_REJECTED("dataprism.cluster.seal.salt_rejected"),
+    CLUSTER_MEMBERS_UNVERIFIED("dataprism.cluster.members.unverified"),
+    CLUSTER_PAUSE_FRESH("dataprism.cluster.pause.fresh"),
+    CLUSTER_PAUSE_AGE_SECONDS("dataprism.cluster.pause.age_seconds"),
+    CLUSTER_PAUSE_CONFLICT("dataprism.cluster.pause.conflict"),
+    CLUSTER_ROTATION_ACCEPTING_NEXT("dataprism.cluster.rotation.accepting_next"),
+    CLUSTER_ROTATION_BLOCKED("dataprism.cluster.rotation.blocked"),
+    CLUSTER_ROTATION_BEHIND("dataprism.cluster.rotation.behind"),
+    CLUSTER_SEAL_ENTRIES_UNDER_PREVIOUS("dataprism.cluster.seal.entries_under_previous"),
+    CLUSTER_LOCK_TIMEOUT("dataprism.cluster.lock.timeout"),
+    CLUSTER_FLOOR_REFUSAL("dataprism.cluster.floor.refusal"),
+    CLUSTER_LEGACY_ENTRIES("dataprism.cluster.legacy.entries");
 
     private final String metricName;
 

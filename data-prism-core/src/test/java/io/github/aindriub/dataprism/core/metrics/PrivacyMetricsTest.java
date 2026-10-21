@@ -35,7 +35,21 @@ class PrivacyMetricsTest {
                 "dataprism.audit.retention.unverified",
                 "dataprism.audit.retention.anchor_failed",
                 "dataprism.audit.retention.delete_failed",
-                "dataprism.audit.retention.failed");
+                "dataprism.audit.retention.failed",
+                "dataprism.cluster.seal.tamper",
+                "dataprism.cluster.seal.unsupported_format",
+                "dataprism.cluster.seal.salt_rejected",
+                "dataprism.cluster.members.unverified",
+                "dataprism.cluster.pause.fresh",
+                "dataprism.cluster.pause.age_seconds",
+                "dataprism.cluster.pause.conflict",
+                "dataprism.cluster.rotation.accepting_next",
+                "dataprism.cluster.rotation.blocked",
+                "dataprism.cluster.rotation.behind",
+                "dataprism.cluster.seal.entries_under_previous",
+                "dataprism.cluster.lock.timeout",
+                "dataprism.cluster.floor.refusal",
+                "dataprism.cluster.legacy.entries");
 
         Set<String> actual = Arrays.stream(Metric.values())
                 .map(Metric::metricName)
@@ -43,6 +57,31 @@ class PrivacyMetricsTest {
 
         assertThat(actual).isEqualTo(expected);
         assertThat(Metric.values()).hasSize(expected.size());
+    }
+
+    @Test
+    @DisplayName("the cluster metric constants are named after their signal")
+    void clusterConstantsMatchTheirNames() {
+        for (Metric metric : Metric.values()) {
+            if (metric.metricName().startsWith("dataprism.cluster.")) {
+                assertThat(metric.name()).isEqualTo(metric.metricName()
+                        .substring("dataprism.".length()).toUpperCase(java.util.Locale.ROOT).replace('.', '_'));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the default gauge method is a no-op, and none() accepts it")
+    void gaugeDefaultIsNoOp() {
+        PrivacyMetrics legacy = new PrivacyMetrics() {
+            @Override public void increment(Metric metric) {}
+            @Override public void increment(Metric metric, String sourceName) {}
+            @Override public void record(Metric metric, String sourceName, Duration duration) {}
+        };
+        assertThatCode(() -> {
+            legacy.gauge(Metric.CLUSTER_PAUSE_FRESH, () -> 1.0);
+            PrivacyMetrics.none().gauge(Metric.CLUSTER_PAUSE_FRESH, () -> 1.0);
+        }).doesNotThrowAnyException();
     }
 
     @Test
