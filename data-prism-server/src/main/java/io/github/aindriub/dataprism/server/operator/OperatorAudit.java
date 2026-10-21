@@ -3,6 +3,9 @@ package io.github.aindriub.dataprism.server.operator;
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -17,9 +20,17 @@ import java.util.UUID;
 final class OperatorAudit {
 
     private final AuditRecorder recorder;
+    private final PrivacyMetrics metrics;
 
     OperatorAudit(AuditRecorder recorder) {
         this.recorder = recorder;
+        this.metrics = PrivacyMetrics.none();
+    }
+
+    @Autowired
+    OperatorAudit(AuditRecorder recorder, ObjectProvider<PrivacyMetrics> metrics) {
+        this.recorder = recorder;
+        this.metrics = metrics.getIfAvailable(PrivacyMetrics::none);
     }
 
     /** @throws OperatorException 503 {@code AUDIT_UNAVAILABLE} when the event cannot be written */
