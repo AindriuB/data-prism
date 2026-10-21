@@ -100,7 +100,14 @@ the token is read on every request, and once three quarters of its lifetime
 (9 h) has passed a new one is minted, and once three quarters of the scope's
 lifetime (6 h) has passed the scope is rotated, by minting a token with a new
 case id (`CASE-LOADTEST-2`, ...). Both are counted in the result file under
-`credentials`. Throughput divides the calls finished by the deadline by the
+`credentials`: `tokenReissues` is every re-mint after the first (a scope rotation
+mints a new token too, so with the real 12 h and 8 h lifetimes a 24 h run shows 4
+reissues and 4 rotations), and `scopeRotations` is those that changed the scope.
+If the server process exits during a run the run stops at once, the result
+records `server.diedDuringRun` and its `exitCode`, the server log is kept in the
+results directory, and the harness exits with an error. The server's own log is a
+rolling file (10 MB per file, 2 rolled files, 30 MB in all, console output off),
+so a 24 h soak keeps the tail of the log rather than all of it. Throughput divides the calls finished by the deadline by the
 configured duration (`measuredSeconds`); the calls still in flight at the
 deadline are counted (`calls.completedAfterDeadline`) and timed, but do not
 raise it. A failure that is not a timeout but took one second or more (for
@@ -132,9 +139,12 @@ name), `sourcesNotAnswered` (source readings whose status is neither
 and `scopeRotations`), plus `commit` (and `workingTreeDirty`), `jdk`, `host`, the scenario
 `parameters` and the `effectiveLimits` the server was started with.
 
-Source keys in `perSourceStatus` are the names the server returns, which are
-aliases that are stable within the run's one privacy scope and unrelated to
-the generated source names. Error text from a response is never recorded: a
+Source keys in `perSourceStatus` are `scope-<n>/<name>`, where `<name>` is the
+name the server returns. Those are aliases that are stable only within one
+privacy scope and unrelated to the generated source names, and a soak rotates
+the scope (see Soak runs), so the same source has a different alias in each
+scope; `<n>` is the scope number (from 1) the call was made in. The scope is
+read just before a call, so a rotation landing mid-call can mislabel that one call. Error text from a response is never recorded: a
 refusal is tallied by its code, and anything unrecognised is the fixed code
 `UNCLASSIFIED_ERROR`.
 
@@ -152,12 +162,13 @@ Each cause is counted from its own branch of the classifier, in this order:
 
 | Cause | When |
 |---|---|
-| `CONNECT_TIMEOUT` | the connection was not established within 10 s |
+| `CONNECT_TIMEOUT` | the connection was not established within 10 s. A scenario's `callTimeoutSeconds` must be at least 10 (it is validated), so a connect timeout is never cut short into a `READ_TIMEOUT` |
 | `READ_TIMEOUT` | the request timed out, or the call waited `callTimeoutSeconds` with no better cause |
 | `MCP_PARSE_ERROR`, `MCP_INVALID_REQUEST`, `MCP_METHOD_NOT_FOUND`, `MCP_INVALID_PARAMS`, `MCP_INTERNAL_ERROR` | the JSON-RPC error code `-32700`, `-32600`, `-32601`, `-32602`, `-32603` |
 | `MCP_ERROR_OTHER` | any other JSON-RPC error code |
-| `HTTP_STATUS_4XX`, `HTTP_STATUS_5XX`, `HTTP_STATUS_OTHER` | the HTTP status the transport reported |
-| `UNPARSEABLE_BODY` | the response could not be parsed, or held no `sources` object |
+| `HTTP_STATUS_4XX`, `HTTP_STATUS_5XX`, `HTTP_STATUS_OTHER` | the HTTP status the SDK reported: read from the response of a 401 or 403 (`McpHttpClientTransportAuthorizationException`), or from the "Status code: N" in the message of a 400 or 429 |
+| `HTTP_STATUS_UNREPORTED` | a 5xx, 1xx or 3xx: SDK 2.0.1 throws `Failed to send message: AggregateResponseEvent[...]`, which carries no status, so none can be read |
+| `UNPARSEABLE_BODY` | the tool result's content could not be parsed, or held no `sources` object. It is timed from its scheduled time. It does not cover a malformed JSON-RPC body: with SDK 2.0.1 a malformed body on a 200 is never delivered and the call ends as `READ_TIMEOUT` after `callTimeoutSeconds` |
 | `CONNECTION_FAILED` | connection refused, reset or closed |
 | `OTHER` | none of the above |
 
