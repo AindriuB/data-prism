@@ -48,3 +48,13 @@ The first manual run of `supply-chain.yml` (run 39662563118, on `main`) failed o
 - The jackson and hazelcast blocks, and the `jackson-bom` snippet and "What has been checked" text in `docs/extending.md`.
 - `docs/verifying-releases.md` (nothing a consumer verifies changes).
 - `PLAN.md`, `HISTORY.md` and `HISTORY-INDEX.md` (the scribe's).
+
+## Outcome
+
+Landed 2026-10-21 on branch `task/268-override-tomcat`, merged with a merge commit in PR record/0.7.1-wave3-245-268 so that 266 can cherry-pick the original commits. Backport commits, in pick order: `b12f0966` (`pom.xml`), then `7175ed4e` (`docs/extending.md`). Neither touches `docs/plan/`. Tester PASS and reviewer APPROVE on `b12f0966`; the docs commit was approved by the reviewer once it said the Tomcat fragment is not one of the checked blocks, and `mkdocs build --strict` passed.
+
+**What changed.** `pom.xml` defines `tomcat.version` as `11.0.27` after the `jackson3.version` block, and manages `tomcat-embed-core`, `tomcat-embed-el` and `tomcat-embed-websocket` explicitly, ahead of the Spring Boot BOM import, because Boot's `tomcat.version` is interpolated inside the imported BOM and a property alone changes nothing. A tomcat-bom import was not used. `docs/extending.md` ("The pom shape") tells applications that embed the starter to manage `org.apache.tomcat.embed` at 11.0.25 or later until Spring Boot does.
+
+**Not recorded here.** The per-module dependency-tree listing, the local osv scan result, the surefire and failsafe counts and the Docker build were checked by the tester and are not copied into this file. 266's checklist items 4 and the image check (unzip of the 0.7.1 server jar and a Docker build on `release/0.7.1-cut`) remain the check that counts for the release.
+
+**Remove** the property and the three entries when Spring Boot manages Tomcat 11.0.25 or later.
