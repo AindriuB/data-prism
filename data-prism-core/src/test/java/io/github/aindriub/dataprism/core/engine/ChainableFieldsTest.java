@@ -348,6 +348,114 @@ class ChainableFieldsTest {
                         @NonSensitive(reason = "structure") java.util.Optional<NodeOptional> next) {
     }
 
+    @LlmExposedModel
+    record Leaf(@InternalIdentifier @Chainable(keyNamespace = "leaf") String id) {
+    }
+
+    @LlmExposedModel
+    record Grid(@NonSensitive(reason = "structure") Leaf[][] grid) {
+    }
+
+    @LlmExposedModel
+    record ListGrid(@NonSensitive(reason = "structure") List<Leaf[][]> grid) {
+    }
+
+    record Holder<T extends Leaf>(@NonSensitive(reason = "structure") T value) {
+    }
+
+    @LlmExposedModel
+    record WildHolder(@NonSensitive(reason = "structure") Holder<?> h) {
+    }
+
+    @LlmExposedModel
+    record RecMapList(@InternalIdentifier @Chainable(keyNamespace = "n") String id,
+                      @NonSensitive(reason = "structure") Map<String, List<RecMapList>> kids) {
+    }
+
+    @LlmExposedModel
+    record RecListMap(@InternalIdentifier @Chainable(keyNamespace = "n") String id,
+                      @NonSensitive(reason = "structure") List<Map<String, RecListMap>> kids) {
+    }
+
+    @LlmExposedModel
+    record MapOfList(Leaf a, @NonSensitive(reason = "structure") Map<String, List<Leaf>> m) {
+    }
+
+    @LlmExposedModel
+    record ListList(Leaf a, @NonSensitive(reason = "structure") List<List<Leaf>> ll) {
+    }
+
+    @LlmExposedModel
+    record MapKey(Leaf a, @NonSensitive(reason = "structure") Map<Leaf, String> m) {
+    }
+
+    record Nd2(RecNd back) {
+    }
+
+    @LlmExposedModel
+    record RecNd(@InternalIdentifier @Chainable(keyNamespace = "n") String id, Nd2 nd) {
+    }
+
+    @SensitiveObject
+    record D14(@InternalIdentifier String id) {
+    }
+
+    @SensitiveObject
+    record D13(@NonSensitive(reason = "structure") D14 a, @NonSensitive(reason = "structure") D14 b) {
+    }
+
+    @SensitiveObject
+    record D12(@NonSensitive(reason = "structure") D13 a, @NonSensitive(reason = "structure") D13 b) {
+    }
+
+    @SensitiveObject
+    record D11(@NonSensitive(reason = "structure") D12 a, @NonSensitive(reason = "structure") D12 b) {
+    }
+
+    @SensitiveObject
+    record D10(@NonSensitive(reason = "structure") D11 a, @NonSensitive(reason = "structure") D11 b) {
+    }
+
+    @SensitiveObject
+    record D9(@NonSensitive(reason = "structure") D10 a, @NonSensitive(reason = "structure") D10 b) {
+    }
+
+    @SensitiveObject
+    record D8(@NonSensitive(reason = "structure") D9 a, @NonSensitive(reason = "structure") D9 b) {
+    }
+
+    @SensitiveObject
+    record D7(@NonSensitive(reason = "structure") D8 a, @NonSensitive(reason = "structure") D8 b) {
+    }
+
+    @SensitiveObject
+    record D6(@NonSensitive(reason = "structure") D7 a, @NonSensitive(reason = "structure") D7 b) {
+    }
+
+    @SensitiveObject
+    record D5(@NonSensitive(reason = "structure") D6 a, @NonSensitive(reason = "structure") D6 b) {
+    }
+
+    @SensitiveObject
+    record D4(@NonSensitive(reason = "structure") D5 a, @NonSensitive(reason = "structure") D5 b) {
+    }
+
+    @SensitiveObject
+    record D3(@NonSensitive(reason = "structure") D4 a, @NonSensitive(reason = "structure") D4 b) {
+    }
+
+    @SensitiveObject
+    record D2(@NonSensitive(reason = "structure") D3 a, @NonSensitive(reason = "structure") D3 b) {
+    }
+
+    @SensitiveObject
+    record D1(@NonSensitive(reason = "structure") D2 a, @NonSensitive(reason = "structure") D2 b) {
+    }
+
+    @SensitiveObject
+    record D0(@NonSensitive(reason = "structure") D1 a, @NonSensitive(reason = "structure") D1 b) {
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -642,5 +750,35 @@ class ChainableFieldsTest {
                 new ChainableField("id", new KeyNamespace("node"), false));
         assertThat(ChainableFields.of(NodeOptional.class)).containsExactly(
                 new ChainableField("id", new KeyNamespace("node"), false));
+    }
+
+    @Test
+    @DisplayName("a chainable reachable through a route the path grammar cannot express is refused")
+    void inexpressibleRoutes() {
+        for (Class<?> type : List.of(Grid.class, ListGrid.class, Holder.class, WildHolder.class,
+                RecMapList.class, RecListMap.class, MapOfList.class, ListList.class, MapKey.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type))
+                    .as(type.getSimpleName())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageStartingWith(CODE);
+        }
+        assertThatThrownBy(() -> ChainableFields.of(ListList.class)).hasMessageContaining(ListList.class.getName() + ".ll");
+        assertThatThrownBy(() -> ChainableFields.of(MapKey.class)).hasMessageContaining(MapKey.class.getName() + ".m");
+        assertThatThrownBy(() -> ChainableFields.of(RecMapList.class))
+                .hasMessageContaining(RecMapList.class.getName() + ".kids");
+    }
+
+    @Test
+    @DisplayName("recursion through a type the scrubber does not descend into is refused")
+    void nonDescendableRecursion() {
+        assertThatThrownBy(() -> ChainableFields.of(RecNd.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(RecNd.class.getName() + ".id");
+    }
+
+    @Test
+    @DisplayName("a deep diamond of types is refused as too deep to analyse")
+    void deepDiamond() {
+        assertThatThrownBy(() -> ChainableFields.of(D0.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining("model too deep to analyse");
     }
 }

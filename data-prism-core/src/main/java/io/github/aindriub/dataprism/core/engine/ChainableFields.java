@@ -43,6 +43,13 @@ import java.util.Set;
  * simply get no links. Through a map, or any other place the walk refuses, the same recursion is
  * refused.
  *
+ * <p>The route rule: a field whose declared type the path grammar cannot express (a map, a nested
+ * generic such as {@code List<List<X>>}, a multi-dimensional array, a type variable or a wildcard) is
+ * searched in full, every type argument, array dimension and bound. A chainable declaration reachable
+ * through it is refused, even when the same declaration is also consumed on an ordinary route elsewhere.
+ * The analysis makes at most {@value #MAX_VISITS} type visits and refuses a model beyond that as too deep
+ * to analyse.
+ *
  * <p>The annotation and the descriptor are deliberately not symmetric: a descriptor that restates the
  * annotation's {@code keyNamespace} without {@code chainable} is accepted, but {@code chainable: true}
  * with no {@code keyNamespace} is always refused. A field that is both an identifier and
@@ -54,6 +61,9 @@ public final class ChainableFields {
 
     /** The longest declared path, in UTF-8 bytes (OD-200-4). */
     public static final int MAX_PATH_BYTES = 64;
+
+    /** The most type visits one analysis may make; a diamond-shaped model would otherwise cost 2^depth. */
+    public static final int MAX_VISITS = 10_000;
 
     private ChainableFields() {
     }
@@ -74,7 +84,8 @@ public final class ChainableFields {
         List<ChainableField> out = new ArrayList<>();
         Set<AnnotatedElement> consumed = new HashSet<>();
         Set<String> consumedFields = new HashSet<>();
-        walk(model, "", false, null, resolver, descriptors, new HashSet<>(), out, consumed, consumedFields);
+        walk(model, "", false, null, resolver, descriptors, new HashSet<>(), out, consumed, consumedFields,
+                new int[1]);
         refuseUnconsumed(model, descriptors, consumed, consumedFields);
         out.sort(Comparator.comparing(ChainableField::path));
         return List.copyOf(out);
@@ -83,7 +94,10 @@ public final class ChainableFields {
     private static void walk(Class<?> type, String prefix, boolean underElement, String refusal,
                              FieldMetadataResolver resolver, Map<String, ModelDescriptor> descriptors,
                              Set<String> inProgress, List<ChainableField> out,
-                             Set<AnnotatedElement> consumed, Set<String> consumedFields) {
+                             Set<AnnotatedElement> consumed, Set<String> consumedFields, int[] visits) {
+        if (++visits[0] > MAX_VISITS) {
+            throw invalid(type, "*", "model too deep to analyse");
+        }
         // Keyed by type and mode: meeting a type again in refusal mode (under a map, or where the
         // scrubber does not descend) must still be walked, or its chainable fields would slip through.
         String state = type.getName() + (refusal == null ? "" : "!refusal");
@@ -96,6 +110,7 @@ public final class ChainableFields {
             String name = field.fieldName();
             ModelDescriptor.FieldDescriptor stated = descriptor == null ? null : descriptor.field(name);
             KeyNamespace namespace = declared(type, name, declarations.getOrDefault(name, List.of()), stated);
+            refuseInexpressibleRoute(type, name, genericType(type, name));
             Class<?> valueType = field.valueType();
             boolean map = Map.class.isAssignableFrom(valueType);
             boolean collection = valueType.isArray() || Iterable.class.isAssignableFrom(valueType);
@@ -126,7 +141,7 @@ public final class ChainableFields {
                     next = "is chainable in a type the scrubber does not descend into";
                 }
                 walk(inner, prefix + name + (collection ? "[]." : "."), underElement || collection, next,
-                        resolver, descriptors, inProgress, out, consumed, consumedFields);
+                        resolver, descriptors, inProgress, out, consumed, consumedFields, visits);
             }
         }
         inProgress.remove(state);
@@ -182,7 +197,7 @@ public final class ChainableFields {
      */
     private static void refuseUnconsumed(Class<?> model, Map<String, ModelDescriptor> descriptors,
                                          Set<AnnotatedElement> consumed, Set<String> consumedFields) {
-        Set<Class<?>> reachable = new java.util.LinkedHashSet<>();
+        Reached reachable = new Reached();
         collect(model, reachable);
         for (Class<?> type : reachable) {
             for (RecordComponent component : type.isRecord() ? type.getRecordComponents()
@@ -239,7 +254,103 @@ public final class ChainableFields {
                 && !name.startsWith("java.") && !name.startsWith("javax.");
     }
 
-    private static void collect(Class<?> type, Set<Class<?>> out) {
+    /** The classes reached, and the type variables and wildcards already followed (bounds may be cyclic). */
+    private static final class Reached extends java.util.LinkedHashSet<Class<?>> {
+        private final Set<java.lang.reflect.Type> seen = new HashSet<>();
+    }
+
+    /**
+     * Whether a declared type maps to one path: a plain class, a one-dimensional array, or a collection
+     * or wrapper of exactly one plain class. Maps, nested generics, multi-dimensional arrays, type
+     * variables and wildcards cannot be named in the path grammar.
+     */
+    private static boolean expressible(java.lang.reflect.Type type) {
+        if (type instanceof Class<?> c) {
+            return !c.isArray() || !c.getComponentType().isArray();
+        }
+        if (type instanceof java.lang.reflect.ParameterizedType p && p.getRawType() instanceof Class<?> raw) {
+            java.lang.reflect.Type[] arguments = p.getActualTypeArguments();
+            return !Map.class.isAssignableFrom(raw) && arguments.length == 1
+                    && arguments[0] instanceof Class<?> argument && !argument.isArray();
+        }
+        return false;
+    }
+
+    /** The first {@code @Chainable} member declared on the type, as {@code "member"}, or null. */
+    private static String chainableMember(Class<?> type) {
+        if (type.isRecord()) {
+            for (RecordComponent component : type.getRecordComponents()) {
+                if (component.isAnnotationPresent(Chainable.class)) {
+                    return component.getName();
+                }
+            }
+        }
+        for (Field field : type.getDeclaredFields()) {
+            if (field.isAnnotationPresent(Chainable.class)) {
+                return field.getName();
+            }
+        }
+        for (Method method : type.getDeclaredMethods()) {
+            if (method.isSynthetic()) {
+                continue;
+            }
+            if (method.isAnnotationPresent(Chainable.class)) {
+                return method.getName();
+            }
+            for (java.lang.reflect.Parameter parameter : method.getParameters()) {
+                if (parameter.isAnnotationPresent(Chainable.class)) {
+                    return method.getName() + "(" + parameter.getName() + ")";
+                }
+            }
+        }
+        for (java.lang.reflect.Constructor<?> constructor : type.getDeclaredConstructors()) {
+            for (java.lang.reflect.Parameter parameter : constructor.getParameters()) {
+                if (parameter.isAnnotationPresent(Chainable.class)) {
+                    return "<init>(" + parameter.getName() + ")";
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The route rule: a field whose type the path grammar cannot express is searched in full, and any
+     * chainable declaration reachable through it is refused, even if the same declaration is consumed on
+     * another, ordinary route.
+     */
+    private static void refuseInexpressibleRoute(Class<?> owner, String field, java.lang.reflect.Type type) {
+        if (type == null || expressible(type)) {
+            return;
+        }
+        Reached reached = new Reached();
+        collect(type, reached);
+        for (Class<?> candidate : reached) {
+            String member = chainableMember(candidate);
+            if (member != null) {
+                throw invalid(owner, field, "reaches the chainable declaration " + candidate.getName() + "."
+                        + member + " through a type the path grammar cannot express");
+            }
+        }
+    }
+
+    /** The field's full generic type, from the record component or the declared field. */
+    private static java.lang.reflect.Type genericType(Class<?> type, String name) {
+        if (type.isRecord()) {
+            for (RecordComponent component : type.getRecordComponents()) {
+                if (component.getName().equals(name)) {
+                    return component.getGenericType();
+                }
+            }
+            return null;
+        }
+        try {
+            return type.getDeclaredField(name).getGenericType();
+        } catch (NoSuchFieldException e) {
+            return null;
+        }
+    }
+
+    private static void collect(Class<?> type, Reached out) {
         if (!collectable(type) || type == Record.class || !out.add(type)) {
             return;
         }
@@ -260,10 +371,23 @@ public final class ChainableFields {
         }
     }
 
-    private static void collect(java.lang.reflect.Type type, Set<Class<?>> out) {
+    private static void collect(java.lang.reflect.Type type, Reached out) {
         switch (type) {
             case null -> { }
-            case Class<?> c -> collect(c.isArray() ? c.getComponentType() : c, out);
+            case Class<?> c -> {
+                Class<?> element = c;
+                while (element.isArray()) {
+                    element = element.getComponentType();
+                }
+                collect(element, out);
+            }
+            case java.lang.reflect.TypeVariable<?> v -> {
+                if (out.seen.add(v)) {
+                    for (java.lang.reflect.Type bound : v.getBounds()) {
+                        collect(bound, out);
+                    }
+                }
+            }
             case java.lang.reflect.ParameterizedType p -> {
                 collect(p.getRawType(), out);
                 for (java.lang.reflect.Type argument : p.getActualTypeArguments()) {
@@ -272,6 +396,9 @@ public final class ChainableFields {
             }
             case java.lang.reflect.GenericArrayType g -> collect(g.getGenericComponentType(), out);
             case java.lang.reflect.WildcardType w -> {
+                if (!out.seen.add(w)) {
+                    return;
+                }
                 for (java.lang.reflect.Type bound : w.getUpperBounds()) {
                     collect(bound, out);
                 }
