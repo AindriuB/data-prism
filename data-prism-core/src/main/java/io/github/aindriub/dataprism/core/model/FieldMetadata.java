@@ -28,8 +28,10 @@ import java.util.List;
  *                           refused
  * @param elementType        the type a nested value is scrubbed with when it is
  *                           held inside the declared type: an array's component,
- *                           the argument of a JDK collection or {@code Optional},
- *                           or the value type of a JDK map; null otherwise. A
+ *                           or the argument of a JDK collection or {@code Optional};
+ *                           null otherwise. A JDK map's value type is also stated
+ *                           here, but a map object is never descended with it: it
+ *                           is unclassified, and so are its entries. A
  *                           user generic or any other wrapper yields null, since
  *                           its type argument says nothing about its own fields
  */

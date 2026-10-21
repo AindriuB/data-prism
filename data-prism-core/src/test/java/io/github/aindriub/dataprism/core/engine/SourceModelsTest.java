@@ -511,7 +511,7 @@ class SourceModelsTest {
     }
 
     @Test
-    void aRecursiveTypeVariableBoundTerminatesAndAnObjectShapedEnumIsRefusedAtStartup() {
+    void aRecursiveGenericRecordIsRefusedAsGenericAndAnObjectShapedEnumIsRefusedAtStartup() {
         // Task 265: a record declaring type parameters is refused outright, so the bound is never walked.
         assertRefusedWith(() -> SourceModels.require(Recursive.class), "SOURCE_MODEL_GENERIC", "Recursive");
         assertRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
@@ -523,7 +523,7 @@ class SourceModelsTest {
     }
 
     @Test
-    void aTypeVariableBoundIsWalkedAtStartup() {
+    void aGenericRecordWithABoundedTypeVariableIsRefusedAsGeneric() {
         // Task 265: refused as generic before the bound (a Bean) is reached.
         assertRefusedWith(() -> SourceModels.require(Boxed.class), "SOURCE_MODEL_GENERIC", "Boxed");
     }
@@ -740,7 +740,7 @@ class SourceModelsTest {
 
     @Test
     void aGenericRecordBehindAnObjectComponentIsRefusedAtRequestTime() {
-        assertRefusedWith(() -> SourceTree.of(new HoldsAny(new Envelope<>(new Inner("n", Tier.GOLD), "e"))),
+        assertRefusedWith(() -> SourceTree.of(new HoldsAny(new Envelope<>(new Inner("value-that-must-not-appear", Tier.GOLD), "alice@invalid.example"))),
                 "SOURCE_MODEL_GENERIC", "Envelope");
     }
 
