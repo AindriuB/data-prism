@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Reads metadata from records, classes and accessors.
@@ -170,15 +171,23 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
     }
 
     /**
-     * The element type of a collection, where it is stated. Erasure means a raw
-     * or wildcard collection yields nothing, which is correct: without a type
-     * there is no metadata to descend with, and the engine must treat the
-     * contents as unclassified rather than guess.
+     * The type a nested value is scrubbed with, where the declared type states it: an array's
+     * component, the single argument of a JDK collection or {@link Optional}, or the value type of
+     * a JDK map. Nothing else is followed. A user generic ({@code Envelope<Leaf>}), a user
+     * subtype of a collection and a JDK wrapper outside that list ({@code AtomicReference<Leaf>})
+     * hold their own fields, which the argument's type says nothing about, so they yield nothing
+     * and are scrubbed with their own type. Erasure means a raw or wildcard collection also
+     * yields nothing: without a type there is no metadata to descend with, and the engine must
+     * treat the contents as unclassified rather than guess.
      */
     private static Class<?> elementType(Type type) {
-        if (type instanceof ParameterizedType p) {
+        if (type instanceof ParameterizedType p && p.getRawType() instanceof Class<?> raw && jdk(raw)) {
             Type[] arguments = p.getActualTypeArguments();
-            if (arguments.length > 0 && arguments[arguments.length - 1] instanceof Class<?> c) {
+            if (arguments.length == 1 && (Iterable.class.isAssignableFrom(raw) || raw == Optional.class)
+                    && arguments[0] instanceof Class<?> c) {
+                return c;
+            }
+            if (arguments.length == 2 && Map.class.isAssignableFrom(raw) && arguments[1] instanceof Class<?> c) {
                 return c;
             }
         }
@@ -186,6 +195,12 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
             return c.getComponentType();
         }
         return null;
+    }
+
+    /** A class the platform defines: the bootstrap or platform loader, never application code. */
+    private static boolean jdk(Class<?> c) {
+        ClassLoader loader = c.getClassLoader();
+        return loader == null || loader == ClassLoader.getPlatformClassLoader();
     }
 
     private static <A extends java.lang.annotation.Annotation> A first(

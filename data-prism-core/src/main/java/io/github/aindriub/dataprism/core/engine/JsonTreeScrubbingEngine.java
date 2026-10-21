@@ -250,7 +250,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         }
 
         if (value.isObject()) {
-            return scrubNestedObject((ObjectNode) value, md, run, path, pointer, depth, ownSubject);
+            return scrubNestedObject((ObjectNode) value, md, false, run, path, pointer, depth, ownSubject);
         }
         if (value.isArray()) {
             ArrayNode out = SourceTree.newArray();
@@ -259,7 +259,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 JsonNode element = in.get(i);
                 String elementPath = path + "[" + i + "]";
                 JsonNode scrubbed = element.isObject()
-                        ? scrubNestedObject((ObjectNode) element, md, run, elementPath, pointer + "/*", depth, ownSubject)
+                        ? scrubNestedObject((ObjectNode) element, md, true, run, elementPath, pointer + "/*", depth, ownSubject)
                         : scalar(element, md, policy, run, elementPath, ownSubject, scope);
                 if (scrubbed != null) {
                     out.add(scrubbed);
@@ -276,11 +276,9 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * class nobody annotated — is unclassified, and the profile's setting for
      * unclassified data decides, exactly as it would for a scalar.
      */
-    private JsonNode scrubNestedObject(ObjectNode value, FieldMetadata md, Run run,
+    private JsonNode scrubNestedObject(ObjectNode value, FieldMetadata md, boolean element, Run run,
                                        String path, String pointer, int depth, String inheritedSubject) {
-        Class<?> nested = md.elementType() != null && md.elementType() != Object.class
-                ? md.elementType()
-                : md.valueType();
+        Class<?> nested = nestedType(md, element);
 
         if (nested != null && resolver.descendable(nested)) {
             return scrubObject(value, nested, run, path, pointer, depth + 1, inheritedSubject);
@@ -305,6 +303,21 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
             case REDACT -> SourceTree.text(REDACTED);
             default -> null;
         };
+    }
+
+    /**
+     * The type a nested value is read with, by one rule shared (as a copy) with {@code SourceValues}
+     * and the configured-JSON shape guard. An object value takes the field's own {@code valueType()}: a
+     * user generic or a map is that object, not the type argument it carries. Only an {@code Optional}
+     * is transparent. An element of an array value takes {@code elementType()} when one is stated.
+     */
+    private static Class<?> nestedType(FieldMetadata md, boolean element) {
+        Class<?> elementType = md.elementType();
+        boolean stated = elementType != null && elementType != Object.class;
+        if (element) {
+            return stated ? elementType : md.valueType();
+        }
+        return md.valueType() == java.util.Optional.class && stated ? elementType : md.valueType();
     }
 
     /**

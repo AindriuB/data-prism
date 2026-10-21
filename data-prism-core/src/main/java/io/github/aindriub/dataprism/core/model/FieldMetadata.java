@@ -26,8 +26,12 @@ import java.util.List;
  *                           object was: without the type there is no metadata to
  *                           descend with, and the subtree can only be copied or
  *                           refused
- * @param elementType        for a collection, the declared element type; null
- *                           otherwise
+ * @param elementType        the type a nested value is scrubbed with when it is
+ *                           held inside the declared type: an array's component,
+ *                           the argument of a JDK collection or {@code Optional},
+ *                           or the value type of a JDK map; null otherwise. A
+ *                           user generic or any other wrapper yields null, since
+ *                           its type argument says nothing about its own fields
  */
 public record FieldMetadata(
         String fieldName,
