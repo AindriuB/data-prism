@@ -321,6 +321,35 @@ class SealerTest {
     }
 
     @Test
+    @DisplayName("authenticated peer salts fill the cache to its bound and the least recently used one is evicted")
+    void lruEviction() {
+        MutableClock clock = new MutableClock();
+        Sealer reader = Sealer.builder(keys(), metrics).clock(clock).saltCacheBound(3)
+                .saltDerivationsPerWindow(5).build();
+        List<String> envelopes = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            envelopes.add(Sealer.builder(keys(), metrics).build().seal(MAP, KEY, PLAIN));
+        }
+        for (int i = 0; i < 3; i++) {
+            assertThat(reader.open(MAP, KEY, envelopes.get(i)).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        }
+        assertThat(reader.saltCacheSize()).isEqualTo(3);
+        // A hit makes peer 0 the most recently used (no derivation spent).
+        assertThat(reader.open(MAP, KEY, envelopes.get(0)).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        assertThat(reader.open(MAP, KEY, envelopes.get(3)).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        assertThat(reader.open(MAP, KEY, envelopes.get(4)).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        assertThat(reader.saltCacheSize()).as("bounded").isEqualTo(3);
+
+        // All five derivations of this window are spent, so only a cached salt can still open.
+        assertThat(reader.open(MAP, KEY, envelopes.get(0)).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        assertThat(reader.open(MAP, KEY, envelopes.get(1)).outcome()).as("evicted").isEqualTo(Opened.Outcome.UNSUPPORTED);
+        assertThat(reader.open(MAP, KEY, envelopes.get(2)).outcome()).as("evicted").isEqualTo(Opened.Outcome.UNSUPPORTED);
+        clock.advance(java.time.Duration.ofMinutes(5));
+        assertThat(reader.open(MAP, KEY, envelopes.get(1)).outcome()).as("re-derived").isEqualTo(Opened.Outcome.AUTHENTIC);
+        assertThat(reader.saltCacheSize()).isEqualTo(3);
+    }
+
+    @Test
     @DisplayName("an unknown real salt is refused over the limit, and admitted again in the next window")
     void limiterRecovers() {
         MutableClock clock = new MutableClock();

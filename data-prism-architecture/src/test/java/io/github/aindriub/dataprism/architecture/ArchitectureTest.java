@@ -756,15 +756,16 @@ class ArchitectureTest {
      * The Sealer test seams fix the salt and the nonce counter. A production class that called them could
      * reuse a (subkey, nonce) pair, so no class may call them except tests (this rule imports main classes only).
      */
-    private static ArchRule noCallsToSealerBuilder(String... methods) {
+    private static final String SEALER_BUILDER = "io.github.aindriub.dataprism.hazelcast.seal.Sealer$Builder";
+
+    private static ArchRule noCallsToBuilder(String ownerName, String... methods) {
         return noClasses()
                 .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>(
                         "is a call to Sealer.Builder " + String.join("/", methods)) {
                     @Override
                     public boolean test(JavaAccess<?> access) {
                         return access instanceof JavaMethodCall
-                                && access.getTarget().getOwner().getName()
-                                .equals("io.github.aindriub.dataprism.hazelcast.seal.Sealer$Builder")
+                                && access.getTarget().getOwner().getName().equals(ownerName)
                                 && List.of(methods).contains(access.getTarget().getName());
                     }
                 })
@@ -773,20 +774,34 @@ class ArchitectureTest {
 
     @Test
     void productionCodeDoesNotCallTheSealerSeams() {
-        noCallsToSealerBuilder("salt", "initialCounter").check(CLASSES);
+        noCallsToBuilder(SEALER_BUILDER, "salt", "initialCounter").check(CLASSES);
     }
 
+    /**
+     * The real seams are package-private and cannot be called from this module, so the fixture calls a stand-in
+     * with the same method names; the rule's predicate is the same, only the owner name differs.
+     */
     @Test
     void sealerSeamRuleCatchesACaller() {
         JavaClasses fixture = new ClassFileImporter().importClasses(SealerSeamCallerFixture.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> noCallsToSealerBuilder("clock").check(fixture))
-                .isInstanceOf(AssertionError.class);
+        String owner = FakeSealerBuilder.class.getName();
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> noCallsToBuilder(owner, "salt", "initialCounter").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("SealerSeamCallerFixture")
+                .hasMessageContaining("salt")
+                .hasMessageContaining("initialCounter");
     }
 
-    /** Calls a public builder method, standing in for the package-private seams the real rule forbids. */
+    static final class FakeSealerBuilder {
+        FakeSealerBuilder salt(byte[] salt) { return this; }
+        FakeSealerBuilder initialCounter(long first) { return this; }
+    }
+
+    /** Calls the seams by name, as a production class that fixed a salt or counter would. */
     static final class SealerSeamCallerFixture {
-        Object call(io.github.aindriub.dataprism.hazelcast.seal.Sealer.Builder b) {
-            return b.clock(java.time.Clock.systemUTC());
+        Object call(FakeSealerBuilder b) {
+            return b.salt(new byte[16]).initialCounter(1);
         }
     }
 
