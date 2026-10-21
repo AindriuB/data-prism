@@ -57,6 +57,12 @@ public final class SourceModels {
 
     public static final String CODE = "SOURCE_MODEL_NOT_A_RECORD";
 
+    /** A record declaring type parameters, or a component whose declared type is a parameterized user type. */
+    public static final String GENERIC_CODE = "SOURCE_MODEL_GENERIC";
+
+    /** A JDK map whose value type contains a record at any depth. */
+    public static final String MAP_OF_RECORD_CODE = "SOURCE_MODEL_MAP_OF_RECORD";
+
     private SourceModels() {
     }
 
