@@ -30,6 +30,7 @@ Provide the cryptographic core every later cluster task uses, with nothing wired
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java:129-132: the existing 32-byte strength rule for the HMAC key.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/metrics/Metric.java and PrivacyMetricsTest.java: one constant per signal, with the full set pinned.
 - data-prism-architecture/.../ArchitectureTest.java, `ONLY_REIDENTIFICATION_CALLS_SUBJECT_FOR` (about :699-716): the shape of a boundary rule.
+- From 218/219 (2026-10-21): Add `Metric.CLUSTER_LEGACY_ENTRIES`.
 
 ## Required shape (later tasks read these fields; state them all now)
 - `LabelledHkdf` (core): `extract(salt, ikm)`, `expand(prk, info, length)`, and an `info` encoder that length-prefixes a label and context items. The prefix width is fixed here and pinned by vectors.

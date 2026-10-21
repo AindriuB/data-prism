@@ -52,3 +52,21 @@
 - Cluster names, scopes and ids in tests are invented and neutral.
 - Say "supports", never "compliant".
 - No Hazelcast Enterprise feature or licence (D-0.4.1-A).
+
+## Outcome (2026-10-21, 0.8 wave 1)
+Merged onto `record/0.8-wave1a` (task branch head 6e751e49; tester PASS: two consecutive `./mvnw -B -pl data-prism-hazelcast -am verify` runs, 51 spike tests in 12 classes, 265 hazelcast tests, 0 failures; reviewer APPROVE). The answer table is in `data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/spike/package-info.java`; read it there. In summary:
+
+- Q1: `network/interfaces` does not restrict inbound connections.
+- Q3: a keyless client that knows only the cluster name can freeze or shut down the cluster with Management Center protocol messages. The Java client API refuses locally; the member accepts.
+- Q13: a `ManagementCenterConfig` `trustedInterfaces` that does not match the client makes the member refuse MC change-state with `AccessControlException`. Only change-state was tested, and Data Prism does not set it today. The console, scripting and data-access switches do not stop it.
+- Q4: with only String, Integer and Boolean allowed, a remote entry processor fails as `OperationTimeoutException`. On a caller-owned key the primary applies it and the backup is refused, which is silent divergence.
+- Q5: phone-home is on when unset, forced off for a supplied `Config`, and untouched on a supplied running instance.
+- Q6: a duplicate live UUID does not join.
+- Q7: `localKeySet` is the primary-owned keys.
+- Q8: sealing inside the process makes primary and backup bytes differ unless a custom backup processor copies them, and a copy-only backup processor loses the TTL.
+- Q9: merge policies and entry processors that implement `HazelcastInstanceAware` can read member-local state, so they could unseal.
+- Q10: `tryPut` and `tryRemove` return false within the timeout; `replace(k,old,new)` and `remove(k,v)` wait without bound on a locked key.
+- Q11: MERGING, then the policy, then MERGED, on the smaller side only.
+- Q12: not run, because Central has no second 5.7.x patch.
+
+Incident: in review round 1 a spike test started a member with phone-home enabled, so builds of that commit posted Hazelcast's anonymous usage ping to `phonehome.hazelcast.com`. Fixed in round 2: every spike member-creation path calls a guard that refuses phone-home on, and a guard test covers it. Do not create a member in a test without that guard.

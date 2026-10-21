@@ -32,6 +32,7 @@ After this task no Hazelcast key, and no lock key, contains a scope id, subject 
 - Task 219 answers 8 (backup re-execution, retry, TTL on the backup), 9 (member-local state in processors and merge policies) and 10 (which writes wait on a held lock).
 - HazelcastStoredValueBoundaryTest.java:59-247: the single test that enumerates every map. It is the exhaustiveness guard this task splits into per-area checkers.
 - docs/plan/PLAN.md, "Follow-ups from the final review of 216": `useLockTimeout` is last-store-wins. Folded in here as a Javadoc note.
+- From 218/219 (2026-10-21): Backup processors must copy the bytes and set the TTL (Q8). Every compare-and-set runs under a bounded `tryLock` (Q10).
 
 ## Required approach
 - `ScopeKeys` takes `KeyedNames` and returns keyed strings only. The canonical inputs are the same parts, in the same order, as today. Scoped maps (identity, re-identification, budget, approval entries, oversight scope pauses) use `scoped(...)`. Claims use `mapKey(claims, approvalId)`. Pending entries use `mapKey(pending, kind NUL requester)`. The caller-rate map uses `mapKey(callerrate, principal)`.

@@ -22,6 +22,7 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
 - Task 219 answer 10 (`replace(k, old, new)` against a held lock) and answer 11 (`MERGED` delivery and its order relative to merge policies).
 - Task 227: `MemberCards.reportPauseSequence`, `highestReportedPauseSequence`, `verifiedMembers`; `ClusterSecurityStatus`; the gate never blocks the pause map; OD-215-16 for oversight writes while not serving.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/oversight/OversightState.java: the SPI, unchanged.
+- From 218/219 (2026-10-21): This task owns the 0.7 fence write (`all` = TRUE in `dataprism.oversight`) and its re-assertion at each lease refresh.
 
 ## Required approach
 - One document under a fixed keyed name in `dataprism.oversight.s1`: the full set of pauses, `sequence`, `refresh`, `issuedAt`, and the issuing member. Order is (sequence, refresh), lexicographic.
