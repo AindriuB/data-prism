@@ -22,6 +22,7 @@ The roadmap's 0.8 readiness includes a soak, including the cluster. Run the 0.8 
 - docs/plan/tasks/215-plan-sealed-cluster-implementation.md, Outcome: the soak (design 5.2), rotation under load and the packet capture are this task's.
 - Sealed-cluster tasks 229 (`RotationPhasesTest`, the in-process version of the rotation steps), 231 (`HostileMemberEndToEndTest`) and 264 (the shared link limiter). Read with `git show plan/0.8-sealed-cluster:docs/plan/tasks/<id>-*.md`.
 - docs/multiple-instances.md: the isolation claims the capture tests.
+- From 221 (2026-10-21): fail if any member logs "Resolving class ... is not allowed" during the soak runs.
 
 ## Acceptance
 - [ ] Single node: a run of at least 8 hours at a fixed rate, 100 sources, links enabled, mixing `list_sources` walks, `describe_source`, targeted and untargeted `get_entity_context`, `follow` of direct and translated links, invalid links, timeouts and budget exhaustion. Three members: the same mix for at least 4 hours through a load balancer, using the overlay under `load-test/soak/` and not editing `docker/multi-instance/**`.

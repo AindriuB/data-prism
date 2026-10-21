@@ -64,7 +64,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | Wave | Briefs |
 |---|---|
 | 1 | 259 open; 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a) |
-| 2 | 220, 221, 240 |
+| 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
 | 3 | 222, 242, 244, 248, 257 |
 | 4 | 223, 241 |
 | 5 | 224, 225, 226, 227, 245, 256 |
@@ -87,6 +87,18 @@ Follow-ups from wave 1 (landed 2026-10-21), each belonging to the brief named:
 - 250: add test obligation 1 cases for over-long real names in paging: `[L1,L2,a,b]` with page size 2, and all-long with page size 1.
 - New small 0.8 follow-up (no brief yet): `ScopeIdentityIndex.endScope` deletes `BUDGET_MAP` keys with `IMap.delete`, which waits on another member's key lock bounded only by that lock's lease, not the lock timeout. Switch to a timed delete (`tryRemove`).
 - Spike findings for the cluster briefs (219, in `data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/spike/package-info.java`): each is recorded as a dated Context bullet in 220, 221, 223, 224, 226, 227, 228 and 231. Q12 (a second 5.7.x patch) was not run because Central has none; revisit when one exists.
+Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (also recorded as dated Context bullets in the briefs):
+
+- 222: map `MISSING_MEMBER_INTERFACE` and `UNBOUNDED_MEMBER_INTERFACE` in `DataPrismPropertiesValidator`; wire `Metric.CLUSTER_LEGACY_ENTRIES` to 221's package-private `legacyEntries()` count (222 edits the `PrivacyCluster` wiring first); rename or document `UNSAFE_HAZELCAST_SERIALIZATION`, which now also covers the REST, memcache, Management Center and phone-home refusals.
+- 227: member cards carry each member's sealing salt so known members' salts are pre-admitted and the unknown-salt limiter only affects strangers; enforce that `next` is never written; approval-map locks use `scoped(...)`, not `lockKey`. The verified-member excuse in 221's `UNSEALED_CLUSTER_STATE` check waits for this task.
+- 221 residuals (no brief yet; fold into 222 or 227 when next editing the membership watch): bound the legacy-check thread pool or skip a check while one runs; a late check must not overwrite a newer count; comment that the reply-path test uses a test-only processor.
+- 231 and 263: fail if any member logs "Resolving class ... is not allowed" during integration and soak runs.
+- 213: never restore one process snapshot more than once (GCM nonce reuse); the `using()` breaking change and integrator requirements (`requiredSerializationFilter()`, non-empty `trustedInterfaces`, phone-home off, no memcache, REST `HEALTH_CHECK` only); the `trustedInterfaces` value; REST and memcache off; correct "docs list 5.7.2" to 5.7.0.
+- Design 2.3.7 (next edit of `cluster-security.md`): the unknown-salt derivation limiter turns a forged-salt spray into a bounded loss of availability for new members' entries (`seal.salt_rejected`).
+- 248, 249, 251: `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
+- Release note required for 0.8 (Breaking in `CHANGELOG.md`): `PrivacyCluster.using()` refuses instances it used to accept.
+- Known residual of 240: an enum constant body's `@Chainable` is not visited.
+
 - Tooling: `.claude/scripts/wt-new.sh` bases branches on local `main`, not `origin/main`.
 
 Owner decisions that change behaviour and belong in `docs/migration-0.8.md`: the cutover is non-rolling and refuses `UNSEALED_CLUSTER_STATE` when no other verified 0.8 member is present (cached state is fetched again, pending approvals must be requested again); every serving 0.8 member fences 0.7 members by keeping key `all` = TRUE in `dataprism.oversight` (residuals: anyone on the network can delete the fence until it is re-asserted, and plain-Java embedders using `ToolAdmission.none()` are not fenced); `dataprism.limits.scope-read-budget` stays 100 but now counts source reads; the new defaults are `request-timeout` `PT10S` and `scope-total-read-budget` 50,000; `SKIPPED_OVER_LIMIT` is removed before the 0.9 freeze (Breaking in `CHANGELOG.md` when built); a missing shared link limiter refuses with `MISSING_SHARED_LINK_LIMITER`. Per-instance weakening of the link limiter is excluded.

@@ -26,6 +26,7 @@ Every member that holds the cluster key proves it by publishing a sealed member 
 - Task 220 `ServingGate`, `Sealer`, key check value.
 - Task 223 `ClusterSecuritySettings` (`unverifiedMemberAction`, `unverifiedMemberGrace`, `pauseLease` as the card lease).
 - From 218/219 (2026-10-21): A member card must open knowing only the live member UUID; test it. The `UNSEALED_CLUSTER_STATE` check runs before the card write. Duplicate-UUID members cannot join (Q6).
+- From 220/221 (2026-10-21): member cards should carry each member's sealing salt, so known members' salts are pre-admitted and the unknown-salt limiter (default 256 per minute) only affects strangers. Enforce that `next` is never written. Approval-map locks use `scoped(...)`, not `lockKey`. 221's verified-member excuse for `UNSEALED_CLUSTER_STATE` waits for this task: until then a join to a cluster of two or more holding a non-fence old entry is refused.
 
 ## Required shape (tasks 228, 229 and 230 read these)
 - A card holds: member UUID, format version, the cluster key ids this member accepts, a key check value for each configured purpose key (cluster keys and name key now; further purpose keys, such as link keys, through `MemberCards.addPurposeKey(id, material)` before start), the highest pause sequence this member accepted (from a supplier set by 228; zero until then), and a lease end. It is sealed with the member UUID and lease end authenticated.

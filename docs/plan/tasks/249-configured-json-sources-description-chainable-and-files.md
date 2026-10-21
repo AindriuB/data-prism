@@ -27,6 +27,7 @@ A configured JSON source is declared in a `json-sources:` file, not in Java, so 
 - docs/configuration.md, `dataprism.json-sources.config-location` (about :660-700): strict keys, the catalogue rules, the location-describing rule.
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java:110-380: the strict parser and its messages (`StrictYaml.shown`).
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesInitializer.java:47-120: how the location is read and shown in messages.
+- From 240 (2026-10-21): `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.

@@ -69,3 +69,10 @@ No store changes, so no 0.7 approval property is touched: creation tokens, claim
 - Say "supports", never "compliant".
 - JDK `javax.crypto` only. No new dependency, no Enterprise feature (D-0.4.1-A).
 - No sleeps. Anything time-dependent takes an injected clock.
+
+## Outcome (2026-10-21, 0.8 wave 2)
+Merged onto `record/0.8-wave2` (task branch head 7faa7d70; tester PASS at 7faa7d70 on core, hazelcast, architecture, server and integration-tests; reviewer APPROVE, who found no nonce reuse, HKDF or associated-data defect). Added `LabelledHkdf` (RFC 5869 cases 1 to 3 pass; info items carry a 2-byte big-endian length and more than 65,535 bytes is refused), the `dps1` `Sealer` (AES-GCM; a random 16-byte salt per sealer; nonce is 4 zero bytes plus an 8-byte counter shared across maps, and the sealer refuses to wrap; associated data per OD-215-9), `KeyedNames` (`lockKey` equals `mapKey`, per the coordinator decision of 2026-10-21), `ClusterKeys`, the key check value (8 raw bytes, empty HKDF salt), the 14 cluster `Metric` constants with the gauge method on both Micrometer implementations, architecture rule T14, and an ArchUnit rule forbidding production calls to `Sealer.Builder.salt` and `initialCounter`.
+
+Coordinator decision: a peer's salt is admitted to the cache only after GCM authenticates, and a separate limiter (default 256 per minute) bounds derivations for unknown salts. T16's "a 10,000-salt spray leaves the cache at its bound" is superseded; `lruEviction` proves the bound with authenticated salts. The seam-rule fixture uses a nested `FakeSealerBuilder` because the real seams are package-private. Fix-round tests were not run red first; the reviewer confirmed each would fail on the previous commit.
+
+Implementer decisions 1 to 9: prefix width, nonce layout, salt cache bound 1024, provider faults map to TAMPERED or a constant refusal, the builder, KCV as raw bytes, the shape of T14, and `FailSafeGaugeForwardingTest` written by reflection.

@@ -41,6 +41,9 @@ Document controls when they ship in 0.8, before the 0.9 freeze. Keep 1.0 a stabi
 - [ ] Wording says “supports”, never “compliant” or “compliance”, and makes no claim that a deployment meets a legal duty.
 - [ ] `mkdocs build --strict` and every `docs-site/hooks/check_*.py` pass, with `DP_REQUIRE_NO_STUBS=true`. Build success alone is insufficient.
 
+## Context
+- From wave 2 (2026-10-21), for the operator docs and migration notes: never restore one process snapshot more than once (GCM nonce reuse). The `using()` breaking change and what integrators must supply: `requiredSerializationFilter()`, non-empty `trustedInterfaces`, phone-home off, no memcache, REST `HEALTH_CHECK` only. State the `trustedInterfaces` value and that REST and memcache are off. Correct "docs list 5.7.2" to 5.7.0.
+
 ## Out of scope
 - `docs/data-protection.md` (214), code and `docs/configuration.md` (implementation tasks).
 - 0.7 release documentation (201), version cuts, release publication and new 1.0 features.

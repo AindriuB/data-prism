@@ -27,6 +27,7 @@ When links are enabled, every `ANSWERED` source result carries one sealed link p
 - docs/plan/design/key-resolvers.md section 7 (direct or translated; direct wins, OD-R7).
 - docs/plan/design/contract-register.md OD-200-4: a source whose real name is over 64 characters gets no links in 0.8 (counted as omitted).
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java: where raw records, scrubbed trees and the `emitted` set meet; the final validation over the assembled tree.
+- From 240 (2026-10-21): `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.

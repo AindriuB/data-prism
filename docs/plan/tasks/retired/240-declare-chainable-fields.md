@@ -9,7 +9,7 @@
 - data-prism-annotations/src/main/java/io/github/aindriub/dataprism/annotations/Chainable.java *(new)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/ModelDescriptors.java *(the `chainable` and `keyNamespace` field keys and their validation only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/ModelDescriptor.java *(the accessor for a field's chainable declaration only)*
-- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/ChainableField.java *(new)*
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/ChainableField.java *(new; moved from core.model during the task, see Outcome)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/ChainableFields.java *(new)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/descriptor/ChainableDescriptorTest.java *(new)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/ChainableFieldsTest.java *(new)*
@@ -44,3 +44,8 @@ A link can only start from a field the model says is a key another source accept
 - Building links from raw values (251).
 - A compile-time check in `data-prism-processor`.
 - Turning the `INVALID_CHAINABLE_FIELD:` exception into a Spring startup refusal (254).
+
+## Outcome (2026-10-21, 0.8 wave 2)
+Merged onto `record/0.8-wave2` (task branch head 7fa7912a; tester PASS, about 2,196 tests; reviewer APPROVE). Added `@Chainable` (one attribute, same target and retention as `@InternalIdentifier`), the descriptor field keys `chainable` and `keyNamespace`, and `ChainableField` with `ChainableFields`. Chainable is metadata only; a parity test, including annotated twins, proves it does not change dispositions.
+
+Coordinator decisions: `ChainableField` lives in `core.engine`, not `core.model`, because the architecture test caught a model-to-spi package cycle (the Owns line above is updated). The entry points are `ChainableFields.of(Class, Map<String, ModelDescriptor>)` and `of(Class)`, not `ModelDescriptors`. Only arrays and `Iterable` are collections (`Optional` takes the plain path); `Map` fields are refused. The walk descends exactly where the scrubber does. A declared path over 64 UTF-8 bytes (including the `[]` suffix) is refused. Every `@Chainable` occurrence in the model's data graph (supertypes, fields, components, constructor parameters, generic arguments; not arbitrary method return or parameter types; not static field types) is consumed or refused with `INVALID_CHAINABLE_FIELD`, and a descriptor entry naming an unconsumed field, including a redundant `chainable:false`, is refused. Known residual: an enum constant body's `@Chainable` is not visited.
