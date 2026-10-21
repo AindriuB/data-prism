@@ -265,7 +265,16 @@ class ClusterConfigurationTest {
                 new com.hazelcast.config.JavaSerializationFilterConfig().setDefaultsDisabled(true)
                         .setWhitelist(new com.hazelcast.config.ClassFilter()
                                 .setClasses(java.util.Set.of("java.lang.String", "java.lang.Integer",
-                                        "java.lang.Boolean", "java.time.Ser"))
+                                        "java.lang.Boolean", "java.time.Ser",
+                                        "java.lang.Throwable", "java.lang.Exception", "java.lang.RuntimeException",
+                                        "java.lang.IllegalStateException", "java.lang.IllegalMonitorStateException",
+                                        "java.lang.StackTraceElement", "[Ljava.lang.StackTraceElement;",
+                                        "java.util.Collections$EmptyList",
+                                        "com.hazelcast.core.HazelcastException",
+                                        "com.hazelcast.core.OperationTimeoutException",
+                                        "com.hazelcast.core.HazelcastInstanceNotActiveException",
+                                        "com.hazelcast.transaction.TransactionException",
+                                        "com.hazelcast.splitbrainprotection.SplitBrainProtectionException"))
                                 .setPrefixes(java.util.Set.of("io.github.aindriub.dataprism.hazelcast.",
                                         "com.hazelcast.spi.exception."))));
         return config;
