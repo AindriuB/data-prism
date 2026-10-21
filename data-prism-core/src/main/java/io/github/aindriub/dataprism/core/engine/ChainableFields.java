@@ -126,6 +126,9 @@ public final class ChainableFields {
                 if (map) {
                     throw invalid(type, name, "is chainable inside a map, which the path grammar cannot name");
                 }
+                if (!expressible(genericType(type, name))) {
+                    throw invalid(type, name, "is chainable but its type cannot be named in a path");
+                }
                 if (!field.identifier()) {
                     throw invalid(type, name, "is not classified as an identifier");
                 }
@@ -268,6 +271,9 @@ public final class ChainableFields {
      * variables and wildcards cannot be named in the path grammar.
      */
     private static boolean expressible(java.lang.reflect.Type type) {
+        if (type == null) {
+            return true;
+        }
         if (type instanceof Class<?> c) {
             Class<?> element = c;
             int dimensions = 0;
@@ -487,11 +493,26 @@ public final class ChainableFields {
     private static KeyNamespace declared(Class<?> type, String name, List<AnnotatedElement> elements,
                                          ModelDescriptor.FieldDescriptor stated) {
         String fromCode = null;
+        List<String> fromParameters = new ArrayList<>();
         for (AnnotatedElement element : elements) {
             Chainable found = element.getAnnotation(Chainable.class);
-            if (found != null) {
-                fromCode = found.keyNamespace();
-                break;
+            if (found == null) {
+                continue;
+            }
+            if (element instanceof java.lang.reflect.Parameter) {
+                // A constructor parameter alone does not declare the field (it is refused as unread),
+                // but it must agree with the declaration it sits beside.
+                fromParameters.add(found.keyNamespace());
+                continue;
+            }
+            if (fromCode != null && !fromCode.equals(found.keyNamespace())) {
+                throw invalid(type, name, "has conflicting keyNamespace declarations in code");
+            }
+            fromCode = found.keyNamespace();
+        }
+        for (String parameter : fromParameters) {
+            if (fromCode != null && !fromCode.equals(parameter)) {
+                throw invalid(type, name, "has conflicting keyNamespace declarations in code");
             }
         }
         Boolean flag = stated == null ? null : stated.chainable();
@@ -537,6 +558,7 @@ public final class ChainableFields {
                 } catch (NoSuchFieldException ignored) {
                     // A record component always has a field; tolerated rather than assumed.
                 }
+                canonicalParameter(type, rc.getName()).ifPresent(elements::add);
                 out.put(rc.getName(), elements);
             }
         } else {
@@ -554,6 +576,26 @@ public final class ChainableFields {
             }
         }
         return out;
+    }
+
+    /** The canonical constructor's parameter for a record component, matched by position. */
+    private static java.util.Optional<java.lang.reflect.Parameter> canonicalParameter(Class<?> type,
+                                                                                      String name) {
+        RecordComponent[] components = type.getRecordComponents();
+        Class<?>[] types = new Class<?>[components.length];
+        int position = -1;
+        for (int i = 0; i < components.length; i++) {
+            types[i] = components[i].getType();
+            if (components[i].getName().equals(name)) {
+                position = i;
+            }
+        }
+        try {
+            return position < 0 ? java.util.Optional.empty()
+                    : java.util.Optional.of(type.getDeclaredConstructor(types).getParameters()[position]);
+        } catch (NoSuchMethodException e) {
+            return java.util.Optional.empty();
+        }
     }
 
     private static Method accessor(Class<?> type, String name) {

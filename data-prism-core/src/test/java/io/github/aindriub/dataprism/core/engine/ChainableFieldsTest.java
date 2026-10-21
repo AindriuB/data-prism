@@ -564,6 +564,95 @@ class ChainableFieldsTest {
     record Arr(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String[] arr) {
     }
 
+    @LlmExposedModel
+    record XGrid(@InternalIdentifier @Chainable(keyNamespace = "k-ref") String[][] k) {
+    }
+
+    @LlmExposedModel
+    record XGridD(@InternalIdentifier String[][] k) {
+    }
+
+    @LlmExposedModel
+    record XNestedKeys(@InternalIdentifier @Chainable(keyNamespace = "k-ref") List<List<String>> k) {
+    }
+
+    @LlmExposedModel
+    record XNestedKeysD(@InternalIdentifier List<List<String>> k) {
+    }
+
+    @LlmExposedModel
+    record XGenArr<T extends CharSequence>(@InternalIdentifier @Chainable(keyNamespace = "k-ref") T[] k) {
+    }
+
+    @LlmExposedModel
+    record XGenArrD<T extends CharSequence>(@InternalIdentifier T[] k) {
+    }
+
+    @LlmExposedModel
+    record XOptList(@InternalIdentifier @Chainable(keyNamespace = "k-ref") java.util.Optional<List<String>> k) {
+    }
+
+    @LlmExposedModel
+    record XOptListD(@InternalIdentifier java.util.Optional<List<String>> k) {
+    }
+
+    @LlmExposedModel
+    record XOptMap(@InternalIdentifier @Chainable(keyNamespace = "k-ref") java.util.Optional<Map<String, String>> k) {
+    }
+
+    @LlmExposedModel
+    record XOptMapD(@InternalIdentifier java.util.Optional<Map<String, String>> k) {
+    }
+
+    @LlmExposedModel
+    record XTypeVar<T>(@InternalIdentifier @Chainable(keyNamespace = "k-ref") T k) {
+    }
+
+    @LlmExposedModel
+    record XTypeVarD<T>(@InternalIdentifier T k) {
+    }
+
+    @LlmExposedModel
+    record XWild(@InternalIdentifier @Chainable(keyNamespace = "k-ref") List<? extends CharSequence> k) {
+    }
+
+    @LlmExposedModel
+    record XWildD(@InternalIdentifier List<? extends CharSequence> k) {
+    }
+
+    static class ConflictBean {
+        @Chainable(keyNamespace = "parcel-ref")
+        String id;
+
+        @Chainable(keyNamespace = "depot-ref")
+        public String getId() {
+            return id;
+        }
+    }
+
+    @LlmExposedModel
+    record ConflictAccessor(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String id) {
+        @Chainable(keyNamespace = "depot-ref")
+        public String id() {
+            return id;
+        }
+    }
+
+    @LlmExposedModel
+    record ConflictCtor(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String id) {
+        ConflictCtor(@Chainable(keyNamespace = "depot-ref") String id) {
+            this.id = id;
+        }
+    }
+
+    @LlmExposedModel
+    record SameRepeat(@InternalIdentifier @Chainable(keyNamespace = "parcel-ref") String id) {
+        @Chainable(keyNamespace = "parcel-ref")
+        public String id() {
+            return id;
+        }
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace, String role) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -940,13 +1029,46 @@ class ChainableFieldsTest {
     @Test
     @DisplayName("the expressible acceptance shapes are still listed")
     void acceptanceShapesStillWork() {
-        assertThat(ChainableFields.of(KeyList.class)).extracting(ChainableField::path).containsExactly("keys[]");
-        assertThat(ChainableFields.of(Routes.class)).extracting(ChainableField::path)
-                .containsExactly("routes[].depot");
-        assertThat(ChainableFields.of(Nested.class)).extracting(ChainableField::path).containsExactly("a.b");
-        assertThat(ChainableFields.of(Opt.class)).extracting(ChainableField::path).containsExactly("ref");
-        assertThat(ChainableFields.of(OptRoute.class)).extracting(ChainableField::path)
-                .containsExactly("opt.depot");
-        assertThat(ChainableFields.of(Arr.class)).extracting(ChainableField::path).containsExactly("arr[]");
+        assertThat(ChainableFields.of(KeyList.class)).containsExactly(
+                new ChainableField("keys[]", new KeyNamespace("depot-ref"), true));
+        assertThat(ChainableFields.of(Routes.class)).containsExactly(
+                new ChainableField("routes[].depot", new KeyNamespace("depot-ref"), true));
+        assertThat(ChainableFields.of(Nested.class)).containsExactly(
+                new ChainableField("a.b", new KeyNamespace("parcel-ref"), false));
+        assertThat(ChainableFields.of(Opt.class)).containsExactly(
+                new ChainableField("ref", new KeyNamespace("parcel-ref"), false));
+        assertThat(ChainableFields.of(OptRoute.class)).containsExactly(
+                new ChainableField("opt.depot", new KeyNamespace("depot-ref"), false));
+        assertThat(ChainableFields.of(Arr.class)).containsExactly(
+                new ChainableField("arr[]", new KeyNamespace("parcel-ref"), true));
+    }
+
+    @Test
+    @DisplayName("a chainable field whose own type the path grammar cannot express is refused")
+    void inexpressibleOwnType() {
+        for (Class<?> type : List.of(XGrid.class, XNestedKeys.class, XGenArr.class, XOptList.class,
+                XOptMap.class, XTypeVar.class, XWild.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type))
+                    .as(type.getSimpleName()).hasMessageStartingWith(CODE)
+                    .hasMessageContaining(type.getName() + ".k");
+        }
+        for (Class<?> type : List.of(XGridD.class, XNestedKeysD.class, XGenArrD.class, XOptListD.class,
+                XOptMapD.class, XTypeVarD.class, XWildD.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type, descriptor(type, "k", true, "k-ref", null)))
+                    .as(type.getSimpleName() + " by descriptor").hasMessageStartingWith(CODE)
+                    .hasMessageContaining(type.getName() + ".k");
+        }
+    }
+
+    @Test
+    @DisplayName("conflicting namespaces on one field are refused without naming a namespace")
+    void conflictingNamespaces() {
+        for (Class<?> type : List.of(ConflictBean.class, ConflictAccessor.class, ConflictCtor.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type))
+                    .as(type.getSimpleName()).hasMessageStartingWith(CODE)
+                    .hasMessageContaining(type.getName() + ".id")
+                    .hasMessageNotContaining("parcel-ref").hasMessageNotContaining("depot-ref");
+        }
+        assertThat(ChainableFields.of(SameRepeat.class)).hasSize(1);
     }
 }
