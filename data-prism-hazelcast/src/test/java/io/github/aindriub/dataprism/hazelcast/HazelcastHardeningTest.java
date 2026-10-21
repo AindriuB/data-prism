@@ -554,6 +554,59 @@ class HazelcastHardeningTest {
     }
 
     @Test
+    void usingRefusesABlacklistThatMatchesOrCoversARequiredClassOrPrefix() {
+        usingRefusesAnUnsafeSetting("blacklisted required class", config -> blacklist(config)
+                .addClasses("java.lang.IllegalStateException"));
+        usingRefusesAnUnsafeSetting("blacklisted package of a required class", config -> blacklist(config)
+                .addPackages("java.lang"));
+        usingRefusesAnUnsafeSetting("blacklisted prefix of a required class", config -> blacklist(config)
+                .addPrefixes("java.lang.Str"));
+        usingRefusesAnUnsafeSetting("blacklisted prefix of a required prefix", config -> blacklist(config)
+                .addPrefixes("io.github.aindriub."));
+        usingRefusesAnUnsafeSetting("blacklisted prefix inside a required prefix", config -> blacklist(config)
+                .addPrefixes("com.hazelcast.spi.exception.Part"));
+        usingRefusesAnUnsafeSetting("blacklisted package of a required prefix", config -> blacklist(config)
+                .addPackages("com.hazelcast.spi.exception"));
+        usingRefusesAnUnsafeSetting("blacklisted class inside a required prefix", config -> blacklist(config)
+                .addClasses("io.github.aindriub.dataprism.hazelcast.PendingSet"));
+    }
+
+    @Test
+    void usingAcceptsABlacklistThatTouchesNothingRequired() {
+        HazelcastInstance own = rawMember(config -> blacklist(config).addClasses("com.example.Bad")
+                .addPrefixes("com.evil.").addPackages("org.gadget"));
+        assertThat(PrivacyCluster.using(own, false).instance()).isSameAs(own);
+    }
+
+    @Test
+    void embeddedRefusesABlacklistThatCoversARequiredClassAndAcceptsOneThatDoesNot() {
+        Config covering = new Config().setClusterName("hardening-deny");
+        covering.getSerializationConfig().setJavaSerializationFilterConfig(
+                PrivacyCluster.requiredSerializationFilter());
+        blacklist(covering).addPrefixes("java.lang.");
+        Throwable refused = catchThrowable(() -> PrivacyCluster.configure(covering));
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.UNSAFE_HAZELCAST_SERIALIZATION);
+        assertThat(refused.getMessage()).contains("java-serialization-filter").doesNotContain("java.lang.");
+
+        Config harmless = new Config().setClusterName("hardening-deny");
+        harmless.getSerializationConfig().setJavaSerializationFilterConfig(
+                PrivacyCluster.requiredSerializationFilter());
+        blacklist(harmless).addClasses("com.example.Bad");
+        PrivacyCluster.configure(harmless);
+        assertThat(harmless.getSerializationConfig().getJavaSerializationFilterConfig().getBlacklist().isEmpty())
+                .as("the installed filter is exactly the required one").isTrue();
+    }
+
+    private static ClassFilter blacklist(Config config) {
+        var filter = config.getSerializationConfig().getJavaSerializationFilterConfig();
+        if (filter.getBlacklist() == null) {
+            filter.setBlacklist(new ClassFilter());
+        }
+        return filter.getBlacklist();
+    }
+
+    @Test
     void theRequiredFilterIsFreshOnEachCallAndEqualsThePin() {
         JavaSerializationFilterConfig first = PrivacyCluster.requiredSerializationFilter();
         assertThat(first.isDefaultsDisabled()).isTrue();

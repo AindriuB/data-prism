@@ -584,7 +584,7 @@ public final class PrivacyCluster implements AutoCloseable {
                     "a global serializer that overrides Java serialization bypasses the java-serialization-filter");
         }
         JavaSerializationFilterConfig supplied = config.getSerializationConfig().getJavaSerializationFilterConfig();
-        if (supplied != null && !withinAllowlist(supplied)) {
+        if (supplied != null && (!withinAllowlist(supplied) || blocksRequired(supplied.getBlacklist()))) {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
                     "the java-serialization-filter allows more than Data Prism needs; remove it to take the default "
                             + "or narrow it");
@@ -630,7 +630,8 @@ public final class PrivacyCluster implements AutoCloseable {
     private static void checkInstanceSettings(Config config) {
         JavaSerializationFilterConfig filter = config.getSerializationConfig().getJavaSerializationFilterConfig();
         if (filter == null || !filter.isDefaultsDisabled() || filter.getWhitelist() == null
-                || !allowsDataPrism(filter.getWhitelist()) || !addsNoWideEntries(filter.getWhitelist())) {
+                || !allowsDataPrism(filter.getWhitelist()) || !addsNoWideEntries(filter.getWhitelist())
+                || blocksRequired(filter.getBlacklist())) {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
                     "the supplied instance needs a java-serialization-filter with defaults disabled that allows "
                             + "Data Prism's classes and no other prefix or package");
@@ -665,6 +666,47 @@ public final class PrivacyCluster implements AutoCloseable {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
                     "phone-home must be disabled on the supplied instance");
         }
+    }
+
+    /**
+     * Hazelcast gives the blacklist precedence over the whitelist, so a blacklist that names, or covers by package or
+     * prefix, any required class or prefix (or reaches inside a required prefix) would pass the whitelist check and
+     * then lose processor calls or error replies. Such a filter is refused; a blacklist clear of the required set is
+     * the integrator's own and is accepted on {@link #using}.
+     */
+    private static boolean blocksRequired(ClassFilter deny) {
+        if (deny == null) {
+            return false;
+        }
+        for (String name : ALLOWED_CLASSES) {
+            if (denies(deny, name, false)) {
+                return true;
+            }
+        }
+        for (String prefix : ALLOWED_PREFIXES) {
+            if (denies(deny, prefix, true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether {@code deny} matches {@code token}; for a prefix, also anything inside it. */
+    private static boolean denies(ClassFilter deny, String token, boolean isPrefix) {
+        if (deny.getClasses().contains(token) || (isPrefix && deny.getClasses().stream().anyMatch(c -> c.startsWith(token)))) {
+            return true;
+        }
+        for (String prefix : deny.getPrefixes()) {
+            if (token.startsWith(prefix) || (isPrefix && prefix.startsWith(token))) {
+                return true;
+            }
+        }
+        for (String pkg : deny.getPackages()) {
+            if (token.startsWith(pkg + ".") || (isPrefix && pkg.startsWith(token))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Only Data Prism's own prefixes; no package at all. Named classes are free. */
