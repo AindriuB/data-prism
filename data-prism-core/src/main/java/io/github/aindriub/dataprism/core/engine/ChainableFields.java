@@ -158,9 +158,11 @@ public final class ChainableFields {
     }
 
     /**
-     * Collect pass then refusal: visits every type reachable from the model, through supertypes,
-     * interfaces, field, method and constructor types and every generic type argument, stopping at
-     * primitives, enums, annotations and JDK types. Any {@code @Chainable} occurrence found (field,
+     * Collect pass then refusal: visits every type the model's data can reach, through supertypes,
+     * interfaces, field and record component types, constructor parameter types and every generic type
+     * argument, stopping at primitives, annotations and JDK types (enums are visited). Method return and
+     * parameter types are not followed: a method returning another model says nothing about this one's
+     * data, though a stray {@code @Chainable} on such a method in a visited type is still refused. Any {@code @Chainable} occurrence found (field,
      * method, method or constructor parameter, record component) that the walk did not turn into a
      * chainable field is refused: a declaration the walk cannot reach must never be silently ignored.
      *
@@ -222,8 +224,15 @@ public final class ChainableFields {
         }
     }
 
+    /** As {@link #userType}, but enums are visited too: a declaration on one is refused, not ignored. */
+    private static boolean collectable(Class<?> type) {
+        String name = type.getName();
+        return !type.isPrimitive() && !type.isAnnotation()
+                && !name.startsWith("java.") && !name.startsWith("javax.");
+    }
+
     private static void collect(Class<?> type, Set<Class<?>> out) {
-        if (!userType(type) || type == Record.class || !out.add(type)) {
+        if (!collectable(type) || type == Record.class || !out.add(type)) {
             return;
         }
         collect(type.getGenericSuperclass(), out);
@@ -232,12 +241,6 @@ public final class ChainableFields {
         }
         for (Field field : type.getDeclaredFields()) {
             collect(field.getGenericType(), out);
-        }
-        for (Method method : type.getDeclaredMethods()) {
-            collect(method.getGenericReturnType(), out);
-            for (java.lang.reflect.Type parameter : method.getGenericParameterTypes()) {
-                collect(parameter, out);
-            }
         }
         for (java.lang.reflect.Constructor<?> constructor : type.getDeclaredConstructors()) {
             for (java.lang.reflect.Type parameter : constructor.getGenericParameterTypes()) {

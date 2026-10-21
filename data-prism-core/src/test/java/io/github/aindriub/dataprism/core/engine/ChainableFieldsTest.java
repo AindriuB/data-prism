@@ -302,6 +302,27 @@ class ChainableFieldsTest {
     }
 
     @LlmExposedModel
+    record StrayOnMethod(@InternalIdentifier String id) {
+        @Chainable(keyNamespace = "x")
+        Deep other() {
+            return null;
+        }
+    }
+
+    enum Kind {
+        A;
+
+        @Chainable(keyNamespace = "x")
+        public String code() {
+            return "";
+        }
+    }
+
+    @LlmExposedModel
+    record HasKind(@NonSensitive(reason = "enumerated") Kind kind) {
+    }
+
+    @LlmExposedModel
     record ReturnsDeep(@InternalIdentifier String id) {
         Deep other() {
             return null;
@@ -550,11 +571,19 @@ class ChainableFieldsTest {
         assertThatThrownBy(() -> ChainableFields.of(ChildOfSetter.class))
                 .hasMessageStartingWith(CODE).hasMessageContaining(SuperSetter.class.getName() + ".setX");
         assertThatThrownBy(() -> ChainableFields.of(NestedLists.class))
-                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName());
+                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName() + ".id");
         assertThatThrownBy(() -> ChainableFields.of(OptionalList.class))
-                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName());
-        assertThatThrownBy(() -> ChainableFields.of(ReturnsDeep.class))
-                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName());
+                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName() + ".id");
+        assertThatThrownBy(() -> ChainableFields.of(StrayOnMethod.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(StrayOnMethod.class.getName() + ".other");
+        assertThatThrownBy(() -> ChainableFields.of(HasKind.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Kind.class.getName() + ".code");
+    }
+
+    @Test
+    @DisplayName("a non-accessor method returning another model is not part of the data graph")
+    void returnTypesNotVisited() {
+        assertThat(ChainableFields.of(ReturnsDeep.class)).isEmpty();
     }
 
     @Test
