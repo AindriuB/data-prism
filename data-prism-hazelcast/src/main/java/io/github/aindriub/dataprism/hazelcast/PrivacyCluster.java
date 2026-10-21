@@ -132,21 +132,33 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PrivacyCluster.class);
-    private static final long LEGACY_CHECK_TIMEOUT_SECONDS = 10;
     private static final long LEGACY_WARN_INTERVAL_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
 
-    private final java.util.concurrent.ScheduledExecutorService legacyChecks = java.util.concurrent.Executors
-            .newSingleThreadScheduledExecutor(task -> {
+    /** One thread per check, so a check that ignores its interrupt never holds up the next join's check. */
+    private final java.util.concurrent.ExecutorService legacyChecks = java.util.concurrent.Executors
+            .newCachedThreadPool(task -> {
                 Thread thread = new Thread(task, "dataprism-legacy-check");
                 thread.setDaemon(true);
                 return thread;
             });
+    /** Enforces the limit from outside the check, so a stalled check cannot be what delays its own cancellation. */
+    private final java.util.concurrent.ScheduledExecutorService legacyWatchdog = java.util.concurrent.Executors
+            .newSingleThreadScheduledExecutor(task -> {
+                Thread thread = new Thread(task, "dataprism-legacy-watchdog");
+                thread.setDaemon(true);
+                return thread;
+            });
+    /** How long one check may run before it is interrupted and abandoned. Settable for tests. */
+    volatile java.time.Duration legacyCheckLimit = java.time.Duration.ofSeconds(10);
+    /** What a check asks; a seam for tests. */
+    volatile java.util.function.Function<HazelcastInstance, Map<String, Integer>> legacyProbe =
+            ClusterMembership::legacyEntryCounts;
     private final java.util.concurrent.atomic.AtomicInteger legacyEntries = new java.util.concurrent.atomic.AtomicInteger();
     private volatile long lastLegacyWarnNanos = System.nanoTime() - LEGACY_WARN_INTERVAL_NANOS;
     private final java.util.UUID legacyWatch;
 
     /**
-     * Re-runs the pre-0.8 check on every member join, off the listener thread and bounded in time. A running
+     * Re-runs the pre-0.8 check on every member join, off the listener thread and bounded in time (the limit is enforced by a separate watchdog thread). A running
      * member is never stopped by what it finds: the entries are counted and one WARN naming the map constants and a
      * count is logged at most once a minute, never an entry. The counter stands in for the metric
      * {@code dataprism.cluster.legacy.entries}, which is not in this base.
@@ -157,8 +169,8 @@ public final class PrivacyCluster implements AutoCloseable {
             public void memberAdded(com.hazelcast.cluster.MembershipEvent event) {
                 try {
                     var check = legacyChecks.submit(() -> checkLegacy(watched));
-                    legacyChecks.schedule(() -> check.cancel(true), LEGACY_CHECK_TIMEOUT_SECONDS,
-                            java.util.concurrent.TimeUnit.SECONDS);
+                    legacyWatchdog.schedule(() -> check.cancel(true), legacyCheckLimit.toMillis(),
+                            java.util.concurrent.TimeUnit.MILLISECONDS);
                 } catch (java.util.concurrent.RejectedExecutionException closed) {
                     // Closing; nothing to check.
                 }
@@ -172,7 +184,7 @@ public final class PrivacyCluster implements AutoCloseable {
 
     private void checkLegacy(HazelcastInstance watched) {
         try {
-            Map<String, Integer> found = ClusterMembership.legacyEntryCounts(watched);
+            Map<String, Integer> found = legacyProbe.apply(watched);
             int total = found.values().stream().mapToInt(Integer::intValue).sum();
             legacyEntries.set(total);
             long now = System.nanoTime();
@@ -702,6 +714,7 @@ public final class PrivacyCluster implements AutoCloseable {
             // The instance may already be gone.
         }
         legacyChecks.shutdownNow();
+        legacyWatchdog.shutdownNow();
         sweeper.close();
         instance.shutdown();
     }

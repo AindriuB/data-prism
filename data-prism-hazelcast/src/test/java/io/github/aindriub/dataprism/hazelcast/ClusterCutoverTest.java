@@ -181,6 +181,51 @@ class ClusterCutoverTest {
         }
     }
 
+    @Test
+    void aStalledLegacyCheckIsInterruptedAtTheLimitAndNeverHoldsUpTheNextJoin() throws Exception {
+        List<HazelcastInstance> joiners = new java.util.ArrayList<>();
+        try (PrivacyCluster running = startNewMember()) {
+            running.legacyCheckLimit = java.time.Duration.ofMillis(500);
+            java.util.concurrent.CountDownLatch started = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch interrupted = new java.util.concurrent.CountDownLatch(1);
+            running.legacyProbe = instance -> {
+                started.countDown();
+                try {
+                    new java.util.concurrent.CountDownLatch(1).await();
+                } catch (InterruptedException atTheLimit) {
+                    interrupted.countDown();
+                }
+                return java.util.Map.of();
+            };
+            joiners.add(rawMember(FreePorts.consecutive(1)));
+            assertThat(started.await(30, TimeUnit.SECONDS)).isTrue();
+            assertThat(interrupted.await(15, TimeUnit.SECONDS)).as("the stalled check was interrupted").isTrue();
+
+            // A check that ignores its interrupt cannot be freed; the next join's check must still run.
+            java.util.concurrent.CountDownLatch stuck = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            running.legacyProbe = instance -> {
+                stuck.countDown();
+                while (true) {
+                    try {
+                        release.await();
+                        return java.util.Map.of();
+                    } catch (InterruptedException ignored) {
+                        // keeps waiting
+                    }
+                }
+            };
+            joiners.add(rawMember(FreePorts.consecutive(1)));
+            assertThat(stuck.await(30, TimeUnit.SECONDS)).isTrue();
+            running.legacyProbe = instance -> java.util.Map.of("dataprism.budget", 7);
+            joiners.add(rawMember(FreePorts.consecutive(1)));
+            assertThat(await(30, () -> running.legacyEntries() == 7)).as("the later check ran").isTrue();
+            release.countDown();
+        } finally {
+            joiners.forEach(j -> j.getLifecycleService().terminate());
+        }
+    }
+
     private static boolean await(long seconds, BooleanSupplier condition) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
         while (System.nanoTime() < deadline) {

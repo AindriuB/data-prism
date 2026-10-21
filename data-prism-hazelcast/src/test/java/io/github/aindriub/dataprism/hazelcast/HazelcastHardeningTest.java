@@ -564,10 +564,19 @@ class HazelcastHardeningTest {
                 .containsExactlyInAnyOrderElementsOf(ALLOWED_PREFIXES);
     }
 
-    // ---- an error thrown by a processor comes back promptly ----
+    // ---- an error thrown by a processor comes back to its caller ----
+
+    /** Reads the stored value as a count, as the budget processor does. */
+    private record ExpectsAnInteger() implements EntryProcessor<String, Object, Boolean> {
+        @Override
+        public Boolean process(Map.Entry<String, Object> entry) {
+            int count = (Integer) entry.getValue();
+            return count > 0;
+        }
+    }
 
     @Test
-    void aForeignValueUnderABudgetKeyIsRefusedPromptlyFromTheNonOwner() {
+    void aForeignValueUnderABudgetKeyIsRefusedAndTheOwnersErrorReachesTheCaller() {
         PrivacyCluster[] pair = TestMembers.pair(TestMembers.uniqueName("hardening-cce"), OptionalInt.empty());
         clusters.add(pair[0]);
         clusters.add(pair[1]);
@@ -583,11 +592,21 @@ class HazelcastHardeningTest {
             }
         }
         assertThat(key).isNotNull();
+        String finalSubject = subject;
         // Something other than an Integer under the key, as a hostile or confused writer could leave.
         pair[0].instance().<String, Object>getMap(PrivacyCluster.BUDGET_MAP).put(key, "not-a-count");
-        long started = System.nanoTime();
         boolean admitted = new HazelcastScopeBudget(pair[0]).tryRead("scope-a", subject, 5);
         assertThat(admitted).as("a value that is not a count refuses the read").isFalse();
-        assertThat(java.time.Duration.ofNanos(System.nanoTime() - started)).isLessThan(java.time.Duration.ofSeconds(8));
+        // The outcome type proves the owner's error reply was not lost: the caller sees the owner's exception,
+        // never an OperationTimeoutException.
+        IMap<String, Object> counts = pair[0].instance().getMap(PrivacyCluster.BUDGET_MAP);
+        Throwable thrown = catchThrowable(() -> counts.executeOnKey(ScopeKeys.budget("scope-a", finalSubject),
+                new ExpectsAnInteger()));
+        assertThat(thrown).isNotNull();
+        StringBuilder chain = new StringBuilder();
+        for (Throwable c = thrown; c != null; c = c.getCause()) {
+            chain.append(c.getClass().getName()).append(' ');
+        }
+        assertThat(chain.toString()).contains("ClassCastException").doesNotContain("OperationTimeoutException");
     }
 }
