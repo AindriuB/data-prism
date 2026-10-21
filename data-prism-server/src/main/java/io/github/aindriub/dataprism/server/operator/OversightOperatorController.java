@@ -107,7 +107,11 @@ final class OversightOperatorController {
     Map<String, Object> resume(@RequestBody PauseRequest body) {
         AuthenticatedCaller caller = caller();
         Target target = target(caller, "resume", body);
-        audit.record(caller, "resume", target.entityType(), target.scopeId(), "ALLOW:RESUMED", "", "");
+        // Audit first: the resume takes effect only after its ALLOW:RESUMED is written. If applying it then fails,
+        // a linked DENY under the same correlation id says so.
+        String correlationId = UUID.randomUUID().toString();
+        audit.record(caller, "resume", target.entityType(), target.scopeId(), "ALLOW:RESUMED", "", "",
+                correlationId);
         try {
             switch (target.type()) {
                 case ALL -> state.resumeAll();
@@ -115,7 +119,12 @@ final class OversightOperatorController {
                 case SCOPE -> state.resumeScope(target.name());
             }
         } catch (RuntimeException unavailable) {
-            throw unavailable(caller, "resume", target, unavailable);
+            String code = unavailableCode(unavailable);
+            if (!audit.recordDenial(caller, "resume", target.entityType(), target.scopeId(), code, "",
+                    correlationId)) {
+                throw audit.denialUnaudited();
+            }
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
         return Map.of("status", "RESUMED", "target", target.type().name());
     }
