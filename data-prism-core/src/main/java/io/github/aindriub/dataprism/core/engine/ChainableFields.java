@@ -1,0 +1,174 @@
+package io.github.aindriub.dataprism.core.engine;
+
+import io.github.aindriub.dataprism.annotations.Chainable;
+import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
+import io.github.aindriub.dataprism.core.model.ChainableField;
+import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
+import io.github.aindriub.dataprism.core.spi.KeyNamespace;
+
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.RecordComponent;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+/**
+ * Lists the paths of a model that hold a key another source accepts.
+ *
+ * <p>Walks the same graph as {@link DefaultFieldMetadataResolver}: nested models and collections of them.
+ * The flag is metadata only. It is read here and nowhere in scrubbing, so it can never change what happens
+ * to the field.
+ *
+ * <p>A chainable flag is valid only on a field already classified as an identifier. A descriptor may add a
+ * flag but may not remove one the annotation declared, nor change its namespace. Every violation throws
+ * {@link IllegalStateException} whose message starts {@value #CODE}, naming the model and field and never
+ * a namespace or a value.
+ */
+public final class ChainableFields {
+
+    public static final String CODE = "INVALID_CHAINABLE_FIELD";
+
+    private ChainableFields() {
+    }
+
+    public static List<ChainableField> of(Class<?> model) {
+        return of(model, Map.of());
+    }
+
+    /**
+     * @param descriptors model descriptors by type name, as returned by {@code ModelDescriptors.fromYaml}
+     * @return the chainable paths in ascending path order
+     * @throws IllegalStateException with a message starting {@code INVALID_CHAINABLE_FIELD:}
+     */
+    public static List<ChainableField> of(Class<?> model, Map<String, ModelDescriptor> descriptors) {
+        Objects.requireNonNull(model, "model");
+        FieldMetadataResolver resolver = new DescriptorFieldMetadataResolver(
+                new DefaultFieldMetadataResolver(), Objects.requireNonNull(descriptors, "descriptors"));
+        List<ChainableField> out = new ArrayList<>();
+        walk(model, "", false, resolver, descriptors, new HashSet<>(), out);
+        out.sort(Comparator.comparing(ChainableField::path));
+        return List.copyOf(out);
+    }
+
+    private static void walk(Class<?> type, String prefix, boolean underElement, FieldMetadataResolver resolver,
+                             Map<String, ModelDescriptor> descriptors, Set<Class<?>> inProgress,
+                             List<ChainableField> out) {
+        if (!inProgress.add(type)) {
+            return;
+        }
+        Map<String, List<AnnotatedElement>> declarations = declarations(type);
+        ModelDescriptor descriptor = descriptors.get(type.getName());
+        for (FieldMetadata field : resolver.resolve(type)) {
+            String name = field.fieldName();
+            ModelDescriptor.FieldDescriptor stated = descriptor == null ? null : descriptor.field(name);
+            KeyNamespace namespace = declared(type, name, declarations.getOrDefault(name, List.of()), stated);
+            boolean collection = field.elementType() != null;
+            if (namespace != null) {
+                if (!field.identifier()) {
+                    throw invalid(type, name, "is not classified as an identifier");
+                }
+                out.add(new ChainableField(prefix + name + (collection ? "[]" : ""), namespace,
+                        underElement || collection));
+            } else if (collection && field.elementType().isRecord()) {
+                walk(field.elementType(), prefix + name + "[].", true, resolver, descriptors, inProgress, out);
+            } else if (!collection && field.valueType().isRecord()) {
+                walk(field.valueType(), prefix + name + ".", underElement, resolver, descriptors, inProgress, out);
+            }
+        }
+        inProgress.remove(type);
+    }
+
+    /** The effective namespace, or null when the field is not declared chainable. */
+    private static KeyNamespace declared(Class<?> type, String name, List<AnnotatedElement> elements,
+                                         ModelDescriptor.FieldDescriptor stated) {
+        String fromCode = null;
+        for (AnnotatedElement element : elements) {
+            Chainable found = element.getAnnotation(Chainable.class);
+            if (found != null) {
+                fromCode = found.keyNamespace();
+                break;
+            }
+        }
+        Boolean flag = stated == null ? null : stated.chainable();
+        String fromDescriptor = stated == null ? null : stated.keyNamespace();
+
+        if (Boolean.TRUE.equals(flag) && fromDescriptor == null) {
+            throw invalid(type, name, "is chainable in the descriptor without a keyNamespace");
+        }
+        if (Boolean.FALSE.equals(flag) && fromCode != null) {
+            throw invalid(type, name, "is chainable in code and a descriptor may not remove that");
+        }
+        if (!Boolean.TRUE.equals(flag) && fromDescriptor != null && fromCode == null) {
+            throw invalid(type, name, "has a descriptor keyNamespace without chainable: true");
+        }
+        if (fromCode != null && fromDescriptor != null && !fromCode.equals(fromDescriptor)) {
+            throw invalid(type, name, "has a different keyNamespace in the descriptor than in code");
+        }
+
+        String value = fromCode != null ? fromCode : (Boolean.TRUE.equals(flag) ? fromDescriptor : null);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new KeyNamespace(value);
+        } catch (IllegalArgumentException e) {
+            throw invalid(type, name, "has a keyNamespace outside [a-z][a-z0-9-]{0,31}");
+        }
+    }
+
+    private static IllegalStateException invalid(Class<?> type, String field, String reason) {
+        return new IllegalStateException(CODE + ": " + type.getName() + "." + field + " " + reason);
+    }
+
+    private static Map<String, List<AnnotatedElement>> declarations(Class<?> type) {
+        Map<String, List<AnnotatedElement>> out = new java.util.LinkedHashMap<>();
+        if (type.isRecord()) {
+            for (RecordComponent rc : type.getRecordComponents()) {
+                List<AnnotatedElement> elements = new ArrayList<>();
+                elements.add(rc);
+                elements.add(rc.getAccessor());
+                try {
+                    elements.add(type.getDeclaredField(rc.getName()));
+                } catch (NoSuchFieldException ignored) {
+                    // A record component always has a field; tolerated rather than assumed.
+                }
+                out.put(rc.getName(), elements);
+            }
+        } else {
+            for (Field field : type.getDeclaredFields()) {
+                if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                List<AnnotatedElement> elements = new ArrayList<>();
+                elements.add(field);
+                Method accessor = accessor(type, field.getName());
+                if (accessor != null) {
+                    elements.add(accessor);
+                }
+                out.put(field.getName(), elements);
+            }
+        }
+        return out;
+    }
+
+    private static Method accessor(Class<?> type, String name) {
+        String capitalised = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+        for (String candidate : List.of(name, "get" + capitalised, "is" + capitalised)) {
+            try {
+                return type.getMethod(candidate);
+            } catch (NoSuchMethodException ignored) {
+                // Try the next shape.
+            }
+        }
+        return null;
+    }
+}
