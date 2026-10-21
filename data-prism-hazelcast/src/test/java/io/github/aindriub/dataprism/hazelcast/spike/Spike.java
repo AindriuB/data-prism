@@ -94,7 +94,8 @@ final class Spike {
     static String keyOwnedBy(HazelcastInstance owner, String prefix) {
         String uuid = owner.getCluster().getLocalMember().getUuid().toString();
         // Partitions are assigned lazily, by the first operation that needs them.
-        owner.getMap("partition-warmup").size();
+        // A put, not size(): size() is a partition-iterating call that hung intermittently under the Q4 filter.
+        owner.getMap("partition-warmup").put("w", "w");
         await(20, () -> owner.getPartitionService().getPartition("warm").getOwner() != null);
         for (int i = 0; i < 10_000; i++) {
             String key = prefix + "-" + i;

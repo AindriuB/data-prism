@@ -36,7 +36,8 @@
  * itself owns the key, the processor applies on the primary, the backup is refused, and the call still returns
  * success after the backup times out (about 6 s); after the primary is killed the promoted backup holds the old
  * value, so primary and backup silently diverge. The split-brain merge ran with only the three classes: each
- * side's unique key survived under PutIfAbsentMergePolicy (a DiscardMergePolicy mutation fails the test).</td>
+ * side's unique key survived under PutIfAbsentMergePolicy (a DiscardMergePolicy mutation fails the test). Separately, {@code IMap.size()} (a partition-iterating
+ * call) hung intermittently under the three-class filter while writing these tests; not pinned, avoid it there.</td>
  * <td>{@code Q04SerializationFilterSpikeTest}</td><td>221</td></tr>
  * <tr><td>5</td><td>Jet: {@code JetConfig.setEnabled(false)}; the default of an untouched {@code Config} is off.
  * User-code deployment: {@code UserCodeDeploymentConfig.setEnabled(false)}; default off. User-code namespaces:
