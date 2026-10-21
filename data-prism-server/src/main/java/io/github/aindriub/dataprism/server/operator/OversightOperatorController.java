@@ -34,8 +34,11 @@ import java.util.UUID;
  *
  * <p>Order matters for fail-closed: a restrictive action (pause, reject) takes effect and is then
  * audited; a permissive one (resume) is audited first and takes effect only if the event was
- * written; an approval is audited first and committed only if the event was written, with a
- * linked {@code DENY} under the same correlation id when it then did not apply.
+ * written. If applying the resume then fails, a linked {@code DENY} is written under the same
+ * correlation id as the {@code ALLOW:RESUMED}, the state is unchanged and the answer is the failure;
+ * if that {@code DENY} cannot be written either, the answer is 503 {@code AUDIT_UNAVAILABLE}. An
+ * approval is audited first and committed only if the event was written, with a linked {@code DENY}
+ * under the same correlation id when it then did not apply.
  */
 @RestController
 @ConditionalOnProperty(prefix = "dataprism.operator", name = "enabled", havingValue = "true")
@@ -107,7 +110,11 @@ final class OversightOperatorController {
     Map<String, Object> resume(@RequestBody PauseRequest body) {
         AuthenticatedCaller caller = caller();
         Target target = target(caller, "resume", body);
-        audit.record(caller, "resume", target.entityType(), target.scopeId(), "ALLOW:RESUMED", "", "");
+        // Audit first: the resume takes effect only after its ALLOW:RESUMED is written. If applying it then fails,
+        // a linked DENY under the same correlation id says so.
+        String correlationId = UUID.randomUUID().toString();
+        audit.record(caller, "resume", target.entityType(), target.scopeId(), "ALLOW:RESUMED", "", "",
+                correlationId);
         try {
             switch (target.type()) {
                 case ALL -> state.resumeAll();
@@ -115,7 +122,12 @@ final class OversightOperatorController {
                 case SCOPE -> state.resumeScope(target.name());
             }
         } catch (RuntimeException unavailable) {
-            throw unavailable(caller, "resume", target, unavailable);
+            String code = unavailableCode(unavailable);
+            if (!audit.recordDenial(caller, "resume", target.entityType(), target.scopeId(), code, "",
+                    correlationId)) {
+                throw audit.denialUnaudited();
+            }
+            throw new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, code);
         }
         return Map.of("status", "RESUMED", "target", target.type().name());
     }

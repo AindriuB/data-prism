@@ -647,14 +647,14 @@ class ReidentificationServiceTest {
 
     @Test
     void aClusterRefusalWithTheAuditSinkDownStillRefusesAndResolvesNothing() {
-        // The denial's audit write fails; the answer is the same refusal a generic failure gets, never a subject.
+        // The denial's audit write fails (task 245): the answer is AUDIT_UNAVAILABLE, never the refusal's own code
+        // as if it had been recorded, and never a subject.
         for (RuntimeException failure : clusterFailures()) {
-            String code = ((io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException) failure).code();
             auditDown = true;
             events.clear();
             assertThat(serviceOver(storeThrowingOn("create", failure))
                     .request(caller("alice", "supervisor"), req("fraud-investigation")))
-                    .isEqualTo(new Refused(code));
+                    .isEqualTo(new Refused("AUDIT_UNAVAILABLE"));
             assertThat(events).isEmpty();
         }
         assertThat(lookups).isZero();
