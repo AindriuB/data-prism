@@ -122,7 +122,7 @@ class ClusterCutoverTest {
     }
 
     @Test
-    void aSuppliedInstanceThatJoinedACluster_withAnOldEntry_isRefusedAndLeftRunning() {
+    void aSuppliedInstanceThatJoinedAClusterWithAnOldEntryIsRefusedAndLeftRunning() {
         old.getMap("dataprism.callerrate").put("caller" + NUL + "1", "7");
         // A hardened member, so that nothing but the old state can refuse it.
         Config config = PrivacyCluster.configure(ClusterMembership
@@ -136,6 +136,48 @@ class ClusterCutoverTest {
             assertThat(supplied.getLifecycleService().isRunning()).isTrue();
         } finally {
             supplied.getLifecycleService().terminate();
+        }
+    }
+
+    private HazelcastInstance rawMember(int port) {
+        Config config = new Config().setClusterName(cluster);
+        config.getJetConfig().setEnabled(false);
+        config.setProperty("hazelcast.phone.home.enabled", "false");
+        config.getNetworkConfig().setPort(port).setPortAutoIncrement(false);
+        var join = config.getNetworkConfig().getJoin();
+        join.getMulticastConfig().setEnabled(false);
+        join.getAutoDetectionConfig().setEnabled(false);
+        join.getTcpIpConfig().setEnabled(true).addMember("127.0.0.1:" + newPort);
+        config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+        config.setProperty("hazelcast.socket.bind.any", "false");
+        return Hazelcast.newHazelcastInstance(config);
+    }
+
+    @Test
+    void aZeroSevenMemberThatJoinsLaterIsCountedAndTheRunningMemberKeepsServing() {
+        old.getLifecycleService().terminate();
+        HazelcastInstance late = null;
+        HazelcastInstance trigger = null;
+        try (PrivacyCluster running = startNewMember()) {
+            assertThat(running.legacyEntries()).isZero();
+            late = rawMember(FreePorts.consecutive(1));
+            assertThat(await(30, () -> running.instance().getCluster().getMembers().size() == 2)).isTrue();
+            late.getMap("dataprism.budget").put("scope-a" + NUL + "subject-a", 3);
+            // The next membership change re-runs the check, off the listener thread.
+            trigger = rawMember(FreePorts.consecutive(1));
+            assertThat(await(30, () -> running.legacyEntries() > 0)).as("legacy entries counted").isTrue();
+            // A running member is never shut down by what it finds: it keeps serving its own maps.
+            assertThat(running.instance().getLifecycleService().isRunning()).isTrue();
+            running.instance().<String, String>getMap(PrivacyCluster.CALLER_RATE_MAP).put("k", "v");
+            assertThat(running.instance().<String, String>getMap(PrivacyCluster.CALLER_RATE_MAP).get("k"))
+                    .isEqualTo("v");
+        } finally {
+            if (trigger != null) {
+                trigger.getLifecycleService().terminate();
+            }
+            if (late != null) {
+                late.getLifecycleService().terminate();
+            }
         }
     }
 

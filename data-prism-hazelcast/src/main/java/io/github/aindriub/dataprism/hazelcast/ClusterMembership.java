@@ -160,7 +160,11 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
     /** Every octet is a wildcard or a range that spans 0 to 255, so no address is left out. */
     static boolean matchesEveryAddress(String value) {
         for (String part : value.split("\\.", -1)) {
-            if (!part.equals("*") && !part.equals("0-255")) {
+            if (part.equals("*")) {
+                continue;
+            }
+            String[] bounds = part.split("-", -1);
+            if (bounds.length != 2 || Integer.parseInt(bounds[0]) > 0 || Integer.parseInt(bounds[1]) < 255) {
                 return false;
             }
         }
@@ -233,7 +237,7 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
     /**
      * The cutover from 0.7 is non-rolling (cluster-security 4.8): a member that finds an entry in a map of the
      * pre-0.8 generation refuses, so a 0.7 and a 0.8 generation never serve side by side. Only emptiness is asked;
-     * the old entries are never read, copied or logged. The one entry that does not count is the fence, the key
+     * the old entries are never copied or logged. The one entry that does not count is the fence, the key
      * {@code all} holding {@code TRUE} in the old oversight map, which a serving 0.8 member keeps there so that a
      * 0.7 member reads the cluster as paused.
      *
@@ -255,6 +259,32 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
                         "the cluster holds state from before 0.8; stop every 0.7 member, then start the 0.8 members");
             }
         }
+    }
+
+    /**
+     * How many entries each pre-0.8 map that holds any has, without reading one: sizes only, less the fence. A map
+     * that cannot be asked counts as one. Empty if the member is alone.
+     */
+    static java.util.Map<String, Integer> legacyEntryCounts(HazelcastInstance instance) {
+        java.util.Map<String, Integer> found = new java.util.LinkedHashMap<>();
+        if (instance.getCluster().getMembers().size() < 2) {
+            return found;
+        }
+        for (String name : PrivacyCluster.PRE_0_8_MAPS) {
+            try {
+                IMap<Object, Object> map = instance.getMap(name);
+                int size = map.size();
+                if (PrivacyCluster.OVERSIGHT_FENCE_MAP.equals(name) && Boolean.TRUE.equals(map.get("all"))) {
+                    size--;
+                }
+                if (size > 0) {
+                    found.put(name, size);
+                }
+            } catch (RuntimeException unreadable) {
+                found.put(name, 1);
+            }
+        }
+        return found;
     }
 
     private static boolean holdsEntries(HazelcastInstance instance, String name) {

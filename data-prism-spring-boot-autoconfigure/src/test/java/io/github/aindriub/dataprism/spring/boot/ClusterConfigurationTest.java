@@ -261,22 +261,8 @@ class ClusterConfigurationTest {
         config.setProperty("hazelcast.phone.home.enabled", "false");
         config.getJetConfig().setEnabled(false);
         config.getUserCodeDeploymentConfig().setEnabled(false);
-        config.getSerializationConfig().setJavaSerializationFilterConfig(
-                new com.hazelcast.config.JavaSerializationFilterConfig().setDefaultsDisabled(true)
-                        .setWhitelist(new com.hazelcast.config.ClassFilter()
-                                .setClasses(java.util.Set.of("java.lang.String", "java.lang.Integer",
-                                        "java.lang.Boolean", "java.time.Ser",
-                                        "java.lang.Throwable", "java.lang.Exception", "java.lang.RuntimeException",
-                                        "java.lang.IllegalStateException", "java.lang.IllegalMonitorStateException",
-                                        "java.lang.StackTraceElement", "[Ljava.lang.StackTraceElement;",
-                                        "java.util.Collections$EmptyList",
-                                        "com.hazelcast.core.HazelcastException",
-                                        "com.hazelcast.core.OperationTimeoutException",
-                                        "com.hazelcast.core.HazelcastInstanceNotActiveException",
-                                        "com.hazelcast.transaction.TransactionException",
-                                        "com.hazelcast.splitbrainprotection.SplitBrainProtectionException"))
-                                .setPrefixes(java.util.Set.of("io.github.aindriub.dataprism.hazelcast.",
-                                        "com.hazelcast.spi.exception."))));
+        config.getSerializationConfig().setJavaSerializationFilterConfig(PrivacyCluster.requiredSerializationFilter());
+        config.getManagementCenterConfig().setTrustedInterfaces(java.util.Set.of("255.255.255.255"));
         return config;
     }
 

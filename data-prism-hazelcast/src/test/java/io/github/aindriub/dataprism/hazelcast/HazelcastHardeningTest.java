@@ -62,7 +62,13 @@ class HazelcastHardeningTest {
             "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
             "com.hazelcast.core.HazelcastInstanceNotActiveException",
             "com.hazelcast.transaction.TransactionException",
-            "com.hazelcast.splitbrainprotection.SplitBrainProtectionException");
+            "com.hazelcast.splitbrainprotection.SplitBrainProtectionException",
+            "com.hazelcast.nio.serialization.HazelcastSerializationException",
+            "java.lang.SecurityException", "java.lang.ClassCastException", "java.lang.IllegalArgumentException",
+            "java.lang.NullPointerException", "java.lang.NumberFormatException",
+            "java.lang.IndexOutOfBoundsException", "java.lang.StringIndexOutOfBoundsException",
+            "java.lang.ArrayIndexOutOfBoundsException", "java.time.DateTimeException",
+            "java.time.format.DateTimeParseException");
     private static final Set<String> ALLOWED_PREFIXES = Set.of("io.github.aindriub.dataprism.hazelcast.",
             "com.hazelcast.spi.exception.");
 
@@ -422,7 +428,7 @@ class HazelcastHardeningTest {
     }
 
     @Test
-    void anEmptyTrustedListIsUnsafe_aClientFreezesTheCluster() {
+    void anEmptyTrustedListIsUnsafeBecauseAClientFreezesTheCluster() {
         // The premise of the two tests above: with Hazelcast's default (empty means unrestricted) a keyless client
         // freezes the cluster. A build that regressed to an empty list would fail the refusal tests.
         HazelcastInstance unrestricted = rawMember(config -> config.getManagementCenterConfig()
@@ -451,5 +457,137 @@ class HazelcastHardeningTest {
     void embeddedStillRefusesAnInvalidMinimum() {
         assertThatThrownBy(() -> PrivacyCluster.embedded(new Config().setClusterName("x"), false, OptionalInt.of(0)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // ---- REST, memcache, global serializer, trusted interfaces and phone-home ----
+
+    @Test
+    void bothEmbeddedPathsForceTheRestApiAndMemcacheOff() {
+        for (PrivacyCluster cluster : List.of(membershipMember(), configMember())) {
+            var network = cluster.instance().getConfig().getNetworkConfig();
+            assertThat(network.getRestApiConfig().isEnabled()).isFalse();
+            assertThat(network.getMemcacheProtocolConfig().isEnabled()).isFalse();
+        }
+        Config supplied = new Config().setClusterName("hardening-rest");
+        supplied.getNetworkConfig().getRestApiConfig().setEnabled(true)
+                .enableGroups(com.hazelcast.config.RestEndpointGroup.CLUSTER_WRITE);
+        supplied.getNetworkConfig().getMemcacheProtocolConfig().setEnabled(true);
+        PrivacyCluster.configure(supplied);
+        assertThat(supplied.getNetworkConfig().getRestApiConfig().isEnabled()).isFalse();
+        assertThat(supplied.getNetworkConfig().getMemcacheProtocolConfig().isEnabled()).isFalse();
+    }
+
+    private void usingRefusesAnUnsafeSetting(String what, Consumer<Config> breakOneThing) {
+        Config config = PrivacyCluster.configure(ClusterMembership
+                .tcpIp("hardening-proxy", List.of("127.0.0.1:1")).withPort(1).withInterface("127.0.0.1").toConfig());
+        breakOneThing.accept(config);
+        // A stand-in that only reports its config, so that a setting that must not be started can still be judged.
+        HazelcastInstance stand = (HazelcastInstance) java.lang.reflect.Proxy.newProxyInstance(
+                HazelcastInstance.class.getClassLoader(), new Class<?>[]{HazelcastInstance.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("getConfig")) {
+                        return config;
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        Throwable refused = catchThrowable(() -> PrivacyCluster.using(stand, false));
+        assertThat(refused).as(what).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).as(what).isEqualTo(Code.UNSAFE_HAZELCAST_SERIALIZATION);
+    }
+
+    @Test
+    void usingRefusesMemcacheAndAnyRestGroupBeyondHealthCheck() {
+        usingRefusesAnUnsafeSetting("memcache",
+                config -> config.getNetworkConfig().getMemcacheProtocolConfig().setEnabled(true));
+        usingRefusesAnUnsafeSetting("rest cluster write", config -> config.getNetworkConfig().getRestApiConfig()
+                .setEnabled(true).enableGroups(com.hazelcast.config.RestEndpointGroup.CLUSTER_WRITE));
+        usingRefusesAnUnsafeSetting("rest data", config -> config.getNetworkConfig().getRestApiConfig()
+                .setEnabled(true).enableGroups(com.hazelcast.config.RestEndpointGroup.DATA));
+    }
+
+    @Test
+    void usingAcceptsRestWithOnlyTheHealthCheckGroup() {
+        HazelcastInstance healthOnly = rawMember(config -> config.getNetworkConfig().getRestApiConfig()
+                .setEnabled(true).disableAllGroups().enableGroups(com.hazelcast.config.RestEndpointGroup.HEALTH_CHECK));
+        assertThat(PrivacyCluster.using(healthOnly, false).instance()).isSameAs(healthOnly);
+    }
+
+    @Test
+    void usingRefusesUnrestrictedManagementPhoneHomeAndAGlobalSerializerOverride() {
+        usingRefusesAnUnsafeSetting("empty trusted interfaces",
+                config -> config.getManagementCenterConfig().setTrustedInterfaces(Set.of()));
+        usingRefusesAnUnsafeSetting("phone-home on",
+                config -> config.setProperty("hazelcast.phone.home.enabled", "true"));
+        usingRefusesAnUnsafeSetting("global serializer override", config -> config.getSerializationConfig()
+                .setGlobalSerializerConfig(new com.hazelcast.config.GlobalSerializerConfig()
+                        .setClassName("example.Serializer").setOverrideJavaSerialization(true)));
+    }
+
+    @Test
+    void aNonEmptyTrustedListOnASuppliedInstanceIsTheIntegratorsToJudge() {
+        HazelcastInstance own = rawMember(config -> config.getManagementCenterConfig()
+                .setTrustedInterfaces(Set.of("10.9.9.9")));
+        assertThat(PrivacyCluster.using(own, false).instance()).isSameAs(own);
+    }
+
+    @Test
+    void embeddedRefusesAGlobalSerializerThatOverridesJavaSerialization() {
+        Config config = new Config().setClusterName("hardening-global");
+        config.getSerializationConfig().setGlobalSerializerConfig(new com.hazelcast.config.GlobalSerializerConfig()
+                .setClassName("example.Serializer").setOverrideJavaSerialization(true));
+        refuses(Code.UNSAFE_HAZELCAST_SERIALIZATION, () -> PrivacyCluster.embedded(config, false));
+    }
+
+    // ---- the filter a supplied instance must carry ----
+
+    @Test
+    void usingRefusesAnAdditionalPrefixOrPackageAndAcceptsAnAdditionalNamedClass() {
+        for (String prefix : List.of("", "java.", "org.")) {
+            usingRefusesAnUnsafeSetting("prefix '" + prefix + "'", config -> config.getSerializationConfig()
+                    .getJavaSerializationFilterConfig().getWhitelist().addPrefixes(prefix));
+        }
+        usingRefusesAnUnsafeSetting("package", config -> config.getSerializationConfig()
+                .getJavaSerializationFilterConfig().getWhitelist().addPackages("com.example.other"));
+        HazelcastInstance shared = rawMember(config -> config.getSerializationConfig()
+                .getJavaSerializationFilterConfig().getWhitelist().addClasses("com.example.other.Own"));
+        assertThat(PrivacyCluster.using(shared, false).instance()).isSameAs(shared);
+    }
+
+    @Test
+    void theRequiredFilterIsFreshOnEachCallAndEqualsThePin() {
+        JavaSerializationFilterConfig first = PrivacyCluster.requiredSerializationFilter();
+        assertThat(first.isDefaultsDisabled()).isTrue();
+        assertThat(first.getWhitelist().getClasses()).containsExactlyInAnyOrderElementsOf(ALLOWED_CLASSES);
+        assertThat(first.getWhitelist().getPrefixes()).containsExactlyInAnyOrderElementsOf(ALLOWED_PREFIXES);
+        first.getWhitelist().addPrefixes("java.");
+        assertThat(PrivacyCluster.requiredSerializationFilter().getWhitelist().getPrefixes())
+                .containsExactlyInAnyOrderElementsOf(ALLOWED_PREFIXES);
+    }
+
+    // ---- an error thrown by a processor comes back promptly ----
+
+    @Test
+    void aForeignValueUnderABudgetKeyIsRefusedPromptlyFromTheNonOwner() {
+        PrivacyCluster[] pair = TestMembers.pair(TestMembers.uniqueName("hardening-cce"), OptionalInt.empty());
+        clusters.add(pair[0]);
+        clusters.add(pair[1]);
+        HazelcastInstance owner = pair[1].instance();
+        String key = null;
+        String subject = null;
+        for (int i = 0; i < 10_000 && key == null; i++) {
+            String candidate = ScopeKeys.budget("scope-a", "subject-" + i);
+            if (pair[0].instance().getPartitionService().getPartition(candidate).getOwner().equals(
+                    owner.getCluster().getLocalMember())) {
+                key = candidate;
+                subject = "subject-" + i;
+            }
+        }
+        assertThat(key).isNotNull();
+        // Something other than an Integer under the key, as a hostile or confused writer could leave.
+        pair[0].instance().<String, Object>getMap(PrivacyCluster.BUDGET_MAP).put(key, "not-a-count");
+        long started = System.nanoTime();
+        boolean admitted = new HazelcastScopeBudget(pair[0]).tryRead("scope-a", subject, 5);
+        assertThat(admitted).as("a value that is not a count refuses the read").isFalse();
+        assertThat(java.time.Duration.ofNanos(System.nanoTime() - started)).isLessThan(java.time.Duration.ofSeconds(8));
     }
 }

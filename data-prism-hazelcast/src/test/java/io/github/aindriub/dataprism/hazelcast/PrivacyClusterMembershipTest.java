@@ -153,6 +153,10 @@ class PrivacyClusterMembershipTest {
                 () -> ClusterMembership.tcpIp("c", ok).withInterface("0-255.0-255.0-255.0-255"));
         refuses(Code.UNBOUNDED_MEMBER_INTERFACE,
                 () -> ClusterMembership.kubernetes("c", "ns", "svc", null).withInterface("*.*.*.*"));
+        refuses(Code.UNBOUNDED_MEMBER_INTERFACE, () -> ClusterMembership.tcpIp("c", ok).withInterface("*.*.*.00-255"));
+        refuses(Code.UNBOUNDED_MEMBER_INTERFACE, () -> ClusterMembership.tcpIp("c", ok).withInterface("000-255.*.*.*"));
+        refuses(Code.UNBOUNDED_MEMBER_INTERFACE,
+                () -> ClusterMembership.tcpIp("c", ok).withInterface("*.0-255.00-255.*"));
         // Bounded patterns, wide as they are, stay accepted; PUBLIC_MEMBER_INTERFACE is not added (OD-10 (ii)).
         assertThat(ClusterMembership.tcpIp("c", ok).withInterface("10.*.*.*").interfaceAddress())
                 .isEqualTo(Optional.of("10.*.*.*"));

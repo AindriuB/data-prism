@@ -8,14 +8,18 @@ import com.hazelcast.config.IndexConfig;
 import com.hazelcast.config.IndexType;
 import com.hazelcast.config.JavaSerializationFilterConfig;
 import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.RestEndpointGroup;
 import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -61,7 +65,7 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /**
      * Synthetic values, recomputable. Losing this map costs CPU and nothing else. Every map name carries the
-     * generation suffix {@code .s1}; the 0.7 names (no suffix) are never read.
+     * generation suffix {@code .s1}; the 0.7 names (no suffix) hold nothing 0.8 uses.
      */
     public static final String IDENTITY_MAP = "dataprism.identity.s1";
 
@@ -102,7 +106,7 @@ public final class PrivacyCluster implements AutoCloseable {
     static final String OVERSIGHT_FENCE_MAP = "dataprism.oversight";
 
     /**
-     * The eight map names of 0.7 and earlier. A 0.8 member never reads them; it only checks that they are empty
+     * The eight map names of 0.7 and earlier. A 0.8 member reads no entry of them; it asks only whether they are empty, how many entries they hold, and the value of the fence
      * (the cutover is non-rolling).
      */
     static final List<String> PRE_0_8_MAPS = List.of("dataprism.identity", "dataprism.reidentification",
@@ -124,6 +128,67 @@ public final class PrivacyCluster implements AutoCloseable {
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
         this.sweeper = new PendingSweeper(instance, approvalSweepInterval, java.time.Clock.systemUTC());
+        this.legacyWatch = startLegacyWatch(instance);
+    }
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PrivacyCluster.class);
+    private static final long LEGACY_CHECK_TIMEOUT_SECONDS = 10;
+    private static final long LEGACY_WARN_INTERVAL_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
+
+    private final java.util.concurrent.ScheduledExecutorService legacyChecks = java.util.concurrent.Executors
+            .newSingleThreadScheduledExecutor(task -> {
+                Thread thread = new Thread(task, "dataprism-legacy-check");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private final java.util.concurrent.atomic.AtomicInteger legacyEntries = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long lastLegacyWarnNanos = System.nanoTime() - LEGACY_WARN_INTERVAL_NANOS;
+    private final java.util.UUID legacyWatch;
+
+    /**
+     * Re-runs the pre-0.8 check on every member join, off the listener thread and bounded in time. A running
+     * member is never stopped by what it finds: the entries are counted and one WARN naming the map constants and a
+     * count is logged at most once a minute, never an entry. The counter stands in for the metric
+     * {@code dataprism.cluster.legacy.entries}, which is not in this base.
+     */
+    private java.util.UUID startLegacyWatch(HazelcastInstance watched) {
+        return watched.getCluster().addMembershipListener(new com.hazelcast.cluster.MembershipListener() {
+            @Override
+            public void memberAdded(com.hazelcast.cluster.MembershipEvent event) {
+                try {
+                    var check = legacyChecks.submit(() -> checkLegacy(watched));
+                    legacyChecks.schedule(() -> check.cancel(true), LEGACY_CHECK_TIMEOUT_SECONDS,
+                            java.util.concurrent.TimeUnit.SECONDS);
+                } catch (java.util.concurrent.RejectedExecutionException closed) {
+                    // Closing; nothing to check.
+                }
+            }
+
+            @Override
+            public void memberRemoved(com.hazelcast.cluster.MembershipEvent event) {
+            }
+        });
+    }
+
+    private void checkLegacy(HazelcastInstance watched) {
+        try {
+            Map<String, Integer> found = ClusterMembership.legacyEntryCounts(watched);
+            int total = found.values().stream().mapToInt(Integer::intValue).sum();
+            legacyEntries.set(total);
+            long now = System.nanoTime();
+            if (total > 0 && now - lastLegacyWarnNanos >= LEGACY_WARN_INTERVAL_NANOS) {
+                lastLegacyWarnNanos = now;
+                LOG.warn("pre-0.8 state is present in the cluster: {} entries in {}; a 0.7 member is probably "
+                        + "running", total, found.keySet());
+            }
+        } catch (RuntimeException unreadable) {
+            LOG.debug("pre-0.8 check did not complete: {}", unreadable.getClass().getSimpleName());
+        }
+    }
+
+    /** Entries found in the pre-0.8 maps by the latest membership check; 0 if none. Stands in for the metric. */
+    int legacyEntries() {
+        return legacyEntries.get();
     }
 
     /** Runs one sweep of the pending-approval entries this member owns, as the schedule does. */
@@ -472,7 +537,16 @@ public final class PrivacyCluster implements AutoCloseable {
             "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
             "com.hazelcast.core.HazelcastInstanceNotActiveException",
             "com.hazelcast.transaction.TransactionException",
-            "com.hazelcast.splitbrainprotection.SplitBrainProtectionException");
+            "com.hazelcast.splitbrainprotection.SplitBrainProtectionException",
+            // What an entry processor or merge policy can throw back to its caller: a foreign value under a key
+            // (ClassCastException, NullPointerException), an unreadable stored string (NumberFormatException,
+            // StringIndexOutOfBounds, DateTimeParseException) or a refused argument, and the filter's own refusal.
+            "com.hazelcast.nio.serialization.HazelcastSerializationException",
+            "java.lang.SecurityException", "java.lang.ClassCastException", "java.lang.IllegalArgumentException",
+            "java.lang.NullPointerException", "java.lang.NumberFormatException",
+            "java.lang.IndexOutOfBoundsException", "java.lang.StringIndexOutOfBoundsException",
+            "java.lang.ArrayIndexOutOfBoundsException", "java.time.DateTimeException",
+            "java.time.format.DateTimeParseException");
 
     /** Every Data Prism processor and merge policy lives under the first; Hazelcast's retryable exceptions, the second. */
     static final Set<String> ALLOWED_PREFIXES = Set.of("io.github.aindriub.dataprism.hazelcast.",
@@ -489,15 +563,38 @@ public final class PrivacyCluster implements AutoCloseable {
         config.getJetConfig().setEnabled(false);
         config.getUserCodeDeploymentConfig().setEnabled(false);
         config.getManagementCenterConfig().setTrustedInterfaces(Set.of(UNMATCHABLE_MANAGEMENT_ADDRESS));
+        // Data Prism has its own health endpoint. The member REST API can change the cluster state whatever the
+        // trusted interfaces say, and the memcache protocol opens the maps to anything that can reach the port.
+        config.getNetworkConfig().getRestApiConfig().setEnabled(false);
+        config.getNetworkConfig().getMemcacheProtocolConfig().setEnabled(false);
+        if (overridesJavaSerialization(config)) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "a global serializer that overrides Java serialization bypasses the java-serialization-filter");
+        }
         JavaSerializationFilterConfig supplied = config.getSerializationConfig().getJavaSerializationFilterConfig();
         if (supplied != null && !withinAllowlist(supplied)) {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
                     "the java-serialization-filter allows more than Data Prism needs; remove it to take the default "
                             + "or narrow it");
         }
-        config.getSerializationConfig().setJavaSerializationFilterConfig(new JavaSerializationFilterConfig()
-                .setDefaultsDisabled(true)
-                .setWhitelist(new ClassFilter().setClasses(ALLOWED_CLASSES).setPrefixes(ALLOWED_PREFIXES)));
+        config.getSerializationConfig().setJavaSerializationFilterConfig(requiredSerializationFilter());
+    }
+
+    private static boolean overridesJavaSerialization(Config config) {
+        var global = config.getSerializationConfig().getGlobalSerializerConfig();
+        return global != null && global.isOverrideJavaSerialization();
+    }
+
+    /**
+     * A fresh copy of the {@code java-serialization-filter} a member needs: defaults disabled and an allowlist of
+     * Data Prism's own classes and the exception types Hazelcast replies with. {@link #embedded} installs exactly
+     * this. An integrator who starts the instance for {@link #using} sets it (or a filter that also names classes of
+     * their own, but no further prefix or package) on the {@code Config}.
+     */
+    public static JavaSerializationFilterConfig requiredSerializationFilter() {
+        return new JavaSerializationFilterConfig().setDefaultsDisabled(true)
+                .setWhitelist(new ClassFilter().setClasses(new HashSet<>(ALLOWED_CLASSES))
+                        .setPrefixes(new HashSet<>(ALLOWED_PREFIXES)));
     }
 
     /** Defaults off, and nothing listed that the allowlist does not already list. */
@@ -510,17 +607,25 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /**
-     * What can be checked on an instance somebody else started and cannot be changed: an allowlisting filter that
-     * names Data Prism's classes, and neither Jet nor user-code deployment. Phone-home and the Management Center
-     * trusted interfaces are the integrator's; neither is checked here.
+     * What can be checked on an instance somebody else started and cannot be changed, each refused with
+     * {@code UNSAFE_HAZELCAST_SERIALIZATION} (the code decided in 218; no new code is added):
+     * a filter with defaults disabled that allows all of {@link #requiredSerializationFilter()} and names no prefix
+     * or package beyond Data Prism's own (extra named classes are the integrator's to add); no Jet, no user-code
+     * deployment, no memcache, no REST group beyond {@code HEALTH_CHECK}; no global serializer overriding Java
+     * serialization; a non-empty Management Center trusted-interface list (an empty list is unrestricted); and
+     * phone-home off. Which addresses a non-empty trusted list names is the integrator's responsibility.
      */
     private static void checkInstanceSettings(Config config) {
         JavaSerializationFilterConfig filter = config.getSerializationConfig().getJavaSerializationFilterConfig();
         if (filter == null || !filter.isDefaultsDisabled() || filter.getWhitelist() == null
-                || !allowsDataPrism(filter.getWhitelist())) {
+                || !allowsDataPrism(filter.getWhitelist()) || !addsNoWideEntries(filter.getWhitelist())) {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
                     "the supplied instance needs a java-serialization-filter with defaults disabled that allows "
-                            + "Data Prism's classes");
+                            + "Data Prism's classes and no other prefix or package");
+        }
+        if (overridesJavaSerialization(config)) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "a global serializer must not override Java serialization on the supplied instance");
         }
         if (config.getJetConfig().isEnabled()) {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
@@ -530,6 +635,29 @@ public final class PrivacyCluster implements AutoCloseable {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
                     "user-code-deployment must be disabled on the supplied instance");
         }
+        var network = config.getNetworkConfig();
+        if (network.getMemcacheProtocolConfig().isEnabled()) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "the memcache protocol must be disabled on the supplied instance");
+        }
+        var rest = network.getRestApiConfig();
+        if (rest.isEnabled() && !Set.of(RestEndpointGroup.HEALTH_CHECK).containsAll(rest.getEnabledGroups())) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "the member REST API may enable only the HEALTH_CHECK group on the supplied instance");
+        }
+        if (config.getManagementCenterConfig().getTrustedInterfaces().isEmpty()) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "management-center trusted-interfaces must not be empty on the supplied instance");
+        }
+        if (new HazelcastProperties(config).getBoolean(ClusterProperty.PHONE_HOME_ENABLED)) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "phone-home must be disabled on the supplied instance");
+        }
+    }
+
+    /** Only Data Prism's own prefixes; no package at all. Named classes are free. */
+    private static boolean addsNoWideEntries(ClassFilter allow) {
+        return ALLOWED_PREFIXES.containsAll(allow.getPrefixes()) && allow.getPackages().isEmpty();
     }
 
     private static boolean allowsDataPrism(ClassFilter allow) {
@@ -568,6 +696,12 @@ public final class PrivacyCluster implements AutoCloseable {
 
     @Override
     public void close() {
+        try {
+            instance.getCluster().removeMembershipListener(legacyWatch);
+        } catch (RuntimeException ignored) {
+            // The instance may already be gone.
+        }
+        legacyChecks.shutdownNow();
         sweeper.close();
         instance.shutdown();
     }
