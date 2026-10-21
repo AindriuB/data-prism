@@ -103,6 +103,8 @@ class SourceCatalogTest {
     void ruleOne() {
         assertThat(build(described("a".repeat(240))).entries()).hasSize(1);
         assertRefused(INVALID, 1, described("a".repeat(241)));
+        assertThat(build(described("\uD835\uDC00".repeat(240))).entries()).hasSize(1);
+        assertRefused(INVALID, 1, described("\uD835\uDC00".repeat(241)));
         assertRefused(INVALID, 1, described(""));
         assertRefused(INVALID, 1, described("   "));
         assertRefused(INVALID, 1, described("line one\nline two"));
@@ -131,8 +133,8 @@ class SourceCatalogTest {
     void ruleThree() {
         for (String bad : new String[] {
                 "key sk-abcdefghijklmnopqrstuvwx",
-                "account GB82WEST12345698765432",
-                "id 1234567T",
+                "account GB00WEST12345698765432",
+                "id 1234567A",
                 "see http://internal-thing",
                 "see https://thing/path",
                 "see www.thing",
@@ -200,6 +202,19 @@ class SourceCatalogTest {
         };
         assertRefused(INVALID, 4, throwing);
         assertThatThrownBy(() -> build(throwing)).hasMessageNotContaining("SENTINEL").hasNoCause();
+    }
+
+    @Test
+    @DisplayName("a description() that fails for any other reason is reported as a failure, not as rule 4")
+    void descriptionFailed() {
+        DataSourceAdapter<?> throwing = new OldStyleAdapter("alpha") {
+            @Override
+            public SourceDescription description() {
+                throw new IllegalStateException("SENTINEL text");
+            }
+        };
+        assertThatThrownBy(() -> build(throwing)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(INVALID + "source alpha description failed").hasNoCause();
     }
 
     // ---- rule 5 ----

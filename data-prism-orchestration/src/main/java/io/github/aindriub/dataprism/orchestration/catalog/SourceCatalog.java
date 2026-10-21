@@ -142,9 +142,11 @@ public final class SourceCatalog {
         SourceDescription description;
         try {
             description = adapter.description();
-        } catch (RuntimeException e) {
+        } catch (IllegalArgumentException e) {
             // The cause is dropped on purpose: an adapter's message may carry the text.
             throw SourceDescriptionChecks.refuse(SourceDescriptionChecks.INVALID, name, 4);
+        } catch (RuntimeException e) {
+            throw SourceDescriptionChecks.refuseFailed(name);
         }
         return description == null ? SourceDescription.undeclared() : description;
     }

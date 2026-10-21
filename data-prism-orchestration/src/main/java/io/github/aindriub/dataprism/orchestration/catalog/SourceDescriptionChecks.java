@@ -85,12 +85,16 @@ final class SourceDescriptionChecks {
         return new IllegalArgumentException(code + ": source " + sourceName + " rule " + rule);
     }
 
+    static IllegalArgumentException refuseFailed(String sourceName) {
+        return new IllegalArgumentException(INVALID + ": source " + sourceName + " description failed");
+    }
+
     private void applyStructure(String sourceName, int rule, String text) {
         if (text == null) {
             return;
         }
         boolean ok = switch (rule) {
-            case 1 -> !text.isBlank() && text.length() <= MAX_LENGTH && !LINE_BREAK.matcher(text).find();
+            case 1 -> !text.isBlank() && text.codePointCount(0, text.length()) <= MAX_LENGTH && !LINE_BREAK.matcher(text).find();
             case 2 -> text.codePoints().allMatch(SourceDescriptionChecks::printable);
             default -> keyAndLocationFree(text);
         };
