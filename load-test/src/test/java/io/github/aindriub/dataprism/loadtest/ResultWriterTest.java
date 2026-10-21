@@ -16,7 +16,7 @@ class ResultWriterTest {
 
     private static LoadDriver.Run run(ResultAggregator aggregator) {
         return new LoadDriver.Run(aggregator.summary(Duration.ofSeconds(10)), Duration.ofSeconds(12), 0,
-                Duration.ofSeconds(10), 3, 1);
+                Duration.ofSeconds(10), 3, 1, null);
     }
 
     @SuppressWarnings("unchecked")
@@ -38,6 +38,19 @@ class ResultWriterTest {
         assertThat(doc.get("measuredSeconds")).isEqualTo(10.0);
         assertThat(doc.get("elapsedSeconds")).isEqualTo(12.0);
         assertThat(doc.get("sourcesNotAnswered")).isEqualTo(1L);
+        assertThat((Map<String, Object>) doc.get("server")).containsEntry("diedDuringRun", false);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void aServerThatDiedMidRunIsStatedWithItsExitCode() {
+        LoadDriver.Run died = new LoadDriver.Run(new ResultAggregator().summary(Duration.ofSeconds(1)),
+                Duration.ofSeconds(1), 0, Duration.ofSeconds(1), 0, 0, 137);
+
+        Map<String, Object> doc = ResultWriter.document(SCENARIO, Instant.EPOCH, "abc", false, died);
+
+        assertThat((Map<String, Object>) doc.get("server")).containsEntry("diedDuringRun", true)
+                .containsEntry("exitCode", 137);
     }
 
     @Test
@@ -47,7 +60,7 @@ class ResultWriterTest {
                 good.totalStatus(), Map.of(), 0, Map.of("OTHER", 1L), 0, 0);
 
         assertThatThrownBy(() -> ResultWriter.document(SCENARIO, Instant.EPOCH, "abc", false,
-                new LoadDriver.Run(broken, Duration.ofSeconds(1), 0, Duration.ofSeconds(1), 0, 0)))
+                new LoadDriver.Run(broken, Duration.ofSeconds(1), 0, Duration.ofSeconds(1), 0, 0, null)))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("do not add up");
     }
 }

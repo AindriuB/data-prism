@@ -12,8 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 /**
  * Drives {@code get_entity_context} through the MCP Java SDK client over streamable HTTP, the protocol path
@@ -28,17 +30,21 @@ final class LoadDriver {
 
     /**
      * @param elapsed   the wall time of the measured phase, in-flight drain included
+     * @param serverExitCode the server's exit code if it died during the run (which was then stopped), otherwise null
      * @param measured  the window throughput is divided by: {@code elapsed}, but never more than the scenario's
      *                  duration, so the calls still in flight at the deadline do not stretch it
      */
     record Run(ResultAggregator.Summary summary, Duration elapsed, long notDispatched, Duration measured,
-               long tokenReissues, long scopeRotations) { }
+               long tokenReissues, long scopeRotations, Integer serverExitCode) { }
 
     /** The longest the client waits to open a connection. */
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
 
     /** The longest the closing of every session may take, in total. */
     static final Duration CLOSE_BOUND = Duration.ofSeconds(30);
+
+    /** How often the server child is checked while a run drives it. */
+    static final Duration SERVER_POLL = Duration.ofSeconds(1);
 
     /** A failure that took at least this long is timed even though it was not a timeout. */
     static final Duration SLOW_FAILURE = Duration.ofSeconds(1);
@@ -47,10 +53,19 @@ final class LoadDriver {
     private final CredentialRotation credentials;
     private final Scenario scenario;
 
+    private final Supplier<Integer> serverExit;
+    private volatile ServerWatch watch;
+
     LoadDriver(String baseUrl, CredentialRotation credentials, Scenario scenario) {
+        this(baseUrl, credentials, scenario, () -> null);
+    }
+
+    /** @param serverExit the server's exit code, or null while it is alive; polled to stop a run whose server died */
+    LoadDriver(String baseUrl, CredentialRotation credentials, Scenario scenario, Supplier<Integer> serverExit) {
         this.baseUrl = baseUrl;
         this.credentials = credentials;
         this.scenario = scenario;
+        this.serverExit = serverExit;
     }
 
     static HttpClient.Builder boundConnect(HttpClient.Builder builder) {
@@ -65,7 +80,8 @@ final class LoadDriver {
     Run run() throws Exception {
         Scenario.Load load = scenario.load();
         List<McpSyncClient> clients = new ArrayList<>();
-        try {
+        try (ServerWatch serverWatch = ServerWatch.start(serverExit, SERVER_POLL)) {
+            watch = serverWatch;
             for (int i = 0; i < load.concurrency(); i++) {
                 clients.add(newClient(load));
             }
@@ -82,7 +98,7 @@ final class LoadDriver {
                             ? Duration.ofSeconds(load.durationSeconds()) : elapsed
                     : elapsed;
             return new Run(aggregator.summary(measured), elapsed, notDispatched, measured,
-                    credentials.tokenReissues(), credentials.scopeRotations());
+                    credentials.tokenReissues(), credentials.scopeRotations(), serverWatch.exitCode());
         } finally {
             // A session that will not close must not hold the run (or the result file) up.
             Bounded.run(() -> clients.forEach(client -> {
@@ -147,7 +163,7 @@ final class LoadDriver {
                 if (recordTo != null) {
                     recordTo.record(outcome, System.nanoTime() >= end, scope);
                 }
-            }), "load-worker");
+            }, () -> watch != null && watch.halted()), "load-worker");
             workers.add(worker);
             worker.start();
         }
@@ -170,7 +186,14 @@ final class LoadDriver {
      */
     static void workerLoop(AtomicLong next, AtomicLong dispatched, int calls, long start, int ratePerSecond,
                            long end, LongSupplier clock, LongConsumer park, Dispatch dispatch) {
-        while (true) {
+        workerLoop(next, dispatched, calls, start, ratePerSecond, end, clock, park, dispatch, () -> false);
+    }
+
+    /** As above, and a worker stops at once, before its next call, when {@code halted} turns true. */
+    static void workerLoop(AtomicLong next, AtomicLong dispatched, int calls, long start, int ratePerSecond,
+                           long end, LongSupplier clock, LongConsumer park, Dispatch dispatch,
+                           BooleanSupplier halted) {
+        while (!halted.getAsBoolean()) {
             long index = next.getAndIncrement();
             if (calls > 0 && index >= calls) {
                 return;
@@ -183,7 +206,7 @@ final class LoadDriver {
             // return at once every time, so an interrupted worker stops instead of spinning.
             long wait;
             while ((wait = due - clock.getAsLong()) > 0) {
-                if (Thread.currentThread().isInterrupted()) {
+                if (Thread.currentThread().isInterrupted() || halted.getAsBoolean()) {
                     return;
                 }
                 park.accept(wait);

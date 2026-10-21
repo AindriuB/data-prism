@@ -48,6 +48,11 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
                        int callTimeoutSeconds, int subjectPool) {
         public Load {
             callTimeoutSeconds = callTimeoutSeconds <= 0 ? 30 : callTimeoutSeconds;
+            if (callTimeoutSeconds < LoadDriver.CONNECT_TIMEOUT.toSeconds()) {
+                // Below the connect timeout a connect timeout could never be told from a read timeout.
+                throw new IllegalArgumentException("scenario load.callTimeoutSeconds must be at least the "
+                        + LoadDriver.CONNECT_TIMEOUT.toSeconds() + " s connect timeout");
+            }
         }
     }
 

@@ -84,6 +84,7 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.audit.entity-types[0]=" + SourceGenerator.ENTITY_TYPE,
                 "--dataprism.metrics.sink=micrometer",
                 "--dataprism.hazelcast.topology=single-node"));
+        command.addAll(loggingArguments(log));
         scenario.limits().asProperties().forEach((key, value) -> command.add("--" + key + "=" + value));
 
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile());
@@ -180,11 +181,53 @@ final class ServerProcess implements AutoCloseable {
         return logFile;
     }
 
-    /** Copies the server log out of the temp dir (deleted on exit) to the git-ignored results dir. */
-    private Path keepLog() {
+    /**
+     * The server's own log, capped so a 24 h soak cannot fill the disk: a rolling file of at most 10 MB per file,
+     * 2 rolled files and 30 MB in all, so the newest output (the tail) is what survives. Its console output is
+     * switched off (an empty console pattern), so stdout, which the harness redirects to a file, stays small.
+     */
+    static List<String> loggingArguments(Path log) {
+        return List.of(
+                "--logging.file.name=" + log,
+                "--logging.pattern.console=",
+                "--logging.logback.rollingpolicy.max-file-size=10MB",
+                "--logging.logback.rollingpolicy.max-history=2",
+                "--logging.logback.rollingpolicy.total-size-cap=30MB");
+    }
+
+    /** The live log and the files rolled from it ({@code server.log.*}). */
+    static List<Path> logFilesOf(Path log) {
+        try (Stream<Path> siblings = Files.list(log.toAbsolutePath().getParent())) {
+            String name = log.getFileName().toString();
+            return siblings.filter(p -> p.getFileName().toString().equals(name)
+                    || p.getFileName().toString().startsWith(name + ".")).sorted().toList();
+        } catch (IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /** The exit code if the server has exited, otherwise {@code null}. */
+    Integer exitCode() {
+        return process.isAlive() ? null : process.exitValue();
+    }
+
+    /**
+     * Copies the server log (live and rolled files) out of the temp dir (deleted on exit) to the git-ignored
+     * results dir. Returns the copy of the live log, or null if there is none.
+     */
+    Path keepLog() {
         try {
             Files.createDirectories(resultsDir);
-            return Files.copy(logFile, resultsDir.resolve("server-failure-" + System.currentTimeMillis() + ".log"));
+            String stamp = String.valueOf(System.currentTimeMillis());
+            Path kept = null;
+            for (Path file : logFilesOf(logFile)) {
+                String suffix = file.getFileName().toString().substring(logFile.getFileName().toString().length());
+                Path copy = Files.copy(file, resultsDir.resolve("server-failure-" + stamp + ".log" + suffix));
+                if (suffix.isEmpty()) {
+                    kept = copy;
+                }
+            }
+            return kept;
         } catch (IOException | RuntimeException e) {
             return null;
         }

@@ -27,6 +27,28 @@ class ServerProcessTest {
     }
 
     @Test
+    void theServersOwnLogIsCappedAndItsConsoleIsSilenced() {
+        java.util.List<String> arguments = ServerProcess.loggingArguments(dir.resolve("server.log"));
+
+        assertThat(arguments).contains("--logging.file.name=" + dir.resolve("server.log"))
+                .contains("--logging.pattern.console=")
+                .anyMatch(a -> a.startsWith("--logging.logback.rollingpolicy.max-file-size="))
+                .anyMatch(a -> a.startsWith("--logging.logback.rollingpolicy.max-history="))
+                .anyMatch(a -> a.startsWith("--logging.logback.rollingpolicy.total-size-cap="));
+    }
+
+    @Test
+    void keptLogsIncludeTheRolledFilesNextToTheLiveOne() throws Exception {
+        Files.writeString(dir.resolve("server.log"), "live");
+        Files.writeString(dir.resolve("server.log.1.gz"), "old");
+        Files.writeString(dir.resolve("other.txt"), "x");
+
+        assertThat(ServerProcess.logFilesOf(dir.resolve("server.log")))
+                .extracting(p -> p.getFileName().toString())
+                .containsExactlyInAnyOrder("server.log", "server.log.1.gz");
+    }
+
+    @Test
     void theLogMayListSeveralConnectorsInAnyOrder() throws Exception {
         Path log = dir.resolve("server.log");
         Files.writeString(log, "Tomcat started on ports 8443 (https), 41234 (http) with context path '/'\n");

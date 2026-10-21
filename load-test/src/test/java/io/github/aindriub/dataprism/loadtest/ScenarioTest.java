@@ -125,6 +125,17 @@ class ScenarioTest {
     }
 
     @Test
+    void aCallTimeoutBelowTheConnectTimeoutIsRefused() throws Exception {
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, """
+                {"name":"x","sources":5,"load":{"concurrency":1,"calls":3,"callTimeoutSeconds":5}}
+                """);
+
+        assertThatThrownBy(() -> Scenario.load(file)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("callTimeoutSeconds").hasMessageContaining("connect");
+    }
+
+    @Test
     void aSubjectPoolDefaultsToDistinctSubjectsAndMustNotBeNegative() throws Exception {
         Path file = dir.resolve("x.json");
         Files.writeString(file, """

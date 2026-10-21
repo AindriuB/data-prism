@@ -70,6 +70,12 @@ final class ResultWriter {
         credentials.put("tokenReissues", run.tokenReissues());
         credentials.put("scopeRotations", run.scopeRotations());
         doc.put("credentials", credentials);
+        Map<String, Object> server = new LinkedHashMap<>();
+        server.put("diedDuringRun", run.serverExitCode() != null);
+        if (run.serverExitCode() != null) {
+            server.put("exitCode", run.serverExitCode());
+        }
+        doc.put("server", server);
         doc.put("throughputPerSecond", s.throughputPerSecond());
         doc.put("refusalCodes", s.refusalCodes());
         doc.put("sourceStatusTotals", s.totalStatus());

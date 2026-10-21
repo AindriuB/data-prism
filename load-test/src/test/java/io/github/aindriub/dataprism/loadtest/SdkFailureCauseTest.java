@@ -27,6 +27,10 @@ class SdkFailureCauseTest {
     private volatile String callBody = "";
 
     private McpSyncClient start() throws Exception {
+        return start(Duration.ofSeconds(5));
+    }
+
+    private McpSyncClient start(Duration timeout) throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/mcp", exchange -> {
             try (exchange) {
@@ -51,7 +55,7 @@ class SdkFailureCauseTest {
         });
         server.start();
         return LoadDriver.openClient("http://127.0.0.1:" + server.getAddress().getPort(), () -> "t",
-                Duration.ofSeconds(5));
+                timeout);
     }
 
     private static String idOf(String request) {
@@ -81,6 +85,34 @@ class SdkFailureCauseTest {
         } catch (RuntimeException failure) {
             return FailureCause.of(failure);
         }
+    }
+
+    @Test
+    void aMalformedJsonRpcBodyOnA200EndsAsAReadTimeout() throws Exception {
+        McpSyncClient client = start(Duration.ofSeconds(2));
+        status.set(200);
+        callBody = "this is not json-rpc";
+        try {
+            client.callTool(new McpSchema.CallToolRequest("get_entity_context", Map.of("subjectId", "x")));
+            throw new AssertionError("expected a failure");
+        } catch (RuntimeException failure) {
+            assertThat(FailureCause.of(failure)).isEqualTo(FailureCause.READ_TIMEOUT);
+        }
+    }
+
+    @Test
+    void aSessionThatCannotBeInitialisedFailsFastInsteadOfLeavingAHalfBuiltClient() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/mcp", exchange -> {
+            try (exchange) {
+                exchange.sendResponseHeaders(401, -1);
+            }
+        });
+        server.start();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> LoadDriver.openClient(
+                "http://127.0.0.1:" + server.getAddress().getPort(), () -> "t", Duration.ofSeconds(5)))
+                .isInstanceOf(RuntimeException.class);
     }
 
     @Test
