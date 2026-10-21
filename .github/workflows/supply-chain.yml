@@ -35,9 +35,14 @@ jobs:
       # `package` under the release profile writes target/bom.json for the
       # root and each deployable module (the same SBOMs the release ships).
       # Tests, javadoc and sources are skipped: only the resolved tree matters.
+      # cyclonedx-maven-plugin skips modules that are not deployed by default,
+      # which would leave the server image's module, the quickstarts and the
+      # test modules unscanned; skipNotDeployed=false covers them. This build
+      # is the scan's own, so the release SBOMs are unchanged.
       - name: Resolve the reactor tree to SBOMs
         run: >-
           ./mvnw -B --no-transfer-progress -Prelease
+          -Dcyclonedx.skipNotDeployed=false
           -DskipTests -Dgpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.source.skip=true
           package
 
@@ -50,14 +55,31 @@ jobs:
             "org.cyclonedx:cyclonedx-maven-plugin:${plugin}:makeBom" \
             -DoutputFormat=json
 
+      # Every ignore must carry a reason and an ignoreUntil date, or the
+      # scan is not run at all.
+      - name: Check the ignore list is justified
+        run: |
+          awk '
+            function flush() { if (inblock && (!reason || !until)) { print "::error::[[IgnoredVulns]] entry ending at line " NR " lacks a reason or an ignoreUntil date"; bad=1 } }
+            /^[[:space:]]*\[\[IgnoredVulns\]\]/ { flush(); inblock=1; reason=0; until=0; next }
+            /^[[:space:]]*\[/ { flush(); inblock=0; next }
+            inblock && /^[[:space:]]*reason[[:space:]]*=[[:space:]]*"[^"]+"/ { reason=1 }
+            inblock && /^[[:space:]]*ignoreUntil[[:space:]]*=[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { until=1 }
+            END { flush(); exit bad }
+          ' .github/osv-scanner.toml
+
       - name: Scan for known advisories
         run: |
           shopt -s nullglob
           boms=(target/bom.json data-prism-*/target/bom.json load-test/target/bom.json)
-          if [ "${#boms[@]}" -lt 2 ]; then
-            echo "::error::expected SBOMs for the reactor and load-test/, found ${#boms[@]}"
-            exit 1
-          fi
+          # The modules that matter most must have produced an SBOM, by name;
+          # a count would pass with the wrong files.
+          for required in data-prism-server/target/bom.json load-test/target/bom.json; do
+            if [ ! -f "$required" ]; then
+              echo "::error::${required} was not produced, so it would go unscanned"
+              exit 1
+            fi
+          done
           mkdir -p osv
           failed=0
           for bom in "${boms[@]}"; do
