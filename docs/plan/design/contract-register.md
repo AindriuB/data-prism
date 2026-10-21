@@ -247,6 +247,8 @@ Surface: the tool result text and the audit `policyDecision` `DENY:<code>` (docs
 | `NO_SUBJECT` | shipped | 0.1.0 | core:JsonTreeScrubbingEngine.java:327 | no |  |
 | `UNKNOWN_SUBJECT_FIELD` | shipped | 0.1.0 | core:JsonTreeScrubbingEngine.java:363 | no |  |
 | `SOURCE_MODEL_NOT_A_RECORD` | shipped | 0.6.0 | core:SourceModels.java:58 | yes |  |
+| `SOURCE_MODEL_GENERIC` | shipped | 0.7.1 | core:SourceModels.java:61 | yes |  |
+| `SOURCE_MODEL_MAP_OF_RECORD` | shipped | 0.7.1 | core:SourceModels.java:64 | yes |  |
 | `GENERALIZE_TYPE_MISMATCH` | shipped | 0.1.0 | core:Generalizer.java:36 | no |  |
 | `INVALID_REFUSAL_CODE` | shipped | 0.4.0 | core:RefusalCodes.java:17 | yes |  |
 | `NO_TOKEN_SOURCE` | shipped | 0.1.0 | core:ValueTokenSource.java:49 | no |  |
