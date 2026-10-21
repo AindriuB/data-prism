@@ -285,7 +285,7 @@ public final class ChainableFields {
      */
     private static boolean expressible(java.lang.reflect.Type type) {
         if (type == null) {
-            return true;
+            return false;
         }
         if (type instanceof Class<?> c) {
             Class<?> element = c;
@@ -489,6 +489,9 @@ public final class ChainableFields {
                     return;
                 }
                 for (java.lang.reflect.Type bound : w.getUpperBounds()) {
+                    collect(bound, out);
+                }
+                for (java.lang.reflect.Type bound : w.getLowerBounds()) {
                     collect(bound, out);
                 }
             }

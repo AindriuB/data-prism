@@ -715,6 +715,14 @@ class ChainableFieldsTest {
     record RawListD(@InternalIdentifier List k) {
     }
 
+    @LlmExposedModel
+    record SuperWild(@NonSensitive(reason = "structure") Leaf primary, @NonSensitive(reason = "structure") List<? super Leaf> others) {
+    }
+
+    @LlmExposedModel
+    record SuperWildOnly(@NonSensitive(reason = "structure") List<? super Leaf> others) {
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace, String role) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -1171,5 +1179,14 @@ class ChainableFieldsTest {
         assertThatThrownBy(() -> ChainableFields.of(RawListD.class,
                 descriptor(RawListD.class, "k", true, "k-ref", null)))
                 .hasMessageStartingWith(CODE).hasMessageContaining(RawListD.class.getName() + ".k");
+    }
+
+    @Test
+    @DisplayName("wildcard lower bounds are followed")
+    void wildcardLowerBounds() {
+        for (Class<?> type : List.of(SuperWild.class, SuperWildOnly.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type)).as(type.getSimpleName())
+                    .hasMessageStartingWith(CODE);
+        }
     }
 }
