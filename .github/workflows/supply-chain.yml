@@ -1,0 +1,102 @@
+name: supply-chain
+
+# Dependabot reads declared versions. It cannot see a version a BOM manages
+# (Spring Boot's, for one), so a vulnerable transitive dependency can sit in
+# the resolved tree with no pull request raised. This job builds the resolved
+# tree of the root reactor and of the out-of-reactor load-test/ as CycloneDX
+# SBOMs and scans them against the OSV database (task 257, OD-08-17).
+#
+# Fails on any HIGH or CRITICAL advisory (CVSS 7.0 or higher). Lower and
+# unscored advisories are listed in the log and the job summary but do not
+# fail the run. Ignores live in .github/osv-scanner.toml and need a reason.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  advisory-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-java@v6.1.0
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      # `package` under the release profile writes target/bom.json for the
+      # root and each deployable module (the same SBOMs the release ships).
+      # Tests, javadoc and sources are skipped: only the resolved tree matters.
+      - name: Resolve the reactor tree to SBOMs
+        run: >-
+          ./mvnw -B --no-transfer-progress -Prelease
+          -DskipTests -Dgpg.skip=true -Dmaven.javadoc.skip=true -Dmaven.source.skip=true
+          package
+
+      # load-test/ is outside the reactor and has no parent, so the plugin is
+      # run on it directly, at the version the root pom pins.
+      - name: Resolve the load-test tree to an SBOM
+        run: |
+          plugin="$(./mvnw -B -q -DforceStdout help:evaluate -Dexpression=cyclonedx-plugin.version)"
+          ./mvnw -B --no-transfer-progress -f load-test/pom.xml \
+            "org.cyclonedx:cyclonedx-maven-plugin:${plugin}:makeBom" \
+            -DoutputFormat=json
+
+      - name: Scan for known advisories
+        run: |
+          shopt -s nullglob
+          boms=(target/bom.json data-prism-*/target/bom.json load-test/target/bom.json)
+          if [ "${#boms[@]}" -lt 2 ]; then
+            echo "::error::expected SBOMs for the reactor and load-test/, found ${#boms[@]}"
+            exit 1
+          fi
+          mkdir -p osv
+          failed=0
+          for bom in "${boms[@]}"; do
+            name="$(echo "$bom" | tr '/' '_')"
+            # osv-scanner exits 1 when it finds advisories (judged below) and
+            # higher for a scan error, which must fail the run.
+            rc=0
+            docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:v2.7.0 \
+              scan source --config=/src/.github/osv-scanner.toml \
+              --sbom="$bom" --format=json > "osv/${name}.json" || rc=$?
+            if [ "$rc" -gt 1 ]; then
+              echo "::error::osv-scanner failed on ${bom} (exit ${rc})"
+              failed=1
+              continue
+            fi
+            # max_severity is the highest CVSS score in an advisory group;
+            # empty means unscored.
+            jq -r --arg bom "$bom" '
+              [.results[]?.packages[]? as $p | $p.groups[]?
+               | {pkg: ($p.package.name + "@" + $p.package.version),
+                  ids: (.ids | join(",")), sev: ((.max_severity // "") | tonumber? // -1)}]
+              | .[] | "\(if .sev >= 7 then "FAIL" else "warn" end) \($bom) \(.pkg) \(.ids) cvss=\(.sev)"' \
+              "osv/${name}.json" | tee -a osv/summary.txt
+            if jq -e '[.results[]?.packages[]?.groups[]? | (.max_severity // "" | tonumber? // -1) | select(. >= 7)] | length > 0' \
+                 "osv/${name}.json" > /dev/null; then
+              failed=1
+            fi
+          done
+          {
+            echo "### Advisory scan"
+            echo '```'
+            cat osv/summary.txt 2>/dev/null || echo "no advisories"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::HIGH or CRITICAL advisories (CVSS 7.0 or higher), or a scan error; see above"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: advisory-scan
+          path: osv/
+          if-no-files-found: ignore
