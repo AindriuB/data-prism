@@ -109,21 +109,25 @@ class Q05SubsystemSwitchesSpikeTest {
     }
 
     @Test
-    void aSuppliedConfigKeepsJetAndUserCodeDeploymentAsSuppliedAndPhoneHomeReadsOff() {
+    void aSuppliedConfigHasJetAndUserCodeDeploymentForcedOffAndPhoneHomeReadsOff() {
+        // Superseded by task 221: 0.7 kept both as supplied; PrivacyCluster.embedded now forces them off.
         Config config = everythingOn(Spike.config(Spike.name("q5b"), SpikePorts.consecutive(1), List.of()));
         Spike.requirePhoneHomeOff(config);
         cluster = PrivacyCluster.embedded(config, false);
-        assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "true", "userCodeDeployment", "true",
-                "userCodeNamespaces", "false", "phoneHome", "false", "sql", "HazelcastSqlException"));
+        assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "false", "userCodeDeployment", "false",
+                "userCodeNamespaces", "false", "phoneHome", "false", "sql", "JetDisabledException"));
     }
 
     @Test
-    void aSuppliedInstanceIsLeftAsItWasStartedIncludingACustomProperty() {
+    void aSuppliedInstanceIsLeftAsItWasStartedAndUsingRefusesItWhenUnhardened() {
         supplied = Spike.start(everythingOn(Spike.config(Spike.name("q5c"), SpikePorts.consecutive(1), List.of())));
-        cluster = PrivacyCluster.using(supplied, false);
-        assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "true", "userCodeDeployment", "true",
+        // Still true of raw Hazelcast: nothing changes a running instance, including a custom property.
+        assertThat(reading(supplied)).isEqualTo(Map.of("jet", "true", "userCodeDeployment", "true",
                 "userCodeNamespaces", "false", "phoneHome", "false", "sql", "HazelcastSqlException"));
-        assertThat(cluster.instance().getConfig().getProperty("dataprism.spike.marker")).isEqualTo("kept");
+        assertThat(supplied.getConfig().getProperty("dataprism.spike.marker")).isEqualTo("kept");
+        // Superseded by task 221: 0.7 accepted it; using() now refuses an instance with no filter, Jet or user code.
+        assertThat(Spike.attempt(() -> PrivacyCluster.using(supplied, false))).isEqualTo("PrivacyClusterRefusal");
+        assertThat(supplied.getLifecycleService().isRunning()).isTrue();
     }
 
     @Test

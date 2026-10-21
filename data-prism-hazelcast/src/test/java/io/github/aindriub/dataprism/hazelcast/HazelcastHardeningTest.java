@@ -296,11 +296,13 @@ class HazelcastHardeningTest {
     }
 
     @Test
+    @ExpectsFilterRejection
     void aDisallowedClassFromAKeylessClientIsRefusedOnTheMembershipPath() {
         aDisallowedClassFromAKeylessClientIsRefusedAndTheMemberKeepsServing(membershipMember());
     }
 
     @Test
+    @ExpectsFilterRejection
     void aDisallowedClassFromAKeylessClientIsRefusedOnTheConfigPath() {
         aDisallowedClassFromAKeylessClientIsRefusedAndTheMemberKeepsServing(configMember());
     }
