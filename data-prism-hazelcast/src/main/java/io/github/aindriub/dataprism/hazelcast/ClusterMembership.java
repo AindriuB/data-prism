@@ -248,12 +248,32 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
      * @throws PrivacyClusterRefusal {@code UNSEALED_CLUSTER_STATE}
      */
     static void refuseUnsealedState(HazelcastInstance instance) {
-        // State lives only in running members. A member that is alone has nothing to find, and asking would create
-        // the old maps, empty and unconfigured, under names 0.8 never uses.
+        refuseUnsealedState(instance, false);
+    }
+
+    /**
+     * @param supplied whether the instance was started by somebody else and may already have been in use. A member
+     *                 this class created is empty, so alone it has nothing to find, and asking would create the old
+     *                 maps, empty and unconfigured, under names 0.8 never uses. A supplied instance can hold old
+     *                 entries with no other member left: it is asked even when alone, but only about old maps it
+     *                 already has, so none is created.
+     */
+    static void refuseUnsealedState(HazelcastInstance instance, boolean supplied) {
+        java.util.Collection<String> names = PrivacyCluster.PRE_0_8_MAPS;
         if (instance.getCluster().getMembers().size() < 2) {
-            return;
+            if (!supplied) {
+                return;
+            }
+            try {
+                java.util.Set<String> existing = new java.util.HashSet<>();
+                instance.getDistributedObjects().stream().filter(o -> o instanceof IMap)
+                        .forEach(o -> existing.add(o.getName()));
+                names = PrivacyCluster.PRE_0_8_MAPS.stream().filter(existing::contains).toList();
+            } catch (RuntimeException unreadable) {
+                // The list cannot be read, so every old name is asked about directly.
+            }
         }
-        for (String name : PrivacyCluster.PRE_0_8_MAPS) {
+        for (String name : names) {
             if (holdsEntries(instance, name)) {
                 throw refuse(Code.UNSEALED_CLUSTER_STATE,
                         "the cluster holds state from before 0.8; stop every 0.7 member, then start the 0.8 members");

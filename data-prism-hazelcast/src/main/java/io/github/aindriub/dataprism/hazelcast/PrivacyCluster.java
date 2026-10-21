@@ -473,7 +473,7 @@ public final class PrivacyCluster implements AutoCloseable {
                     "auto-detection and multicast must be disabled on the supplied instance");
         }
         checkInstanceSettings(config);
-        ClusterMembership.refuseUnsealedState(instance);
+        ClusterMembership.refuseUnsealedState(instance, true);
         return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval);
     }
 

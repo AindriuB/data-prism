@@ -226,6 +226,63 @@ class ClusterCutoverTest {
         }
     }
 
+    /** A hardened single-member instance that someone else started, already in use. */
+    private HazelcastInstance suppliedSolo() {
+        int port = FreePorts.consecutive(1);
+        Config config = PrivacyCluster.configure(ClusterMembership
+                .tcpIp(TestMembers.uniqueName("supplied-solo"), List.of("127.0.0.1:" + port)).withPort(port)
+                .withInterface("127.0.0.1").toConfig());
+        return Hazelcast.newHazelcastInstance(config);
+    }
+
+    private void usingRefusesTheOldStateAndLeavesTheInstanceRunning(String map, Object key, Object value) {
+        HazelcastInstance supplied = suppliedSolo();
+        try {
+            supplied.getMap(map).put(key, value);
+            Throwable refused = catchThrowable(() -> PrivacyCluster.using(supplied, false));
+            assertThat(refused).as(map).isInstanceOf(PrivacyClusterRefusal.class);
+            assertThat(((PrivacyClusterRefusal) refused).code()).as(map).isEqualTo(Code.UNSEALED_CLUSTER_STATE);
+            assertThat(supplied.getLifecycleService().isRunning()).isTrue();
+        } finally {
+            supplied.getLifecycleService().terminate();
+        }
+    }
+
+    @Test
+    void aSuppliedSingleMemberInstanceHoldingAnOldPauseEntryIsRefusedAndLeftRunning() {
+        usingRefusesTheOldStateAndLeavesTheInstanceRunning("dataprism.oversight", "tool" + NUL + "search",
+                Boolean.TRUE);
+    }
+
+    @Test
+    void aSuppliedSingleMemberInstanceHoldingAnOldBudgetEntryIsRefusedAndLeftRunning() {
+        usingRefusesTheOldStateAndLeavesTheInstanceRunning("dataprism.budget", "scope-a" + NUL + "subject-a", 3);
+    }
+
+    @Test
+    void aSuppliedSingleMemberInstanceHoldingOnlyTheFenceIsAccepted() {
+        HazelcastInstance supplied = suppliedSolo();
+        try {
+            supplied.getMap("dataprism.oversight").put("all", Boolean.TRUE);
+            assertThat(PrivacyCluster.using(supplied, false).instance()).isSameAs(supplied);
+        } finally {
+            supplied.getLifecycleService().terminate();
+        }
+    }
+
+    @Test
+    void anEmptySuppliedSingleMemberInstanceIsAcceptedAndCreatesNoOldMapProxies() {
+        HazelcastInstance supplied = suppliedSolo();
+        try {
+            supplied.getMap(PrivacyCluster.BUDGET_MAP).put("k", 1);
+            assertThat(PrivacyCluster.using(supplied, false).instance()).isSameAs(supplied);
+            assertThat(supplied.getDistributedObjects().stream().map(o -> o.getName()))
+                    .doesNotContainAnyElementsOf(PrivacyCluster.PRE_0_8_MAPS);
+        } finally {
+            supplied.getLifecycleService().terminate();
+        }
+    }
+
     private static boolean await(long seconds, BooleanSupplier condition) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
         while (System.nanoTime() < deadline) {
