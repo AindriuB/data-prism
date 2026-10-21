@@ -89,7 +89,7 @@ class PacedDispatchTest {
     void latencyIsMeasuredFromTheScheduledTimeNotFromWhenTheCallWasSent() {
         now.set(500 * MILLI);
         McpSchema.CallToolResult result = McpSchema.CallToolResult.builder()
-                .structuredContent(Map.of()).addTextContent("{}").build();
+                .structuredContent(Map.of("sources", Map.of())).addTextContent("{}").build();
 
         CallOutcome outcome = LoadDriver.measuredCall(subject -> {
             now.addAndGet(5 * MILLI);
@@ -115,6 +115,36 @@ class PacedDispatchTest {
     }
 
     @Test
+    void aSlowFailureThatIsNotATimeoutIsTimedWithItsOwnCause() {
+        now.set(500 * MILLI);
+
+        CallOutcome outcome = LoadDriver.measuredCall(subject -> {
+            now.addAndGet(4 * SECOND);
+            throw new IllegalStateException("reset after a long wait");
+        }, now::get, "m-1", 100 * MILLI, Duration.ofSeconds(60));
+
+        assertThat(outcome.completed()).isFalse();
+        assertThat(outcome.timedOut()).isFalse();
+        assertThat(outcome.timed()).isTrue();
+        assertThat(outcome.failureCause()).isEqualTo(FailureCause.OTHER);
+        assertThat(outcome.latencyMicros()).isEqualTo(4_400_000);
+    }
+
+    @Test
+    void aConnectTimeoutIsTimedAndKeepsItsCauseEvenBelowTheCallTimeout() {
+        now.set(500 * MILLI);
+
+        CallOutcome outcome = LoadDriver.measuredCall(subject -> {
+            now.addAndGet(10 * SECOND);
+            throw new RuntimeException("x", new java.net.http.HttpConnectTimeoutException("connect"));
+        }, now::get, "m-1", 100 * MILLI, Duration.ofSeconds(60));
+
+        assertThat(outcome.timed()).isTrue();
+        assertThat(outcome.timedOut()).isTrue();
+        assertThat(outcome.failureCause()).isEqualTo(FailureCause.CONNECT_TIMEOUT);
+    }
+
+    @Test
     void aTimeoutIsTimedFromTheScheduledTime() {
         now.set(500 * MILLI);
 
@@ -126,6 +156,7 @@ class PacedDispatchTest {
         assertThat(outcome.completed()).isFalse();
         assertThat(outcome.timedOut()).isTrue();
         assertThat(outcome.transportFailure()).isEqualTo("IllegalStateException");
+        assertThat(outcome.failureCause()).isEqualTo(FailureCause.READ_TIMEOUT);
         assertThat(outcome.latencyMicros()).isEqualTo(60_400_000);
     }
 

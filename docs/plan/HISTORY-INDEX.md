@@ -20,6 +20,8 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-21 | 218, 219 | 0.8 wave 1b: cluster design and register aligned with OD-215-1 to -10 plus the 0.7 fence decision; Hazelcast capability spike with 13 questions answered in a test package; phone-home incident in the spike recorded | `## 2026-10-21 — 0.8 wave 1b: cluster design aligned, Hazelcast capability spike` |
+| 2026-10-21 | 238, 239, 243, 258 | 0.8 wave 1a: core design documents corrected to OD-200; adapter description SPI and SourceCatalog; ScopeBudget reserve/release/scopeReads; load harness failure scenarios, FailureCause and 24 h soak | `## 2026-10-21 — 0.8 wave 1a: design documents, source catalog, read reservations, soak harness` |
 | 2026-10-20 | 213, 215, 218-231, 238-264 | 0.8 plan: 42 briefs in 14 waves, 5 owner decisions (OD-215-14 resolved by one), 28 delegated to recommended options, none open; 264 may slip to 0.9.0 with an agreed fallback | `## 2026-10-20 — 0.8 planning recorded: 42 briefs and 34 decisions` |
 | 2026-10-20 | 237, 188 | 0.7.0 released: Central, GitHub Release, five multi-arch images, MCP registry; first tag push failed on `cosign-installer@v4` (fixed by PR #139, tag moved); 188's verification run end to end; per-arch digests found to be unsigned | `## 2026-10-20 — 0.7.0 released` |
 | 2026-10-20 | 236 | Operator `ApprovalView` gains an effective `status` (PENDING/APPROVED/REJECTED/CONSUMED/EXPIRED; stored PENDING at or past expiry shown as EXPIRED), D-0.7-OPS-1; makes the multiple-instances retry check work | `## 2026-10-20 — 236: operator approval view carries status` |

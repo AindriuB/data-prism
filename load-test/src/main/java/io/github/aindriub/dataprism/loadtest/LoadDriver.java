@@ -5,15 +5,17 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 
-import java.net.http.HttpRequest;
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 /**
  * Drives {@code get_entity_context} through the MCP Java SDK client over streamable HTTP, the protocol path
@@ -26,22 +28,60 @@ import java.util.function.LongSupplier;
  */
 final class LoadDriver {
 
-    record Run(ResultAggregator.Summary summary, Duration elapsed, long notDispatched) { }
+    /**
+     * @param elapsed   the wall time of the measured phase, in-flight drain included
+     * @param serverExitCode the server's exit code if it died during the run (which was then stopped), otherwise null
+     * @param measured  the window throughput is divided by: {@code elapsed}, but never more than the scenario's
+     *                  duration, so the calls still in flight at the deadline do not stretch it
+     */
+    record Run(ResultAggregator.Summary summary, Duration elapsed, long notDispatched, Duration measured,
+               long tokenReissues, long scopeRotations, Integer serverExitCode) { }
+
+    /** The longest the client waits to open a connection. */
+    static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+
+    /** The longest the closing of every session may take, in total. */
+    static final Duration CLOSE_BOUND = Duration.ofSeconds(30);
+
+    /** How often the server child is checked while a run drives it. */
+    static final Duration SERVER_POLL = Duration.ofSeconds(1);
+
+    /** A failure that took at least this long is timed even though it was not a timeout. */
+    static final Duration SLOW_FAILURE = Duration.ofSeconds(1);
 
     private final String baseUrl;
-    private final String token;
+    private final CredentialRotation credentials;
     private final Scenario scenario;
 
-    LoadDriver(String baseUrl, String token, Scenario scenario) {
+    private final Supplier<Integer> serverExit;
+    private volatile ServerWatch watch;
+
+    LoadDriver(String baseUrl, CredentialRotation credentials, Scenario scenario) {
+        this(baseUrl, credentials, scenario, () -> null);
+    }
+
+    /** @param serverExit the server's exit code, or null while it is alive; polled to stop a run whose server died */
+    LoadDriver(String baseUrl, CredentialRotation credentials, Scenario scenario, Supplier<Integer> serverExit) {
         this.baseUrl = baseUrl;
-        this.token = token;
+        this.credentials = credentials;
         this.scenario = scenario;
+        this.serverExit = serverExit;
+    }
+
+    static HttpClient.Builder boundConnect(HttpClient.Builder builder) {
+        return builder.connectTimeout(CONNECT_TIMEOUT);
+    }
+
+    /** The subject call {@code index} asks for: a new one each time, or one of {@code pool} when a pool is set. */
+    static String subjectFor(String prefix, long index, int pool) {
+        return String.format("%s-%08d", prefix, pool > 0 ? index % pool : index);
     }
 
     Run run() throws Exception {
         Scenario.Load load = scenario.load();
         List<McpSyncClient> clients = new ArrayList<>();
-        try {
+        try (ServerWatch serverWatch = ServerWatch.start(serverExit, SERVER_POLL)) {
+            watch = serverWatch;
             for (int i = 0; i < load.concurrency(); i++) {
                 clients.add(newClient(load));
             }
@@ -53,28 +93,55 @@ final class LoadDriver {
             long notDispatched = phase(clients, load.calls(), load.durationSeconds(), load.ratePerSecond(),
                     aggregator, "m");
             Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
-            return new Run(aggregator.summary(elapsed), elapsed, notDispatched);
+            Duration measured = load.durationSeconds() > 0
+                    ? elapsed.compareTo(Duration.ofSeconds(load.durationSeconds())) > 0
+                            ? Duration.ofSeconds(load.durationSeconds()) : elapsed
+                    : elapsed;
+            return new Run(aggregator.summary(measured), elapsed, notDispatched, measured,
+                    credentials.tokenReissues(), credentials.scopeRotations(), serverWatch.exitCode());
         } finally {
-            clients.forEach(client -> {
+            // A session that will not close must not hold the run (or the result file) up.
+            Bounded.run(() -> clients.forEach(client -> {
                 try {
                     client.closeGracefully();
                 } catch (RuntimeException ignored) {
                     // Closing a session the run is finished with; nothing to report.
                 }
-            });
+            }), CLOSE_BOUND);
         }
     }
 
     private McpSyncClient newClient(Scenario.Load load) {
+        return openClient(baseUrl, credentials::token, Duration.ofSeconds(load.callTimeoutSeconds()));
+    }
+
+    /**
+     * An initialised MCP session. The token is read on every request, so one replaced during a long run is the
+     * one that is sent. A session whose initialisation fails is closed before the failure is rethrown.
+     */
+    static McpSyncClient openClient(String baseUrl, java.util.function.Supplier<String> token, Duration timeout) {
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(baseUrl)
                 .endpoint("/mcp")
-                .requestBuilder(HttpRequest.newBuilder().header("Authorization", "Bearer " + token))
+                .customizeClient(LoadDriver::boundConnect)
+                .httpRequestCustomizer((request, method, uri, body, context) ->
+                        request.setHeader("Authorization", "Bearer " + token.get()))
                 .build();
         McpSyncClient client = McpClient.sync(transport)
                 .clientInfo(new McpSchema.Implementation("data-prism-load-test", "1.0.0"))
-                .requestTimeout(Duration.ofSeconds(load.callTimeoutSeconds()))
+                .requestTimeout(timeout)
                 .build();
-        client.initialize();
+        try {
+            client.initialize();
+        } catch (RuntimeException failed) {
+            Bounded.run(() -> {
+                try {
+                    client.close();
+                } catch (RuntimeException ignored) {
+                    // The initialisation failure is the one to report.
+                }
+            }, CLOSE_BOUND);
+            throw failed;
+        }
         return client;
     }
 
@@ -85,15 +152,18 @@ final class LoadDriver {
         AtomicLong dispatched = new AtomicLong();
         long start = System.nanoTime();
         long end = durationSeconds > 0 ? start + Duration.ofSeconds(durationSeconds).toNanos() : Long.MAX_VALUE;
+        int subjectPool = scenario.load().subjectPool();
         List<Thread> workers = new ArrayList<>();
         for (McpSyncClient client : clients) {
             Thread worker = new Thread(() -> workerLoop(next, dispatched, calls, start, ratePerSecond,
                     end, System::nanoTime, LockSupport::parkNanos, (index, due) -> {
-                CallOutcome outcome = call(client, String.format("%s-%08d", subjectPrefix, index), due);
+                // The scope is read before the call: a rotation landing mid-call can mislabel that one call.
+                int scope = credentials.scopeNumber();
+                CallOutcome outcome = call(client, subjectFor(subjectPrefix, index, subjectPool), due);
                 if (recordTo != null) {
-                    recordTo.record(outcome);
+                    recordTo.record(outcome, System.nanoTime() >= end, scope);
                 }
-            }), "load-worker");
+            }, () -> watch != null && watch.halted()), "load-worker");
             workers.add(worker);
             worker.start();
         }
@@ -116,7 +186,14 @@ final class LoadDriver {
      */
     static void workerLoop(AtomicLong next, AtomicLong dispatched, int calls, long start, int ratePerSecond,
                            long end, LongSupplier clock, LongConsumer park, Dispatch dispatch) {
-        while (true) {
+        workerLoop(next, dispatched, calls, start, ratePerSecond, end, clock, park, dispatch, () -> false);
+    }
+
+    /** As above, and a worker stops at once, before its next call, when {@code halted} turns true. */
+    static void workerLoop(AtomicLong next, AtomicLong dispatched, int calls, long start, int ratePerSecond,
+                           long end, LongSupplier clock, LongConsumer park, Dispatch dispatch,
+                           BooleanSupplier halted) {
+        while (!halted.getAsBoolean()) {
             long index = next.getAndIncrement();
             if (calls > 0 && index >= calls) {
                 return;
@@ -129,7 +206,7 @@ final class LoadDriver {
             // return at once every time, so an interrupted worker stops instead of spinning.
             long wait;
             while ((wait = due - clock.getAsLong()) > 0) {
-                if (Thread.currentThread().isInterrupted()) {
+                if (Thread.currentThread().isInterrupted() || halted.getAsBoolean()) {
                     return;
                 }
                 park.accept(wait);
@@ -171,7 +248,8 @@ final class LoadDriver {
 
     /**
      * Makes one call and times it from {@code measuredFrom} (its scheduled time). A failure is timed only if it
-     * was a timeout: a {@code TimeoutException} in the cause chain, or a wait of at least {@code callTimeout}.
+     * was a timeout (a timeout cause in the chain, or a wait of at least {@code callTimeout}) or slow (a wait of at
+     * least {@link #SLOW_FAILURE}); a quick failure is counted but not timed. Every failure carries its cause.
      */
     static CallOutcome measuredCall(ToolCall toolCall, LongSupplier clock, String subject, long measuredFrom,
                                     Duration callTimeout) {
@@ -181,19 +259,19 @@ final class LoadDriver {
             return ResponseClassifier.classify(result, micros(clock, measuredFrom));
         } catch (RuntimeException failure) {
             String kind = failure.getClass().getSimpleName();
-            boolean timedOut = hasTimeoutCause(failure) || clock.getAsLong() - sent >= callTimeout.toNanos();
-            return timedOut ? CallOutcome.timeout(kind, micros(clock, measuredFrom))
-                    : CallOutcome.transportFailure(kind);
-        }
-    }
-
-    private static boolean hasTimeoutCause(Throwable failure) {
-        for (Throwable t = failure; t != null; t = t.getCause() == t ? null : t.getCause()) {
-            if (t instanceof java.util.concurrent.TimeoutException) {
-                return true;
+            long waited = clock.getAsLong() - sent;
+            FailureCause cause = FailureCause.of(failure);
+            boolean timedOut = cause.isTimeout() || waited >= callTimeout.toNanos();
+            if (timedOut && cause == FailureCause.OTHER) {
+                cause = FailureCause.READ_TIMEOUT;
             }
+            if (timedOut) {
+                return CallOutcome.timeout(kind, cause, micros(clock, measuredFrom));
+            }
+            return waited >= SLOW_FAILURE.toNanos()
+                    ? CallOutcome.slowFailure(kind, cause, micros(clock, measuredFrom))
+                    : CallOutcome.transportFailure(kind, cause);
         }
-        return false;
     }
 
     private static long micros(LongSupplier clock, long measuredFrom) {

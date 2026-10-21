@@ -51,3 +51,23 @@
 - Use only invented, neutral example identifiers. No real person, organisation, workplace or real-world domain.
 - Say the product "supports" a requirement, never that it is "compliant".
 - No Hazelcast Enterprise feature (D-0.4.1-A).
+
+## Outcome (2026-10-21, 0.8 wave 1)
+Merged onto `record/0.8-wave1a` (task branch head 8161b34f; tester PASS with `mkdocs --strict` at ae557384, later commits touch only `docs/plan/`, which mkdocs excludes; reviewer APPROVE at ed8784bf; the final two-line wording commit 8161b34f was checked by the coordinator). `cluster-security.md` and `contract-register.md` are aligned with OD-215-1 to OD-215-10, so no implementer of 220 to 231 has to choose a name, code or label. Scope was extended with the OD-200-8 register rows so the counts agree; the register now has 185 rows and 266 names.
+
+Coordinator decisions, 2026-10-21:
+
+- The lock key is the keyed map key of the entry it guards. There are no lock subkeys and no lock label.
+- Every compare-and-set on a lockable key runs under a bounded `tryLock`, because spike Q10 showed `replace(k,old,new)` and `remove(k,v)` wait without bound on a locked key.
+- OD-215-16: pause is allowed and resume is refused while the member is not serving.
+- An unverified member produces no audit event.
+- The consumed-tombstone map has no size eviction. Entries expire by `expiresAt` plus the clock-skew tolerance, merge as a union, and use the approval quorum and backups.
+- The serialization allowlist includes every Data Prism processor and merge-policy class, and T12 enumerates them.
+- A KCV mismatch makes health DOWN.
+- Naming is pinned: `.` separator, unpadded base64url, and the short names equal the full `.s1` names.
+- OD-215-13: only the sweeper re-seals.
+- The `UNSEALED_CLUSTER_STATE` check runs before the starting member writes its own card.
+- The member card uses the standard envelope, with the lease expiry in plaintext.
+- New metric `CLUSTER_LEGACY_ENTRIES`.
+
+Owner decision, 2026-10-21 (extends OD-215-1): every serving 0.8 member fences 0.7 members by keeping key `all` = TRUE in `dataprism.oversight`, re-asserted at each pause-lease refresh. Verified against v0.7.0: `ToolAdmission` checks `allPaused()` uncached on every call. `UNSEALED_CLUSTER_STATE` refuses only when no other verified 0.8 member is present, and ignores the fence. Afterwards legacy entries are counted and WARN-logged. Residuals: anyone on the network can delete the fence until it is re-asserted, and plain-Java embedders using `ToolAdmission.none()` are not fenced.

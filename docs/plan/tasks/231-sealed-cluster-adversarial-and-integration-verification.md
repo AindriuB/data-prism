@@ -21,6 +21,7 @@ Prove, across real servers and not only inside the hazelcast module, that the se
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/cluster/ClusterMembers.java, MultiMemberOperatorTest.java: how real multi-member servers start (read only).
 - data-prism-integration-tests/.../PiiLogScanTest.java: the scan shape. Core task 255 adds scenarios to the same file; this task adds after it.
 - The Outcomes of 219 to 230.
+- From 218/219 (2026-10-21): Add fence tests (a 0.7-format member reads paused) and the T12 enumeration test.
 
 ## Acceptance
 - [ ] T13, in `MixedFormatTest`: a fixture writing 0.7-format entries into the `.s1` maps and one writing `dps2` envelopes into a cluster of 0.8 members; each is ignored per structure (identity recomputes, re-identification empty, budget and caller rate refuse, approval not found, pause treated as not fresh) and counted. A fixture writing 0.7 entries into the old map names after start does not change any 0.8 answer.

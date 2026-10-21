@@ -33,6 +33,11 @@ final class ResultWriter {
     static Map<String, Object> document(Scenario scenario, Instant startedAt, String commit, boolean dirty,
                                         LoadDriver.Run run) {
         ResultAggregator.Summary s = run.summary();
+        long causes = s.failureCauses().values().stream().mapToLong(Long::longValue).sum();
+        if (causes != s.transportFailures()) {
+            throw new IllegalStateException("failure causes (" + causes + ") do not add up to the failed calls ("
+                    + s.transportFailures() + "); the result would be wrong");
+        }
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("scenario", scenario.name());
         doc.put("startedAt", startedAt.toString());
@@ -47,6 +52,8 @@ final class ResultWriter {
         calls.put("completed", s.completed());
         calls.put("transportFailures", s.transportFailures());
         calls.put("transportFailureKinds", s.transportFailureKinds());
+        calls.put("failureCauses", s.failureCauses());
+        calls.put("completedAfterDeadline", s.completedAfterDeadline());
         calls.put("notDispatched", run.notDispatched());
         doc.put("calls", calls);
         Map<String, Object> latency = new LinkedHashMap<>();
@@ -58,9 +65,21 @@ final class ResultWriter {
         latency.put("clamped", s.clamped());
         doc.put("latencyMs", latency);
         doc.put("elapsedSeconds", run.elapsed().toNanos() / 1e9);
+        doc.put("measuredSeconds", run.measured().toNanos() / 1e9);
+        Map<String, Object> credentials = new LinkedHashMap<>();
+        credentials.put("tokenReissues", run.tokenReissues());
+        credentials.put("scopeRotations", run.scopeRotations());
+        doc.put("credentials", credentials);
+        Map<String, Object> server = new LinkedHashMap<>();
+        server.put("diedDuringRun", run.serverExitCode() != null);
+        if (run.serverExitCode() != null) {
+            server.put("exitCode", run.serverExitCode());
+        }
+        doc.put("server", server);
         doc.put("throughputPerSecond", s.throughputPerSecond());
         doc.put("refusalCodes", s.refusalCodes());
         doc.put("sourceStatusTotals", s.totalStatus());
+        doc.put("sourcesNotAnswered", s.sourcesNotAnswered());
         doc.put("perSourceStatus", s.perSourceStatus());
         return doc;
     }

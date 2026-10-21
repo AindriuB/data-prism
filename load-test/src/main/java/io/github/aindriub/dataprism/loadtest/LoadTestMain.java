@@ -19,21 +19,50 @@ public final class LoadTestMain {
 
     private LoadTestMain() { }
 
-    public static void main(String[] args) throws Exception {
+    static final String USAGE = "usage: LoadTestMain <scenario.json> [--repo-root <dir>] [--results-dir <dir>]";
+
+    record Arguments(Path scenarioFile, Path repoRoot, Path resultsDir) { }
+
+    /** @throws IllegalArgumentException with a message naming the problem when the arguments are not usable */
+    static Arguments parse(String[] args) {
         Path scenarioFile = null;
         Path repoRoot = Path.of("..").toAbsolutePath().normalize();
         Path resultsDir = Path.of("results").toAbsolutePath();
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
-                case "--repo-root" -> repoRoot = Path.of(args[++i]).toAbsolutePath().normalize();
-                case "--results-dir" -> resultsDir = Path.of(args[++i]).toAbsolutePath();
+                case "--repo-root", "--results-dir" -> {
+                    if (i + 1 >= args.length) {
+                        throw new IllegalArgumentException(args[i] + " needs a directory");
+                    }
+                    Path value = Path.of(args[++i]).toAbsolutePath();
+                    if (args[i - 1].equals("--repo-root")) {
+                        repoRoot = value.normalize();
+                    } else {
+                        resultsDir = value;
+                    }
+                }
                 default -> scenarioFile = Path.of(args[i]);
             }
         }
         if (scenarioFile == null) {
-            System.err.println("usage: LoadTestMain <scenario.json> [--repo-root <dir>] [--results-dir <dir>]");
-            System.exit(2);
+            throw new IllegalArgumentException("no scenario file given");
         }
+        return new Arguments(scenarioFile, repoRoot, resultsDir);
+    }
+
+    public static void main(String[] args) throws Exception {
+        Arguments parsed;
+        try {
+            parsed = parse(args);
+        } catch (IllegalArgumentException usage) {
+            System.err.println(usage.getMessage());
+            System.err.println(USAGE);
+            System.exit(2);
+            return;
+        }
+        Path scenarioFile = parsed.scenarioFile();
+        Path repoRoot = parsed.repoRoot();
+        Path resultsDir = parsed.resultsDir();
         Scenario scenario = Scenario.load(scenarioFile);
         List<SourceDefinition> sources = SourceGenerator.generate(scenario);
         Path workDir = Files.createTempDirectory("data-prism-load-test-");
@@ -50,11 +79,20 @@ public final class LoadTestMain {
             System.out.println("scenario " + scenario.name() + ": " + sources.size() + " sources, starting server");
             try (ServerProcess server = ServerProcess.start(repoRoot, workDir, resultsDir, catalogue, issuer, scenario, cleanup)) {
                 System.out.println("server healthy; driving " + scenario.load());
-                String token = issuer.mintToken(Duration.ofHours(12));
-                LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), token, scenario).run();
+                CredentialRotation credentials = new CredentialRotation(issuer::mintToken,
+                        TokenIssuer.TOKEN_LIFETIME, ServerProcess.SCOPE_LIFETIME, System::nanoTime);
+                LoadDriver.Run run = new LoadDriver(server.mcpBaseUrl(), credentials, scenario,
+                        server::exitCode).run();
                 Path file = ResultWriter.write(resultsDir, scenario, startedAt, git(repoRoot, "rev-parse", "HEAD"),
                         !git(repoRoot, "status", "--porcelain").isBlank(), run);
                 System.out.println("wrote " + file);
+                if (run.serverExitCode() != null) {
+                    Path kept = server.keepLog();
+                    throw new IllegalStateException("the server exited with " + run.serverExitCode()
+                            + " during the run, which was stopped; the result so far is " + file
+                            + (kept == null ? "" : " and the server log is kept at " + kept)
+                            + "\nserver console tail:\n" + server.consoleTail(40));
+                }
             }
         } finally {
             cleanup.run();

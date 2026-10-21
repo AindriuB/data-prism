@@ -26,6 +26,7 @@ Budget and caller-rate counts become sealed, and a member that deletes or replay
 - docs/plan/tasks/retired/202-*.md, "For 0.8": budget and rate maps still have the default merge policy.
 - Task 219 answers 8 (processor re-run on backup and retry) and 9 (member-local state in a merge policy). Task 223 `SealedWrites`, computing shape: a retried counter may over-count, never under-count.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/limits/InMemoryScopeBudget.java: the reference semantics.
+- From 218/219 (2026-10-21): OD-215-11 answer: a merge policy can open values (Q9), so "keep the higher count" is available. The earlier wave-1 follow-ups in PLAN.md also apply.
 
 ## Required approach
 - Counter values are sealed with their canonical parts and window or lease end. Every change is one computing processor from `SealedWrites`: open, check, add, seal once on the primary, copy bytes to the backup.

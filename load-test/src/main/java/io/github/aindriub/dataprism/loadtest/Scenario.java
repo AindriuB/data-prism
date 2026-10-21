@@ -23,8 +23,13 @@ import java.util.Map;
  * @param limits        the {@code dataprism.limits.*} the server is started with; omitted keys take the
  *                      framework default, except {@code max-sources}, which takes {@code sources}
  * @param seed          seeds the sources' latency sampling, so a run's source behaviour is reproducible
+ * @param slowSources   how many of the {@code sources} (the last ones) answer within {@code slowLatency} instead
+ *                      of {@code sourceLatency}; 0 means none. Lets a scenario time out some sources and not all
+ *                      (a call in which every source fails is refused, and reports no per-source statuses)
+ * @param slowLatency   the band the slow sources answer within; required when {@code slowSources} is above 0
  */
-public record Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed) {
+public record Scenario(String name, int sources, Latency sourceLatency, Load load, Limits limits, long seed,
+                       int slowSources, Latency slowLatency) {
 
     /** Uniform latency band, in milliseconds, each source responds within. */
     public record Latency(int minMs, int maxMs) { }
@@ -36,11 +41,18 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
      * @param ratePerSecond  target start rate across all callers; 0 means unpaced
      * @param durationSeconds measured run length; 0 means run for {@code calls}
      * @param callTimeoutSeconds how long the client waits for one call before counting a transport failure
+     * @param subjectPool    0 asks for a different subject on every call; above 0 the calls cycle through that many
+     *                       subjects, so the per-subject read budget is reached
      */
     public record Load(int concurrency, int calls, int warmupCalls, int ratePerSecond, int durationSeconds,
-                       int callTimeoutSeconds) {
+                       int callTimeoutSeconds, int subjectPool) {
         public Load {
             callTimeoutSeconds = callTimeoutSeconds <= 0 ? 30 : callTimeoutSeconds;
+            if (callTimeoutSeconds < LoadDriver.CONNECT_TIMEOUT.toSeconds()) {
+                // Below the connect timeout a connect timeout could never be told from a read timeout.
+                throw new IllegalArgumentException("scenario load.callTimeoutSeconds must be at least the "
+                        + LoadDriver.CONNECT_TIMEOUT.toSeconds() + " s connect timeout");
+            }
         }
     }
 
@@ -79,6 +91,9 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         }
     }
 
+    /** The longest run: past it the credential rotation has not been shown to hold. */
+    public static final int MAX_DURATION_SECONDS = 24 * 60 * 60;
+
     private static final java.util.regex.Pattern SAFE_NAME = java.util.regex.Pattern.compile("[a-z0-9][a-z0-9-]*");
 
     public Scenario {
@@ -92,14 +107,25 @@ public record Scenario(String name, int sources, Latency sourceLatency, Load loa
         if (sourceLatency == null) {
             sourceLatency = new Latency(5, 25);
         }
+        if (slowSources < 0 || slowSources > sources) {
+            throw new IllegalArgumentException("scenario slowSources must be between 0 and sources");
+        }
+        if (slowSources > 0 && slowLatency == null) {
+            throw new IllegalArgumentException("scenario slowSources needs a slowLatency band");
+        }
         if (load == null || load.concurrency() <= 0) {
             throw new IllegalArgumentException("scenario load needs a concurrency of at least 1");
         }
         for (var field : Map.of("calls", load.calls(), "warmupCalls", load.warmupCalls(),
-                "ratePerSecond", load.ratePerSecond(), "durationSeconds", load.durationSeconds()).entrySet()) {
+                "ratePerSecond", load.ratePerSecond(), "durationSeconds", load.durationSeconds(),
+                "subjectPool", load.subjectPool()).entrySet()) {
             if (field.getValue() < 0) {
                 throw new IllegalArgumentException("scenario load." + field.getKey() + " must not be negative");
             }
+        }
+        if (load.durationSeconds() > MAX_DURATION_SECONDS) {
+            throw new IllegalArgumentException("scenario load.durationSeconds must not exceed 24 hours ("
+                    + MAX_DURATION_SECONDS + " s)");
         }
         if (load.calls() <= 0 && load.durationSeconds() <= 0) {
             throw new IllegalArgumentException("scenario load needs calls or durationSeconds");

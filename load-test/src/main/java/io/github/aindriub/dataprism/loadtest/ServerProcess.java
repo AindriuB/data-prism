@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -26,16 +27,21 @@ import java.util.stream.Stream;
  */
 final class ServerProcess implements AutoCloseable {
 
+    /** The privacy scope lifetime the server is started with; a long run rotates its scope before this ends. */
+    static final Duration SCOPE_LIFETIME = Duration.ofHours(8);
+
     static final String HMAC_ENV = "DATAPRISM_LOADTEST_HMAC_KEY";
 
     private final Process process;
     private final int port;
     private final Path logFile;
+    private final Path consoleFile;
 
     private final Path resultsDir;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    private ServerProcess(Process process, int port, Path logFile, Path resultsDir) {
+    private ServerProcess(Process process, int port, Path logFile, Path consoleFile, Path resultsDir) {
+        this.consoleFile = consoleFile;
         this.resultsDir = resultsDir;
         this.process = process;
         this.port = port;
@@ -72,7 +78,7 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
                 "--dataprism.identity.resolver=pass-through",
                 "--dataprism.privacy.profile=DEFAULT",
-                "--dataprism.privacy.scope-lifetime=8h",
+                "--dataprism.privacy.scope-lifetime=" + SCOPE_LIFETIME.toHours() + "h",
                 "--dataprism.privacy.hmac-key.key-id=loadtest-v1",
                 "--dataprism.privacy.hmac-key.environment-variable=" + HMAC_ENV,
                 "--dataprism.audit.sink=slf4j",
@@ -80,9 +86,14 @@ final class ServerProcess implements AutoCloseable {
                 "--dataprism.audit.entity-types[0]=" + SourceGenerator.ENTITY_TYPE,
                 "--dataprism.metrics.sink=micrometer",
                 "--dataprism.hazelcast.topology=single-node"));
+        command.addAll(loggingArguments(log));
         scenario.limits().asProperties().forEach((key, value) -> command.add("--" + key + "=" + value));
 
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile());
+        // The JVM's own stdout and stderr (an uncaught exception, an OutOfMemoryError) go to a file of their own:
+        // the server's logger owns and rolls server.log, and must never share a path with this redirect.
+        Path console = consoleFileOf(log);
+        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.appendTo(console.toFile()));
         byte[] key = new byte[48];
         new SecureRandom().nextBytes(key);
         builder.environment().put(HMAC_ENV, Base64.getEncoder().encodeToString(key));
@@ -100,7 +111,7 @@ final class ServerProcess implements AutoCloseable {
                 guard.failed();
             }
         }
-        ServerProcess server = new ServerProcess(process, port, log, resultsDir);
+        ServerProcess server = new ServerProcess(process, port, log, console, resultsDir);
         cleanup.track(server);
         try {
             server.awaitHealthy(Duration.ofSeconds(180));
@@ -176,11 +187,77 @@ final class ServerProcess implements AutoCloseable {
         return logFile;
     }
 
-    /** Copies the server log out of the temp dir (deleted on exit) to the git-ignored results dir. */
-    private Path keepLog() {
+    /**
+     * The server's own log, capped so a 24 h soak cannot fill the disk: a rolling file of at most 10 MB per file,
+     * 2 rolled files and 30 MB in all, so the newest output (the tail) is what survives. Its console output is
+     * switched off ({@code logging.threshold.console=OFF}; an empty console pattern makes Logback report a status
+     * error), so the console file holds only what the JVM itself prints, such as a crash.
+     */
+    static List<String> loggingArguments(Path log) {
+        return List.of(
+                "--logging.file.name=" + log,
+                "--logging.threshold.console=OFF",
+                "--logging.logback.rollingpolicy.max-file-size=10MB",
+                "--logging.logback.rollingpolicy.max-history=2",
+                "--logging.logback.rollingpolicy.total-size-cap=30MB");
+    }
+
+    /** Where the child's stdout and stderr go: beside the server log, never the same file. */
+    static Path consoleFileOf(Path log) {
+        return log.resolveSibling("server-console.log");
+    }
+
+    /** The last {@code lines} lines of the child's stdout and stderr, or a note when there are none. */
+    String consoleTail(int lines) {
+        try {
+            List<String> all = Files.readAllLines(consoleFile);
+            return all.isEmpty() ? "(console empty)"
+                    : String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+        } catch (IOException | RuntimeException unreadable) {
+            return "(console unreadable)";
+        }
+    }
+
+    /** The live log and the files rolled from it ({@code server.log.*}). */
+    static List<Path> logFilesOf(Path log) {
+        try (Stream<Path> siblings = Files.list(log.toAbsolutePath().getParent())) {
+            String name = log.getFileName().toString();
+            return siblings.filter(p -> p.getFileName().toString().equals(name)
+                    || p.getFileName().toString().startsWith(name + ".")).sorted().toList();
+        } catch (IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    static ServerProcess forTest(Process process, Path logFile, Path resultsDir) {
+        return new ServerProcess(process, 0, logFile, consoleFileOf(logFile), resultsDir);
+    }
+
+    /** The exit code if the server has exited, otherwise {@code null}. */
+    Integer exitCode() {
+        return process.isAlive() ? null : process.exitValue();
+    }
+
+    /**
+     * Copies the server log (live and rolled files) out of the temp dir (deleted on exit) to the git-ignored
+     * results dir. Returns the copy of the live log, or null if there is none.
+     */
+    Path keepLog() {
         try {
             Files.createDirectories(resultsDir);
-            return Files.copy(logFile, resultsDir.resolve("server-failure-" + System.currentTimeMillis() + ".log"));
+            String stamp = String.valueOf(System.currentTimeMillis());
+            Path kept = null;
+            for (Path file : logFilesOf(logFile)) {
+                String suffix = file.getFileName().toString().substring(logFile.getFileName().toString().length());
+                Path copy = Files.copy(file, resultsDir.resolve("server-failure-" + stamp + ".log" + suffix));
+                if (suffix.isEmpty()) {
+                    kept = copy;
+                }
+            }
+            if (Files.exists(consoleFile)) {
+                Files.copy(consoleFile, resultsDir.resolve("server-failure-" + stamp + ".console.log"));
+            }
+            return kept;
         } catch (IOException | RuntimeException e) {
             return null;
         }
@@ -211,18 +288,40 @@ final class ServerProcess implements AutoCloseable {
         throw new IOException("server not healthy within " + timeout + "; see " + logFile + "\n" + tail(40));
     }
 
-    /** Whether the server log says the web server started on {@code port}. */
+    private static final Pattern STARTED = Pattern.compile("started on ports?\\s+([^\\n]*)");
+    private static final Pattern CONNECTOR_PORT = Pattern.compile("(\\d+)\\s*\\(");
+
+    /**
+     * Whether the server log says the web server started on {@code port}. Spring Boot lists every connector on
+     * one line ({@code started on ports 8443 (https), 41234 (http)}), so a server with more than one connector
+     * is matched on any of them.
+     */
     static boolean logShowsPort(Path log, int port) {
         try {
-            return Pattern.compile("started on port\\s+" + port + "\\b").matcher(Files.readString(log)).find();
+            Matcher started = STARTED.matcher(Files.readString(log));
+            while (started.find()) {
+                Matcher connector = CONNECTOR_PORT.matcher(started.group(1));
+                while (connector.find()) {
+                    if (connector.group(1).equals(String.valueOf(port))) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         } catch (IOException | RuntimeException unreadable) {
             return false;
         }
     }
 
-    private String tail(int lines) throws IOException {
-        List<String> all = Files.readAllLines(logFile);
-        return String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+    private String tail(int lines) {
+        String log;
+        try {
+            List<String> all = Files.readAllLines(logFile);
+            log = String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+        } catch (IOException | RuntimeException unreadable) {
+            log = "(log unreadable)";
+        }
+        return log + "\n--- console (stdout and stderr) ---\n" + consoleTail(lines);
     }
 
     @Override
