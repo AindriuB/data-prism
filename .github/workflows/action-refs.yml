@@ -1,0 +1,25 @@
+name: action-refs
+
+# Every `uses:` reference must be a full version tag or a SHA and must resolve
+# (task 257). Runs on every pull request that touches .github/, and on main.
+on:
+  push:
+    branches: ["main"]
+    paths: [".github/**"]
+  pull_request:
+    paths: [".github/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  action-refs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Checker rejects a bad reference
+        run: .github/scripts/check-action-refs.sh --self-test
+
+      - name: Every action reference is pinned and resolves
+        run: .github/scripts/check-action-refs.sh

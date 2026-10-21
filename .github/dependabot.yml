@@ -20,6 +20,16 @@ updates:
       - dependency-name: "org.apache.maven:apache-maven"
         versions: [">= 3.10"]
 
+  # load-test/ is outside the reactor (no parent), so the root entry above
+  # does not see it.
+  - package-ecosystem: "maven"
+    directory: "/load-test"
+    schedule:
+      interval: "weekly"
+    groups:
+      maven-load-test:
+        patterns: ["*"]
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -54,3 +64,16 @@ updates:
       # Maven 4 is a major (4.x tags), not a Java change.
       - dependency-name: "maven"
         update-types: ["version-update:semver-major"]
+
+  # Each requirements.txt is its own directory for Dependabot.
+  - package-ecosystem: "pip"
+    directories:
+      - "/docs-site"
+      - "/docs-site/logo"
+      - "/docs-site/social-card"
+      - "/examples/correlation-header"
+    schedule:
+      interval: "weekly"
+    groups:
+      pip:
+        patterns: ["*"]
