@@ -254,6 +254,60 @@ class ChainableFieldsTest {
     record HasCreator(@NonSensitive(reason = "structure") Creator c) {
     }
 
+    @LlmExposedModel
+    record ExtraCtor(@InternalIdentifier String id) {
+        ExtraCtor(@Chainable(keyNamespace = "x") int n) {
+            this(String.valueOf(n));
+        }
+    }
+
+    @LlmExposedModel
+    record ExplicitCanonical(@InternalIdentifier String id) {
+        ExplicitCanonical(@Chainable(keyNamespace = "x") String id) {
+            this.id = id;
+        }
+    }
+
+    @SensitiveObject
+    static class WithSetter {
+        @InternalIdentifier
+        String id;
+
+        public void setId(@Chainable(keyNamespace = "x") String id) {
+            this.id = id;
+        }
+    }
+
+    static class SuperSetter {
+        public void setX(@Chainable(keyNamespace = "x") String x) {
+        }
+    }
+
+    @SensitiveObject
+    static class ChildOfSetter extends SuperSetter {
+        @InternalIdentifier
+        String id;
+    }
+
+    @SensitiveObject
+    record Deep(@InternalIdentifier @Chainable(keyNamespace = "x") String id) {
+    }
+
+    @LlmExposedModel
+    record NestedLists(@NonSensitive(reason = "structure") List<List<Deep>> deep) {
+    }
+
+    @LlmExposedModel
+    record OptionalList(@NonSensitive(reason = "structure") java.util.Optional<List<Deep>> deep) {
+    }
+
+    @LlmExposedModel
+    record ReturnsDeep(@InternalIdentifier String id) {
+        Deep other() {
+            return null;
+        }
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -482,5 +536,41 @@ class ChainableFieldsTest {
     void constructorParameter() {
         assertThatThrownBy(() -> ChainableFields.of(HasCreator.class))
                 .hasMessageStartingWith(CODE).hasMessageContaining(Creator.class.getName());
+    }
+
+    @Test
+    @DisplayName("every unconsumed @Chainable occurrence in the reachable graph is refused")
+    void exhaustive() {
+        assertThatThrownBy(() -> ChainableFields.of(ExtraCtor.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(ExtraCtor.class.getName());
+        assertThatThrownBy(() -> ChainableFields.of(ExplicitCanonical.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(ExplicitCanonical.class.getName());
+        assertThatThrownBy(() -> ChainableFields.of(WithSetter.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(WithSetter.class.getName() + ".setId");
+        assertThatThrownBy(() -> ChainableFields.of(ChildOfSetter.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(SuperSetter.class.getName() + ".setX");
+        assertThatThrownBy(() -> ChainableFields.of(NestedLists.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName());
+        assertThatThrownBy(() -> ChainableFields.of(OptionalList.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName());
+        assertThatThrownBy(() -> ChainableFields.of(ReturnsDeep.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Deep.class.getName());
+    }
+
+    @Test
+    @DisplayName("a descriptor chainable entry naming a field that does not exist is refused")
+    void descriptorTypo() {
+        assertThatThrownBy(() -> ChainableFields.of(Plain.class,
+                descriptor(Plain.class, "custmerId", true, "parcel-ref")))
+                .hasMessageStartingWith(CODE).hasMessageContaining(Plain.class.getName() + ".custmerId");
+        assertThatThrownBy(() -> ChainableFields.of(Plain.class,
+                descriptor(Plain.class, "custmerId", null, "parcel-ref")))
+                .hasMessageStartingWith(CODE);
+    }
+
+    @Test
+    @DisplayName("a record's canonical constructor parameter is consumed with its component")
+    void canonicalConsumed() {
+        assertThat(ChainableFields.of(Annotated.class)).hasSize(1);
     }
 }

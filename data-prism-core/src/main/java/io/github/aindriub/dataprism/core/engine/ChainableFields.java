@@ -67,20 +67,22 @@ public final class ChainableFields {
         FieldMetadataResolver resolver = new DescriptorFieldMetadataResolver(
                 new DefaultFieldMetadataResolver(), Objects.requireNonNull(descriptors, "descriptors"));
         List<ChainableField> out = new ArrayList<>();
-        walk(model, "", false, null, resolver, descriptors, new HashSet<>(), out);
+        Set<AnnotatedElement> consumed = new HashSet<>();
+        Set<String> consumedFields = new HashSet<>();
+        walk(model, "", false, null, resolver, descriptors, new HashSet<>(), out, consumed, consumedFields);
+        refuseUnconsumed(model, descriptors, consumed, consumedFields);
         out.sort(Comparator.comparing(ChainableField::path));
         return List.copyOf(out);
     }
 
     private static void walk(Class<?> type, String prefix, boolean underElement, String refusal,
                              FieldMetadataResolver resolver, Map<String, ModelDescriptor> descriptors,
-                             Set<Class<?>> inProgress, List<ChainableField> out) {
+                             Set<Class<?>> inProgress, List<ChainableField> out,
+                             Set<AnnotatedElement> consumed, Set<String> consumedFields) {
         if (!inProgress.add(type)) {
             return;
         }
         Map<String, List<AnnotatedElement>> declarations = declarations(type);
-        refuseOrphans(type, declarations);
-        refuseUnreadMembers(type);
         ModelDescriptor descriptor = descriptors.get(type.getName());
         for (FieldMetadata field : resolver.resolve(type)) {
             String name = field.fieldName();
@@ -106,6 +108,8 @@ public final class ChainableFields {
                     throw invalid(type, name, "has a path longer than " + MAX_PATH_BYTES + " bytes");
                 }
                 out.add(new ChainableField(path, namespace, underElement || collection));
+                consumedFields.add(type.getName() + "." + name);
+                consume(type, name, declarations.getOrDefault(name, List.of()), consumed);
             } else if (inner != null && userType(inner)) {
                 String next = refusal;
                 if (next == null && map) {
@@ -114,76 +118,151 @@ public final class ChainableFields {
                     next = "is chainable in a type the scrubber does not descend into";
                 }
                 walk(inner, prefix + name + (collection ? "[]." : "."), underElement || collection, next,
-                        resolver, descriptors, inProgress, out);
+                        resolver, descriptors, inProgress, out, consumed, consumedFields);
             }
         }
         inProgress.remove(type);
     }
 
     /**
-     * Refuses any {@code @Chainable} member declared on the type that no field consumes: a getter matching
-     * no property, a static field, a method that is not an accessor, an interface method. A declaration the
-     * walk cannot reach must never be silently ignored.
+     * Marks the {@code @Chainable} occurrences a chainable field accounts for: its record component, field
+     * and accessor, and the canonical-constructor parameter at the component's position. Identity and
+     * position, not "any constructor of a record".
      */
-    private static void refuseOrphans(Class<?> type, Map<String, List<AnnotatedElement>> declarations) {
-        Set<AnnotatedElement> consumed = new HashSet<>();
-        declarations.values().forEach(consumed::addAll);
-        for (Field field : type.getDeclaredFields()) {
-            if (field.isAnnotationPresent(Chainable.class) && !consumed.contains(field)) {
-                throw invalid(type, field.getName(), "is declared chainable but is not a readable property");
+    private static void consume(Class<?> type, String name, List<AnnotatedElement> elements,
+                                Set<AnnotatedElement> consumed) {
+        for (AnnotatedElement element : elements) {
+            if (element.isAnnotationPresent(Chainable.class)) {
+                consumed.add(element);
             }
         }
-        for (Method method : type.getDeclaredMethods()) {
-            if (!method.isSynthetic() && method.isAnnotationPresent(Chainable.class)
-                    && !consumed.contains(method)) {
-                throw invalid(type, method.getName(), "is declared chainable but is not a readable property");
+        if (type.isRecord()) {
+            RecordComponent[] components = type.getRecordComponents();
+            Class<?>[] types = new Class<?>[components.length];
+            int position = -1;
+            for (int i = 0; i < components.length; i++) {
+                types[i] = components[i].getType();
+                if (components[i].getName().equals(name)) {
+                    position = i;
+                }
+            }
+            try {
+                var canonical = type.getDeclaredConstructor(types);
+                if (position >= 0 && canonical.getParameters()[position].isAnnotationPresent(Chainable.class)) {
+                    consumed.add(canonical.getParameters()[position]);
+                }
+            } catch (NoSuchMethodException ignored) {
+                // A record always has its canonical constructor.
             }
         }
     }
 
     /**
-     * The resolver reads only the members a type declares itself, so a {@code @Chainable} on a superclass
-     * or an implemented interface is never read: refuse it. The same holds for any constructor parameter
-     * other than a record's canonical one, whose annotations repeat those of the component.
+     * Collect pass then refusal: visits every type reachable from the model, through supertypes,
+     * interfaces, field, method and constructor types and every generic type argument, stopping at
+     * primitives, enums, annotations and JDK types. Any {@code @Chainable} occurrence found (field,
+     * method, method or constructor parameter, record component) that the walk did not turn into a
+     * chainable field is refused: a declaration the walk cannot reach must never be silently ignored.
+     *
+     * <p>Superclass fields are never read by the resolver. Its accessor lookup does see inherited public
+     * getters, so a {@code @Chainable} there is refused too; that is over-refusal, and fails closed.
+     *
+     * <p>Descriptor entries stating {@code chainable} or {@code keyNamespace} must name a field the walk
+     * consumed, so a typo cannot quietly declare nothing.
      */
-    private static void refuseUnreadMembers(Class<?> type) {
-        Set<Class<?>> supertypes = new java.util.LinkedHashSet<>();
-        collectSupertypes(type, supertypes);
-        for (Class<?> supertype : supertypes) {
-            for (Field field : supertype.getDeclaredFields()) {
-                if (field.isAnnotationPresent(Chainable.class)) {
-                    throw invalid(supertype, field.getName(), "is declared chainable on a supertype of "
-                            + type.getName() + ", which the scrubber does not read");
+    private static void refuseUnconsumed(Class<?> model, Map<String, ModelDescriptor> descriptors,
+                                         Set<AnnotatedElement> consumed, Set<String> consumedFields) {
+        Set<Class<?>> reachable = new java.util.LinkedHashSet<>();
+        collect(model, reachable);
+        for (Class<?> type : reachable) {
+            for (RecordComponent component : type.isRecord() ? type.getRecordComponents()
+                    : new RecordComponent[0]) {
+                // RecordComponent has identity equality and is re-created per call: match by name.
+                if (component.isAnnotationPresent(Chainable.class)
+                        && !consumedFields.contains(type.getName() + "." + component.getName())) {
+                    throw invalid(type, component.getName(),
+                            "is declared chainable but the scrubber does not read it");
                 }
             }
-            for (Method method : supertype.getDeclaredMethods()) {
-                if (!method.isSynthetic() && method.isAnnotationPresent(Chainable.class)) {
-                    throw invalid(supertype, method.getName(), "is declared chainable on a supertype of "
-                            + type.getName() + ", which the scrubber does not read");
+            for (Field field : type.getDeclaredFields()) {
+                refuseIfUnconsumed(type, field, field.getName(), consumed);
+            }
+            for (Method method : type.getDeclaredMethods()) {
+                if (method.isSynthetic()) {
+                    continue;
+                }
+                refuseIfUnconsumed(type, method, method.getName(), consumed);
+                for (java.lang.reflect.Parameter parameter : method.getParameters()) {
+                    refuseIfUnconsumed(type, parameter, method.getName() + "(" + parameter.getName() + ")",
+                            consumed);
                 }
             }
-        }
-        if (!type.isRecord()) {
             for (java.lang.reflect.Constructor<?> constructor : type.getDeclaredConstructors()) {
                 for (java.lang.reflect.Parameter parameter : constructor.getParameters()) {
-                    if (parameter.isAnnotationPresent(Chainable.class)) {
-                        throw invalid(type, parameter.getName(),
-                                "is declared chainable on a constructor parameter, which the scrubber does not read");
-                    }
+                    refuseIfUnconsumed(type, parameter, "<init>(" + parameter.getName() + ")", consumed);
                 }
+            }
+            ModelDescriptor descriptor = descriptors.get(type.getName());
+            if (descriptor != null) {
+                descriptor.fields().forEach((name, stated) -> {
+                    if ((stated.chainable() != null || stated.keyNamespace() != null)
+                            && !consumedFields.contains(type.getName() + "." + name)) {
+                        throw invalid(type, name, "is named by a descriptor chainable entry but the model has"
+                                + " no such chainable field");
+                    }
+                });
             }
         }
     }
 
-    private static void collectSupertypes(Class<?> type, Set<Class<?>> out) {
-        List<Class<?>> direct = new ArrayList<>(List.of(type.getInterfaces()));
-        if (type.getSuperclass() != null) {
-            direct.add(type.getSuperclass());
+    private static void refuseIfUnconsumed(Class<?> type, AnnotatedElement element, String member,
+                                           Set<AnnotatedElement> consumed) {
+        if (element.isAnnotationPresent(Chainable.class) && !consumed.contains(element)) {
+            throw invalid(type, member, "is declared chainable but the scrubber does not read it");
         }
-        for (Class<?> supertype : direct) {
-            if (supertype != Object.class && supertype != Record.class && out.add(supertype)) {
-                collectSupertypes(supertype, out);
+    }
+
+    private static void collect(Class<?> type, Set<Class<?>> out) {
+        if (!userType(type) || type == Record.class || !out.add(type)) {
+            return;
+        }
+        collect(type.getGenericSuperclass(), out);
+        for (java.lang.reflect.Type supertype : type.getGenericInterfaces()) {
+            collect(supertype, out);
+        }
+        for (Field field : type.getDeclaredFields()) {
+            collect(field.getGenericType(), out);
+        }
+        for (Method method : type.getDeclaredMethods()) {
+            collect(method.getGenericReturnType(), out);
+            for (java.lang.reflect.Type parameter : method.getGenericParameterTypes()) {
+                collect(parameter, out);
             }
+        }
+        for (java.lang.reflect.Constructor<?> constructor : type.getDeclaredConstructors()) {
+            for (java.lang.reflect.Type parameter : constructor.getGenericParameterTypes()) {
+                collect(parameter, out);
+            }
+        }
+    }
+
+    private static void collect(java.lang.reflect.Type type, Set<Class<?>> out) {
+        switch (type) {
+            case null -> { }
+            case Class<?> c -> collect(c.isArray() ? c.getComponentType() : c, out);
+            case java.lang.reflect.ParameterizedType p -> {
+                collect(p.getRawType(), out);
+                for (java.lang.reflect.Type argument : p.getActualTypeArguments()) {
+                    collect(argument, out);
+                }
+            }
+            case java.lang.reflect.GenericArrayType g -> collect(g.getGenericComponentType(), out);
+            case java.lang.reflect.WildcardType w -> {
+                for (java.lang.reflect.Type bound : w.getUpperBounds()) {
+                    collect(bound, out);
+                }
+            }
+            default -> { }
         }
     }
 
