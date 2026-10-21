@@ -101,12 +101,13 @@ the token is read on every request, and once three quarters of its lifetime
 lifetime (6 h) has passed the scope is rotated, by minting a token with a new
 case id (`CASE-LOADTEST-2`, ...). Both are counted in the result file under
 `credentials`: `tokenReissues` is every re-mint after the first (a scope rotation
-mints a new token too, so with the real 12 h and 8 h lifetimes a 24 h run shows 4
-reissues and 4 rotations), and `scopeRotations` is those that changed the scope.
+mints a new token too, so with the real 12 h and 8 h lifetimes a 24 h run shows 3 or 4
+reissues and 3 or 4 rotations: the 4th, due 24 h after the first mint, happens
+only if a call lands between that moment and the measured deadline, so 3 is not a failure), and `scopeRotations` is those that changed the scope.
 If the server process exits during a run the run stops at once, the result
 records `server.diedDuringRun` and its `exitCode`, the server log is kept in the
 results directory, and the harness exits with an error. The server's own log is a
-rolling file (10 MB per file, 2 rolled files, 30 MB in all, console output off),
+rolling file (10 MB per file, 2 rolled files, 30 MB in all, console appender off, so the separate console file holds only what the JVM itself prints),
 so a 24 h soak keeps the tail of the log rather than all of it. Throughput divides the calls finished by the deadline by the
 configured duration (`measuredSeconds`); the calls still in flight at the
 deadline are counted (`calls.completedAfterDeadline`) and timed, but do not

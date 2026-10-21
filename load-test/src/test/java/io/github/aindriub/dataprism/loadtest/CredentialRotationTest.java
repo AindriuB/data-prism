@@ -92,6 +92,7 @@ class CredentialRotationTest {
             advance(Duration.ofMinutes(1));
         }
 
+        // Exact here because the fake clock makes a call at 24 h; a live run sees 3 or 4 (see the README).
         // Mints at 0, 6, 12, 18 and 24 h: every re-mint is a reissue, and each one here also rotates the scope.
         assertThat(minted).hasSize(5);
         assertThat(rotation.tokenReissues()).isEqualTo(4);

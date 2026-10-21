@@ -90,7 +90,8 @@ public final class LoadTestMain {
                     Path kept = server.keepLog();
                     throw new IllegalStateException("the server exited with " + run.serverExitCode()
                             + " during the run, which was stopped; the result so far is " + file
-                            + (kept == null ? "" : " and the server log is kept at " + kept));
+                            + (kept == null ? "" : " and the server log is kept at " + kept)
+                            + "\nserver console tail:\n" + server.consoleTail(40));
                 }
             }
         } finally {

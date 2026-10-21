@@ -35,11 +35,13 @@ final class ServerProcess implements AutoCloseable {
     private final Process process;
     private final int port;
     private final Path logFile;
+    private final Path consoleFile;
 
     private final Path resultsDir;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    private ServerProcess(Process process, int port, Path logFile, Path resultsDir) {
+    private ServerProcess(Process process, int port, Path logFile, Path consoleFile, Path resultsDir) {
+        this.consoleFile = consoleFile;
         this.resultsDir = resultsDir;
         this.process = process;
         this.port = port;
@@ -87,7 +89,11 @@ final class ServerProcess implements AutoCloseable {
         command.addAll(loggingArguments(log));
         scenario.limits().asProperties().forEach((key, value) -> command.add("--" + key + "=" + value));
 
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile());
+        // The JVM's own stdout and stderr (an uncaught exception, an OutOfMemoryError) go to a file of their own:
+        // the server's logger owns and rolls server.log, and must never share a path with this redirect.
+        Path console = consoleFileOf(log);
+        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.appendTo(console.toFile()));
         byte[] key = new byte[48];
         new SecureRandom().nextBytes(key);
         builder.environment().put(HMAC_ENV, Base64.getEncoder().encodeToString(key));
@@ -105,7 +111,7 @@ final class ServerProcess implements AutoCloseable {
                 guard.failed();
             }
         }
-        ServerProcess server = new ServerProcess(process, port, log, resultsDir);
+        ServerProcess server = new ServerProcess(process, port, log, console, resultsDir);
         cleanup.track(server);
         try {
             server.awaitHealthy(Duration.ofSeconds(180));
@@ -184,15 +190,32 @@ final class ServerProcess implements AutoCloseable {
     /**
      * The server's own log, capped so a 24 h soak cannot fill the disk: a rolling file of at most 10 MB per file,
      * 2 rolled files and 30 MB in all, so the newest output (the tail) is what survives. Its console output is
-     * switched off (an empty console pattern), so stdout, which the harness redirects to a file, stays small.
+     * switched off ({@code logging.threshold.console=OFF}; an empty console pattern makes Logback report a status
+     * error), so the console file holds only what the JVM itself prints, such as a crash.
      */
     static List<String> loggingArguments(Path log) {
         return List.of(
                 "--logging.file.name=" + log,
-                "--logging.pattern.console=",
+                "--logging.threshold.console=OFF",
                 "--logging.logback.rollingpolicy.max-file-size=10MB",
                 "--logging.logback.rollingpolicy.max-history=2",
                 "--logging.logback.rollingpolicy.total-size-cap=30MB");
+    }
+
+    /** Where the child's stdout and stderr go: beside the server log, never the same file. */
+    static Path consoleFileOf(Path log) {
+        return log.resolveSibling("server-console.log");
+    }
+
+    /** The last {@code lines} lines of the child's stdout and stderr, or a note when there are none. */
+    String consoleTail(int lines) {
+        try {
+            List<String> all = Files.readAllLines(consoleFile);
+            return all.isEmpty() ? "(console empty)"
+                    : String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+        } catch (IOException | RuntimeException unreadable) {
+            return "(console unreadable)";
+        }
     }
 
     /** The live log and the files rolled from it ({@code server.log.*}). */
@@ -204,6 +227,10 @@ final class ServerProcess implements AutoCloseable {
         } catch (IOException | RuntimeException e) {
             return List.of();
         }
+    }
+
+    static ServerProcess forTest(Process process, Path logFile, Path resultsDir) {
+        return new ServerProcess(process, 0, logFile, consoleFileOf(logFile), resultsDir);
     }
 
     /** The exit code if the server has exited, otherwise {@code null}. */
@@ -226,6 +253,9 @@ final class ServerProcess implements AutoCloseable {
                 if (suffix.isEmpty()) {
                     kept = copy;
                 }
+            }
+            if (Files.exists(consoleFile)) {
+                Files.copy(consoleFile, resultsDir.resolve("server-failure-" + stamp + ".console.log"));
             }
             return kept;
         } catch (IOException | RuntimeException e) {
@@ -283,9 +313,15 @@ final class ServerProcess implements AutoCloseable {
         }
     }
 
-    private String tail(int lines) throws IOException {
-        List<String> all = Files.readAllLines(logFile);
-        return String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+    private String tail(int lines) {
+        String log;
+        try {
+            List<String> all = Files.readAllLines(logFile);
+            log = String.join("\n", all.subList(Math.max(0, all.size() - lines), all.size()));
+        } catch (IOException | RuntimeException unreadable) {
+            log = "(log unreadable)";
+        }
+        return log + "\n--- console (stdout and stderr) ---\n" + consoleTail(lines);
     }
 
     @Override
