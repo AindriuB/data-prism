@@ -14,4 +14,12 @@ public interface DataSourceAdapter<T> {
     Class<T> responseType();
 
     T fetch(DataRequest request);
+
+    /**
+     * What this source holds, for the catalog. The default declares nothing, and the catalog
+     * then generates a neutral description. Called once, at startup.
+     */
+    default SourceDescription description() {
+        return SourceDescription.undeclared();
+    }
 }

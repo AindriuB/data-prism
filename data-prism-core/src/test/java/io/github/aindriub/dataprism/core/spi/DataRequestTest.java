@@ -42,4 +42,18 @@ class DataRequestTest {
         assertThat(with.entityType()).isEqualTo("t");
         assertThat(with.subjectId()).isEqualTo("s");
     }
+
+    @Test
+    @DisplayName("every existing factory leaves the key namespace empty; withKeyNamespace sets it and keeps the rest")
+    void keyNamespace() {
+        assertThat(DataRequest.of("t", "s").keyNamespace()).isEmpty();
+        assertThat(new DataRequest("t", "s", Map.of()).keyNamespace()).isEmpty();
+        assertThat(new DataRequest("t", "s", Map.of(), null).keyNamespace()).isEmpty();
+        assertThat(DataRequest.of("t", "s").withContext(SourceCallContext.of(id())).keyNamespace()).isEmpty();
+        DataRequest with = new DataRequest("t", "s", Map.of("k", "v")).withKeyNamespace(new KeyNamespace("ref"));
+        assertThat(with.keyNamespace()).contains(new KeyNamespace("ref"));
+        assertThat(with.parameters()).isEqualTo(Map.of("k", "v"));
+        assertThat(with.withContext(SourceCallContext.of(id())).keyNamespace()).contains(new KeyNamespace("ref"));
+        assertThat(new DataRequest("t", "s", Map.of(), null, null).keyNamespace()).isEmpty();
+    }
 }

@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.core.spi;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * What to fetch from a source.
@@ -10,10 +11,19 @@ import java.util.Objects;
  * Adapters map these fields onto endpoints configured server-side.
  */
 public record DataRequest(
-        String entityType, String subjectId, Map<String, Object> parameters, SourceCallContext context) {
+        String entityType,
+        String subjectId,
+        Map<String, Object> parameters,
+        SourceCallContext context,
+        Optional<KeyNamespace> keyNamespace) {
 
     public DataRequest(String entityType, String subjectId, Map<String, Object> parameters) {
         this(entityType, subjectId, parameters, SourceCallContext.none());
+    }
+
+    public DataRequest(
+            String entityType, String subjectId, Map<String, Object> parameters, SourceCallContext context) {
+        this(entityType, subjectId, parameters, context, Optional.empty());
     }
 
     public DataRequest {
@@ -21,6 +31,7 @@ public record DataRequest(
         Objects.requireNonNull(subjectId, "subjectId");
         parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
         context = context == null ? SourceCallContext.none() : context;
+        keyNamespace = keyNamespace == null ? Optional.empty() : keyNamespace;
     }
 
     public static DataRequest of(String entityType, String subjectId) {
@@ -28,6 +39,11 @@ public record DataRequest(
     }
 
     public DataRequest withContext(SourceCallContext newContext) {
-        return new DataRequest(entityType, subjectId, parameters, newContext);
+        return new DataRequest(entityType, subjectId, parameters, newContext, keyNamespace);
+    }
+
+    /** The namespace {@code subjectId} is expressed in; empty when none was chosen. */
+    public DataRequest withKeyNamespace(KeyNamespace namespace) {
+        return new DataRequest(entityType, subjectId, parameters, context, Optional.of(namespace));
     }
 }
