@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-21 | 259, 265, 266 | Quiet-host 0.7 baseline (laptop, loads above 4 flagged; 32-source tail unexplained) and the 0.7.1 plan: 265 fail-open fix, backport of 244/245/257/265, release brief 266 | `## 2026-10-21 — 259: quiet-host 0.7 baseline and the 0.7.1 plan` |
 | 2026-10-21 | 220, 221, 240 | Sealing primitives (dps1 Sealer, HKDF, keyed names), hardened Hazelcast config and `using()` refusals, `@Chainable` fields | `## 2026-10-21 — 0.8 wave 2: sealing primitives, hardened cluster configuration, chainable fields` |
 | 2026-10-21 | 218, 219 | 0.8 wave 1b: cluster design and register aligned with OD-215-1 to -10 plus the 0.7 fence decision; Hazelcast capability spike with 13 questions answered in a test package; phone-home incident in the spike recorded | `## 2026-10-21 — 0.8 wave 1b: cluster design aligned, Hazelcast capability spike` |
 | 2026-10-21 | 238, 239, 243, 258 | 0.8 wave 1a: core design documents corrected to OD-200; adapter description SPI and SourceCatalog; ScopeBudget reserve/release/scopeReads; load harness failure scenarios, FailureCause and 24 h soak | `## 2026-10-21 — 0.8 wave 1a: design documents, source catalog, read reservations, soak harness` |
