@@ -305,6 +305,46 @@ class HazelcastHardeningTest {
         aDisallowedClassFromAKeylessClientIsRefusedAndTheMemberKeepsServing(configMember());
     }
 
+    /** T12 (b): every entry processor and merge policy Data Prism sends between members passes the filter. */
+    @Test
+    void everyDataPrismProcessorAndMergePolicyAndTheTypesTheyCarryPassTheConfiguredFilter() throws Exception {
+        Config config = PrivacyCluster.configure(new Config().setClusterName("hardening-t12"));
+        ClassFilter allow = config.getSerializationConfig().getJavaSerializationFilterConfig().getWhitelist();
+        java.nio.file.Path classes = java.nio.file.Path.of(PrivacyCluster.class.getProtectionDomain().getCodeSource()
+                .getLocation().toURI());
+        List<Class<?>> sent = new ArrayList<>();
+        try (var files = java.nio.file.Files.walk(classes)) {
+            for (java.nio.file.Path file : (Iterable<java.nio.file.Path>) files::iterator) {
+                String name = classes.relativize(file).toString();
+                if (name.endsWith(".class") && name.startsWith("io/github/aindriub/dataprism/hazelcast/")) {
+                    Class<?> type = Class.forName(name.substring(0, name.length() - 6).replace('/', '.'), false,
+                            PrivacyCluster.class.getClassLoader());
+                    if (EntryProcessor.class.isAssignableFrom(type)
+                            || com.hazelcast.spi.merge.SplitBrainMergePolicy.class.isAssignableFrom(type)) {
+                        sent.add(type);
+                    }
+                }
+            }
+        }
+        assertThat(sent).as("the processors and merge policies found").hasSizeGreaterThanOrEqualTo(7);
+        for (Class<?> type : sent) {
+            assertThat(isAllowed(allow, type.getName())).as(type.getName()).isTrue();
+            for (var field : type.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) || field.getType().isPrimitive()) {
+                    continue;
+                }
+                // Instant is written by java.time.Ser.
+                String carried = field.getType() == java.time.Instant.class ? "java.time.Ser"
+                        : field.getType().getName();
+                assertThat(isAllowed(allow, carried)).as(type.getName() + "." + field.getName()).isTrue();
+            }
+        }
+    }
+
+    private static boolean isAllowed(ClassFilter allow, String name) {
+        return allow.getClasses().contains(name) || allow.getPrefixes().stream().anyMatch(name::startsWith);
+    }
+
     // ---- Management Center protocol messages (spike 219, Q3 and Q13) ----
 
     /** Sends a raw Management Center message through the client's own connection. "allowed" or the failure's name. */

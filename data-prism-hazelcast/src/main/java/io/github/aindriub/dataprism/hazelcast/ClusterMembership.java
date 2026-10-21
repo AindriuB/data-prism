@@ -244,6 +244,11 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
      * @throws PrivacyClusterRefusal {@code UNSEALED_CLUSTER_STATE}
      */
     static void refuseUnsealedState(HazelcastInstance instance) {
+        // State lives only in running members. A member that is alone has nothing to find, and asking would create
+        // the old maps, empty and unconfigured, under names 0.8 never uses.
+        if (instance.getCluster().getMembers().size() < 2) {
+            return;
+        }
         for (String name : PrivacyCluster.PRE_0_8_MAPS) {
             if (holdsEntries(instance, name)) {
                 throw refuse(Code.UNSEALED_CLUSTER_STATE,

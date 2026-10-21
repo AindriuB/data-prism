@@ -51,16 +51,17 @@ import java.util.regex.Pattern;
  * authentication: both are Enterprise features and are not provided here. Network
  * isolation of the cluster port is therefore the deployer's responsibility. The advanced
  * network config is refused too, because it bypasses the join and TLS checks. A
- * {@link ClusterMembership} with an interface also stops the member listening on other
- * interfaces; without one the member binds every interface, which is Hazelcast's default.
- * {@link #using} validates a supplied instance the same way and never shuts down
- * an instance it did not start.
+ * {@link ClusterMembership} requires an interface for {@code tcp-ip} and {@code kubernetes}, and the member
+ * listens only there. Jet, user-code deployment and phone-home are forced off, a Java serialisation allowlist is
+ * set, and the Management Center trusted interfaces are set so that no client matches. A member that finds state
+ * from before 0.8 refuses to start. {@link #using} checks a supplied instance for the same things it cannot change
+ * and never shuts down an instance it did not start.
  */
 public final class PrivacyCluster implements AutoCloseable {
 
     /**
      * Synthetic values, recomputable. Losing this map costs CPU and nothing else. Every map name carries the
-     * generation suffix {@code .s1}; the 0.7 names are {@link #PRE_0_8_MAPS} and are never read.
+     * generation suffix {@code .s1}; the 0.7 names (no suffix) are never read.
      */
     public static final String IDENTITY_MAP = "dataprism.identity.s1";
 
@@ -102,7 +103,7 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /**
      * The eight map names of 0.7 and earlier. A 0.8 member never reads them; it only checks that they are empty
-     * (the cutover is non-rolling, see {@link ClusterMembership#refuseUnsealedState}).
+     * (the cutover is non-rolling).
      */
     static final List<String> PRE_0_8_MAPS = List.of("dataprism.identity", "dataprism.reidentification",
             "dataprism.budget", "dataprism.oversight", "dataprism.approval", "dataprism.approval.id",
