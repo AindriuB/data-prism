@@ -214,3 +214,57 @@ jobs:
           subject-path: |
             /tmp/bundle/**/*.jar
             /tmp/bundle/**/*-cyclonedx.json
+
+      # The SBOMs exactly as sent to Central, for the attach-sboms job. One
+      # copy, one build: the GitHub release gets these same bytes (task 257,
+      # OD-08-12), not the output of a second build.
+      - name: Collect the SBOMs from the bundle
+        run: |
+          mkdir -p sbom
+          find /tmp/bundle -name '*-cyclonedx.json' -exec cp {} sbom/ \;
+          ls -l sbom
+          if [ -z "$(ls -A sbom)" ]; then
+            echo "::error::no SBOMs in the Central bundle"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: central-sboms
+          retention-days: 14
+          if-no-files-found: error
+          path: sbom/*-cyclonedx.json
+
+  # Attaches the Central bundle's SBOMs to the GitHub release that release.yml
+  # created from the same tag, then asserts the release assets are
+  # byte-identical (SHA-256) to the bundle's. A separate job so that the job
+  # holding the Central token never gets contents: write.
+  attach-sboms:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: central-sboms
+          path: sbom
+
+      - name: Attach to the release and assert identical to the Central bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The release is created by release.yml on the same tag push.
+          gh release view "$TAG" > /dev/null
+          gh release upload "$TAG" sbom/*-cyclonedx.json --clobber
+          mkdir released
+          gh release download "$TAG" --pattern '*-cyclonedx.json' --dir released
+          (cd sbom && sha256sum -- *-cyclonedx.json) | sort > bundle.sha256
+          (cd released && sha256sum -- *-cyclonedx.json) | sort > release.sha256
+          cat bundle.sha256
+          if ! diff bundle.sha256 release.sha256; then
+            echo "::error::release SBOMs differ from the Central bundle"
+            exit 1
+          fi
