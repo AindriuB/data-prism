@@ -39,7 +39,7 @@ class SourceModelsTest {
     public record Inner(String name, Tier tier) {
     }
 
-    public record Allowed(Inner inner, List<Inner> list, Map<String, Optional<Inner>> map, Inner[] array,
+    public record Allowed(Inner inner, List<Inner> list, Map<String, Optional<String>> map, Inner[] array,
                           Instant at, UUID id, JsonNode node, Object any, Runnable iface) {
     }
 
@@ -140,7 +140,7 @@ class SourceModelsTest {
         ObjectNode node = SourceTree.newObject();
         node.put("a", 1);
         Inner inner = new Inner("n", Tier.GOLD);
-        JsonNode tree = SourceTree.of(new Allowed(inner, List.of(inner), Map.of("k", Optional.of(inner)),
+        JsonNode tree = SourceTree.of(new Allowed(inner, List.of(inner), Map.of("k", Optional.of("v")),
                 new Inner[]{inner}, Instant.parse("2026-10-08T12:00:00Z"), UUID.fromString(
                 "00000000-0000-0000-0000-000000000001"), node, inner, null));
         assertThat(tree.get("inner").get("tier").asString()).isEqualTo("GOLD");
@@ -511,8 +511,9 @@ class SourceModelsTest {
     }
 
     @Test
-    void aRecursiveTypeVariableBoundTerminatesAndAnObjectShapedEnumIsRefusedAtStartup() {
-        assertThatCode(() -> SourceModels.require(Recursive.class)).doesNotThrowAnyException();
+    void aRecursiveGenericRecordIsRefusedAsGenericAndAnObjectShapedEnumIsRefusedAtStartup() {
+        // Task 265: a record declaring type parameters is refused outright, so the bound is never walked.
+        assertRefusedWith(() -> SourceModels.require(Recursive.class), "SOURCE_MODEL_GENERIC", "Recursive");
         assertRefused(() -> SourceModels.require(ObjectEnumHolder.class), "ObjectEnum");
     }
 
@@ -522,8 +523,9 @@ class SourceModelsTest {
     }
 
     @Test
-    void aTypeVariableBoundIsWalkedAtStartup() {
-        assertRefused(() -> SourceModels.require(Boxed.class));
+    void aGenericRecordWithABoundedTypeVariableIsRefusedAsGeneric() {
+        // Task 265: refused as generic before the bound (a Bean) is reached.
+        assertRefusedWith(() -> SourceModels.require(Boxed.class), "SOURCE_MODEL_GENERIC", "Boxed");
     }
 
     public record Tree(String name, List<Tree> children) {
@@ -611,5 +613,206 @@ class SourceModelsTest {
         ValueSerializer<?> contextual = wrapped.createContextual(null, null);
         assertThat(contextual).isInstanceOf(SourceTree.CheckedKey.class).isNotSameAs(wrapped);
         assertThat(((CtxKeySer) ((SourceTree.CheckedKey) contextual).delegate()).prefix).isEqualTo("contextual:");
+    }
+
+    // ---- generic source models and maps of records (task 265) ----------------------------------
+
+    public record Envelope<T>(T item, String email) {
+    }
+
+    public interface UserBox<T> {
+    }
+
+    public static class UserCell<T> {
+    }
+
+    public record Page<T>(List<T> items) {
+    }
+
+    public record SketchResponse(Envelope<Inner> env) {
+    }
+
+    public record RawEnvelopeResponse(@SuppressWarnings("rawtypes") Envelope env) {
+    }
+
+    public record BoxResponse(UserBox<Inner> box) {
+    }
+
+    public record CellResponse(UserCell<Inner> cell) {
+    }
+
+    public record GenericInList(List<Envelope<Inner>> envs) {
+    }
+
+    public record GenericInArray(Envelope<Inner>[] envs) {
+    }
+
+    public record GenericInOptional(Optional<Page<Inner>> page) {
+    }
+
+    public record MapOfRecord(Map<String, Inner> byKey) {
+    }
+
+    public record MapOfListOfRecord(Map<String, List<Inner>> byKey) {
+    }
+
+    public record MapOfOptionalOfRecord(Map<String, Optional<Inner>> byKey) {
+    }
+
+    public record MapOfMapOfRecord(Map<String, Map<String, Inner[]>> byKey) {
+    }
+
+    public record ListOfMapOfRecord(List<Map<String, Inner>> maps) {
+    }
+
+    public record MapOfWildRecord(Map<String, ? extends Inner> byKey) {
+    }
+
+    public record Scalars(Map<String, String> a, Map<String, List<String>> b, Map<String, Object> c,
+                          Map<String, JsonNode> d, Map<Tier, Integer> e) {
+    }
+
+    public record HoldsAny(Object any) {
+    }
+
+    private static void assertRefusedWith(Runnable action, String code, String... names) {
+        assertThatThrownBy(action::run)
+                .isInstanceOfSatisfying(PrivacyRefusedException.class, e -> {
+                    assertThat(e.code()).isEqualTo(code);
+                    assertThat(e.path()).isEqualTo("$");
+                    assertThat(e.getMessage()).contains(names)
+                            .doesNotContain("value-that-must-not-appear", "io.github", "alice@invalid.example");
+                });
+    }
+
+    @Test
+    void theNewCodesAreValidRefusalTokens() {
+        for (String code : List.of(SourceModels.GENERIC_CODE, SourceModels.MAP_OF_RECORD_CODE)) {
+            assertThat(io.github.aindriub.dataprism.core.refusal.RefusalCodes.sanitise(code)).isEqualTo(code);
+        }
+        assertThat(SourceModels.GENERIC_CODE).isEqualTo("SOURCE_MODEL_GENERIC");
+        assertThat(SourceModels.MAP_OF_RECORD_CODE).isEqualTo("SOURCE_MODEL_MAP_OF_RECORD");
+    }
+
+    @Test
+    void aGenericRecordIsRefusedWhereverTheWalkReachesIt() {
+        assertRefusedWith(() -> SourceModels.require(Envelope.class), "SOURCE_MODEL_GENERIC", "Envelope");
+        assertRefusedWith(() -> SourceModels.require(SketchResponse.class), "SOURCE_MODEL_GENERIC",
+                "SketchResponse.env", "Envelope is generic; source models must not be");
+        assertRefusedWith(() -> SourceModels.require(RawEnvelopeResponse.class), "SOURCE_MODEL_GENERIC",
+                "RawEnvelopeResponse.env", "Envelope");
+        assertRefusedWith(() -> SourceModels.require(GenericInList.class), "SOURCE_MODEL_GENERIC",
+                "GenericInList.envs", "Envelope");
+        assertRefusedWith(() -> SourceModels.require(GenericInArray.class), "SOURCE_MODEL_GENERIC",
+                "GenericInArray.envs", "Envelope");
+        assertRefusedWith(() -> SourceModels.require(GenericInOptional.class), "SOURCE_MODEL_GENERIC",
+                "GenericInOptional.page", "Page");
+    }
+
+    @Test
+    void aParameterizedUserTypeIsRefusedAsGenericWhateverItsKind() {
+        assertRefusedWith(() -> SourceModels.require(BoxResponse.class), "SOURCE_MODEL_GENERIC",
+                "BoxResponse.box", "UserBox");
+        assertRefusedWith(() -> SourceModels.require(CellResponse.class), "SOURCE_MODEL_GENERIC",
+                "CellResponse.cell", "UserCell");
+    }
+
+    @Test
+    void aMapWhoseValuesContainARecordIsRefusedAtAnyDepth() {
+        assertRefusedWith(() -> SourceModels.require(MapOfRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "MapOfRecord.byKey");
+        assertRefusedWith(() -> SourceModels.require(MapOfListOfRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "MapOfListOfRecord.byKey");
+        assertRefusedWith(() -> SourceModels.require(MapOfOptionalOfRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "MapOfOptionalOfRecord.byKey");
+        assertRefusedWith(() -> SourceModels.require(MapOfMapOfRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "MapOfMapOfRecord.byKey");
+        assertRefusedWith(() -> SourceModels.require(ListOfMapOfRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "ListOfMapOfRecord.maps");
+        assertRefusedWith(() -> SourceModels.require(MapOfWildRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "MapOfWildRecord.byKey");
+    }
+
+    @Test
+    void mapsOfScalarsObjectsAndTreeNodesStillPass() {
+        assertThatCode(() -> SourceModels.require(Scalars.class)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aGenericRecordBehindAnObjectComponentIsRefusedAtRequestTime() {
+        assertRefusedWith(() -> SourceTree.of(new HoldsAny(new Envelope<>(new Inner("value-that-must-not-appear", Tier.GOLD), "alice@invalid.example"))),
+                "SOURCE_MODEL_GENERIC", "Envelope");
+    }
+
+    public record ListOfList(List<List<Inner>> v) {
+    }
+
+    public record ArrOfArr(Inner[][] v) {
+    }
+
+    public record ListOfArr(List<Inner[]> v) {
+    }
+
+    public record ArrOfList(List<Inner>[] v) {
+    }
+
+    public record SetOfList(java.util.Set<List<Inner>> v) {
+    }
+
+    public record ListOfSet(List<java.util.Set<Inner>> v) {
+    }
+
+    public record ListOfListOfList(List<List<List<Inner>>> v) {
+    }
+
+    public record OptionalOfListOfList(Optional<List<List<Inner>>> v) {
+    }
+
+    public record WildListOfList(List<? extends List<Inner>> v) {
+    }
+
+    public record HoldsListOfList(ListOfList inner) {
+    }
+
+    public record NestedScalars(List<List<String>> a, String[][] b, byte[][] c, List<int[]> d) {
+    }
+
+    public record OptionalShapes(Optional<List<Inner>> a, Optional<Inner[]> b, List<Optional<Inner>> c) {
+    }
+
+    public record MapOfListOfListOfRecord(Map<String, List<List<Inner>>> byKey) {
+    }
+
+    @Test
+    void theNestedCollectionCodeIsAValidRefusalToken() {
+        String code = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
+        assertThat(io.github.aindriub.dataprism.core.refusal.RefusalCodes.sanitise(code)).isEqualTo(code);
+    }
+
+    @Test
+    void aRecordInsideACollectionInsideACollectionIsRefusedAtStartup() {
+        String code = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
+        assertRefusedWith(() -> SourceModels.require(ListOfList.class), code, "ListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(ArrOfArr.class), code, "ArrOfArr.v");
+        assertRefusedWith(() -> SourceModels.require(ListOfArr.class), code, "ListOfArr.v");
+        assertRefusedWith(() -> SourceModels.require(ArrOfList.class), code, "ArrOfList.v");
+        assertRefusedWith(() -> SourceModels.require(SetOfList.class), code, "SetOfList.v");
+        assertRefusedWith(() -> SourceModels.require(ListOfSet.class), code, "ListOfSet.v");
+        assertRefusedWith(() -> SourceModels.require(ListOfListOfList.class), code, "ListOfListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(OptionalOfListOfList.class), code, "OptionalOfListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(WildListOfList.class), code, "WildListOfList.v");
+        assertRefusedWith(() -> SourceModels.require(HoldsListOfList.class), code, "ListOfList.v");
+    }
+
+    @Test
+    void scalarsAndOneLevelOfRecordsInsideOptionalsStillPass() {
+        assertThatCode(() -> SourceModels.require(NestedScalars.class)).doesNotThrowAnyException();
+        assertThatCode(() -> SourceModels.require(OptionalShapes.class)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aMapOfNestedCollectionsOfRecordsStaysAMapOfRecord() {
+        assertRefusedWith(() -> SourceModels.require(MapOfListOfListOfRecord.class), "SOURCE_MODEL_MAP_OF_RECORD",
+                "MapOfListOfListOfRecord.byKey");
     }
 }

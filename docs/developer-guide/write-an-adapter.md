@@ -21,7 +21,7 @@ gets you the same result with no Java at all.
 
 ## 1. Model the response and classify its fields
 
-A `DataSourceAdapter` returns one Java type, and that type (and every user type nested in it) must be a `record`; any other class is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`. Every field on a type exposed
+A `DataSourceAdapter` returns one Java type, and that type (and every user type nested in it) must be a `record`; any other class is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`. A source model must not be generic (`SOURCE_MODEL_GENERIC`), a map's values must not be records (`SOURCE_MODEL_MAP_OF_RECORD`), and a record must not sit inside a collection inside a collection (`SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`). Every field on a type exposed
 through MCP must carry a classification annotation — `@LlmExposedModel`
 requires one of `@InternalIdentifier`, `@SensitiveData`, `@NonSensitive` or
 `@SubjectIdentifier` on every field, and the annotation processor fails the

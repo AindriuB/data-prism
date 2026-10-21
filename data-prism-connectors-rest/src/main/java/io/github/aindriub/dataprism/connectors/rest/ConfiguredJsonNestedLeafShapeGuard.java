@@ -52,13 +52,13 @@ final class ConfiguredJsonNestedLeafShapeGuard {
         for (Map.Entry<String, FieldMetadata> entry : rootFields.entrySet()) {
             String field = entry.getKey();
             FieldMetadata md = entry.getValue();
-            Class<?> token = descendType(md);
-            Map<String, FieldMetadata> nestedFields = token == null ? null : resolver.nestedFields(token);
-            if (nestedFields == null) {
-                continue;
-            }
             JsonNode value = body.get(field);
             if (value == null || value.isNull()) {
+                continue;
+            }
+            Class<?> token = descendType(md, value.isArray());
+            Map<String, FieldMetadata> nestedFields = token == null ? null : resolver.nestedFields(token);
+            if (nestedFields == null) {
                 continue;
             }
             if (value.isObject()) {
@@ -110,11 +110,14 @@ final class ConfiguredJsonNestedLeafShapeGuard {
         }
     }
 
-    /** @return the index of the first object element, or -1 if the array contains none */
+    /**
+     * @return the index, in this array, of the first element that is an object or holds one at any
+     * array depth, or -1 if there is none
+     */
     private static int firstObjectIndex(JsonNode array) {
         int index = 0;
         for (JsonNode element : array) {
-            if (element.isObject()) {
+            if (holdsObject(element)) {
                 return index;
             }
             index++;
@@ -122,11 +125,31 @@ final class ConfiguredJsonNestedLeafShapeGuard {
         return -1;
     }
 
-    /** Mirrors {@code JsonTreeScrubbingEngine.scrubNestedObject}'s own type selection, deliberately not shared. */
-    private static Class<?> descendType(FieldMetadata md) {
-        if (md.elementType() != null && md.elementType() != Object.class) {
-            return md.elementType();
+    private static boolean holdsObject(JsonNode node) {
+        if (node.isObject()) {
+            return true;
         }
-        return md.valueType();
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                if (holdsObject(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Mirrors {@code JsonTreeScrubbingEngine.scrubNestedObject}'s own type selection, deliberately not
+     * shared: an object value takes {@code valueType()}, except through an {@code Optional}; an array's
+     * elements take {@code elementType()} when one is stated.
+     */
+    private static Class<?> descendType(FieldMetadata md, boolean elements) {
+        Class<?> elementType = md.elementType();
+        boolean stated = elementType != null && elementType != Object.class;
+        if (elements) {
+            return stated ? elementType : md.valueType();
+        }
+        return md.valueType() == java.util.Optional.class && stated ? elementType : md.valueType();
     }
 }
