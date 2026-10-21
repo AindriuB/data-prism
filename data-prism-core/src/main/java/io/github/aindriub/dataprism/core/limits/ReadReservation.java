@@ -69,6 +69,10 @@ public final class ReadReservation {
         return origin;
     }
 
+    public static ReadReservation refused(String scopeId, String subjectId, int reads, Refusal refusedBy) {
+        return new ReadReservation(scopeId, subjectId, reads, Objects.requireNonNull(refusedBy, "refusedBy"), null);
+    }
+
     public boolean granted() {
         return refusedBy == null;
     }
