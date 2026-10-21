@@ -87,10 +87,14 @@ legacy `.sig` tags, and cosign v2 will not find them.
 
 Each image's manifest list is signed and attested, and from 0.7.1 so is every
 per-architecture digest reachable from a published tag. Verify the digest you
-resolved from the tag (the manifest list), or any platform digest listed in it
-(`docker buildx imagetools inspect "$image:<version>"` shows them), with the
-same command. The release workflow runs this verification for all of them and
-fails the release if one is unsigned.
+resolved from the tag (the manifest list), or the digest of any `linux/amd64`
+or `linux/arm64` platform manifest in it, with the same command. The list also
+holds entries with platform `unknown/unknown` (annotation
+`vnd.docker.reference.type: attestation-manifest`). Those are the buildx SBOM
+and provenance payloads, which the signatures above cover; they are not signed
+on their own and `cosign verify` on one fails. The release workflow verifies
+the list and every real platform manifest, and fails the release if one is
+unsigned.
 
 Releases up to and including 0.7.0 are different. Assembling their manifest
 list flattened the signed per-architecture build indexes into plain platform
