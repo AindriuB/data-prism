@@ -1,7 +1,9 @@
 # Sealed links: threat model, link contract and `follow`
 
 Status: design for 0.8, reviewed externally in 0.9. Internal (`docs/plan/design/`, D-070-12 (a)); not published.
-Task 191. Companion: `key-resolvers.md`. Nothing here is code, an SPI stub or a configuration property; every name is a proposal until the 0.8 task that builds it.
+Task 191. Companion: `key-resolvers.md`.
+
+Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-3 (status spelling), OD-200-4 (length caps), OD-200-5 (the `FOLLOW` capability), OD-200-8 (option (b)-only names dropped), D4 (relation bytes `0x02` to `0x04`), D5 and OD-13 shape C (closing-table rows). No decision is changed here. Each edit cites its id on the line it changes. Nothing here is code, an SPI stub or a configuration property; every name is a proposal until the 0.8 task that builds it.
 
 All examples use an invented neutral domain: a logistics estate with a parcel service, a depot service and a courier-roster service. No real system, organisation or data model is meant.
 
@@ -107,8 +109,8 @@ The mechanism that makes a link work must give the server, at `follow` time, the
 
 What (b) costs, stated plainly:
 
-- **Trace length is capped.** A link on the result of a followed link must carry the whole chain of origins, because the agent never holds a key to start again from. The chain is capped by `max-chain-depth` (default 3, ceiling 4, bounded by the size arithmetic in section 3). A trace needing more hops than the cap cannot be followed by links; a human has to supply a key (option (c) from that point).
-- **Reads grow quadratically.** A follow at depth d re-reads d origins and then reads the target: d + 1 source reads. An n-hop trace costs 2 + 3 + ... + (n + 1) = n(n + 3) / 2 reads against n for (a): 9 against 3 at three hops, 14 against 4 at four hops (the ceiling). Each is charged (OD-5), and a translated hop adds a resolver call per re-read of that hop. With hundreds of sources and an agent following many links per hop, this multiplies the read budget an investigation uses.
+- **Trace length is capped.** A link on the result of a followed link must carry the whole chain of origins, because the agent never holds a key to start again from. The chain is capped by a depth limit (a setting that existed only for option (b) and is withdrawn, OD-200-8; bounded by the size arithmetic in section 3). A trace needing more hops than the cap cannot be followed by links; a human has to supply a key (option (c) from that point).
+- **Reads grow quadratically.** A follow at depth d re-reads d origins and then reads the target: d + 1 source reads. An n-hop trace costs 2 + 3 + ... + (n + 1) = n(n + 3) / 2 reads against n for (a): 9 against 3 at three hops, 14 against 4 at four hops. Each is charged (OD-5), and a translated hop adds a resolver call per re-read of that hop. With hundreds of sources and an agent following many links per hop, this multiplies the read budget an investigation uses.
 - **Refusal by drift compounds.** Every re-read must still find a record whose chainable field matches the recorded fingerprint. If one origin re-read fails with probability p (a key was updated or deleted, a resolver answers differently; mere reordering is not drift), a link at depth d fails with probability about 1 - (1 - p)^d. The agent sees only `LINK_INVALID`, indistinguishable from forgery, and must repeat the origin call. For a "where did this record stop propagating" investigation, a record that is changing in flight is the usual case.
 - **A one-to-many parent must record which child it came from.** When a translated follow returns several items, a link on item k must say which of the parent's translated keys it stems from. Under (b) the child's origin records the parent link's payload plus the keyed fingerprint of that item's translated key; re-deriving it means re-reading the grand-origin, calling the resolver again and selecting the key whose fingerprint matches. A resolver that returns a different set, or a different capped prefix, causes drift. Under (a) the item's real translated key is sealed into the child link.
 - Moving parts: origin re-fetch, fingerprints, depth cap, drift handling.
@@ -127,7 +129,7 @@ What (a) and (a') cost, stated plainly:
 | New real-identifier ciphertext in model context and provider logs | Yes, every chained key of every result | Yes, same | No. Only the root input already sent in clear | None |
 | Effect of later key compromise | Every link ever issued under that key opens | Only links under keys the provider has not destroyed; none of the retired ones if truly destroyed, which the product cannot verify | Opens the root request and structural facts (labels, field paths); no new real identifier | Not applicable |
 | Length of the sealed key leaks | Yes, to a bucket (T17) | Yes, to a bucket | No chained key in the payload | None |
-| Maximum trace length by links | Not limited by the format (links are self-contained; lifetime limits it) | Same | `max-chain-depth` (default 3, ceiling 4) | Not applicable; a human at every hop |
+| Maximum trace length by links | Not limited by the format (links are self-contained; lifetime limits it) | Same | A depth cap (setting withdrawn, OD-200-8) | Not applicable; a human at every hop |
 | Source reads for an n-hop trace | n | n | n(n + 3) / 2 | n |
 | Link fails because data moved | Only if the target no longer holds the sealed key | Same | Compounds per hop, about 1 - (1 - p)^d, uniform with forgery | Not applicable |
 | One-to-many parent | The item's key is sealed in the child link | Same | Child records parent link plus item fingerprint; resolver called again on each re-read | Not applicable |
@@ -143,7 +145,7 @@ Evidence for the compromise claim: the accepted consequence recorded on `SecretK
 
 Weak points of (b) beyond cost: the fingerprint is a guessing oracle for whoever holds the key and a candidate list; a stored origin request that includes free-text search arguments (after 1.0) must carry the same fingerprint-only form the audit uses.
 
-**Recommendation (for the owner to accept or overrule). This replaces the first draft's recommendation of (b).** The first draft led with (b) because it adds no new real-identifier ciphertext. Re-derived against the 1.0 purpose, an agent following a record across many services unaided, (b) caps the length of a trace at `max-chain-depth` hops, makes a trace's read cost quadratic, and turns ordinary data movement into compounding uniform refusals; those are failures of the purpose, not tuning matters. The recommendation is now **(a') with fixed-size padding**: a dedicated link key id, rotated at least every `lifetime`, retired keys destroyed in the key store (not only removed from memory), and the residual risks T10 and T17 accepted in writing. If the owner weighs "no new real-identifier ciphertext in provider logs" above long unaided traces, (b) is the right choice and the depth cap is then a published product limit. If the owner accepts neither residual, (c) is the fallback and is what `dataprism.links.enabled=false` gives. Two facts the owner can still get cheaply: the typical and longest trace length in the pilot, and p from the load harness.
+**Recommendation (for the owner to accept or overrule). This replaces the first draft's recommendation of (b).** The first draft led with (b) because it adds no new real-identifier ciphertext. Re-derived against the 1.0 purpose, an agent following a record across many services unaided, (b) caps the length of a trace at a fixed depth (the setting is withdrawn, OD-200-8), makes a trace's read cost quadratic, and turns ordinary data movement into compounding uniform refusals; those are failures of the purpose, not tuning matters. The recommendation is now **(a') with fixed-size padding**: a dedicated link key id, rotated at least every `lifetime`, retired keys destroyed in the key store (not only removed from memory), and the residual risks T10 and T17 accepted in writing. If the owner weighs "no new real-identifier ciphertext in provider logs" above long unaided traces, (b) is the right choice and the depth cap is then a published product limit. If the owner accepts neither residual, (c) is the fallback and is what `dataprism.links.enabled=false` gives. Two facts the owner can still get cheaply: the typical and longest trace length in the pilot, and p from the load harness.
 
 ## 3. Link format
 
@@ -181,12 +183,25 @@ Base64url without padding of a binary layout, fixed order, all lengths explicit.
 | version | 1 | `0x01`. Any other value is refused before cryptography |
 | key id length, key id | 1 + up to 16 | ASCII `[A-Za-z0-9_-]`, not sensitive |
 | expiry | 8 | epoch seconds; also in the AAD |
-| target length, target | 1 + up to 64 | the label the client sees in this response (alias or real name, D-RM-10); also in the AAD |
-| relation | 1 | a code, `0x00` direct, `0x01` translated; also in the AAD |
+| target length, target | 1 + up to 64 | the label the client sees in this response (alias or real name, D-RM-10); also in the AAD; empty for a catalog page link (`0x02`, D4); source labels are at most 64 (OD-200-4) |
+| relation | 1 | a code from the relation table below (D4, register 8.2); also in the AAD |
 | nonce | 12 | random |
 | tag | 16 | at the end of the ciphertext |
 
-The header is at most 1 + 17 + 8 + 65 + 1 + 12 + 16 = 120 bytes. The target must be cleartext because the AAD has to be known before decryption and the client already sees that label. The relation is cleartext for the same reason, but it is only a one-byte code: the namespaces and resolver name, which are operator-chosen labels that could resemble real system names, are inside the encrypted payload and never in cleartext. All label lengths are enforced at startup (namespaces and resolver names at most 32 bytes, source labels at most 64).
+Relation byte (D4; the combined table of register section 8.2, which governs). This document's `_links` use `0x00` and `0x01`; the other codes belong to the batch design and are listed so that a byte is never reused:
+
+| Relation byte | Relation | Accepted by | Release |
+|---|---|---|---|
+| `0x00` | direct | `follow`; `follow_bulk` `links` | 0.8 |
+| `0x01` | translated | `follow`; `follow_bulk` `links` | 0.8 |
+| `0x02` | catalog page | `list_sources` `page` only | 0.8 |
+| `0x03` | collection page | `follow` only | 0.9 |
+| `0x04` | group | `follow_bulk` `group` only | 0.9 |
+| `0x05` to `0xFF` | reserved | none: refused as an invalid link (`LINK_INVALID`) | n/a |
+
+A link whose relation byte its tool does not accept is refused as invalid with the audit-only reason `LINK_WRONG_TOOL`, classified after authentication and not counted by the limiter (`batch-and-bulk-follow.md` 3.2). The page and group relations are specified in `batch-and-bulk-follow.md`.
+
+The header is at most 1 + 17 + 8 + 65 + 1 + 12 + 16 = 120 bytes. The target must be cleartext because the AAD has to be known before decryption and the client already sees that label. The relation is cleartext for the same reason, but it is only a one-byte code: the namespaces and resolver name, which are operator-chosen labels that could resemble real system names, are inside the encrypted payload and never in cleartext. Namespace and resolver-name lengths are enforced at startup (at most 32 bytes, grammar `[a-z][a-z0-9-]{0,31}`; entity types and field paths at most 64; OD-200-4). Source labels are at most 64, but in 0.8 a source name over 64 only warns at startup (OD-200-4 (a), OD-C18 (c) of `catalog.md`): such a source gets no links, counted as omitted, and `INVALID_SOURCE_NAME` refuses startup from 0.9.
 
 Associated data is the length-prefixed concatenation of: version, key id, expiry, target, relation, `scopeId` (from the session, never from the token), and the caller tag. Because scope and caller come from the authenticated session at verification time, a token replayed in another scope or by another caller fails authentication rather than relying on a comparison the code could forget.
 
@@ -200,8 +215,8 @@ Sealed payload:
 | key namespace | 1 + up to 32 | yes | yes |
 | resolver name (translated only) | 1 + up to 32 | yes | yes |
 | chained key | 2 + 64k, at most 258 | the real key, zero-padded to a multiple of 64 bytes (k = 1 to 4); a key over 256 bytes gets no link and is counted as omitted | absent |
-| origin, one record per level | at most 155 each | absent | origin source label (1 + 64), field path (1 + 32), fingerprint of the chained value (12), and for a translated level the resolver name (1 + 32) and fingerprint of the translated key (12) |
-| root request | at most 291 | absent | entity type (1 + 32), `subjectId` (2 + at most 256), as the caller sent it |
+| origin, one record per level | at most 187 each | absent | origin source label (1 + 64), field path (1 + 64, OD-200-4), fingerprint of the chained value (12), and for a translated level the resolver name (1 + 32) and fingerprint of the translated key (12) |
+| root request | at most 323 | absent | entity type (1 + 64, OD-200-4), `subjectId` (2 + at most 256), as the caller sent it |
 
 The length prefix of the chained key is inside the ciphertext, so padding hides the exact length within a 64-byte bucket. It does not hide the bucket (T17).
 
@@ -211,19 +226,21 @@ The target source is not repeated in the payload. The label in the header is aut
 
 ### Size arithmetic and defaults
 
-Worst case for option (a) and (a'): header 120 + payload (8 + 8 + 1 + 33 + 33 + 258 = 341) = 461 bytes, which is 616 characters.
+Worst case for option (a) and (a'): header 120 + payload (8 + 8 + 1 + 33 + 33 + 258 = 341) = 461 bytes, which is 616 characters. OD-200-4 leaves it unchanged: the sum already used the decided caps (namespace and resolver name 32, source label 64), and the entity type and field path appear only in option (b) fields below. 616 is at most the 1024 default.
 
-Worst case for option (b) with d origin levels: header 120 + fixed payload (8 + 8 + 1 + 33 + 33 = 83) + root request 291 + 155 d = 494 + 155 d bytes. Base64url length is 4 x ceil(bytes / 3).
+Worst case for option (b), which was rejected (OD-1) and is kept for the record, with d origin levels and the OD-200-4 caps (entity type 1 + 64, field path 1 + 64): header 120 + fixed payload (8 + 8 + 1 + 33 + 33 = 83) + root request 323 + 187 d = 526 + 187 d bytes. Base64url length is 4 x ceil(bytes / 3).
 
 | d (hops allowed) | Bytes | Characters |
 |---|---|---|
-| 1 | 649 | 868 |
-| 2 | 804 | 1072 |
-| 3 | 959 | 1280 |
-| 4 | 1114 | 1488 |
-| 5 | 1269 | 1692 |
+| 1 | 713 | 952 |
+| 2 | 900 | 1200 |
+| 3 | 1087 | 1452 |
+| 4 | 1274 | 1700 |
+| 5 | 1461 | 1948 |
 
-(b) at one level already exceeds 768 characters, so a 768 default could not hold even one hop. The defaults depend on the option. Under (a) and (a') the worst case is 616 characters, so the default `max-length` is 768 (576 bytes): a margin of 152 characters (25 percent) for a future header field, and a leaner schema and cap than the first sizing. Under (b) the default is 1536 characters (1152 bytes), `max-chain-depth` 3 (1280 characters), ceiling 4 (1488); depth 5 does not fit 1536 and would need `max-length` raised. The adopted option is (a') (OD-1), so the effective defaults were 768 and no chain depth; the owner raised the default `max-length` to 1024 on 2026-10-19 (OD-B12 of `batch-and-bulk-follow.md`), replacing the 768 decided here, and the 616-character worst case of this section is unchanged. Under (b) startup applies the formula: if `4 x ceil((494 + 155 x max-chain-depth) / 3)` exceeds `max-length`, startup refuses with `INVALID_LINK_LIMIT`. Typical links are far smaller than the worst case (short labels, short keys: about 200 to 300 bytes under (a), 300 to 450 under (b) at depth 1), but the cap and the schema use the worst case. The worst case is also why links count toward the response-size cap (task 193): 50 links at 768 characters is 38 KB in the extreme under (a'); under (b) at 1536 it would be 77 KB.
+Only d = 1 fits the 1024 default; deeper traces would need a larger `max-length` (at most 4096), which is part of why (b) is not adopted.
+
+(b) at one level already exceeds 768 characters, so a 768 default could not hold even one hop. The defaults depend on the option. Under (a) and (a') the worst case is 616 characters, so the default `max-length` is 768 (576 bytes): a margin of 152 characters (25 percent) for a future header field, and a leaner schema and cap than the first sizing. Under (b) the default was 1536 characters (1152 bytes); with the OD-200-4 caps depth 3 needs 1452 characters and depth 4 needs 1700, so depth 4 would need `max-length` raised. The depth setting is withdrawn with option (b) (OD-200-8). The adopted option is (a') (OD-1), so the effective defaults were 768 and no chain depth; the owner raised the default `max-length` to 1024 on 2026-10-19 (OD-B12 of `batch-and-bulk-follow.md`), replacing the 768 decided here, and the 616-character worst case of this section is unchanged. The option (b) startup formula and its depth setting are withdrawn (OD-200-8). Typical links are far smaller than the worst case (short labels, short keys: about 200 to 300 bytes under (a), 300 to 450 under (b) at depth 1), but the cap and the schema use the worst case. The worst case is also why links count toward the response-size cap (task 193): 50 links at 768 characters is 38 KB in the extreme under (a'); under (b) at 1536 it would be 77 KB.
 
 Maximum encoded length is checked before any decoding. If the sealer would produce a link longer than `max-length`, the link is not issued and counts as omitted.
 
@@ -247,9 +264,11 @@ The decision is `DENY:LINK_INVALID`. The real reason must be recorded somewhere 
 
 | Disposition key | Information | Shape under OD-13 shape C |
 |---|---|---|
-| `link` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `ISSUED_IN_FUTURE`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `DEPTH_EXCEEDED`, `PAYLOAD_MISMATCH` | `REFUSED:LINK_<REASON>`, for example `REFUSED:LINK_AUTH_FAILED` |
+| `link` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `ISSUED_IN_FUTURE`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `PAYLOAD_MISMATCH` | `REFUSED:LINK_<REASON>`, for example `REFUSED:LINK_AUTH_FAILED` |
 | `link:id` | The link's 16 hex-character id, only when the link authenticated | Not recorded under C (a metric-free loss: issue and use are joined by `correlationId` of each call only) |
 | `link:attempts` | The principal's counted failures in the window | Not recorded under C; exposed as a metric without a principal label |
+
+The closed set has eleven reasons. A twelfth, `DEPTH_EXCEEDED`, existed only for rejected option (b) and is withdrawn (OD-200-8).
 
 `AUTH_FAILED` covers forgery, tampering, wrong scope, wrong caller and wrong target, because the AEAD cannot say which input differed. That is a deliberate loss of operator diagnostics in exchange for no oracle (OD-3).
 
@@ -262,7 +281,7 @@ Never in audit, logs, metrics or exceptions: the token, the sealed payload, the 
 Purpose: stop a prompt-injected agent from grinding forged links. Properties required:
 
 - It counts only failures decided before the token authenticates: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY` and `AUTH_FAILED`. These are the failures a forger produces. An honest link naming a retired key has expired anyway under the rotation rule in section 3, so counting `UNKNOWN_KEY` does not penalise honest use.
-- Classification follows the authentication step. A token that fails authentication is always recorded and counted as `AUTH_FAILED`, whatever its cleartext header says: a forged token that names a target the caller cannot see, an expiry in the past or a relation that is not declared is `AUTH_FAILED`, not `TARGET_NOT_PERMITTED`, `EXPIRED` or `RELATION_UNDECLARED`. Those, together with `ORIGIN_DRIFT`, `ISSUED_IN_FUTURE`, `PAYLOAD_MISMATCH` and `DEPTH_EXCEEDED`, are classified only after authentication succeeds, so they are reachable only with a genuine link, are never counted, and give a prober no information (a prober cannot reach them). Counting them would only lock out honest users, for example on clock skew between members.
+- Classification follows the authentication step. A token that fails authentication is always recorded and counted as `AUTH_FAILED`, whatever its cleartext header says: a forged token that names a target the caller cannot see, an expiry in the past or a relation that is not declared is `AUTH_FAILED`, not `TARGET_NOT_PERMITTED`, `EXPIRED` or `RELATION_UNDECLARED`. Those, together with `ORIGIN_DRIFT`, `ISSUED_IN_FUTURE` and `PAYLOAD_MISMATCH` (the reason `DEPTH_EXCEEDED` is withdrawn, OD-200-8), are classified only after authentication succeeds, so they are reachable only with a genuine link, are never counted, and give a prober no information (a prober cannot reach them). Counting them would only lock out honest users, for example on clock skew between members.
 - It counts per principal within a scope, so one principal cannot lock the others out. The counter key is `HMAC(fingerprintKey, scopeId | principalId)` truncated and hex-encoded, so the map holds neither a case id nor a principal id (boundary 6).
 - The window is fixed and does not depend on a stored scope end, which does not exist: the counter entry is created at the first counted failure with a time-to-live of `dataprism.links.invalid-attempt-window` (default `PT10M`) and increments do not extend it. In a single-node deployment the same semantics hold in process.
 - When the count reaches `invalid-attempt-limit` (default 20), every `follow` by that principal in that scope is refused with `LINK_ATTEMPTS_EXHAUSTED` until the entry expires, including calls carrying a valid link. A lock that still accepted valid links would tell the prober which links are valid.
@@ -271,6 +290,8 @@ Purpose: stop a prompt-injected agent from grinding forged links. Properties req
 ## 5. The `follow` tool and `_links`
 
 ### `follow`
+
+Capability (OD-200-5, D11): `follow` needs the capability `FOLLOW`, a new entry in `Capability.KNOWN`. It is granted per role and off until granted: no existing role gains it by upgrading. Upgrade note, as for `COMPARE_ENTITY_SOURCES` in 0.2.0: a role that must use `follow` has `FOLLOW` added to its capabilities explicitly when `dataprism.links.enabled` is turned on, and the release notes of 0.8.0 say so. `follow_bulk` has its own capability, `FOLLOW_BULK` (`batch-and-bulk-follow.md`).
 
 Input schema (draft 2020-12). The caller supplies nothing but the link: scope, principal, purpose and case come from the session (rule 4; `ReservedArguments` strips them).
 
@@ -326,10 +347,10 @@ Output: the same envelope as `get_entity_context` (D-070-1), with exactly one en
       "type": "object",
       "properties": {
         "rel": { "enum": ["direct", "translated"] },
-        "target": { "type": "string" },
-        "field": { "type": "string" },
-        "namespace": { "type": "string" },
-        "toNamespace": { "type": "string" },
+        "target": { "type": "string", "maxLength": 64 },
+        "field": { "type": "string", "$comment": "the concrete indexed path (for example depots[2]), not the declared path capped by OD-200-4, so no maxLength" },
+        "namespace": { "type": "string", "maxLength": 32 },
+        "toNamespace": { "type": "string", "maxLength": 32 },
         "link": { "type": "string", "maxLength": 1024 },
         "expiresAt": { "type": "string", "format": "date-time" }
       },
@@ -380,7 +401,7 @@ Rules:
 3. A source whose status is not `ANSWERED` has no `_links` and no `_linksOmitted`. A `REFUSED` source (D-070-2) is omitted entirely and so is any link it would have produced.
 4. Links are grouped by `rel`, then by target in ascending order, then by `field`, so output is deterministic (task 179's ordering rule).
 5. Cap: `dataprism.links.max-per-response` (default 50) across the whole response. Selection under the cap takes links round-robin across targets in order, so one relation cannot starve the others. Each affected source carries `_linksOmitted` with the number dropped from it (D-RM-12). The marker states a count only, never what was dropped. Both the round-robin rule and the default are OD-11.
-6. A link whose sealed encoding would exceed `max-length`, or whose key exceeds 256 bytes under (a) and (a'), is not issued and counts as omitted.
+6. A link whose sealed encoding would exceed `max-length`, or whose key exceeds 256 bytes under (a) and (a'), or whose target source name exceeds 64 bytes (a non-conforming name that still starts in 0.8; OD-200-4, OD-C18 (c)), is not issued and counts as omitted.
 7. The leak validators run on the response with links present. A token is exempt from the key-shape scan by construction only if produced by the sealer (a typed `SealedLink` value); a token-shaped string that is not one fails validation (boundary 1).
 
 ### Configuration keys
@@ -393,12 +414,13 @@ All proposals. Unknown keys under `dataprism.links` are startup errors like ever
 | `dataprism.links.key-id` | none | Required when enabled. Unresolvable: `LINK_KEY_UNRESOLVED`. Shorter than 32 bytes: `LINK_KEY_WEAK`. Same id as `dataprism.privacy.hmac-key.key-id`: `LINK_KEY_SHARED` |
 | `dataprism.links.lifetime` | `PT30M` | Positive duration, or `scope`; otherwise `INVALID_LINK_LIFETIME`. Never effective beyond the scope (D-RM-6) |
 | `dataprism.links.max-per-response` | `50` | 1 to 500; otherwise `INVALID_LINK_LIMIT` |
-| `dataprism.links.max-length` | `1024` under (a)/(a') (was 768 until 2026-10-19; see OD-B12 of `batch-and-bulk-follow.md`); `1536` under (b) | At most 4096. Floor depends on the option: 616 under (a) and (a'), the worst case of (a) in section 3; under (b) the formula `4 x ceil((494 + 155 x max-chain-depth) / 3)` (868 at depth 1). A value below the floor of the chosen option is `INVALID_LINK_LIMIT` |
+| `dataprism.links.max-length` | `1024` (was 768 until 2026-10-19; see OD-B12 of `batch-and-bulk-follow.md`) | At most 4096. Floor 616, the worst case of (a) and (a') in section 3. A value below the floor is `INVALID_LINK_LIMIT`. The option (b) default of 1536 and its floor formula are withdrawn (OD-200-8) |
 | `dataprism.links.bind-caller` | `true` | Boolean (OD-2) |
 | `dataprism.links.invalid-attempt-limit` | `20` | Positive; otherwise `INVALID_LINK_LIMIT` |
 | `dataprism.links.invalid-attempt-window` | `PT10M` | Positive duration; otherwise `INVALID_LINK_LIMIT` |
 | `dataprism.links.clock-skew` | `PT5S` | 0 to `PT30S`; otherwise `INVALID_LINK_LIMIT` |
-| `dataprism.links.max-chain-depth` | `3` | 1 to 4; used only under option (b); otherwise `INVALID_LINK_LIMIT` |
+
+Withdrawn (OD-200-8): `dataprism.links.max-chain-depth`, a key that existed only for rejected option (b).
 
 ## 6. Boundaries
 
@@ -433,8 +455,8 @@ Mutation-testable: each line names a mutant that must be killed. PIT gates the l
 18. The token contains no cleartext of the chained value or the root `subjectId` (search the raw bytes before base64). Mutant: put either in the header.
 19. Padding (a, a'): keys of different lengths within one 64-byte bucket give tokens of identical length; a key over 256 bytes gets no link. Mutant: no padding, or padding to a variable length.
 20. Option (b): origin drift (record removed, record changed) is `LINK_INVALID` with audit `ORIGIN_DRIFT`; reordering alone is not drift. A link on a one-to-many item re-selects the right translated key after the resolver returns a different order.
-21. Option (b): depth `max-chain-depth + 1` is not issued; `DEPTH_EXCEEDED` on a forged deeper link. For every depth up to the ceiling the worst-case token fits `max-length`: a test builds a worst-case token (maximum labels, maximum `subjectId`) and checks the length formula in section 3. Startup refuses a `max-length` below the formula.
-22. Failed-attempt limiter: the counted reasons (`MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`) count; post-authentication reasons (`EXPIRED`, `ISSUED_IN_FUTURE`, `ORIGIN_DRIFT`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `PAYLOAD_MISMATCH`, `DEPTH_EXCEEDED`) never do, tested with genuine links in each state; a forged token whose cleartext header names a target the caller cannot see, an expired expiry, or an undeclared relation is recorded and counted as `AUTH_FAILED` and not as the reason the header suggests (mutant: classify from the header before authentication); the N+1th counted failure by principal P returns `LINK_ATTEMPTS_EXHAUSTED` for P, including for a valid link; principal Q in the same scope and P in another scope are unaffected; the window ends and the lock lifts; increments do not extend the window; the counter map holds no case id, principal id or other sensitive value. Mutants: count every reason, key by scope only, extend the window on increment, accept valid links while locked. Rolling rotation: a two-member simulation in which member A holds {old, new} with `key-id` old and member B holds {old, new} with `key-id` new issues and verifies links across both with no `UNKNOWN_KEY` and no counted failure; a member that holds only the old key and receives a new-key link records `UNKNOWN_KEY` (the failure phase 1 prevents); the health list and gauge show the held ids.
+21. Withdrawn with option (b) (OD-200-8): the depth cap, the `DEPTH_EXCEEDED` reason and the option (b) length formula no longer exist, so there is nothing to test.
+22. Failed-attempt limiter: the counted reasons (`MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`) count; post-authentication reasons (`EXPIRED`, `ISSUED_IN_FUTURE`, `ORIGIN_DRIFT`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `PAYLOAD_MISMATCH`) never do, tested with genuine links in each state; a forged token whose cleartext header names a target the caller cannot see, an expired expiry, or an undeclared relation is recorded and counted as `AUTH_FAILED` and not as the reason the header suggests (mutant: classify from the header before authentication); the N+1th counted failure by principal P returns `LINK_ATTEMPTS_EXHAUSTED` for P, including for a valid link; principal Q in the same scope and P in another scope are unaffected; the window ends and the lock lifts; increments do not extend the window; the counter map holds no case id, principal id or other sensitive value. Mutants: count every reason, key by scope only, extend the window on increment, accept valid links while locked. Rolling rotation: a two-member simulation in which member A holds {old, new} with `key-id` old and member B holds {old, new} with `key-id` new issues and verifies links across both with no `UNKNOWN_KEY` and no counted failure; a member that holds only the old key and receives a new-key link records `UNKNOWN_KEY` (the failure phase 1 prevents); the health list and gauge show the held ids.
 23. Collections: one link per distinct element key; indexed paths; the same key at several indices within one source result and toward one target gives one link, at the first index in path order (OD-14); a record with no chainable value gets none; the cap applies after collapse.
 24. One-to-many follow: the outer status rule for each mix (all answered, some answered, all `NO_DATA`, all `TIMED_OUT`, mixed failures, some refused, all refused); an item status that does not match the code pattern fails the schema; budget exhaustion part-way gives the items read so far and `itemsTruncated`; exhaustion before the first read is `SCOPE_READ_BUDGET`.
 25. Architecture rules: no `mcp` or `connectors` class depends on the raw-key accessor; the link module does not depend on `data-prism-reidentification`; no class outside the sealer calls `Cipher.getInstance("AES/GCM...")` (extend the existing designated-class pattern).
@@ -448,7 +470,7 @@ Each row has options and a recommendation. On 2026-10-09 the owner delegated eve
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| OD-1 | How the real chained key reaches `follow` | (a) ciphertext of the real key; (a') as (a) with a dedicated short-lived key and destroyed retired keys; (b) origin reference resolved server-side without Hazelcast, with a trace-length cap, quadratic reads and compounding drift; (c) chain only from keys a human supplies. Comparison in section 2 | (a') with fixed-size padding, accepting T10 and T17 in writing, because (b) fails the 1.0 purpose beyond `max-chain-depth` hops. Choose (b) instead if no new real-identifier ciphertext in provider logs matters more than long unaided traces. Keep (c) reachable by `enabled=false`. Measure the pilot's trace lengths and p first if cheap **Decided (owner delegated, 2026-10-09): (a') with fixed-size padding. The owner accepts residual risks T10 (a link key compromised before its destruction opens every link issued under it, revealing the real chained keys) and T17 (the 64-byte padding bucket of each sealed key, and the number and shape of links on a result, are visible to the model and its provider). The key-destruction procedure (destroy retired keys in the key store, not only remove them from memory) goes into the 0.8 operator documentation. (c) remains reachable by `enabled=false`.** |
+| OD-1 | How the real chained key reaches `follow` | (a) ciphertext of the real key; (a') as (a) with a dedicated short-lived key and destroyed retired keys; (b) origin reference resolved server-side without Hazelcast, with a trace-length cap, quadratic reads and compounding drift; (c) chain only from keys a human supplies. Comparison in section 2 | (a') with fixed-size padding, accepting T10 and T17 in writing, because (b) fails the 1.0 purpose beyond its depth cap (the setting is withdrawn, OD-200-8). Choose (b) instead if no new real-identifier ciphertext in provider logs matters more than long unaided traces. Keep (c) reachable by `enabled=false`. Measure the pilot's trace lengths and p first if cheap **Decided (owner delegated, 2026-10-09): (a') with fixed-size padding. The owner accepts residual risks T10 (a link key compromised before its destruction opens every link issued under it, revealing the real chained keys) and T17 (the 64-byte padding bucket of each sealed key, and the number and shape of links on a result, are visible to the model and its provider). The key-destruction procedure (destroy retired keys in the key store, not only remove them from memory) goes into the 0.8 operator documentation. (c) remains reachable by `enabled=false`.** |
 | OD-2 | Bind a link to the caller? | Bind (a second principal in the case cannot reuse a pasted link) or scope-only (analysts can hand links over) | Bind. Authorisation is rechecked on follow either way, so binding costs only hand-over convenience. Trade-off to note: under OD-13 shape C the audit has no link id, so issue and use are joined by principal, scope and target (and the `correlationId` of each call), not per link; binding is what makes that join meaningful **Decided (owner delegated, 2026-10-09): bind the caller (`bind-caller` true).** |
 | OD-3 | Operator diagnostics versus oracle | Keep `AUTH_FAILED` as one reason; or add a keyed scope tag to the cleartext header so audit can say "wrong scope" | Keep one reason. The loss is small and nothing reveals a scope relationship **Decided (owner delegated, 2026-10-09): one `AUTH_FAILED` reason.** |
 | OD-4 | Scope end semantics. A scope has no stored end; the same case id re-used later is the same scope | (i) accept: links die by lifetime alone; (ii) add a scope epoch (a value stored with the case that changes at scope end) into key derivation | (i) now, documented; revisit with the pilot. (ii) needs state the roadmap forbids unless the epoch derives from an existing source **Decided (owner delegated, 2026-10-09): option (i): links die by lifetime alone; documented.** |
@@ -459,7 +481,7 @@ Each row has options and a recommendation. On 2026-10-09 the owner delegated eve
 | OD-9 | Outer status of a one-to-many follow and partial results under budget exhaustion | The rule in section 5 (any answered item makes it `ANSWERED`; partial results with `itemsTruncated`); or the outer status is `FAILED` unless every item answered; or refuse the whole call if the budget runs out part-way | The rule in section 5. Returning what was read is consistent with D-RM-12 and the budget is already charged **Decided (owner delegated, 2026-10-09): the section 5 rule, aligned with D-070-2.** |
 | OD-10 | One link per collection element versus a single link for a whole collection | Per element (a link identifies exactly one key); or one link per collection field that follows to `items` (under (b) only, since (a) would have to seal the whole key list) | Per element. It keeps every link small and fixed in meaning and keeps the cap and paging (task 198) in one place **Decided (owner delegated, 2026-10-09): one link per element.** |
 | OD-11 | Cap policy | Round-robin across targets with default 50; or fill by relation; or a smaller default | Round-robin, 50. Round-robin cannot let one relation starve the rest; 50 is a starting value for the load harness to confirm **Decided (owner delegated, 2026-10-09): round-robin across targets, default 50.** |
-| OD-13 | Audit disposition grammar. `AuditEvent` accepts only `PrivacyAction` names, `REFUSED` and (D-070-13) `REFUSED:<code>`; the proposed reasons, counts, ids and timings do not fit | A: widen the grammar with an explicit allow-list of value shapes (changes the published `docs/audit.md` contract and the verifier). B: move counts, ids and timings to existing record fields or metrics, and widen only for reasons. C: encode only `REFUSED:<code>`-shaped values (one code per reason, e.g. `REFUSED:LINK_AUTH_FAILED`), and put counts and timings in metrics | C. It needs no contract or hash change; the cost is that link ids, attempt counts and resolver timings are in metrics, not the audit. Choose A if the audit must join an issued link to its use. In 0.8 `docs/audit.md` must document the new disposition keys and shapes: `link`, `<target>[<i>]:<refused>` and, under A, `resolver:<name>`; resolver failures under C are visible as the target's `name:KEY_UNRESOLVED` status plus a metric, not as dispositions **Decided (owner delegated, 2026-10-09): shape C (`REFUSED:<code>`-shaped values; counts, ids and timings as metrics).** |
+| OD-13 | Audit disposition grammar. `AuditEvent` accepts only `PrivacyAction` names, `REFUSED` and (D-070-13) `REFUSED:<code>`; the proposed reasons, counts, ids and timings do not fit | A: widen the grammar with an explicit allow-list of value shapes (changes the published `docs/audit.md` contract and the verifier). B: move counts, ids and timings to existing record fields or metrics, and widen only for reasons. C: encode only `REFUSED:<code>`-shaped values (one code per reason, e.g. `REFUSED:LINK_AUTH_FAILED`), and put counts and timings in metrics | C. It needs no contract or hash change; the cost is that link ids, attempt counts and resolver timings are in metrics, not the audit. Choose A if the audit must join an issued link to its use. In 0.8 `docs/audit.md` must document the new disposition keys and shapes: `link`, `<target>[<i>]:<refused>` and, under A, `resolver:<name>`; resolver failures under C are visible as the target's `name:KEY_UNRESOLVED` status plus a metric, not as dispositions **Decided (owner delegated, 2026-10-09): shape C (`REFUSED:<code>`-shaped values; counts, ids and timings as metrics).** *Rename note (OD-200-3, 2026-10-20): the status is spelled `RESOLVER_FAILED`.* |
 | OD-14 | Duplicate collection elements | Collapse the same key across all indices of a source result toward one target (first index wins, as in the rules); or only within one field path; or never collapse | Collapse across the result. Links are per key, and a second link for the same key adds only context cost **Decided (owner delegated, 2026-10-09): collapse the same key across the source result, first index wins.** |
 | OD-15 | Key rotation when `lifetime=scope` | Rotate the link key at most every maximum scope lifetime and retire it after that plus skew; or cap link lifetime at the rotation interval; or forbid `scope` under (a') | Allow `scope` and state that the (a') exposure window then equals the scope lifetime plus the rotation interval **Decided (owner delegated, 2026-10-09): allow `lifetime=scope`; (a') exposure window is the scope lifetime plus the rotation interval.** |
 | OD-16 | Clock skew defaults | `PT5S` default with `PT30S` ceiling; or 0 (strict); or a larger default | `PT5S` and `PT30S`. Skew applies to link expiry only **Decided (owner delegated, 2026-10-09): `PT5S` default, `PT30S` ceiling, link expiry only.** |
@@ -468,7 +490,7 @@ Each row has options and a recommendation. On 2026-10-09 the owner delegated eve
 
 ## 9. Proposed names (closing table)
 
-None collides with an existing name; the commands used are recorded in the Outcome of task 191. `KEY_UNRESOLVED` (in `key-resolvers.md`) is close in spelling to the existing startup code `HMAC_KEY_UNRESOLVED`; they are different kinds (a per-source status and a startup refusal), but task 200 should record both together or rename the new one.
+None collides with an existing name; the commands used are recorded in the Outcome of task 191. The per-source status of `key-resolvers.md`, first spelled `KEY_UNRESOLVED`, is `RESOLVER_FAILED` (OD-200-3), which also removes the near-collision with the startup code `HMAC_KEY_UNRESOLVED`.
 
 | Name | Kind | Proposed release |
 |---|---|---|
@@ -480,11 +502,8 @@ None collides with an existing name; the commands used are recorded in the Outco
 | `LINK_KEY_WEAK` | startup refusal code | 0.8 |
 | `INVALID_LINK_LIFETIME` | startup refusal code | 0.8 |
 | `INVALID_LINK_LIMIT` | startup refusal code | 0.8 |
-| `link` | audit disposition key (values `INVALID:<reason>`) | 0.8 |
-| `link:id` | audit disposition key | 0.8 |
-| `link:attempts` | audit disposition key | 0.8 |
-| `links:issued` | audit disposition key | 0.8 |
-| `links:omitted` | audit disposition key | 0.8 |
+| `link` | audit disposition key (values `REFUSED:LINK_<REASON>`, D5, OD-13 shape C) | 0.8 |
+| `FOLLOW` | capability (OD-200-5), off until granted | 0.8 |
 | `_links` | result field | 0.8 |
 | `_linksOmitted` | result field | 0.8 |
 | `items`, `itemsTruncated` | result fields (one-to-many follow) | 0.8 |
@@ -497,8 +516,9 @@ None collides with an existing name; the commands used are recorded in the Outco
 | `dataprism.links.invalid-attempt-limit` | configuration key | 0.8 |
 | `dataprism.links.invalid-attempt-window` | configuration key | 0.8 |
 | `dataprism.links.clock-skew` | configuration key | 0.8 |
-| `dataprism.links.max-chain-depth` | configuration key (option b only) | 0.8 |
-| `LINK_<REASON>` (twelve audit-only reason codes, shape C of OD-13) | audit value | 0.8 |
+| `LINK_<REASON>` (eleven audit-only reason codes, shape C of OD-13; `LINK_DEPTH_EXCEEDED` withdrawn, OD-200-8) | audit value | 0.8 |
 | `dataprism/link/v1/seal`, `/fingerprint`, `/caller` | key-derivation labels | 0.8 |
 | `dataprism.links.keys.loaded` | metric (gauge, one series per held link key id, value 1) | 0.8 |
 | link key ids held (list) | health-endpoint field | 0.8 |
+
+Withdrawn (OD-13 shape C, D5): the audit disposition keys `link:id`, `link:attempts`, `links:issued` and `links:omitted`, and the value shape `INVALID:<reason>`. The ids, counts and timings they carried are metrics, not dispositions. Withdrawn (OD-200-8): `dataprism.links.max-chain-depth` and the reason `DEPTH_EXCEEDED`.
