@@ -57,13 +57,18 @@ public final class ReadReservation {
     }
 
     /**
-     * Opaque and owned by the implementation that granted this reservation;
-     * {@code null} for one made without an origin and for refusals. Nothing else
-     * should interpret it.
+     * An opaque handle owned by the implementation that granted this
+     * reservation; {@code null} for a refusal and for one made without an origin.
+     * Nothing else should interpret it.
      *
-     * <p>Contract: an implementation must ignore (no-op) a release whose origin
-     * it does not recognise as live, so a release made after {@code forget} and a
-     * later recreation of the same scope id returns nothing to the new scope.
+     * <p>Contract: the origin is not proof of issue, because anyone holding a
+     * live reservation can read it and build another reservation around it. An
+     * implementation MUST recognise its own reservations by its own record (the
+     * object's identity, or an unguessable id it stores, such as sealed state),
+     * and MUST no-op any release it cannot match, including one for a scope that
+     * was forgotten and recreated. A reservation made without an origin (the
+     * three-argument {@code granted}) cannot be released by an implementation
+     * that relies on its own record.
      */
     public Object origin() {
         return origin;
@@ -96,11 +101,20 @@ public final class ReadReservation {
     }
 
     /**
+     * Reads this reservation still holds, for the implementation that issued it.
+     */
+    int remaining() {
+        return held.get();
+    }
+
+    /**
      * For implementations of {@link ScopeBudget}: takes up to {@code unused}
      * reads out of what this reservation still holds.
      *
      * @return how many reads the implementation must now return to its counters;
-     *         zero for a refused reservation or reads already returned
+     *         zero for a refused reservation or reads already returned. A holder that
+     *         empties its own reservation this way makes any later release return
+     *         nothing: it fails closed, and those reads stay charged
      */
     public int takeUnused(int unused) {
         if (unused < 0) {

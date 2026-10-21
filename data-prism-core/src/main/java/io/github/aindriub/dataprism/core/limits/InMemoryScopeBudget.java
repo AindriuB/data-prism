@@ -1,8 +1,11 @@
 package io.github.aindriub.dataprism.core.limits;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -35,6 +38,8 @@ public final class InMemoryScopeBudget implements ScopeBudget {
         private final Map<String, Integer> subjects = new HashMap<>();
         private int total;
         private boolean dead;
+        /** The reservations this state issued and that still hold reads. */
+        private final Set<ReadReservation> issued = Collections.newSetFromMap(new IdentityHashMap<>());
     }
 
     private final Map<String, ScopeState> scopes = new ConcurrentHashMap<>();
@@ -102,7 +107,9 @@ public final class InMemoryScopeBudget implements ScopeBudget {
                 }
                 state.subjects.put(subjectId, newSubject);
                 state.total = newTotal;
-                return ReadReservation.granted(scopeId, subjectId, reads, state);
+                ReadReservation granted = ReadReservation.granted(scopeId, subjectId, reads, state);
+                state.issued.add(granted);
+                return granted;
             }
         }
     }
@@ -124,7 +131,16 @@ public final class InMemoryScopeBudget implements ScopeBudget {
             }
             // Taken under the scope lock, so a release that loses a race with
             // forget returns nothing and cannot be applied to a later scope.
+            // Only a reservation this state itself issued, recognised by identity.
+            // The origin is not proof: a forged one built from a live origin is
+            // not in the set and releases nothing.
+            if (!state.issued.contains(reservation)) {
+                return;
+            }
             int give = reservation.takeUnused(unused);
+            if (reservation.remaining() == 0) {
+                state.issued.remove(reservation);
+            }
             if (give == 0) {
                 return;
             }
@@ -171,6 +187,7 @@ public final class InMemoryScopeBudget implements ScopeBudget {
             synchronized (state.lock) {
                 state.dead = true;
                 state.subjects.clear();
+                state.issued.clear();
                 state.total = 0;
             }
         }

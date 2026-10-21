@@ -374,6 +374,40 @@ class InMemoryScopeBudgetTest {
         assertThat(budget.scopeReads("T")).isZero();
     }
 
+    @Test
+    @DisplayName("a forged reservation built from a live origin releases nothing")
+    void forgedReservationIsNoOp() {
+        var budget = new InMemoryScopeBudget();
+        var victim = budget.reserve("S", "a", 3, 10, 10);
+        budget.reserve("S", "b", 5, 10, 10);
+
+        var forged = ReadReservation.granted("S", "b", 5, victim.origin());
+        budget.release(forged, 5);
+        var otherScope = ReadReservation.granted("T", "b", 5, victim.origin());
+        budget.release(otherScope, 5);
+
+        assertThat(budget.reads("S", "a")).isEqualTo(3);
+        assertThat(budget.reads("S", "b")).isEqualTo(5);
+        assertThat(budget.scopeReads("S")).isEqualTo(8);
+        assertThat(budget.scopeReads("T")).isZero();
+
+        budget.release(victim, 3);
+        assertThat(budget.reads("S", "a")).isZero();
+        assertThat(budget.scopeReads("S")).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("a reservation emptied by its holder releases nothing")
+    void emptiedReservationReleasesNothing() {
+        var budget = new InMemoryScopeBudget();
+        var r = budget.reserve("S", "a", 3, 10, 10);
+        r.takeUnused(3);
+
+        budget.release(r, 3);
+
+        assertThat(budget.scopeReads("S")).isEqualTo(3);
+    }
+
     private static boolean get(Future<Boolean> future) {
         try {
             return future.get();
