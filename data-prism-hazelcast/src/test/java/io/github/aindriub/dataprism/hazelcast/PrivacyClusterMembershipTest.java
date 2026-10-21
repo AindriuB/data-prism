@@ -3,11 +3,23 @@ package io.github.aindriub.dataprism.hazelcast;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.config.EvictionPolicy;
+import com.hazelcast.config.IndexType;
+import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.MaxSizePolicy;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,8 +37,8 @@ class PrivacyClusterMembershipTest {
     @Test
     void everyJoinDisablesAutoDetectionMulticastAndPhoneHome() {
         for (ClusterMembership m : List.of(
-                ClusterMembership.tcpIp("c1", List.of("10.1.2.3")).withPort(6001),
-                ClusterMembership.kubernetes("c1", "ns", "svc", null).withPort(6001),
+                ClusterMembership.tcpIp("c1", List.of("10.1.2.3")).withPort(6001).withInterface("10.0.*.*"),
+                ClusterMembership.kubernetes("c1", "ns", "svc", null).withPort(6001).withInterface("10.0.*.*"),
                 ClusterMembership.none("c1").withPort(6001))) {
             Config c = m.toConfig();
             assertThat(c.getNetworkConfig().getJoin().getAutoDetectionConfig().isEnabled()).isFalse();
@@ -44,7 +56,8 @@ class PrivacyClusterMembershipTest {
 
     @Test
     void tcpIpEnablesOnlyTcpIpWithTheGivenMembers() {
-        Config c = ClusterMembership.tcpIp("c1", List.of("10.1.2.3", "10.1.2.4:5702")).toConfig();
+        Config c = ClusterMembership.tcpIp("c1", List.of("10.1.2.3", "10.1.2.4:5702")).withInterface("10.0.*.*")
+                .toConfig();
         var join = c.getNetworkConfig().getJoin();
         assertThat(join.getTcpIpConfig().isEnabled()).isTrue();
         assertThat(join.getTcpIpConfig().getMembers()).containsExactly("10.1.2.3", "10.1.2.4:5702");
@@ -53,14 +66,15 @@ class PrivacyClusterMembershipTest {
 
     @Test
     void kubernetesEnablesOnlyKubernetesWithNamespaceAndOneServiceProperty() {
-        var byName = ClusterMembership.kubernetes("c1", "ns", "svc", null).toConfig()
+        var byName = ClusterMembership.kubernetes("c1", "ns", "svc", null).withInterface("10.0.*.*").toConfig()
                 .getNetworkConfig().getJoin();
         assertThat(byName.getKubernetesConfig().isEnabled()).isTrue();
         assertThat(byName.getTcpIpConfig().isEnabled()).isFalse();
         assertThat(byName.getKubernetesConfig().getProperties())
                 .containsOnlyKeys("namespace", "service-name")
                 .containsEntry("namespace", "ns").containsEntry("service-name", "svc");
-        var byDns = ClusterMembership.kubernetes("c1", "ns", null, "svc.ns.svc.cluster.local").toConfig()
+        var byDns = ClusterMembership.kubernetes("c1", "ns", null, "svc.ns.svc.cluster.local")
+                .withInterface("10.0.*.*").toConfig()
                 .getNetworkConfig().getJoin();
         assertThat(byDns.getKubernetesConfig().getProperties()).containsOnlyKeys("namespace", "service-dns");
     }
@@ -123,14 +137,40 @@ class PrivacyClusterMembershipTest {
     }
 
     @Test
-    void withoutAnInterfaceTcpIpAndKubernetesBindAny() {
-        // Documented choice: no interface means bind-any, which is Hazelcast's default.
-        for (ClusterMembership m : List.of(ClusterMembership.tcpIp("c1", List.of("10.1.2.3")),
-                ClusterMembership.kubernetes("c1", "ns", "svc", null))) {
-            Config c = m.toConfig();
-            assertThat(c.getProperty("hazelcast.socket.bind.any")).isNotEqualTo("false");
-            assertThat(c.getNetworkConfig().getInterfaces().isEnabled()).isFalse();
-        }
+    void tcpIpAndKubernetesWithoutAnInterfaceAreRefusedWhenTheConfigIsBuilt() {
+        refuses(Code.MISSING_MEMBER_INTERFACE, () -> ClusterMembership.tcpIp("c1", List.of("10.1.2.3")).toConfig());
+        refuses(Code.MISSING_MEMBER_INTERFACE,
+                () -> ClusterMembership.kubernetes("c1", "ns", "svc", null).toConfig());
+        refuses(Code.MISSING_MEMBER_INTERFACE, () -> PrivacyCluster.embedded(
+                ClusterMembership.tcpIp("c1", List.of("10.1.2.3")), false));
+    }
+
+    @Test
+    void anInterfaceThatMatchesEveryAddressIsRefused() {
+        List<String> ok = List.of("10.1.2.3");
+        refuses(Code.UNBOUNDED_MEMBER_INTERFACE, () -> ClusterMembership.tcpIp("c", ok).withInterface("*.*.*.*"));
+        refuses(Code.UNBOUNDED_MEMBER_INTERFACE,
+                () -> ClusterMembership.tcpIp("c", ok).withInterface("0-255.0-255.0-255.0-255"));
+        refuses(Code.UNBOUNDED_MEMBER_INTERFACE,
+                () -> ClusterMembership.kubernetes("c", "ns", "svc", null).withInterface("*.*.*.*"));
+        // Bounded patterns, wide as they are, stay accepted; PUBLIC_MEMBER_INTERFACE is not added (OD-10 (ii)).
+        assertThat(ClusterMembership.tcpIp("c", ok).withInterface("10.*.*.*").interfaceAddress())
+                .isEqualTo(Optional.of("10.*.*.*"));
+        assertThat(java.util.Arrays.stream(Code.values()).map(Enum::name)).doesNotContain("PUBLIC_MEMBER_INTERFACE");
+    }
+
+    @Test
+    void noneNeedsNoInterface() {
+        assertThat(ClusterMembership.none("c1").toConfig().getNetworkConfig().getInterfaces().getInterfaces())
+                .containsExactly("127.0.0.1");
+    }
+
+    @Test
+    void interfaceRefusalMessagesNameTheSettingAndNeverAValue() {
+        assertThatThrownBy(() -> ClusterMembership.tcpIp("c", List.of("secret-host.internal")).toConfig())
+                .hasMessageContaining("member.interface").hasMessageNotContaining("secret-host");
+        assertThatThrownBy(() -> ClusterMembership.tcpIp("c", List.of("10.1.2.3")).withInterface("*.*.*.*"))
+                .hasMessageContaining("member.interface").hasMessageNotContaining("*.*.*.*");
     }
 
     @Test
@@ -297,5 +337,128 @@ class PrivacyClusterMembershipTest {
                 }
             }
         }
+    }
+
+    // ---- map names (task 218 register, section 8.1) ----
+
+    /** Every Data Prism map-name constant, by constant name. */
+    private static final Map<String, String> MAP_NAMES = new LinkedHashMap<>();
+
+    static {
+        MAP_NAMES.put("IDENTITY_MAP", PrivacyCluster.IDENTITY_MAP);
+        MAP_NAMES.put("REIDENTIFICATION_MAP", PrivacyCluster.REIDENTIFICATION_MAP);
+        MAP_NAMES.put("BUDGET_MAP", PrivacyCluster.BUDGET_MAP);
+        MAP_NAMES.put("OVERSIGHT_MAP", PrivacyCluster.OVERSIGHT_MAP);
+        MAP_NAMES.put("APPROVAL_MAP", PrivacyCluster.APPROVAL_MAP);
+        MAP_NAMES.put("APPROVAL_ID_MAP", PrivacyCluster.APPROVAL_ID_MAP);
+        MAP_NAMES.put("APPROVAL_PENDING_MAP", PrivacyCluster.APPROVAL_PENDING_MAP);
+        MAP_NAMES.put("CALLER_RATE_MAP", PrivacyCluster.CALLER_RATE_MAP);
+        MAP_NAMES.put("APPROVAL_CONSUMED_MAP", PrivacyCluster.APPROVAL_CONSUMED_MAP);
+        MAP_NAMES.put("MEMBER_CARD_MAP", PrivacyCluster.MEMBER_CARD_MAP);
+    }
+
+    @Test
+    void everyMapConstantHasTheS1NameOfTheRegister() {
+        Set<String> registered = new TreeSet<>();
+        Path register = Path.of("..", "docs", "plan", "design", "contract-register.md");
+        try {
+            for (String line : Files.readAllLines(register)) {
+                String[] cells = line.split("\\|");
+                // | `name` | map | proposed | 0.8 | ...
+                if (cells.length > 4 && cells[2].strip().equals("map") && cells[3].strip().equals("proposed")
+                        && cells[4].strip().equals("0.8")) {
+                    registered.add(cells[1].strip().replace("`", ""));
+                }
+            }
+        } catch (IOException unreadable) {
+            throw new AssertionError("the contract register must be readable from the module directory", unreadable);
+        }
+        assertThat(registered).as("the 0.8 maps registered in section 8.1").hasSize(10);
+        assertThat(new TreeSet<>(MAP_NAMES.values())).isEqualTo(registered);
+        assertThat(MAP_NAMES.values()).allSatisfy(name -> assertThat(name).endsWith(".s1"));
+    }
+
+    @Test
+    void thePreEightMapNamesAreTheEightOfTheCutoverRule() {
+        assertThat(PrivacyCluster.PRE_0_8_MAPS).containsExactlyInAnyOrder("dataprism.identity",
+                "dataprism.budget", "dataprism.callerrate", "dataprism.oversight", "dataprism.approval",
+                "dataprism.approval.id", "dataprism.approval.pending", "dataprism.reidentification");
+    }
+
+    // ---- the settings of each map, equal to 0.7 map for map ----
+
+    private record Expected(EvictionPolicy eviction, String mergePolicy, boolean quorum) {
+    }
+
+    /** What a map that sets no merge policy has: Hazelcast's default, which is the union of keys. */
+    private static final String PUT_IF_ABSENT = new com.hazelcast.config.MergePolicyConfig().getPolicy();
+    /** What the claim map and the consumed map set, spelled as 0.7 spelled it. */
+    private static final String CLAIM_POLICY = "PutIfAbsentMergePolicy";
+
+    private static final Map<String, Expected> SETTINGS = new LinkedHashMap<>();
+
+    static {
+        SETTINGS.put(PrivacyCluster.IDENTITY_MAP, new Expected(EvictionPolicy.LRU, PUT_IF_ABSENT, false));
+        SETTINGS.put(PrivacyCluster.REIDENTIFICATION_MAP, new Expected(EvictionPolicy.LRU, PUT_IF_ABSENT, false));
+        SETTINGS.put(PrivacyCluster.BUDGET_MAP, new Expected(EvictionPolicy.LRU, PUT_IF_ABSENT, false));
+        SETTINGS.put(PrivacyCluster.OVERSIGHT_MAP, new Expected(EvictionPolicy.NONE, PUT_IF_ABSENT, false));
+        SETTINGS.put(PrivacyCluster.CALLER_RATE_MAP, new Expected(EvictionPolicy.NONE, PUT_IF_ABSENT, false));
+        SETTINGS.put(PrivacyCluster.APPROVAL_MAP,
+                new Expected(EvictionPolicy.LRU, ApprovalMergePolicy.class.getName(), true));
+        SETTINGS.put(PrivacyCluster.APPROVAL_ID_MAP, new Expected(EvictionPolicy.NONE, CLAIM_POLICY, true));
+        SETTINGS.put(PrivacyCluster.APPROVAL_PENDING_MAP,
+                new Expected(EvictionPolicy.NONE, PendingMergePolicy.class.getName(), true));
+        // New in 0.8: no size-based eviction, a union of keys on heal, and the approval map's quorum.
+        SETTINGS.put(PrivacyCluster.APPROVAL_CONSUMED_MAP, new Expected(EvictionPolicy.NONE, CLAIM_POLICY, true));
+        SETTINGS.put(PrivacyCluster.MEMBER_CARD_MAP, new Expected(EvictionPolicy.NONE, PUT_IF_ABSENT, false));
+    }
+
+    @Test
+    void everyMapKeepsItsZeroSevenSettingsUnderTheNewName() {
+        Config config = PrivacyCluster.configure(new Config().setClusterName("settings"), OptionalInt.of(2));
+        assertThat(config.getMapConfigs().keySet()).containsExactlyInAnyOrderElementsOf(SETTINGS.keySet());
+        SETTINGS.forEach((name, expected) -> {
+            MapConfig map = config.getMapConfigs().get(name);
+            assertThat(map.getEvictionConfig().getEvictionPolicy()).as(name + " eviction")
+                    .isEqualTo(expected.eviction());
+            assertThat(map.getEvictionConfig().getMaxSizePolicy()).as(name).isEqualTo(MaxSizePolicy.PER_NODE);
+            assertThat(map.getEvictionConfig().getSize()).as(name).isEqualTo(100_000);
+            assertThat(map.getMergePolicyConfig().getPolicy()).as(name + " merge").isEqualTo(expected.mergePolicy());
+            assertThat(map.getMergePolicyConfig().getBatchSize()).as(name).isEqualTo(100);
+            assertThat(map.getTimeToLiveSeconds()).as(name + " map-level ttl").isZero();
+            assertThat(map.getMapStoreConfig().isEnabled()).as(name + " map store").isFalse();
+            assertThat(map.getBackupCount()).as(name).isEqualTo(1);
+            assertThat(map.isStatisticsEnabled()).as(name).isTrue();
+            assertThat(map.getIndexConfigs()).as(name).hasSize(1);
+            assertThat(map.getIndexConfigs().get(0).getType()).isEqualTo(IndexType.HASH);
+            assertThat(map.getIndexConfigs().get(0).getAttributes()).containsExactly("__key");
+            assertThat(map.getSplitBrainProtectionName()).as(name + " quorum")
+                    .isEqualTo(expected.quorum() ? PrivacyCluster.APPROVAL_PROTECTION : null);
+        });
+        var protection = config.getSplitBrainProtectionConfigs().get(PrivacyCluster.APPROVAL_PROTECTION);
+        assertThat(protection.getMinimumClusterSize()).isEqualTo(2);
+        assertThat(protection.getProtectOn()).isEqualTo(com.hazelcast.splitbrainprotection.SplitBrainProtectionOn.WRITE);
+    }
+
+    @Test
+    void withoutAQuorumNoMapNamesAProtection() {
+        for (OptionalInt none : List.of(OptionalInt.empty(), OptionalInt.of(1))) {
+            Config config = PrivacyCluster.configure(new Config().setClusterName("settings"), none);
+            assertThat(config.getSplitBrainProtectionConfigs()).isEmpty();
+            config.getMapConfigs().values().forEach(m -> assertThat(m.getSplitBrainProtectionName()).isNull());
+        }
+    }
+
+    @Test
+    void theAreaClassesHoldTheMapNamesTheyConfigure() {
+        assertThat(IdentityMaps.NAMES).containsExactlyInAnyOrder(PrivacyCluster.IDENTITY_MAP,
+                PrivacyCluster.REIDENTIFICATION_MAP);
+        assertThat(CounterMaps.NAMES).containsExactlyInAnyOrder(PrivacyCluster.BUDGET_MAP,
+                PrivacyCluster.CALLER_RATE_MAP);
+        assertThat(OversightMaps.NAMES).containsExactlyInAnyOrder(PrivacyCluster.OVERSIGHT_MAP,
+                PrivacyCluster.MEMBER_CARD_MAP);
+        assertThat(ApprovalMaps.NAMES).containsExactlyInAnyOrder(PrivacyCluster.APPROVAL_MAP,
+                PrivacyCluster.APPROVAL_ID_MAP, PrivacyCluster.APPROVAL_PENDING_MAP,
+                PrivacyCluster.APPROVAL_CONSUMED_MAP);
     }
 }

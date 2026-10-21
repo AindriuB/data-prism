@@ -1,17 +1,16 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.config.ClassFilter;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.IndexConfig;
 import com.hazelcast.config.IndexType;
+import com.hazelcast.config.JavaSerializationFilterConfig;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.MaxSizePolicy;
-import com.hazelcast.config.MergePolicyConfig;
-import com.hazelcast.config.SplitBrainProtectionConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.splitbrainprotection.SplitBrainProtectionOn;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 
 import java.util.HashSet;
@@ -59,35 +58,55 @@ import java.util.regex.Pattern;
  */
 public final class PrivacyCluster implements AutoCloseable {
 
-    /** Synthetic values, recomputable. Losing this map costs CPU and nothing else. */
-    public static final String IDENTITY_MAP = "dataprism.identity";
+    /**
+     * Synthetic values, recomputable. Losing this map costs CPU and nothing else. Every map name carries the
+     * generation suffix {@code .s1}; the 0.7 names are {@link #PRE_0_8_MAPS} and are never read.
+     */
+    public static final String IDENTITY_MAP = "dataprism.identity.s1";
 
     /** Pseudonym to subject. Not recomputable, and the most sensitive object here. */
-    public static final String REIDENTIFICATION_MAP = "dataprism.reidentification";
+    public static final String REIDENTIFICATION_MAP = "dataprism.reidentification.s1";
 
     /** Per-subject read counts, shared so the budget means what it says. */
-    public static final String BUDGET_MAP = "dataprism.budget";
+    public static final String BUDGET_MAP = "dataprism.budget.s1";
 
     /** Pause flags: global, per tool, per scope. No TTL and no eviction, because losing one reopens a paused path. */
-    public static final String OVERSIGHT_MAP = "dataprism.oversight";
+    public static final String OVERSIGHT_MAP = "dataprism.oversight.s1";
 
     /** Approval requests, keyed scope first. Each entry lives until the request's expiry. */
-    public static final String APPROVAL_MAP = "dataprism.approval";
+    public static final String APPROVAL_MAP = "dataprism.approval.s1";
 
     /**
      * Claims on approval ids, keyed by the bare id; the value is the approval's entry key. A claim makes an id
      * unique across scopes. It lives at least as long as the approval it guards.
      */
-    public static final String APPROVAL_ID_MAP = "dataprism.approval.id";
+    public static final String APPROVAL_ID_MAP = "dataprism.approval.id.s1";
 
     /**
      * The pending approvals of each (kind, requester) with their expiries, which the per-requester cap counts.
      * One entry processor changes an entry, so the count and the add are one step.
      */
-    public static final String APPROVAL_PENDING_MAP = "dataprism.approval.pending";
+    public static final String APPROVAL_PENDING_MAP = "dataprism.approval.pending.s1";
 
     /** Per-caller fixed-window request counts. */
-    public static final String CALLER_RATE_MAP = "dataprism.callerrate";
+    public static final String CALLER_RATE_MAP = "dataprism.callerrate.s1";
+
+    /** Consumed-approval tombstones: an approval that was used stays used, even after the approval entry is gone. */
+    public static final String APPROVAL_CONSUMED_MAP = "dataprism.approval.consumed.s1";
+
+    /** Member cards, and the sentinel under its reserved key. */
+    public static final String MEMBER_CARD_MAP = "dataprism.membercard.s1";
+
+    /** The 0.7 oversight map, where a serving 0.8 member keeps the fence entry. */
+    static final String OVERSIGHT_FENCE_MAP = "dataprism.oversight";
+
+    /**
+     * The eight map names of 0.7 and earlier. A 0.8 member never reads them; it only checks that they are empty
+     * (the cutover is non-rolling, see {@link ClusterMembership#refuseUnsealedState}).
+     */
+    static final List<String> PRE_0_8_MAPS = List.of("dataprism.identity", "dataprism.reidentification",
+            "dataprism.budget", "dataprism.oversight", "dataprism.approval", "dataprism.approval.id",
+            "dataprism.approval.pending", "dataprism.callerrate");
 
     /** The split-brain protection on the approval map: writes only, so a minority can still read. */
     static final String APPROVAL_PROTECTION = "dataprism.approval.quorum";
@@ -338,8 +357,15 @@ public final class PrivacyCluster implements AutoCloseable {
                                           OptionalInt approvalMinimumMembers,
                                           java.time.Duration approvalSweepInterval) {
         PendingSweeper.checked(approvalSweepInterval);
-        return new PrivacyCluster(Hazelcast.newHazelcastInstance(configure(config, approvalMinimumMembers)),
-                reidentificationEnabled, approvalSweepInterval);
+        HazelcastInstance started = Hazelcast.newHazelcastInstance(configure(config, approvalMinimumMembers));
+        try {
+            ClusterMembership.refuseUnsealedState(started);
+        } catch (RuntimeException refused) {
+            // Started here, so stopped here: a member that refuses serves nothing.
+            started.shutdown();
+            throw refused;
+        }
+        return new PrivacyCluster(started, reidentificationEnabled, approvalSweepInterval);
     }
 
     /**
@@ -368,6 +394,8 @@ public final class PrivacyCluster implements AutoCloseable {
             throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_DISCOVERY,
                     "auto-detection and multicast must be disabled on the supplied instance");
         }
+        checkInstanceSettings(config);
+        ClusterMembership.refuseUnsealedState(instance);
         return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval);
     }
 
@@ -416,51 +444,88 @@ public final class PrivacyCluster implements AutoCloseable {
         config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
         config.setProperty("hazelcast.phone.home.enabled", "false");
-        config.addMapConfig(privacyMap(new MapConfig(IDENTITY_MAP)));
-        config.addMapConfig(privacyMap(new MapConfig(REIDENTIFICATION_MAP)));
-        config.addMapConfig(privacyMap(new MapConfig(BUDGET_MAP)));
-        MapConfig oversight = privacyMap(new MapConfig(OVERSIGHT_MAP));
-        // An evicted pause flag is a path silently reopened.
-        oversight.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
-        config.addMapConfig(oversight);
-        MapConfig approval = privacyMap(new MapConfig(APPROVAL_MAP));
-        // After a heal an approval either side used stays used; the default keeps the larger side's copy.
-        approval.setMergePolicyConfig(new MergePolicyConfig(ApprovalMergePolicy.class.getName(),
-                MergePolicyConfig.DEFAULT_BATCH_SIZE));
-        // A minimum of 1 is met by any member that is running, so it needs no protection. Configuring it would
-        // only refuse approvals for the first seconds after start, until Hazelcast first evaluates the members.
-        if (approvalMinimumMembers.isPresent() && approvalMinimumMembers.getAsInt() > 1) {
-            config.addSplitBrainProtectionConfig(new SplitBrainProtectionConfig(APPROVAL_PROTECTION, true,
-                    approvalMinimumMembers.getAsInt()).setProtectOn(SplitBrainProtectionOn.WRITE));
-            approval.setSplitBrainProtectionName(APPROVAL_PROTECTION);
-        }
-        config.addMapConfig(approval);
-        // The id claims and pending sets guard the approval map, so they get its write quorum, never evict, and a
-        // heal never frees a held claim or lowers a requester's pending set.
-        MapConfig idClaims = approvalGuard(new MapConfig(APPROVAL_ID_MAP), "PutIfAbsentMergePolicy");
-        MapConfig pending = approvalGuard(new MapConfig(APPROVAL_PENDING_MAP), PendingMergePolicy.class.getName());
-        if (approvalMinimumMembers.isPresent() && approvalMinimumMembers.getAsInt() > 1) {
-            idClaims.setSplitBrainProtectionName(APPROVAL_PROTECTION);
-            pending.setSplitBrainProtectionName(APPROVAL_PROTECTION);
-        }
-        config.addMapConfig(idClaims);
-        config.addMapConfig(pending);
-        MapConfig callerRate = privacyMap(new MapConfig(CALLER_RATE_MAP));
-        // An evicted counter resets a caller's window; the 2-window TTL bounds size.
-        callerRate.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
-        config.addMapConfig(callerRate);
+        forceSafeSettings(config);
+        IdentityMaps.configure(config);
+        OversightMaps.configure(config);
+        ApprovalMaps.configure(config, approvalMinimumMembers);
+        CounterMaps.configure(config);
         return config;
     }
 
-    private static MapConfig approvalGuard(MapConfig map, String mergePolicy) {
-        privacyMap(map);
-        // An evicted claim or pending id reopens the path it closes. Entries leave by explicit removal or TTL.
-        map.getEvictionConfig().setEvictionPolicy(EvictionPolicy.NONE);
-        map.setMergePolicyConfig(new MergePolicyConfig(mergePolicy, MergePolicyConfig.DEFAULT_BATCH_SIZE));
-        return map;
+    /** The Java serialisation allowlist: what Data Prism's own entry processors and values need, and nothing else. */
+    static final Set<String> ALLOWED_CLASSES = Set.of("java.lang.String", "java.lang.Integer", "java.lang.Boolean",
+            "java.time.Ser");
+
+    /** Every Data Prism processor and merge policy lives under this prefix. */
+    static final Set<String> ALLOWED_PREFIXES = Set.of("io.github.aindriub.dataprism.hazelcast.");
+
+    /**
+     * An address no client can have, so the Management Center trusted-interface list is non-empty and matches none.
+     * An empty list is Hazelcast's default and means unrestricted: a client that knows only the cluster name can
+     * then freeze or shut down the cluster (spike 219, Q3 and Q13).
+     */
+    static final String UNMATCHABLE_MANAGEMENT_ADDRESS = "255.255.255.255";
+
+    private static void forceSafeSettings(Config config) {
+        config.getJetConfig().setEnabled(false);
+        config.getUserCodeDeploymentConfig().setEnabled(false);
+        config.getManagementCenterConfig().setTrustedInterfaces(Set.of(UNMATCHABLE_MANAGEMENT_ADDRESS));
+        JavaSerializationFilterConfig supplied = config.getSerializationConfig().getJavaSerializationFilterConfig();
+        if (supplied != null && !withinAllowlist(supplied)) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "the java-serialization-filter allows more than Data Prism needs; remove it to take the default "
+                            + "or narrow it");
+        }
+        config.getSerializationConfig().setJavaSerializationFilterConfig(new JavaSerializationFilterConfig()
+                .setDefaultsDisabled(true)
+                .setWhitelist(new ClassFilter().setClasses(ALLOWED_CLASSES).setPrefixes(ALLOWED_PREFIXES)));
     }
 
-    private static MapConfig privacyMap(MapConfig map) {
+    /** Defaults off, and nothing listed that the allowlist does not already list. */
+    private static boolean withinAllowlist(JavaSerializationFilterConfig filter) {
+        ClassFilter allow = filter.getWhitelist();
+        return filter.isDefaultsDisabled() && allow != null
+                && ALLOWED_CLASSES.containsAll(allow.getClasses())
+                && ALLOWED_PREFIXES.containsAll(allow.getPrefixes())
+                && allow.getPackages().isEmpty();
+    }
+
+    /**
+     * What can be checked on an instance somebody else started and cannot be changed: an allowlisting filter that
+     * names Data Prism's classes, and neither Jet nor user-code deployment. Phone-home and the Management Center
+     * trusted interfaces are the integrator's; neither is checked here.
+     */
+    private static void checkInstanceSettings(Config config) {
+        JavaSerializationFilterConfig filter = config.getSerializationConfig().getJavaSerializationFilterConfig();
+        if (filter == null || !filter.isDefaultsDisabled() || filter.getWhitelist() == null
+                || !allowsDataPrism(filter.getWhitelist())) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "the supplied instance needs a java-serialization-filter with defaults disabled that allows "
+                            + "Data Prism's classes");
+        }
+        if (config.getJetConfig().isEnabled()) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "jet must be disabled on the supplied instance");
+        }
+        if (config.getUserCodeDeploymentConfig().isEnabled()) {
+            throw new PrivacyClusterRefusal(Code.UNSAFE_HAZELCAST_SERIALIZATION,
+                    "user-code-deployment must be disabled on the supplied instance");
+        }
+    }
+
+    private static boolean allowsDataPrism(ClassFilter allow) {
+        return ALLOWED_CLASSES.stream().allMatch(name -> allowed(allow, name))
+                && ALLOWED_PREFIXES.stream().allMatch(prefix -> allowed(allow, prefix));
+    }
+
+    private static boolean allowed(ClassFilter allow, String nameOrPrefix) {
+        return allow.getClasses().contains(nameOrPrefix)
+                || allow.getPrefixes().stream().anyMatch(nameOrPrefix::startsWith)
+                || allow.getPackages().stream().anyMatch(p -> nameOrPrefix.startsWith(p + "."));
+    }
+
+    /** The settings every Data Prism map has; an area class then adjusts eviction, merge policy and protection. */
+    static MapConfig privacyMap(MapConfig map) {
         map.getMapStoreConfig().setEnabled(false);
         map.setBackupCount(1);
         map.setStatisticsEnabled(true);

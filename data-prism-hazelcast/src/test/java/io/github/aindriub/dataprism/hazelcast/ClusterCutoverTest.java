@@ -1,0 +1,152 @@
+package io.github.aindriub.dataprism.hazelcast;
+
+import com.hazelcast.config.Config;
+import com.hazelcast.core.Hazelcast;
+import com.hazelcast.core.HazelcastInstance;
+import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+
+/**
+ * The 0.7 to 0.8 cutover is non-rolling (cluster-security 4.8, OD-215-1 (a)): a 0.8 member that finds an entry in a
+ * pre-0.8 map refuses to start, so a 0.7 and a 0.8 generation never serve side by side. The "0.7 member" here is a
+ * plain Hazelcast member holding entries under the old names; it is started with phone-home off.
+ */
+class ClusterCutoverTest {
+
+    private static final char NUL = 0;
+
+    private final String cluster = TestMembers.uniqueName("cutover");
+    private int oldPort;
+    private int newPort;
+    private HazelcastInstance old;
+
+    @BeforeEach
+    void startTheOldMember() {
+        oldPort = FreePorts.consecutive(1);
+        newPort = FreePorts.consecutive(1);
+        Config config = new Config().setClusterName(cluster);
+        config.getJetConfig().setEnabled(false);
+        config.setProperty("hazelcast.phone.home.enabled", "false");
+        config.getNetworkConfig().setPort(oldPort).setPortAutoIncrement(false);
+        var join = config.getNetworkConfig().getJoin();
+        join.getMulticastConfig().setEnabled(false);
+        join.getAutoDetectionConfig().setEnabled(false);
+        join.getTcpIpConfig().setEnabled(true).addMember("127.0.0.1:" + newPort);
+        config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+        config.setProperty("hazelcast.socket.bind.any", "false");
+        old = Hazelcast.newHazelcastInstance(config);
+    }
+
+    @AfterEach
+    void stop() {
+        old.getLifecycleService().terminate();
+    }
+
+    private PrivacyCluster startNewMember() {
+        return PrivacyCluster.embedded(ClusterMembership
+                .tcpIp(cluster, List.of("127.0.0.1:" + oldPort, "127.0.0.1:" + newPort)).withPort(newPort)
+                .withInterface("127.0.0.1"), false);
+    }
+
+    private void clearOldMaps() {
+        PrivacyCluster.PRE_0_8_MAPS.forEach(name -> old.getMap(name).clear());
+    }
+
+    @Test
+    void aMemberThatJoinsAClusterHoldingAnEntryInAnyPreZeroEightMapIsRefusedAndServesNothing() {
+        assertThat(PrivacyCluster.PRE_0_8_MAPS).hasSize(8);
+        for (String map : PrivacyCluster.PRE_0_8_MAPS) {
+            clearOldMaps();
+            old.getMap(map).put("scope-a" + NUL + "subject-a", "old-format-value-7f3a");
+            Throwable refused = catchThrowable(this::startNewMember);
+            assertThat(refused).as(map).isInstanceOf(PrivacyClusterRefusal.class);
+            assertThat(((PrivacyClusterRefusal) refused).code()).as(map).isEqualTo(Code.UNSEALED_CLUSTER_STATE);
+            // Serves nothing: the member that was started is gone, and the old member is alone again.
+            assertThat(await(30, () -> old.getCluster().getMembers().size() == 1)).as(map + " member left").isTrue();
+            assertThat(Hazelcast.getAllHazelcastInstances()).as(map).containsExactly(old);
+        }
+    }
+
+    @Test
+    void aBudgetEntryWrittenInTheZeroSevenFormatIsRefused() {
+        // 0.7: key = scope NUL subject, value = the Integer count.
+        old.<String, Integer>getMap("dataprism.budget").put("scope-a" + NUL + "subject-a", 3);
+        Throwable refused = catchThrowable(this::startNewMember);
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.UNSEALED_CLUSTER_STATE);
+    }
+
+    @Test
+    void theRefusalNamesTheConditionAndNeverAnEntry() {
+        old.getMap("dataprism.budget").put("scope-secret" + NUL + "subject-secret", 41);
+        Throwable refused = catchThrowable(this::startNewMember);
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(refused.getMessage()).startsWith("UNSEALED_CLUSTER_STATE")
+                .doesNotContain("scope-secret").doesNotContain("subject-secret").doesNotContain("41");
+    }
+
+    @Test
+    void aClusterWithNoPreZeroEightEntryStartsAndCreatesTheS1MapsEmpty() {
+        try (PrivacyCluster fresh = startNewMember()) {
+            assertThat(await(30, () -> fresh.instance().getCluster().getMembers().size() == 2)).isTrue();
+            assertThat(fresh.instance().getMap(PrivacyCluster.BUDGET_MAP).isEmpty()).isTrue();
+        }
+    }
+
+    @Test
+    void theFenceEntryAloneIsNotAnEntry() {
+        // cluster-security 4.8: key `all` = Boolean.TRUE in the pre-0.8 oversight map is the fence, ignored.
+        old.getMap("dataprism.oversight").put("all", Boolean.TRUE);
+        try (PrivacyCluster fresh = startNewMember()) {
+            assertThat(fresh.instance().getLifecycleService().isRunning()).isTrue();
+        }
+    }
+
+    @Test
+    void theFenceDoesNotExcuseAnotherEntryInTheSameMap() {
+        old.getMap("dataprism.oversight").put("all", Boolean.TRUE);
+        old.getMap("dataprism.oversight").put("tool" + NUL + "search", Boolean.TRUE);
+        Throwable refused = catchThrowable(this::startNewMember);
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.UNSEALED_CLUSTER_STATE);
+    }
+
+    @Test
+    void aSuppliedInstanceThatJoinedACluster_withAnOldEntry_isRefusedAndLeftRunning() {
+        old.getMap("dataprism.callerrate").put("caller" + NUL + "1", "7");
+        // A hardened member, so that nothing but the old state can refuse it.
+        Config config = PrivacyCluster.configure(ClusterMembership
+                .tcpIp(cluster, List.of("127.0.0.1:" + oldPort, "127.0.0.1:" + newPort)).withPort(newPort)
+                .withInterface("127.0.0.1").toConfig());
+        HazelcastInstance supplied = Hazelcast.newHazelcastInstance(config);
+        try {
+            Throwable refused = catchThrowable(() -> PrivacyCluster.using(supplied, false));
+            assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+            assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.UNSEALED_CLUSTER_STATE);
+            assertThat(supplied.getLifecycleService().isRunning()).isTrue();
+        } finally {
+            supplied.getLifecycleService().terminate();
+        }
+    }
+
+    private static boolean await(long seconds, BooleanSupplier condition) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+        }
+        return condition.getAsBoolean();
+    }
+}
