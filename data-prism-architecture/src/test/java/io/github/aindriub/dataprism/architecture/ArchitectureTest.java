@@ -723,6 +723,43 @@ class ArchitectureTest {
     }
 
     /**
+     * T14: the cluster sealing code (envelope, keyed names) is reachable only from the cluster stores. A tool-side
+     * class (mcp, orchestration, connectors) that touched it could read or forge a sealed entry without the
+     * privacy engine in between.
+     */
+    private static ArchRule noSealDependencyFrom(String... subjectPackages) {
+        return noClasses()
+                .that().resideInAnyPackage(subjectPackages)
+                .should().dependOnClassesThat().resideInAPackage("io.github.aindriub.dataprism.hazelcast.seal..")
+                .allowEmptyShould(true);
+    }
+
+    private static final ArchRule NO_TOOL_SIDE_DEPENDS_ON_SEAL =
+            noSealDependencyFrom("..mcp..", "..orchestration..", "..connectors..");
+
+    @Test
+    void noToolSideClassDependsOnTheSealPackage() {
+        NO_TOOL_SIDE_DEPENDS_ON_SEAL.check(CLASSES);
+    }
+
+    /** The fixture lives in this package, so the rule is pointed at it; the dependency test is the same. */
+    @Test
+    void sealRuleCatchesADependencyOnTheSealPackage() {
+        JavaClasses fixture = new ClassFileImporter().importClasses(SealDependentFixture.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> noSealDependencyFrom("io.github.aindriub.dataprism.architecture").check(fixture))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("SealDependentFixture");
+    }
+
+    /** What the rule above exists to stop: a class outside the cluster stores reaching for the sealer. */
+    static final class SealDependentFixture {
+        Object reachForTheSealer() {
+            return io.github.aindriub.dataprism.hazelcast.seal.Sealer.class;
+        }
+    }
+
+    /**
      * An approval becomes usable only through {@code ApprovalStore.approve}, and its two production callers audit the
      * decision before they call it. Nothing else may call it, so an approved value with no {@code ALLOW:APPROVED}
      * before it cannot be made.
