@@ -3,6 +3,8 @@ package io.github.aindriub.dataprism.hazelcast;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.KubernetesConfig;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 
 import java.util.List;
@@ -60,6 +62,10 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
             throw refuse(Code.INVALID_CLUSTER_INTERFACE,
                     "interface must be an IPv4 literal or a wildcard pattern such as 10.0.*.*");
         }
+        if (interfaceAddress.isPresent() && matchesEveryAddress(interfaceAddress.get())) {
+            throw refuse(Code.UNBOUNDED_MEMBER_INTERFACE,
+                    "member.interface matches every address; name the network the cluster port may listen on");
+        }
     }
 
     public static ClusterMembership tcpIp(String clusterName, List<String> members) {
@@ -84,8 +90,19 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         return new ClusterMembership(clusterName, join, port, Optional.ofNullable(address));
     }
 
-    /** Builds a fresh config. Nothing here starts a member. */
+    /**
+     * Builds a fresh config. Nothing here starts a member.
+     *
+     * @throws PrivacyClusterRefusal {@code MISSING_MEMBER_INTERFACE} for {@code tcp-ip} or {@code kubernetes}
+     *                               without an interface: a member that binds every interface listens on networks
+     *                               nobody chose. Checked here and not at construction, so the factories can be
+     *                               followed by {@link #withInterface}.
+     */
     public Config toConfig() {
+        if (!(join instanceof None) && interfaceAddress.isEmpty()) {
+            throw refuse(Code.MISSING_MEMBER_INTERFACE,
+                    "member.interface is required for tcp-ip and kubernetes joins");
+        }
         Config config = new Config();
         config.setClusterName(clusterName);
         config.getJetConfig().setEnabled(false);
@@ -138,6 +155,20 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
 
     static boolean validPort(int p) {
         return p >= 1 && p <= 65535;
+    }
+
+    /** Every octet is a wildcard or a range that spans 0 to 255, so no address is left out. */
+    static boolean matchesEveryAddress(String value) {
+        for (String part : value.split("\\.", -1)) {
+            if (part.equals("*")) {
+                continue;
+            }
+            String[] bounds = part.split("-", -1);
+            if (bounds.length != 2 || Integer.parseInt(bounds[0]) > 0 || Integer.parseInt(bounds[1]) < 255) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static boolean validInterface(String value) {
@@ -200,6 +231,73 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
             } catch (NumberFormatException e) {
                 throw refuse(Code.INVALID_CLUSTER_MEMBERS, "a member port must be 1-65535");
             }
+        }
+    }
+
+    /**
+     * The cutover from 0.7 is non-rolling (cluster-security 4.8): a member that finds an entry in a map of the
+     * pre-0.8 generation refuses, so a 0.7 and a 0.8 generation never serve side by side. Only emptiness is asked;
+     * the old entries are never copied or logged. The one entry that does not count is the fence, the key
+     * {@code all} holding {@code TRUE} in the old oversight map, which a serving 0.8 member keeps there so that a
+     * 0.7 member reads the cluster as paused.
+     *
+     * <p>The caller has not yet written anything of its own, so it cannot be counted as the verified 0.8 member that
+     * would excuse the check. Excusing the check when another verified 0.8 member is present needs the member cards
+     * of the next task; until then the check always applies.
+     *
+     * @throws PrivacyClusterRefusal {@code UNSEALED_CLUSTER_STATE}
+     */
+    static void refuseUnsealedState(HazelcastInstance instance) {
+        // State lives only in running members. A member that is alone has nothing to find, and asking would create
+        // the old maps, empty and unconfigured, under names 0.8 never uses.
+        if (instance.getCluster().getMembers().size() < 2) {
+            return;
+        }
+        for (String name : PrivacyCluster.PRE_0_8_MAPS) {
+            if (holdsEntries(instance, name)) {
+                throw refuse(Code.UNSEALED_CLUSTER_STATE,
+                        "the cluster holds state from before 0.8; stop every 0.7 member, then start the 0.8 members");
+            }
+        }
+    }
+
+    /**
+     * How many entries each pre-0.8 map that holds any has, without reading one: sizes only, less the fence. A map
+     * that cannot be asked counts as one. Empty if the member is alone.
+     */
+    static java.util.Map<String, Integer> legacyEntryCounts(HazelcastInstance instance) {
+        java.util.Map<String, Integer> found = new java.util.LinkedHashMap<>();
+        if (instance.getCluster().getMembers().size() < 2) {
+            return found;
+        }
+        for (String name : PrivacyCluster.PRE_0_8_MAPS) {
+            try {
+                IMap<Object, Object> map = instance.getMap(name);
+                int size = map.size();
+                if (PrivacyCluster.OVERSIGHT_FENCE_MAP.equals(name) && Boolean.TRUE.equals(map.get("all"))) {
+                    size--;
+                }
+                if (size > 0) {
+                    found.put(name, size);
+                }
+            } catch (RuntimeException unreadable) {
+                found.put(name, 1);
+            }
+        }
+        return found;
+    }
+
+    private static boolean holdsEntries(HazelcastInstance instance, String name) {
+        try {
+            IMap<Object, Object> map = instance.getMap(name);
+            if (map.isEmpty()) {
+                return false;
+            }
+            return !(PrivacyCluster.OVERSIGHT_FENCE_MAP.equals(name) && map.size() == 1
+                    && Boolean.TRUE.equals(map.get("all")));
+        } catch (RuntimeException unreadable) {
+            // A map that cannot be asked is not known to be empty.
+            return true;
         }
     }
 

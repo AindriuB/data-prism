@@ -50,9 +50,10 @@
  * Jet off a query fails with {@code JetDisabledException}, and in this build the {@code hazelcast-sql} module is not
  * on the classpath so any query fails with {@code HazelcastSqlException}. Read-back works on all three paths with
  * {@code instance.getConfig()}. {@code ClusterMembership.toConfig} reads back Jet off, user code off, phone-home
- * false. A supplied Config keeps Jet and user-code deployment as supplied and has phone-home forced to false by
- * {@code PrivacyCluster.embedded}. A supplied running instance is left as it was started: Jet true, user code true and a custom
- * property are unchanged after {@code PrivacyCluster.using}. No test starts a member with phone-home on (a started
+ * false. A supplied Config had Jet and user-code deployment kept as supplied and phone-home forced to false in 0.7; since task 221
+ * {@code PrivacyCluster.embedded} forces Jet and user-code deployment off as well. A supplied running instance is left as it was
+ * started (Jet true, user code true and a custom property are unchanged), which is still true of raw Hazelcast; since task 221
+ * {@code PrivacyCluster.using} refuses such an instance with {@code UNSAFE_HAZELCAST_SERIALIZATION}. No test starts a member with phone-home on (a started
  * member posts telemetry), so phone-home on a supplied instance and the forcing off by
  * {@code PrivacyCluster.embedded} were not observed; the supplied Config here already had it off, and
  * {@code Spike.start} refuses any config where it is effectively on.</td>
