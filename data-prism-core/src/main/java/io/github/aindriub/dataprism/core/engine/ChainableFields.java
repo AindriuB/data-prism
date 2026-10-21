@@ -85,6 +85,7 @@ public final class ChainableFields {
         Set<AnnotatedElement> consumed = new HashSet<>();
         Set<String> consumedFields = new HashSet<>();
         Reached rootSupertypes = new Reached();
+        rootSupertypes.seed(model);
         collectSupertypes(model, rootSupertypes);
         refuseReached(model, "<supertypes>", rootSupertypes, descriptors);
         walk(model, "", false, null, resolver, descriptors, new HashSet<>(), out, consumed, consumedFields,
@@ -126,7 +127,12 @@ public final class ChainableFields {
                 if (map) {
                     throw invalid(type, name, "is chainable inside a map, which the path grammar cannot name");
                 }
-                if (!expressible(genericType(type, name))) {
+                java.lang.reflect.Type declaredType = genericType(type, name);
+                if (declaredType instanceof Class<?> c && c.isArray()
+                        && (c.getComponentType() == byte.class || c.getComponentType() == char.class)) {
+                    throw invalid(type, name, "is a byte or char array, which is serialised as one string");
+                }
+                if (!expressible(declaredType)) {
                     throw invalid(type, name, "is chainable but its type cannot be named in a path");
                 }
                 if (!field.identifier()) {
@@ -263,6 +269,13 @@ public final class ChainableFields {
     /** The classes reached, and the type variables and wildcards already followed (bounds may be cyclic). */
     private static final class Reached extends java.util.LinkedHashSet<Class<?>> {
         private final Set<java.lang.reflect.Type> seen = new HashSet<>();
+        /** The type being examined: seeded so a reference back to it is not a route, and not checked. */
+        private Class<?> self;
+
+        void seed(Class<?> type) {
+            self = type;
+            add(type);
+        }
     }
 
     /**
@@ -284,7 +297,8 @@ public final class ChainableFields {
             // A user subclass of a JDK collection or map hides its element type in its supertypes.
             boolean hiddenContainer = !element.getName().startsWith("java.")
                     && (Iterable.class.isAssignableFrom(element) || Map.class.isAssignableFrom(element));
-            return dimensions <= 1 && !hiddenContainer;
+            // A raw List, Optional and so on names no element type, which the contract requires.
+            return dimensions <= 1 && !hiddenContainer && !EXPRESSIBLE_GENERICS.contains(element);
         }
         if (type instanceof java.lang.reflect.ParameterizedType p && p.getRawType() instanceof Class<?> raw) {
             java.lang.reflect.Type[] arguments = p.getActualTypeArguments();
@@ -376,6 +390,7 @@ public final class ChainableFields {
             // The scrubber reads declared fields only, so whatever the held type inherits is unreachable.
             Class<?> held = heldClass(type);
             if (held != null && userType(held)) {
+                reached.seed(held);
                 collectSupertypes(held, reached);
             }
         }
@@ -392,10 +407,13 @@ public final class ChainableFields {
     private static void refuseReached(Class<?> owner, String field, Reached reached,
                                       Map<String, ModelDescriptor> descriptors) {
         for (Class<?> candidate : reached) {
+            if (candidate == reached.self) {
+                continue;
+            }
             String member = chainableMember(candidate, descriptors);
             if (member != null) {
                 throw invalid(owner, field, "reaches the chainable declaration " + candidate.getName() + "."
-                        + member + " through a route the path grammar cannot express");
+                        + member + " through a route the scrubber does not read or the path grammar cannot express");
             }
         }
     }

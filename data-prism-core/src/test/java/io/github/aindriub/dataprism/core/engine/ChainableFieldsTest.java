@@ -653,6 +653,68 @@ class ChainableFieldsTest {
         }
     }
 
+    @LlmExposedModel
+    record Cmp(@InternalIdentifier @Chainable(keyNamespace = "crm") String id) implements Comparable<Cmp> {
+        @Override
+        public int compareTo(Cmp o) {
+            return 0;
+        }
+    }
+
+    static class NBase<T> {
+    }
+
+    @LlmExposedModel
+    static class NodeG extends NBase<NodeG> {
+        @InternalIdentifier
+        @Chainable(keyNamespace = "crm")
+        String id;
+    }
+
+    @SensitiveObject
+    record CmpInner(@InternalIdentifier @Chainable(keyNamespace = "crm") String id)
+            implements Comparable<CmpInner> {
+        @Override
+        public int compareTo(CmpInner o) {
+            return 0;
+        }
+    }
+
+    @LlmExposedModel
+    record HolderCmp(@NonSensitive(reason = "structure") CmpInner inner) {
+    }
+
+    @LlmExposedModel
+    record ByteKey(@InternalIdentifier @Chainable(keyNamespace = "k-ref") byte[] k) {
+    }
+
+    @LlmExposedModel
+    record CharKey(@InternalIdentifier @Chainable(keyNamespace = "k-ref") char[] k) {
+    }
+
+    @LlmExposedModel
+    record ByteKeyD(@InternalIdentifier byte[] k) {
+    }
+
+    @LlmExposedModel
+    record CharKeyD(@InternalIdentifier char[] k) {
+    }
+
+    @SuppressWarnings("rawtypes")
+    @LlmExposedModel
+    record RawList(@InternalIdentifier @Chainable(keyNamespace = "k-ref") List k) {
+    }
+
+    @SuppressWarnings("rawtypes")
+    @LlmExposedModel
+    record RawOptional(@InternalIdentifier @Chainable(keyNamespace = "k-ref") java.util.Optional k) {
+    }
+
+    @SuppressWarnings("rawtypes")
+    @LlmExposedModel
+    record RawListD(@InternalIdentifier List k) {
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace, String role) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -1070,5 +1132,44 @@ class ChainableFieldsTest {
                     .hasMessageNotContaining("parcel-ref").hasMessageNotContaining("depot-ref");
         }
         assertThat(ChainableFields.of(SameRepeat.class)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a self-reference through supertypes or permits is not a route")
+    void selfReferenceIsNotARoute() {
+        assertThat(ChainableFields.of(Cmp.class)).containsExactly(
+                new ChainableField("id", new KeyNamespace("crm"), false));
+        assertThat(ChainableFields.of(Circle.class)).containsExactly(
+                new ChainableField("id", new KeyNamespace("shape"), false));
+        assertThat(ChainableFields.of(NodeG.class)).containsExactly(
+                new ChainableField("id", new KeyNamespace("crm"), false));
+        assertThat(ChainableFields.of(HolderCmp.class)).containsExactly(
+                new ChainableField("inner.id", new KeyNamespace("crm"), false));
+    }
+
+    @Test
+    @DisplayName("byte[] and char[] chainable fields are refused")
+    void byteAndCharArrays() {
+        for (Class<?> type : List.of(ByteKey.class, CharKey.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type)).as(type.getSimpleName())
+                    .hasMessageStartingWith(CODE).hasMessageContaining(type.getName() + ".k");
+        }
+        for (Class<?> type : List.of(ByteKeyD.class, CharKeyD.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type, descriptor(type, "k", true, "k-ref", null)))
+                    .as(type.getSimpleName() + " by descriptor")
+                    .hasMessageStartingWith(CODE).hasMessageContaining(type.getName() + ".k");
+        }
+    }
+
+    @Test
+    @DisplayName("a raw collection or Optional chainable field is refused")
+    void rawTypes() {
+        for (Class<?> type : List.of(RawList.class, RawOptional.class)) {
+            assertThatThrownBy(() -> ChainableFields.of(type)).as(type.getSimpleName())
+                    .hasMessageStartingWith(CODE).hasMessageContaining(type.getName() + ".k");
+        }
+        assertThatThrownBy(() -> ChainableFields.of(RawListD.class,
+                descriptor(RawListD.class, "k", true, "k-ref", null)))
+                .hasMessageStartingWith(CODE).hasMessageContaining(RawListD.class.getName() + ".k");
     }
 }
