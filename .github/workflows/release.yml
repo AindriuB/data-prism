@@ -17,13 +17,13 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       # A JDK the build workflow's matrix verifies against, so a release never
       # ships something the build check hasn't already proven compiles and
       # passes. Bytecode is still --release 21; the class-version check below
       # enforces it.
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6.1.0
         with:
           java-version: "25"
           distribution: temurin
@@ -73,7 +73,7 @@ jobs:
 
       # Provenance for every file uploaded to the release below.
       - name: Attest build provenance of the release assets
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: sbom/*-cyclonedx.json
 
