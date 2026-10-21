@@ -37,8 +37,9 @@ public final class FilterRejectionGuard implements BeforeEachCallback, AfterEach
                 }
                 String all = text.toString();
                 int at = all.indexOf("is not allowed");
-                if (at >= 0) {
-                    int from = Math.max(0, all.lastIndexOf("Resolving class", at));
+                // Not the Management Center refusal, which also says "is not allowed".
+                if (at >= 0 && all.lastIndexOf("Resolving class", at) >= 0) {
+                    int from = all.lastIndexOf("Resolving class", at);
                     REJECTIONS.add(all.substring(from, at + "is not allowed".length()));
                     Thread thread = testThread;
                     if (thread != null) {
