@@ -3,7 +3,6 @@ package io.github.aindriub.dataprism.core.engine;
 import io.github.aindriub.dataprism.annotations.Chainable;
 import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
-import io.github.aindriub.dataprism.core.model.ChainableField;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
@@ -240,6 +239,9 @@ public final class ChainableFields {
             collect(supertype, out);
         }
         for (Field field : type.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers())) {
+                continue; // a constant is not data; a @Chainable on the field itself is still refused
+            }
             collect(field.getGenericType(), out);
         }
         for (java.lang.reflect.Constructor<?> constructor : type.getDeclaredConstructors()) {

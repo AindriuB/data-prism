@@ -9,7 +9,6 @@ import io.github.aindriub.dataprism.annotations.SensitiveData;
 import io.github.aindriub.dataprism.annotations.SensitiveObject;
 import io.github.aindriub.dataprism.annotations.SubjectIdentifier;
 import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
-import io.github.aindriub.dataprism.core.model.ChainableField;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -323,6 +322,11 @@ class ChainableFieldsTest {
     }
 
     @LlmExposedModel
+    record HasConstant(@InternalIdentifier String id) {
+        static final Deep DEFAULT = null;
+    }
+
+    @LlmExposedModel
     record ReturnsDeep(@InternalIdentifier String id) {
         Deep other() {
             return null;
@@ -578,6 +582,12 @@ class ChainableFieldsTest {
                 .hasMessageStartingWith(CODE).hasMessageContaining(StrayOnMethod.class.getName() + ".other");
         assertThatThrownBy(() -> ChainableFields.of(HasKind.class))
                 .hasMessageStartingWith(CODE).hasMessageContaining(Kind.class.getName() + ".code");
+    }
+
+    @Test
+    @DisplayName("the type of a static constant is not data and is not visited")
+    void staticFieldTypeNotVisited() {
+        assertThat(ChainableFields.of(HasConstant.class)).isEmpty();
     }
 
     @Test

@@ -1,4 +1,4 @@
-package io.github.aindriub.dataprism.core.model;
+package io.github.aindriub.dataprism.core.engine;
 
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 
