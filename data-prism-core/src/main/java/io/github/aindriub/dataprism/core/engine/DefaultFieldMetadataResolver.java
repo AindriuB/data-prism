@@ -172,8 +172,9 @@ public final class DefaultFieldMetadataResolver implements FieldMetadataResolver
 
     /**
      * The type a nested value is scrubbed with, where the declared type states it: an array's
-     * component, the single argument of a JDK collection or {@link Optional}, or the value type of
-     * a JDK map. Nothing else is followed. A user generic ({@code Envelope<Leaf>}), a user
+     * component, or the single argument of a JDK collection or {@link Optional}. The value type of
+     * a JDK map is stated too, but a map object never descends with it; it is unclassified.
+     * Nothing else is followed. A user generic ({@code Envelope<Leaf>}), a user
      * subtype of a collection and a JDK wrapper outside that list ({@code AtomicReference<Leaf>})
      * hold their own fields, which the argument's type says nothing about, so they yield nothing
      * and are scrubbed with their own type. Erasure means a raw or wildcard collection also
