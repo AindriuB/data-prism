@@ -3,7 +3,7 @@
 Status: design for 0.8 (`list_sources`, `describe_source`, the adapter description, targeting) and 0.9 (`describe_entity_model`; the surface freezes at the 0.9.0 release). Internal (`docs/plan/design/`, D-070-12 (a)); not published.
 Task 197. Companions: `sealed-links.md` and `key-resolvers.md` (task 191), whose names this document reuses and does not redefine. Nothing here is code, an SPI stub or a configuration property; every name is a proposal until the 0.8 or 0.9 task that builds it. Paging, batch and bulk follow are task 198's; where this design needs paging it says so and does not invent the mechanism.
 
-Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-4 (every source label `maxLength` is 64, key namespace grammar `[a-z][a-z0-9-]{0,31}`, field path 64), OD-200-6 (the annotation is `@Chainable(keyNamespace = "…")`), OD-200-7 (the metric formerly written `dataprism.catalog.source-names.nonconforming` is `dataprism.catalog.source_names.nonconforming`), OD-200-12 (audit key `names`, result field `labels`). No decision is changed here. Each edit cites its id on the line it changes.
+Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-4 (every source label `maxLength` is 64 from 0.9, with `INVALID_SOURCE_NAME`; the schemas say 128 in 0.8 because a source name over 64 still starts then (OD-C18 (c)), while the key namespace and field path caps are enforced in 0.8 and stay 64; key namespace grammar `[a-z][a-z0-9-]{0,31}`, field path 64), OD-200-6 (the annotation is `@Chainable(keyNamespace = "…")`), OD-200-7 (the metric formerly written `dataprism.catalog.source-names.nonconforming` is `dataprism.catalog.source_names.nonconforming`), OD-200-12 (audit key `names`, result field `labels`). No decision is changed here. Each edit cites its id on the line it changes.
 
 Every product choice in this text is an open decision (OD-C1 to OD-C19, section 9) with options and a recommendation. On 2026-10-09 the owner decided OD-C2 explicitly and delegated the rest to their recommendations; section 9 records each.
 
@@ -262,7 +262,7 @@ Both filters match exactly (no case folding, no prefix), as namespaces do everyw
     "entry": {
       "type": "object",
       "properties": {
-        "source": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 128, "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)" },
         "description": { "type": "string", "minLength": 1, "maxLength": 240 },
         "entityTypes": {
           "type": "array",
@@ -400,7 +400,8 @@ Where `protection` is `SYNTHETIC` or `TOKEN`, the field also carries `valueNames
       "description": "A source label exactly as returned by list_sources.",
       "type": "string",
       "minLength": 1,
-      "maxLength": 64
+      "maxLength": 128,
+      "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)"
     }
   },
   "required": ["source"]
@@ -417,7 +418,7 @@ Where `protection` is `SYNTHETIC` or `TOKEN`, the field also carries `valueNames
   "properties": {
     "correlationId": { "type": "string" },
     "labels": { "enum": ["ALIAS", "REAL"] },
-    "source": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "source": { "type": "string", "minLength": 1, "maxLength": 128, "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)" },
     "description": { "type": "string", "minLength": 1, "maxLength": 240 },
     "entityTypes": {
       "type": "array",
@@ -582,7 +583,7 @@ Threat note: an agent steered by injected text that calls `describe_entity_model
   "required": ["correlationId", "labels", "entityType", "sources", "keyNamespaces"],
   "additionalProperties": false,
   "$defs": {
-    "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "label": { "type": "string", "minLength": 1, "maxLength": 128, "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)" },
     "keyNamespace": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
     "sourceField": {
       "type": "object",
@@ -701,7 +702,7 @@ Input schema change (the new property; `entityType` and `subjectId` are unchange
     "targetSources": {
       "description": "Source labels as returned by list_sources. When absent, every permitted source is asked, and the call is refused if there are too many.",
       "type": "array",
-      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "items": { "type": "string", "minLength": 1, "maxLength": 128, "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)" },
       "minItems": 1,
       "uniqueItems": true
     }

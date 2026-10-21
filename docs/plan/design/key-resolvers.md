@@ -86,12 +86,12 @@ The outer status of the source and the handling of refused items and of budget e
 
 | Event | Result and audit (shape C: a failure is the target's `name:RESOLVER_FAILED` entry plus a metric; OD-13, D5) |
 |---|---|
-| Resolver throws `UNAVAILABLE`, `TIMEOUT`, `REJECTED` | The translated follow returns the target source with a per-source status `RESOLVER_FAILED` and no `entity` (OD-200-3). Audit: the target's `name:RESOLVER_FAILED` entry; the reason (`UNAVAILABLE`, `TIMEOUT`, `REJECTED`) is a metric label, not a disposition |
-| Resolver returns more than `maxResults` keys | Treated as `TOO_MANY`; no entities returned; status `RESOLVER_FAILED`. Audit as above; reason `TOO_MANY` is a metric label |
+| Resolver throws `UNAVAILABLE`, `TIMEOUT`, `REJECTED` | The translated follow returns the target source with a per-source status `RESOLVER_FAILED` and no `entity` (OD-200-3). Audit: the target's `name:RESOLVER_FAILED` entry; the reason (`UNAVAILABLE`, `TIMEOUT`, `REJECTED`) is counted by one metric per reason (`RESOLVER_UNAVAILABLE`, `RESOLVER_TIMEOUT`, `RESOLVER_REJECTED`; OD-200-15), not a disposition |
+| Resolver returns more than `maxResults` keys | Treated as `TOO_MANY`; no entities returned; status `RESOLVER_FAILED`. Audit as above; reason `TOO_MANY` is counted by one metric per reason (`RESOLVER_TOO_MANY`; OD-200-15) |
 | Resolver returns `more = true` | Not a failure: the keys returned are read and `itemsTruncated` is set |
-| Resolver returns `more = true` with no keys | Contract violation; status `RESOLVER_FAILED`. Audit as above; reason `INVALID_OUTPUT` is a metric label, not a disposition value |
+| Resolver returns `more = true` with no keys | Contract violation; status `RESOLVER_FAILED`. Audit as above; reason `INVALID_OUTPUT` is counted by one metric per reason (OD-200-15), not a disposition value |
 | Resolver returns an empty list | Status `NO_DATA` (a truthful "nothing known"); the audit carries the target's ordinary `name:NO_DATA` entry and no resolver entry (`EMPTY` is not a disposition value) |
-| Resolver returns a blank or over-long key (over 256 bytes) | Status `RESOLVER_FAILED`; reason `INVALID_OUTPUT` is a metric label, not a disposition value |
+| Resolver returns a blank or over-long key (over 256 bytes) | Status `RESOLVER_FAILED`; reason `INVALID_OUTPUT` is counted by one metric per reason (OD-200-15), not a disposition value |
 | Resolver runtime exception of any other type | Same as `UNAVAILABLE`, never propagated with its message |
 | Resolver exceeds `dataprism.key-resolvers.timeout` (default `PT2S`) | `TIMEOUT` |
 | Resolver bean missing at follow time (configuration changed since issue) | The link is `LINK_INVALID`, audit reason `RELATION_UNDECLARED` |
@@ -110,8 +110,8 @@ The audit disposition grammar is closed (`AuditEvent.isValidAction`: a `PrivacyA
 
 | Key | Information | Shape under shape C |
 |---|---|---|
-| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:RESOLVER_FAILED` entry (OD-200-3), and the reason is a metric (`reason` label, resolver name label) and an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
-| `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; a metric labelled by resolver name and outcome |
+| `resolver:<name>` | Failure reason `UNAVAILABLE`, `TIMEOUT`, `REJECTED`, `TOO_MANY`, `INVALID_OUTPUT` | Not a disposition. A resolver failure is not a privacy refusal, and `REFUSED:<code>` would over-count refusals, so nothing in the closed grammar fits it. The failure is visible in the audit as the target's `name:RESOLVER_FAILED` entry (OD-200-3), and the reason is counted by one metric per reason (`RESOLVER_UNAVAILABLE`, `RESOLVER_TIMEOUT`, `RESOLVER_REJECTED`, `RESOLVER_TOO_MANY`; OD-200-15) and is an enum in the log. `docs/audit.md` states this in 0.8. A reason in the audit itself needs shape A of OD-13. Success (`OK:<n>`, `EMPTY`) is not recorded |
+| `resolver:<name>:ms` | Elapsed milliseconds | Not recorded; counted by one metric per outcome (OD-200-15) |
 
 A refused one-to-many item is audited `REFUSED:<code>` under `<target>[<i>]:<refused>`, per D-070-13.
 
@@ -183,7 +183,7 @@ A source's **input keys** are declared on the adapter (the adapter-description S
 1. **Nothing reaches `mcp` unscrubbed.** The resolver sits in `orchestration`/`core`, outside `mcp`. Its output is consumed by the fetch path and goes through the same scrub and validate steps as a direct read. The `ResolutionContext` is deliberately narrow. A new architecture rule forbids `mcp` and `connectors` classes from depending on `KeyResolver`.
 2. **Boundary 5 (re-identification).** A resolver is not given, and must not call, `ScopeIdentityIndex.subjectFor`. The module providing resolvers must not depend on `data-prism-reidentification`. A resolver translating a pseudonym back to a real key would be exactly the re-identification path this boundary closes; the SPI takes real keys only because the server, not the model, calls it with raw keys obtained from sources.
 3. **Boundary 6 (Hazelcast).** No resolver result is cached in Hazelcast. A resolver implementation that caches internally is the operator's code; the project's reference implementations (if any) cache nothing. The read-budget counter is an integer and already allowed.
-4. **Boundary 7 (no sensitive value in logs, audit, exceptions).** Resolver input and output keys are never logged or audited, nor are they in `KeyResolutionException` messages. The resolver name is validated against a pattern. Metrics may label by resolver name and outcome only.
+4. **Boundary 7 (no sensitive value in logs, audit, exceptions).** Resolver input and output keys are never logged or audited, nor are they in `KeyResolutionException` messages. The resolver name is validated against a pattern. Metrics are one constant per outcome, with no labels (OD-200-15).
 
 Also: fail closed (rule 2) in every row of the failure table; real source names and resolver names reach the client only under D-RM-10 and then only source names, never resolver names.
 
@@ -212,7 +212,7 @@ On 2026-10-09 the owner delegated every decision in this section to its recommen
 |---|---|---|---|
 | OD-R1 | One-to-many cap default | 5, 16 (matching the batch default, D-RM-7), or unbounded with paging | 5 for `follow`; larger sets belong to bulk follow and paging (task 198). Configurable with a ceiling **Decided (owner delegated, 2026-10-09): 5 for `follow`, configurable with a ceiling.** |
 | OD-R2 | Timing of resolution: at follow (proposed) or at issue | At follow: no I/O at issue, the link may later turn out empty. At issue: the agent sees only links that resolve, but every result costs resolver calls and a mapping is observable through the number of links | At follow. Issuing links is then cheap and leaks no mapping **Decided (owner delegated, 2026-10-09): resolve at follow.** |
-| OD-R3 | New per-source status for resolver failure | New resolver-failure status (drafted as `KEY_UNRESOLVED`); or reuse `FAILED` | New code, entered in task 200's register, because "the target failed" and "we could not form the key" differ for the agent's next step **Decided (owner delegated, 2026-10-09): new status, registered in task 200. Spelling decided by OD-200-3 (2026-10-20): `RESOLVER_FAILED`.** |
+| OD-R3 | New per-source status for resolver failure | New `KEY_UNRESOLVED`; or reuse `FAILED` | New code, entered in task 200's register, because "the target failed" and "we could not form the key" differ for the agent's next step **Decided (owner delegated, 2026-10-09): new status `KEY_UNRESOLVED`, registered in task 200.** *Rename note (OD-200-3, 2026-10-20): the status is spelled `RESOLVER_FAILED`.* |
 | OD-R4 | Where the namespace vocabulary lives | Free-form validated labels (proposed); or a registry declared once per deployment | Free-form with a startup check that every namespace used appears on at least one field and one input key. A typo otherwise silently yields no link **Decided (owner delegated, 2026-10-09): free-form validated labels with a startup usage check.** |
 | OD-R5 | Opt-in adapter from `IdentityResolver` | Provide it; or require a hand-written `KeyResolver` | Provide it, opt-in per pair, so no existing mapping is written twice **Decided (owner delegated, 2026-10-09): provide the opt-in adapter.** |
 | OD-R7 | Direct link wins over a translated link to the same source | Issue only the direct link (as drafted); or issue both | Only the direct link. A translated link to a source that already accepts the key directly adds a path that may disagree with the direct one and costs a resolver call **Decided (owner delegated, 2026-10-09): only the direct link.** |
@@ -243,4 +243,4 @@ None collides with an existing name: the commands used are recorded in the Outco
 | `dataprism.key-resolvers.timeout` | configuration key (default `PT2S`) | 0.8 |
 | `dataprism.key-resolvers.budget-cost` | configuration key (default 1) | 0.8 |
 
-Withdrawn (OD-13 shape C, D5): the audit disposition keys `resolver:<name>` and `resolver:<name>:ms`. A resolver failure is the target's `name:RESOLVER_FAILED` entry plus a metric; timings are metrics.
+Withdrawn (OD-13 shape C, D5): the audit disposition keys `resolver:<name>` and `resolver:<name>:ms`. A resolver failure is the target's `name:RESOLVER_FAILED` entry plus a metric counted per reason (OD-200-15); timings are metrics.

@@ -3,7 +3,7 @@
 Status: design. Part A (the `list_sources` page) is for 0.8, as decided in catalog OD-C16. Everything else (batch, collection paging, truncation markers, bulk follow) is for 0.9, and the surface freezes at the 0.9.0 release. Internal (`docs/plan/design/`, D-070-12 (a)); not published.
 Task 198. Companions: `catalog.md` (task 197), `sealed-links.md` and `key-resolvers.md` (task 191), whose names and mechanisms this document reuses and does not redefine. Nothing here is code, an SPI stub or a configuration property; every name and every number is a proposal until the 0.8 or 0.9 task that builds it.
 
-Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-3 (the status first drafted as `KEY_UNRESOLVED` is `RESOLVER_FAILED`), OD-200-4 (source labels at most 64, key namespace grammar `[a-z][a-z0-9-]{0,31}`, entity type 64, field path 64) and OD-200-5 (the `FOLLOW` capability is defined in `sealed-links.md`). The worst-case length figures of Part A and 3.2 are recomputed with those caps. No decision is changed here. Each edit cites its id on the line it changes.
+Change note, 2026-10-21 (task 238, successor S1 of the contract register): this document is brought into line with decisions already recorded in `contract-register.md`: OD-200-3 (the status first drafted as `KEY_UNRESOLVED` is `RESOLVER_FAILED`), OD-200-4 (source labels at most 64 from 0.9, with `INVALID_SOURCE_NAME`: the source-label schemas say `maxLength` 128 in 0.8 because a source name over 64 still starts then (OD-C18 (c)), while the key namespace, entity type and field path caps are enforced in 0.8 and stay 64; key namespace grammar `[a-z][a-z0-9-]{0,31}`, entity type 64, field path 64) and OD-200-5 (the `FOLLOW` capability is defined in `sealed-links.md`). The worst-case length figures of Part A and 3.2 are recomputed with those caps. No decision is changed here. Each edit cites its id on the line it changes.
 
 Every product choice in this text was an open decision (OD-B1 to OD-B24, section 9) with options and a recommendation. On 2026-10-19 the owner decided all of them; section 9 records each decision. Three were decided explicitly by the owner (OD-B12 in part, OD-B18, OD-B24 option (b)); the rest were delegated to the recommendations. Passages marked "(proposal, OD-Bn)" now follow the decision recorded for that OD. The text remains a design, not code, and the surface still freezes at 0.9.0. What was already decided (D-RM-7, D-RM-12, D-RM-15, OD-C16 and the earlier design decisions listed below) is cited and not reopened.
 
@@ -123,7 +123,7 @@ The schema replaces the one in `catalog.md` section 3 by adding one required pro
     "entry": {
       "type": "object",
       "properties": {
-        "source": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 128, "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)" },
         "description": { "type": "string", "minLength": 1, "maxLength": 240 },
         "entityTypes": {
           "type": "array",
@@ -359,7 +359,7 @@ Scope, principal, purpose and case come from the session (rule 4). The reserved 
   "$defs": {
     "targetSources": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "items": { "type": "string", "minLength": 1, "maxLength": 128, "$comment": "64 from 0.9, with INVALID_SOURCE_NAME; OD-200-4, OD-C18 (c)" },
       "minItems": 1,
       "uniqueItems": true
     },
@@ -680,7 +680,7 @@ The `follow` result of a page link is the same envelope as any `follow` (one ent
           "items": {
             "type": "object",
             "properties": {
-              "path": { "type": "string" },
+              "path": { "type": "string", "maxLength": 64 },
               "kept": { "type": "integer", "minimum": 0 },
               "omitted": { "type": "integer", "minimum": 1 },
               "reason": { "enum": ["RECORD_CAP", "SIZE_CAP"] },
@@ -1117,7 +1117,7 @@ Checked for collisions against `docs/tools.md`, `docs/audit.md`, `docs/configura
 |---|---|---|---|
 | `pageSize`, `page` | `list_sources` input arguments | 0.8 | `page` the object in the output has the same name as the input argument, with a different shape (a string in, an object out); the same pattern as `entityType` |
 | `page` (`size`, `last`, `next`, `expiresAt`) | `list_sources` result object | 0.8 | `expiresAt` is the field of a `_links` entry, same meaning |
-| `LINK_WRONG_TOOL`, `LINK_FILTER_MISMATCH`, `LINK_LABELS_CHANGED`, `LINK_CATALOG_CHANGED` | audit-only reason codes (shape C) | 0.8 | the twelve `LINK_<REASON>` codes of task 191 (siblings; `LINK_ORIGIN_DRIFT` and `LINK_EXPIRED` are reused from them) |
+| `LINK_WRONG_TOOL`, `LINK_FILTER_MISMATCH`, `LINK_LABELS_CHANGED`, `LINK_CATALOG_CHANGED` | audit-only reason codes (shape C) | 0.8 | the eleven `LINK_<REASON>` codes (`DEPTH_EXCEEDED` withdrawn, OD-200-8) of task 191 (siblings; `LINK_ORIGIN_DRIFT` and `LINK_EXPIRED` are reused from them) |
 | `dataprism.paging.list-sources.page-size`, `.max-page-size`, `dataprism.paging.lifetime` | configuration keys | 0.8 | `dataprism.links.lifetime` (the link default; this one caps page links) |
 | `INVALID_PAGING_SETTING` | startup refusal code | 0.8 | `INVALID_CATALOG_SETTING`, `INVALID_LINK_LIMIT` (siblings) |
 | `PAGING_KEY_REQUIRED` | startup refusal code (OD-B2 (a)) | 0.8 | `LINK_KEY_UNRESOLVED` (siblings) |
