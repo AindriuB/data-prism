@@ -333,6 +333,21 @@ class ChainableFieldsTest {
         }
     }
 
+    @LlmExposedModel
+    record NodeMap(@InternalIdentifier @Chainable(keyNamespace = "node") String id,
+                   @NonSensitive(reason = "structure") Map<String, NodeMap> children) {
+    }
+
+    @LlmExposedModel
+    record NodeList(@InternalIdentifier @Chainable(keyNamespace = "node") String id,
+                    @NonSensitive(reason = "structure") List<NodeList> children) {
+    }
+
+    @LlmExposedModel
+    record NodeOptional(@InternalIdentifier @Chainable(keyNamespace = "node") String id,
+                        @NonSensitive(reason = "structure") java.util.Optional<NodeOptional> next) {
+    }
+
     private static Map<String, ModelDescriptor> descriptor(Class<?> type, String field,
                                                            Boolean chainable, String namespace) {
         return Map.of(type.getName(), new ModelDescriptor(type.getName(), null, null, null,
@@ -611,5 +626,21 @@ class ChainableFieldsTest {
     @DisplayName("a record's canonical constructor parameter is consumed with its component")
     void canonicalConsumed() {
         assertThat(ChainableFields.of(Annotated.class)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a chainable reached again beneath a map in a recursive model is refused")
+    void recursiveMap() {
+        assertThatThrownBy(() -> ChainableFields.of(NodeMap.class))
+                .hasMessageStartingWith(CODE).hasMessageContaining(NodeMap.class.getName() + ".id");
+    }
+
+    @Test
+    @DisplayName("recursion through a list or optional lists only the root path")
+    void recursiveListAndOptional() {
+        assertThat(ChainableFields.of(NodeList.class)).containsExactly(
+                new ChainableField("id", new KeyNamespace("node"), false));
+        assertThat(ChainableFields.of(NodeOptional.class)).containsExactly(
+                new ChainableField("id", new KeyNamespace("node"), false));
     }
 }

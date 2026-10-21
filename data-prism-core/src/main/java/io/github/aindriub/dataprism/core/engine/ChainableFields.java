@@ -37,6 +37,12 @@ import java.util.Set;
  * value, or inside a type the scrubber does not descend into is refused, because no link could be built
  * from it. A declared path over {@value #MAX_PATH_BYTES} UTF-8 bytes is refused.
  *
+ * <p>Recursion terminates per type and mode. A model that contains itself through a list or an
+ * {@code Optional} lists only the shallowest path ({@code id}, not {@code children[].id}): the path
+ * grammar cannot express unbounded depth, and the deeper occurrences are the same declaration, which
+ * simply get no links. Through a map, or any other place the walk refuses, the same recursion is
+ * refused.
+ *
  * <p>The annotation and the descriptor are deliberately not symmetric: a descriptor that restates the
  * annotation's {@code keyNamespace} without {@code chainable} is accepted, but {@code chainable: true}
  * with no {@code keyNamespace} is always refused. A field that is both an identifier and
@@ -76,9 +82,12 @@ public final class ChainableFields {
 
     private static void walk(Class<?> type, String prefix, boolean underElement, String refusal,
                              FieldMetadataResolver resolver, Map<String, ModelDescriptor> descriptors,
-                             Set<Class<?>> inProgress, List<ChainableField> out,
+                             Set<String> inProgress, List<ChainableField> out,
                              Set<AnnotatedElement> consumed, Set<String> consumedFields) {
-        if (!inProgress.add(type)) {
+        // Keyed by type and mode: meeting a type again in refusal mode (under a map, or where the
+        // scrubber does not descend) must still be walked, or its chainable fields would slip through.
+        String state = type.getName() + (refusal == null ? "" : "!refusal");
+        if (!inProgress.add(state)) {
             return;
         }
         Map<String, List<AnnotatedElement>> declarations = declarations(type);
@@ -120,7 +129,7 @@ public final class ChainableFields {
                         resolver, descriptors, inProgress, out, consumed, consumedFields);
             }
         }
-        inProgress.remove(type);
+        inProgress.remove(state);
     }
 
     /**
