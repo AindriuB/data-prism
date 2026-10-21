@@ -6,9 +6,12 @@ name: supply-chain
 # tree of the root reactor and of the out-of-reactor load-test/ as CycloneDX
 # SBOMs and scans them against the OSV database (task 257, OD-08-17).
 #
-# Fails on any HIGH or CRITICAL advisory (CVSS 7.0 or higher). Lower and
-# unscored advisories are listed in the log and the job summary but do not
-# fail the run. Ignores live in .github/osv-scanner.toml and need a reason.
+# Fails on any HIGH or CRITICAL advisory: a CVSS score of 7.0 or more, or a
+# database severity label of HIGH or CRITICAL. An advisory with neither a
+# score nor a label also fails (fail closed); it is accepted only by an entry
+# in .github/osv-scanner.toml, which needs a reason and an ignoreUntil date.
+# Advisories scored below 7.0, or labelled LOW or MODERATE, are listed in the
+# log and the job summary but do not fail the run.
 on:
   schedule:
     - cron: "17 5 * * 1"
@@ -60,7 +63,14 @@ jobs:
           for bom in "${boms[@]}"; do
             name="$(echo "$bom" | tr '/' '_')"
             # osv-scanner exits 1 when it finds advisories (judged below) and
-            # higher for a scan error, which must fail the run.
+            # higher for a scan error, which must fail the run. An SBOM with
+            # no components (the aggregator pom, a module with no
+            # dependencies) makes it exit 128 ("no packages found"); that is
+            # not an error, so such SBOMs are skipped and logged.
+            if ! jq -e '(.components // []) | length > 0' "$bom" > /dev/null; then
+              echo "skipped ${bom}: no components"
+              continue
+            fi
             rc=0
             docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:v2.7.0 \
               scan source --config=/src/.github/osv-scanner.toml \
@@ -70,27 +80,38 @@ jobs:
               failed=1
               continue
             fi
-            # max_severity is the highest CVSS score in an advisory group;
-            # empty means unscored.
+            # One row per advisory group. FAIL when the highest CVSS score is
+            # 7.0 or more, or the database severity label is HIGH or CRITICAL
+            # (some advisories carry a label but no vector), or the advisory
+            # has neither a score nor a label (fail closed). Anything else is
+            # a warning.
             jq -r --arg bom "$bom" '
+              def lbl($p; $ids): [$p.vulnerabilities[]? | select(.id as $i | $ids | index($i))
+                                  | .database_specific.severity // empty | ascii_upcase];
               [.results[]?.packages[]? as $p | $p.groups[]?
-               | {pkg: ($p.package.name + "@" + $p.package.version),
-                  ids: (.ids | join(",")), sev: ((.max_severity // "") | tonumber? // -1)}]
-              | .[] | "\(if .sev >= 7 then "FAIL" else "warn" end) \($bom) \(.pkg) \(.ids) cvss=\(.sev)"' \
-              "osv/${name}.json" | tee -a osv/summary.txt
-            if jq -e '[.results[]?.packages[]?.groups[]? | (.max_severity // "" | tonumber? // -1) | select(. >= 7)] | length > 0' \
-                 "osv/${name}.json" > /dev/null; then
-              failed=1
-            fi
+               | (.ids) as $ids
+               | ((.max_severity // "") | tonumber? // null) as $score
+               | lbl($p; $ids) as $labels
+               | {pkg: ($p.package.name + "@" + $p.package.version), ids: ($ids | join(",")),
+                  score: $score, labels: ($labels | unique | join("/")),
+                  fail: (($score != null and $score >= 7)
+                         or ($labels | any(. == "HIGH" or . == "CRITICAL"))
+                         or ($score == null and ($labels | length) == 0))}]
+              | .[] | "\(if .fail then "FAIL" else "warn" end) \($bom) \(.pkg) \(.ids) cvss=\(.score // "none") label=\(if .labels == "" then "none" else .labels end)"' \
+              "osv/${name}.json" | tee -a osv/rows.txt
           done
+          touch osv/rows.txt
+          grep '^FAIL' osv/rows.txt > osv/summary.txt || true
+          if [ -s osv/summary.txt ]; then failed=1; fi
           {
             echo "### Advisory scan"
             echo '```'
-            cat osv/summary.txt 2>/dev/null || echo "no advisories"
+            cat osv/rows.txt
+            [ -s osv/rows.txt ] || echo "no advisories"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$failed" -ne 0 ]; then
-            echo "::error::HIGH or CRITICAL advisories (CVSS 7.0 or higher), or a scan error; see above"
+            echo "::error::HIGH, CRITICAL or unscored advisories, or a scan error; see above"
             exit 1
           fi
 
