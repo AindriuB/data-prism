@@ -63,7 +63,7 @@ Found after 0.7.0: a user-generic element type (a collection whose type argument
 - 0.7.1 is cut from `v0.7.0` with 265, 267, 244, 245, 257 and 268, through the release brief 266. Everything else stays in 0.8.0. 267 (records inside nested containers) was added by a second owner decision and 268 (embedded Tomcat 11.0.27, for three CRITICAL Tomcat advisories) by the coordinator, both on 2026-10-21. The tasks are cherry-picked from `main` after they merge there; their briefs carry a "0.7.1 backport" note.
 - Open owner decision, for the 0.7.1 release: whether to publish a GitHub security advisory for 0.7.0.
 
-Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266, which also waits for 268 (wave 1, running). 244 and 257 are done (2026-10-21, PR record/0.7.1-wave1-244); 265 and 267 are done (2026-10-21, PR record/0.7.1-wave2-265-267); 245 is unblocked; 268 is running. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
+Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266, which also waits for 268. 244 and 257 are done (2026-10-21, PR record/0.7.1-wave1-244); 265 and 267 are done (2026-10-21, PR record/0.7.1-wave2-265-267); 245 and 268 are done (2026-10-21, PR record/0.7.1-wave3-245-268). All six 0.7.1 fixes are now merged or in that PR, so 266 (the 0.7.1 release brief) is next. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
 
 0.7.1 backport commits recorded so far (cherry-pick onto `release/0.7.1` in this order, 266):
 
@@ -71,11 +71,18 @@ Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266
 - 257: `34bcce2b`, `4c8a070b`, `e5864921`, `9118afc7`, `61ec2f94` (docs only), `00810a75`, `752d867a` (docs only), `f456a12b`. Pick `e34a738c` (the post-tag correction to `docs/verifying-releases.md`) before `61ec2f94`.
 - 265 (core-fix commits only, pick first): `484cf7c7`, `7c23172a`, `d4469c7e`. Skip `5445c0b8` (main only).
 - 267 (core-fix commits only, pick after 265's): `82329385`, `34a6a0e3`, `f2090cae`, `096a823e`. Skip `2d5e5c30` (main only).
-- 245 and 268: not yet merged.
+- 245: `168ca025`, `f0cfdb10`, `811a73eb`, `5fd20ef7`, `212fceb5`, `c81fa46f`, `846d9b2f`. Seven commits, all code and tests, none under `docs/plan/`. The first two and the third are tests and a refactor that precede the fixes; pick all seven in this order. One existing test line changed (see "Follow-ups from 245" below).
+- 268: `b12f0966` (`pom.xml`) then `7175ed4e` (`docs/extending.md`). There is no Outcome commit to skip: the Outcome lands in the record commit.
 
 Pick order for 266: 265 core, 267 core, 244, 245, the `e34a738c` docs carry, 257, 268 (its `pom.xml` and `docs/extending.md` commits only).
 
 CHANGELOG `[0.7.1]` carries three Security entries (265, 267, 268), plus Changed entries for 265 and 267 and the Fixed and Build entries. The drafted text is in 266's Context.
+
+Documentation owed by 245 and 268 (2026-10-21), for 266 (CHANGELOG, on the release branch) and 261 (user pages, on `main`):
+
+- `docs/reidentification.md` and the operator API page: a re-identification refusal or operator denial whose DENY audit write fails answers `AUDIT_UNAVAILABLE` (HTTP 503 on the operator API) instead of its own code. `resume` writes `ALLOW:RESUMED` first and, if applying the resume then fails, writes a linked `DENY:<code>` under the same correlation id; if that DENY also fails, the answer is 503 `AUDIT_UNAVAILABLE`. 261.
+- CHANGELOG `[0.7.1]` Fixed (245) text is already drafted in 266's Context; the behaviour above is what it must say. 266.
+- CHANGELOG `[0.7.1]` Security (268): Spring Boot 4.1.1 manages embedded Tomcat 11.0.24, affected by GHSA-9xv2-5v5q-p794 / CVE-2026-65905, GHSA-gcx9-497g-6cp6 / CVE-2026-65182 and GHSA-h3x4-894j-xpx5 / CVE-2026-68525 (fixed in 11.0.25). Data Prism now manages 11.0.27 for the server, the starter and the quickstart images. Consumer action: an application that embeds `data-prism-spring-boot-starter` and imports its own Spring Boot BOM must manage `org.apache.tomcat.embed` at 11.0.25 or later (`docs/extending.md`, "The pom shape"). The brief's filing-time check found no container-managed DIGEST or FORM authentication in the repository (authentication is Spring Security JWT and a signing issuer); 266 states exposure from that, and does not claim a re-run. 266.
 
 Documentation owed by 244 (2026-10-21), for 266 (the `[0.7.1]` CHANGELOG, on the release branch) and 261 (the user pages, on `main`):
 
@@ -96,10 +103,10 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 
 | Wave | Briefs |
 |---|---|
-| 1 | 268 (Tomcat 11.0.27 override; running, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
+| 1 | 268 done 2026-10-21 (Tomcat 11.0.27 override; PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
 | 3 | 222, 242; 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
-| 4 | 223, 241, 245, 248 (245 also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
+| 4 | 223, 241, 248; 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
 | 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 267, 244, 245, 257, 268) |
 | 6 | 228, 246 |
 | 7 | 229, 247 |
@@ -131,6 +138,14 @@ Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (a
 - 248, 249, 251: `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
 - Release note required for 0.8 (Breaking in `CHANGELOG.md`): `PrivacyCluster.using()` refuses instances it used to accept.
 - Known residual of 240: an enum constant body's `@Chainable` is not visited.
+
+Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
+
+- The operator read endpoints write `ALLOW` before the read, so a read that then fails leaves an `ALLOW` for a read that did not happen. Same shape as the `resume` bug 245 fixed; OD-08-14 decides it for `resume` only.
+- A race between `pause` and `resume`: both write their audit and then apply, with no ordering between them, so concurrent calls can leave the state and the audit disagreeing. Needs a decision on locking the transition or on recording the resulting state.
+- `collect` can consume the approval and then answer `AUDIT_UNAVAILABLE`, so the caller is told it failed after the subject was released and the approval spent. Decide whether consume must follow a durable audit, as for the other permissive actions.
+- The surefire fork hangs at teardown on the server module after the tests pass (seen on the first verify of 245; a re-run passed). Find what keeps a non-daemon thread alive, probably a test fixture's executor, and close it.
+- `ReidentificationServiceTest.aClusterRefusalWithTheAuditSinkDownStillRefusesAndResolvesNothing` was edited by 245 because it pinned the old answer (the refusal's own code); it now expects `AUDIT_UNAVAILABLE`. 245's brief said existing tests pass unmodified; this is the one accepted deviation.
 
 Follow-ups from the 0.7.1 planning review (2026-10-21), each belonging to the brief named:
 
@@ -171,7 +186,7 @@ Follow-ups from 235 (found in its review, none scheduled):
 Follow-ups from the cluster-refusal retry docs fix (0.8, none scheduled):
 
 - `forgetOne` aborts on `CLUSTER_OPERATION_REFUSED` while the other maps are already deleted. It fails closed, but unlike the `CLUSTER_LOCK_TIMEOUT` path.
-- `OversightOperatorController.resume` writes `ALLOW:RESUMED` before applying the resume, so a failure in a custom `OversightState` leaves a false `ALLOW` in the audit.
+- Done in 245: `OversightOperatorController.resume` now follows OD-08-14 (a), with a linked `DENY` when the apply fails.
 
 Follow-ups from 234 (none scheduled):
 
@@ -183,7 +198,7 @@ Follow-ups from 234 (none scheduled):
 
 Follow-ups from 233 (none scheduled):
 
-- 0.8 (owner decision): a denial whose audit write fails answers `AUDIT_UNAVAILABLE` and counts a metric, consistently across the re-identification, operator and tool paths. Today `ReidentificationService.refuse` and `refuseApproval` and the operator controller's `recordDenial` swallow the failed audit and still refuse. The 233 brief wrongly called the `AUDIT_UNAVAILABLE` answer existing behaviour; the owner waived that acceptance item.
+- Done in 244 (tools) and 245 (re-identification and operator): a denial whose audit write fails answers `AUDIT_UNAVAILABLE` and counts a metric. Original note: a denial whose audit write fails answers `AUDIT_UNAVAILABLE` and counts a metric, consistently across the re-identification, operator and tool paths. Today `ReidentificationService.refuse` and `refuseApproval` and the operator controller's `recordDenial` swallow the failed audit and still refuse. The 233 brief wrongly called the `AUDIT_UNAVAILABLE` answer existing behaviour; the owner waived that acceptance item.
 - P3: `ClusterRefusals` in the hazelcast module holds a mutable static logger, which would break under parallel tests.
 - P3: the sentinel log test runs at `ClusterRefusals.refused` rather than at a real throw site.
 

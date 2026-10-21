@@ -43,3 +43,18 @@ Finish the owner decision that 244 starts. `ReidentificationService.refuse` and 
 - The other 232, 235 and 216 follow-ups (`ALLOW:FORWARDED` correlation id, `forgetOne`, the EXPIRED pre-check, lease expiry during decide).
 - Any Hazelcast oversight or pause-document change (sealed-cluster work).
 - Documentation (261).
+
+## Outcome
+
+Landed 2026-10-21 on branch `task/245-operator-denial-audit-and-resume-ordering`, merged with a merge commit in PR record/0.7.1-wave3-245-268 so that 266 can cherry-pick the original commits. Backport commits, in pick order after 244: `168ca025`, `f0cfdb10`, `811a73eb`, `5fd20ef7`, `212fceb5`, `c81fa46f`, `846d9b2f`. None touches `docs/plan/`. Tester PASS on a re-run (the first run's surefire fork hung at teardown after the tests passed; filed as a follow-up). Reviewer APPROVE.
+
+**What changed.**
+- `ReidentificationService.refuse` and `refuseApproval` answer `Refused("AUDIT_UNAVAILABLE")` and count the 244 metric once when the DENY audit write throws (`5fd20ef7`).
+- `OperatorAudit` takes the metrics provider (`f0cfdb10`, no behaviour change). Every operator denial whose DENY cannot be written answers 503 `AUDIT_UNAVAILABLE` and counts the metric (`212fceb5`).
+- `OversightOperatorController.resume` stays audit-first (`ALLOW:RESUMED`, then apply). If the apply throws, a linked `DENY:<code>` is written under the same correlation id and the failure is returned; if that DENY also fails, the answer is 503 `AUDIT_UNAVAILABLE` (`212fceb5`). `846d9b2f` documents the order on the controller.
+
+**Failing-first tests.** `168ca025` (`DenialAuditUnavailableServiceTest`) and `811a73eb` (`DenialAuditUnavailableOperatorTest`, `ResumeAuditOrderingTest`) were written before the fixes. `c81fa46f` makes the resume test detect an attempted DENY after a failed ALLOW. `846d9b2f` renames the tests as sentences.
+
+**Accepted deviation.** `ReidentificationServiceTest.aClusterRefusalWithTheAuditSinkDownStillRefusesAndResolvesNothing` pinned the old answer and now expects `AUDIT_UNAVAILABLE`. The brief said existing tests pass unmodified; this is the one change, six lines.
+
+**Follow-ups.** Filed in PLAN.md under "Follow-ups from 245": read endpoints write `ALLOW` before the read, a pause/resume race, `collect` can consume and then answer `AUDIT_UNAVAILABLE`, and the surefire teardown hang. The user-page documentation is 261's.

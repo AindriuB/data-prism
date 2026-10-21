@@ -2,7 +2,11 @@ package io.github.aindriub.dataprism.server.operator;
 
 import io.github.aindriub.dataprism.audit.AuditEntry;
 import io.github.aindriub.dataprism.audit.AuditRecorder;
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -17,9 +21,17 @@ import java.util.UUID;
 final class OperatorAudit {
 
     private final AuditRecorder recorder;
+    private final PrivacyMetrics metrics;
 
     OperatorAudit(AuditRecorder recorder) {
         this.recorder = recorder;
+        this.metrics = PrivacyMetrics.none();
+    }
+
+    @Autowired
+    OperatorAudit(AuditRecorder recorder, ObjectProvider<PrivacyMetrics> metrics) {
+        this.recorder = recorder;
+        this.metrics = metrics.getIfAvailable(PrivacyMetrics::none);
     }
 
     /** @throws OperatorException 503 {@code AUDIT_UNAVAILABLE} when the event cannot be written */
@@ -65,14 +77,25 @@ final class OperatorAudit {
         }
     }
 
-    /** For a refusal: the refusal stands whether or not the event could be written. */
+    /**
+     * For a refusal: the refusal is recorded or it is not made. A DENY that cannot be written is answered
+     * {@code AUDIT_UNAVAILABLE}, never with the refusal's own code, and counted.
+     *
+     * @throws OperatorException 503 {@code AUDIT_UNAVAILABLE} when the event cannot be written
+     */
     void recordDenial(AuthenticatedCaller caller, String action, String entityType, String scopeId, String code,
                       String approvalId) {
         try {
             recorder.record(entry(caller, action, entityType, scopeId, "DENY:" + code, approvalId, ""));
         } catch (RuntimeException unavailable) {
-            // still a refusal
+            throw denialUnaudited();
         }
+    }
+
+    /** The answer for a denial whose event could not be written; counts it. Carries no text from the sink. */
+    OperatorException denialUnaudited() {
+        metrics.increment(Metric.DENIAL_AUDIT_UNAVAILABLE);
+        return new OperatorException(HttpStatus.SERVICE_UNAVAILABLE, "AUDIT_UNAVAILABLE");
     }
 
     private static AuditEntry entry(AuthenticatedCaller caller, String action, String entityType, String scopeId,
