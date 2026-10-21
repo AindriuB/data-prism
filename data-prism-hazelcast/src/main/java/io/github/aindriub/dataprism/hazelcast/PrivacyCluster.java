@@ -452,12 +452,30 @@ public final class PrivacyCluster implements AutoCloseable {
         return config;
     }
 
-    /** The Java serialisation allowlist: what Data Prism's own entry processors and values need, and nothing else. */
+    /**
+     * The Java serialisation allowlist. Values and processors are Strings, Integers and Booleans and Data Prism's
+     * own records (the prefix below), with {@code java.time.Ser} for the sweep processor's {@code Instant}.
+     *
+     * <p>The rest is the Java form of an error reply. A member that cannot run an operation answers with a
+     * Java-serialised exception, and a reply the filter refuses is not an error at the caller but a lost answer,
+     * so the call hangs until the operation timeout. Observed with only the three classes listed (spike 219, Q4):
+     * a map's first use on a two-member cluster blocked, because Hazelcast's own {@code PartitionMigratingException}
+     * and {@code WrongTargetException} replies were refused. The retryable family, the base exception types and the
+     * exceptions Data Prism's calls are told about are therefore listed by name, and no wider prefix.
+     */
     static final Set<String> ALLOWED_CLASSES = Set.of("java.lang.String", "java.lang.Integer", "java.lang.Boolean",
-            "java.time.Ser");
+            "java.time.Ser",
+            "java.lang.Throwable", "java.lang.Exception", "java.lang.RuntimeException",
+            "java.lang.IllegalStateException", "java.lang.IllegalMonitorStateException",
+            "java.lang.StackTraceElement", "[Ljava.lang.StackTraceElement;", "java.util.Collections$EmptyList",
+            "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
+            "com.hazelcast.core.HazelcastInstanceNotActiveException",
+            "com.hazelcast.transaction.TransactionException",
+            "com.hazelcast.splitbrainprotection.SplitBrainProtectionException");
 
-    /** Every Data Prism processor and merge policy lives under this prefix. */
-    static final Set<String> ALLOWED_PREFIXES = Set.of("io.github.aindriub.dataprism.hazelcast.");
+    /** Every Data Prism processor and merge policy lives under the first; Hazelcast's retryable exceptions, the second. */
+    static final Set<String> ALLOWED_PREFIXES = Set.of("io.github.aindriub.dataprism.hazelcast.",
+            "com.hazelcast.spi.exception.");
 
     /**
      * An address no client can have, so the Management Center trusted-interface list is non-empty and matches none.

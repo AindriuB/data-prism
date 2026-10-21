@@ -53,9 +53,18 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  */
 class HazelcastHardeningTest {
 
+    /** Answer 4 of the spike (values and processors), then the Java form of an error reply; see PrivacyCluster. */
     private static final Set<String> ALLOWED_CLASSES = Set.of("java.lang.String", "java.lang.Integer",
-            "java.lang.Boolean", "java.time.Ser");
-    private static final Set<String> ALLOWED_PREFIXES = Set.of("io.github.aindriub.dataprism.hazelcast.");
+            "java.lang.Boolean", "java.time.Ser",
+            "java.lang.Throwable", "java.lang.Exception", "java.lang.RuntimeException",
+            "java.lang.IllegalStateException", "java.lang.IllegalMonitorStateException",
+            "java.lang.StackTraceElement", "[Ljava.lang.StackTraceElement;", "java.util.Collections$EmptyList",
+            "com.hazelcast.core.HazelcastException", "com.hazelcast.core.OperationTimeoutException",
+            "com.hazelcast.core.HazelcastInstanceNotActiveException",
+            "com.hazelcast.transaction.TransactionException",
+            "com.hazelcast.splitbrainprotection.SplitBrainProtectionException");
+    private static final Set<String> ALLOWED_PREFIXES = Set.of("io.github.aindriub.dataprism.hazelcast.",
+            "com.hazelcast.spi.exception.");
 
     private final List<PrivacyCluster> clusters = new ArrayList<>();
     private final List<HazelcastInstance> raw = new ArrayList<>();
