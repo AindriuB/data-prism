@@ -76,4 +76,26 @@ final class TestAdapters {
     static SourceDescription types(Set<String> types, List<String> keys) {
         return new SourceDescription(types, null, null, keys.stream().map(KeyNamespace::new).toList(), null, null);
     }
+
+    /** A non-final named adapter, so tests can subclass it as a proxy library would. */
+    static class GadgetFeedAdapter extends OldStyleAdapter {
+        private final SourceDescription description;
+
+        GadgetFeedAdapter(String name, SourceDescription description) {
+            super(name);
+            this.description = description;
+        }
+
+        @Override
+        public SourceDescription description() {
+            return description;
+        }
+    }
+
+    /** Named the way a CGLIB proxy subclass is. */
+    static final class GadgetFeedAdapter$$SpringCGLIB$$0 extends GadgetFeedAdapter {
+        GadgetFeedAdapter$$SpringCGLIB$$0(String name, SourceDescription description) {
+            super(name, description);
+        }
+    }
 }

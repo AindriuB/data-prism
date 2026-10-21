@@ -4,6 +4,7 @@ import io.github.aindriub.dataprism.core.engine.SourceTree;
 import io.github.aindriub.dataprism.core.spi.SourceDescription;
 import io.github.aindriub.dataprism.validation.ScanReport;
 import io.github.aindriub.dataprism.validation.SensitiveDataScanner;
+import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -20,9 +21,23 @@ final class SourceDescriptionChecks {
 
     private static final String PUNCTUATION = ".,;:()-_/'\"";
     private static final Pattern LINE_BREAK = Pattern.compile("[\\n\\r\\u000B\\u000C\\u0085\\u2028\\u2029]");
-    /** A scheme, a {@code www.} prefix, or a dotted run of host labels ending in a letters-only label. */
+    /**
+     * Shapes that locate a system. Applied to NFKC-normalised, lower-cased text. Deliberately
+     * broad: a false positive costs the operator a rewording, a false negative a leaked location.
+     * <ul>
+     * <li>a scheme, a protocol-relative {@code //}, or {@code www.};
+     * <li>a dotted run of labels whose last label contains a letter (hosts, {@code api.k8s});
+     * <li>an IPv4 dotted quad, with or without a port;
+     * <li>an IPv6 literal (two or more colon-separated hex groups, bracketed or not);
+     * <li>a name or number followed by a colon and a port of two to five digits.
+     * </ul>
+     */
     private static final Pattern URL_OR_HOST = Pattern.compile(
-            "(?i)(?:[a-z][a-z0-9+.-]*://|\\bwww\\.|[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*\\.[a-z]{2,}(?![a-z0-9]))");
+            "[a-z][a-z0-9+.-]*://|//|\\bwww\\."
+                    + "|[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*\\.[a-z0-9_-]*[a-z][a-z0-9_-]*(?![a-z0-9_-])"
+                    + "|(?<![0-9])[0-9]{1,3}(?:\\.[0-9]{1,3}){3}(?![0-9])"
+                    + "|(?<![a-z0-9])(?:[0-9a-f]{0,4}:){2,}[0-9a-f]{0,4}(?![a-z0-9])"
+                    + "|[a-z0-9_-]+:[0-9]{2,5}(?![0-9])");
 
     private final SensitiveDataScanner scanner = new SensitiveDataScanner();
 
@@ -52,10 +67,15 @@ final class SourceDescriptionChecks {
         }
     }
 
-    /** Lower-cases and keeps only letters and digits. */
+    /** NFKC-normalises and lower-cases, so fullwidth and other compatibility forms read as plain text. */
+    static String fold(String text) {
+        return Normalizer.normalize(text, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);
+    }
+
+    /** Folds, then keeps only letters and digits. */
     static String normalise(String text) {
         StringBuilder out = new StringBuilder(text.length());
-        text.toLowerCase(Locale.ROOT).codePoints()
+        fold(text).codePoints()
                 .filter(Character::isLetterOrDigit)
                 .forEach(out::appendCodePoint);
         return out.toString();
@@ -84,7 +104,10 @@ final class SourceDescriptionChecks {
     }
 
     private boolean keyAndLocationFree(String text) {
-        ScanReport report = scanner.scan(SourceTree.text(text));
-        return report.complete() && report.matches().isEmpty() && !URL_OR_HOST.matcher(text).find();
+        String composed = Normalizer.normalize(text, Normalizer.Form.NFKC);
+        String folded = composed.toLowerCase(Locale.ROOT);
+        // The scanner's shapes are case-sensitive, so it sees the normalised text before folding.
+        ScanReport report = scanner.scan(SourceTree.text(composed));
+        return report.complete() && report.matches().isEmpty() && !URL_OR_HOST.matcher(folded).find();
     }
 }

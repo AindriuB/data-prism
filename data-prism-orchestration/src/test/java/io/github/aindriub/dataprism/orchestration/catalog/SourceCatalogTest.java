@@ -15,6 +15,7 @@ import io.github.aindriub.dataprism.core.spi.SourceDescription;
 import io.github.aindriub.dataprism.orchestration.catalog.TestAdapters.DescribedAdapter;
 import io.github.aindriub.dataprism.orchestration.catalog.TestAdapters.OldStyleAdapter;
 import io.github.aindriub.dataprism.orchestration.catalog.TestAdapters.WidgetLedgerAdapter;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -142,6 +143,37 @@ class SourceCatalogTest {
     }
 
     @Test
+    @DisplayName("rule 3: IP literals refuse, IPv4 and IPv6, bracketed and with ports")
+    void ruleThreeIpLiterals() {
+        for (String bad : new String[] {"Reads 10.20.30.40 nightly.", "Reads 10.20.30.40:8080 nightly.",
+                "Reads 2001:db8::1 nightly.", "Reads fe80:0:0:0:1:2:3:4 nightly.", "Reads ::1 nightly.",
+                "Reads [2001:db8::1]:8080 nightly."}) {
+            assertRefusedAnyRule(described(bad));
+        }
+    }
+
+    @Test
+    @DisplayName("rule 3: digit-bearing hosts, host:port and protocol-relative URLs refuse")
+    void ruleThreeOtherHostShapes() {
+        for (String bad : new String[] {"Reads api.k8s nightly.", "Reads db01.dc2 nightly.",
+                "Reads billing-db:5432 nightly.", "Reads //billing/api nightly."}) {
+            assertRefused(INVALID, 3, described(bad));
+        }
+    }
+
+    @Test
+    @DisplayName("rules 3 and 5 see through fullwidth and compatibility forms")
+    void unicodeNormalisation() {
+        assertRefused(INVALID, 3, described("Reads \uFF42\uFF49\uFF4C\uFF4C\uFF49\uFF4E\uFF47.\uFF45\uFF58\uFF41\uFF4D\uFF50\uFF4C\uFF45.\uFF43\uFF4F\uFF4D nightly."));
+        assertRefused(LEAKS, 5, new DescribedAdapter("ledger", aliasText("The \uFF2C\uFF25\uFF24\uFF27\uFF25\uFF32 data.")));
+    }
+
+    private static void assertRefusedAnyRule(DataSourceAdapter<?> adapter) {
+        assertThatThrownBy(() -> build(adapter)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith(INVALID);
+    }
+
+    @Test
     @DisplayName("rule 3 also covers the real description")
     void ruleThreeOnReal() {
         assertRefused(INVALID, 3, new DescribedAdapter("alpha", texts("Fine.", "runs on db-7.example.org")));
@@ -194,6 +226,31 @@ class SourceCatalogTest {
     }
 
     @Test
+    @DisplayName("rule 5: a proxy subclass is checked under the user class name")
+    void ruleFiveProxyClassName() {
+        String text = "The gadget feed adapter data.";
+        assertRefused(LEAKS, 5, new TestAdapters.GadgetFeedAdapter("alpha", aliasText(text)));
+        assertRefused(LEAKS, 5, new TestAdapters.GadgetFeedAdapter$$SpringCGLIB$$0("alpha", aliasText(text)));
+    }
+
+    @Test
+    @DisplayName("rule 5: an anonymous subclass is checked under its named superclass, a JDK proxy builds")
+    void ruleFiveAnonymousAndJdkProxy() {
+        DataSourceAdapter<?> anonymous = new TestAdapters.GadgetFeedAdapter("alpha", aliasText("The gadget feed adapter data.")) {
+        };
+        assertRefused(LEAKS, 5, anonymous);
+        @SuppressWarnings("unchecked")
+        DataSourceAdapter<String> proxy = (DataSourceAdapter<String>) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[] {DataSourceAdapter.class}, (p, m, a) -> switch (m.getName()) {
+                    case "sourceName" -> "alpha";
+                    case "description" -> aliasText("Fine.");
+                    case "hashCode" -> 1;
+                    default -> null;
+                });
+        assertThat(build(proxy).entries()).hasSize(1);
+    }
+
+    @Test
     @DisplayName("rule 5: the base-url host refuses in mixed case with punctuation")
     void ruleFiveHost() {
         SourceCatalog.build(List.of(new DescribedAdapter("alpha", aliasText("Fine."))), Map.of("alpha", "api.thing.example"));
@@ -210,6 +267,10 @@ class SourceCatalogTest {
         DataSourceAdapter<?> b = new OldStyleAdapter("beta");
         assertThatThrownBy(() -> build(a, b)).hasMessage(LEAKS + "source alpha rule 5");
         assertThatThrownBy(() -> build(b, a)).hasMessage(LEAKS + "source alpha rule 5");
+        // Another source's host is not forbidden: only its name is.
+        assertThat(SourceCatalog.build(
+                List.of(new DescribedAdapter("alpha", aliasText("Uses gamma example data.")), b),
+                Map.of("beta", "gamma.example")).entries()).hasSize(2);
     }
 
     @Test

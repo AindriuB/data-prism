@@ -83,7 +83,7 @@ public final class SourceCatalog {
             SourceDescription description = describe(adapter, name);
             List<String> forbidden = new ArrayList<>();
             forbidden.add(SourceDescriptionChecks.normalise(name));
-            forbidden.add(SourceDescriptionChecks.normalise(adapter.getClass().getSimpleName()));
+            userClassName(adapter.getClass()).ifPresent(n -> forbidden.add(SourceDescriptionChecks.normalise(n)));
             String host = hosts.get(name);
             if (host != null) {
                 forbidden.add(SourceDescriptionChecks.normalise(host));
@@ -98,6 +98,44 @@ public final class SourceCatalog {
             built.add(new Entry(name, description, aliasText, realText, generated));
         }
         return new SourceCatalog(built, SourceNames.nonconformingCount(names));
+    }
+
+    /**
+     * The name a person gave the adapter class. A proxy library's subclass ({@code Name$$...}), an
+     * anonymous class, a hidden class or a JDK proxy has none of its own, so the nearest named
+     * superclass or {@code DataSourceAdapter} sub-interface stands in.
+     */
+    static Optional<String> userClassName(Class<?> type) {
+        if (type == null || type == Object.class || type == DataSourceAdapter.class) {
+            return Optional.empty();
+        }
+        String binary = type.getName();
+        int generated = binary.indexOf("$$");
+        if (generated > 0) {
+            String base = binary.substring(0, generated);
+            String simple = base.substring(Math.max(base.lastIndexOf('.'), base.lastIndexOf('$')) + 1);
+            if (!simple.isEmpty()) {
+                return Optional.of(simple);
+            }
+        }
+        boolean unnamed = generated >= 0 || type.isAnonymousClass() || type.isSynthetic() || type.isHidden()
+                || java.lang.reflect.Proxy.isProxyClass(type) || type.getSimpleName().isEmpty();
+        if (!unnamed) {
+            return Optional.of(type.getSimpleName());
+        }
+        Optional<String> fromSuper = userClassName(type.getSuperclass());
+        if (fromSuper.isPresent()) {
+            return fromSuper;
+        }
+        for (Class<?> iface : type.getInterfaces()) {
+            if (DataSourceAdapter.class.isAssignableFrom(iface)) {
+                Optional<String> named = userClassName(iface);
+                if (named.isPresent()) {
+                    return named;
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     private static SourceDescription describe(DataSourceAdapter<?> adapter, String name) {
