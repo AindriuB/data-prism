@@ -4,7 +4,7 @@
 **Release:** 0.8.0, and backported to 0.7.1 by cherry-pick as its Security fix (task 266; owner decision 2026-10-21, which replaces the earlier "no 0.7.1" note)
 **Base branch:** `origin/main` once PR #144 (record/0.8-wave2, which lands 240's `ChainableFields`) has merged
 **Depends on:** 240 (`ChainableFields` reads `FieldMetadata.elementType()`, and this task changes what that returns). Only the main-only commit needs 240; see "0.7.1 backport" in Context.
-**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 266; 203 and 206 to 211 counted as landed). 248 depends on 265 since 2026-10-21 and is wave 4.
+**Wave:** 3 (combined 0.8 graph of 213, 218 to 231 and 238 to 267; 203 and 206 to 211 counted as landed). 248 depends on 265 since 2026-10-21. 267 depends on 265 (wave 4), and 248 also depends on 267 (wave 5).
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/DefaultFieldMetadataResolver.java *(`elementType` and its Javadoc only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceModels.java
@@ -103,6 +103,8 @@ The fix fails closed and stays small:
   - `List<Leaf>`, `Set<Leaf>`, `Leaf[]` and `Optional<Leaf>` are scrubbed with `Leaf`'s rules;
   - `Map<String, String>` and `Map<String, Object>` take the unclassified-structure path;
   - `Optional<List<Leaf>>` and `List<List<Leaf>>` keep their current outcome.
+
+  Task 267 (filed 2026-10-21) later replaces the `List<List<Leaf>>` pin in `nestedContainersKeepTheirOutcome`, because that pin asserts a leaking output. This task still ships the pin as written.
 - [ ] `ChainableFields`:
   - its comment no longer says "other wrappers" take the type argument;
   - a new `ChainableFieldsTest` case shows that a `@Chainable` identifier declared on `Envelope` and reached through a `Box<Leaf>`-style user generic field is found at `Envelope`'s path, never at `Leaf`'s.
@@ -126,3 +128,4 @@ The fix fails closed and stays small:
 - `RawValueLeakValidator`, `SensitivePatternValidator` and `SensitiveDataScanner` (208 and 256 own them). The fix is in what they are given, not in them.
 - Map-key classification (the 0.6 follow-up about `keyUsing` keys written as field names).
 - Any other `ChainableFields` route or refusal rule (240 is closed).
+- An array inside an array, and a record inside one (task 267, which depends on this task and replaces the `List<List<Leaf>>` pin).

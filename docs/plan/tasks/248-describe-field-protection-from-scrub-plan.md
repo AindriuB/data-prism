@@ -2,9 +2,9 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` once 240 and 265 have merged
-**Depends on:** 240 (`ChainableFields`), 265 (both edit `JsonTreeScrubbingEngine.java`. 265 corrects the nested-type rule, so the type an object value or array element descends into, and the `describe` override must copy that corrected rule; added 2026-10-21)
-**Wave:** 4 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Base branch:** `origin/main` once 240, 265 and 267 have merged
+**Depends on:** 240 (`ChainableFields`), 265 (both edit `JsonTreeScrubbingEngine.java`. 265 corrects the nested-type rule, so the type an object value or array element descends into, and the `describe` override must copy that corrected rule; added 2026-10-21), 267 (both edit `JsonTreeScrubbingEngine.java`. 267 makes an array inside an array keep the field's policy only for its scalars, and sends an object inside an inner array to the unclassified-structure path, so the describer must never describe such an object's fields; added 2026-10-21)
+**Wave:** 5 (combined 0.8 graph of 213, 218 to 231 and 238 to 267; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/ScrubbingEngine.java *(the `describe` default method only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/ModelDescription.java *(new)*
@@ -23,6 +23,7 @@
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/policy/EffectivePrivacyPolicy.java and PrivacyProfiles.java: profile tightening; the profile comes from the `PrivacyContext`.
 - data-prism-annotations/src/main/java/io/github/aindriub/dataprism/annotations/PrivacyAction.java: seven values, three implemented.
 - From 240 (2026-10-21): `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
+- From 265 and 267 (2026-10-21): the nested-type rule is `nestedType` in `JsonTreeScrubbingEngine`. An array inside an array is scrubbed level by level with the field's policy for its scalars, and an object inside an inner array is always an unclassified structure. A model with a record in such a place is refused at startup with `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`. The path grammar's single `[]` level therefore describes everything the scrubber emits.
 
 ## Required shape (later tasks read these)
 - `Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled)` on `ScrubbingEngine`; the default returns empty, which callers treat as "cannot describe" and refuse (fail closed). `ConfiguredJsonScrubbingEngine` overrides it in 249.
