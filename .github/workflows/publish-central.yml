@@ -183,6 +183,19 @@ jobs:
             exit 1
           fi
 
+      # attach-sboms (below) needs the GitHub release release.yml makes from
+      # this tag. Find out it is missing now, not after the deploy that cannot
+      # be undone.
+      - name: Guard the GitHub release for this tag exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null; then
+            echo "::error::no GitHub release for ${GITHUB_REF_NAME}; wait for release.yml to finish (or create it) before publishing to Central"
+            exit 1
+          fi
+
       # Deploys only the reactor's deployable modules: the six modules this
       # task marks non-deployable set skipPublishing (and maven.deploy.skip)
       # to true in their own poms, so the Central Portal bundle this produces
