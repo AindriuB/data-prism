@@ -81,7 +81,7 @@ public final class SourceValues {
     }
 
     /**
-     * The type a nested value is read with, by one rule shared (as a copy) with {@code SourceValues}
+     * The type a nested value is read with, by one rule shared (as a copy) with {@code JsonTreeScrubbingEngine}
      * and the configured-JSON shape guard. An object value takes the field's own {@code valueType()}: a
      * user generic or a map is that object, not the type argument it carries. Only an {@code Optional}
      * is transparent. An element of an array value takes {@code elementType()} when one is stated.
