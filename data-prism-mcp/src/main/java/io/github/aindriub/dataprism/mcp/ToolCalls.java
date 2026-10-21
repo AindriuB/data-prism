@@ -1,10 +1,13 @@
 package io.github.aindriub.dataprism.mcp;
 
+import io.github.aindriub.dataprism.core.metrics.Metric;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.refusal.RefusalCodes;
 import io.github.aindriub.dataprism.orchestration.AuditedRefusalException;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
+import io.github.aindriub.dataprism.orchestration.DenialAuditFailedException;
 import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.security.AdmissionDecision;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
@@ -30,6 +33,9 @@ final class ToolCalls {
 
     /** Refusal code when admission itself could not be evaluated. */
     static final String OVERSIGHT_UNAVAILABLE = "OVERSIGHT_UNAVAILABLE";
+
+    /** Refusal code when a denial could not be written to the audit trail. */
+    static final String AUDIT_UNAVAILABLE = DenialAuditFailedException.CODE;
 
     /**
      * Approval fields a caller must never be able to set. They are not part of
@@ -141,6 +147,16 @@ final class ToolCalls {
     private static void append(StringBuilder out, String part) {
         String value = part == null ? "" : part;
         out.append(value.length()).append(':').append(value).append('\u0000');
+    }
+
+    /**
+     * A denial whose audit write failed: counted, and answered with the code alone. There is no audit
+     * event, so there is no correlation id to return, and nothing from the sink's exception.
+     */
+    static McpSchema.CallToolResult auditUnavailable(PrivacyMetrics metrics) {
+        metrics.increment(Metric.DENIAL_AUDIT_UNAVAILABLE);
+        return McpSchema.CallToolResult.builder().isError(true).addTextContent("refused: " + AUDIT_UNAVAILABLE)
+                .build();
     }
 
     /** An orchestrator refusal that was already audited: its text, with that audit event's id. */
