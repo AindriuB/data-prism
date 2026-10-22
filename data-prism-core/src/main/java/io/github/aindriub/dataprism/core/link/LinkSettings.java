@@ -23,6 +23,8 @@ public record LinkSettings(
         Duration clockSkew) {
 
     private static final Pattern KEY_ID = Pattern.compile("[A-Za-z0-9_-]{1," + LinkLayout.MAX_KEY_ID + "}");
+    /** The design sets no maximum; one day bounds the arithmetic and a link's exposure. */
+    static final Duration MAX_LIFETIME = Duration.ofDays(1);
     private static final Duration MAX_SKEW = Duration.ofSeconds(30);
 
     public LinkSettings {
@@ -35,6 +37,9 @@ public record LinkSettings(
         }
         if (lifetime.isPresent() && (lifetime.get().isZero() || lifetime.get().isNegative())) {
             throw new IllegalArgumentException("INVALID_LINK_LIFETIME: the lifetime must be positive or scope");
+        }
+        if (lifetime.isPresent() && lifetime.get().compareTo(MAX_LIFETIME) > 0) {
+            throw new IllegalArgumentException("INVALID_LINK_LIFETIME: the lifetime must be at most one day");
         }
         if (maxLength < LinkLayout.MIN_MAX_LENGTH || maxLength > LinkLayout.MAX_MAX_LENGTH) {
             throw new IllegalArgumentException(

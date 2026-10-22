@@ -34,13 +34,16 @@ public final class InMemoryLinkAttemptLimiter implements LinkAttemptLimiter {
         if (window.isZero() || window.isNegative()) {
             throw new IllegalArgumentException("INVALID_LINK_ATTEMPT_WINDOW: the window must be positive");
         }
+        if (window.compareTo(Duration.ofDays(1)) > 0) {
+            throw new IllegalArgumentException("INVALID_LINK_ATTEMPT_WINDOW: the window must be at most one day");
+        }
         this.limit = limit;
         this.window = window;
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     private boolean ended(Entry entry, Instant now) {
-        return !now.isBefore(entry.windowStart().plus(window));
+        return !now.isBefore(LinkLayout.plus(entry.windowStart(), window));
     }
 
     @Override

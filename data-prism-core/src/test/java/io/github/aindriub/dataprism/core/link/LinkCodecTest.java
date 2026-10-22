@@ -247,8 +247,7 @@ class LinkCodecTest {
     }
 
     @Test
-    void versionIsPartOfTheFormatNotJustChecked() {
-        // Version 0x01 is the first byte of the associated data too: the same bytes under version 2 never open.
+    void anotherVersionByteIsRefusedBeforeAnyCryptography() {
         assertThat(refused(codec.open(token(patched(sealed(follow(5)), 0, 0)), binding, follows())).reason())
                 .isEqualTo(LinkReason.VERSION);
     }
@@ -319,9 +318,33 @@ class LinkCodecTest {
 
     @Test
     void skewNeverExtendsTheScopeOrTheToken() {
-        LinkBinding shortScope = new LinkBinding("case-1", "alice", T0.plusSeconds(10), T0.plus(Duration.ofDays(1)));
-        SealedLink link = codec.seal(follow(5), shortScope).orElseThrow();
-        assertThat(link.expiry()).isEqualTo(T0.plusSeconds(10));
+        Instant later = T0.plus(Duration.ofDays(1));
+        LinkBinding shortScope = new LinkBinding("case-1", "alice", T0.plusSeconds(10), later);
+        LinkBinding shortToken = new LinkBinding("case-1", "alice", later, T0.plusSeconds(10));
+        for (LinkBinding live : List.of(shortScope, shortToken)) {
+            String token = codec.seal(follow(5), live).orElseThrow().token();
+            clock.set(T0.plusSeconds(9));
+            assertThat(codec.open(token, live, follows())).isInstanceOf(Opened.class);
+            // 25 s is inside the 30 s skew of the link's own expiry, but past the scope or token end.
+            clock.set(T0.plusSeconds(25));
+            Refused refused = refused(codec.open(token, live, follows()));
+            assertThat(refused.reason()).isEqualTo(LinkReason.EXPIRED);
+            assertThat(refused.counted()).isFalse();
+            clock.set(T0);
+        }
+    }
+
+    @Test
+    void aScopeOrTokenThatHasAlreadyEndedGetsNoLink() {
+        Instant later = T0.plus(Duration.ofDays(1));
+        for (LinkBinding ended : List.of(
+                new LinkBinding("case-1", "alice", T0.minusSeconds(5), later),
+                new LinkBinding("case-1", "alice", later, T0.minusSeconds(5)),
+                new LinkBinding("case-1", "alice", T0, later))) {
+            assertThat(codec.seal(follow(5), ended)).isEmpty();
+            assertThat(codec.sealDetailed(follow(5), ended))
+                    .isEqualTo(new SealResult.Omitted(SealResult.OmitReason.ALREADY_EXPIRED));
+        }
     }
 
     @ParameterizedTest
@@ -400,6 +423,31 @@ class LinkCodecTest {
                 .seal(follow(5), binding).orElseThrow().token();
         assertThat(refused(codec(onlyOld, settings("old", true, Duration.ofSeconds(30)), clock)
                 .open(newLink, binding, follows())).reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
+    }
+
+    @Test
+    void aTokenSealedUnderThePseudonymisationKeyIsUnknownKey() {
+        MapKeys both = new MapKeys().with("k1", material(1, 32)).with("pseudo", material(9, 32));
+        LinkCodec issuer = new LinkCodec(settings("pseudo", true, Duration.ofSeconds(30)),
+                new LinkKeys(both, "pseudo", "other"), clock);
+        String token = issuer.seal(follow(5), binding).orElseThrow().token();
+        java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
+        LinkCodec verifier = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
+                new LinkKeys(both, "k1", "pseudo", () -> held), clock);
+        assertThat(refused(verifier.open(token, binding, follows())).reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
+        // The held set is read on every open: adding the pseudonymisation id later still refuses it.
+        held.add("pseudo");
+        assertThat(refused(verifier.open(token, binding, follows())).reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
+    }
+
+    @Test
+    void aKeyTheProviderHoldsButHeldKeyIdsOmitsIsUnknownKey() {
+        MapKeys both = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
+        String token = new LinkCodec(settings("k2", true, Duration.ofSeconds(30)),
+                new LinkKeys(both, "k2", "pseudo"), clock).seal(follow(5), binding).orElseThrow().token();
+        LinkCodec verifier = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
+                new LinkKeys(both, "k1", "pseudo", () -> Set.of("k1")), clock);
+        assertThat(refused(verifier.open(token, binding, follows())).reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
     }
 
     // ---- padding and size ----

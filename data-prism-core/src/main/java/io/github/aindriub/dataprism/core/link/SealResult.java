@@ -10,7 +10,9 @@ public sealed interface SealResult permits SealResult.Issued, SealResult.Omitted
         /** The chained key is over 256 bytes. */
         KEY_TOO_LONG,
         /** The encoded link is longer than {@code maxLength}. */
-        TOO_LONG
+        TOO_LONG,
+        /** The computed expiry is not after now: the scope or the caller token has already ended. */
+        ALREADY_EXPIRED
     }
 
     record Issued(SealedLink link) implements SealResult {

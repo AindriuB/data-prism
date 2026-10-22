@@ -1,5 +1,9 @@
 package io.github.aindriub.dataprism.core.link;
 
+import java.time.DateTimeException;
+import java.time.Duration;
+import java.time.Instant;
+
 /**
  * The constants of the link layout (sealed-links.md section 3, with the OD-200-4 caps). Package-private: the
  * sizes are a property of the format, not an API. Tests recompute the worst-case lengths from these.
@@ -28,6 +32,15 @@ final class LinkLayout {
     static final int MAX_MAX_LENGTH = 4096;
 
     private LinkLayout() {}
+
+    /** {@code instant + by}, saturating at {@link Instant#MAX} instead of throwing. */
+    static Instant plus(Instant instant, Duration by) {
+        try {
+            return instant.plus(by);
+        } catch (DateTimeException | ArithmeticException overflow) {
+            return Instant.MAX;
+        }
+    }
 
     /**
      * The padded base64 length, {@code 4 * ceil(bytes / 3)}: the design's figure (616 for the worst-case follow

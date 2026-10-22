@@ -58,6 +58,23 @@ class LinkKeysTest {
     }
 
     @Test
+    void aHeldSetContainingThePseudonymisationKeyRefuses() {
+        MapKeys keys = new MapKeys().with("k1", material(1, 32)).with("pseudo", material(2, 32));
+        assertThatThrownBy(() -> new LinkKeys(keys, "k1", "pseudo", () -> Set.of("k1", "pseudo")))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED"));
+    }
+
+    @Test
+    void lifetimeIsCappedAtOneDay() {
+        assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(Duration.ofSeconds(Long.MAX_VALUE)), 1024, true,
+                Duration.ZERO)).hasMessageStartingWith("INVALID_LINK_LIFETIME");
+        new LinkSettings("k1", Optional.of(Duration.ofDays(1)), 1024, true, Duration.ZERO);
+        assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(Duration.ofDays(1).plusSeconds(1)), 1024, true,
+                Duration.ZERO)).hasMessageStartingWith("INVALID_LINK_LIFETIME");
+    }
+
+    @Test
     void theConstructorDoesNotMutateTheProvidersArray() {
         byte[] held = material(1, 32);
         byte[] before = held.clone();

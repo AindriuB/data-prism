@@ -96,6 +96,9 @@ public final class LinkCodec {
         }
         Instant now = clock.instant();
         Instant expiry = expiry(now, binding);
+        if (!expiry.isAfter(now)) {
+            return new SealResult.Omitted(SealResult.OmitReason.ALREADY_EXPIRED);
+        }
         long expirySeconds = expiry.getEpochSecond();
         String target = payload instanceof FollowPayload follow ? follow.target() : "";
         byte[] targetBytes = target.getBytes(StandardCharsets.UTF_8);
@@ -138,7 +141,7 @@ public final class LinkCodec {
         Instant expiry = binding.scopeExpiry().isBefore(binding.tokenExpiry())
                 ? binding.scopeExpiry() : binding.tokenExpiry();
         if (settings.lifetime().isPresent()) {
-            Instant byLifetime = now.plus(settings.lifetime().get());
+            Instant byLifetime = LinkLayout.plus(now, settings.lifetime().get());
             if (byLifetime.isBefore(expiry)) {
                 expiry = byLifetime;
             }
@@ -190,14 +193,17 @@ public final class LinkCodec {
         Instant now = clock.instant();
         // The header expiry is unauthenticated until the tag verifies; clamp it so a hostile value cannot throw.
         Instant expiry = Instant.ofEpochSecond(Math.max(-EXPIRY_CLAMP, Math.min(EXPIRY_CLAMP, header.expirySeconds)));
-        boolean expired = !now.isBefore(expiry.plus(settings.clockSkew()));
+        // Skew applies to the link's own expiry only; the scope and the token end exactly, with no skew.
+        boolean expired = !now.isBefore(LinkLayout.plus(expiry, settings.clockSkew()))
+                || !now.isBefore(binding.scopeExpiry())
+                || !now.isBefore(binding.tokenExpiry());
         LinkRelation relation = LinkRelation.fromCode(header.relationCode);
         boolean relationAccepted = relation != null && accepted.contains(relation)
                 && relation != LinkRelation.COLLECTION_PAGE && relation != LinkRelation.GROUP;
         LinkPayload payload = authenticated ? decodePayload(plain, relation, header) : null;
         boolean parsed = !authenticated || payload != null;
         boolean future = payload != null
-                && payload.issueTime().isAfter(now.plus(settings.clockSkew()));
+                && payload.issueTime().isAfter(LinkLayout.plus(now, settings.clockSkew()));
 
         if (!knownKey) {
             return refuse(LinkReason.UNKNOWN_KEY);

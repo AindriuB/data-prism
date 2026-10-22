@@ -54,3 +54,20 @@ A link is the one new authority object in 0.8 and the one place new cryptography
 - Spring properties and key resolution from configuration (254, 255).
 - The collection-page and group payloads (0.9).
 - The timing soak test of sealed-links obligation 10 (252 writes it, 263 runs it).
+
+## Outcome
+
+Branch `task/242-sealed-link-codec`. Tests written first: `LinkCodecTest`, `LinkKeysTest`, `InMemoryLinkAttemptLimiterTest` (core `link` package) and `LinkArchitectureTest`; none compiles on the base commit.
+
+Decisions made after review (coordinator, on the fail-closed rule):
+
+- **Scope and token end (a).** `open` refuses as `EXPIRED` when `now >= scopeExpiry` or `now >= tokenExpiry`, with no skew on those two. `sealDetailed` omits (`ALREADY_EXPIRED`) when the computed expiry is not after now. Task 252 still re-checks the live session; this is defence in depth.
+- **Key allow-list.** `open` verifies only ids in `heldKeyIds()` (the current id plus the supplied set, read on every call). Any other id takes the dummy-key path and is `UNKNOWN_KEY`. The pseudonymisation key id is refused at construction (`LINK_KEY_SHARED`) if the held set contains it, and is `UNKNOWN_KEY` if it appears later. The default held set is the current id only, which fails closed until 255 supplies the real set.
+- **Overflow.** Link lifetime is capped at one day (`INVALID_LINK_LIFETIME`; the design gives no maximum) and the limiter window at one day (`INVALID_LINK_ATTEMPT_WINDOW`). `Instant.plus` saturates at `Instant.MAX`.
+
+Rotation notes for later tasks:
+
+- Task 255 must supply `heldKeyIds` (`SecretKeyProvider` has no listing); until then only the current key verifies. That supplier must never return null or throw: `open` reads it on every call and would throw instead of refusing.
+- Counter keys derive from the current key id, so they split across key ids during phase 2 of a rotation. The cluster limiter (264) must handle this.
+
+Other findings: the unpadded worst-case follow link is 615 characters (the design's 616 counts padding); the `TOO_LONG` omit is unreachable with validated settings; the payload parse runs only after authentication, a small work difference for 252's timing soak.

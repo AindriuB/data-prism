@@ -39,6 +39,7 @@ public final class LinkKeys {
     private final SecretKeyProvider provider;
     private final String currentKeyId;
     private final Supplier<Set<String>> held;
+    private final String pseudonymisationKeyId;
 
     /** As the long form, reporting only the current key id as held. */
     public LinkKeys(SecretKeyProvider provider, String currentKeyId, String pseudonymisationKeyId) {
@@ -74,6 +75,11 @@ public final class LinkKeys {
             throw new IllegalStateException("LINK_KEY_WEAK: the link key must be at least 32 bytes");
         }
         this.held = held != null ? held : () -> Set.of(currentKeyId);
+        this.pseudonymisationKeyId = pseudonymisationKeyId;
+        if (pseudonymisationKeyId != null && this.held.get().contains(pseudonymisationKeyId)) {
+            throw new IllegalStateException(
+                    "LINK_KEY_SHARED: the held key ids must not include the pseudonymisation key id");
+        }
     }
 
     /** The key id used to issue. */
@@ -81,9 +87,17 @@ public final class LinkKeys {
         return currentKeyId;
     }
 
-    /** The key ids this member holds, sorted; for the health endpoint and the loaded-keys gauge. */
+    /**
+     * The key ids this member verifies with, sorted: the current id and the supplied held set, never the
+     * pseudonymisation key id. For the health endpoint and the loaded-keys gauge.
+     */
     public Set<String> heldKeyIds() {
-        return new TreeSet<>(held.get());
+        Set<String> ids = new TreeSet<>(held.get());
+        ids.add(currentKeyId);
+        if (pseudonymisationKeyId != null) {
+            ids.remove(pseudonymisationKeyId);
+        }
+        return ids;
     }
 
     /** The per-scope keys under the current key id. */
@@ -116,8 +130,14 @@ public final class LinkKeys {
         return HexFormat.of().formatHex(mac, 0, 16);
     }
 
-    /** The named key's material, or {@code null} when unknown, unavailable or under 32 bytes. Never falls back. */
+    /**
+     * The named key's material, or {@code null} when the id is not held, is the pseudonymisation key's, or the
+     * key is unknown, unavailable or under 32 bytes. The held set is read on every call. Never falls back.
+     */
     byte[] master(String keyId) {
+        if (!heldKeyIds().contains(keyId)) {
+            return null;
+        }
         try {
             byte[] material = provider.secret(keyId);
             return material != null && material.length >= MIN_KEY_BYTES ? material : null;

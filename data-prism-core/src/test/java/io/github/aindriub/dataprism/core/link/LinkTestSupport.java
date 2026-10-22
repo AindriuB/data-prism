@@ -88,7 +88,11 @@ final class LinkTestSupport {
 
     static LinkCodec codec(MapKeys provider, LinkSettings settings, Clock clock) {
         LinkKeys keys = new LinkKeys(provider, settings.keyId(), "pseudo-key",
-                () -> Set.copyOf(provider.keys.keySet()));
+                () -> {
+                    Set<String> ids = new java.util.HashSet<>(provider.keys.keySet());
+                    ids.remove("pseudo-key");
+                    return ids;
+                });
         return new LinkCodec(settings, keys, clock);
     }
 
