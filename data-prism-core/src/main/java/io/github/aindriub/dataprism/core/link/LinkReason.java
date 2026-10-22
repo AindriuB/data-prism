@@ -4,7 +4,9 @@ package io.github.aindriub.dataprism.core.link;
  * Why a link was refused. The client sees one refusal for all of them; the reason is for the audit only, as
  * {@code REFUSED:LINK_<REASON>} (sealed-links.md section 4).
  *
- * <p>The first five are decided before the token authenticates and are counted by the failed-attempt limiter.
+ * <p>The first five are decided before the token authenticates and are counted by the failed-attempt limiter by
+ * default. {@code Refused.counted()} is authoritative; {@link #counted()} is only the default (a {@code MALFORMED}
+ * decided after authentication is not counted).
  * The rest are never counted: most are decided only after authentication and are reachable only with a genuine
  * link; {@code KEY_UNAVAILABLE} is a key-provider outage on a key id this member holds, which a genuine user cannot
  * cause and must not be locked out by.

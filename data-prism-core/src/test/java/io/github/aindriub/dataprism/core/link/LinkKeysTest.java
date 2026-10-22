@@ -158,6 +158,18 @@ class LinkKeysTest {
                 .hasMessageStartingWith("LINK_KEY_SHARED");
     }
 
+    @Test
+    void aKeyAddedLaterWithThePseudonymisationBytesIsNotHeld() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(200, 32));
+        java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
+        LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> held);
+        held.add("k2");
+        assertThat(keys.heldKeyIds()).containsExactly("k1");
+        assertThat(keys.master("k2")).isNull();
+        assertThat(keys.lookup("k2").status()).isEqualTo(LinkKeys.Status.NOT_HELD);
+        assertThat(keys.toString()).doesNotContain("k2");
+    }
+
     // ---- review: a null entry in the held set is absent ----
 
     @Test

@@ -509,6 +509,22 @@ class LinkCodecTest {
     }
 
     @Test
+    void aTokenUnderALaterAddedKeyWithThePseudonymisationBytesIsUnknownKeyAndCounted() {
+        MapKeys keys = new MapKeys().with("k1", material(1, 32)).with("k2", material(200, 32))
+                .with("other-pseudo", material(77, 32));
+        String token = new LinkCodec(settings("k2", true, Duration.ofSeconds(30)),
+                new LinkKeys(keys, "k2", "other-pseudo", () -> Set.of("k2")), clock)
+                .seal(follow(5), binding).orElseThrow().token();
+        java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
+        LinkCodec verifier = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
+                new LinkKeys(keys, "k1", "pseudo-key", () -> held), clock);
+        held.add("k2");
+        Refused refused = refused(verifier.open(token, binding, follows()));
+        assertThat(refused.reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
+        assertThat(refused.counted()).isTrue();
+    }
+
+    @Test
     void aKeyTheProviderHoldsButHeldKeyIdsOmitsIsUnknownKey() {
         MapKeys both = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
         String token = new LinkCodec(settings("k2", true, Duration.ofSeconds(30)),
