@@ -173,13 +173,9 @@ final class ClusterKeyResolution {
     /** The privacy HMAC key, already validated before the cluster is built. */
     private static byte[] privacyKey(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
         PrivacyProperties.HmacKey hmac = properties.getPrivacy().getHmacKey();
-        String reference = hmac.getEnvironmentVariable();
-        if (reference == null || reference.isBlank()) {
-            reference = hmac.getProviderReference();
-        }
         byte[] received;
         try {
-            received = resolver.resolve(hmac.getKeyId(), reference);
+            received = HmacKeyReferences.resolve(resolver, hmac, hmac.getKeyId());
         } catch (RuntimeException unresolved) {
             received = null;
         }

@@ -158,4 +158,24 @@ class ClusterKeyResolutionTest {
                 .contains("dataprism.hazelcast.security.name-key.provider-reference")
                 .doesNotContain("vault:name");
     }
+
+    @Test
+    void anHmacKeyGivenAsAProviderReferenceIsComparedThroughTheProviderMethod() {
+        DataPrismProperties p = properties();
+        p.getPrivacy().getHmacKey().setEnvironmentVariable(null);
+        p.getPrivacy().getHmacKey().setProviderReference("vault:hmac");
+        HmacKeyReferenceResolver resolver = new HmacKeyReferenceResolver() {
+            @Override public byte[] resolve(String keyId, String reference) {
+                return reference.equals("CLUSTER_REF") ? bytes('c') : bytes('n');
+            }
+
+            @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                return bytes('c');
+            }
+        };
+        // The HMAC key has the cluster key's material, which only the provider method reveals.
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(p, () -> resolver));
+        assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:");
+    }
 }

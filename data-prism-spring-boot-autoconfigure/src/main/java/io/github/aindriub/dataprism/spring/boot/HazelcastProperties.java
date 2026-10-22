@@ -3,8 +3,6 @@ package io.github.aindriub.dataprism.spring.boot;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 public class HazelcastProperties {
     /** embedded shares state across members that have joined one cluster; single-node keeps state per process. Required for a protected deployment, never defaulted. */

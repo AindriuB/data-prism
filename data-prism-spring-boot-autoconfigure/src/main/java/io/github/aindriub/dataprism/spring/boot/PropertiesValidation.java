@@ -122,10 +122,9 @@ class PropertiesValidation {
 
     private static void validateKey(DataPrismProperties properties, HmacKeyReferenceResolver provider) {
         if (provider == null) throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER", "provide an HmacKeyReferenceResolver bean for the configured reference");
-        String reference = properties.getPrivacy().getHmacKey().getEnvironmentVariable();
-        if (reference == null || reference.isBlank()) reference = properties.getPrivacy().getHmacKey().getProviderReference();
+        PrivacyProperties.HmacKey hmac = properties.getPrivacy().getHmacKey();
         try {
-            byte[] key = provider.resolve(properties.getPrivacy().getHmacKey().getKeyId(), reference);
+            byte[] key = HmacKeyReferences.resolve(provider, hmac, hmac.getKeyId());
             // Read only: the resolver's array is not ours to change, and a copy wiped here would protect nothing.
             if (key == null || key.length < 32) throw new DataPrismConfigurationException("HMAC_KEY_WEAK", "configured key material is shorter than 32 bytes");
         } catch (DataPrismConfigurationException e) { throw e;

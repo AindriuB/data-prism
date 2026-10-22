@@ -118,3 +118,11 @@ Notes:
 6. `aKeyedConfigMemberKeepsItsClusterNameAndInterface` also asserts the interface.
 7. The property prefixes live in `HazelcastProperties.Security.CLUSTER_KEY_PROPERTY` and `NAME_KEY_PROPERTY`.
 8. Inline fully-qualified names removed from the new tests; the stale "stands in for the metric" Javadoc fixed; the test-only `resolve(properties, resolver)` overload removed (tests pass `() -> resolver`).
+
+Follow-up to round 2:
+
+- The loopback test for a keyless supplied instance now reads the listening socket's configuration, not the advertised address: `bind.any` and `server.bind.any` false, interfaces enabled and all loopback, no public address, loopback member address. A real instance with `bind.any` left at its default is refused (the reviewer's probe, reproduced).
+- A join before the listener is registered is reported: the listener is an `InitialMembershipListener` and refuses in `init()` when more than one member is present; `using()` and `embedded()` then throw `MISSING_CLUSTER_KEY`.
+- The privacy HMAC key is routed like the cluster keys: `HmacKeyReferences` sends an `environment-variable` to `resolve` and a `provider-reference` to `resolveProviderReference`, in `PropertiesValidation.validateKey`, `PrivacyEngineWiring`/`ConfiguredSecretKeyProvider` and `ClusterKeyResolution`. The default method still calls `resolve`, so existing resolvers are unchanged. The packaged server's environment resolver is only registered for an environment-variable HMAC key, so its default setup is unaffected. Owns widening approved as review scope: `ConfiguredSecretKeyProvider`, `PrivacyEngineWiring`, `PropertiesValidation`, new `HmacKeyReferences`.
+- Late-join closing is detection, not prevention (partition replicas reach the joiner first; a supplied instance keeps running). `docs/configuration.md` and the Javadoc say so.
+- Unused `Map` and `Set` imports removed from `HazelcastProperties`.

@@ -134,9 +134,9 @@ class PrivacyEngineWiring {
     ValueTokenSource dataPrismValueTokenSource(SecretKeyProvider keys) { return new HmacValueTokenSource(keys); }
     @Bean @Primary @ConditionalOnBean(HmacKeyReferenceResolver.class)
     SecretKeyProvider dataPrismSecretKeyProvider(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
-        String reference = properties.getPrivacy().getHmacKey().getEnvironmentVariable();
-        if (reference == null || reference.isBlank()) reference = properties.getPrivacy().getHmacKey().getProviderReference();
-        return new ConfiguredSecretKeyProvider(properties.getPrivacy().getHmacKey().getKeyId(), reference, resolver);
+        PrivacyProperties.HmacKey hmac = properties.getPrivacy().getHmacKey();
+        return new ConfiguredSecretKeyProvider(hmac.getKeyId(), HmacKeyReferences.reference(hmac),
+                HmacKeyReferences.isProviderReference(hmac), resolver);
     }
 
     /**

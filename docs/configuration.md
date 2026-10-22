@@ -592,17 +592,26 @@ refused (`CLUSTER_SETTINGS_IGNORED`) because nothing would read it.
 A member without keys is always solo: it listens on `127.0.0.1` only, under a
 cluster name with a random suffix, so no keyed member can join it. This holds for
 a `Config` passed to `PrivacyCluster.embedded` too. A `PrivacyCluster` or Hazelcast
-instance you supply without keys must be isolated the same way by you. One whose
-member is not bound to a loopback address, or that already has more than one member, is
-refused (`MISSING_CLUSTER_KEY`). If a member joins a keyless wrapper later anyway, the
-wrapper is closed: it logs `MISSING_CLUSTER_KEY`, refuses every later operation, and
-shuts the instance down only if `PrivacyCluster` started it.
+instance you supply without keys must be isolated the same way by you. One that is
+reachable from other hosts is refused (`MISSING_CLUSTER_KEY`): it must have `bind.any` false (both
+`hazelcast.socket.bind.any` and `hazelcast.socket.server.bind.any`), interfaces enabled and listing
+only loopback entries, no public address, and a loopback member address. The same code refuses an
+instance that already has more than one member.
+
+A late join is detected, not prevented. If a member joins a keyless wrapper anyway (or was already
+present when the wrapper registered its listener), the wrapper logs `MISSING_CLUSTER_KEY`, refuses
+every later operation, and shuts the instance down only if `PrivacyCluster` started it. Partition
+replicas reach the joiner before any listener runs, and a supplied instance keeps running, so this
+limits what the wrapper goes on serving; it does not undo any exposure. Isolation at start is the
+control.
 
 The packaged server reads cluster and name keys from environment variables only. A key
 given as `provider-reference` there is refused (`MISSING_KEY_PROVIDER`, naming the
 property) and is never looked up as the name of an environment variable. A custom
 `HmacKeyReferenceResolver` serves provider references by overriding
-`resolveProviderReference`; by default that calls `resolve`.
+`resolveProviderReference`; by default that calls `resolve`. The privacy HMAC key follows the same
+rule: a `dataprism.privacy.hmac-key.provider-reference` is read through `resolveProviderReference`
+and an `environment-variable` through `resolve`.
 
 The first failing check is the one reported, and the checks run in this order:
 
