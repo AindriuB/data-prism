@@ -2,6 +2,13 @@
 # Local proving only; kubernetes.yaml in this directory is the production
 # shape. Every value labelled "fixture-only" is the quickstart's, not yours.
 #
+# Both servers refuse to start without a cluster key and a name key (task 222).
+# Generate the two, distinct and at least 32 characters each, and export them
+# before `up`; the file reads them from these two variables and never holds
+# them:
+#   export DATAPRISM_CLUSTER_KEY_MATERIAL="$(openssl rand -hex 32)"
+#   export DATAPRISM_NAME_KEY_MATERIAL="$(openssl rand -hex 32)"
+#
 # Run from the repository root, building the images locally:
 #   docker compose -f docker/multi-instance/compose.yaml \
 #     -f docker/multi-instance/compose.build.yaml up --build
@@ -85,8 +92,9 @@ services:
       # The cluster key and the name key, by reference: each names a variable,
       # and the variable holds the key. Every member needs the same two keys, and
       # they must differ from each other and from the privacy HMAC key. Export
-      # 32 or more random bytes for each before `up`; the values are never
-      # written in this file, and a member without them refuses to start.
+      # a value of 32 or more characters for each before `up` (see the header
+      # for `openssl rand -hex 32`); the values are never written in this file,
+      # and a member without them refuses to start.
       DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_KEYID: cluster-1
       DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_ENVIRONMENTVARIABLE: DATAPRISM_CLUSTER_KEY_MATERIAL
       DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_KEYID: name-1
