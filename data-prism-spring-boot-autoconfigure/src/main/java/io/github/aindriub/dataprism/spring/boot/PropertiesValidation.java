@@ -125,11 +125,9 @@ class PropertiesValidation {
         String reference = properties.getPrivacy().getHmacKey().getEnvironmentVariable();
         if (reference == null || reference.isBlank()) reference = properties.getPrivacy().getHmacKey().getProviderReference();
         try {
-            byte[] received = provider.resolve(properties.getPrivacy().getHmacKey().getKeyId(), reference);
-            if (received == null || received.length < 32) throw new DataPrismConfigurationException("HMAC_KEY_WEAK", "configured key material is shorter than 32 bytes");
-            // Only this copy is cleared: a caching resolver's own array must stay intact.
-            byte[] key = received.clone();
-            Arrays.fill(key, (byte) 0);
+            byte[] key = provider.resolve(properties.getPrivacy().getHmacKey().getKeyId(), reference);
+            // Read only: the resolver's array is not ours to change, and a copy wiped here would protect nothing.
+            if (key == null || key.length < 32) throw new DataPrismConfigurationException("HMAC_KEY_WEAK", "configured key material is shorter than 32 bytes");
         } catch (DataPrismConfigurationException e) { throw e;
         } catch (RuntimeException e) { throw new DataPrismConfigurationException("HMAC_KEY_UNRESOLVED", "configured HMAC key reference could not be resolved"); }
     }

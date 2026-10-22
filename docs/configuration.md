@@ -592,8 +592,17 @@ refused (`CLUSTER_SETTINGS_IGNORED`) because nothing would read it.
 A member without keys is always solo: it listens on `127.0.0.1` only, under a
 cluster name with a random suffix, so no keyed member can join it. This holds for
 a `Config` passed to `PrivacyCluster.embedded` too. A `PrivacyCluster` or Hazelcast
-instance you supply without keys must be isolated the same way by you; one that
-already has more than one member is refused (`MISSING_CLUSTER_KEY`).
+instance you supply without keys must be isolated the same way by you. One whose
+member is not bound to a loopback address, or that already has more than one member, is
+refused (`MISSING_CLUSTER_KEY`). If a member joins a keyless wrapper later anyway, the
+wrapper is closed: it logs `MISSING_CLUSTER_KEY`, refuses every later operation, and
+shuts the instance down only if `PrivacyCluster` started it.
+
+The packaged server reads cluster and name keys from environment variables only. A key
+given as `provider-reference` there is refused (`MISSING_KEY_PROVIDER`, naming the
+property) and is never looked up as the name of an environment variable. A custom
+`HmacKeyReferenceResolver` serves provider references by overriding
+`resolveProviderReference`; by default that calls `resolve`.
 
 The first failing check is the one reported, and the checks run in this order:
 

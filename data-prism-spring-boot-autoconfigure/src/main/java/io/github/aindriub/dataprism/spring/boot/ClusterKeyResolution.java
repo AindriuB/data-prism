@@ -46,12 +46,8 @@ final class ClusterKeyResolution {
      * @return the keys, or empty when none are configured (only a solo member may have none)
      * @throws DataPrismConfigurationException with the code the register defines for the first failure
      */
-    static Optional<ClusterKeys> resolve(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
-        return resolveLazily(properties, () -> resolver);
-    }
-
-    /** As above; the resolver is asked for only when a security key is set, so a solo member needs none. */
-    static Optional<ClusterKeys> resolveLazily(DataPrismProperties properties,
+    /** The resolver is asked for only when a security key is set, so a solo member needs none. */
+    static Optional<ClusterKeys> resolve(DataPrismProperties properties,
                                          Supplier<HmacKeyReferenceResolver> resolverSupplier) {
         HazelcastProperties.Security security = properties.getHazelcast().getSecurity();
         if (!properties.getHazelcast().securitySet()) {

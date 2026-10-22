@@ -3,7 +3,9 @@ package io.github.aindriub.dataprism.spring.boot;
 import com.hazelcast.core.Hazelcast;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -11,13 +13,14 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
-import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
-
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.DoubleSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,7 +39,7 @@ class ClusterLegacyGaugeTest {
     static class RecordingMetrics extends ClusterKeyConfigurationTest.KeyIntegrations {
         @Bean PrivacyMetrics metrics() {
             return new PrivacyMetrics() {
-                @Override public void record(Metric metric, String tag, java.time.Duration elapsed) { }
+                @Override public void record(Metric metric, String tag, Duration elapsed) { }
                 @Override public void increment(Metric metric, String tag) { }
                 @Override public void increment(Metric metric) { }
                 @Override public void gauge(Metric metric, DoubleSupplier supplier) {
@@ -50,7 +53,7 @@ class ClusterLegacyGaugeTest {
     static class ThrowingMetrics extends ClusterKeyConfigurationTest.KeyIntegrations {
         @Bean PrivacyMetrics metrics() {
             return new PrivacyMetrics() {
-                @Override public void record(Metric metric, String tag, java.time.Duration elapsed) { }
+                @Override public void record(Metric metric, String tag, Duration elapsed) { }
                 @Override public void increment(Metric metric, String tag) { }
                 @Override public void increment(Metric metric) { }
                 @Override public void gauge(Metric metric, DoubleSupplier supplier) {
@@ -67,7 +70,7 @@ class ClusterLegacyGaugeTest {
     }
 
     private static WebApplicationContextRunner runner(Class<?> integrations, Map<String, String> p) {
-        java.util.List<String> all = new java.util.ArrayList<>();
+        List<String> all = new ArrayList<>();
         p.forEach((k, v) -> all.add(k + "=" + v));
         return new WebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
@@ -77,7 +80,7 @@ class ClusterLegacyGaugeTest {
     }
 
     @Test
-    void theLegacyEntriesGaugeIsRegisteredAndReadsTheClusterCount() {
+    void theLegacyEntriesGaugeIsRegisteredOnTheClusterBean() {
         GAUGES.clear();
         runner(RecordingMetrics.class).run(result -> {
             assertThat(result).hasNotFailed();
@@ -124,7 +127,7 @@ class ClusterLegacyGaugeTest {
                 } catch (RuntimeException expected) {
                     // The legacy state is found at its start.
                 }
-                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
                 while (gauge.getAsDouble() == 0 && System.nanoTime() < deadline) {
                     Thread.sleep(100);
                 }
@@ -168,7 +171,7 @@ class ClusterLegacyGaugeTest {
         @Override @Bean HmacKeyReferenceResolver keys() {
             return (id, reference) -> CACHE.computeIfAbsent(reference, r -> {
                 byte[] out = new byte[32];
-                java.util.Arrays.fill(out, (byte) r.hashCode());
+                Arrays.fill(out, (byte) r.hashCode());
                 return out;
             });
         }
@@ -182,7 +185,7 @@ class ClusterLegacyGaugeTest {
             assertThat(CachingKeys.CACHE).isNotEmpty();
             CachingKeys.CACHE.forEach((reference, bytes) -> {
                 byte[] expected = new byte[32];
-                java.util.Arrays.fill(expected, (byte) reference.hashCode());
+                Arrays.fill(expected, (byte) reference.hashCode());
                 assertThat(bytes).as(reference).isEqualTo(expected);
             });
         });
