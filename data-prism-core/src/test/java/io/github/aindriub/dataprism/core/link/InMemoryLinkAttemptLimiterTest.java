@@ -174,13 +174,26 @@ class InMemoryLinkAttemptLimiterTest {
     }
 
     @Test
+    void aHugeWindowConstructsCountsAndLocksAtTheLimit() {
+        InMemoryLinkAttemptLimiter huge =
+                new InMemoryLinkAttemptLimiter(3, Duration.ofSeconds(Long.MAX_VALUE), clock);
+        huge.recordFailure("a");
+        huge.recordFailure("a");
+        assertThat(huge.locked("a")).isFalse();
+        huge.recordFailure("a");
+        assertThat(huge.locked("a")).isTrue();
+        clock.advance(Duration.ofDays(365 * 100));
+        assertThat(huge.locked("a")).isTrue();
+        huge.sweep();
+        assertThat(huge.size()).isEqualTo(1);
+    }
+
+    @Test
     void constructionValidatesItsArguments() {
         assertThatThrownBy(() -> new InMemoryLinkAttemptLimiter(0, Duration.ofMinutes(1), clock))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new InMemoryLinkAttemptLimiter(3, Duration.ofSeconds(Long.MAX_VALUE), clock))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageStartingWith("INVALID_LINK_ATTEMPT_WINDOW");
-        new InMemoryLinkAttemptLimiter(3, Duration.ofDays(1), clock);
+        assertThatThrownBy(() -> new InMemoryLinkAttemptLimiter(0, Duration.ofMinutes(1), clock))
+                .hasMessageStartingWith("INVALID_LINK_LIMIT");
         assertThatThrownBy(() -> new InMemoryLinkAttemptLimiter(1, Duration.ZERO, clock))
                 .isInstanceOf(IllegalArgumentException.class);
     }

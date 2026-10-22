@@ -55,7 +55,7 @@ public final class LinkKeys {
         this.currentKeyId = Objects.requireNonNull(currentKeyId, "currentKeyId");
         if (!LinkSettings.validKeyId(currentKeyId)) {
             throw new IllegalArgumentException(
-                    "INVALID_LINK_KEY_ID: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
+                    "INVALID_LINK_LIMIT: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
         }
         if (currentKeyId.equals(pseudonymisationKeyId)) {
             throw new IllegalStateException(
@@ -76,7 +76,7 @@ public final class LinkKeys {
         }
         this.held = held != null ? held : () -> Set.of(currentKeyId);
         this.pseudonymisationKeyId = pseudonymisationKeyId;
-        if (pseudonymisationKeyId != null && this.held.get().contains(pseudonymisationKeyId)) {
+        if (pseudonymisationKeyId != null && heldOrEmpty().contains(pseudonymisationKeyId)) {
             throw new IllegalStateException(
                     "LINK_KEY_SHARED: the held key ids must not include the pseudonymisation key id");
         }
@@ -87,12 +87,22 @@ public final class LinkKeys {
         return currentKeyId;
     }
 
+    /** The supplied held set; a supplier that returns null or throws is treated as empty (current id only). */
+    private Set<String> heldOrEmpty() {
+        try {
+            Set<String> ids = held.get();
+            return ids != null ? ids : Set.of();
+        } catch (RuntimeException failure) {
+            return Set.of();
+        }
+    }
+
     /**
      * The key ids this member verifies with, sorted: the current id and the supplied held set, never the
      * pseudonymisation key id. For the health endpoint and the loaded-keys gauge.
      */
     public Set<String> heldKeyIds() {
-        Set<String> ids = new TreeSet<>(held.get());
+        Set<String> ids = new TreeSet<>(heldOrEmpty());
         ids.add(currentKeyId);
         if (pseudonymisationKeyId != null) {
             ids.remove(pseudonymisationKeyId);

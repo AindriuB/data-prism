@@ -23,8 +23,6 @@ public record LinkSettings(
         Duration clockSkew) {
 
     private static final Pattern KEY_ID = Pattern.compile("[A-Za-z0-9_-]{1," + LinkLayout.MAX_KEY_ID + "}");
-    /** The design sets no maximum; one day bounds the arithmetic and a link's exposure. */
-    static final Duration MAX_LIFETIME = Duration.ofDays(1);
     private static final Duration MAX_SKEW = Duration.ofSeconds(30);
 
     public LinkSettings {
@@ -33,20 +31,17 @@ public record LinkSettings(
         Objects.requireNonNull(clockSkew, "clockSkew");
         if (!validKeyId(keyId)) {
             throw new IllegalArgumentException(
-                    "INVALID_LINK_KEY_ID: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
+                    "INVALID_LINK_LIMIT: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
         }
         if (lifetime.isPresent() && (lifetime.get().isZero() || lifetime.get().isNegative())) {
             throw new IllegalArgumentException("INVALID_LINK_LIFETIME: the lifetime must be positive or scope");
-        }
-        if (lifetime.isPresent() && lifetime.get().compareTo(MAX_LIFETIME) > 0) {
-            throw new IllegalArgumentException("INVALID_LINK_LIFETIME: the lifetime must be at most one day");
         }
         if (maxLength < LinkLayout.MIN_MAX_LENGTH || maxLength > LinkLayout.MAX_MAX_LENGTH) {
             throw new IllegalArgumentException(
                     "INVALID_LINK_LIMIT: max-length must be 616 to 4096 characters");
         }
         if (clockSkew.isNegative() || clockSkew.compareTo(MAX_SKEW) > 0) {
-            throw new IllegalArgumentException("INVALID_LINK_CLOCK_SKEW: clock-skew must be 0 to 30 seconds");
+            throw new IllegalArgumentException("INVALID_LINK_LIMIT: clock-skew must be 0 to 30 seconds");
         }
     }
 

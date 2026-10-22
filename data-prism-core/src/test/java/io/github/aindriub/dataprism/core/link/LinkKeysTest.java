@@ -66,12 +66,28 @@ class LinkKeysTest {
     }
 
     @Test
-    void lifetimeIsCappedAtOneDay() {
-        assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(Duration.ofSeconds(Long.MAX_VALUE)), 1024, true,
-                Duration.ZERO)).hasMessageStartingWith("INVALID_LINK_LIFETIME");
-        new LinkSettings("k1", Optional.of(Duration.ofDays(1)), 1024, true, Duration.ZERO);
-        assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(Duration.ofDays(1).plusSeconds(1)), 1024, true,
-                Duration.ZERO)).hasMessageStartingWith("INVALID_LINK_LIFETIME");
+    void aHugeLifetimeSaturatesInsteadOfOverflowing() {
+        LinkSettings huge = new LinkSettings("k1", Optional.of(Duration.ofSeconds(Long.MAX_VALUE)), 1024, true,
+                Duration.ZERO);
+        MapKeys provider = new MapKeys().with("k1", material(1, 32));
+        LinkTestSupport.TestClock clock = new LinkTestSupport.TestClock(T0);
+        LinkCodec codec = new LinkCodec(huge, new LinkKeys(provider, "k1", "pseudo-key"), clock);
+        LinkBinding binding = binding("case-1", "alice");
+        SealedLink link = codec.seal(follow(5), binding).orElseThrow();
+        // The scope and token ends bind, as for any lifetime.
+        assertThat(link.expiry()).isEqualTo(T0.plus(Duration.ofDays(1)));
+    }
+
+    @Test
+    void aHeldSetThatReturnsNullOrThrowsMeansTheCurrentIdOnly() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
+        assertThat(new LinkKeys(provider, "k1", "pseudo-key", () -> null).heldKeyIds()).containsExactly("k1");
+        LinkKeys throwing = new LinkKeys(provider, "k1", "pseudo-key", () -> {
+            throw new IllegalStateException(SENTINEL);
+        });
+        assertThat(throwing.heldKeyIds()).containsExactly("k1");
+        assertThat(throwing.master("k2")).isNull();
+        assertThat(throwing.master("k1")).isNotNull();
     }
 
     @Test
@@ -91,14 +107,14 @@ class LinkKeysTest {
         new LinkSettings("k1", Optional.empty(), 616, true, Duration.ZERO);
         new LinkSettings("k1", Optional.empty(), 4096, true, Duration.ofSeconds(30));
         assertThatThrownBy(() -> new LinkSettings("k1", Optional.empty(), 1024, true, Duration.ofSeconds(31)))
-                .hasMessageStartingWith("INVALID_LINK_CLOCK_SKEW");
+                .hasMessageStartingWith("INVALID_LINK_LIMIT");
         assertThatThrownBy(() -> new LinkSettings("k1", Optional.empty(), 1024, true, Duration.ofSeconds(-1)))
-                .hasMessageStartingWith("INVALID_LINK_CLOCK_SKEW");
+                .hasMessageStartingWith("INVALID_LINK_LIMIT");
         assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(Duration.ZERO), 1024, true, Duration.ZERO))
                 .hasMessageStartingWith("INVALID_LINK_LIFETIME");
         for (String bad : List.of("", "a".repeat(17), "has space", "dot.id", "slash/id", "é")) {
             assertThatThrownBy(() -> new LinkSettings(bad, Optional.empty(), 1024, true, Duration.ZERO))
-                    .hasMessageStartingWith("INVALID_LINK_KEY_ID");
+                    .hasMessageStartingWith("INVALID_LINK_LIMIT");
         }
         new LinkSettings("A_b-9".repeat(3) + "Z", Optional.empty(), 1024, true, Duration.ZERO);
     }

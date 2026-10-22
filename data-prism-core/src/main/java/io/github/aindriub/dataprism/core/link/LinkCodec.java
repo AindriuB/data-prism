@@ -65,7 +65,7 @@ public final class LinkCodec {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.nonces = Objects.requireNonNull(nonces, "nonces");
         if (!settings.keyId().equals(keys.currentKeyId())) {
-            throw new IllegalArgumentException("INVALID_LINK_KEY_ID: the settings and the keys name different ids");
+            throw new IllegalArgumentException("the settings and the keys name different key ids");
         }
     }
 
