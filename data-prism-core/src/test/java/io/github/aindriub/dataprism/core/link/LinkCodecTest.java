@@ -113,17 +113,29 @@ class LinkCodecTest {
 
     @Test
     void nonCanonicalBase64IsMalformed() {
-        String token = sealed(follow(5));
-        // Change the final character to another that decodes to the same bytes (trailing bits ignored).
-        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        char last = token.charAt(token.length() - 1);
-        for (char candidate : alphabet.toCharArray()) {
-            if (candidate != last) {
-                String variant = token.substring(0, token.length() - 1) + candidate;
-                assertThat(refused(codec.open(variant, binding, follows())).reason())
-                        .isIn(LinkReason.MALFORMED, LinkReason.AUTH_FAILED);
+        // A raw length that is not a multiple of 3 leaves spare bits in the final character.
+        String token = null;
+        for (int targetLength = 1; targetLength <= 8 && token == null; targetLength++) {
+            String candidate = sealed(follow(material(40, 5), "s".repeat(targetLength)));
+            if (raw(candidate).length % 3 != 0) {
+                token = candidate;
             }
         }
+        assertThat(token).isNotNull();
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        char last = token.charAt(token.length() - 1);
+        byte[] canonical = raw(token);
+        int variants = 0;
+        for (char candidate : alphabet.toCharArray()) {
+            String variant = token.substring(0, token.length() - 1) + candidate;
+            if (candidate != last && Arrays.equals(raw(variant), canonical)) {
+                variants++;
+                assertThat(refused(codec.open(variant, binding, follows())).reason())
+                        .as("variant " + candidate).isEqualTo(LinkReason.MALFORMED);
+            }
+        }
+        assertThat(variants).isPositive();
+        assertThat(codec.open(token, binding, follows())).isInstanceOf(Opened.class);
     }
 
     @Test
@@ -433,6 +445,43 @@ class LinkCodecTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    // ---- review 2: bounds that must never throw ----
+
+    @Test
+    void anOversizeBindingIsRefusedUncountedAndOmittedNeverThrown() {
+        String big = "x".repeat(65536);
+        for (LinkBinding oversize : List.of(
+                new LinkBinding(big, "alice", binding.scopeExpiry(), binding.tokenExpiry()),
+                new LinkBinding("case-1", big, binding.scopeExpiry(), binding.tokenExpiry()))) {
+            Refused refused = refused(codec.open(sealed(follow(5)), oversize, follows()));
+            assertThat(refused.reason()).isEqualTo(LinkReason.MALFORMED);
+            assertThat(refused.counted()).isFalse();
+            assertThat(codec.sealDetailed(follow(5), oversize))
+                    .isEqualTo(new SealResult.Omitted(SealResult.OmitReason.BINDING_TOO_LONG));
+        }
+        LinkBinding atLimit = new LinkBinding("x".repeat(65535), "y".repeat(65535), binding.scopeExpiry(),
+                binding.tokenExpiry());
+        String token = codec.seal(follow(5), atLimit).orElseThrow().token();
+        assertThat(codec.open(token, atLimit, follows())).isInstanceOf(Opened.class);
+    }
+
+    @Test
+    void aTargetOver64BytesOmitsInsteadOfThrowing() {
+        FollowPayload longTarget = follow(material(40, 5), "t".repeat(65));
+        assertThat(codec.sealDetailed(longTarget, binding))
+                .isEqualTo(new SealResult.Omitted(SealResult.OmitReason.TARGET_TOO_LONG));
+        assertThat(codec.sealDetailed(follow(material(40, 5), "t".repeat(64)), binding))
+                .isInstanceOf(SealResult.Issued.class);
+    }
+
+    @Test
+    void aKeyIdMismatchHasAStableCode() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new LinkCodec(
+                settings("k2", true, Duration.ofSeconds(30)),
+                new LinkKeys(provider, "k1", "pseudo-key"), clock))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageStartingWith("INVALID_LINK_LIMIT");
+    }
+
     // ---- rotation ----
 
     @Test
@@ -644,7 +693,7 @@ class LinkCodecTest {
     @Test
     void payloadConstructorsNameNoValue() {
         String secret = "subject-secret-value-" + "x".repeat(80);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> follow(secret.getBytes(StandardCharsets.UTF_8), secret))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> follow(secret.getBytes(StandardCharsets.UTF_8), ""))
                 .isInstanceOf(IllegalArgumentException.class)
                 .satisfies(e -> assertThat(e.getMessage()).doesNotContain("subject-secret"));
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> follow(new byte[0], "source-one"))

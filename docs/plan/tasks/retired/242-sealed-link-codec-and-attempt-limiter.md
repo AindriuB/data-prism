@@ -81,7 +81,7 @@ Bug hunt (limiter concurrency, oracle uniformity, boundary leaks) was run inline
 - A key id the provider held but the member did not list could verify; now the allow-list refuses it.
 - A past-the-end scope or token could be sealed and opened; now refused (decision above).
 
-Checked and found sound: the limiter's `compute` and `computeIfPresent` are atomic and a 16-thread test loses no count; the structural checks depend only on public layout, and every refusal after the length and structure checks runs the same AEAD work, including for an unknown key; no token, payload, key byte or provider message reaches an exception message or `toString` (sentinel tests).
+Checked and found sound: the limiter's `compute` and `computeIfPresent` are atomic and a 16-thread test loses no count; the structural checks depend only on public layout, and every refusal after the length and structure checks runs the same key derivation and AEAD, including for an unknown key (a key id the member holds also costs a provider fetch and a SHA-256 of the material, which an unknown id does not; see round 2); no token, payload, key byte or provider message reaches an exception message or `toString` (sentinel tests).
 
 Notes for later tasks:
 
@@ -111,3 +111,16 @@ Recorded for later tasks, with no code change here:
 - The limiter contract is check then record, so concurrent attempts can exceed the limit. Settle this before 264.
 - The in-memory limiter's map is unbounded, and it sweeps on the request thread every 256 failures. Bound it in 264 or 255.
 - `Refused.counted()` is authoritative; `LinkReason.counted()` is only the default (a post-authentication `MALFORMED` is uncounted). Tasks 251 and 252 must gate the limiter on `refused.counted()`, never on `reason.counted()`.
+
+### External review of PR #154 — round 2
+
+- **Base64 test.** The old test could not fail: its token was a multiple of 3 bytes and it accepted `AUTH_FAILED`. It now seals a token whose raw length is not a multiple of 3, builds every variant that decodes to the same bytes by changing the spare trailing bits, and asserts exactly `MALFORMED`. With the canonical-encoding check removed in `LinkCodec.decode`, it fails.
+- **Binding bounds.** A scope id or principal id over 65535 UTF-8 bytes (the associated-data item limit; the design gives no tighter bound) makes `open` refuse `MALFORMED`, uncounted, because the session and not the token is at fault, and makes `sealDetailed` omit with the new `BINDING_TOO_LONG`. Neither throws. `LinkBinding` still constructs, so the caller can build one. Tested at 65535 (works) and 65536 (refused and omitted). Note for 251/252: `attemptCounterKey` still throws for an id over the limit, so the caller must check bounds before it.
+- **Long target.** A follow target over 64 bytes now constructs and `sealDetailed` omits it with the new `TARGET_TOO_LONG`. `FollowPayload` still refuses an empty target.
+- **Limiter gate test.** `uncountedRefusalsLeaveTheCounterUntouchedAtTheGate` drives post-authentication `MALFORMED` and `KEY_UNAVAILABLE` through the test gate, which records on `refused.counted()`, and shows the counter is untouched after 10 of each. It fails if the gate records on `reason.counted()`.
+- **Key id mismatch.** The `LinkCodec` constructor refusal now starts `INVALID_LINK_LIMIT:`, as for the other settings errors.
+- **Uniformity wording.** What is uniform is the key derivation and the AEAD. What differs is that a held key id costs a provider fetch and a SHA-256 of the material, while an unknown id costs neither; key ids are public, so this reveals nothing secret. Javadoc and comments now say so. For 255: a forged token naming a held id costs a key-store round trip per attempt, so consider caching resolved held keys.
+- **Older pseudonymisation keys.** The shared-material check covers only the current pseudonymisation key, not older ones that live scopes still pin. Recorded for 255.
+- **Left alone, by instruction.** The limiter's check-then-record contract, its map bound and the counter-key derivation are an open owner decision and are unchanged.
+
+Design amendments for the scribe: `OmitReason.BINDING_TOO_LONG` and `TARGET_TOO_LONG`.

@@ -33,7 +33,9 @@ public final class LinkKeys {
 
     private static final int MIN_KEY_BYTES = 32;
     private static final byte[] ZERO_SALT = new byte[32];
-    /** Not a secret: the stand-in key so that an unknown key id costs the same work as a known one. */
+    /** Not a secret: the stand-in key so that an unknown key id still runs the same key derivation and AEAD as a known one.
+     * The provider fetch (and, for a held id, a SHA-256 of the material) is not part of that: a held id costs it, an
+     * unknown id does not. Key ids are public in the token header, so that difference reveals nothing secret. */
     private static final byte[] DUMMY_KEY =
             "dataprism-link-dummy-key-0000000".getBytes(StandardCharsets.US_ASCII);
 

@@ -14,7 +14,11 @@ public sealed interface SealResult permits SealResult.Issued, SealResult.Omitted
         /** The computed expiry is not after now: the scope or the caller token has already ended. */
         ALREADY_EXPIRED,
         /** The current link key cannot be read from the provider right now. */
-        KEY_UNAVAILABLE
+        KEY_UNAVAILABLE,
+        /** The scope id or the principal id is over 65535 UTF-8 bytes. */
+        BINDING_TOO_LONG,
+        /** The target label is over 64 UTF-8 bytes. */
+        TARGET_TOO_LONG
     }
 
     record Issued(SealedLink link) implements SealResult {

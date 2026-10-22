@@ -35,7 +35,8 @@ import java.util.function.Supplier;
  *
  * <p><b>Verification order</b> (no oracle): the length first, before any decoding; then the structure, which
  * depends only on the public layout; then AEAD verification always, against the key the token names or a fixed
- * dummy key when that id is unknown; and only then expiry, issue time and relation, evaluated as booleans. A
+ * dummy key when that id is unknown (the AEAD work is uniform; a held key id also costs a provider fetch and a
+ * digest, which an unknown id does not, and key ids are public); and only then expiry, issue time and relation, evaluated as booleans. A
  * token that fails authentication is {@code AUTH_FAILED} whatever its header says.
  *
  * <p>This is the only place in the project, with the cluster seal, that creates an {@code AES/GCM} cipher. No
@@ -65,7 +66,7 @@ public final class LinkCodec {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.nonces = Objects.requireNonNull(nonces, "nonces");
         if (!settings.keyId().equals(keys.currentKeyId())) {
-            throw new IllegalArgumentException("the settings and the keys name different key ids");
+            throw new IllegalArgumentException("INVALID_LINK_LIMIT: the settings and the keys name different key ids");
         }
     }
 
@@ -91,6 +92,13 @@ public final class LinkCodec {
     public SealResult sealDetailed(LinkPayload payload, LinkBinding binding) {
         Objects.requireNonNull(payload, "payload");
         Objects.requireNonNull(binding, "binding");
+        if (!binding.withinBounds()) {
+            return new SealResult.Omitted(SealResult.OmitReason.BINDING_TOO_LONG);
+        }
+        if (payload instanceof FollowPayload follow
+                && follow.target().getBytes(StandardCharsets.UTF_8).length > LinkLayout.MAX_TARGET) {
+            return new SealResult.Omitted(SealResult.OmitReason.TARGET_TOO_LONG);
+        }
         if (payload instanceof FollowPayload follow && follow.chainedKey().length > LinkLayout.MAX_CHAINED_KEY) {
             return new SealResult.Omitted(SealResult.OmitReason.KEY_TOO_LONG);
         }
@@ -158,6 +166,10 @@ public final class LinkCodec {
     public LinkOpenResult open(String token, LinkBinding binding, Set<LinkRelation> accepted) {
         Objects.requireNonNull(binding, "binding");
         Objects.requireNonNull(accepted, "accepted");
+        if (!binding.withinBounds()) {
+            // The session is oversize, not the token: never the attacker's doing, so never counted.
+            return new LinkOpenResult.Refused(LinkReason.MALFORMED, false);
+        }
         if (token == null) {
             return refuse(LinkReason.MALFORMED);
         }
