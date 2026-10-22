@@ -198,24 +198,42 @@ class InMemoryLinkAttemptLimiterTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /** The caller's gate, as tasks 251 and 252 will write it: check the lock, then open, then record. */
+    private String gate(LinkCodec codec, LinkKeys keys, LinkBinding binding, String token) {
+        String counter = keys.attemptCounterKey(binding.scopeId(), binding.principalId());
+        if (limiter.locked(counter)) {
+            return "LOCKED";
+        }
+        LinkOpenResult result = codec.open(token, binding, follows());
+        if (result instanceof LinkOpenResult.Refused refused) {
+            if (refused.counted()) {
+                limiter.recordFailure(counter);
+            }
+            return "REFUSED";
+        }
+        return "OPENED";
+    }
+
     @Test
     void aLockedPrincipalIsRefusedEvenWithAValidLinkAtTheCallersGate() {
-        // The caller checks locked() before open(); a locked key must not depend on the link presented.
         MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("pseudo-key", material(200, 32));
         LinkCodec codec = codec(provider, settings("k1", true, Duration.ofSeconds(30)), clock);
         LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key");
-        LinkBinding binding = binding("case-1", "alice");
-        String valid = codec.seal(follow(5), binding).orElseThrow().token();
-        String counter = keys.attemptCounterKey("case-1", "alice");
+        LinkBinding alice = binding("case-1", "alice");
+        LinkBinding bob = binding("case-1", "bob");
+        String valid = codec.seal(follow(5), alice).orElseThrow().token();
+        String bobsValid = codec.seal(follow(5), bob).orElseThrow().token();
+
+        assertThat(gate(codec, keys, alice, valid)).isEqualTo("OPENED");
         for (int i = 0; i < 3; i++) {
-            var result = codec.open("!bad", binding, follows());
-            if (result instanceof LinkOpenResult.Refused refused && refused.counted()) {
-                limiter.recordFailure(counter);
-            }
+            assertThat(gate(codec, keys, alice, "!bad")).isEqualTo("REFUSED");
         }
-        assertThat(limiter.locked(counter)).isTrue();
-        assertThat(codec.open(valid, binding, follows())).isInstanceOf(LinkOpenResult.Opened.class);
-        // The lock is the limiter's answer, independent of the link: it stays locked after a valid open.
-        assertThat(limiter.locked(counter)).isTrue();
+        // The same valid link that opened before is now refused by the lock alone.
+        assertThat(gate(codec, keys, alice, valid)).isEqualTo("LOCKED");
+        // Another principal in the same scope is unaffected.
+        assertThat(gate(codec, keys, bob, bobsValid)).isEqualTo("OPENED");
+        // The window ending lifts the lock.
+        clock.advance(Duration.ofMinutes(10));
+        assertThat(gate(codec, keys, alice, valid)).isEqualTo("OPENED");
     }
 }
