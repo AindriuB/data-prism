@@ -24,7 +24,7 @@ public record FollowPayload(
     public FollowPayload {
         linkId = Check.linkId(linkId);
         issueTime = Check.seconds(issueTime, "issueTime");
-        Check.text(keyNamespace, 0, LinkLayout.MAX_NAMESPACE, "keyNamespace");
+        Check.text(keyNamespace, 1, LinkLayout.MAX_NAMESPACE, "keyNamespace");
         Objects.requireNonNull(resolverName, "resolverName");
         resolverName.ifPresent(name -> Check.text(name, 1, LinkLayout.MAX_RESOLVER, "resolverName"));
         Objects.requireNonNull(chainedKey, "chainedKey");
@@ -36,6 +36,12 @@ public record FollowPayload(
         Objects.requireNonNull(relation, "relation");
         if (relation != LinkRelation.DIRECT && relation != LinkRelation.TRANSLATED) {
             throw new IllegalArgumentException("a follow payload is DIRECT or TRANSLATED");
+        }
+        if (relation == LinkRelation.DIRECT && resolverName.isPresent()) {
+            throw new IllegalArgumentException("a DIRECT follow payload names no resolver");
+        }
+        if (relation == LinkRelation.TRANSLATED && resolverName.isEmpty()) {
+            throw new IllegalArgumentException("a TRANSLATED follow payload names its resolver");
         }
     }
 

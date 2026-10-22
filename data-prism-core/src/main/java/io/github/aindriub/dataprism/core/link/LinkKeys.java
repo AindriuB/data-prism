@@ -4,6 +4,7 @@ import io.github.aindriub.dataprism.core.crypto.LabelledHkdf;
 import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
@@ -40,6 +41,8 @@ public final class LinkKeys {
     private final String currentKeyId;
     private final Supplier<Set<String>> held;
     private final String pseudonymisationKeyId;
+    /** SHA-256 of the pseudonymisation key's material; the material itself is never kept. */
+    private final byte[] pseudonymisationDigest;
 
     /** As the long form, reporting only the current key id as held. */
     public LinkKeys(SecretKeyProvider provider, String currentKeyId, String pseudonymisationKeyId) {
@@ -53,6 +56,10 @@ public final class LinkKeys {
                     Supplier<Set<String>> held) {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.currentKeyId = Objects.requireNonNull(currentKeyId, "currentKeyId");
+        if (pseudonymisationKeyId == null) {
+            throw new IllegalStateException("LINK_KEY_SHARED: the pseudonymisation key id setting is required");
+        }
+        this.pseudonymisationKeyId = pseudonymisationKeyId;
         if (!LinkSettings.validKeyId(currentKeyId)) {
             throw new IllegalArgumentException(
                     "INVALID_LINK_LIMIT: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
@@ -61,24 +68,28 @@ public final class LinkKeys {
             throw new IllegalStateException(
                     "LINK_KEY_SHARED: the link key id must differ from the pseudonymisation key id");
         }
-        byte[] material;
-        try {
-            material = provider.secret(currentKeyId);
-        } catch (RuntimeException failure) {
-            throw new IllegalStateException("LINK_KEY_UNRESOLVED: the link key id could not be resolved");
-        }
-        if (material == null) {
-            throw new IllegalStateException("LINK_KEY_UNRESOLVED: the link key id could not be resolved");
-        }
-        boolean weak = material.length < MIN_KEY_BYTES;
-        if (weak) {
-            throw new IllegalStateException("LINK_KEY_WEAK: the link key must be at least 32 bytes");
-        }
         this.held = held != null ? held : () -> Set.of(currentKeyId);
-        this.pseudonymisationKeyId = pseudonymisationKeyId;
-        if (pseudonymisationKeyId != null && heldOrEmpty().contains(pseudonymisationKeyId)) {
+        if (heldOrEmpty().contains(pseudonymisationKeyId)) {
             throw new IllegalStateException(
                     "LINK_KEY_SHARED: the held key ids must not include the pseudonymisation key id");
+        }
+        byte[] pseudonymisationMaterial = resolve(pseudonymisationKeyId);
+        if (pseudonymisationMaterial == null) {
+            throw new IllegalStateException(
+                    "LINK_KEY_UNRESOLVED: the pseudonymisation key id setting could not be resolved");
+        }
+        this.pseudonymisationDigest = digest(pseudonymisationMaterial);
+        for (String id : declaredHeld()) {
+            Resolution resolution = resolution(id);
+            if (resolution.shared) {
+                throw new IllegalStateException(
+                        "LINK_KEY_SHARED: a link key must not share material with the pseudonymisation key");
+            }
+            if (resolution.material == null) {
+                throw new IllegalStateException(resolution.weak
+                        ? "LINK_KEY_WEAK: the link key must be at least 32 bytes"
+                        : "LINK_KEY_UNRESOLVED: the link key id could not be resolved");
+            }
         }
     }
 
@@ -98,14 +109,31 @@ public final class LinkKeys {
     }
 
     /**
-     * The key ids this member verifies with, sorted: the current id and the supplied held set, never the
-     * pseudonymisation key id. For the health endpoint and the loaded-keys gauge.
+     * The ids this member declares it holds, resolved or not: the current id and the supplied set, without null
+     * entries and without the pseudonymisation key id.
+     */
+    private Set<String> declaredHeld() {
+        Set<String> ids = new TreeSet<>();
+        for (String id : heldOrEmpty()) {
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        ids.add(currentKeyId);
+        ids.remove(pseudonymisationKeyId);
+        return ids;
+    }
+
+    /**
+     * The key ids this member verifies with, sorted: the declared ids that resolve to at least 32 bytes right now,
+     * never the pseudonymisation key id. For the health endpoint and the loaded-keys gauge.
      */
     public Set<String> heldKeyIds() {
-        Set<String> ids = new TreeSet<>(heldOrEmpty());
-        ids.add(currentKeyId);
-        if (pseudonymisationKeyId != null) {
-            ids.remove(pseudonymisationKeyId);
+        Set<String> ids = new TreeSet<>();
+        for (String id : declaredHeld()) {
+            if (resolution(id).material != null) {
+                ids.add(id);
+            }
         }
         return ids;
     }
@@ -145,12 +173,59 @@ public final class LinkKeys {
      * key is unknown, unavailable or under 32 bytes. The held set is read on every call. Never falls back.
      */
     byte[] master(String keyId) {
-        if (!heldKeyIds().contains(keyId)) {
-            return null;
+        return lookup(keyId).material;
+    }
+
+    /**
+     * As {@link #master}, telling a key this member does not hold ({@link Status#NOT_HELD}) from one it holds
+     * but cannot read right now ({@link Status#UNAVAILABLE}: the provider failed, or the material is short).
+     */
+    Lookup lookup(String keyId) {
+        if (keyId == null || keyId.equals(pseudonymisationKeyId) || !declaredHeld().contains(keyId)) {
+            return new Lookup(Status.NOT_HELD, null);
         }
+        Resolution resolution = resolution(keyId);
+        if (resolution.shared) {
+            return new Lookup(Status.NOT_HELD, null);
+        }
+        return resolution.material != null
+                ? new Lookup(Status.HELD, resolution.material) : new Lookup(Status.UNAVAILABLE, null);
+    }
+
+    enum Status { HELD, NOT_HELD, UNAVAILABLE }
+
+    record Lookup(Status status, byte[] material) {}
+
+    /** {@code material} is null unless the key is usable; {@code shared} marks the pseudonymisation key's bytes. */
+    private record Resolution(byte[] material, boolean weak, boolean shared) {}
+
+    private Resolution resolution(String keyId) {
+        byte[] material = resolve(keyId);
+        if (material == null) {
+            return new Resolution(null, false, false);
+        }
+        if (material.length < MIN_KEY_BYTES) {
+            return new Resolution(null, true, false);
+        }
+        // Checked on every resolution, because the held set is live and a key added during rotation is new.
+        if (MessageDigest.isEqual(digest(material), pseudonymisationDigest)) {
+            return new Resolution(null, false, true);
+        }
+        return new Resolution(material, false, false);
+    }
+
+    private static byte[] digest(byte[] material) {
         try {
-            byte[] material = provider.secret(keyId);
-            return material != null && material.length >= MIN_KEY_BYTES ? material : null;
+            return MessageDigest.getInstance("SHA-256").digest(material);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable");
+        }
+    }
+
+    /** The provider's material, or {@code null} when it returns null or fails; its message is dropped. */
+    private byte[] resolve(String keyId) {
+        try {
+            return provider.secret(keyId);
         } catch (RuntimeException failure) {
             return null;
         }

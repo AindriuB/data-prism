@@ -90,11 +90,102 @@ class LinkKeysTest {
         assertThat(throwing.master("k1")).isNotNull();
     }
 
+    // ---- review: held ids are resolved and length-checked ----
+
+    @Test
+    void aHeldIdThatDoesNotResolveRefusesAtConstruction() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32));
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2")))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
+                        .doesNotContain(SENTINEL).doesNotContain("k2"))
+                .hasNoCause();
+    }
+
+    @Test
+    void aWeakHeldIdRefusesAtConstruction() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 31));
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2")))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_WEAK").doesNotContain("k2"));
+    }
+
+    @Test
+    void heldKeyIdsDropsAnIdThatStopsResolvingOrBecomesWeak() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32))
+                .with("k3", material(3, 32));
+        LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2", "k3"));
+        assertThat(keys.heldKeyIds()).containsExactly("k1", "k2", "k3");
+        provider.keys.remove("k2");
+        provider.keys.put("k3", material(3, 31));
+        assertThat(keys.heldKeyIds()).containsExactly("k1");
+        assertThat(keys.master("k2")).isNull();
+        assertThat(keys.master("k3")).isNull();
+    }
+
+    // ---- review: the pseudonymisation key ----
+
+    @Test
+    void aNullPseudonymisationKeyIdRefuses() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32));
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", null))
+                .isInstanceOf(IllegalStateException.class).hasMessageStartingWith("LINK_KEY_SHARED");
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", null, () -> Set.of("k1")))
+                .hasMessageStartingWith("LINK_KEY_SHARED");
+    }
+
+    @Test
+    void anUnresolvablePseudonymisationKeyRefuses() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32));
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo-ref-9"))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
+                        .doesNotContain("pseudo-ref-9").doesNotContain(SENTINEL))
+                .hasNoCause();
+        assertThatThrownBy(() -> new LinkKeys(id -> "k1".equals(id) ? material(1, 32) : null, "k1", "pseudo-key"))
+                .hasMessageStartingWith("LINK_KEY_UNRESOLVED");
+    }
+
+    @Test
+    void aHeldKeyWithTheMaterialOfThePseudonymisationKeyRefuses() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(9, 32))
+                .with("pseudo", material(9, 32));
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo", () -> Set.of("k1", "k2")))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED"));
+        MapKeys current = new MapKeys().with("k1", material(9, 32)).with("pseudo", material(9, 32));
+        assertThatThrownBy(() -> new LinkKeys(current, "k1", "pseudo"))
+                .hasMessageStartingWith("LINK_KEY_SHARED");
+    }
+
+    @Test
+    void aKeyAddedLaterWithThePseudonymisationBytesIsNotHeld() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(200, 32));
+        java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
+        LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> held);
+        held.add("k2");
+        assertThat(keys.heldKeyIds()).containsExactly("k1");
+        assertThat(keys.master("k2")).isNull();
+        assertThat(keys.lookup("k2").status()).isEqualTo(LinkKeys.Status.NOT_HELD);
+        assertThat(keys.toString()).doesNotContain("k2");
+    }
+
+    // ---- review: a null entry in the held set is absent ----
+
+    @Test
+    void aNullEntryInTheHeldSetIsTreatedAsAbsent() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
+        java.util.Set<String> withNull = new java.util.HashSet<>(Arrays.asList("k1", "k2", null));
+        LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> withNull);
+        assertThat(keys.heldKeyIds()).containsExactly("k1", "k2");
+        assertThat(keys.master(null)).isNull();
+    }
+
     @Test
     void theConstructorDoesNotMutateTheProvidersArray() {
         byte[] held = material(1, 32);
         byte[] before = held.clone();
-        new LinkKeys(id -> held, "k1", "pseudo-key");
+        new LinkKeys(id -> "k1".equals(id) ? held : material(200, 32), "k1", "pseudo-key");
         assertThat(held).isEqualTo(before);
     }
 
@@ -187,9 +278,9 @@ class LinkKeysTest {
     @Test
     void heldKeyIdsReportsTheProvidersSet() {
         MapKeys provider = new MapKeys().with("old", material(1, 32)).with("new", material(2, 32));
-        assertThat(new LinkKeys(provider, "new", "p", () -> Set.of("old", "new")).heldKeyIds())
+        assertThat(new LinkKeys(provider, "new", "pseudo-key", () -> Set.of("old", "new")).heldKeyIds())
                 .containsExactly("new", "old");
-        assertThat(new LinkKeys(provider, "new", "p").heldKeyIds()).containsExactly("new");
+        assertThat(new LinkKeys(provider, "new", "pseudo-key").heldKeyIds()).containsExactly("new");
     }
 
     // ---- known answers ----

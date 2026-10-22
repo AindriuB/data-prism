@@ -59,6 +59,11 @@ final class LinkTestSupport {
     static class MapKeys implements SecretKeyProvider {
         final Map<String, byte[]> keys = new LinkedHashMap<>();
 
+        /** Holds the pseudonymisation key by default, because a link key set now needs it to compare against. */
+        MapKeys() {
+            keys.put("pseudo-key", material(200, 32));
+        }
+
         MapKeys with(String id, byte[] material) {
             keys.put(id, material);
             return this;
