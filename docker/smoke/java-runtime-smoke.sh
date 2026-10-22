@@ -14,6 +14,12 @@ SERVER_IMAGE="${SMOKE_PREFIX}server:${SMOKE_RUN_ID}"
 # Unique project name: -p overrides the fixed name in compose.yaml, so teardown
 # can only ever touch the stack this run created.
 PROJECT="data-prism-smoke-$$"
+# Task 222: tcp-ip members refuse to start without a cluster key and a name key,
+# which compose.yaml takes by reference from these two variables. Generated per
+# run, distinct from each other, test-only, never written to disk or logged.
+DATAPRISM_CLUSTER_KEY_MATERIAL="$(openssl rand -hex 32)"
+DATAPRISM_NAME_KEY_MATERIAL="$(openssl rand -hex 32)"
+export DATAPRISM_CLUSTER_KEY_MATERIAL DATAPRISM_NAME_KEY_MATERIAL
 COMPOSE=(docker compose -p "$PROJECT" -f "${ROOT}/docker/multi-instance/compose.yaml"
          -f "${ROOT}/docker/multi-instance/compose.build.yaml"
          -f "${ROOT}/docker/smoke/compose.smoke.yaml")
@@ -88,6 +94,9 @@ while :; do
   if [ "$a" -gt 0 ] && [ "$b" -gt 0 ]; then break; fi
   if [ "$SECONDS" -ge "$deadline" ]; then
     echo "FAIL: cluster of 2 not seen within ${TIMEOUT}s (server-a=${a}, server-b=${b})" >&2
+    # The logs are the only evidence of why; dump them before teardown removes them.
+    "${COMPOSE[@]}" ps -a >&2 || true
+    "${COMPOSE[@]}" logs --no-color --tail 200 server-a server-b >&2 || true
     exit 1
   fi
   sleep 3
