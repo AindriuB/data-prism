@@ -5,6 +5,7 @@ import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
+import com.tngtech.archunit.core.domain.JavaMethodReference;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
@@ -52,8 +53,13 @@ class LinkArchitectureTest {
 
     private static DescribedPredicate<JavaClass> outsideTheSealers() {
         return DescribedPredicate.describe("outside core.link and the cluster sealing package",
-                c -> !c.getPackageName().startsWith("io.github.aindriub.dataprism.core.link")
-                        && !c.getPackageName().startsWith("io.github.aindriub.dataprism.hazelcast.seal"));
+                c -> !inPackageOrBelow(c.getPackageName(), "io.github.aindriub.dataprism.core.link")
+                        && !inPackageOrBelow(c.getPackageName(), "io.github.aindriub.dataprism.hazelcast.seal"));
+    }
+
+    /** The package itself or a sub-package: {@code core.linkx} is not in {@code core.link}. */
+    static boolean inPackageOrBelow(String packageName, String root) {
+        return packageName.equals(root) || packageName.startsWith(root + ".");
     }
 
     private static ArchRule noCipherOutside(DescribedPredicate<JavaClass> origin) {
@@ -61,7 +67,7 @@ class LinkArchitectureTest {
                 .should().accessTargetWhere(new DescribedPredicate<JavaAccess<?>>("is a call to Cipher.getInstance") {
                     @Override
                     public boolean test(JavaAccess<?> access) {
-                        return access instanceof JavaMethodCall
+                        return (access instanceof JavaMethodCall || access instanceof JavaMethodReference)
                                 && access.getTarget().getOwner().isEquivalentTo(Cipher.class)
                                 && access.getTarget().getName().equals("getInstance");
                     }
@@ -141,6 +147,16 @@ class LinkArchitectureTest {
         }
     }
 
+    interface CipherFactory {
+        Object create(String transformation) throws GeneralSecurityException;
+    }
+
+    static final class FixtureCreatesACipherByReference {
+        CipherFactory factory() {
+            return Cipher::getInstance;
+        }
+    }
+
     static final class FixtureCreatesNoCipher {
         Object create() {
             return "no cipher";
@@ -186,6 +202,24 @@ class LinkArchitectureTest {
                 FixtureCreatesACipher.class);
         assertThat(result.hasViolation()).isTrue();
         assertThat(String.join("\n", result.getFailureReport().getDetails())).contains("getInstance");
+    }
+
+    @Test
+    void cipherRuleFailsOnACipherCreatedByMethodReference() {
+        EvaluationResult result = evaluate(noCipherOutside(named(FixtureCreatesACipherByReference.class)),
+                FixtureCreatesACipherByReference.class);
+        assertThat(result.hasViolation()).isTrue();
+    }
+
+    @Test
+    void theSealerPackageMatchIsExact() {
+        String link = "io.github.aindriub.dataprism.core.link";
+        assertThat(inPackageOrBelow(link, link)).isTrue();
+        assertThat(inPackageOrBelow(link + ".sub", link)).isTrue();
+        assertThat(inPackageOrBelow(link + "x", link)).isFalse();
+        assertThat(inPackageOrBelow(link + "x.sub", link)).isFalse();
+        assertThat(inPackageOrBelow("io.github.aindriub.dataprism.hazelcast.sealx",
+                "io.github.aindriub.dataprism.hazelcast.seal")).isFalse();
     }
 
     @Test
