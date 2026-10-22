@@ -72,7 +72,7 @@ Where checks live. `DataPrismPropertiesValidator.validateCluster` does property-
 
 Plain Java. `PrivacyCluster.embedded(...)` and `using(...)` have overloads taking `ClusterKeys`. Any enabled join (tcp-ip, kubernetes, aws, gcp, azure, eureka, discovery SPI) without keys is `MISSING_CLUSTER_KEY`, before a member starts and before `member.interface` is checked; `using` leaves the instance running. `PrivacyCluster.keys()` is package-private; the public accessor is `keyIds()` (ids only). `legacyEntries()` is public and `ClusterBackedState` registers `Metric.CLUSTER_LEGACY_ENTRIES` as a gauge over it, closing the cluster if registration throws.
 
-Tests and deployment. `TestMembers.KEYS` and the server `ClusterMembers` give every multi-member test one shared set of keys; the server `OperatorHarness` resolver now returns distinct material per reference (the privacy key keeps its fixed bytes). `compose.yaml` and `kubernetes.yaml` configure both keys by reference with placeholder variable and Secret names; `kubernetes.yaml` now also sets `DATAPRISM_HAZELCAST_MEMBER_INTERFACE` (`10.0.*.*`, to be replaced with the pod network).
+Tests and deployment. `TestMembers.KEYS` and the server `ClusterMembers` give every multi-member test one shared set of keys; the server `OperatorHarness` resolver now returns distinct material per reference (the privacy key keeps its fixed bytes). `compose.yaml` and `kubernetes.yaml` configure both keys by reference with placeholder variable and Secret names; `kubernetes.yaml` now also sets `DATAPRISM_HAZELCAST_MEMBER_INTERFACE` (`10.*.*.*`, bounded and covering the common 10/8 pod networks; to be replaced with your pod network).
 
 For the scribe and later tasks.
 - `contract-register.md:809`: `dataprism.cluster.legacy.entries` must change from counter to gauge. It reports a level, the latest membership check's count.
@@ -80,3 +80,12 @@ For the scribe and later tasks.
 - `docs/multiple-instances.md` and `docs/migration-0.8.md` (task 213) still say an interface is optional; they need the 0.8 text. The `docs/configuration.md` property rows, the `dataprism.hazelcast` bullet and the startup-code table are updated.
 - Deferred to 227 (next task editing `PrivacyCluster`'s cluster checks), from review: rename `UNSAFE_HAZELCAST_SERIALIZATION` or add a register note that it now also covers the REST, memcache, Management Center and phone-home refusals; the serialization-filter blacklist over-refusal, the missing test for a blacklisted subpackage, and the wrong-fix message.
 - The packaged server's environment resolver is registered only when `hmac-key.environment-variable` is set and reads any reference with `System.getenv`; a cluster key given as `provider-reference` needs the same reviewed resolver extension as the HMAC key.
+
+Owns widenings approved by the coordinator: `validation/MemberInterfaceCheck.java` (new); `ValidatorWithoutHazelcastTest.java` (new); `PrivacyCluster.legacyEntries()` made public for the `CLUSTER_LEGACY_ENTRIES` wiring; the `next.value` and `previous.value` refusals; the `keyIds()` accessor; the `member.interface` entry in `kubernetes.yaml`; and the corrections to the metadata description and `docs/configuration.md`.
+
+More for the scribe.
+- (a) `cluster-security.md` 4.1: add rows for `cluster-key.next.value` and `cluster-key.previous.value` to the property table (~563-576), the key index (~834-847) and the "Reused" sentence (~626). `contract-register.md`: two new key rows near ~991 and ~1001, the totals at ~1235 (20 to 22 `security.*` keys) and N4 at ~1348.
+- (b) `CLUSTER_LEGACY_ENTRIES` counter to gauge at `docs/plan/design/contract-register.md:809` and `docs/plan/design/cluster-security.md:667`.
+- (c) Wider rules as built: `DUPLICATE_CLUSTER_KEY_ID` also covers a name-key id equal to a cluster-key id, and `*_SHARED` also fires on the same key id as the HMAC key. Update `cluster-security.md` ~610 and ~613-614 and `contract-register.md` ~542 and ~546.
+- (d) Add `ClusterKeyResolution.java` and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows to the Owns of briefs 211 and 242's successors (254 and 255 for link keys), so they can extend the shared-key check.
+- (e) `docs/multiple-instances.md` (owned by 213) still says `member.interface` is optional.

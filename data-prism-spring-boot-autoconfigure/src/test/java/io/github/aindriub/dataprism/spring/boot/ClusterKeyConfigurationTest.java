@@ -122,7 +122,8 @@ class ClusterKeyConfigurationTest {
     /**
      * One refusal: the code, the edits (a leading {@code -} removes a key; keys are relative to
      * {@code dataprism.hazelcast.security.}), the text its message must carry (a property name), and the modes it
-     * applies to. Rows are in the order the refusals are made.
+     * applies to. Rows are grouped by code, roughly in the order the refusals are made; the {@code .value} rows come
+     * after the presence checks and before resolution, but are listed with the other literal rows.
      */
     record Row(String code, String what, String[] edits, String names, boolean joining, boolean solo) {
         @Override public String toString() {
