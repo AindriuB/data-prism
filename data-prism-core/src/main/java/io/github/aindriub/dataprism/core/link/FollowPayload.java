@@ -32,7 +32,7 @@ public record FollowPayload(
             throw new IllegalArgumentException("the chained key is empty");
         }
         chainedKey = chainedKey.clone();
-        Check.text(target, 1, LinkLayout.MAX_TARGET, "target");
+        Check.text(target, 1, Integer.MAX_VALUE, "target"); // over 64 bytes: the codec omits the link
         Objects.requireNonNull(relation, "relation");
         if (relation != LinkRelation.DIRECT && relation != LinkRelation.TRANSLATED) {
             throw new IllegalArgumentException("a follow payload is DIRECT or TRANSLATED");

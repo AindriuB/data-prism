@@ -198,6 +198,30 @@ class InMemoryLinkAttemptLimiterTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void uncountedRefusalsLeaveTheCounterUntouchedAtTheGate() throws Exception {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
+        LinkCodec codec = codec(provider, settings("k1", true, Duration.ofSeconds(30)), clock);
+        LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key");
+        LinkBinding alice = binding("case-1", "alice");
+        byte[] raw = LinkTestSupport.raw(codec.seal(follow(5), alice).orElseThrow().token());
+        byte[] plain = LinkVectors.decrypt(material(1, 32), "case-1", "alice", true, raw);
+        String authenticatedButBroken = LinkTestSupport.token(LinkVectors.reseal(material(1, 32), "case-1", "alice",
+                true, raw, java.util.Arrays.copyOf(plain, plain.length - 3)));
+        for (int i = 0; i < 10; i++) {
+            assertThat(gate(codec, keys, alice, authenticatedButBroken)).isEqualTo("REFUSED");
+        }
+        String underK2 = new LinkCodec(settings("k2", true, Duration.ofSeconds(30)),
+                new LinkKeys(provider, "k2", "pseudo-key"), clock).seal(follow(5), alice).orElseThrow().token();
+        LinkCodec member = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
+                new LinkKeys(provider, "k1", "pseudo-key", () -> java.util.Set.of("k1", "k2")), clock);
+        provider.keys.remove("k2");
+        for (int i = 0; i < 10; i++) {
+            assertThat(gate(member, keys, alice, underK2)).isEqualTo("REFUSED");
+        }
+        assertThat(limiter.locked(keys.attemptCounterKey("case-1", "alice"))).isFalse();
+    }
+
     /** The caller's gate, as tasks 251 and 252 will write it: check the lock, then open, then record. */
     private String gate(LinkCodec codec, LinkKeys keys, LinkBinding binding, String token) {
         String counter = keys.attemptCounterKey(binding.scopeId(), binding.principalId());
