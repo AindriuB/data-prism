@@ -567,9 +567,11 @@ lock timeout is not a key of this group: the shipped
 | `dataprism.hazelcast.security.cluster-key.next.key-id` | String | unset | Optional, phase 1 of a rotation (4.6, OD-6). Read-only key. Must differ from `current` and `previous`; the same resolution, strength and sharing rules as `current` | `DUPLICATE_CLUSTER_KEY_ID`; `CLUSTER_KEY_UNRESOLVED`; `CLUSTER_KEY_WEAK`; `CLUSTER_KEY_SHARED`; `MISSING_CLUSTER_KEY` (a source without a `key-id`, or a `key-id` without exactly one source) | Allowed with a `current` key (`MISSING_CLUSTER_KEY` without one); same codes |
 | `dataprism.hazelcast.security.cluster-key.next.environment-variable` | String | unset | As above, for the next key | As above | As above |
 | `dataprism.hazelcast.security.cluster-key.next.provider-reference` | String | unset | As above, for the next key | As above | As above |
+| `dataprism.hazelcast.security.cluster-key.next.value` | String | unset | Refused if set: a literal key is never accepted. Bound only so it can be refused by name; never echoed | `LITERAL_SECRET_FORBIDDEN` | Refused the same way |
 | `dataprism.hazelcast.security.cluster-key.previous.key-id` | String | unset | Optional, phase 2 of a rotation (4.6, OD-6). Must differ from `current` and `next`; the same resolution, strength and sharing rules as `current` | `DUPLICATE_CLUSTER_KEY_ID`; `CLUSTER_KEY_UNRESOLVED`; `CLUSTER_KEY_WEAK`; `CLUSTER_KEY_SHARED`; `MISSING_CLUSTER_KEY` (as for `next`) | Allowed with a `current` key; same codes |
 | `dataprism.hazelcast.security.cluster-key.previous.environment-variable` | String | unset | As above, for the previous key | As above | As above |
 | `dataprism.hazelcast.security.cluster-key.previous.provider-reference` | String | unset | As above, for the previous key | As above | As above |
+| `dataprism.hazelcast.security.cluster-key.previous.value` | String | unset | Refused if set: a literal key is never accepted. Bound only so it can be refused by name; never echoed | `LITERAL_SECRET_FORBIDDEN` | Refused the same way |
 | `dataprism.hazelcast.security.name-key.key-id` | String | unset | Required. The separate, non-rolling key for map keys (which are also the lock keys) and the scope token (4.6). Exactly one of `environment-variable` and `provider-reference` must accompany it. Must resolve, meet the strength rule, differ from every cluster key (`current`, `next`, `previous`), from the privacy HMAC key, from the audit key and from every link key, and contain no `.` | `MISSING_CLUSTER_KEY` (absent, or not exactly one source); `NAME_KEY_UNRESOLVED`; `NAME_KEY_WEAK`; `NAME_KEY_SHARED` | Optional, with the cluster key (both or neither); same codes when supplied |
 | `dataprism.hazelcast.security.name-key.environment-variable` | String | unset | Name of the variable holding the name key | `MISSING_CLUSTER_KEY` (neither source, or both) | As above |
 | `dataprism.hazelcast.security.name-key.provider-reference` | String | unset | A reference to a key provider | `MISSING_CLUSTER_KEY` (neither source, or both) | As above |
@@ -607,11 +609,11 @@ secret (OD-215-3 (a)).
 | `MISSING_CLUSTER_KEY` | A joining member without a `cluster-key.key-id` or a `name-key.key-id`, or either without exactly one of environment variable and provider reference; on `join.mode: none`, only one of the cluster key and the name key supplied, or `next` or `previous` without `current` |
 | `CLUSTER_KEY_UNRESOLVED` | A cluster key (`current`, `next` or `previous`) whose reference does not resolve, or whose id contains `.` |
 | `CLUSTER_KEY_WEAK` | A cluster key below the strength rule used for `dataprism.privacy.hmac-key` |
-| `CLUSTER_KEY_SHARED` | A cluster key that is the same key as the privacy HMAC key, the audit key or a link key (OD-9) |
+| `CLUSTER_KEY_SHARED` | A cluster key that is the same key as the privacy HMAC key, the audit key or a link key (OD-9). As built (task 222) it fires on the same key id or the same material, and compares only the privacy HMAC key until tasks 211 (audit key) and 254 and 255 (link keys) extend `ClusterKeyResolution` |
 | `NAME_KEY_UNRESOLVED` | The name key's reference does not resolve, or its id contains `.` |
 | `NAME_KEY_WEAK` | The name key is below the strength rule |
-| `NAME_KEY_SHARED` | The name key is the same key as another purpose key (the privacy HMAC key, the audit key or a link key) or as any cluster key |
-| `DUPLICATE_CLUSTER_KEY_ID` | The ids of `current`, `next` and `previous` are not pairwise distinct |
+| `NAME_KEY_SHARED` | The name key is the same key as another purpose key (the privacy HMAC key, the audit key or a link key) or as any cluster key. As built (task 222) it fires on the same key id or the same material, and compares only the privacy HMAC key and the cluster keys until tasks 211, 254 and 255 extend `ClusterKeyResolution` |
+| `DUPLICATE_CLUSTER_KEY_ID` | The ids of `current`, `next` and `previous` are not pairwise distinct, or the name key's id equals the id of any of them (task 222) |
 | `MISSING_ISOLATION_ATTESTATION` | `security.isolation.attestation` absent on a joining member |
 | `INVALID_ISOLATION_ATTESTATION` | An unknown attestation value |
 | `MISSING_MEMBER_INTERFACE` | `tcp-ip` or `kubernetes` without `member.interface`. Subject to OD-10 |
@@ -623,7 +625,7 @@ secret (OD-215-3 (a)).
 | `CLUSTER_KEY_MISMATCH` | At join, the sentinel already in the cluster does not authenticate under any key this member holds (`current`, `next`, `previous`), or is sealed under a key id it does not hold. This includes a member that holds only the old key after the sentinel has moved to the new one: it cannot read the cluster, so it refuses to join, never serves and never gets a member card (4.6, 4.7). A sentinel that authenticates under `previous` is normal in phase 2 and not a mismatch. A sentinel that authenticates under `next` is not a mismatch either: the member is behind but can read (`rotation.behind`) |
 | `UNSEALED_CLUSTER_STATE` | A 0.8 member starts, **no verified 0.8 member is present** (no authenticated member card of a live member, 2.4), and it finds an entry in a pre-0.8 map (the eight 0.7 map names, 4.8) other than the fence entry. This is the refusal that enforces the non-rolling cutover (OD-215-1 (a)); there is no compatibility mode that reads those maps. It is never raised once a verified 0.8 member is present (owner decision 2026-10-21, extends OD-215-1): then the entries are counted and logged instead (4.8). "No verified 0.8 member is present" excludes the starting member itself: the check runs before the starting member writes its own card (2.4, 4.8), so rolling restarts for key rotation and the soak keep working |
 
-Reused, not new: `LITERAL_SECRET_FORBIDDEN` for `cluster-key.value` and `name-key.value`,
+Reused, not new: `LITERAL_SECRET_FORBIDDEN` for `cluster-key.value`, `cluster-key.next.value`, `cluster-key.previous.value` and `name-key.value`,
 and `CLUSTER_SETTINGS_IGNORED` for the cases in 4.1.
 
 Withdrawn: `MISSING_CLUSTER_SECURITY_MODE` and `UNSUPPORTED_CLUSTER_SECURITY_MODE`, with the key they checked (OD-200-9: a joining member is sealed by definition, and `MISSING_CLUSTER_KEY` refuses it without a key). `INVALID_CLUSTER_KEY` is withdrawn too, replaced by the six codes above (OD-215-3 (a)): one family of OD-200-10, two areas.
@@ -664,7 +666,7 @@ a scope or a map entry (boundary 7).
 | `dataprism.cluster.seal.entries_under_previous` | `CLUSTER_SEAL_ENTRIES_UNDER_PREVIOUS` | gauge | Locally owned entries still sealed under the previous key (phase 2 gate) |
 | `dataprism.cluster.lock.timeout` | `CLUSTER_LOCK_TIMEOUT` | counter | A map lock wait ended in a fail-closed refusal |
 | `dataprism.cluster.floor.refusal` | `CLUSTER_FLOOR_REFUSAL` | counter | A local floor refused a request that the shared count would have allowed (evidence of reset or replay) |
-| `dataprism.cluster.legacy.entries` | `CLUSTER_LEGACY_ENTRIES` | counter | A check found entries (other than the fence) in a pre-0.8 map while a verified 0.8 member was present (4.8): a 0.7 member that joined late, or a leftover |
+| `dataprism.cluster.legacy.entries` | `CLUSTER_LEGACY_ENTRIES` | gauge | The latest membership check's count of entries (other than the fence) in pre-0.8 maps while a verified 0.8 member was present (4.8): a 0.7 member that joined late, or a leftover. A level, not an event count (task 222; `PrivacyCluster.legacyEntries()`) |
 
 **How gauges are emitted (OD-215-5 (a)).** `PrivacyMetrics` has no gauge method
 today. 0.8 adds a `default` no-op `gauge(Metric, DoubleSupplier)` to it. The
@@ -838,9 +840,11 @@ The names withdrawn by this design are not listed: `dataprism.hazelcast.security
 | key | `dataprism.hazelcast.security.cluster-key.next.key-id` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.next.environment-variable` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.next.provider-reference` | 4.1 |
+| key | `dataprism.hazelcast.security.cluster-key.next.value` (refused) | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.previous.key-id` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.previous.environment-variable` | 4.1 |
 | key | `dataprism.hazelcast.security.cluster-key.previous.provider-reference` | 4.1 |
+| key | `dataprism.hazelcast.security.cluster-key.previous.value` (refused) | 4.1 |
 | key | `dataprism.hazelcast.security.name-key.key-id` | 4.1 |
 | key | `dataprism.hazelcast.security.name-key.environment-variable` | 4.1 |
 | key | `dataprism.hazelcast.security.name-key.provider-reference` | 4.1 |

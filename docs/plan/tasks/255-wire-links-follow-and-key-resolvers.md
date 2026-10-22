@@ -36,6 +36,7 @@ Turn the agent-led surface on through configuration: `dataprism.links.*` (sealed
 - docs/plan/design/key-resolvers.md section 6 ("Registration": beans only, OD-R6) and section 9 OD-R1 ("configurable with a ceiling") and OD-R10.
 - docs/plan/design/batch-and-bulk-follow.md A.8 (`paging.lifetime` never exceeds `links.lifetime` when links are on).
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java and AuditFilePiiScanTest.java: the scans, and the conventions rule that each leak test is shown non-vacuous by a mutation.
+- From 222 and 242 (2026-10-22): (1) add `ClusterKeyResolution.java` and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows to this brief's Owns and extend the shared-key check to link keys (`LINK_KEY_SHARED` already covers the privacy HMAC key). (2) `LinkKeys` takes a `Supplier<Set<String>>` of held key ids because `SecretKeyProvider` has no listing method; this task must supply the real set (the current id plus any previous id still held), or only the current key verifies. A supplier that returns null or throws fails closed to current-only without a sound, so add a health signal for it. Until the set is supplied, a link sealed before a rotation is `UNKNOWN_KEY`.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.

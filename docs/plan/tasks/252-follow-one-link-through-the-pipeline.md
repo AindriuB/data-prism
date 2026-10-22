@@ -26,6 +26,7 @@
 - docs/plan/design/key-resolvers.md section 6 (cardinality, failure table, read budget, audit) and test obligations 6 to 9, with register OD-200-3 (`RESOLVER_FAILED`).
 - docs/plan/design/batch-and-bulk-follow.md 3.2 "Relation bytes": `follow` accepts `0x00` and `0x01` in 0.8.
 - D-070-1, D-070-2 (refused sources omitted, all refused refuses the call), D-070-13.
+- From 242 (2026-10-22): forged and genuine tokens do different work after authentication, because only an authenticated token has its payload parsed. The difference is small; the timing soak of sealed-links obligation 10 (written here, run by 263) should cover it. The core `open` also refuses `EXPIRED` at `now >= scopeExpiry` or `now >= tokenExpiry` with no skew; this task still re-checks the live session.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.

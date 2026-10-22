@@ -43,6 +43,7 @@ Document controls when they ship in 0.8, before the 0.9 freeze. Keep 1.0 a stabi
 
 ## Context
 - From wave 2 (2026-10-21), for the operator docs and migration notes: never restore one process snapshot more than once (GCM nonce reuse). The `using()` breaking change and what integrators must supply: `requiredSerializationFilter()`, non-empty `trustedInterfaces`, phone-home off, no memcache, REST `HEALTH_CHECK` only. State the `trustedInterfaces` value and that REST and memcache are off. Correct "docs list 5.7.2" to 5.7.0.
+- From 222 (2026-10-22): `docs/multiple-instances.md` and `docs/migration-0.8.md` still say `member.interface` is optional. For 0.8 it is required on `tcp-ip` and `kubernetes` (`MISSING_MEMBER_INTERFACE`), must be bounded (`UNBOUNDED_MEMBER_INTERFACE`) and valid (`INVALID_CLUSTER_INTERFACE`), and `kubernetes.yaml` now sets `DATAPRISM_HAZELCAST_MEMBER_INTERFACE` to a placeholder pod network. Fix both files. Also document that the packaged server's environment resolver reads any reference with `System.getenv` and is registered only when `hmac-key.environment-variable` is set, so a cluster key given as `provider-reference` needs the same reviewed resolver extension as the HMAC key.
 
 ## Out of scope
 - `docs/data-protection.md` (214), code and `docs/configuration.md` (implementation tasks).

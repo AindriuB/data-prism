@@ -36,6 +36,7 @@ Sealed links count failed attempts per principal and scope and lock the principa
 - Task 229: `RotationSweeper` walks every sealed map except identity and the pause document.
 - Task 227: `ServingGate`. Under `unverified-member.action: refuse`, a closed gate refuses tool-path stores.
 - docs/plan/design/cluster-security.md 1 (inventory), 2.3.1 (per-structure failure), 2.3.5 (local floors), 4.6 (rotation), as amended by 218.
+- From 242 (2026-10-22): (1) the attempt counter key is derived under the current key id, so during phase 2 of a rotation counts split across key ids and a principal can have up to one limit per key id in flight. Decide whether to accept that or key the counter on something stable. (2) The limiter decides the window end by comparing the stored window start with the injected clock, never by an entry expiring; `sealed-links.md` now says so, and the shared limiter must do the same (no map time-to-live).
 
 ## Required shape
 - Map `dataprism.linkattempt.s1` (or the name 218's naming rule gives), configured in `CounterMaps`. It has the counter merge policy, and a TTL of the attempt window plus the clock-skew tolerance. The TTL only bounds memory: whether a window has ended is decided by comparing the sealed window start with the injected `Clock` (242), never by an entry expiring.
