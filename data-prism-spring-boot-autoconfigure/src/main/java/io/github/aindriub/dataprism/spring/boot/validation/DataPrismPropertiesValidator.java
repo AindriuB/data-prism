@@ -309,8 +309,8 @@ public final class DataPrismPropertiesValidator {
         }
     }
 
-    private static final String CLUSTER_KEY = "dataprism.hazelcast.security.cluster-key";
-    private static final String NAME_KEY = "dataprism.hazelcast.security.name-key";
+    private static final String CLUSTER_KEY = HazelcastProperties.Security.CLUSTER_KEY_PROPERTY;
+    private static final String NAME_KEY = HazelcastProperties.Security.NAME_KEY_PROPERTY;
 
     /**
      * The cluster key and the name key, as property names only: both are required to join other members, optional

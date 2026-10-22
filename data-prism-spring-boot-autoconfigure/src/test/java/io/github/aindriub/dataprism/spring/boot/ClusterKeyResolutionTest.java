@@ -115,4 +115,47 @@ class ClusterKeyResolutionTest {
                 () -> ClusterKeyResolution.resolve(p, resolver));
         assertThat(refused.getMessage()).startsWith("HMAC_KEY_UNRESOLVED:");
     }
+
+    @Test
+    void aProviderReferenceIsResolvedAsAProviderReferenceAndAnEnvironmentVariableAsOne() {
+        DataPrismProperties p = properties();
+        HazelcastProperties.ClusterKey cluster = p.getHazelcast().getSecurity().getClusterKey();
+        cluster.setEnvironmentVariable(null);
+        cluster.setProviderReference("vault:cluster");
+        List<String> calls = new ArrayList<>();
+        HmacKeyReferenceResolver resolver = new HmacKeyReferenceResolver() {
+            @Override public byte[] resolve(String keyId, String reference) {
+                calls.add("env:" + reference);
+                return reference.equals("HMAC_REF") ? bytes('h') : bytes('n');
+            }
+
+            @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                calls.add("provider:" + reference);
+                return bytes('c');
+            }
+        };
+        assertThat(ClusterKeyResolution.resolve(p, resolver)).isPresent();
+        assertThat(calls).contains("provider:vault:cluster", "env:NAME_REF").doesNotContain("env:vault:cluster");
+    }
+
+    @Test
+    void aResolverThatCannotServeProviderReferencesRefusesWithACodeNamingTheProperty() {
+        DataPrismProperties p = properties();
+        p.getHazelcast().getSecurity().getNameKey().setEnvironmentVariable(null);
+        p.getHazelcast().getSecurity().getNameKey().setProviderReference("vault:name");
+        HmacKeyReferenceResolver environmentOnly = new HmacKeyReferenceResolver() {
+            @Override public byte[] resolve(String keyId, String reference) {
+                return reference.equals("HMAC_REF") ? bytes('h') : bytes('c');
+            }
+
+            @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER", "no provider");
+            }
+        };
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(p, environmentOnly));
+        assertThat(refused.getMessage()).startsWith("MISSING_KEY_PROVIDER:")
+                .contains("dataprism.hazelcast.security.name-key.provider-reference")
+                .doesNotContain("vault:name");
+    }
 }
