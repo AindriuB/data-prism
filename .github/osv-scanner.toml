@@ -1,0 +1,12 @@
+# Ignore list for the scheduled advisory scan (.github/workflows/supply-chain.yml).
+#
+# Every entry needs a written reason and an ignoreUntil date, so an ignore
+# cannot outlive the reasoning behind it. An entry without both is not
+# accepted in review. Example:
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-31
+# reason = "Not reachable: <what the vulnerable code path is and why we never call it>."
+#
+# There are no ignores today.

@@ -7,6 +7,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-21
+
+### Security
+
+- A field whose declared type was a user generic type (for example
+  `Envelope<Leaf>`) was scrubbed, and its prohibited values were collected, with
+  the type argument's rules instead of the field's own type. When the argument
+  type declared the same field names as `@NonSensitive`, values from the outer
+  type could be released under the DEFAULT profile, and neither output validator
+  caught them. A `Map` whose values are records was scrubbed as if the map were
+  a record. The defect is present in every release up to and including 0.7.0. It
+  affects deployments whose source models use user generic types or maps of
+  records; models built only from records, scalars, JDK collections, `Optional`
+  and arrays were not affected by this entry (nested collections are the next
+  entry). Fixed in 0.7.1: upgrade, and change any model that is now refused at
+  startup (see Changed).
+- When a field held an array of arrays (for example `List<List<Leaf>>` or
+  `Leaf[][]`), the field's own policy was applied to each inner array whole. A
+  field marked `@NonSensitive` therefore released every record inside the inner
+  arrays unscrubbed under the DEFAULT profile, and neither output validator
+  caught it. The same happened at request time for an `Object` or
+  `List<Object>` field holding nested lists of records. The defect is present in
+  every release up to and including 0.7.0. It affects deployments whose source
+  models hold records inside a collection inside a collection, or whose
+  `Object`-typed fields can carry nested lists of records; a single level of
+  `List`, `Set`, array or `Optional` around a record was not affected. Fixed in
+  0.7.1: upgrade, and change any model that is now refused at startup (see
+  Changed).
+- Embedded Tomcat is managed at 11.0.27. Spring Boot 4.1.1 manages Tomcat
+  11.0.24, which is affected by GHSA-9xv2-5v5q-p794 (CVE-2026-65905),
+  GHSA-gcx9-497g-6cp6 (CVE-2026-65182) and GHSA-h3x4-894j-xpx5 (CVE-2026-68525),
+  all fixed in 11.0.25. Data Prism manages 11.0.27 for the server, the starter
+  and the quickstart images. Data Prism does not configure Tomcat DIGEST or FORM
+  authentication anywhere: requests are authenticated by Spring Security JWT
+  validation, and the quickstart issuer signs the tokens. An application that
+  embeds `data-prism-spring-boot-starter` and imports its own Spring Boot BOM
+  must manage `org.apache.tomcat.embed` at 11.0.25 or later itself, ahead of
+  that BOM (`docs/extending.md`, "The pom shape").
+
+### Changed
+
+- Two new startup refusal codes for source models. `SOURCE_MODEL_GENERIC` is
+  raised for a generic record, or for a component whose declared type is a
+  parameterized user type. `SOURCE_MODEL_MAP_OF_RECORD` is raised for a JDK map
+  whose value type contains a record. A JDK wrapper outside collections,
+  `Optional` and maps (for example `AtomicReference<X>`) is no longer scrubbed
+  with `X`'s rules; it takes the unclassified-structure path, which refuses
+  under DEFAULT. These deliberately refuse models that 0.7.0 accepted, in a
+  patch release, because those models were not protected.
+- A new startup refusal code, `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`, is
+  raised for a component that puts a record inside a collection or array inside
+  another collection or array (`Optional` does not count as a level). At request
+  time, a record inside a nested array is refused as an unclassified structure
+  (`UNCLASSIFIED_STRUCTURE` under DEFAULT). On a field holding nested arrays of
+  scalars, an action other than pass-through now applies to each scalar rather
+  than to each inner array whole; pass-through output is unchanged. Like the
+  entry above, this deliberately refuses models that 0.7.0 accepted, in a patch
+  release, because those models were not protected.
+- Clients that got an MCP protocol error, or "the request could not be
+  completed", when a denial's audit write failed now get an error tool result
+  `refused: AUDIT_UNAVAILABLE`. `AuditUnavailableException` is deprecated for
+  removal.
+
+### Fixed
+
+- On both tools (`get_entity_context` and `compare_entity_sources`), every
+  denial whose audit write fails now answers `refused: AUDIT_UNAVAILABLE` and
+  increments the new metric `dataprism.audit.denial_unavailable`. Before, an
+  orchestrator-side DENY that could not be written surfaced as a generic
+  failure.
+- A re-identification refusal or operator denial whose audit write fails now
+  answers `AUDIT_UNAVAILABLE` (HTTP 503 on the operator API) and increments
+  `dataprism.audit.denial_unavailable`, instead of returning the original code
+  with no audit record. A resume that fails after its `ALLOW:RESUMED` is written
+  now leaves a linked `DENY:<code>` under the same correlation id, and state
+  stays unchanged.
+
+### Build
+
+- Every GitHub Actions reference is pinned to a full version, and a check on
+  pull requests that touch `.github/` confirms each reference resolves.
+- A weekly advisory scan of the resolved Maven dependency trees (all modules,
+  including `data-prism-server`). High, critical and unrated advisories fail the
+  scan; every ignore must carry a reason and an expiry date. Dependabot now also
+  covers the pip files and `load-test`.
+- One SBOM build is shared by the GitHub Release and Central: the release
+  attaches the same SBOM files that go in the Central bundle, and a step asserts
+  their SHA-256 values are equal.
+- Each per-architecture image digest reachable from a manifest list is signed
+  and attested, and the image publish fails if any list or platform digest is
+  unsigned. The Central publish is refused unless the GitHub release exists.
+  `docs/verifying-releases.md` shows the per-architecture and release-SBOM
+  checks.
+- The Jackson 3 override stays at 3.1.8: Spring Boot 4.1.1 still manages 3.1.5,
+  which is below the fixed 3.1.7.
+
 ## [0.7.0] - 2026-10-20
 
 ### Breaking
@@ -1012,6 +1108,7 @@ First release: the walking skeleton and every slice through S9a.
 - An append-only audit sink with hash-chain verifier. The only audit sink in
   this release writes to a file and to SLF4J.
 
+[0.7.1]: https://github.com/AindriuB/data-prism/releases/tag/v0.7.1
 [0.7.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.7.0
 [0.6.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.6.0
 [0.5.0]: https://github.com/AindriuB/data-prism/releases/tag/v0.5.0

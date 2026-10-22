@@ -12,7 +12,7 @@ check that what you run is what the project built:
 |---|---|---|
 | Maven jars | Maven Central, group `io.github.aindriub` | GPG signature (`.asc`), CycloneDX SBOM, build provenance |
 | Container images | `ghcr.io/aindriub/data-prism-server` and the four `data-prism-quickstart-*` images | keyless cosign signature, build provenance, SBOM attestation |
-| SBOM files | the GitHub Release page and Maven Central | build provenance |
+| SBOM files | the GitHub Release page and Maven Central (the same files from 0.7.1) | build provenance |
 
 All commands below use placeholders in angle brackets. Replace `<version>`
 with the release version without the leading `v` (for example `0.7.0`).
@@ -28,13 +28,16 @@ with the project release key (key ID `FC5E68A44A325696`). Check a jar:
 base=https://repo1.maven.org/maven2/io/github/aindriub/data-prism-core/<version>
 curl -fsSLO "$base/data-prism-core-<version>.jar"
 curl -fsSLO "$base/data-prism-core-<version>.jar.asc"
-gpg --keyserver keyserver.ubuntu.com --recv-keys FC5E68A44A325696
+gpg --keyserver hkps://keys.openpgp.org --recv-keys FC5E68A44A325696
 gpg --verify data-prism-core-<version>.jar.asc data-prism-core-<version>.jar
 ```
 
-Expected: `Good signature` from a key whose fingerprint ends in
-`FC5E68A44A325696`. A `BAD signature` or a different key means do not use the
-file.
+Expected: `Good signature` from the project release key. `gpg` prints
+`using RSA key FC2DB94A7891425639F53AEF697F862CDC47EBF1`, which is the signing
+subkey, and the primary key fingerprint is
+`7B633FA5CC84CDE87C1701A9FC5E68A44A325696` (its key ID, the last 16 digits, is
+`FC5E68A44A325696`). Check that the primary fingerprint matches. A
+`BAD signature` or a different key means do not use the file.
 
 ### SBOM
 
@@ -67,7 +70,8 @@ from the `v<version>` tag.
 
 The images are `ghcr.io/aindriub/data-prism-server` and
 `ghcr.io/aindriub/data-prism-quickstart-{server,fixtures,issuer,certs-init}`.
-Resolve a tag to its digest first, and verify the digest, not the tag:
+Resolve a tag to its digest first, and verify the digest, not the tag. That
+digest is the manifest list, and the manifest list is the object to verify:
 
 ```bash
 image=ghcr.io/aindriub/data-prism-server
@@ -77,14 +81,46 @@ digest=$(docker buildx imagetools inspect "$image:<version>" --format '{{json .M
 ### Signature
 
 Images are signed keylessly with cosign, using the GitHub Actions identity of
-the `publish-image.yml` workflow. Each per-architecture digest and each
-manifest list is signed.
+the `publish-image.yml` workflow. Cosign v3 or later is required: the
+signatures are stored only as sigstore bundle v0.3 OCI referrers, with no
+legacy `.sig` tags, and cosign v2 will not find them.
+
+Each image's manifest list is signed and attested, and from 0.7.1 so is every
+per-architecture digest reachable from a published tag. Verify the digest you
+resolved from the tag (the manifest list), or the digest of any `linux/amd64`
+or `linux/arm64` platform manifest in it, with the same command. The list also
+holds entries with platform `unknown/unknown` (annotation
+`vnd.docker.reference.type: attestation-manifest`). Those are the buildx SBOM
+and provenance payloads, which the signatures above cover; they are not signed
+on their own and `cosign verify` on one fails. The release workflow verifies
+the list and every real platform manifest, and fails the release if one is
+unsigned.
+
+Releases up to and including 0.7.0 are different. Assembling their manifest
+list flattened the signed per-architecture build indexes into plain platform
+manifests, so the platform digests found from the tag carry no cosign
+signature, attestation or SBOM of their own, and `cosign verify` on one fails.
+The signed build indexes exist, and their digests are recorded in the log of
+the `publish-image` run. For those releases, verify the manifest list; do not
+treat a failure on a platform digest as a sign of tampering.
 
 ```bash
 cosign verify \
   --certificate-identity-regexp '^https://github\.com/AindriuB/data-prism/\.github/workflows/publish-image\.yml@refs/tags/v.+$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$image@$digest"
+```
+
+To verify one platform manifest (from 0.7.1), take its digest from the list
+and use the same command:
+
+```bash
+platform=$(docker manifest inspect "$image:<version>" \
+  | jq -r '.manifests[] | select(.platform.architecture == "arm64") | .digest')
+cosign verify \
+  --certificate-identity-regexp '^https://github\.com/AindriuB/data-prism/\.github/workflows/publish-image\.yml@refs/tags/v.+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$image@$platform"
 ```
 
 Expected identity: the workflow
@@ -123,9 +159,10 @@ done
 Expected: a non-zero package count for each platform; a missing platform key
 fails loudly. For the provenance use `.Provenance` the same way.
 
-On a per-architecture digest (an index holding one platform plus its
-attestation manifest) buildx prints `.SBOM` and `.Provenance` unkeyed, so drop
-the `index`:
+On a per-architecture build index (for 0.7.0 and earlier, its digest is in the
+`publish-image` run log; an index holding one platform plus its attestation
+manifest), buildx prints `.SBOM` and `.Provenance` unkeyed, so drop the
+`index`. The plain platform digests found from the tag do not carry these:
 
 ```bash
 docker buildx imagetools inspect "$image@<per-arch-digest>" \
@@ -139,18 +176,22 @@ the manifest list's signature covers them.
 
 ## GitHub Release assets
 
-The SBOM files attached to the GitHub Release have build provenance from the
-`release.yml` workflow:
+From 0.7.1 the SBOM files attached to the GitHub Release are the very files in
+the Central bundle: the `publish-central.yml` workflow copies them from the
+bundle it uploaded and asserts the SHA-256 of each matches. They carry the
+build provenance of that workflow:
 
 ```bash
 gh release download v<version> --repo AindriuB/data-prism --pattern '*-cyclonedx.json'
 gh attestation verify data-prism-core-<version>-cyclonedx.json \
   --repo AindriuB/data-prism \
-  --signer-workflow AindriuB/data-prism/.github/workflows/release.yml
+  --signer-workflow AindriuB/data-prism/.github/workflows/publish-central.yml
 ```
 
-Expected identity: the `release.yml` workflow of `AindriuB/data-prism`, run
-from the `v<version>` tag.
+Expected identity: the `publish-central.yml` workflow of `AindriuB/data-prism`,
+run from the `v<version>` tag. For 0.7.0 and earlier the release assets came
+from a second build in `release.yml` and differ byte for byte from Central's;
+verify them with `--signer-workflow AindriuB/data-prism/.github/workflows/release.yml`.
 
 ## What this does and does not prove
 

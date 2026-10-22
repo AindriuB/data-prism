@@ -60,23 +60,51 @@ public final class SourceValues {
 
     private static void descend(JsonNode value, FieldMetadata md, FieldMetadataResolver resolver,
                                 Set<String> out, int depth) {
-        Class<?> nested = md.elementType() != null && md.elementType() != Object.class
-                ? md.elementType()
-                : md.valueType();
-        if (nested == null || !resolver.descendable(nested)) {
-            return;
-        }
         if (value.isObject()) {
-            collect((ObjectNode) value, nested, resolver, out, depth + 1);
+            Class<?> nested = nestedType(md, false);
+            if (nested != null && resolver.descendable(nested)) {
+                collect((ObjectNode) value, nested, resolver, out, depth + 1);
+            }
             return;
         }
         if (value.isArray()) {
+            Class<?> nested = nestedType(md, true);
+            boolean follow = nested != null && resolver.descendable(nested);
             value.forEach(element -> {
-                if (element.isObject()) {
+                if (element.isObject() && follow) {
                     collect((ObjectNode) element, nested, resolver, out, depth + 1);
+                } else if (element.isArray()) {
+                    addScalarsOfObjects(element, out);
                 }
             });
         }
+    }
+
+    /**
+     * An object inside an array nested in the field's array has no type that can be determined, and
+     * the scrubber treats it as an unclassified structure. So every scalar under it is prohibited.
+     */
+    private static void addScalarsOfObjects(JsonNode node, Set<String> out) {
+        if (node.isObject()) {
+            addScalars(node, out);
+        } else if (node.isArray()) {
+            node.forEach(child -> addScalarsOfObjects(child, out));
+        }
+    }
+
+    /**
+     * The type a nested value is read with, by one rule shared (as a copy) with {@code JsonTreeScrubbingEngine}
+     * and the configured-JSON shape guard. An object value takes the field's own {@code valueType()}: a
+     * user generic or a map is that object, not the type argument it carries. Only an {@code Optional}
+     * is transparent. An element of an array value takes {@code elementType()} when one is stated.
+     */
+    private static Class<?> nestedType(FieldMetadata md, boolean element) {
+        Class<?> elementType = md.elementType();
+        boolean stated = elementType != null && elementType != Object.class;
+        if (element) {
+            return stated ? elementType : md.valueType();
+        }
+        return md.valueType() == java.util.Optional.class && stated ? elementType : md.valueType();
     }
 
     /** Every scalar under this node, so a sensitive collection contributes each element. */

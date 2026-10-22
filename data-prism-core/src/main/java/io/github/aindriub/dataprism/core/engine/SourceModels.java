@@ -57,6 +57,15 @@ public final class SourceModels {
 
     public static final String CODE = "SOURCE_MODEL_NOT_A_RECORD";
 
+    /** A record declaring type parameters, or a component whose declared type is a parameterized user type. */
+    public static final String GENERIC_CODE = "SOURCE_MODEL_GENERIC";
+
+    /** A JDK map whose value type contains a record at any depth. */
+    public static final String MAP_OF_RECORD_CODE = "SOURCE_MODEL_MAP_OF_RECORD";
+
+    /** A record at array level two or deeper: inside a collection or array that is itself inside one. */
+    public static final String NESTED_COLLECTION_OF_RECORD_CODE = "SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD";
+
     private SourceModels() {
     }
 
@@ -69,7 +78,7 @@ public final class SourceModels {
         if (!type.isRecord()) {
             throw refusal(type);
         }
-        walk(type, new HashSet<>());
+        walk(type, new HashSet<>(), null);
     }
 
     /**
@@ -91,6 +100,9 @@ public final class SourceModels {
      */
     static void refuseSerializer(Class<?> type, ValueSerializer<?> serializer) {
         if (type.isRecord()) {
+            if (type.getTypeParameters().length > 0) {
+                throw genericRefusal(null, type);
+            }
             refuseForeignProperties(type, serializer);
             return;
         }
@@ -206,17 +218,30 @@ public final class SourceModels {
         return loader == null || loader == ClassLoader.getPlatformClassLoader();
     }
 
-    private static void walk(Type type, Set<Object> seen) {
+    /**
+     * @param where the {@code Model.field} being walked, or null at the top level; it prefixes the
+     *              message of a refusal so the author can find the component
+     */
+    private static void walk(Type type, Set<Object> seen, String where) {
         if (type instanceof Class<?> c) {
             if (c.isArray()) {
-                walk(c.getComponentType(), seen);
+                walk(c.getComponentType(), seen, where);
             } else if (c.isRecord()) {
+                if (c.getTypeParameters().length > 0) {
+                    throw genericRefusal(where, c);
+                }
                 if (seen.add(c)) {
-                    // Ask the reader to build it: the serializer modifier compares its properties.
-                    SourceTree.refuseIfReadByGetters(c);
+                    // Components first, so a refusal names the component; then ask the reader to
+                    // build it: the serializer modifier compares its properties.
                     for (RecordComponent component : c.getRecordComponents()) {
-                        walk(component.getGenericType(), seen);
+                        String componentWhere = simpleName(c) + "." + component.getName();
+                        walk(component.getGenericType(), seen, componentWhere);
+                        // After the walk, so a generic or a map of records keeps its own code.
+                        if (recordBeyondFirstArray(component.getGenericType(), 0, new HashSet<>())) {
+                            throw nestedCollectionRefusal(componentWhere);
+                        }
                     }
+                    SourceTree.refuseIfReadByGetters(c);
                 }
             } else if (c.isEnum() && objectShaped(c)) {
                 throw refusal(c);
@@ -229,21 +254,119 @@ public final class SourceModels {
                 SourceTree.refuseIfReadByGetters(c);
             }
         } else if (type instanceof ParameterizedType p) {
-            walk(p.getRawType(), seen);
+            if (p.getRawType() instanceof Class<?> raw) {
+                if (!platform(raw)) {
+                    // Envelope<Leaf>, Box<Leaf>: what it holds is its own, not its argument's.
+                    throw genericRefusal(where, raw);
+                }
+                Type[] arguments = p.getActualTypeArguments();
+                if (java.util.Map.class.isAssignableFrom(raw) && arguments.length == 2
+                        && containsRecord(arguments[1], new HashSet<>())) {
+                    throw mapOfRecordRefusal(where, raw);
+                }
+            }
+            walk(p.getRawType(), seen, where);
             for (Type argument : p.getActualTypeArguments()) {
-                walk(argument, seen);
+                walk(argument, seen, where);
             }
         } else if (type instanceof GenericArrayType g) {
-            walk(g.getGenericComponentType(), seen);
+            walk(g.getGenericComponentType(), seen, where);
         } else if (type instanceof TypeVariable<?> v) {
             for (Type bound : seen.add(v) ? v.getBounds() : new Type[0]) {
-                walk(bound, seen);
+                walk(bound, seen, where);
             }
         } else if (type instanceof WildcardType w) {
             for (Type bound : w.getUpperBounds()) {
-                walk(bound, seen);
+                walk(bound, seen, where);
             }
         }
+    }
+
+    /** Whether a record appears anywhere in {@code type}: its arguments, array components and bounds. */
+    private static boolean containsRecord(Type type, Set<Object> seen) {
+        if (type instanceof Class<?> c) {
+            return c.isArray() ? containsRecord(c.getComponentType(), seen) : c.isRecord();
+        }
+        if (type instanceof ParameterizedType p) {
+            if (containsRecord(p.getRawType(), seen)) {
+                return true;
+            }
+            for (Type argument : p.getActualTypeArguments()) {
+                if (containsRecord(argument, seen)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (type instanceof GenericArrayType g) {
+            return containsRecord(g.getGenericComponentType(), seen);
+        }
+        if (type instanceof TypeVariable<?> v) {
+            if (seen.add(v)) {
+                for (Type bound : v.getBounds()) {
+                    if (containsRecord(bound, seen)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (type instanceof WildcardType w) {
+            for (Type bound : w.getUpperBounds()) {
+                if (containsRecord(bound, seen)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a record sits at array level two or deeper in {@code type}. An array class, a generic
+     * array and a parameterized JDK {@code Iterable} each add a level; an {@code Optional} adds none;
+     * type variables and wildcards are read through their upper bounds. Counting restarts inside each
+     * record, which {@link #walk} handles on its own.
+     */
+    private static boolean recordBeyondFirstArray(Type type, int level, Set<Object> seen) {
+        if (type instanceof Class<?> c) {
+            if (c.isArray()) {
+                return recordBeyondFirstArray(c.getComponentType(), level + 1, seen);
+            }
+            return c.isRecord() && level >= 2;
+        }
+        if (type instanceof ParameterizedType p) {
+            int inner = level;
+            if (p.getRawType() instanceof Class<?> raw && Iterable.class.isAssignableFrom(raw)) {
+                inner = level + 1;
+            }
+            for (Type argument : p.getActualTypeArguments()) {
+                if (recordBeyondFirstArray(argument, inner, seen)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (type instanceof GenericArrayType g) {
+            return recordBeyondFirstArray(g.getGenericComponentType(), level + 1, seen);
+        }
+        if (type instanceof TypeVariable<?> v) {
+            if (seen.add(v)) {
+                for (Type bound : v.getBounds()) {
+                    if (recordBeyondFirstArray(bound, level, seen)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (type instanceof WildcardType w) {
+            for (Type bound : w.getUpperBounds()) {
+                if (recordBeyondFirstArray(bound, level, seen)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean allowedLeaf(Class<?> c) {
@@ -265,6 +388,26 @@ public final class SourceModels {
         }
         String name = type.getName();
         return name.substring(name.lastIndexOf('.') + 1);
+    }
+
+    private static String at(String where) {
+        return where == null ? "" : where + ": ";
+    }
+
+    private static PrivacyRefusedException genericRefusal(String where, Class<?> type) {
+        return new PrivacyRefusedException(GENERIC_CODE, "$",
+                at(where) + simpleName(type) + " is generic; source models must not be");
+    }
+
+    private static PrivacyRefusedException mapOfRecordRefusal(String where, Class<?> map) {
+        return new PrivacyRefusedException(MAP_OF_RECORD_CODE, "$",
+                at(where) + simpleName(map) + " values must not be records; source models must not hold them");
+    }
+
+    private static PrivacyRefusedException nestedCollectionRefusal(String where) {
+        return new PrivacyRefusedException(NESTED_COLLECTION_OF_RECORD_CODE, "$",
+                at(where) + "a record must not sit inside a collection inside a collection;"
+                        + " source models must not hold one");
     }
 
     private static PrivacyRefusedException refusal(Class<?> type) {

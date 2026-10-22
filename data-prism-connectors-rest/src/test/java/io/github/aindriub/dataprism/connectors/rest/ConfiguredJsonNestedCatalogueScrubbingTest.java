@@ -353,6 +353,45 @@ class ConfiguredJsonNestedCatalogueScrubbingTest {
                 .hasMessageNotContaining("123-45-6789");
     }
 
+    @Test
+    @DisplayName("a leaf field holding an object at any array depth refuses with NESTED_LEAF_NOT_SCALAR, "
+            + "naming the outermost index")
+    void objectInsideAnInnerArrayAtALeafRefuses() {
+        ConfiguredJsonSource source = sourceWithAddress();
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve("und");
+        ConfiguredJsonScrubbingEngine engine = engineFor(source, vocabulary);
+
+        ObjectNode body = body("""
+                {"id":"CUST-1","address":{"line1":"123 Main St","ssn":["111-11-1111",[{"name":"Zelda Invented-Probe"}]]}}
+                """);
+
+        assertThatThrownBy(() -> engine.scrub(
+                new ConfiguredJsonPayload("customer-with-address", body), context(vocabulary)))
+                .isInstanceOf(PrivacyRefusedException.class)
+                .hasMessageContaining(ConfiguredJsonNestedLeafShapeGuard.CODE)
+                .hasMessageContaining("$.address.ssn[1]")
+                .hasMessageNotContaining("Zelda Invented-Probe");
+    }
+
+    @Test
+    @DisplayName("a `nested:` field whose element is an array is still refused with NESTED_FIELD_NOT_STRUCTURED")
+    void arrayElementAtNestedFieldStillRefuses() {
+        ConfiguredJsonSource source = sourceWithAddress();
+        Vocabulary vocabulary = VocabularyRegistry.withBuiltIns().resolve("und");
+        ConfiguredJsonScrubbingEngine engine = engineFor(source, vocabulary);
+
+        ObjectNode body = body("""
+                {"id":"CUST-1","address":[[{"line1":"123 Main St","ssn":"111-11-1111"}]]}
+                """);
+
+        assertThatThrownBy(() -> engine.scrub(
+                new ConfiguredJsonPayload("customer-with-address", body), context(vocabulary)))
+                .isInstanceOf(PrivacyRefusedException.class)
+                .hasMessageContaining(ConfiguredJsonNestedLeafShapeGuard.STRUCTURE_CODE)
+                .hasMessageContaining("address[0]")
+                .hasMessageNotContaining("111-11-1111");
+    }
+
     /**
      * A second, independent source whose Nth nested catalogue shares the exact
      * same minted {@code Class} token as {@link #sourceWithAddress()}'s Nth

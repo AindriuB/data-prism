@@ -344,11 +344,23 @@ fixture source shares a single id:
     The response type, and every user type nested inside it, must be a Java
     `record`. Enums, JDK types (`String`, numbers, `Instant`, `UUID`, ...),
     `JsonNode`, and collections, maps (with String, enum, number, UUID, date or
-    similar keys), `Optional`s and arrays of those are also fine. A record is read
+    similar keys, and values that are not records), `Optional`s and arrays of
+    those are also fine. A record is read
     by its components only; an extra `getX()` on it is not emitted. Any other
     class (a bean or POJO, a subclass of a collection, a `Throwable`), at any
     depth, is refused at startup with `SOURCE_MODEL_NOT_A_RECORD`, and again at
     runtime if one turns up behind an `Object`- or interface-typed component.
+    A source model must not be generic: a record that declares type parameters,
+    or a component of a parameterized user type (`Envelope<Leaf>`), is refused
+    with `SOURCE_MODEL_GENERIC`, because the fields it holds are its own and not
+    its type argument's. A map's values must not be records, at any depth
+    (`Map<String, Leaf>`, `Map<String, List<Leaf>>`): that is refused with
+    `SOURCE_MODEL_MAP_OF_RECORD`, since the keys are data and are not classified.
+    Use a list of records, or a record with named fields, instead.
+    A record must not sit inside a collection inside a collection
+    (`List<List<Leaf>>`, `Leaf[][]`, `List<Leaf[]>`, `Set<List<Leaf>>`): that is
+    refused with `SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`, since a field's own
+    policy cannot tell what the inner arrays hold. Wrap the inner list in a record.
     A `@JsonSerialize(using=...)` on a record or its components, `@JsonAnyGetter`
     and `@JsonValue` are the model author's explicit choice and stay allowed (the
     engine still classifies what they produce); `@JsonProperty` or `@JsonGetter` on
@@ -554,7 +566,7 @@ depending on Data Prism:
 ```xml
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <data-prism.version>0.7.0</data-prism.version>
+    <data-prism.version>0.7.1</data-prism.version>
     <spring-boot.version>4.1.1</spring-boot.version>
   </properties>
 
@@ -623,6 +635,48 @@ that exist only so the Maven reactor builds the packaged artifacts this
 module's own smoke test starts as subprocesses and drives, and
 `spring-boot-test` for its `ApplicationContextRunner` test. A consumer's
 extension pom has no reason to carry the first five.)
+
+Every application that embeds `data-prism-spring-boot-starter` must manage its
+own embedded Tomcat version, unless its pom inherits `io.github.aindriub:data-prism`.
+The `dependencyManagement` of this repository's parent pom is not published to
+consumers of the starter (Maven 3 does not apply a dependency's own management
+to the consumer), so a bare consumer resolves whatever its own Spring Boot BOM
+manages, as it does for Jackson, whose `jackson-bom` import the snippet above
+also carries for that reason. Spring Boot 4.1.1 manages Tomcat `11.0.24`, which
+is affected by GHSA-9xv2-5v5q-p794 (CVE-2026-65905), GHSA-gcx9-497g-6cp6
+(CVE-2026-65182) and GHSA-h3x4-894j-xpx5 (CVE-2026-68525), fixed in `11.0.25`.
+Until Spring Boot manages a fixed version, manage the `org.apache.tomcat.embed`
+artifacts at `11.0.25` or later, ahead of the Spring Boot BOM import:
+
+```xml
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-core</artifactId>
+        <version>11.0.27</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-el</artifactId>
+        <version>11.0.27</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-websocket</artifactId>
+        <version>11.0.27</version>
+      </dependency>
+      <!-- then the spring-boot-dependencies import, as above -->
+    </dependencies>
+  </dependencyManagement>
+```
+
+An application that inherits `spring-boot-starter-parent` can instead set the
+`tomcat.version` property. The adapter jar built from the snippet above is not
+affected, because it resolves no Tomcat.
+
+The Tomcat fragment above is not one of the two blocks described as checked
+below; it was not extracted or built.
 
 What has been checked, and what has not (recorded 2026-10-07, updated 2026-10-20). The two XML
 blocks in this section were extracted programmatically and pasted unmodified
@@ -771,7 +825,7 @@ the README's "Building and running" section:
 
 ```bash
 LOADER_PATH=/opt/data-prism/extensions \
-  java -jar data-prism-server/target/data-prism-server-0.7.0.jar \
+  java -jar data-prism-server/target/data-prism-server-0.7.1.jar \
   --spring.config.additional-location=file:/etc/data-prism/application.yaml
 ```
 

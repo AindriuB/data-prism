@@ -269,7 +269,7 @@ public final class ReidentificationService {
             try {
                 audit.record(entry(caller, request, purpose, caseId, "DENY:TOO_MANY_PENDING", "", ""));
             } catch (RuntimeException auditDown) {
-                return new ReidentificationOutcome.Refused("AUDIT_UNAVAILABLE");
+                return denialUnaudited();
             }
             return new ReidentificationOutcome.Refused("TOO_MANY_PENDING");
         }
@@ -303,7 +303,9 @@ public final class ReidentificationService {
 
     private ReidentificationOutcome refuseApproval(AuthenticatedCaller caller, ApprovalRequest approval,
                                                    String approvalId, String code, boolean approving) {
-        auditDeny(caller, approval, approvalId, code, approving, UUID.randomUUID().toString());
+        if (!auditDeny(caller, approval, approvalId, code, approving, UUID.randomUUID().toString())) {
+            return denialUnaudited();
+        }
         return new ReidentificationOutcome.Refused(code);
     }
 
@@ -320,7 +322,7 @@ public final class ReidentificationService {
                     Map.of(), approvalId == null ? "" : approvalId, approving ? caller.principalId() : ""));
             return true;
         } catch (RuntimeException auditDown) {
-            // still a refusal
+            // the caller decides what to answer: a linked DENY keeps its code, any other is AUDIT_UNAVAILABLE
             return false;
         }
     }
@@ -331,9 +333,15 @@ public final class ReidentificationService {
         try {
             audit.record(entry(caller, request, purpose, caseId, "DENY:" + code, approvalId, approverId));
         } catch (RuntimeException auditDown) {
-            // still a refusal
+            return denialUnaudited();
         }
         return new ReidentificationOutcome.Refused(code);
+    }
+
+    /** A refusal that could not be recorded is not answered with its own code: nothing would show it was made. */
+    private ReidentificationOutcome denialUnaudited() {
+        metrics.increment(Metric.DENIAL_AUDIT_UNAVAILABLE);
+        return new ReidentificationOutcome.Refused("AUDIT_UNAVAILABLE");
     }
 
     private void record(ApprovalRequest approval, String decision, String approvalId,
