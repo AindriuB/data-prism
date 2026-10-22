@@ -128,9 +128,22 @@ class LinkKeysTest {
     @Test
     void aNullPseudonymisationKeyIdRefuses() {
         MapKeys provider = new MapKeys().with("k1", material(1, 32));
-        assertThatThrownBy(() -> new LinkKeys(provider, "k1", null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", null))
+                .isInstanceOf(IllegalStateException.class).hasMessageStartingWith("LINK_KEY_SHARED");
         assertThatThrownBy(() -> new LinkKeys(provider, "k1", null, () -> Set.of("k1")))
-                .isInstanceOf(NullPointerException.class);
+                .hasMessageStartingWith("LINK_KEY_SHARED");
+    }
+
+    @Test
+    void anUnresolvablePseudonymisationKeyRefuses() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32));
+        assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo-ref-9"))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
+                        .doesNotContain("pseudo-ref-9").doesNotContain(SENTINEL))
+                .hasNoCause();
+        assertThatThrownBy(() -> new LinkKeys(id -> "k1".equals(id) ? material(1, 32) : null, "k1", "pseudo-key"))
+                .hasMessageStartingWith("LINK_KEY_UNRESOLVED");
     }
 
     @Test
@@ -160,7 +173,7 @@ class LinkKeysTest {
     void theConstructorDoesNotMutateTheProvidersArray() {
         byte[] held = material(1, 32);
         byte[] before = held.clone();
-        new LinkKeys(id -> "k1".equals(id) ? held : null, "k1", "pseudo-key");
+        new LinkKeys(id -> "k1".equals(id) ? held : material(200, 32), "k1", "pseudo-key");
         assertThat(held).isEqualTo(before);
     }
 
@@ -253,9 +266,9 @@ class LinkKeysTest {
     @Test
     void heldKeyIdsReportsTheProvidersSet() {
         MapKeys provider = new MapKeys().with("old", material(1, 32)).with("new", material(2, 32));
-        assertThat(new LinkKeys(provider, "new", "p", () -> Set.of("old", "new")).heldKeyIds())
+        assertThat(new LinkKeys(provider, "new", "pseudo-key", () -> Set.of("old", "new")).heldKeyIds())
                 .containsExactly("new", "old");
-        assertThat(new LinkKeys(provider, "new", "p").heldKeyIds()).containsExactly("new");
+        assertThat(new LinkKeys(provider, "new", "pseudo-key").heldKeyIds()).containsExactly("new");
     }
 
     // ---- known answers ----

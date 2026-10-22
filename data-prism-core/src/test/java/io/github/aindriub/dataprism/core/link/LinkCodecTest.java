@@ -497,7 +497,7 @@ class LinkCodecTest {
     void aTokenSealedUnderThePseudonymisationKeyIsUnknownKey() {
         MapKeys both = new MapKeys().with("k1", material(1, 32)).with("pseudo", material(9, 32));
         LinkCodec issuer = new LinkCodec(settings("pseudo", true, Duration.ofSeconds(30)),
-                new LinkKeys(both, "pseudo", "other"), clock);
+                new LinkKeys(both, "pseudo", "pseudo-key"), clock);
         String token = issuer.seal(follow(5), binding).orElseThrow().token();
         java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
         LinkCodec verifier = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
@@ -512,9 +512,9 @@ class LinkCodecTest {
     void aKeyTheProviderHoldsButHeldKeyIdsOmitsIsUnknownKey() {
         MapKeys both = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
         String token = new LinkCodec(settings("k2", true, Duration.ofSeconds(30)),
-                new LinkKeys(both, "k2", "pseudo"), clock).seal(follow(5), binding).orElseThrow().token();
+                new LinkKeys(both, "k2", "pseudo-key"), clock).seal(follow(5), binding).orElseThrow().token();
         LinkCodec verifier = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
-                new LinkKeys(both, "k1", "pseudo", () -> Set.of("k1")), clock);
+                new LinkKeys(both, "k1", "pseudo-key", () -> Set.of("k1")), clock);
         assertThat(refused(verifier.open(token, binding, follows())).reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
     }
 

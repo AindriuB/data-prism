@@ -54,7 +54,10 @@ public final class LinkKeys {
                     Supplier<Set<String>> held) {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.currentKeyId = Objects.requireNonNull(currentKeyId, "currentKeyId");
-        this.pseudonymisationKeyId = Objects.requireNonNull(pseudonymisationKeyId, "pseudonymisationKeyId");
+        if (pseudonymisationKeyId == null) {
+            throw new IllegalStateException("LINK_KEY_SHARED: the pseudonymisation key id setting is required");
+        }
+        this.pseudonymisationKeyId = pseudonymisationKeyId;
         if (!LinkSettings.validKeyId(currentKeyId)) {
             throw new IllegalArgumentException(
                     "INVALID_LINK_LIMIT: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
@@ -69,6 +72,10 @@ public final class LinkKeys {
                     "LINK_KEY_SHARED: the held key ids must not include the pseudonymisation key id");
         }
         byte[] pseudonymisationMaterial = resolve(pseudonymisationKeyId);
+        if (pseudonymisationMaterial == null) {
+            throw new IllegalStateException(
+                    "LINK_KEY_UNRESOLVED: the pseudonymisation key id setting could not be resolved");
+        }
         for (String id : declaredHeld()) {
             Resolution resolution = resolution(id);
             if (resolution.material == null) {
@@ -76,8 +83,7 @@ public final class LinkKeys {
                         ? "LINK_KEY_WEAK: the link key must be at least 32 bytes"
                         : "LINK_KEY_UNRESOLVED: the link key id could not be resolved");
             }
-            if (pseudonymisationMaterial != null
-                    && MessageDigest.isEqual(resolution.material, pseudonymisationMaterial)) {
+            if (MessageDigest.isEqual(resolution.material, pseudonymisationMaterial)) {
                 throw new IllegalStateException(
                         "LINK_KEY_SHARED: a link key must not share material with the pseudonymisation key");
             }
