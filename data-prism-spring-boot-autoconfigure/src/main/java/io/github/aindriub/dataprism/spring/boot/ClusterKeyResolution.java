@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Resolves the configured cluster and name keys through the reviewed {@link HmacKeyReferenceResolver}, the same way
@@ -44,10 +45,17 @@ final class ClusterKeyResolution {
      * @throws DataPrismConfigurationException with the code the register defines for the first failure
      */
     static Optional<ClusterKeys> resolve(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
+        return resolveLazily(properties, () -> resolver);
+    }
+
+    /** As above; the resolver is asked for only when a security key is set, so a solo member needs none. */
+    static Optional<ClusterKeys> resolveLazily(DataPrismProperties properties,
+                                         Supplier<HmacKeyReferenceResolver> resolverSupplier) {
         HazelcastProperties.Security security = properties.getHazelcast().getSecurity();
         if (!properties.getHazelcast().securitySet()) {
             return Optional.empty();
         }
+        HmacKeyReferenceResolver resolver = resolverSupplier.get();
         HazelcastProperties.ClusterKey cluster = security.getClusterKey();
         HazelcastProperties.NameKey name = security.getNameKey();
         List<Resolved> clusterKeys = new ArrayList<>();

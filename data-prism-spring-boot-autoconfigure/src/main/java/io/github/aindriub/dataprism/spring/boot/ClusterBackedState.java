@@ -51,8 +51,7 @@ class ClusterBackedState {
             ObjectProvider<HmacKeyReferenceResolver> keyResolver, ObjectProvider<PrivacyMetrics> metrics) {
         HazelcastProperties h = properties.getHazelcast();
         // Resolved before anything starts; the material lives only as long as ClusterKeys needs to copy it.
-        ClusterKeys keys = h.securitySet()
-                ? ClusterKeyResolution.resolve(properties, keyResolver.getObject()).orElse(null) : null;
+        ClusterKeys keys = ClusterKeyResolution.resolveLazily(properties, keyResolver::getObject).orElse(null);
         try {
             ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
@@ -64,13 +63,25 @@ class ClusterBackedState {
                         cluster::legacyEntries);
             } catch (RuntimeException | Error registrationFailed) {
                 // A member that was started here is not left running because a gauge would not register.
-                cluster.close();
+                closeSuppressing(cluster::close, registrationFailed);
                 throw registrationFailed;
             }
             return cluster;
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
             throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
+        }
+    }
+
+    /**
+     * Runs {@code close}; if it fails too, that failure is added to {@code failure} as suppressed, so the original
+     * is what propagates.
+     */
+    static void closeSuppressing(Runnable close, Throwable failure) {
+        try {
+            close.run();
+        } catch (RuntimeException | Error closeFailure) {
+            failure.addSuppressed(closeFailure);
         }
     }
 
