@@ -264,11 +264,19 @@ The decision is `DENY:LINK_INVALID`. The real reason must be recorded somewhere 
 
 | Disposition key | Information | Shape under OD-13 shape C |
 |---|---|---|
-| `link` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `ISSUED_IN_FUTURE`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `PAYLOAD_MISMATCH` | `REFUSED:LINK_<REASON>`, for example `REFUSED:LINK_AUTH_FAILED` |
+| `link` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `ISSUED_IN_FUTURE`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `PAYLOAD_MISMATCH`, and (task 242 review, 2026-10-22) `KEY_UNAVAILABLE` | `REFUSED:LINK_<REASON>`, for example `REFUSED:LINK_AUTH_FAILED`; `KEY_UNAVAILABLE` is `REFUSED:LINK_KEY_UNAVAILABLE` |
 | `link:id` | The link's 16 hex-character id, only when the link authenticated | Not recorded under C (a metric-free loss: issue and use are joined by `correlationId` of each call only) |
 | `link:attempts` | The principal's counted failures in the window | Not recorded under C; exposed as a metric without a principal label |
 
 The closed set has eleven reasons. A twelfth, `DEPTH_EXCEEDED`, existed only for rejected option (b) and is withdrawn (OD-200-8).
+
+Amendments from the external review of PR #154 (task 242, 2026-10-22), built in `core.link`:
+
+- `KEY_UNAVAILABLE` is a further reason, uncounted, audit value `REFUSED:LINK_KEY_UNAVAILABLE`. It means a key id the instance holds whose key the provider cannot serve at open time (failure, null, or under 32 bytes). The dummy-key AEAD still runs, so timing is unchanged. An id not held stays `UNKNOWN_KEY`, counted. The sealing side has the matching `SealResult.OmitReason.KEY_UNAVAILABLE`: `sealDetailed` returns `Omitted(KEY_UNAVAILABLE)` when the current key has vanished, and does not throw.
+- A `MALFORMED` decided after authentication (an authenticated payload that does not parse) is uncounted. `Refused.counted()` is authoritative; `LinkReason.counted()` is only the default for the reason. Callers gate the limiter on `refused.counted()`.
+- Follow payload rules, enforced at construction: a resolver is present only for `TRANSLATED` (`DIRECT` with a resolver and `TRANSLATED` without one are refused), and the namespace is 1 to 32 bytes (empty is refused).
+- Held key ids are filtered on every read: `heldKeyIds()` lists only ids that resolve to at least 32 bytes now, and every held key that resolves is compared with a SHA-256 digest of the pseudonymisation key by `MessageDigest.isEqual` at construction and on every resolution. A held key later found equal to the pseudonymisation key is not held, is `UNKNOWN_KEY` at open, and never appears in `heldKeyIds()`.
+- A null pseudonymisation key id refuses at construction (`LINK_KEY_SHARED`), and one that cannot be resolved refuses `LINK_KEY_UNRESOLVED`; there is no id-only fallback. A declared held id that does not resolve refuses `LINK_KEY_UNRESOLVED`, and one under 32 bytes `LINK_KEY_WEAK`.
 
 `AUTH_FAILED` covers forgery, tampering, wrong scope, wrong caller and wrong target, because the AEAD cannot say which input differed. That is a deliberate loss of operator diagnostics in exchange for no oracle (OD-3).
 
@@ -280,7 +288,7 @@ Never in audit, logs, metrics or exceptions: the token, the sealed payload, the 
 
 Purpose: stop a prompt-injected agent from grinding forged links. Properties required:
 
-- It counts only failures decided before the token authenticates: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY` and `AUTH_FAILED`. These are the failures a forger produces. An honest link naming a retired key has expired anyway under the rotation rule in section 3, so counting `UNKNOWN_KEY` does not penalise honest use.
+- It counts only failures decided before the token authenticates: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY` and `AUTH_FAILED`. A `MALFORMED` decided after authentication is not counted, and neither is `KEY_UNAVAILABLE`; `Refused.counted()` decides. These are the failures a forger produces. An honest link naming a retired key has expired anyway under the rotation rule in section 3, so counting `UNKNOWN_KEY` does not penalise honest use.
 - Classification follows the authentication step. A token that fails authentication is always recorded and counted as `AUTH_FAILED`, whatever its cleartext header says: a forged token that names a target the caller cannot see, an expiry in the past or a relation that is not declared is `AUTH_FAILED`, not `TARGET_NOT_PERMITTED`, `EXPIRED` or `RELATION_UNDECLARED`. Those, together with `ORIGIN_DRIFT`, `ISSUED_IN_FUTURE` and `PAYLOAD_MISMATCH` (the reason `DEPTH_EXCEEDED` is withdrawn, OD-200-8), are classified only after authentication succeeds, so they are reachable only with a genuine link, are never counted, and give a prober no information (a prober cannot reach them). Counting them would only lock out honest users, for example on clock skew between members.
 - It counts per principal within a scope, so one principal cannot lock the others out. The counter key is `HMAC(fingerprintKey, scopeId | principalId)` truncated and hex-encoded, so the map holds neither a case id nor a principal id (boundary 6).
 - The window is fixed and does not depend on a stored scope end, which does not exist: the counter entry is created at the first counted failure and stores the window start; the window ends when the clock passes that start plus `dataprism.links.invalid-attempt-window` (default `PT10M`), decided by comparing the stored start with the clock and never by an entry expiring (task 242; a shared limiter, task 264, must do the same), and increments do not extend it. In a single-node deployment the same semantics hold in process.
