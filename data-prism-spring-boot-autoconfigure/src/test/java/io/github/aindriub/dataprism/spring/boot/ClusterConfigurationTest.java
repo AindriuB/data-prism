@@ -278,6 +278,9 @@ class ClusterConfigurationTest {
         @Bean(destroyMethod = "close") PrivacyCluster suppliedCluster() {
             Config config = new Config().setClusterName(uniqueName());
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
+            // A supplied member without keys must be solo: loopback only.
+            config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+            config.setProperty("hazelcast.socket.bind.any", "false");
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
             return PrivacyCluster.using(Hazelcast.newHazelcastInstance(hardened(config)), false);
@@ -289,6 +292,8 @@ class ClusterConfigurationTest {
         @Bean PrivacyCluster suppliedCluster() {
             Config config = new Config().setClusterName(uniqueName());
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
+            config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+            config.setProperty("hazelcast.socket.bind.any", "false");
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(true);
             HazelcastInstance instance = Hazelcast.newHazelcastInstance(hardened(config));
