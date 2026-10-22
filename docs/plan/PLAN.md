@@ -49,7 +49,11 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 ### Open work and execution state (updated 2026-10-21)
 
-0.7.0 is released (2026-10-20); see `HISTORY.md`, "0.7.0 released". Every 0.7.0 task has landed on `main`. 0.8 is planned (task 215 and the core briefs); see "0.8 plan" below. A 0.7.1 security patch is planned from `v0.7.0`; see "0.7.1 plan" below.
+0.7.0 is released (2026-10-20); see `HISTORY.md`, "0.7.0 released". Every 0.7.0 task has landed on `main`. 0.8 is planned (task 215 and the core briefs); see "0.8 plan" below. 0.7.1 is released (2026-10-22, tag `v0.7.1` at `256d5e16`; Central, ghcr image and MCP registry); see "0.7.1 plan" below and `HISTORY.md`.
+
+##### Open: Sonatype Central File Count limit (before 0.8.0)
+
+Central warned on 2026-10-22 that the organisation reached its monthly File Count publishing limit; the grace period ends 2026-11-08. Decide before 0.8.0 whether to check the plan or limit in the portal, publish fewer modules, or release at most once a month.
 
 #### 0.7.0 release gate: done
 
@@ -63,7 +67,7 @@ Found after 0.7.0: a user-generic element type (a collection whose type argument
 - 0.7.1 is cut from `v0.7.0` with 265, 267, 244, 245, 257 and 268, through the release brief 266. Everything else stays in 0.8.0. 267 (records inside nested containers) was added by a second owner decision and 268 (embedded Tomcat 11.0.27, for three CRITICAL Tomcat advisories) by the coordinator, both on 2026-10-21. The tasks are cherry-picked from `main` after they merge there; their briefs carry a "0.7.1 backport" note.
 - Open owner decision, for the 0.7.1 release: whether to publish a GitHub security advisory for 0.7.0.
 
-Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266, which also waits for 268. 244 and 257 are done (2026-10-21, PR record/0.7.1-wave1-244); 265 and 267 are done (2026-10-21, PR record/0.7.1-wave2-265-267); 245 and 268 are done (2026-10-21, PR record/0.7.1-wave3-245-268). All six 0.7.1 fixes are now merged or in that PR, so 266 (the 0.7.1 release brief) is next. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
+Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266, which also waits for 268. 244 and 257 are done (2026-10-21, PR record/0.7.1-wave1-244); 265 and 267 are done (2026-10-21, PR record/0.7.1-wave2-265-267); 245 and 268 are done (2026-10-21, PR record/0.7.1-wave3-245-268). All six 0.7.1 fixes are now merged or in that PR, 266 (the 0.7.1 release) is done and released 2026-10-22; 261 and 213 are unblocked by it, and the `forward/0.7.1` PR carries the changelog, faq sentence and README citation to `main`. 244 must be built before 203 (it inserts into `Metric.java` and `PrivacyMetricsTest.java`). 245 no longer depends on 210 or 223 (both are 0.8-only); its new test files are narrowed instead, and whichever of 210, 222 or 223 lands later updates the shared fixtures. 248 depends on 265 (both edit `JsonTreeScrubbingEngine.java`). 261 depends on 266 (both edit `CHANGELOG.md`; 266 forward-ports the `[0.7.1]` section to `main`).
 
 0.7.1 backport commits recorded so far (cherry-pick onto `release/0.7.1` in this order, 266):
 
