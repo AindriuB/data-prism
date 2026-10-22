@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-22 | 266 | 0.7.1 tagged and published (Central, ghcr image, MCP registry); changelog, faq sentence and README citation forwarded to `main` | `## 2026-10-22 — 266: 0.7.1 released` |
 | 2026-10-21 | 245, 268 | Re-identification and operator denials answer `AUDIT_UNAVAILABLE` when the DENY cannot be written, and a failed resume leaves a linked DENY; embedded Tomcat managed at 11.0.27 for three CRITICAL advisories; both go to 0.7.1 | `## 2026-10-21 — 245 and 268: operator and re-identification denials answer AUDIT_UNAVAILABLE; embedded Tomcat managed at 11.0.27` |
 | 2026-10-21 | 265, 267 | Type arguments followed only for JDK collections, `Optional` and maps (`SOURCE_MODEL_GENERIC`, `SOURCE_MODEL_MAP_OF_RECORD`); records inside nested containers refused (`SOURCE_MODEL_NESTED_COLLECTION_OF_RECORD`) and a field's policy never applied to an inner array; both go to 0.7.1 | `## 2026-10-21 — 265 and 267: type arguments followed only for JDK collections; records inside nested containers refused` |
 | 2026-10-21 | 244, 257 | Tool denials answer `refused: AUDIT_UNAVAILABLE` and count `dataprism.audit.denial_unavailable` on every path; pinned and checked action refs, weekly advisory scan, one SBOM build, per-arch image signing; both go to 0.7.1 | `## 2026-10-21 — 244 and 257: tool denials answer AUDIT_UNAVAILABLE; CI and release supply chain` |
