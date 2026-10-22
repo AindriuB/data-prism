@@ -1,0 +1,237 @@
+package io.github.aindriub.dataprism.core.link;
+
+import io.github.aindriub.dataprism.core.link.LinkTestSupport.MapKeys;
+import org.junit.jupiter.api.Test;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
+
+import static io.github.aindriub.dataprism.core.link.LinkTestSupport.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class LinkKeysTest {
+
+    private static final HexFormat HEX = HexFormat.of();
+    private static final String SCOPE = "case-1";
+
+    // ---- construction ----
+
+    @Test
+    void anUnresolvableKeyIdRefuses() {
+        MapKeys empty = new MapKeys();
+        assertThatThrownBy(() -> new LinkKeys(empty, "k1", "pseudo-key"))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
+                        .doesNotContain(SENTINEL).doesNotContain("k1"))
+                .hasNoCause();
+    }
+
+    @Test
+    void aNullFromTheProviderIsUnresolved() {
+        assertThatThrownBy(() -> new LinkKeys(id -> null, "k1", "pseudo-key"))
+                .hasMessageStartingWith("LINK_KEY_UNRESOLVED");
+    }
+
+    @Test
+    void materialUnder32BytesRefuses() {
+        MapKeys weak = new MapKeys().with("k1", material(1, 31));
+        assertThatThrownBy(() -> new LinkKeys(weak, "k1", "pseudo-key"))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_WEAK"));
+        new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
+    }
+
+    @Test
+    void theSameIdAsThePseudonymisationKeyRefuses() {
+        MapKeys keys = new MapKeys().with("shared", material(1, 32));
+        assertThatThrownBy(() -> new LinkKeys(keys, "shared", "shared"))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED").doesNotContain("shared-"));
+    }
+
+    @Test
+    void theConstructorDoesNotMutateTheProvidersArray() {
+        byte[] held = material(1, 32);
+        byte[] before = held.clone();
+        new LinkKeys(id -> held, "k1", "pseudo-key");
+        assertThat(held).isEqualTo(before);
+    }
+
+    @Test
+    void settingsLimitsAreValidated() {
+        assertThatThrownBy(() -> new LinkSettings("k1", Optional.empty(), 615, true, Duration.ZERO))
+                .hasMessageStartingWith("INVALID_LINK_LIMIT");
+        assertThatThrownBy(() -> new LinkSettings("k1", Optional.empty(), 4097, true, Duration.ZERO))
+                .hasMessageStartingWith("INVALID_LINK_LIMIT");
+        new LinkSettings("k1", Optional.empty(), 616, true, Duration.ZERO);
+        new LinkSettings("k1", Optional.empty(), 4096, true, Duration.ofSeconds(30));
+        assertThatThrownBy(() -> new LinkSettings("k1", Optional.empty(), 1024, true, Duration.ofSeconds(31)))
+                .hasMessageStartingWith("INVALID_LINK_CLOCK_SKEW");
+        assertThatThrownBy(() -> new LinkSettings("k1", Optional.empty(), 1024, true, Duration.ofSeconds(-1)))
+                .hasMessageStartingWith("INVALID_LINK_CLOCK_SKEW");
+        assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(Duration.ZERO), 1024, true, Duration.ZERO))
+                .hasMessageStartingWith("INVALID_LINK_LIFETIME");
+        for (String bad : List.of("", "a".repeat(17), "has space", "dot.id", "slash/id", "é")) {
+            assertThatThrownBy(() -> new LinkSettings(bad, Optional.empty(), 1024, true, Duration.ZERO))
+                    .hasMessageStartingWith("INVALID_LINK_KEY_ID");
+        }
+        new LinkSettings("A_b-9".repeat(3) + "Z", Optional.empty(), 1024, true, Duration.ZERO);
+    }
+
+    @Test
+    void theCodecRefusesSettingsThatNameAnotherKey() {
+        MapKeys keys = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
+        assertThatThrownBy(() -> new LinkCodec(settings("k2", true, Duration.ZERO),
+                new LinkKeys(keys, "k1", "pseudo-key"), new TestClockHolder().clock))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static final class TestClockHolder {
+        final LinkTestSupport.TestClock clock = new LinkTestSupport.TestClock(T0);
+    }
+
+    // ---- derivation ----
+
+    @Test
+    void derivedKeysDifferPerLabelAndPerScope() throws Exception {
+        byte[] master = material(1, 32);
+        byte[] seal = LinkKeys.derive(master, LinkKeys.SEAL_LABEL, SCOPE);
+        byte[] fingerprint = LinkKeys.derive(master, LinkKeys.FINGERPRINT_LABEL, SCOPE);
+        byte[] caller = LinkKeys.derive(master, LinkKeys.CALLER_LABEL, SCOPE);
+        byte[] otherScope = LinkKeys.derive(master, LinkKeys.SEAL_LABEL, "case-2");
+        assertThat(List.of(HEX.formatHex(seal), HEX.formatHex(fingerprint), HEX.formatHex(caller),
+                HEX.formatHex(otherScope))).doesNotHaveDuplicates();
+        assertThat(seal).hasSize(32);
+        // And the main code agrees with an independent reading of the derivation.
+        assertThat(seal).isEqualTo(LinkVectors.derive(master, "dataprism/link/v1/seal", SCOPE));
+        assertThat(fingerprint).isEqualTo(LinkVectors.derive(master, "dataprism/link/v1/fingerprint", SCOPE));
+        assertThat(caller).isEqualTo(LinkVectors.derive(master, "dataprism/link/v1/caller", SCOPE));
+    }
+
+    @Test
+    void fingerprintsAndTagsAreKeyedPerScope() {
+        LinkKeys keys = new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
+        byte[] value = "subject-1".getBytes(StandardCharsets.UTF_8);
+        assertThat(keys.forScope(SCOPE).fingerprint(value)).hasSize(12)
+                .isEqualTo(keys.forScope(SCOPE).fingerprint(value))
+                .isNotEqualTo(keys.forScope("case-2").fingerprint(value));
+        assertThat(keys.forScope(SCOPE).catalogTag(List.of("a", "b"))).hasSize(16)
+                .isNotEqualTo(keys.forScope(SCOPE).catalogTag(List.of("b", "a")))
+                .isNotEqualTo(keys.forScope(SCOPE).catalogTag(List.of("ab")))
+                .isNotEqualTo(keys.forScope("case-2").catalogTag(List.of("a", "b")));
+        assertThat(keys.forScope(SCOPE).toString()).doesNotContain(HEX.formatHex(keys.forScope(SCOPE)
+                .fingerprint(value)));
+    }
+
+    @Test
+    void forScopeNamesNoReferenceWhenTheIdIsUnknown() {
+        LinkKeys keys = new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
+        assertThatThrownBy(() -> keys.forScope(SCOPE, "gone"))
+                .isInstanceOf(IllegalStateException.class)
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain(SENTINEL));
+    }
+
+    @Test
+    void theAttemptCounterKeyHoldsNeitherScopeNorPrincipal() {
+        LinkKeys keys = new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
+        String counter = keys.attemptCounterKey("case-1", "alice");
+        assertThat(counter).matches("[0-9a-f]{32}").doesNotContain("case").doesNotContain("alice");
+        assertThat(counter).isEqualTo(keys.attemptCounterKey("case-1", "alice"))
+                .isNotEqualTo(keys.attemptCounterKey("case-1", "bob"))
+                .isNotEqualTo(keys.attemptCounterKey("case-2", "alice"));
+        // The boundary between scope and principal is length-prefixed, not delimited.
+        assertThat(keys.attemptCounterKey("ab", "c")).isNotEqualTo(keys.attemptCounterKey("a", "bc"));
+    }
+
+    @Test
+    void heldKeyIdsReportsTheProvidersSet() {
+        MapKeys provider = new MapKeys().with("old", material(1, 32)).with("new", material(2, 32));
+        assertThat(new LinkKeys(provider, "new", "p", () -> Set.of("old", "new")).heldKeyIds())
+                .containsExactly("new", "old");
+        assertThat(new LinkKeys(provider, "new", "p").heldKeyIds()).containsExactly("new");
+    }
+
+    // ---- known answers ----
+
+    private static Properties expected() throws Exception {
+        Properties props = new Properties();
+        try (InputStream in = LinkKeysTest.class.getResourceAsStream("/link/vectors.properties")) {
+            assertThat(in).as("src/test/resources/link/vectors.properties").isNotNull();
+            props.load(in);
+        }
+        return props;
+    }
+
+    /** Regenerates every vector from the fixed inputs. */
+    static Properties regenerate() throws Exception {
+        TestClockHolder holder = new TestClockHolder();
+        byte[] master = material(1, 32);
+        MapKeys provider = new MapKeys().with("vec-key", master).with("pseudo-key", material(200, 32));
+        LinkSettings settings = new LinkSettings("vec-key", Optional.of(Duration.ofMinutes(30)), 1024, true,
+                Duration.ofSeconds(5));
+        byte[] nonce = new byte[12];
+        for (int i = 0; i < nonce.length; i++) {
+            nonce[i] = (byte) (0xA0 + i);
+        }
+        LinkKeys keys = new LinkKeys(provider, "vec-key", "pseudo-key");
+        LinkCodec codec = new LinkCodec(settings, keys, holder.clock, () -> nonce.clone());
+        LinkBinding binding = binding(SCOPE, "alice");
+        Properties out = new Properties();
+        out.setProperty("master.length", "32");
+        out.setProperty("seal.key", HEX.formatHex(LinkKeys.derive(master, LinkKeys.SEAL_LABEL, SCOPE)));
+        out.setProperty("fingerprint.key", HEX.formatHex(LinkKeys.derive(master, LinkKeys.FINGERPRINT_LABEL, SCOPE)));
+        out.setProperty("caller.key", HEX.formatHex(LinkKeys.derive(master, LinkKeys.CALLER_LABEL, SCOPE)));
+        out.setProperty("fingerprint", HEX.formatHex(keys.forScope(SCOPE).fingerprint("subject-1".getBytes(StandardCharsets.UTF_8))));
+        out.setProperty("catalog.tag", HEX.formatHex(keys.forScope(SCOPE).catalogTag(List.of("alpha", "beta"))));
+        out.setProperty("counter.key", keys.attemptCounterKey(SCOPE, "alice"));
+        out.setProperty("follow.token", codec.seal(follow("subject-1".getBytes(StandardCharsets.UTF_8), "source-one"),
+                binding).orElseThrow().token());
+        out.setProperty("page.token", codec.seal(page(), binding).orElseThrow().token());
+        return out;
+    }
+
+    @Test
+    void theVectorFilePinsTheDerivedKeysAndTwoSealedLinks() throws Exception {
+        Properties regenerated = regenerate();
+        String writeTo = System.getProperty("link.vectors.write");
+        if (writeTo != null) {
+            java.nio.file.Files.writeString(java.nio.file.Path.of(writeTo), render(regenerated));
+        }
+        Properties pinned = expected();
+        assertThat(regenerated.stringPropertyNames()).isEqualTo(pinned.stringPropertyNames());
+        for (String name : regenerated.stringPropertyNames()) {
+            assertThat(regenerated.getProperty(name)).as(name).isEqualTo(pinned.getProperty(name));
+        }
+    }
+
+    @Test
+    void thePinnedLinksOpenUnderTheFixedKey() throws Exception {
+        Properties pinned = expected();
+        byte[] master = material(1, 32);
+        byte[] plain = LinkVectors.decrypt(master, SCOPE, "alice", true,
+                java.util.Base64.getUrlDecoder().decode(pinned.getProperty("follow.token")));
+        assertThat(plain).hasSize(8 + 8 + 1 + 5 + 1 + 2 + 64);
+        byte[] pagePlain = LinkVectors.decrypt(master, SCOPE, "alice", true,
+                java.util.Base64.getUrlDecoder().decode(pinned.getProperty("page.token")));
+        assertThat(pagePlain.length).isEqualTo(8 + 8 + 1 + 6 + 5 + 1 + 2 + 11 + 16);
+        assertThat(Arrays.copyOfRange(pagePlain, pagePlain.length - 16, pagePlain.length))
+                .isEqualTo(material(90, 16));
+    }
+
+    private static String render(Properties props) {
+        StringBuilder sb = new StringBuilder("# Known-answer vectors for the sealed-link codec. Invented key material.\n");
+        sb.append("# Inputs: master = material(1,32), scope case-1, principal alice, nonce a0..ab, clock 2030-01-01T00:00:00Z.\n");
+        for (String name : new java.util.TreeSet<>(props.stringPropertyNames())) {
+            sb.append(name).append('=').append(props.getProperty(name)).append('\n');
+        }
+        return sb.toString();
+    }
+}
