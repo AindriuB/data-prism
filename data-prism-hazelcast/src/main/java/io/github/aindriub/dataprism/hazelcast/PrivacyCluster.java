@@ -15,11 +15,13 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
+import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -121,10 +123,12 @@ public final class PrivacyCluster implements AutoCloseable {
 
     private final PendingSweeper sweeper;
     private final java.time.Duration approvalSweepInterval;
+    private final ClusterKeys keys;
 
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
-                           java.time.Duration approvalSweepInterval) {
+                           java.time.Duration approvalSweepInterval, ClusterKeys keys) {
         this.instance = instance;
+        this.keys = keys;
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
         this.sweeper = new PendingSweeper(instance, approvalSweepInterval, java.time.Clock.systemUTC());
@@ -199,7 +203,7 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /** Entries found in the pre-0.8 maps by the latest membership check; 0 if none. Stands in for the metric. */
-    int legacyEntries() {
+    public int legacyEntries() {
         return legacyEntries.get();
     }
 
@@ -252,10 +256,54 @@ public final class PrivacyCluster implements AutoCloseable {
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
                                           java.time.Duration approvalSweepInterval) {
+        return embedded(membership, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, null);
+    }
+
+    /** As {@link #embedded(ClusterMembership, boolean)}, holding the cluster and name keys. */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          ClusterKeys keys) {
+        return embedded(membership, reidentificationEnabled, OptionalInt.empty(), keys);
+    }
+
+    /** As above, with the approval minimum. */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers, ClusterKeys keys) {
+        return embedded(membership, reidentificationEnabled, approvalMinimumMembers,
+                PendingSweeper.DEFAULT_INTERVAL, keys);
+    }
+
+    /**
+     * As above, holding the cluster and name keys. A {@code tcp-ip} or {@code kubernetes} membership needs them; a
+     * {@code none} membership (a solo member) starts with or without them.
+     *
+     * @param keys the keys every member of the cluster shares, or {@code null} for none
+     * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining membership without keys; nothing is
+     *                               started
+     */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          java.time.Duration approvalSweepInterval, ClusterKeys keys) {
         PendingSweeper.checked(approvalSweepInterval);
+        if (keys == null && !(membership.join() instanceof ClusterMembership.None)) {
+            throw missingKeys();
+        }
         return embedded(membership.toConfig(), reidentificationEnabled,
                 approvalMinimumMembers.isPresent() ? approvalMinimumMembers
-                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval);
+                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys);
+    }
+
+    private static PrivacyClusterRefusal missingKeys() {
+        return new PrivacyClusterRefusal(Code.MISSING_CLUSTER_KEY,
+                "a member that joins others needs the cluster key and the name key; none were supplied");
+    }
+
+    /** Whether the config names any way of finding other members. */
+    private static boolean joins(Config config) {
+        var join = config.getNetworkConfig().getJoin();
+        return join.getTcpIpConfig().isEnabled() || join.getKubernetesConfig().isEnabled()
+                || join.getAwsConfig().isEnabled() || join.getGcpConfig().isEnabled()
+                || join.getAzureConfig().isEnabled() || join.getEurekaConfig().isEnabled()
+                || join.getDiscoveryConfig().getDiscoveryStrategyConfigs().iterator().hasNext();
     }
 
     /**
@@ -434,7 +482,29 @@ public final class PrivacyCluster implements AutoCloseable {
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
                                           java.time.Duration approvalSweepInterval) {
+        return embedded(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, null);
+    }
+
+    /** As {@link #embedded(Config, boolean, OptionalInt, java.time.Duration)}, holding the cluster and name keys. */
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers, ClusterKeys keys) {
+        return embedded(config, reidentificationEnabled, approvalMinimumMembers, PendingSweeper.DEFAULT_INTERVAL,
+                keys);
+    }
+
+    /**
+     * As above, holding the cluster and name keys. A config that joins other members needs them.
+     *
+     * @param keys the keys every member of the cluster shares, or {@code null} for none
+     * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining config without keys; nothing is started
+     */
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          java.time.Duration approvalSweepInterval, ClusterKeys keys) {
         PendingSweeper.checked(approvalSweepInterval);
+        if (keys == null && joins(config)) {
+            throw missingKeys();
+        }
         HazelcastInstance started = Hazelcast.newHazelcastInstance(configure(config, approvalMinimumMembers));
         try {
             ClusterMembership.refuseUnsealedState(started);
@@ -443,7 +513,7 @@ public final class PrivacyCluster implements AutoCloseable {
             started.shutdown();
             throw refused;
         }
-        return new PrivacyCluster(started, reidentificationEnabled, approvalSweepInterval);
+        return new PrivacyCluster(started, reidentificationEnabled, approvalSweepInterval, keys);
     }
 
     /**
@@ -463,8 +533,29 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
                                        java.time.Duration approvalSweepInterval) {
+        return using(instance, reidentificationEnabled, approvalSweepInterval, null);
+    }
+
+    /** As {@link #using(HazelcastInstance, boolean)}, holding the cluster and name keys. */
+    public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
+                                       ClusterKeys keys) {
+        return using(instance, reidentificationEnabled, PendingSweeper.DEFAULT_INTERVAL, keys);
+    }
+
+    /**
+     * As above, holding the cluster and name keys. An instance whose config joins other members needs them.
+     *
+     * @param keys the keys every member of the cluster shares, or {@code null} for none
+     * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining instance without keys; the instance is
+     *                               left running
+     */
+    public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
+                                       java.time.Duration approvalSweepInterval, ClusterKeys keys) {
         PendingSweeper.checked(approvalSweepInterval);
         Config config = instance.getConfig();
+        if (keys == null && joins(config)) {
+            throw missingKeys();
+        }
         checkClusterName(config);
         checkNoAdvancedNetwork(config);
         var join = config.getNetworkConfig().getJoin();
@@ -474,7 +565,7 @@ public final class PrivacyCluster implements AutoCloseable {
         }
         checkInstanceSettings(config);
         ClusterMembership.refuseUnsealedState(instance, true);
-        return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval);
+        return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys);
     }
 
     /**
@@ -746,6 +837,14 @@ public final class PrivacyCluster implements AutoCloseable {
 
     public boolean reidentificationEnabled() {
         return reidentificationEnabled;
+    }
+
+    /**
+     * The keys this member was started with: empty for a solo member given none. Never logged; {@code ClusterKeys}
+     * prints ids only.
+     */
+    public Optional<ClusterKeys> keys() {
+        return Optional.ofNullable(keys);
     }
 
     @Override

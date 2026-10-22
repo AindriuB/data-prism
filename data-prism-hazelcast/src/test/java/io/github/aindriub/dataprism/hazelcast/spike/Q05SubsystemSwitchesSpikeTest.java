@@ -113,7 +113,13 @@ class Q05SubsystemSwitchesSpikeTest {
         // Superseded by task 221: 0.7 kept both as supplied; PrivacyCluster.embedded now forces them off.
         Config config = everythingOn(Spike.config(Spike.name("q5b"), SpikePorts.consecutive(1), List.of()));
         Spike.requirePhoneHomeOff(config);
-        cluster = PrivacyCluster.embedded(config, false);
+        byte[] cluster32 = new byte[32];
+        byte[] name32 = new byte[32];
+        java.util.Arrays.fill(cluster32, (byte) 1);
+        java.util.Arrays.fill(name32, (byte) 2);
+        cluster = PrivacyCluster.embedded(config, false, java.util.OptionalInt.empty(),
+                new io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys("spike-cluster", cluster32, null, null,
+                        null, null, "spike-name", name32));
         assertThat(reading(cluster.instance())).isEqualTo(Map.of("jet", "false", "userCodeDeployment", "false",
                 "userCodeNamespaces", "false", "phoneHome", "false", "sql", "JetDisabledException"));
     }

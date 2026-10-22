@@ -54,7 +54,7 @@ class IdentityMetricsTest {
         config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
         config.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
         notReidentifying = PrivacyCluster.embedded(config, false);
-        reidentifying = PrivacyCluster.using(notReidentifying.instance(), true);
+        reidentifying = PrivacyCluster.using(notReidentifying.instance(), true, TestMembers.KEYS);
     }
 
     @AfterAll

@@ -323,8 +323,8 @@ class ApprovalStoreContractTest {
     void concurrentCreatesFromTwoMembersNeverExceedTheCap() throws Exception {
         String name = "dataprism-approval-cap-" + System.nanoTime();
         int port = FreePorts.consecutive(2);
-        cluster = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false);
-        second = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false);
+        cluster = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, TestMembers.KEYS);
+        second = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, TestMembers.KEYS);
         assertThat(cluster.instance().getCluster().getMembers()).hasSize(2);
         ApprovalStore viaA = new HazelcastApprovalStore(cluster);
         ApprovalStore viaB = new HazelcastApprovalStore(second);
