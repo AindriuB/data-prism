@@ -102,4 +102,31 @@ class ClusterLegacyGaugeTest {
         ClusterBackedState.closeSuppressing(() -> { }, original);
         assertThat(original.getSuppressed()).isEmpty();
     }
+
+    @Configuration(proxyBeanMethods = false)
+    static class CachingKeys extends DataPrismAutoConfigurationTest.ReviewedHttpIntegrations {
+        static final Map<String, byte[]> CACHE = new ConcurrentHashMap<>();
+
+        @Override @Bean HmacKeyReferenceResolver keys() {
+            return (id, reference) -> CACHE.computeIfAbsent(reference, r -> {
+                byte[] out = new byte[32];
+                java.util.Arrays.fill(out, (byte) r.hashCode());
+                return out;
+            });
+        }
+    }
+
+    @Test
+    void theHmacKeyCheckLeavesACachingResolversArrayIntact() {
+        CachingKeys.CACHE.clear();
+        runner(CachingKeys.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(CachingKeys.CACHE).isNotEmpty();
+            CachingKeys.CACHE.forEach((reference, bytes) -> {
+                byte[] expected = new byte[32];
+                java.util.Arrays.fill(expected, (byte) reference.hashCode());
+                assertThat(bytes).as(reference).isEqualTo(expected);
+            });
+        });
+    }
 }
