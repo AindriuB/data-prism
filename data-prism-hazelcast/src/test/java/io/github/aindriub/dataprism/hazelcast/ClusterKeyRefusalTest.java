@@ -103,4 +103,41 @@ class ClusterKeyRefusalTest {
             assertThat(member.keys()).containsSame(TestMembers.KEYS);
         }
     }
+
+    private static Config withJoin(java.util.function.Consumer<com.hazelcast.config.JoinConfig> enable) {
+        Config config = new Config().setClusterName(TestMembers.uniqueName("keys"));
+        config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
+        config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
+        enable.accept(config.getNetworkConfig().getJoin());
+        return config;
+    }
+
+    /** An instance that only reports its config: the keys check refuses before anything else is asked of it. */
+    private static HazelcastInstance reporting(Config config) {
+        return (HazelcastInstance) java.lang.reflect.Proxy.newProxyInstance(
+                ClusterKeyRefusalTest.class.getClassLoader(), new Class<?>[] {HazelcastInstance.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("getConfig")) {
+                        return config;
+                    }
+                    throw new AssertionError("nothing but the config may be read before the refusal: "
+                            + method.getName());
+                });
+    }
+
+    @Test
+    void everyOtherWayOfJoiningNeedsKeysToo() {
+        List<Config> joins = List.of(
+                withJoin(j -> j.getAwsConfig().setEnabled(true)),
+                withJoin(j -> j.getGcpConfig().setEnabled(true)),
+                withJoin(j -> j.getAzureConfig().setEnabled(true)),
+                withJoin(j -> j.getEurekaConfig().setEnabled(true)),
+                withJoin(j -> j.getDiscoveryConfig().addDiscoveryStrategyConfig(
+                        new com.hazelcast.config.DiscoveryStrategyConfig("example.NoSuchStrategy"))));
+        for (Config config : joins) {
+            refusedAsMissing(catchThrowable(() -> PrivacyCluster.embedded(config, false)));
+            refusedAsMissing(catchThrowable(() -> PrivacyCluster.using(reporting(config), false)));
+        }
+        assertThat(Hazelcast.getAllHazelcastInstances()).isEmpty();
+    }
 }

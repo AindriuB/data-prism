@@ -88,6 +88,10 @@ spec:
               value: kubernetes
             - name: DATAPRISM_HAZELCAST_MEMBER_PORT
               value: "5701"
+            # Required: the member listens only here. Replace 10.0.*.* with your
+            # cluster's pod network; a pattern that matches every address is refused.
+            - name: DATAPRISM_HAZELCAST_MEMBER_INTERFACE
+              value: "10.0.*.*"
             - name: DATAPRISM_HAZELCAST_JOIN_KUBERNETES_NAMESPACE
               valueFrom:
                 fieldRef:

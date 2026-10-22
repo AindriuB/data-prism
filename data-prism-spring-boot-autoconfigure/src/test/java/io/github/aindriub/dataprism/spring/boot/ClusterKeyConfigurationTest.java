@@ -2,7 +2,6 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.Hazelcast;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
-import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,7 +47,7 @@ class ClusterKeyConfigurationTest {
             case "REF_WEAK" -> (LEAK + "weak-1").getBytes(StandardCharsets.UTF_8);
             case "REF_HMAC_TWIN" -> material("v1", "DATAPRISM_HMAC_KEY_REF");
             case "REF_FIXED" -> (LEAK + "fixed-material-0123456789abcdef").getBytes(StandardCharsets.UTF_8);
-            default -> (reference + ":" + id + ":resolved-key-material").getBytes(StandardCharsets.UTF_8);
+            default -> (LEAK + reference + ":" + id + ":resolved-key-material").getBytes(StandardCharsets.UTF_8);
         };
     }
 
@@ -172,8 +171,16 @@ class ClusterKeyConfigurationTest {
             row("CLUSTER_KEY_UNRESOLVED", "previous does not resolve", "cluster-key.previous", true, true,
                     "cluster-key.previous.key-id=cluster-0",
                     "cluster-key.previous.provider-reference=REF_UNRESOLVED"),
-            row("CLUSTER_KEY_UNRESOLVED", "key id with a dot", "cluster or name key id", true, true,
+            row("CLUSTER_KEY_UNRESOLVED", "key id with a dot", "cluster-key.key-id", true, true,
                     "cluster-key.key-id=cluster.1"),
+            row("CLUSTER_KEY_UNRESOLVED", "next key id with a dot", "cluster-key.next.key-id", true, true,
+                    "cluster-key.next.key-id=cluster.2", "cluster-key.next.environment-variable=DATAPRISM_NEXT_KEY_REF"),
+            row("NAME_KEY_UNRESOLVED", "name key id with a dot", "name-key.key-id", true, true,
+                    "name-key.key-id=name.1"),
+            row("LITERAL_SECRET_FORBIDDEN", "next key value", "cluster-key.next.value", true, true,
+                    "cluster-key.next.value=" + LEAK + "literal"),
+            row("LITERAL_SECRET_FORBIDDEN", "previous key value", "cluster-key.previous.value", true, true,
+                    "cluster-key.previous.value=" + LEAK + "literal"),
             row("NAME_KEY_UNRESOLVED", "name key does not resolve", "name-key", true, true,
                     "name-key.environment-variable=REF_UNRESOLVED"),
             row("CLUSTER_KEY_WEAK", "current under 32 bytes", "cluster-key", true, true,
@@ -301,15 +308,11 @@ class ClusterKeyConfigurationTest {
         p.put(SECURITY + "cluster-key.previous.environment-variable", "DATAPRISM_PREVIOUS_KEY_REF");
         runner("embedded", p).run(result -> {
             assertThat(result).hasNotFailed();
-            ClusterKeys keys = result.getBean(PrivacyCluster.class).keys().orElseThrow();
-            assertThat(keys.current().id()).isEqualTo("cluster-1");
-            assertThat(keys.current().material()).isEqualTo(material("cluster-1", "DATAPRISM_CLUSTER_KEY_REF"));
-            assertThat(keys.next().orElseThrow().id()).isEqualTo("cluster-2");
-            assertThat(keys.next().orElseThrow().material())
-                    .isEqualTo(material("cluster-2", "DATAPRISM_NEXT_KEY_REF"));
-            assertThat(keys.previous().orElseThrow().id()).isEqualTo("cluster-0");
-            assertThat(keys.nameKeyId()).isEqualTo("name-1");
-            assertThat(keys.nameKeyMaterial()).isEqualTo(material("name-1", "DATAPRISM_NAME_KEY_REF"));
+            PrivacyCluster.KeyIds ids = result.getBean(PrivacyCluster.class).keyIds().orElseThrow();
+            assertThat(ids.current()).isEqualTo("cluster-1");
+            assertThat(ids.next()).contains("cluster-2");
+            assertThat(ids.previous()).contains("cluster-0");
+            assertThat(ids.name()).isEqualTo("name-1");
         });
     }
 
@@ -320,7 +323,7 @@ class ClusterKeyConfigurationTest {
         p.put("dataprism.hazelcast.member.port", String.valueOf(ClusterConfigurationTest.freePort()));
         runner("embedded", p).run(result -> {
             assertThat(result).hasNotFailed();
-            assertThat(result.getBean(PrivacyCluster.class).keys()).isEmpty();
+            assertThat(result.getBean(PrivacyCluster.class).keyIds()).isEmpty();
         });
     }
 
@@ -364,9 +367,9 @@ class ClusterKeyConfigurationTest {
         p.put("dataprism.hazelcast.member.port", String.valueOf(port));
         runner("embedded", p).run(result -> {
             assertThat(result).hasNotFailed();
-            ClusterKeys keys = result.getBean(PrivacyCluster.class).keys().orElseThrow();
-            assertThat(keys.current().id()).isEqualTo("cluster-1");
-            assertThat(keys.nameKeyId()).isEqualTo("name-1");
+            PrivacyCluster.KeyIds ids = result.getBean(PrivacyCluster.class).keyIds().orElseThrow();
+            assertThat(ids.current()).isEqualTo("cluster-1");
+            assertThat(ids.name()).isEqualTo("name-1");
         });
     }
 
@@ -383,7 +386,7 @@ class ClusterKeyConfigurationTest {
                     .contains(SECURITY + "cluster-key.key-id");
         });
         for (String key : new String[] {"cluster-key.environment-variable", "cluster-key.provider-reference",
-                "cluster-key.value", "cluster-key.next.key-id", "cluster-key.next.environment-variable",
+                "cluster-key.value", "cluster-key.next.value", "cluster-key.previous.value", "cluster-key.next.key-id", "cluster-key.next.environment-variable",
                 "cluster-key.next.provider-reference", "cluster-key.previous.key-id",
                 "cluster-key.previous.environment-variable", "cluster-key.previous.provider-reference",
                 "name-key.key-id", "name-key.environment-variable", "name-key.provider-reference",

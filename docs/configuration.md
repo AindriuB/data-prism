@@ -202,6 +202,8 @@ Each key below is also described in the group table above. Defaults here are the
 | `dataprism.hazelcast.security.cluster-key.previous.key-id` | unset | Optional, for a rotation: the cluster key being retired. Needs a current key; must differ from every other key id |
 | `dataprism.hazelcast.security.cluster-key.previous.environment-variable` | unset | The environment variable that holds the `previous` key. Exactly one of this and `previous.provider-reference`, with a `previous.key-id` |
 | `dataprism.hazelcast.security.cluster-key.previous.provider-reference` | unset | A reference to the `previous` key in the key provider. Exactly one of this and `previous.environment-variable`, with a `previous.key-id` |
+| `dataprism.hazelcast.security.cluster-key.next.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
+| `dataprism.hazelcast.security.cluster-key.previous.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
 | `dataprism.hazelcast.security.name-key.key-id` | unset | The identifier of the name key, a separate key from every cluster key. Required for `tcp-ip` and `kubernetes`; optional with `none`, but then the cluster key is required too. No dot |
 | `dataprism.hazelcast.security.name-key.environment-variable` | unset | The environment variable that holds the name key. Exactly one of this and `provider-reference` |
 | `dataprism.hazelcast.security.name-key.provider-reference` | unset | A reference to the name key in the key provider. Exactly one of this and `environment-variable` |
@@ -575,9 +577,9 @@ phone-home are always off.
 - `members` with a mode other than `tcp-ip` is refused (`INVALID_CLUSTER_MEMBERS`),
   and `kubernetes.*` with a mode other than `kubernetes` is refused
   (`INVALID_KUBERNETES_JOIN`).
-- Without `member.interface`, a `tcp-ip` or `kubernetes` member binds every
-  network interface. Member traffic is not encrypted or authenticated, so isolate
-  it on a private network.
+- A `tcp-ip` or `kubernetes` member requires `member.interface` and listens only
+  there; one that matches every address is refused. Member traffic is not
+  encrypted or authenticated, so isolate it on a private network.
 
 Every cluster that joins other members needs a cluster key and a separate name
 key, each given as a key id and a reference. They are checked at startup, before a

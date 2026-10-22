@@ -840,11 +840,21 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /**
-     * The keys this member was started with: empty for a solo member given none. Never logged; {@code ClusterKeys}
-     * prints ids only.
+     * The keys this member was started with, for the stores of this package. Not public: key material does not
+     * leave this module.
      */
-    public Optional<ClusterKeys> keys() {
+    Optional<ClusterKeys> keys() {
         return Optional.ofNullable(keys);
+    }
+
+    /** The ids of the keys this member holds, never their material. Empty for a solo member given none. */
+    public Optional<KeyIds> keyIds() {
+        return keys == null ? Optional.empty() : Optional.of(new KeyIds(keys.current().id(),
+                keys.next().map(ClusterKeys.Key::id), keys.previous().map(ClusterKeys.Key::id), keys.nameKeyId()));
+    }
+
+    /** The ids of the held keys. */
+    public record KeyIds(String current, Optional<String> next, Optional<String> previous, String name) {
     }
 
     @Override

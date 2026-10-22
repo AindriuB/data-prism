@@ -335,6 +335,12 @@ public final class DataPrismPropertiesValidator {
         if (!blank(name.getValue())) {
             refuse("LITERAL_SECRET_FORBIDDEN", NAME_KEY + ".value is forbidden");
         }
+        if (!blank(cluster.getNext().getValue())) {
+            refuse("LITERAL_SECRET_FORBIDDEN", CLUSTER_KEY + ".next.value is forbidden");
+        }
+        if (!blank(cluster.getPrevious().getValue())) {
+            refuse("LITERAL_SECRET_FORBIDDEN", CLUSTER_KEY + ".previous.value is forbidden");
+        }
     }
 
     private static void rotationReference(String prefix, HazelcastProperties.RotationKey key) {
@@ -367,18 +373,9 @@ public final class DataPrismPropertiesValidator {
                     + "kubernetes joins");
         }
         try {
-            new io.github.aindriub.dataprism.hazelcast.ClusterMembership("interface-check",
-                    new io.github.aindriub.dataprism.hazelcast.ClusterMembership.TcpIp(java.util.List.of("127.0.0.1")),
-                    io.github.aindriub.dataprism.hazelcast.ClusterMembership.DEFAULT_PORT,
-                    java.util.Optional.of(h.getMember().getInterface()));
-        } catch (io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal refusal) {
-            String code = refusal.code().name();
-            if ("UNBOUNDED_MEMBER_INTERFACE".equals(code) || "INVALID_CLUSTER_INTERFACE".equals(code)) {
-                refuse(code, "dataprism.hazelcast.member.interface "
-                        + ("UNBOUNDED_MEMBER_INTERFACE".equals(code)
-                        ? "matches every address; name the network the cluster port may listen on"
-                        : "must be an IPv4 literal or a wildcard pattern such as 10.0.*.*"));
-            }
+            MemberInterfaceCheck.check(h.getMember().getInterface());
+        } catch (LinkageError hazelcastAbsent) {
+            // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
         }
     }
 

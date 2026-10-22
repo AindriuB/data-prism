@@ -53,6 +53,10 @@ final class ClusterKeyResolution {
         List<Resolved> clusterKeys = new ArrayList<>();
         Resolved nameKey = null;
         byte[] hmac = null;
+        usableId("CLUSTER_KEY", CLUSTER_KEY, cluster.getKeyId());
+        usableId("CLUSTER_KEY", CLUSTER_KEY + ".next", cluster.getNext().getKeyId());
+        usableId("CLUSTER_KEY", CLUSTER_KEY + ".previous", cluster.getPrevious().getKeyId());
+        usableId("NAME_KEY", NAME_KEY, name.getKeyId());
         try {
             clusterKeys.add(resolve(resolver, new Ref(CLUSTER_KEY, "CLUSTER_KEY", cluster.getKeyId(),
                     source(cluster.getEnvironmentVariable(), cluster.getProviderReference()))));
@@ -77,16 +81,10 @@ final class ClusterKeyResolution {
             Resolved current = clusterKeys.get(0);
             Resolved next = find(clusterKeys, CLUSTER_KEY + ".next");
             Resolved previous = find(clusterKeys, CLUSTER_KEY + ".previous");
-            try {
-                return Optional.of(new ClusterKeys(current.ref.keyId(), current.material,
-                        next == null ? null : next.ref.keyId(), next == null ? null : next.material,
-                        previous == null ? null : previous.ref.keyId(), previous == null ? null : previous.material,
-                        nameKey.ref.keyId(), nameKey.material));
-            } catch (IllegalArgumentException unusable) {
-                // A key id with a dot or a blank one: the keys are not usable as configured.
-                throw new DataPrismConfigurationException("CLUSTER_KEY_UNRESOLVED",
-                        "a cluster or name key id is not usable: ids must not be blank or contain a dot");
-            }
+            return Optional.of(new ClusterKeys(current.ref.keyId(), current.material,
+                    next == null ? null : next.ref.keyId(), next == null ? null : next.material,
+                    previous == null ? null : previous.ref.keyId(), previous == null ? null : previous.material,
+                    nameKey.ref.keyId(), nameKey.material));
         } finally {
             for (Resolved key : clusterKeys) {
                 Arrays.fill(key.material, (byte) 0);
@@ -97,6 +95,14 @@ final class ClusterKeyResolution {
             if (hmac != null) {
                 Arrays.fill(hmac, (byte) 0);
             }
+        }
+    }
+
+    /** A key id that is set must be usable: not blank, no dot. Checked per property before anything is resolved. */
+    private static void usableId(String area, String property, String keyId) {
+        if (keyId != null && (keyId.isBlank() || keyId.indexOf('.') >= 0)) {
+            throw new DataPrismConfigurationException(area + "_UNRESOLVED",
+                    property + ".key-id must not be blank or contain a dot");
         }
     }
 

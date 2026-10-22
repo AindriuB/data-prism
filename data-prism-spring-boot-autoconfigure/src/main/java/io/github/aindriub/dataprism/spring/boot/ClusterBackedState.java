@@ -59,8 +59,14 @@ class ClusterBackedState {
                     Optional.ofNullable(h.getMember().getInterface()));
             PrivacyCluster cluster = PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
                     approvalMinimum(h, properties), h.getApprovalSweepInterval(), keys);
-            metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
-                    cluster::legacyEntries);
+            try {
+                metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
+                        cluster::legacyEntries);
+            } catch (RuntimeException | Error registrationFailed) {
+                // A member that was started here is not left running because a gauge would not register.
+                cluster.close();
+                throw registrationFailed;
+            }
             return cluster;
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();

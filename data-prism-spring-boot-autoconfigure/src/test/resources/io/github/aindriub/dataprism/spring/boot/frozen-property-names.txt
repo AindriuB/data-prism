@@ -58,10 +58,12 @@ dataprism.hazelcast.security.cluster-key.next | bean | ro
 dataprism.hazelcast.security.cluster-key.next.environment-variable | java.lang.String | rw | null
 dataprism.hazelcast.security.cluster-key.next.key-id | java.lang.String | rw | null
 dataprism.hazelcast.security.cluster-key.next.provider-reference | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.next.value | java.lang.String | rw | null
 dataprism.hazelcast.security.cluster-key.previous | bean | ro
 dataprism.hazelcast.security.cluster-key.previous.environment-variable | java.lang.String | rw | null
 dataprism.hazelcast.security.cluster-key.previous.key-id | java.lang.String | rw | null
 dataprism.hazelcast.security.cluster-key.previous.provider-reference | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.previous.value | java.lang.String | rw | null
 dataprism.hazelcast.security.cluster-key.provider-reference | java.lang.String | rw | null
 dataprism.hazelcast.security.cluster-key.value | java.lang.String | rw | null
 dataprism.hazelcast.security.name-key | bean | ro

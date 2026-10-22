@@ -236,6 +236,8 @@ public class HazelcastProperties {
 
     /** A {@code next} or {@code previous} cluster key, by reference. */
     public static class RotationKey {
+        /** Refused if set: a literal rotation key is never accepted. */
+        private String value;
         /** Identifier of this rotation key; must differ from every other key id. Contains no dot. */
         private String keyId;
         /** Name of the environment variable holding this rotation key. Exactly one source is required with a key id. */
@@ -267,8 +269,17 @@ public class HazelcastProperties {
             providerReference = v;
         }
 
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String v) {
+            value = v;
+        }
+
         String firstSet(String prefix) {
-            return first(prefix, keyId, environmentVariable, providerReference);
+            String found = first(prefix, keyId, environmentVariable, providerReference);
+            return found == null && !isBlank(value) ? prefix + ".value" : found;
         }
     }
 

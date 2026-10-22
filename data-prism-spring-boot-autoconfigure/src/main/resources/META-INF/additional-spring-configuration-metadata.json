@@ -9,7 +9,7 @@
     {
       "name": "dataprism.hazelcast.member.interface",
       "type": "java.lang.String",
-      "description": "Network interface the member binds. Unset binds every interface for tcp-ip and kubernetes."
+      "description": "Network interface the member binds. Required for tcp-ip and kubernetes; refused with join mode none."
     }
   ],
   "hints": [
