@@ -3,8 +3,6 @@ package io.github.aindriub.dataprism.spring.boot;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 public class HazelcastProperties {
     /** embedded shares state across members that have joined one cluster; single-node keeps state per process. Required for a protected deployment, never defaulted. */
@@ -135,6 +133,11 @@ public class HazelcastProperties {
 
     /** The settings that secure the cluster: the cluster key (with rotation keys) and the separate name key. */
     public static class Security {
+        /** The property prefix of the cluster key, the one place it is written. */
+        public static final String CLUSTER_KEY_PROPERTY = "dataprism.hazelcast.security.cluster-key";
+        /** The property prefix of the name key. */
+        public static final String NAME_KEY_PROPERTY = "dataprism.hazelcast.security.name-key";
+
         private final ClusterKey clusterKey = new ClusterKey();
         private final NameKey nameKey = new NameKey();
 
@@ -149,8 +152,8 @@ public class HazelcastProperties {
         }
 
         String firstSet() {
-            String found = clusterKey.firstSet("dataprism.hazelcast.security.cluster-key");
-            return found != null ? found : nameKey.firstSet("dataprism.hazelcast.security.name-key");
+            String found = clusterKey.firstSet(CLUSTER_KEY_PROPERTY);
+            return found != null ? found : nameKey.firstSet(NAME_KEY_PROPERTY);
         }
     }
 

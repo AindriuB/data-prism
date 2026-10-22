@@ -51,7 +51,7 @@ class ClusterBackedState {
             ObjectProvider<HmacKeyReferenceResolver> keyResolver, ObjectProvider<PrivacyMetrics> metrics) {
         HazelcastProperties h = properties.getHazelcast();
         // Resolved before anything starts; the material lives only as long as ClusterKeys needs to copy it.
-        ClusterKeys keys = ClusterKeyResolution.resolveLazily(properties, keyResolver::getObject).orElse(null);
+        ClusterKeys keys = ClusterKeyResolution.resolve(properties, keyResolver::getObject).orElse(null);
         try {
             ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),

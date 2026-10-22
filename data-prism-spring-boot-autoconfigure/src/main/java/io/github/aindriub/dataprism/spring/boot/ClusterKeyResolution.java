@@ -22,14 +22,14 @@ import java.util.function.Supplier;
  * {@link ClusterKeys} has copied them in turn.
  */
 final class ClusterKeyResolution {
-    private static final String CLUSTER_KEY = "dataprism.hazelcast.security.cluster-key";
-    private static final String NAME_KEY = "dataprism.hazelcast.security.name-key";
+    private static final String CLUSTER_KEY = HazelcastProperties.Security.CLUSTER_KEY_PROPERTY;
+    private static final String NAME_KEY = HazelcastProperties.Security.NAME_KEY_PROPERTY;
 
     private ClusterKeyResolution() {
     }
 
     /** One configured key: the property it came from, the code family for its refusals, its id and its source. */
-    private record Ref(String property, String area, String keyId, String reference) {
+    private record Ref(String property, String area, String keyId, String reference, boolean provider) {
     }
 
     private static final class Resolved {
@@ -46,12 +46,8 @@ final class ClusterKeyResolution {
      * @return the keys, or empty when none are configured (only a solo member may have none)
      * @throws DataPrismConfigurationException with the code the register defines for the first failure
      */
-    static Optional<ClusterKeys> resolve(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
-        return resolveLazily(properties, () -> resolver);
-    }
-
-    /** As above; the resolver is asked for only when a security key is set, so a solo member needs none. */
-    static Optional<ClusterKeys> resolveLazily(DataPrismProperties properties,
+    /** The resolver is asked for only when a security key is set, so a solo member needs none. */
+    static Optional<ClusterKeys> resolve(DataPrismProperties properties,
                                          Supplier<HmacKeyReferenceResolver> resolverSupplier) {
         HazelcastProperties.Security security = properties.getHazelcast().getSecurity();
         if (!properties.getHazelcast().securitySet()) {
@@ -68,12 +64,12 @@ final class ClusterKeyResolution {
         usableId("CLUSTER_KEY", CLUSTER_KEY + ".previous", cluster.getPrevious().getKeyId());
         usableId("NAME_KEY", NAME_KEY, name.getKeyId());
         try {
-            clusterKeys.add(resolve(resolver, new Ref(CLUSTER_KEY, "CLUSTER_KEY", cluster.getKeyId(),
-                    source(cluster.getEnvironmentVariable(), cluster.getProviderReference()))));
+            clusterKeys.add(resolve(resolver, ref(CLUSTER_KEY, "CLUSTER_KEY", cluster.getKeyId(),
+                    cluster.getEnvironmentVariable(), cluster.getProviderReference())));
             rotation(resolver, clusterKeys, CLUSTER_KEY + ".next", cluster.getNext());
             rotation(resolver, clusterKeys, CLUSTER_KEY + ".previous", cluster.getPrevious());
-            nameKey = resolve(resolver, new Ref(NAME_KEY, "NAME_KEY", name.getKeyId(),
-                    source(name.getEnvironmentVariable(), name.getProviderReference())));
+            nameKey = resolve(resolver, ref(NAME_KEY, "NAME_KEY", name.getKeyId(),
+                    name.getEnvironmentVariable(), name.getProviderReference()));
 
             hmac = privacyKey(properties, resolver);
             for (Resolved key : clusterKeys) {
@@ -121,8 +117,8 @@ final class ClusterKeyResolution {
         if (key.getKeyId() == null || key.getKeyId().isBlank()) {
             return;
         }
-        out.add(resolve(resolver, new Ref(property, "CLUSTER_KEY", key.getKeyId(),
-                source(key.getEnvironmentVariable(), key.getProviderReference()))));
+        out.add(resolve(resolver, ref(property, "CLUSTER_KEY", key.getKeyId(),
+                key.getEnvironmentVariable(), key.getProviderReference())));
     }
 
     private static Resolved find(List<Resolved> keys, String property) {
@@ -134,15 +130,27 @@ final class ClusterKeyResolution {
         return null;
     }
 
-    private static String source(String environmentVariable, String providerReference) {
-        return environmentVariable == null || environmentVariable.isBlank() ? providerReference
-                : environmentVariable;
+    /** A key reference as configured: where it came from decides which resolver method reads it. */
+    private static Ref ref(String property, String area, String keyId, String environmentVariable,
+                           String providerReference) {
+        boolean environment = environmentVariable != null && !environmentVariable.isBlank();
+        return new Ref(property, area, keyId, environment ? environmentVariable : providerReference, !environment);
     }
 
     private static Resolved resolve(HmacKeyReferenceResolver resolver, Ref ref) {
         byte[] received;
         try {
-            received = resolver.resolve(ref.keyId(), ref.reference());
+            received = ref.provider() ? resolver.resolveProviderReference(ref.keyId(), ref.reference())
+                    : resolver.resolve(ref.keyId(), ref.reference());
+        } catch (DataPrismConfigurationException refused) {
+            if ("MISSING_KEY_PROVIDER".equals(refused.code())) {
+                // A resolver that cannot serve provider references: the property is named, the reference is not.
+                throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER", ref.property()
+                        + ".provider-reference needs a resolver that reads provider references, not only "
+                        + "environment variables");
+            }
+            throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
+                    ref.property() + " could not be resolved");
         } catch (RuntimeException unresolved) {
             throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
                     ref.property() + " could not be resolved");
@@ -165,13 +173,9 @@ final class ClusterKeyResolution {
     /** The privacy HMAC key, already validated before the cluster is built. */
     private static byte[] privacyKey(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
         PrivacyProperties.HmacKey hmac = properties.getPrivacy().getHmacKey();
-        String reference = hmac.getEnvironmentVariable();
-        if (reference == null || reference.isBlank()) {
-            reference = hmac.getProviderReference();
-        }
         byte[] received;
         try {
-            received = resolver.resolve(hmac.getKeyId(), reference);
+            received = HmacKeyReferences.resolve(resolver, hmac, hmac.getKeyId());
         } catch (RuntimeException unresolved) {
             received = null;
         }

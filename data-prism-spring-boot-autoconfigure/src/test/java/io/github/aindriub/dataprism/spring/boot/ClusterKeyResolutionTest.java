@@ -42,7 +42,7 @@ class ClusterKeyResolutionTest {
             return reference.equals("CLUSTER_REF") ? bytes('c') : bytes('n');
         };
         DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
-                () -> ClusterKeyResolution.resolve(properties(), resolver));
+                () -> ClusterKeyResolution.resolve(properties(), () -> resolver));
         assertThat(refused).isNotNull();
         assertThat(refused.getMessage()).startsWith("HMAC_KEY_UNRESOLVED:");
     }
@@ -55,7 +55,7 @@ class ClusterKeyResolutionTest {
             default -> bytes('n');
         };
         DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
-                () -> ClusterKeyResolution.resolve(properties(), resolver));
+                () -> ClusterKeyResolution.resolve(properties(), () -> resolver));
         assertThat(refused).isNotNull();
         assertThat(refused.getMessage()).startsWith("HMAC_KEY_UNRESOLVED:");
     }
@@ -71,7 +71,7 @@ class ClusterKeyResolutionTest {
             handedOut.add(cache.get(reference));
             return cache.get(reference);
         };
-        ClusterKeys keys = ClusterKeyResolution.resolve(properties(), caching).orElseThrow();
+        ClusterKeys keys = ClusterKeyResolution.resolve(properties(), () -> caching).orElseThrow();
         assertThat(keys.current().id()).isEqualTo("cluster-1");
         assertThat(handedOut).hasSize(3);
         assertThat(cache.get("CLUSTER_REF")).isEqualTo(bytes('c'));
@@ -84,7 +84,7 @@ class ClusterKeyResolutionTest {
         byte[] weak = new byte[] {1, 2, 3};
         Map<String, byte[]> cache = Map.of("CLUSTER_REF", weak, "NAME_REF", bytes('n'), "HMAC_REF", bytes('h'));
         DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
-                () -> ClusterKeyResolution.resolve(properties(), (id, ref) -> cache.get(ref)));
+                () -> ClusterKeyResolution.resolve(properties(), () -> (id, ref) -> cache.get(ref)));
         assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_WEAK:");
         assertThat(weak).containsExactly(1, 2, 3);
     }
@@ -97,7 +97,7 @@ class ClusterKeyResolutionTest {
             default -> new byte[] {1};
         };
         DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
-                () -> ClusterKeyResolution.resolve(properties(), resolver));
+                () -> ClusterKeyResolution.resolve(properties(), () -> resolver));
         assertThat(refused.getMessage()).startsWith("NAME_KEY_WEAK:");
     }
 
@@ -112,7 +112,70 @@ class ClusterKeyResolutionTest {
             return reference.equals("CLUSTER_REF") ? bytes('c') : bytes('n');
         };
         DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
-                () -> ClusterKeyResolution.resolve(p, resolver));
+                () -> ClusterKeyResolution.resolve(p, () -> resolver));
         assertThat(refused.getMessage()).startsWith("HMAC_KEY_UNRESOLVED:");
+    }
+
+    @Test
+    void aProviderReferenceIsResolvedAsAProviderReferenceAndAnEnvironmentVariableAsOne() {
+        DataPrismProperties p = properties();
+        HazelcastProperties.ClusterKey cluster = p.getHazelcast().getSecurity().getClusterKey();
+        cluster.setEnvironmentVariable(null);
+        cluster.setProviderReference("vault:cluster");
+        List<String> calls = new ArrayList<>();
+        HmacKeyReferenceResolver resolver = new HmacKeyReferenceResolver() {
+            @Override public byte[] resolve(String keyId, String reference) {
+                calls.add("env:" + reference);
+                return reference.equals("HMAC_REF") ? bytes('h') : bytes('n');
+            }
+
+            @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                calls.add("provider:" + reference);
+                return bytes('c');
+            }
+        };
+        assertThat(ClusterKeyResolution.resolve(p, () -> resolver)).isPresent();
+        assertThat(calls).contains("provider:vault:cluster", "env:NAME_REF").doesNotContain("env:vault:cluster");
+    }
+
+    @Test
+    void aResolverThatCannotServeProviderReferencesRefusesWithACodeNamingTheProperty() {
+        DataPrismProperties p = properties();
+        p.getHazelcast().getSecurity().getNameKey().setEnvironmentVariable(null);
+        p.getHazelcast().getSecurity().getNameKey().setProviderReference("vault:name");
+        HmacKeyReferenceResolver environmentOnly = new HmacKeyReferenceResolver() {
+            @Override public byte[] resolve(String keyId, String reference) {
+                return reference.equals("HMAC_REF") ? bytes('h') : bytes('c');
+            }
+
+            @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER", "no provider");
+            }
+        };
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(p, () -> environmentOnly));
+        assertThat(refused.getMessage()).startsWith("MISSING_KEY_PROVIDER:")
+                .contains("dataprism.hazelcast.security.name-key.provider-reference")
+                .doesNotContain("vault:name");
+    }
+
+    @Test
+    void anHmacKeyGivenAsAProviderReferenceIsComparedThroughTheProviderMethod() {
+        DataPrismProperties p = properties();
+        p.getPrivacy().getHmacKey().setEnvironmentVariable(null);
+        p.getPrivacy().getHmacKey().setProviderReference("vault:hmac");
+        HmacKeyReferenceResolver resolver = new HmacKeyReferenceResolver() {
+            @Override public byte[] resolve(String keyId, String reference) {
+                return reference.equals("CLUSTER_REF") ? bytes('c') : bytes('n');
+            }
+
+            @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                return bytes('c');
+            }
+        };
+        // The HMAC key has the cluster key's material, which only the provider method reveals.
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(p, () -> resolver));
+        assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:");
     }
 }

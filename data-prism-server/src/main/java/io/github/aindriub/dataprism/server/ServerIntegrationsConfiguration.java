@@ -38,12 +38,22 @@ class ServerIntegrationsConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "dataprism.privacy.hmac-key", name = "environment-variable")
     HmacKeyReferenceResolver environmentHmacKeyReferenceResolver() {
-        return (keyId, reference) -> {
-            String value = System.getenv(reference);
-            if (value == null || value.isBlank()) {
-                throw new IllegalStateException("configured HMAC environment variable is unavailable");
+        return new HmacKeyReferenceResolver() {
+            @Override
+            public byte[] resolve(String keyId, String reference) {
+                String value = System.getenv(reference);
+                if (value == null || value.isBlank()) {
+                    throw new IllegalStateException("configured HMAC environment variable is unavailable");
+                }
+                return value.getBytes(StandardCharsets.UTF_8);
             }
-            return value.getBytes(StandardCharsets.UTF_8);
+
+            /** Reads environment variables only: a provider reference is refused, never looked up as a name. */
+            @Override
+            public byte[] resolveProviderReference(String keyId, String reference) {
+                throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER",
+                        "provider-reference requires a reviewed HmacKeyReferenceResolver extension");
+            }
         };
     }
 
