@@ -42,6 +42,7 @@ class KeylessMemberIsolationTest {
         config.setProperty("hazelcast.phone.home.enabled", "false");
         config.getNetworkConfig().setPort(port).setPortAutoIncrement(false);
         config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+        config.setProperty("hazelcast.socket.bind.any", "false");
         return config;
     }
 
@@ -309,5 +310,77 @@ class KeylessMemberIsolationTest {
         memberJoins(real, listeners);
         assertThat(wrapped.isRefused()).isFalse();
         assertThat(wrapped.instance()).isNotNull();
+    }
+
+    // ---- what a loopback instance really listens on ------------------------------------------------
+
+    private static void refusedAsMissingKeys(Throwable refused) {
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.MISSING_CLUSTER_KEY);
+    }
+
+    /** The reviewer's probe: the member says 127.0.0.1, but with bind.any left at its default it listens everywhere. */
+    @Test
+    void aLoopbackInstanceThatBindsEveryInterfaceIsRefused() {
+        Config config = keylessConfig(TestMembers.uniqueName("bindany"), FreePorts.consecutive(1));
+        config.getProperties().remove("hazelcast.socket.bind.any");
+        HazelcastInstance real = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(config));
+        assertThat(real.getCluster().getLocalMember().getSocketAddress().getAddress().isLoopbackAddress()).isTrue();
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(real, false)));
+        assertThat(real.getLifecycleService().isRunning()).isTrue();
+    }
+
+    @Test
+    void aServerSocketThatBindsEveryInterfaceIsRefusedWhateverTheGeneralSettingSays() {
+        Config config = keylessConfig(TestMembers.uniqueName("serverbindany"), FreePorts.consecutive(1));
+        config.setProperty("hazelcast.socket.server.bind.any", "true");
+        HazelcastInstance real = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(config));
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(real, false)));
+    }
+
+    @Test
+    void aPublicAddressIsRefused() {
+        Config config = keylessConfig(TestMembers.uniqueName("public"), FreePorts.consecutive(1));
+        config.getNetworkConfig().setPublicAddress("127.0.0.1:" + config.getNetworkConfig().getPort());
+        HazelcastInstance real = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(config));
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(real, false)));
+    }
+
+    @Test
+    void interfacesThatAreDisabledOrNotAllLoopbackAreRefused() {
+        HazelcastInstance real = soloInstance();
+        Config disabled = keylessConfig(TestMembers.uniqueName("disabled"), 5701);
+        disabled.getNetworkConfig().getInterfaces().setEnabled(false);
+        Config mixed = keylessConfig(TestMembers.uniqueName("mixed"), 5701);
+        mixed.getNetworkConfig().getInterfaces().addInterface("10.0.0.*");
+        for (Config config : List.of(disabled, mixed)) {
+            HazelcastInstance reported = forwarding(HazelcastInstance.class, real,
+                    (m, a) -> m.getName().equals("getConfig") ? config : NOT_OVERRIDDEN);
+            refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(reported, false)));
+        }
+        assertThat(real.getLifecycleService().isRunning()).isTrue();
+    }
+
+    // ---- a join before the listener is registered ---------------------------------------------------
+
+    @Test
+    void aMemberPresentWhenTheListenerIsRegisteredRefusesTheWrapper() {
+        HazelcastInstance real = soloInstance();
+        Member local = real.getCluster().getLocalMember();
+        Member other = forwarding(Member.class, local, (m, a) -> m.getName().equals("equals") ? Boolean.FALSE
+                : m.getName().equals("hashCode") ? Integer.valueOf(1) : NOT_OVERRIDDEN);
+        Cluster cluster = forwarding(Cluster.class, real.getCluster(), (m, a) -> {
+            if (m.getName().equals("addMembershipListener")
+                    && a[0] instanceof com.hazelcast.cluster.InitialMembershipListener initial) {
+                initial.init(new com.hazelcast.cluster.InitialMembershipEvent(real.getCluster(),
+                        new LinkedHashSet<>(List.of(local, other))));
+                return java.util.UUID.randomUUID();
+            }
+            return NOT_OVERRIDDEN;
+        });
+        HazelcastInstance joined = forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getCluster") ? cluster : NOT_OVERRIDDEN);
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(joined, false)));
+        assertThat(real.getLifecycleService().isRunning()).isTrue();
     }
 }
