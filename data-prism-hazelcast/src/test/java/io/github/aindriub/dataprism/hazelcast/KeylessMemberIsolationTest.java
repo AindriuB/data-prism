@@ -132,4 +132,20 @@ class KeylessMemberIsolationTest {
         assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.MISSING_CLUSTER_KEY);
         assertThat(Hazelcast.getAllHazelcastInstances()).isEmpty();
     }
+
+    @Test
+    void keyIdsCarryNullableComponentsAndGiveOptionalsThroughAccessors() {
+        PrivacyCluster.KeyIds ids = new PrivacyCluster.KeyIds("c", null, "p", "n");
+        assertThat(ids.nextId()).isNull();
+        assertThat(ids.next()).isEmpty();
+        assertThat(ids.previous()).contains("p");
+        try (PrivacyCluster solo = PrivacyCluster.embedded(ClusterMembership.none(TestMembers.uniqueName("ids"))
+                .withPort(FreePorts.consecutive(1)), false, TestMembers.KEYS)) {
+            PrivacyCluster.KeyIds held = solo.keyIds().orElseThrow();
+            assertThat(held.current()).isEqualTo("test-cluster-1");
+            assertThat(held.next()).isEmpty();
+            assertThat(held.previous()).isEmpty();
+            assertThat(held.name()).isEqualTo("test-name-1");
+        }
+    }
 }

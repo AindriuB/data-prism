@@ -871,11 +871,22 @@ public final class PrivacyCluster implements AutoCloseable {
     /** The ids of the keys this member holds, never their material. Empty for a solo member given none. */
     public Optional<KeyIds> keyIds() {
         return keys == null ? Optional.empty() : Optional.of(new KeyIds(keys.current().id(),
-                keys.next().map(ClusterKeys.Key::id), keys.previous().map(ClusterKeys.Key::id), keys.nameKeyId()));
+                keys.next().map(ClusterKeys.Key::id).orElse(null),
+                keys.previous().map(ClusterKeys.Key::id).orElse(null), keys.nameKeyId()));
     }
 
-    /** The ids of the held keys. */
-    public record KeyIds(String current, Optional<String> next, Optional<String> previous, String name) {
+    /**
+     * The ids of the held keys. {@code nextId} and {@code previousId} are {@code null} when no such key is held;
+     * {@link #next()} and {@link #previous()} give them as an {@code Optional}.
+     */
+    public record KeyIds(String current, String nextId, String previousId, String name) {
+        public Optional<String> next() {
+            return Optional.ofNullable(nextId);
+        }
+
+        public Optional<String> previous() {
+            return Optional.ofNullable(previousId);
+        }
     }
 
     @Override
