@@ -69,7 +69,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
     <spring-boot.version>4.1.1</spring-boot.version>
-    <mcp.version>2.0.1</mcp.version>
+    <mcp.version>2.1.0</mcp.version>
     <archunit.version>1.5.1</archunit.version>
     <hazelcast.version>5.7.0</hazelcast.version>
     <nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
@@ -77,7 +77,7 @@
          GHSA-wv8q-qhhj-9h54, GHSA-cxp5-3px4-pw24, GHSA-q4xh-88c3-wmh7, GHSA-wjgm-6hv5-3cvf
          and GHSA-gx83-3vf8-gh7j (fixed in 3.1.6 and 3.1.7). Remove this property and the
          jackson-bom import once Boot manages 3.1.7 or later. -->
-    <jackson3.version>3.1.8</jackson3.version>
+    <jackson3.version>3.2.3</jackson3.version>
     <!-- Embedded Tomcat. Spring Boot 4.1.1 manages 11.0.24, which is affected by
          GHSA-9xv2-5v5q-p794, GHSA-gcx9-497g-6cp6 and GHSA-h3x4-894j-xpx5 (fixed in 11.0.25).
          Boot's own tomcat.version is interpolated inside the imported BOM, so setting it here
@@ -98,9 +98,9 @@
     <source-plugin.version>3.4.0</source-plugin.version>
     <javadoc-plugin.version>3.12.0</javadoc-plugin.version>
     <gpg-plugin.version>3.2.8</gpg-plugin.version>
-    <central-publishing-plugin.version>0.11.0</central-publishing-plugin.version>
+    <central-publishing-plugin.version>0.12.0</central-publishing-plugin.version>
     <cyclonedx-plugin.version>2.9.3</cyclonedx-plugin.version>
-    <pitest-plugin.version>1.30.0</pitest-plugin.version>
+    <pitest-plugin.version>1.30.1</pitest-plugin.version>
     <pitest-junit5-plugin.version>1.2.3</pitest-junit5-plugin.version>
   </properties>
 
