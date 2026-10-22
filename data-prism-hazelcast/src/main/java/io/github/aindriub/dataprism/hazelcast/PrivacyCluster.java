@@ -301,7 +301,9 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Whether the config names any way of finding other members. */
     private static boolean joins(Config config) {
         var join = config.getNetworkConfig().getJoin();
-        return join.getTcpIpConfig().isEnabled() || join.getKubernetesConfig().isEnabled()
+        // The property (also read from -D) turns discovery on for a provider added later, with no strategy config.
+        return new HazelcastProperties(config).getBoolean(ClusterProperty.DISCOVERY_SPI_ENABLED)
+                || join.getTcpIpConfig().isEnabled() || join.getKubernetesConfig().isEnabled()
                 || join.getAwsConfig().isEnabled() || join.getGcpConfig().isEnabled()
                 || join.getAzureConfig().isEnabled() || join.getEurekaConfig().isEnabled()
                 || join.getDiscoveryConfig().isEnabled()
@@ -499,7 +501,8 @@ public final class PrivacyCluster implements AutoCloseable {
      * As above, holding the cluster and name keys. A config that joins other members needs them. Without keys the
      * member is made solo, as {@link ClusterMembership.None} does: it listens on {@code 127.0.0.1} only and its
      * cluster name gains a random suffix, replacing whatever interface the config named, so that no keyed member
-     * can form a cluster with it.
+     * can form a cluster with it. <strong>The {@code Config} passed in is modified</strong> (as it already is by
+     * hardening); passing the same one again does not add the suffix twice.
      *
      * @param keys the keys every member of the cluster shares, or {@code null} for none
      * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining config without keys; nothing is started

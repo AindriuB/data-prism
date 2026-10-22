@@ -31,10 +31,12 @@ class KeylessMemberIsolationTest {
     }
 
     @Test
-    void aKeyedMemberCannotFormAClusterWithAKeylessConfigMember() {
+    void isolationStopsAKeylessMemberFromBringingDownAKeyedMemberThatPointsAtIt() {
         String name = TestMembers.uniqueName("keyless");
         int first = FreePorts.consecutive(2);
         try (PrivacyCluster keyless = PrivacyCluster.embedded(keylessConfig(name, first), false)) {
+            // Pins that isolation keeps the two apart without the keyed member being shut down. The joiner-type
+            // check already stopped them clustering; without isolation it shut the keyed member down instead.
             // Hazelcast's own joiner check may already turn the keyed member away; it must not join either way.
             PrivacyCluster keyed = null;
             try {
@@ -147,5 +149,36 @@ class KeylessMemberIsolationTest {
             assertThat(held.previous()).isEmpty();
             assertThat(held.name()).isEqualTo("test-name-1");
         }
+    }
+
+    private static Config discoveryPropertyConfig(String name, int port) {
+        Config config = keylessConfig(name, port);
+        config.setProperty("hazelcast.discovery.enabled", "true");
+        return config;
+    }
+
+    @Test
+    void theDiscoveryPropertyAloneIsAJoin() {
+        Config config = discoveryPropertyConfig(TestMembers.uniqueName("disc"), FreePorts.consecutive(1));
+        Throwable refused = catchThrowable(() -> PrivacyCluster.embedded(config, false));
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.MISSING_CLUSTER_KEY);
+        assertThat(Hazelcast.getAllHazelcastInstances()).isEmpty();
+        HazelcastInstance running = Hazelcast.newHazelcastInstance(PrivacyCluster.configure(
+                discoveryPropertyConfig(TestMembers.uniqueName("disc"), FreePorts.consecutive(1))));
+        Throwable usingRefused = catchThrowable(() -> PrivacyCluster.using(running, false));
+        assertThat(usingRefused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) usingRefused).code()).isEqualTo(Code.MISSING_CLUSTER_KEY);
+        assertThat(running.getLifecycleService().isRunning()).isTrue();
+    }
+
+    @Test
+    void passingTheSameConfigAgainDoesNotAddTheSuffixTwice() {
+        Config config = keylessConfig(TestMembers.uniqueName("again"), FreePorts.consecutive(1));
+        ClusterMembership.isolate(config);
+        String once = config.getClusterName();
+        ClusterMembership.isolate(config);
+        assertThat(config.getClusterName()).isEqualTo(once);
+        assertThat(once.split("-solo-")).hasSize(2);
     }
 }
