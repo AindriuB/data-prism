@@ -89,3 +89,21 @@ More for the scribe.
 - (c) Wider rules as built: `DUPLICATE_CLUSTER_KEY_ID` also covers a name-key id equal to a cluster-key id, and `*_SHARED` also fires on the same key id as the HMAC key. Update `cluster-security.md` ~610 and ~613-614 and `contract-register.md` ~542 and ~546.
 - (d) Add `ClusterKeyResolution.java` and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows to the Owns of briefs 211 and 242's successors (254 and 255 for link keys), so they can extend the shared-key check.
 - (e) `docs/multiple-instances.md` (owned by 213) still says `member.interface` is optional.
+
+### External review of PR #154 — fixes
+
+All of the following are review-fix scope, and the Owns widenings are approved:
+
+- `ClusterMembership.isolate` (new, shared by `toConfig` and `PrivacyCluster.embedded(Config)`)
+- `docker/smoke/java-runtime-smoke.sh` (header: openssl is required)
+- the four new test files: `KeylessMemberIsolationTest`, `ClusterKeyResolutionTest`, `ClusterLegacyGaugeTest`, `MemberInterfaceCheckTest`
+- `ClusterBackedState.closeSuppressing`
+- the keyless-isolation paragraph and the ordered refusal table in `docs/configuration.md`
+- `PropertiesValidation.validateKey` (clears its own copy of the HMAC key, not the resolver's array)
+
+Notes:
+
+- `-Dhazelcast.local.localAddress` may override the loopback interface that isolation sets. That is exposure only: the random cluster-name suffix still blocks any join.
+- The resolver's original array is no longer cleared, either for the cluster keys or for the HMAC key. A resolver does not promise a fresh array, and a caching one would lose its live key. Only the copy this code holds is cleared; the resolver's own array stays in memory as long as the resolver keeps it. This is a deliberate trade-off.
+- Refusals left without a stable code, by choice: the `IllegalArgumentException`s for `approvalMinimumMembers < 1`, for the sweep interval range, and from the `ClusterKeys` constructor. They are programmatic-API violations, and the Spring path rejects the same inputs earlier with codes.
+- Isolation always adds a fresh `-solo-<uuid>` suffix and keeps no marker or other state in the `Config`, so nothing a caller sets can skip it. A `Config` passed twice carries two suffixes, which is harmless. This is what makes the note above true: the random name blocks any join.

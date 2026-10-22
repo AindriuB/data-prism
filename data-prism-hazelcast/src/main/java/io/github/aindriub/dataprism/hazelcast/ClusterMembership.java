@@ -129,16 +129,23 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
                 bindToInterface(config);
             }
             case None none -> {
-                // Every joiner stays disabled, so the member starts standalone and discovers no one.
-                // Hazelcast still answers a join request that carries a matching cluster name, so
-                // the effective name also carries an unguessable per-member suffix. It is internal
-                // and appears in logs.
-                config.setClusterName(clusterName + "-solo-" + UUID.randomUUID());
-                config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
-                config.setProperty("hazelcast.socket.bind.any", "false");
+                isolate(config);
             }
         }
         return config;
+    }
+
+    /**
+     * Makes a member solo: every joiner stays disabled, so it starts standalone and discovers no one. Hazelcast still
+     * answers a join request that carries a matching cluster name, so the effective name also carries an
+     * unguessable per-member suffix (internal, and it appears in logs), and the member listens on loopback only.
+     */
+    static void isolate(Config config) {
+        // Modifies the Config it is given. The suffix is always fresh, so nothing in the Config can skip it; a
+        // Config passed twice carries two suffixes, which is harmless.
+        config.setClusterName(config.getClusterName() + "-solo-" + UUID.randomUUID());
+        config.getNetworkConfig().getInterfaces().clear().setEnabled(true).addInterface("127.0.0.1");
+        config.setProperty("hazelcast.socket.bind.any", "false");
     }
 
     /** With an interface, listen only there; without one Hazelcast binds every interface. */

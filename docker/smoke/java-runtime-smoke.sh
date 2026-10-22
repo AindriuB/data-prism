@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Java runtime smoke test (task 143). Needs only Docker with Compose v2.
+# Java runtime smoke test (task 143). Needs Docker with Compose v2 and openssl
+# (it generates the cluster and name keys, task 222).
 # Run from anywhere: bash docker/smoke/java-runtime-smoke.sh
 set -euo pipefail
 

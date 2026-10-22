@@ -287,9 +287,10 @@ public final class PrivacyCluster implements AutoCloseable {
         if (keys == null && !(membership.join() instanceof ClusterMembership.None)) {
             throw missingKeys();
         }
-        return embedded(membership.toConfig(), reidentificationEnabled,
+        // toConfig has already made a none membership solo.
+        return launch(membership.toConfig(), reidentificationEnabled,
                 approvalMinimumMembers.isPresent() ? approvalMinimumMembers
-                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys);
+                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys, false);
     }
 
     private static PrivacyClusterRefusal missingKeys() {
@@ -300,9 +301,13 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Whether the config names any way of finding other members. */
     private static boolean joins(Config config) {
         var join = config.getNetworkConfig().getJoin();
-        return join.getTcpIpConfig().isEnabled() || join.getKubernetesConfig().isEnabled()
+        // The property (also read from -D) turns discovery on for a provider added later, with no strategy config.
+        return new HazelcastProperties(config).getBoolean(ClusterProperty.DISCOVERY_SPI_ENABLED)
+                || join.getTcpIpConfig().isEnabled() || join.getKubernetesConfig().isEnabled()
                 || join.getAwsConfig().isEnabled() || join.getGcpConfig().isEnabled()
                 || join.getAzureConfig().isEnabled() || join.getEurekaConfig().isEnabled()
+                || join.getDiscoveryConfig().isEnabled()
+                || join.getDiscoveryConfig().getDiscoveryServiceProvider() != null
                 || join.getDiscoveryConfig().getDiscoveryStrategyConfigs().iterator().hasNext();
     }
 
@@ -493,7 +498,11 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /**
-     * As above, holding the cluster and name keys. A config that joins other members needs them.
+     * As above, holding the cluster and name keys. A config that joins other members needs them. Without keys the
+     * member is made solo, as {@link ClusterMembership.None} does: it listens on {@code 127.0.0.1} only and its
+     * cluster name gains a random suffix, replacing whatever interface the config named, so that no keyed member
+     * can form a cluster with it. <strong>The {@code Config} passed in is modified</strong> (as it already is by
+     * hardening); passing the same one again adds a second, fresh suffix.
      *
      * @param keys the keys every member of the cluster shares, or {@code null} for none
      * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining config without keys; nothing is started
@@ -505,7 +514,19 @@ public final class PrivacyCluster implements AutoCloseable {
         if (keys == null && joins(config)) {
             throw missingKeys();
         }
-        HazelcastInstance started = Hazelcast.newHazelcastInstance(configure(config, approvalMinimumMembers));
+        return launch(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
+                keys == null);
+    }
+
+    private static PrivacyCluster launch(Config config, boolean reidentificationEnabled,
+                                         OptionalInt approvalMinimumMembers,
+                                         java.time.Duration approvalSweepInterval, ClusterKeys keys,
+                                         boolean isolate) {
+        Config hardened = configure(config, approvalMinimumMembers);
+        if (isolate) {
+            ClusterMembership.isolate(hardened);
+        }
+        HazelcastInstance started = Hazelcast.newHazelcastInstance(hardened);
         try {
             ClusterMembership.refuseUnsealedState(started);
         } catch (RuntimeException refused) {
@@ -543,17 +564,20 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /**
-     * As above, holding the cluster and name keys. An instance whose config joins other members needs them.
+     * As above, holding the cluster and name keys. An instance whose config joins other members needs them, and so
+     * does one that already has more than one member. Without keys the supplied instance must be isolated by its
+     * owner: this cannot change a running member's name or interface, so start it as {@link ClusterMembership.None}
+     * does (loopback only, a random cluster-name suffix) or no keyed member is kept from joining it.
      *
      * @param keys the keys every member of the cluster shares, or {@code null} for none
-     * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining instance without keys; the instance is
-     *                               left running
+     * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining or already clustered instance without
+     *                               keys; the instance is left running
      */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
                                        java.time.Duration approvalSweepInterval, ClusterKeys keys) {
         PendingSweeper.checked(approvalSweepInterval);
         Config config = instance.getConfig();
-        if (keys == null && joins(config)) {
+        if (keys == null && (joins(config) || instance.getCluster().getMembers().size() > 1)) {
             throw missingKeys();
         }
         checkClusterName(config);
@@ -850,11 +874,22 @@ public final class PrivacyCluster implements AutoCloseable {
     /** The ids of the keys this member holds, never their material. Empty for a solo member given none. */
     public Optional<KeyIds> keyIds() {
         return keys == null ? Optional.empty() : Optional.of(new KeyIds(keys.current().id(),
-                keys.next().map(ClusterKeys.Key::id), keys.previous().map(ClusterKeys.Key::id), keys.nameKeyId()));
+                keys.next().map(ClusterKeys.Key::id).orElse(null),
+                keys.previous().map(ClusterKeys.Key::id).orElse(null), keys.nameKeyId()));
     }
 
-    /** The ids of the held keys. */
-    public record KeyIds(String current, Optional<String> next, Optional<String> previous, String name) {
+    /**
+     * The ids of the held keys. {@code nextId} and {@code previousId} are {@code null} when no such key is held;
+     * {@link #next()} and {@link #previous()} give them as an {@code Optional}.
+     */
+    public record KeyIds(String current, String nextId, String previousId, String name) {
+        public Optional<String> next() {
+            return Optional.ofNullable(nextId);
+        }
+
+        public Optional<String> previous() {
+            return Optional.ofNullable(previousId);
+        }
     }
 
     @Override

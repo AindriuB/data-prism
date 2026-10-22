@@ -297,6 +297,78 @@ class ClusterKeyConfigurationTest {
         assertThat(output.getAll()).doesNotContain(LEAK);
     }
 
+    // ---- the order of refusals ------------------------------------------------------------------
+
+    /**
+     * The refusals in the order the code makes them, one stage each: property checks (presence, literal values, the
+     * interface), then the key ids, then each key in turn (current, next, previous, name) for resolution and
+     * strength, then the cluster keys against the privacy HMAC key and the name key against it, the name key
+     * against the cluster keys, and last the key ids against each other. The stage that checks the HMAC key itself
+     * is pinned in {@link ClusterKeyResolutionTest}, because the context checks that key earlier.
+     * {@code docs/configuration.md} lists this order.
+     */
+    static final List<Row> ORDER = List.of(
+            row("MISSING_CLUSTER_KEY", "presence", "cluster-key.environment-variable", true, false,
+                    "-cluster-key.environment-variable"),
+            row("LITERAL_SECRET_FORBIDDEN", "literal value", "cluster-key.value", true, false,
+                    "cluster-key.value=" + LEAK + "literal"),
+            row("MISSING_MEMBER_INTERFACE", "interface", "member.interface", true, false,
+                    "!-dataprism.hazelcast.member.interface"),
+            row("CLUSTER_KEY_UNRESOLVED", "current key id has a dot", "cluster-key.key-id", true, false,
+                    "cluster-key.key-id=cluster.1"),
+            row("CLUSTER_KEY_UNRESOLVED", "next key id has a dot", "cluster-key.next.key-id", true, false,
+                    "cluster-key.next.key-id=cluster.2",
+                    "cluster-key.next.environment-variable=DATAPRISM_NEXT_KEY_REF"),
+            row("CLUSTER_KEY_UNRESOLVED", "previous key id has a dot", "cluster-key.previous.key-id", true, false,
+                    "cluster-key.previous.key-id=cluster.0",
+                    "cluster-key.previous.environment-variable=DATAPRISM_PREVIOUS_KEY_REF"),
+            row("NAME_KEY_UNRESOLVED", "name key id has a dot", "name-key.key-id", true, false,
+                    "name-key.key-id=name.1"),
+            row("CLUSTER_KEY_WEAK", "current key is weak", "cluster-key", true, false,
+                    "cluster-key.environment-variable=REF_WEAK"),
+            row("CLUSTER_KEY_UNRESOLVED", "next key does not resolve", "cluster-key.next", true, false,
+                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_UNRESOLVED"),
+            row("CLUSTER_KEY_WEAK", "previous key is weak", "cluster-key.previous", true, false,
+                    "cluster-key.previous.key-id=cluster-0", "cluster-key.previous.environment-variable=REF_WEAK"),
+            row("NAME_KEY_UNRESOLVED", "name key does not resolve", "name-key", true, false,
+                    "name-key.environment-variable=REF_UNRESOLVED"),
+            row("CLUSTER_KEY_SHARED", "next key is the HMAC key", "cluster-key.next", true, false,
+                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_HMAC_TWIN"),
+            row("NAME_KEY_SHARED", "name key is the HMAC key", "name-key", true, false,
+                    "name-key.environment-variable=REF_HMAC_TWIN"),
+            row("NAME_KEY_SHARED", "name key is a cluster key", "cluster-key", true, false,
+                    "cluster-key.environment-variable=REF_FIXED", "name-key.environment-variable=REF_FIXED"),
+            row("DUPLICATE_CLUSTER_KEY_ID", "name key id repeats a cluster key id", "name-key.key-id", true, false,
+                    "name-key.key-id=cluster-1"));
+
+    static Stream<Object[]> adjacentPairs() {
+        List<Object[]> out = new ArrayList<>();
+        for (int i = 0; i + 1 < ORDER.size(); i++) {
+            out.add(new Object[] {ORDER.get(i), ORDER.get(i + 1)});
+        }
+        return out.stream();
+    }
+
+    @ParameterizedTest(name = "{0}  before  {1}")
+    @MethodSource("adjacentPairs")
+    void when_two_adjacent_refusals_both_apply_the_earlier_one_is_made(Row first, Row second) {
+        Map<String, String> p = edited("tcp-ip", first);
+        for (String edit : second.edits()) {
+            if (edit.startsWith("!-")) {
+                p.remove(edit.substring(2));
+            } else if (edit.startsWith("!")) {
+                int at = edit.indexOf('=');
+                p.put(edit.substring(1, at), edit.substring(at + 1));
+            } else if (edit.startsWith("-")) {
+                p.remove(SECURITY + edit.substring(1));
+            } else {
+                int at = edit.indexOf('=');
+                p.put(SECURITY + edit.substring(0, at), edit.substring(at + 1));
+            }
+        }
+        runner("embedded", p).run(result -> assertRefusedWith(result, first));
+    }
+
     // ---- a solo member -------------------------------------------------------------------------
 
     @Test

@@ -7,16 +7,19 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Resolves the configured cluster and name keys through the reviewed {@link HmacKeyReferenceResolver}, the same way
  * the privacy HMAC key is resolved, and builds the {@link ClusterKeys} a member holds. Shape and presence were
  * checked on the properties before this runs; this checks what only the resolved material can show.
  *
- * <p>Refusals are checked in a fixed order: unresolved, weak or shared with the privacy HMAC key (cluster keys
- * first, then the name key), a name key equal to a cluster key, then key ids that are not pairwise distinct. A
- * message names a property and never a key id's material, a reference, or anything the resolver said. Resolved
- * material is cleared as soon as {@link ClusterKeys} has copied it.
+ * <p>Refusals are checked in a fixed order, which {@code docs/configuration.md} lists: key ids that are blank or
+ * hold a dot, then each key in turn (current, next, previous, name) for resolution and strength, the privacy HMAC key
+ * itself, the cluster keys and then the name key against that key, a name key equal to a cluster key, then key ids
+ * that are not pairwise distinct. A message names a property and never a key id's material, a reference, or anything
+ * the resolver said. The resolver's arrays are copied on receipt and only the copies are cleared, as soon as
+ * {@link ClusterKeys} has copied them in turn.
  */
 final class ClusterKeyResolution {
     private static final String CLUSTER_KEY = "dataprism.hazelcast.security.cluster-key";
@@ -44,10 +47,17 @@ final class ClusterKeyResolution {
      * @throws DataPrismConfigurationException with the code the register defines for the first failure
      */
     static Optional<ClusterKeys> resolve(DataPrismProperties properties, HmacKeyReferenceResolver resolver) {
+        return resolveLazily(properties, () -> resolver);
+    }
+
+    /** As above; the resolver is asked for only when a security key is set, so a solo member needs none. */
+    static Optional<ClusterKeys> resolveLazily(DataPrismProperties properties,
+                                         Supplier<HmacKeyReferenceResolver> resolverSupplier) {
         HazelcastProperties.Security security = properties.getHazelcast().getSecurity();
         if (!properties.getHazelcast().securitySet()) {
             return Optional.empty();
         }
+        HmacKeyReferenceResolver resolver = resolverSupplier.get();
         HazelcastProperties.ClusterKey cluster = security.getClusterKey();
         HazelcastProperties.NameKey name = security.getNameKey();
         List<Resolved> clusterKeys = new ArrayList<>();
@@ -130,17 +140,20 @@ final class ClusterKeyResolution {
     }
 
     private static Resolved resolve(HmacKeyReferenceResolver resolver, Ref ref) {
-        byte[] material;
+        byte[] received;
         try {
-            material = resolver.resolve(ref.keyId(), ref.reference());
+            received = resolver.resolve(ref.keyId(), ref.reference());
         } catch (RuntimeException unresolved) {
             throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
                     ref.property() + " could not be resolved");
         }
-        if (material == null) {
+        if (received == null) {
             throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
                     ref.property() + " could not be resolved");
         }
+        // The resolver does not promise a fresh array (a caching one hands out its own), so this copy is the only
+        // one ever cleared.
+        byte[] material = received.clone();
         if (material.length < ClusterKeys.MIN_KEY_BYTES) {
             Arrays.fill(material, (byte) 0);
             throw new DataPrismConfigurationException(ref.area() + "_WEAK",
@@ -156,17 +169,23 @@ final class ClusterKeyResolution {
         if (reference == null || reference.isBlank()) {
             reference = hmac.getProviderReference();
         }
+        byte[] received;
         try {
-            return resolver.resolve(hmac.getKeyId(), reference);
+            received = resolver.resolve(hmac.getKeyId(), reference);
         } catch (RuntimeException unresolved) {
-            // The HMAC key's own refusal comes from its own check, which runs before the cluster is built.
-            return null;
+            received = null;
         }
+        if (received == null) {
+            // Without its material the cluster keys cannot be shown to differ from it, so none is accepted.
+            throw new DataPrismConfigurationException("HMAC_KEY_UNRESOLVED",
+                    "dataprism.privacy.hmac-key could not be resolved to check the cluster keys against it");
+        }
+        return received.clone();
     }
 
     private static void shared(Resolved key, byte[] hmac, String hmacKeyId) {
         boolean sameId = key.ref.keyId().equals(hmacKeyId);
-        boolean sameMaterial = hmac != null && MessageDigest.isEqual(key.material, hmac);
+        boolean sameMaterial = MessageDigest.isEqual(key.material, hmac);
         if (sameId || sameMaterial) {
             throw new DataPrismConfigurationException(key.ref.area() + "_SHARED",
                     key.ref.property() + " must differ from dataprism.privacy.hmac-key");
