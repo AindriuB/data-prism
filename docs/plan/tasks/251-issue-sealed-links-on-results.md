@@ -28,6 +28,7 @@ When links are enabled, every `ANSWERED` source result carries one sealed link p
 - docs/plan/design/contract-register.md OD-200-4: a source whose real name is over 64 characters gets no links in 0.8 (counted as omitted).
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java: where raw records, scrubbed trees and the `emitted` set meet; the final validation over the assembled tree.
 - From 240 (2026-10-21): `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
+- From the second external review of PR #154 (2026-10-23): `attemptCounterKey` throws for a scope or principal id over 65535 UTF-8 bytes, so it and the new gate must check the binding bounds first (an over-bound binding is `MALFORMED` uncounted on open and `BINDING_TOO_LONG` on seal). Task 269 replaces `attemptCounterKey`.
 - From the external review of PR #154 (2026-10-22, 242's Outcome): gate the limiter on `refused.counted()`, never `reason.counted()` (a post-authentication `MALFORMED` and `KEY_UNAVAILABLE` are uncounted). Supply the issue time from the clock and the link id from a random source; the codec seals whatever it is given. `LinkKeys.forScope` and `attemptCounterKey` can refuse `LINK_KEY_UNRESOLVED` when the current key is down; handle it.
 
 ## Acceptance

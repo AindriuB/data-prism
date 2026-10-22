@@ -27,6 +27,7 @@
 - docs/plan/design/batch-and-bulk-follow.md 3.2 "Relation bytes": `follow` accepts `0x00` and `0x01` in 0.8.
 - D-070-1, D-070-2 (refused sources omitted, all refused refuses the call), D-070-13.
 - From 242 (2026-10-22): forged and genuine tokens do different work after authentication, because only an authenticated token has its payload parsed. The difference is small; the timing soak of sealed-links obligation 10 (written here, run by 263) should cover it. The core `open` also refuses `EXPIRED` at `now >= scopeExpiry` or `now >= tokenExpiry` with no skew; this task still re-checks the live session.
+- From the second external review of PR #154 (2026-10-23): `attemptCounterKey` throws for a scope or principal id over 65535 UTF-8 bytes, so it and the new gate must check the binding bounds first (an over-bound binding is `MALFORMED` uncounted on open and `BINDING_TOO_LONG` on seal). Task 269 replaces `attemptCounterKey`.
 - From the external review of PR #154 (2026-10-22, 242's Outcome): gate the limiter on `refused.counted()`, never `reason.counted()` (a post-authentication `MALFORMED` and `KEY_UNAVAILABLE` are uncounted). Supply the issue time from the clock and the link id from a random source. Expect `LINK_KEY_UNRESOLVED` from `forScope` and `attemptCounterKey` when the current key is down.
 
 ## Acceptance

@@ -145,6 +145,8 @@ Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (a
 
 An external review of PR #154 (the wave-3 record) was addressed in the same PR: 4 Medium, 19 Low and 4 Nit findings, fixed on `fix/222-external-review` and `fix/242-external-review` and described in the two Outcomes under "External review of PR #154 — fixes". Its follow-ups for later tasks are in the list below and the dated Context bullets of 251, 252, 254, 255 and 264: gate on `refused.counted()`, issue time and link id from the clock and a random source, `LINK_KEY_UNRESOLVED` from `forScope` and `attemptCounterKey`, a stable counter key across rotation, check-then-record, a bounded limiter map, per-id provider calls in `heldKeyIds`, and the pseudonymisation key through the same provider.
 
+A second review round on PR #154 (4 Medium, 13 Low, 4 Nit; 2026-10-23) is answered on the same branches; OD-269 (a, a, a) is decided and creates task 269, which replaces `attemptCounterKey`. New follow-ups for 251, 252 and 255 are in their Context bullets.
+
 Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the brief named (also recorded as dated Context bullets in the briefs, except where noted):
 
 - 211, 254, 255: extend `ClusterKeyResolution`'s shared-key check (today the privacy HMAC key only) to the audit key and the link keys, and add the file and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows to their Owns.
