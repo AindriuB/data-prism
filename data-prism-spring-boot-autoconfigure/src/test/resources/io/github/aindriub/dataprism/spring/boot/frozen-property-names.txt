@@ -50,6 +50,25 @@ dataprism.hazelcast.member.port | java.lang.Integer | rw | null
 dataprism.hazelcast.persistence-enabled | boolean | rw | false
 dataprism.hazelcast.reidentification-controls-reference | java.lang.String | rw | null
 dataprism.hazelcast.reidentification-enabled | boolean | rw | false
+dataprism.hazelcast.security | bean | ro
+dataprism.hazelcast.security.cluster-key | bean | ro
+dataprism.hazelcast.security.cluster-key.environment-variable | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.key-id | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.next | bean | ro
+dataprism.hazelcast.security.cluster-key.next.environment-variable | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.next.key-id | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.next.provider-reference | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.previous | bean | ro
+dataprism.hazelcast.security.cluster-key.previous.environment-variable | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.previous.key-id | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.previous.provider-reference | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.provider-reference | java.lang.String | rw | null
+dataprism.hazelcast.security.cluster-key.value | java.lang.String | rw | null
+dataprism.hazelcast.security.name-key | bean | ro
+dataprism.hazelcast.security.name-key.environment-variable | java.lang.String | rw | null
+dataprism.hazelcast.security.name-key.key-id | java.lang.String | rw | null
+dataprism.hazelcast.security.name-key.provider-reference | java.lang.String | rw | null
+dataprism.hazelcast.security.name-key.value | java.lang.String | rw | null
 dataprism.hazelcast.tls-key-reference | java.lang.String | rw | null
 dataprism.hazelcast.tls-trust-reference | java.lang.String | rw | null
 dataprism.hazelcast.topology | java.lang.String | rw | null

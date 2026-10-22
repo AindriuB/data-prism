@@ -227,6 +227,10 @@ public final class DataPrismPropertiesValidator {
      * @param managementPort  the effective {@code management.server.port}, or {@code null}
      */
     public void validateCluster(boolean clusterSupplied, Integer serverPort, Integer managementPort) {
+        if ("single-node".equals(hazelcast.getTopology()) && hazelcast.securitySet()) {
+            refuse("CLUSTER_SETTINGS_IGNORED", hazelcast.firstSecurityPropertySet()
+                    + " has no effect with topology single-node, which runs no cluster member");
+        }
         if (!"embedded".equals(hazelcast.getTopology())) {
             return;
         }
@@ -235,6 +239,10 @@ public final class DataPrismPropertiesValidator {
                 refuse("CLUSTER_SETTINGS_IGNORED", "dataprism.hazelcast.cluster-name, join.*, member.* and "
                         + "approval-sweep-interval have no effect when the application supplies its own "
                         + "PrivacyCluster");
+            }
+            if (hazelcast.securitySet()) {
+                refuse("CLUSTER_SETTINGS_IGNORED", hazelcast.firstSecurityPropertySet()
+                        + " has no effect when the application supplies its own PrivacyCluster");
             }
             return;
         }
@@ -286,6 +294,8 @@ public final class DataPrismPropertiesValidator {
             default -> refuse("UNSUPPORTED_CLUSTER_JOIN", "dataprism.hazelcast.join.mode must be tcp-ip, "
                     + "kubernetes or none");
         }
+        validateClusterKeyReferences(h, !"none".equals(h.getJoin().getMode().strip()));
+        validateMemberInterface(h);
         validateApprovalQuorum(h);
         int port = h.getMember().getPort() == null ? 5701 : h.getMember().getPort();
         if (serverPort != null && serverPort > 0 && port == serverPort) {
@@ -296,6 +306,79 @@ public final class DataPrismPropertiesValidator {
         }
         if (operator.isEnabled() && operator.getPort() != null && port == operator.getPort()) {
             refuse("CLUSTER_PORT_SHARED", "dataprism.hazelcast.member.port must differ from dataprism.operator.port");
+        }
+    }
+
+    private static final String CLUSTER_KEY = "dataprism.hazelcast.security.cluster-key";
+    private static final String NAME_KEY = "dataprism.hazelcast.security.name-key";
+
+    /**
+     * The cluster key and the name key, as property names only: both are required to join other members, optional
+     * on a solo member (but both or neither there), and a literal value is never accepted. Whether a reference
+     * resolves, is strong enough, or is shared is checked where the keys are resolved, because that needs the key
+     * provider.
+     */
+    private void validateClusterKeyReferences(HazelcastProperties h, boolean joining) {
+        if (!joining && !h.securitySet()) {
+            return;
+        }
+        HazelcastProperties.ClusterKey cluster = h.getSecurity().getClusterKey();
+        HazelcastProperties.NameKey name = h.getSecurity().getNameKey();
+        keyReference(CLUSTER_KEY, cluster.getKeyId(), cluster.getEnvironmentVariable(),
+                cluster.getProviderReference());
+        keyReference(NAME_KEY, name.getKeyId(), name.getEnvironmentVariable(), name.getProviderReference());
+        rotationReference(CLUSTER_KEY + ".next", cluster.getNext());
+        rotationReference(CLUSTER_KEY + ".previous", cluster.getPrevious());
+        if (!blank(cluster.getValue())) {
+            refuse("LITERAL_SECRET_FORBIDDEN", CLUSTER_KEY + ".value is forbidden");
+        }
+        if (!blank(name.getValue())) {
+            refuse("LITERAL_SECRET_FORBIDDEN", NAME_KEY + ".value is forbidden");
+        }
+    }
+
+    private static void rotationReference(String prefix, HazelcastProperties.RotationKey key) {
+        if (blank(key.getKeyId()) && blank(key.getEnvironmentVariable()) && blank(key.getProviderReference())) {
+            return;
+        }
+        keyReference(prefix, key.getKeyId(), key.getEnvironmentVariable(), key.getProviderReference());
+    }
+
+    /** A key id and exactly one source. Names the missing property, never a value. */
+    private static void keyReference(String prefix, String keyId, String environmentVariable,
+                                     String providerReference) {
+        required(keyId, "MISSING_CLUSTER_KEY", prefix + ".key-id");
+        if (blank(environmentVariable) == blank(providerReference)) {
+            refuse("MISSING_CLUSTER_KEY", "exactly one of " + prefix + ".environment-variable and " + prefix
+                    + ".provider-reference must be set");
+        }
+    }
+
+    /**
+     * A joining member listens only on a named network: {@code member.interface} is required, and one that matches
+     * every address is refused. Both are also refused by the member factory; this is the same refusal, earlier.
+     */
+    private void validateMemberInterface(HazelcastProperties h) {
+        if ("none".equals(h.getJoin().getMode().strip())) {
+            return;
+        }
+        if (blank(h.getMember().getInterface())) {
+            refuse("MISSING_MEMBER_INTERFACE", "dataprism.hazelcast.member.interface is required for tcp-ip and "
+                    + "kubernetes joins");
+        }
+        try {
+            new io.github.aindriub.dataprism.hazelcast.ClusterMembership("interface-check",
+                    new io.github.aindriub.dataprism.hazelcast.ClusterMembership.TcpIp(java.util.List.of("127.0.0.1")),
+                    io.github.aindriub.dataprism.hazelcast.ClusterMembership.DEFAULT_PORT,
+                    java.util.Optional.of(h.getMember().getInterface()));
+        } catch (io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal refusal) {
+            String code = refusal.code().name();
+            if ("UNBOUNDED_MEMBER_INTERFACE".equals(code) || "INVALID_CLUSTER_INTERFACE".equals(code)) {
+                refuse(code, "dataprism.hazelcast.member.interface "
+                        + ("UNBOUNDED_MEMBER_INTERFACE".equals(code)
+                        ? "matches every address; name the network the cluster port may listen on"
+                        : "must be an IPv4 literal or a wildcard pattern such as 10.0.*.*"));
+            }
         }
     }
 

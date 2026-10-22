@@ -35,6 +35,7 @@ public class HazelcastProperties {
     private boolean approvalSweepIntervalSet;
     private final Join join = new Join();
     private final Member member = new Member();
+    private final Security security = new Security();
 
     /**
      * With {@code tcp-ip}, unset means a majority of the distinct {@code join.members}, which must then name every
@@ -103,6 +104,11 @@ public class HazelcastProperties {
         return member;
     }
 
+    /** The keys every member of the cluster shares. */
+    public Security getSecurity() {
+        return security;
+    }
+
     /** Whether any of the cluster-only settings is present. */
     private static boolean isBlank(String v) {
         return v == null || v.isBlank();
@@ -112,6 +118,207 @@ public class HazelcastProperties {
         return !isBlank(clusterName) || approvalMinimumMembers != null || !isBlank(join.mode) || !join.members.isEmpty()
                 || !isBlank(join.kubernetes.namespace) || !isBlank(join.kubernetes.serviceName)
                 || !isBlank(join.kubernetes.serviceDns) || member.port != null || !isBlank(member.interfaceAddress);
+    }
+
+    /**
+     * The first {@code dataprism.hazelcast.security.*} property that is set, by name, or {@code null} when none is.
+     * Never a value.
+     */
+    public String firstSecurityPropertySet() {
+        return security.firstSet();
+    }
+
+    /** Whether any {@code dataprism.hazelcast.security.*} property is set. */
+    public boolean securitySet() {
+        return security.firstSet() != null;
+    }
+
+    /** The settings that secure the cluster: the cluster key (with rotation keys) and the separate name key. */
+    public static class Security {
+        private final ClusterKey clusterKey = new ClusterKey();
+        private final NameKey nameKey = new NameKey();
+
+        /** The key that seals what members store; {@code next} and {@code previous} rotate it. */
+        public ClusterKey getClusterKey() {
+            return clusterKey;
+        }
+
+        /** The separate key from which map and lock names are derived. */
+        public NameKey getNameKey() {
+            return nameKey;
+        }
+
+        String firstSet() {
+            String found = clusterKey.firstSet("dataprism.hazelcast.security.cluster-key");
+            return found != null ? found : nameKey.firstSet("dataprism.hazelcast.security.name-key");
+        }
+    }
+
+    private static String first(String prefix, String keyId, String environmentVariable, String providerReference) {
+        if (!isBlank(keyId)) {
+            return prefix + ".key-id";
+        }
+        if (!isBlank(environmentVariable)) {
+            return prefix + ".environment-variable";
+        }
+        if (!isBlank(providerReference)) {
+            return prefix + ".provider-reference";
+        }
+        return null;
+    }
+
+    /** The cluster key by reference, as for {@code dataprism.privacy.hmac-key}: a literal value is refused. */
+    public static class ClusterKey {
+        /** Identifier of the current cluster key. Required with {@code tcp-ip} and {@code kubernetes}. Contains no dot. */
+        private String keyId;
+        /** Name of the environment variable holding the current cluster key. Exactly one source is required. */
+        private String environmentVariable;
+        /** Reference to the current cluster key in the key provider. Exactly one source is required. */
+        private String providerReference;
+        /** Refused if set: a literal cluster key is never accepted. */
+        private String value;
+        private final RotationKey next = new RotationKey();
+        private final RotationKey previous = new RotationKey();
+
+        public String getKeyId() {
+            return keyId;
+        }
+
+        public void setKeyId(String v) {
+            keyId = v;
+        }
+
+        public String getEnvironmentVariable() {
+            return environmentVariable;
+        }
+
+        public void setEnvironmentVariable(String v) {
+            environmentVariable = v;
+        }
+
+        public String getProviderReference() {
+            return providerReference;
+        }
+
+        public void setProviderReference(String v) {
+            providerReference = v;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String v) {
+            value = v;
+        }
+
+        /** The key a rotation introduces first: read by every member, written by none. */
+        public RotationKey getNext() {
+            return next;
+        }
+
+        /** The key a rotation retires: read, and written only while it is being replaced. */
+        public RotationKey getPrevious() {
+            return previous;
+        }
+
+        String firstSet(String prefix) {
+            String found = first(prefix, keyId, environmentVariable, providerReference);
+            if (found == null && !isBlank(value)) {
+                found = prefix + ".value";
+            }
+            if (found == null) {
+                found = next.firstSet(prefix + ".next");
+            }
+            return found != null ? found : previous.firstSet(prefix + ".previous");
+        }
+    }
+
+    /** A {@code next} or {@code previous} cluster key, by reference. */
+    public static class RotationKey {
+        /** Identifier of this rotation key; must differ from every other key id. Contains no dot. */
+        private String keyId;
+        /** Name of the environment variable holding this rotation key. Exactly one source is required with a key id. */
+        private String environmentVariable;
+        /** Reference to this rotation key in the key provider. Exactly one source is required with a key id. */
+        private String providerReference;
+
+        public String getKeyId() {
+            return keyId;
+        }
+
+        public void setKeyId(String v) {
+            keyId = v;
+        }
+
+        public String getEnvironmentVariable() {
+            return environmentVariable;
+        }
+
+        public void setEnvironmentVariable(String v) {
+            environmentVariable = v;
+        }
+
+        public String getProviderReference() {
+            return providerReference;
+        }
+
+        public void setProviderReference(String v) {
+            providerReference = v;
+        }
+
+        String firstSet(String prefix) {
+            return first(prefix, keyId, environmentVariable, providerReference);
+        }
+    }
+
+    /** The name key by reference: a literal value is refused. */
+    public static class NameKey {
+        /** Identifier of the name key. Required with {@code tcp-ip} and {@code kubernetes}. Contains no dot. */
+        private String keyId;
+        /** Name of the environment variable holding the name key. Exactly one source is required. */
+        private String environmentVariable;
+        /** Reference to the name key in the key provider. Exactly one source is required. */
+        private String providerReference;
+        /** Refused if set: a literal name key is never accepted. */
+        private String value;
+
+        public String getKeyId() {
+            return keyId;
+        }
+
+        public void setKeyId(String v) {
+            keyId = v;
+        }
+
+        public String getEnvironmentVariable() {
+            return environmentVariable;
+        }
+
+        public void setEnvironmentVariable(String v) {
+            environmentVariable = v;
+        }
+
+        public String getProviderReference() {
+            return providerReference;
+        }
+
+        public void setProviderReference(String v) {
+            providerReference = v;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String v) {
+            value = v;
+        }
+
+        String firstSet(String prefix) {
+            String found = first(prefix, keyId, environmentVariable, providerReference);
+            return found == null && !isBlank(value) ? prefix + ".value" : found;
+        }
     }
 
     /** How members find each other. {@code mode} is {@code tcp-ip}, {@code kubernetes} or {@code none}. */

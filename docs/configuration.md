@@ -191,7 +191,21 @@ Each key below is also described in the group table above. Defaults here are the
 | `dataprism.hazelcast.join.kubernetes.service-name` | unset | The service name (API mode); exactly one of this and `service-dns` |
 | `dataprism.hazelcast.join.kubernetes.service-dns` | unset | The service DNS name (DNS mode) |
 | `dataprism.hazelcast.member.port` | unset | The member port; 5701 when unset |
-| `dataprism.hazelcast.member.interface` | unset | The network interface the member binds; every interface when unset |
+| `dataprism.hazelcast.member.interface` | unset | The network interface the member binds. Required for `tcp-ip` and `kubernetes` (`MISSING_MEMBER_INTERFACE`); a value that matches every address is refused (`UNBOUNDED_MEMBER_INTERFACE`). Refused with `none` |
+| `dataprism.hazelcast.security.cluster-key.key-id` | unset | The identifier of the current cluster key. Required for `tcp-ip` and `kubernetes`, with exactly one of the two sources below; optional with `none`, but then the name key is required too. No dot |
+| `dataprism.hazelcast.security.cluster-key.environment-variable` | unset | The environment variable that holds the current cluster key, resolved by the same reviewed resolver as the privacy HMAC key. Exactly one of this and `provider-reference` |
+| `dataprism.hazelcast.security.cluster-key.provider-reference` | unset | A reference to the current cluster key in the key provider. Exactly one of this and `environment-variable` |
+| `dataprism.hazelcast.security.cluster-key.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
+| `dataprism.hazelcast.security.cluster-key.next.key-id` | unset | Optional, for a rotation: a cluster key every member reads and none writes. Needs a current key; must differ from every other key id |
+| `dataprism.hazelcast.security.cluster-key.next.environment-variable` | unset | The environment variable that holds the `next` key. Exactly one of this and `next.provider-reference`, with a `next.key-id` |
+| `dataprism.hazelcast.security.cluster-key.next.provider-reference` | unset | A reference to the `next` key in the key provider. Exactly one of this and `next.environment-variable`, with a `next.key-id` |
+| `dataprism.hazelcast.security.cluster-key.previous.key-id` | unset | Optional, for a rotation: the cluster key being retired. Needs a current key; must differ from every other key id |
+| `dataprism.hazelcast.security.cluster-key.previous.environment-variable` | unset | The environment variable that holds the `previous` key. Exactly one of this and `previous.provider-reference`, with a `previous.key-id` |
+| `dataprism.hazelcast.security.cluster-key.previous.provider-reference` | unset | A reference to the `previous` key in the key provider. Exactly one of this and `previous.environment-variable`, with a `previous.key-id` |
+| `dataprism.hazelcast.security.name-key.key-id` | unset | The identifier of the name key, a separate key from every cluster key. Required for `tcp-ip` and `kubernetes`; optional with `none`, but then the cluster key is required too. No dot |
+| `dataprism.hazelcast.security.name-key.environment-variable` | unset | The environment variable that holds the name key. Exactly one of this and `provider-reference` |
+| `dataprism.hazelcast.security.name-key.provider-reference` | unset | A reference to the name key in the key provider. Exactly one of this and `environment-variable` |
+| `dataprism.hazelcast.security.name-key.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
 | `dataprism.hazelcast.lock-timeout` | `PT2S` | How long a call waits for a cluster lock before it is refused with `CLUSTER_LOCK_TIMEOUT`; from `PT100MS` to `PT30S`. Every lock is leased for five times this, so none is held for ever; locks bound waits only. A lock or lease Hazelcast rejects is refused with `CLUSTER_OPERATION_REFUSED` |
 | `dataprism.hazelcast.approval-sweep-interval` | `PT5M` | How often each member sweeps the pending-approval entries and approval-id claims it owns; from `PT1S` to `P1D`, a `Duration`. A shorter interval clears leftovers sooner at the cost of more cluster calls. Fixed when the cluster is built, so it is refused with `single-node` and beside an application-supplied `PrivacyCluster` (`CLUSTER_SETTINGS_IGNORED`) |
 | `dataprism.hazelcast.approval-minimum-members` | unset | The fewest members that must see each other for approvals to change. Unset: a majority of the distinct `join.members` with `tcp-ip`, 1 with `none`; required with `kubernetes`, and with a hostname among `tcp-ip` members, when approvals are in use (`dataprism.oversight.approval-required-tools` set or `dataprism.reidentification.enabled`); the quorum is not computed or required otherwise |
@@ -564,6 +578,24 @@ phone-home are always off.
 - Without `member.interface`, a `tcp-ip` or `kubernetes` member binds every
   network interface. Member traffic is not encrypted or authenticated, so isolate
   it on a private network.
+
+Every cluster that joins other members needs a cluster key and a separate name
+key, each given as a key id and a reference. They are checked at startup, before a
+member starts, in this order. The message names the property and never a value.
+A solo member (`join.mode: none`) may leave both out. When it gives either, all of
+this applies to it as well, and it must give both. With `topology: single-node`, or
+beside your own `PrivacyCluster` bean, any `dataprism.hazelcast.security.*` key is
+refused (`CLUSTER_SETTINGS_IGNORED`) because nothing would read it.
+
+| Code | When |
+|---|---|
+| `MISSING_CLUSTER_KEY` | A key id or its source is missing, both sources are set, one of the two keys is set without the other, or `next` or `previous` is set without a current key |
+| `LITERAL_SECRET_FORBIDDEN` | A `value` is set on the cluster key or the name key |
+| `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | The reference does not resolve, or the key id is blank or contains a dot |
+| `CLUSTER_KEY_WEAK`, `NAME_KEY_WEAK` | The key is shorter than 32 bytes |
+| `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key or the name key has the key id or the material of the privacy HMAC key; or the name key has the material of a cluster key |
+| `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
+| `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` is missing for `tcp-ip` or `kubernetes`, or matches every address |
 
 The full property list, every refusal code, the Compose and Kubernetes examples
 and the network isolation you must supply are on
