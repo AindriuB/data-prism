@@ -184,4 +184,115 @@ class KeylessMemberIsolationTest {
         ClusterMembership.isolate(config);
         assertThat(config.getClusterName()).isNotEqualTo(first).startsWith(first + "-solo-");
     }
+
+    // ---- a supplied keyless instance --------------------------------------------------------------
+
+    private static final Object NOT_OVERRIDDEN = new Object();
+
+    /** Forwards every call to {@code target} unless {@code override} answers it. */
+    @SuppressWarnings("unchecked")
+    private static <T> T forwarding(Class<T> type, T target,
+                                    java.util.function.BiFunction<java.lang.reflect.Method, Object[], Object> override) {
+        return (T) java.lang.reflect.Proxy.newProxyInstance(KeylessMemberIsolationTest.class.getClassLoader(),
+                new Class<?>[] {type}, (proxy, method, args) -> {
+                    Object answer = override.apply(method, args);
+                    if (answer != NOT_OVERRIDDEN) {
+                        return answer;
+                    }
+                    try {
+                        return method.invoke(target, args);
+                    } catch (java.lang.reflect.InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+    }
+
+    /** A running loopback instance whose cluster hands its membership listeners to {@code listeners}. */
+    private static HazelcastInstance capturing(HazelcastInstance real,
+                                               List<com.hazelcast.cluster.MembershipListener> listeners) {
+        com.hazelcast.cluster.Cluster cluster = forwarding(com.hazelcast.cluster.Cluster.class, real.getCluster(),
+                (m, a) -> {
+                    if (m.getName().equals("addMembershipListener")) {
+                        listeners.add((com.hazelcast.cluster.MembershipListener) a[0]);
+                    }
+                    return NOT_OVERRIDDEN;
+                });
+        return forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getCluster") ? cluster : NOT_OVERRIDDEN);
+    }
+
+    private static void memberJoins(HazelcastInstance real,
+                                    List<com.hazelcast.cluster.MembershipListener> listeners) {
+        com.hazelcast.cluster.Member local = real.getCluster().getLocalMember();
+        var event = new com.hazelcast.cluster.MembershipEvent(real.getCluster(), local,
+                com.hazelcast.cluster.MembershipEvent.MEMBER_ADDED, java.util.Set.of(local));
+        listeners.forEach(l -> l.memberAdded(event));
+    }
+
+    private static HazelcastInstance soloInstance() {
+        return Hazelcast.newHazelcastInstance(PrivacyCluster.configure(
+                keylessConfig(TestMembers.uniqueName("wrapped"), FreePorts.consecutive(1))));
+    }
+
+    @Test
+    void aKeylessInstanceNotBoundToLoopbackIsRefusedAtWrap() throws Exception {
+        HazelcastInstance real = soloInstance();
+        java.net.InetSocketAddress remote = new java.net.InetSocketAddress(
+                java.net.InetAddress.getByAddress(new byte[] {10, 1, 2, 3}), 5701);
+        com.hazelcast.cluster.Member local = forwarding(com.hazelcast.cluster.Member.class,
+                real.getCluster().getLocalMember(),
+                (m, a) -> m.getName().equals("getSocketAddress") ? remote : NOT_OVERRIDDEN);
+        com.hazelcast.cluster.Cluster cluster = forwarding(com.hazelcast.cluster.Cluster.class, real.getCluster(),
+                (m, a) -> m.getName().equals("getLocalMember") ? local : NOT_OVERRIDDEN);
+        HazelcastInstance exposed = forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getCluster") ? cluster : NOT_OVERRIDDEN);
+        Throwable refused = catchThrowable(() -> PrivacyCluster.using(exposed, false));
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.MISSING_CLUSTER_KEY);
+        assertThat(real.getLifecycleService().isRunning()).isTrue();
+    }
+
+    /**
+     * A real late join cannot be produced here: Hazelcast's own joiner check turns away every member that is not
+     * itself joinerless, and a joinerless one never looks. So the join is announced to the wrapper's listeners by
+     * hand, through an instance that forwards everything else to a real one.
+     */
+    @Test
+    void aLoopbackKeylessInstanceThatLaterGetsAMemberIsClosedAndRefusesAfterwards() {
+        HazelcastInstance real = soloInstance();
+        List<com.hazelcast.cluster.MembershipListener> listeners = new java.util.ArrayList<>();
+        PrivacyCluster wrapped = PrivacyCluster.using(capturing(real, listeners), false);
+        assertThat(wrapped.instance()).isNotNull();
+        memberJoins(real, listeners);
+        Throwable refused = catchThrowable(wrapped::instance);
+        assertThat(refused).isInstanceOf(PrivacyClusterRefusal.class);
+        assertThat(((PrivacyClusterRefusal) refused).code()).isEqualTo(Code.MISSING_CLUSTER_KEY);
+        assertThat(wrapped.isRefused()).isTrue();
+        assertThat(real.getLifecycleService().isRunning()).as("not ours to stop").isTrue();
+    }
+
+    @Test
+    void aKeylessMemberThisClassStartedIsShutDownWhenItGetsAMember() throws Exception {
+        HazelcastInstance real = soloInstance();
+        List<com.hazelcast.cluster.MembershipListener> listeners = new java.util.ArrayList<>();
+        PrivacyCluster owned = PrivacyCluster.wrap(capturing(real, listeners), false,
+                java.time.Duration.ofMinutes(1), null, true);
+        memberJoins(real, listeners);
+        assertThat(owned.isRefused()).isTrue();
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (real.getLifecycleService().isRunning() && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
+        assertThat(real.getLifecycleService().isRunning()).isFalse();
+    }
+
+    @Test
+    void aKeyedWrapperIsNotClosedWhenItGetsAMember() {
+        HazelcastInstance real = soloInstance();
+        List<com.hazelcast.cluster.MembershipListener> listeners = new java.util.ArrayList<>();
+        PrivacyCluster wrapped = PrivacyCluster.using(capturing(real, listeners), false, TestMembers.KEYS);
+        memberJoins(real, listeners);
+        assertThat(wrapped.isRefused()).isFalse();
+        assertThat(wrapped.instance()).isNotNull();
+    }
 }
