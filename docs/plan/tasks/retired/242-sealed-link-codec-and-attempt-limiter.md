@@ -90,3 +90,23 @@ Notes for later tasks:
 - Forged and genuine tokens do different work after authentication: only an authenticated token has its payload parsed. The difference is small; 252's timing soak should cover it.
 - Amendment for when 264 is planned: sealed-links.md line 286 describes the counter entry as having a "time-to-live". The in-memory limiter decides window end by comparing the stored window start with the injected clock, never by an entry expiring, so a shared limiter must do the same.
 - The unpadded worst-case follow link is 615 characters (the design's 616 counts padding); the `TOO_LONG` omit in `sealDetailed` is unreachable with validated settings and is defensive.
+
+### External review of PR #154 — fixes (branch `fix/242-external-review`)
+
+- **Held key ids.** `heldKeyIds()` lists only ids that resolve to at least 32 bytes right now, through the same check `master()` uses. At construction a declared held id that does not resolve refuses `LINK_KEY_UNRESOLVED`, and one that is under 32 bytes refuses `LINK_KEY_WEAK`; neither message names a key or reference. Null entries in the held set are treated as absent.
+- **Pseudonymisation key.** `pseudonymisationKeyId` is now required (a null throws `NullPointerException` at construction). Every held key's material is compared with the pseudonymisation key's using `MessageDigest.isEqual`; a match refuses `LINK_KEY_SHARED`. If the pseudonymisation key cannot be resolved, no material comparison is possible and the id comparison alone applies.
+- **Provider outage at open time.** A held id whose key the provider cannot return (failure, null, or under 32 bytes) is refused as the new `KEY_UNAVAILABLE`, uncounted. The dummy-key AEAD still runs, so timing is unchanged. An id not held stays `UNKNOWN_KEY`, counted.
+- **Post-authentication parse failure.** An authenticated payload that does not parse is `MALFORMED` but uncounted.
+- **Seal with a vanished current key.** `sealDetailed` returns `Omitted(KEY_UNAVAILABLE)` instead of throwing.
+- **Follow payload.** `DIRECT` with a resolver, `TRANSLATED` without one, and an empty namespace are refused at construction.
+- **Architecture rule.** The cipher rule sees `Cipher::getInstance` method references, and the sealer package match is the package or a sub-package, so `core.linkx` is outside.
+- **Limiter test.** `aLockedPrincipalIsRefusedEvenWithAValidLinkAtTheCallersGate` now drives a gate that checks the lock, opens and records, and fails if the gate ignores the lock. The gate is test code, because the production gate arrives in 251 and 252.
+
+Design amendments for the scribe: `LinkReason.KEY_UNAVAILABLE` (uncounted, audit value `REFUSED:LINK_KEY_UNAVAILABLE`) and `SealResult.OmitReason.KEY_UNAVAILABLE` are not in sealed-links.md section 4. The follow-payload rules (resolver present only for `TRANSLATED`, namespace 1 to 32 bytes) are now enforced in code.
+
+Recorded for later tasks, with no code change here:
+
+- The codec seals the issue time and the link id the caller supplies. Callers 251 and 252 must take the issue time from the clock and the link id from a random source.
+- The counter key derives from the current key id, so a rotation lifts existing locks. Tasks 264 and 255 must decide a stable counter key.
+- The limiter contract is check then record, so concurrent attempts can exceed the limit. Settle this before 264.
+- The in-memory limiter's map is unbounded, and it sweeps on the request thread every 256 failures. Bound it in 264 or 255.
