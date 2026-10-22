@@ -271,8 +271,12 @@ public final class OperatorHarness implements AutoCloseable {
                     var beans = applicationContext.getBeanFactory();
                     beans.registerSingleton("testIdentityResolver", new PassThroughIdentityResolver());
                     beans.registerSingleton("testCustomerAdapter", adapter());
+                    // The privacy key keeps its fixed bytes; every other reference (the cluster and name keys)
+                    // resolves to material of its own, because a key shared with the privacy key is refused.
                     beans.registerSingleton("testKeys", (HmacKeyReferenceResolver) (keyId, reference) ->
-                            "task-105-test-key-material-longer-than-thirty-two-bytes"
+                            ("test-key".equals(reference)
+                                    ? "task-105-test-key-material-longer-than-thirty-two-bytes"
+                                    : "task-222-" + reference + "-" + keyId + "-test-key-material-over-32-bytes")
                                     .getBytes(StandardCharsets.UTF_8));
                     beans.registerSingleton("testAudit", (AuditSink) event -> {
                         if (failAudit) throw new IllegalStateException("audit down");

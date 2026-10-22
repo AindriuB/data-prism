@@ -88,6 +88,10 @@ spec:
               value: kubernetes
             - name: DATAPRISM_HAZELCAST_MEMBER_PORT
               value: "5701"
+            # Required: the member listens only here. Replace 10.*.*.* with your
+            # cluster's pod network; a pattern that matches every address is refused.
+            - name: DATAPRISM_HAZELCAST_MEMBER_INTERFACE
+              value: "10.*.*.*"
             - name: DATAPRISM_HAZELCAST_JOIN_KUBERNETES_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -109,6 +113,28 @@ spec:
                 secretKeyRef:
                   name: data-prism-hmac
                   key: hmac-key
+            # The cluster key and the name key, by reference as above. Every pod
+            # needs the same two, and they must differ from each other and from
+            # the HMAC key. "data-prism-cluster-key" and "data-prism-name-key" are
+            # placeholder Secret names; create them yourself.
+            - name: DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_KEYID
+              value: cluster-1
+            - name: DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_ENVIRONMENTVARIABLE
+              value: DATAPRISM_CLUSTER_KEY_MATERIAL
+            - name: DATAPRISM_CLUSTER_KEY_MATERIAL
+              valueFrom:
+                secretKeyRef:
+                  name: data-prism-cluster-key
+                  key: cluster-key
+            - name: DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_KEYID
+              value: name-1
+            - name: DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_ENVIRONMENTVARIABLE
+              value: DATAPRISM_NAME_KEY_MATERIAL
+            - name: DATAPRISM_NAME_KEY_MATERIAL
+              valueFrom:
+                secretKeyRef:
+                  name: data-prism-name-key
+                  key: name-key
 ---
 # --8<-- [start:k8s-networkpolicy]
 # Admits member traffic on 5701 only from pods carrying the same app label.

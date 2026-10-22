@@ -61,7 +61,7 @@ class CounterLeaseExpiryTest {
                     new Class<?>[]{HazelcastInstance.class}, (proxy, method, args) ->
                             method.getName().equals("getMap") && args[0].equals(mapName)
                                     ? delayedMap : invoke(method, members[0].instance(), args));
-            PrivacyCluster delayed = PrivacyCluster.using(delayedInstance, false);
+            PrivacyCluster delayed = PrivacyCluster.using(delayedInstance, false, TestMembers.KEYS);
             var stalled = caller.submit(() -> acquire.apply(delayed));
             try {
                 assertThat(paused.await(10, TimeUnit.SECONDS)).isTrue();

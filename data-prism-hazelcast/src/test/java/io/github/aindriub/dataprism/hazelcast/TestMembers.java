@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.config.Config;
+import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
@@ -15,14 +16,28 @@ final class TestMembers {
 
     static final Instant NOW = Instant.parse("2030-01-01T00:00:00Z");
 
+    /** The one set of keys every multi-member test shares: fixed test bytes, never real key material. */
+    static final ClusterKeys KEYS = keys("test-cluster-1", "test-name-1");
+
     private TestMembers() {
+    }
+
+    /** Keys made of fixed test bytes; the same ids give the same keys, so members of one test agree. */
+    static ClusterKeys keys(String clusterKeyId, String nameKeyId) {
+        return new ClusterKeys(clusterKeyId, filled('c'), null, null, null, null, nameKeyId, filled('n'));
+    }
+
+    private static byte[] filled(char c) {
+        byte[] out = new byte[32];
+        java.util.Arrays.fill(out, (byte) c);
+        return out;
     }
 
     /** A member that lists {@code peers} to join, with no split-brain protection unless {@code quorum} says so. */
     static PrivacyCluster member(String clusterName, int port, List<String> peers, OptionalInt quorum) {
         Config config = ClusterMembership.tcpIp(clusterName, peers).withPort(port)
                 .withInterface("127.0.0.1").toConfig();
-        return PrivacyCluster.embedded(config, false, quorum);
+        return PrivacyCluster.embedded(config, false, quorum, KEYS);
     }
 
     /** Two members that join each other. */

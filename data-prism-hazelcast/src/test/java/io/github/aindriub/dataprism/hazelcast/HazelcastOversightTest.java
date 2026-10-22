@@ -61,8 +61,8 @@ class HazelcastOversightTest {
     private void pair() {
         String name = "dataprism-oversight-pair-" + System.nanoTime();
         int port = FreePorts.consecutive(2);
-        a = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false);
-        b = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false);
+        a = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port, port)), false, TestMembers.KEYS);
+        b = PrivacyCluster.using(Hazelcast.newHazelcastInstance(member(name, port + 1, port)), false, TestMembers.KEYS);
         assertThat(a.instance().getCluster().getMembers()).hasSize(2);
     }
 

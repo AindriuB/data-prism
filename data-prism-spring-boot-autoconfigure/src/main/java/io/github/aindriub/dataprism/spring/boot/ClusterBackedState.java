@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
+import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
 import io.github.aindriub.dataprism.hazelcast.HazelcastApprovalStore;
@@ -10,6 +11,7 @@ import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
 import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal;
+import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
 import io.github.aindriub.dataprism.oversight.OversightState;
@@ -45,14 +47,27 @@ class ClusterBackedState {
      * never starts a member.
      */
     @Bean @ConditionalOnMissingBean @DependsOn("dataPrismPropertiesValidated")
-    PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties) {
+    PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties,
+            ObjectProvider<HmacKeyReferenceResolver> keyResolver, ObjectProvider<PrivacyMetrics> metrics) {
         HazelcastProperties h = properties.getHazelcast();
+        // Resolved before anything starts; the material lives only as long as ClusterKeys needs to copy it.
+        ClusterKeys keys = h.securitySet()
+                ? ClusterKeyResolution.resolve(properties, keyResolver.getObject()).orElse(null) : null;
         try {
             ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
                     Optional.ofNullable(h.getMember().getInterface()));
-            return PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
-                    approvalMinimum(h, properties), h.getApprovalSweepInterval());
+            PrivacyCluster cluster = PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
+                    approvalMinimum(h, properties), h.getApprovalSweepInterval(), keys);
+            try {
+                metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
+                        cluster::legacyEntries);
+            } catch (RuntimeException | Error registrationFailed) {
+                // A member that was started here is not left running because a gauge would not register.
+                cluster.close();
+                throw registrationFailed;
+            }
+            return cluster;
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
             throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));

@@ -20,7 +20,8 @@ public final class PrivacyClusterRefusal extends IllegalStateException {
         MISSING_MEMBER_INTERFACE,
         UNBOUNDED_MEMBER_INTERFACE,
         UNSAFE_HAZELCAST_SERIALIZATION,
-        UNSEALED_CLUSTER_STATE
+        UNSEALED_CLUSTER_STATE,
+        MISSING_CLUSTER_KEY
     }
 
     private final Code code;
