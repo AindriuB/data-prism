@@ -4,7 +4,7 @@
 **Release:** 0.8.0 (links stay off by default through 0.9, sealed-links OD-7)
 **Base branch:** the 0.8 integration branch, at a commit that contains 242 and its external-review fixes (`record/0.8-wave3`, PR #154).
 **Depends on:** 242 (`core.link`: `LinkAttemptLimiter`, `InMemoryLinkAttemptLimiter`, `LinkKeys`, `LinkOpenResult.Refused.counted()`)
-**Decisions:** owner decision 2026-10-22: settle the limiter contract in this separate task, before 251 and 264 build on it. **Open, flagged for the owner:** OD-269-1 (atomic contract), OD-269-2 (counter key) and OD-269-3 (ceiling and behaviour at it). The brief is written to the recommendation for each. If the owner picks another option, the planner rewrites "Required shape" before work starts.
+**Decisions:** owner decision 2026-10-22: settle the limiter contract in this separate task, before 251 and 264 build on it. **Decided by the owner 2026-10-22:** OD-269-1 (a), OD-269-2 (a), OD-269-3 (a) and OD-269-4 (coordinator: 269 added to 250's Depends on). "Required shape" is written to these decisions.
 **Wave:** 4 (combined 0.8 graph of 213, 218 to 231 and 238 to 269; 203 and 206 to 211 counted as landed). It runs alongside 223, 241 and 248; it owns none of their files.
 **Serialised with:** none in wave 4. 251 and 264 depend on this task. 250 and 252 read the contract: 252 reaches it through 251, and 250 should get an edge too (see OD-269-4).
 **Owns:**
@@ -36,26 +36,26 @@ Task 242 built the limiter as "check `locked`, then `recordFailure`". That lets 
 - docs/plan/tasks/264-shared-hazelcast-link-attempt-limiter.md "Required shape": today it keys the map on `LinkKeys.attemptCounterKey(...)`. This task removes that method, and 264 keys on `AttemptSubject.canonical()` instead (see the dated bullet in 264).
 - docs/conventions.md "Tests": an injected `Clock`, no sleeps. Use latches for ordering.
 
-## Owner decisions (flagged, not taken)
+## Owner decisions (decided 2026-10-22)
 
-**OD-269-1: the atomic contract.**
+**OD-269-1: the atomic contract. Decided (a), 2026-10-22, owner.**
 - (a) **Verify, then one atomic record-and-decide (recommended).** The gate checks `locked` first, as a cheap pre-check. It then opens the token, which is pure CPU and no I/O. On a counted refusal it calls `recordFailure`. That call atomically opens or extends the window, increments the count, and returns whether the attempt is still within the limit (`count <= limit` after the increment). An attempt over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`, not `LINK_INVALID`, so at most `limit` counted attempts per window ever learn their verification result, however many run at once. There is one write per failed attempt, with no reservation and no undo. Concurrent valid links are never penalised, and a crash cannot leak a reservation. In Hazelcast this is one entry processor that returns the new count.
 - (b) Reserve, then commit or release (`tryAttempt`). This is exact, but every attempt writes twice. Honest concurrent follows use up reservations, so a principal making 20 concurrent valid follows is refused. A member that dies while holding a reservation leaks it, which needs its own expiry in 264.
 - (c) Record first, then undo on success. Every valid follow writes twice. Honest concurrency is penalised as in (b). The undo has to find the same window, or it decrements a new one.
 
-**OD-269-2: the counter key.**
+**OD-269-2: the counter key. Decided (a), 2026-10-22, owner.**
 - (a) **The SPI takes the subject; each implementation keys it under its own non-rotating key (recommended).** `LinkAttemptLimiter` takes `AttemptSubject(scopeId, principalId)`. The in-memory limiter keys its map by `HMAC-SHA256(k, subject.canonical())`, truncated to 16 bytes, where `k` is 32 random bytes drawn per instance at construction. 264 keys its map by `KeyedNames` under the cluster **name key**, as every other shared map is keyed. `LinkKeys.attemptCounterKey` is deleted, so the limiter never reads link-key material. Why the name key's rotation is acceptable: it never rotates in the rolling procedure, so every member derives the same key throughout a link-key or cluster-key rotation. Changing it is a planned full restart that drops all cluster state on every member at once, so counts reset together and never split. The reset is worth at most `limit` further guesses per principal against a 128-bit tag. The per-instance random key in memory is acceptable because in-memory counts already die with the process. This also removes the throw: a link-key outage cannot affect the limiter.
 - (b) A dedicated HKDF label, `dataprism/link/v1/attempt`, over the pseudonymisation key. That key is shared by every member and rotates only with a full re-pseudonymisation. This reverses 242's review decision that `LinkKeys` keeps only a digest of the pseudonymisation key, and couples links to the identity key.
 - (c) A separate, non-rotating "attempt key" property. That is one more secret for operators to provision, for no gain over the name key.
 
-**OD-269-3: the ceiling, and what happens at it.**
+**OD-269-3: the ceiling, and what happens at it. Decided (a), 2026-10-22, owner.**
 - (a) **Recommended.** The default is 100,000 entries per instance, roughly 20 MB at most. It is a constructor parameter, with no `dataprism.*` property in 0.8. At the ceiling, a counted failure for a subject **not already in the map** is answered over the limit (`LINK_ATTEMPTS_EXHAUSTED`) and is not stored. Subjects already in the map keep counting, and **no live entry is ever evicted**. An attacker who fills the map therefore cannot lift anyone's lock (eviction would) or lock anyone out. `locked` for an absent subject is `false`, so honest users with valid links proceed. Only new forgers get no verification answer, and that is the fail-closed direction.
 - (b) As (a), but with a property `dataprism.links.invalid-attempt-capacity` bound by 255.
 - (c) Evict the oldest entry. Rejected: an attacker can lift a locked principal's lock by flooding the map.
 
-**OD-269-4: an edge from 250.** 250 counts page-link failures in the same limiter but does not reach this task through 251. **Recommend** adding `269` to 250's Depends on. That is a change to a line this task may not edit, so it is for the coordinator.
+**OD-269-4: an edge from 250. Decided 2026-10-22, coordinator: done.** 250 counts page-link failures in the same limiter but does not reach this task through 251. `269` is added to 250's Depends on, with a dated Context bullet in 250 (the coordinator's edit, since this task may not edit that file).
 
-## Required shape (later tasks read these; written to the recommendations above)
+## Required shape (later tasks read these; matches the owner's decisions above)
 - `AttemptSubject(String scopeId, String principalId)`, a record. Both parts must be non-null and non-empty; otherwise the constructor throws `IllegalArgumentException` with a message that names no value. `canonical()` returns the length-prefixed bytes of scope then principal, through `LabelledHkdf.lengthPrefixed`, so `("ab","c")` and `("a","bc")` differ. `toString()` is `AttemptSubject[redacted]`.
 - `LinkAttemptLimiter`:
   - `boolean locked(AttemptSubject subject)`: `count >= limit` within the current window.

@@ -3,7 +3,7 @@
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 241, 242, 247, 248 and 203 have merged
-**Depends on:** 241 (the `PAGING_PAGES` constant), 242 (page links, limiter), 247 (labels, visibility, `names`), 248 (`describe`), 203 (203 owns `CapabilityKnownSetTest` and `ExampleApplication.java`)
+**Depends on:** 241 (the `PAGING_PAGES` constant), 242 (page links, limiter), 269 (the limiter contract: `AttemptSubject`, atomic `recordFailure`, `LinkAttemptGate`), 247 (labels, visibility, `names`), 248 (`describe`), 203 (203 owns `CapabilityKnownSetTest` and `ExampleApplication.java`)
 **Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/catalog/CatalogQueries.java *(new)*
@@ -27,6 +27,7 @@
 - docs/plan/design/batch-and-bulk-follow.md Part A (A.1 to A.10) and section 8 items 1 to 13; OD-B1 to OD-B6 as decided; register OD-200-5 (`FOLLOW`), OD-200-15.
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/GetEntityContextTool.java: the authorisation, scope, admission and audit sequence a tool follows; reserved-argument stripping.
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServer.java:222-249: the `Wiring` record and the one-mapper invariant.
+- From 269 (2026-10-22, owner decisions OD-269-1 to 3): count page-link failures through `LinkAttemptGate` with an `AttemptSubject(scopeId, principalId)`, never the limiter directly. `LinkKeys.attemptCounterKey` no longer exists. A counted failure over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`, and at the ceiling a new subject is answered the same and not stored. Read 269's "Required shape".
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
