@@ -365,6 +365,59 @@ class LinkCodecTest {
         assertThat(refused.counted()).isFalse();
     }
 
+    // ---- review: refusals after authentication are never counted ----
+
+    @Test
+    void anAuthenticatedPayloadThatDoesNotParseIsRefusedUncounted() throws Exception {
+        byte[] raw = raw(sealed(follow(5)));
+        byte[] truncated = LinkVectors.decrypt(material(1, 32), "case-1", "alice", true, raw);
+        byte[] broken = Arrays.copyOf(truncated, truncated.length - 3);
+        String token = token(LinkVectors.reseal(material(1, 32), "case-1", "alice", true, raw, broken));
+        Refused refused = refused(codec.open(token, binding, follows()));
+        assertThat(refused.reason()).isEqualTo(LinkReason.MALFORMED);
+        assertThat(refused.counted()).isFalse();
+    }
+
+    @Test
+    void aProviderFailureForAHeldIdIsAnUncountedRefusal() {
+        MapKeys keys = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32))
+                .with("pseudo-key", material(200, 32));
+        LinkSettings issuing = settings("k2", true, Duration.ofSeconds(30));
+        String token = new LinkCodec(issuing, new LinkKeys(keys, "k2", "pseudo-key", () -> Set.of("k1", "k2")),
+                clock).seal(follow(5), binding).orElseThrow().token();
+        LinkCodec member = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
+                new LinkKeys(keys, "k1", "pseudo-key", () -> Set.of("k1", "k2")), clock);
+        assertThat(member.open(token, binding, follows())).isInstanceOf(Opened.class);
+
+        keys.keys.remove("k2");
+        Refused outage = refused(member.open(token, binding, follows()));
+        assertThat(outage.reason()).isEqualTo(LinkReason.KEY_UNAVAILABLE);
+        assertThat(outage.counted()).isFalse();
+
+        keys.with("k2", material(2, 31));
+        assertThat(refused(member.open(token, binding, follows())).counted()).isFalse();
+
+        // An id this member never held is still unknown, and counted.
+        keys.with("k3", material(3, 32));
+        String foreign = new LinkCodec(settings("k3", true, Duration.ofSeconds(30)),
+                new LinkKeys(keys, "k3", "pseudo-key"), clock).seal(follow(5), binding).orElseThrow().token();
+        Refused unknown = refused(member.open(foreign, binding, follows()));
+        assertThat(unknown.reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
+        assertThat(unknown.counted()).isTrue();
+    }
+
+    @Test
+    void sealingWhenTheCurrentKeyHasVanishedOmitsWithAReason() {
+        MapKeys keys = new MapKeys().with("k1", material(1, 32)).with("pseudo-key", material(200, 32));
+        LinkCodec c = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
+                new LinkKeys(keys, "k1", "pseudo-key"), clock);
+        assertThat(c.sealDetailed(follow(5), binding)).isInstanceOf(SealResult.Issued.class);
+        keys.keys.remove("k1");
+        assertThat(c.sealDetailed(follow(5), binding))
+                .isEqualTo(new SealResult.Omitted(SealResult.OmitReason.KEY_UNAVAILABLE));
+        assertThat(c.seal(follow(5), binding)).isEmpty();
+    }
+
     // ---- rotation ----
 
     @Test

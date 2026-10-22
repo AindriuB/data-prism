@@ -42,6 +42,21 @@ final class LinkVectors {
     /** Opens the raw token with the master key and returns the plaintext payload; throws if it does not verify. */
     static byte[] decrypt(byte[] master, String scope, String principal, boolean bind, byte[] raw)
             throws Exception {
+        return crypt(master, scope, principal, bind, raw, null);
+    }
+
+    /** The same token with its payload replaced, authenticated under the same header, nonce and key. */
+    static byte[] reseal(byte[] master, String scope, String principal, boolean bind, byte[] raw, byte[] payload)
+            throws Exception {
+        byte[] sealed = crypt(master, scope, principal, bind, raw, payload);
+        int headerLength = raw.length - (decrypt(master, scope, principal, bind, raw).length + 16);
+        byte[] out = Arrays.copyOf(raw, headerLength + sealed.length);
+        System.arraycopy(sealed, 0, out, headerLength, sealed.length);
+        return out;
+    }
+
+    private static byte[] crypt(byte[] master, String scope, String principal, boolean bind, byte[] raw,
+                                byte[] replacement) throws Exception {
         int at = 1;
         int keyIdLength = raw[at++] & 0xFF;
         byte[] keyId = Arrays.copyOfRange(raw, at, at + keyIdLength);
@@ -68,10 +83,11 @@ final class LinkVectors {
         prefixed(aad, scope.getBytes(StandardCharsets.UTF_8));
         prefixed(aad, callerTag);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(derive(master, "dataprism/link/v1/seal", scope), "AES"),
+        cipher.init(replacement == null ? Cipher.DECRYPT_MODE : Cipher.ENCRYPT_MODE,
+                new SecretKeySpec(derive(master, "dataprism/link/v1/seal", scope), "AES"),
                 new GCMParameterSpec(128, nonce));
         cipher.updateAAD(aad.toByteArray());
-        return cipher.doFinal(raw, at, raw.length - at);
+        return replacement == null ? cipher.doFinal(raw, at, raw.length - at) : cipher.doFinal(replacement);
     }
 
     static long expiryOf(byte[] raw) {

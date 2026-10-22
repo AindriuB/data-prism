@@ -12,7 +12,9 @@ public sealed interface SealResult permits SealResult.Issued, SealResult.Omitted
         /** The encoded link is longer than {@code maxLength}. */
         TOO_LONG,
         /** The computed expiry is not after now: the scope or the caller token has already ended. */
-        ALREADY_EXPIRED
+        ALREADY_EXPIRED,
+        /** The current link key cannot be read from the provider right now. */
+        KEY_UNAVAILABLE
     }
 
     record Issued(SealedLink link) implements SealResult {

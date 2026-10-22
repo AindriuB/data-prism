@@ -107,7 +107,7 @@ public final class LinkCodec {
 
         byte[] master = keys.master(settings.keyId());
         if (master == null) {
-            throw new IllegalStateException("LINK_KEY_UNRESOLVED: the link key id could not be resolved");
+            return new SealResult.Omitted(SealResult.OmitReason.KEY_UNAVAILABLE);
         }
         byte[] sealKey = LinkKeys.derive(master, LinkKeys.SEAL_LABEL, binding.scopeId());
         byte[] callerTag = callerTag(master, binding);
@@ -179,9 +179,9 @@ public final class LinkCodec {
         }
 
         // 3. Always run the AEAD verification: against the named key, or a dummy when it is unknown.
-        byte[] named = keys.master(header.keyId);
-        boolean knownKey = named != null;
-        byte[] master = knownKey ? named : LinkKeys.dummyMaster();
+        LinkKeys.Lookup lookup = keys.lookup(header.keyId);
+        boolean knownKey = lookup.status() == LinkKeys.Status.HELD;
+        byte[] master = knownKey ? lookup.material() : LinkKeys.dummyMaster();
         byte[] sealKey = LinkKeys.derive(master, LinkKeys.SEAL_LABEL, binding.scopeId());
         byte[] callerTag = callerTag(master, binding);
         byte[] aad = aad(header.keyIdBytes, header.expirySeconds, header.targetBytes, header.relationCode,
@@ -205,6 +205,9 @@ public final class LinkCodec {
         boolean future = payload != null
                 && payload.issueTime().isAfter(LinkLayout.plus(now, settings.clockSkew()));
 
+        if (lookup.status() == LinkKeys.Status.UNAVAILABLE) {
+            return refuse(LinkReason.KEY_UNAVAILABLE);
+        }
         if (!knownKey) {
             return refuse(LinkReason.UNKNOWN_KEY);
         }
@@ -212,7 +215,8 @@ public final class LinkCodec {
             return refuse(LinkReason.AUTH_FAILED);
         }
         if (!parsed) {
-            return refuse(LinkReason.MALFORMED);
+            // Only a genuine link authenticates, so a bad payload is the issuer's fault: never counted.
+            return new LinkOpenResult.Refused(LinkReason.MALFORMED, false);
         }
         if (expired) {
             return refuse(LinkReason.EXPIRED);
