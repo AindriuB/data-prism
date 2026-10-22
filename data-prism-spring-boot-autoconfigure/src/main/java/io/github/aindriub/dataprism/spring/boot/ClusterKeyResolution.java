@@ -14,10 +14,12 @@ import java.util.function.Supplier;
  * the privacy HMAC key is resolved, and builds the {@link ClusterKeys} a member holds. Shape and presence were
  * checked on the properties before this runs; this checks what only the resolved material can show.
  *
- * <p>Refusals are checked in a fixed order: unresolved, weak or shared with the privacy HMAC key (cluster keys
- * first, then the name key), a name key equal to a cluster key, then key ids that are not pairwise distinct. A
- * message names a property and never a key id's material, a reference, or anything the resolver said. Resolved
- * material is cleared as soon as {@link ClusterKeys} has copied it.
+ * <p>Refusals are checked in a fixed order, which {@code docs/configuration.md} lists: key ids that are blank or
+ * hold a dot, then each key in turn (current, next, previous, name) for resolution and strength, the privacy HMAC key
+ * itself, the cluster keys and then the name key against that key, a name key equal to a cluster key, then key ids
+ * that are not pairwise distinct. A message names a property and never a key id's material, a reference, or anything
+ * the resolver said. The resolver's arrays are copied on receipt and only the copies are cleared, as soon as
+ * {@link ClusterKeys} has copied them in turn.
  */
 final class ClusterKeyResolution {
     private static final String CLUSTER_KEY = "dataprism.hazelcast.security.cluster-key";

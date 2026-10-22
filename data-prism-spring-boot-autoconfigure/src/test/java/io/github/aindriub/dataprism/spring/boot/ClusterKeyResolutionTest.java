@@ -88,4 +88,31 @@ class ClusterKeyResolutionTest {
         assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_WEAK:");
         assertThat(weak).containsExactly(1, 2, 3);
     }
+
+    @Test
+    void aWeakNameKeyIsRefusedBeforeTheHmacKeyIsResolved() {
+        HmacKeyReferenceResolver resolver = (id, reference) -> switch (reference) {
+            case "HMAC_REF" -> throw new IllegalStateException("provider unavailable");
+            case "CLUSTER_REF" -> bytes('c');
+            default -> new byte[] {1};
+        };
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(properties(), resolver));
+        assertThat(refused.getMessage()).startsWith("NAME_KEY_WEAK:");
+    }
+
+    @Test
+    void anUnresolvedHmacKeyIsRefusedBeforeTheClusterKeysAreComparedWithIt() {
+        DataPrismProperties p = properties();
+        p.getHazelcast().getSecurity().getClusterKey().setKeyId("hmac-1");
+        HmacKeyReferenceResolver resolver = (id, reference) -> {
+            if (reference.equals("HMAC_REF")) {
+                throw new IllegalStateException("provider unavailable");
+            }
+            return reference.equals("CLUSTER_REF") ? bytes('c') : bytes('n');
+        };
+        DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
+                () -> ClusterKeyResolution.resolve(p, resolver));
+        assertThat(refused.getMessage()).startsWith("HMAC_KEY_UNRESOLVED:");
+    }
 }

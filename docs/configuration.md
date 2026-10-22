@@ -583,21 +583,31 @@ phone-home are always off.
 
 Every cluster that joins other members needs a cluster key and a separate name
 key, each given as a key id and a reference. They are checked at startup, before a
-member starts, in this order. The message names the property and never a value.
-A solo member (`join.mode: none`) may leave both out. When it gives either, all of
+member starts. The message names the property and never a value. A solo member
+(`join.mode: none`) may leave both out. When it gives either, all of
 this applies to it as well, and it must give both. With `topology: single-node`, or
 beside your own `PrivacyCluster` bean, any `dataprism.hazelcast.security.*` key is
 refused (`CLUSTER_SETTINGS_IGNORED`) because nothing would read it.
 
-| Code | When |
-|---|---|
-| `MISSING_CLUSTER_KEY` | A key id or its source is missing, both sources are set, one of the two keys is set without the other, or `next` or `previous` is set without a current key |
-| `LITERAL_SECRET_FORBIDDEN` | A `value` is set on the cluster key or the name key |
-| `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | The reference does not resolve, or the key id is blank or contains a dot |
-| `CLUSTER_KEY_WEAK`, `NAME_KEY_WEAK` | The key is shorter than 32 bytes |
-| `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key or the name key has the key id or the material of the privacy HMAC key; or the name key has the material of a cluster key |
-| `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
-| `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` is missing for `tcp-ip` or `kubernetes`, or matches every address |
+A member without keys is always solo: it listens on `127.0.0.1` only, under a
+cluster name with a random suffix, so no keyed member can join it. This holds for
+a `Config` passed to `PrivacyCluster.embedded` too. A `PrivacyCluster` or Hazelcast
+instance you supply without keys must be isolated the same way by you; one that
+already has more than one member is refused (`MISSING_CLUSTER_KEY`).
+
+The first failing check is the one reported, and the checks run in this order:
+
+| Step | Code | When |
+|---|---|---|
+| 1 | `MISSING_CLUSTER_KEY` | A key id or its source is missing, both sources are set, one of the two keys is set without the other, or `next` or `previous` is set without a current key. Checked for the cluster key, the name key, `next`, then `previous` |
+| 2 | `LITERAL_SECRET_FORBIDDEN` | A `value` is set on the cluster key, the name key, `next` or `previous` |
+| 3 | `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` is missing for `tcp-ip` or `kubernetes`, or matches every address |
+| 4 | `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | A key id is blank or contains a dot. Checked for the cluster key, `next`, `previous`, then the name key |
+| 5 | `CLUSTER_KEY_UNRESOLVED`, `CLUSTER_KEY_WEAK`, `NAME_KEY_UNRESOLVED`, `NAME_KEY_WEAK` | A reference does not resolve, or resolves to material shorter than 32 bytes. Each key is resolved and measured in turn: the cluster key, `next`, `previous`, then the name key |
+| 6 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
+| 7 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
+| 8 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
+| 9 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
 
 The full property list, every refusal code, the Compose and Kubernetes examples
 and the network isolation you must supply are on
