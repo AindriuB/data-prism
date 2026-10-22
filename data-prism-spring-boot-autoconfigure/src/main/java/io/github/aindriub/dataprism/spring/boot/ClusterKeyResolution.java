@@ -130,17 +130,20 @@ final class ClusterKeyResolution {
     }
 
     private static Resolved resolve(HmacKeyReferenceResolver resolver, Ref ref) {
-        byte[] material;
+        byte[] received;
         try {
-            material = resolver.resolve(ref.keyId(), ref.reference());
+            received = resolver.resolve(ref.keyId(), ref.reference());
         } catch (RuntimeException unresolved) {
             throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
                     ref.property() + " could not be resolved");
         }
-        if (material == null) {
+        if (received == null) {
             throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
                     ref.property() + " could not be resolved");
         }
+        // The resolver does not promise a fresh array (a caching one hands out its own), so this copy is the only
+        // one ever cleared.
+        byte[] material = received.clone();
         if (material.length < ClusterKeys.MIN_KEY_BYTES) {
             Arrays.fill(material, (byte) 0);
             throw new DataPrismConfigurationException(ref.area() + "_WEAK",
@@ -156,17 +159,23 @@ final class ClusterKeyResolution {
         if (reference == null || reference.isBlank()) {
             reference = hmac.getProviderReference();
         }
+        byte[] received;
         try {
-            return resolver.resolve(hmac.getKeyId(), reference);
+            received = resolver.resolve(hmac.getKeyId(), reference);
         } catch (RuntimeException unresolved) {
-            // The HMAC key's own refusal comes from its own check, which runs before the cluster is built.
-            return null;
+            received = null;
         }
+        if (received == null) {
+            // Without its material the cluster keys cannot be shown to differ from it, so none is accepted.
+            throw new DataPrismConfigurationException("HMAC_KEY_UNRESOLVED",
+                    "dataprism.privacy.hmac-key could not be resolved to check the cluster keys against it");
+        }
+        return received.clone();
     }
 
     private static void shared(Resolved key, byte[] hmac, String hmacKeyId) {
         boolean sameId = key.ref.keyId().equals(hmacKeyId);
-        boolean sameMaterial = hmac != null && MessageDigest.isEqual(key.material, hmac);
+        boolean sameMaterial = MessageDigest.isEqual(key.material, hmac);
         if (sameId || sameMaterial) {
             throw new DataPrismConfigurationException(key.ref.area() + "_SHARED",
                     key.ref.property() + " must differ from dataprism.privacy.hmac-key");
