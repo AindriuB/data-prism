@@ -54,3 +54,39 @@ A link is the one new authority object in 0.8 and the one place new cryptography
 - Spring properties and key resolution from configuration (254, 255).
 - The collection-page and group payloads (0.9).
 - The timing soak test of sealed-links obligation 10 (252 writes it, 263 runs it).
+
+## Outcome
+
+Branch `task/242-sealed-link-codec`. Tests written first: `LinkCodecTest`, `LinkKeysTest`, `InMemoryLinkAttemptLimiterTest` (core `link` package) and `LinkArchitectureTest`; none compiles on the base commit. A known-answer file, `src/test/resources/link/vectors.properties`, pins the derived keys (checked against an independent Python HKDF), one sealed follow link and one sealed page link.
+
+Decisions made after review (coordinator, on the fail-closed rule):
+
+- **Scope and token end.** `open` refuses as `EXPIRED` when `now >= scopeExpiry` or `now >= tokenExpiry`, with no skew on those two. `sealDetailed` omits (`ALREADY_EXPIRED`) when the computed expiry is not after now. Task 252 still re-checks the live session; this is defence in depth.
+- **Key allow-list.** `open` verifies only ids in `heldKeyIds()` (the current id plus the supplied set, read on every call). Any other id takes the dummy-key path and is `UNKNOWN_KEY`. The pseudonymisation key id is refused at construction (`LINK_KEY_SHARED`) if the held set contains it, and is `UNKNOWN_KEY` if it appears later. The default held set is the current id only. A supplier that returns null or throws is treated as "current id only", so `open` still refuses instead of throwing.
+- **Error codes follow the design** (sealed-links.md 415-421). A bad attempt limit, attempt window, clock skew, `maxLength` or key id is `INVALID_LINK_LIMIT`, with the detail after the code. The design names no key-id code. A non-positive lifetime is `INVALID_LINK_LIFETIME`.
+- **No caps beyond the design.** The design gives no maximum lifetime or window, so none is enforced. `LinkLayout.plus` saturates at `Instant.MAX`, and tests show a `Long.MAX_VALUE`-second window constructs, counts and locks at the limit, and a huge lifetime is bounded by the scope and token ends.
+
+APIs added beyond the brief, and why:
+
+- `LinkCodec.sealDetailed` returning `SealResult` (`Issued` or `Omitted(OmitReason)`): the brief asks for the empty result "with the reason"; `seal` delegates to it.
+- `LinkOpenResult.Opened.keyId`: a page verifier recomputes the catalog tag under the key the link names, so a walk begun before a rotation still verifies.
+- `LinkKeys.forScope(scopeId[, keyId])` returning `ScopeKeys`: `fingerprint` and `catalogTag` live there, not on `LinkKeys` as the brief's shape says, because they are per-scope. `attemptCounterKey` and `heldKeyIds` stay on `LinkKeys`.
+- The four-argument `LinkKeys` constructor, with a `Supplier<Set<String>>` of held ids: `SecretKeyProvider` has no listing method, so task 255 must supply the real set.
+
+Bug hunt (limiter concurrency, oracle uniformity, boundary leaks) was run inline over `core.link`. It found and fixed:
+
+- A hostile unauthenticated expiry value threw in `Instant.ofEpochSecond`; it is now clamped before use.
+- The `LinkKeys` constructor zeroed the provider's returned array, which could mutate a provider's own copy; removed, with a test.
+- `Instant.plus` overflow in lifetime, skew and window arithmetic; now saturating.
+- A key id the provider held but the member did not list could verify; now the allow-list refuses it.
+- A past-the-end scope or token could be sealed and opened; now refused (decision above).
+
+Checked and found sound: the limiter's `compute` and `computeIfPresent` are atomic and a 16-thread test loses no count; the structural checks depend only on public layout, and every refusal after the length and structure checks runs the same AEAD work, including for an unknown key; no token, payload, key byte or provider message reaches an exception message or `toString` (sentinel tests).
+
+Notes for later tasks:
+
+- Rotation and the per-principal limit: the counter key is derived under the current key id, so during phase 2 of a rotation the counts split across key ids, both for the single-node limiter and for task 264's cluster limiter. A principal can have up to one limit per key id in flight, and 264 must decide whether to accept that or key the counter on something stable.
+- Task 255 must supply `heldKeyIds`; until then only the current key verifies. The supplier should not return null or throw (both fail closed to current-only, silently).
+- Forged and genuine tokens do different work after authentication: only an authenticated token has its payload parsed. The difference is small; 252's timing soak should cover it.
+- Amendment for when 264 is planned: sealed-links.md line 286 describes the counter entry as having a "time-to-live". The in-memory limiter decides window end by comparing the stored window start with the injected clock, never by an entry expiring, so a shared limiter must do the same.
+- The unpadded worst-case follow link is 615 characters (the design's 616 counts padding); the `TOO_LONG` omit in `sealDetailed` is unreachable with validated settings and is defensive.

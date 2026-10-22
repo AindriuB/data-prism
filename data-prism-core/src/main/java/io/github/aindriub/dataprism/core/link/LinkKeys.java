@@ -1,0 +1,203 @@
+package io.github.aindriub.dataprism.core.link;
+
+import io.github.aindriub.dataprism.core.crypto.LabelledHkdf;
+import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.Supplier;
+
+/**
+ * Link key derivation (sealed-links.md section 3). One link key per key id comes from a
+ * {@link SecretKeyProvider}; each purpose and scope gets its own 32-byte key by HKDF-SHA-256 with a 32-zero-byte
+ * salt, one expand block, and an {@code info} of the purpose label and the scope id.
+ *
+ * <p>Construction refuses an unresolvable key id ({@code LINK_KEY_UNRESOLVED}), key material under 32 bytes
+ * ({@code LINK_KEY_WEAK}) and the pseudonymisation key's id ({@code LINK_KEY_SHARED}). Messages start with the
+ * code and name no key byte or reference; the provider's own exception is dropped, because its message may name
+ * a reference.
+ *
+ * <p>Verification looks up exactly the key id a token names and never another. No method here logs.
+ */
+public final class LinkKeys {
+
+    static final String SEAL_LABEL = "dataprism/link/v1/seal";
+    static final String FINGERPRINT_LABEL = "dataprism/link/v1/fingerprint";
+    static final String CALLER_LABEL = "dataprism/link/v1/caller";
+
+    private static final int MIN_KEY_BYTES = 32;
+    private static final byte[] ZERO_SALT = new byte[32];
+    /** Not a secret: the stand-in key so that an unknown key id costs the same work as a known one. */
+    private static final byte[] DUMMY_KEY =
+            "dataprism-link-dummy-key-0000000".getBytes(StandardCharsets.US_ASCII);
+
+    private final SecretKeyProvider provider;
+    private final String currentKeyId;
+    private final Supplier<Set<String>> held;
+    private final String pseudonymisationKeyId;
+
+    /** As the long form, reporting only the current key id as held. */
+    public LinkKeys(SecretKeyProvider provider, String currentKeyId, String pseudonymisationKeyId) {
+        this(provider, currentKeyId, pseudonymisationKeyId, null);
+    }
+
+    /**
+     * @param held the key ids this member holds, for the health report; {@code null} reports the current id only
+     */
+    public LinkKeys(SecretKeyProvider provider, String currentKeyId, String pseudonymisationKeyId,
+                    Supplier<Set<String>> held) {
+        this.provider = Objects.requireNonNull(provider, "provider");
+        this.currentKeyId = Objects.requireNonNull(currentKeyId, "currentKeyId");
+        if (!LinkSettings.validKeyId(currentKeyId)) {
+            throw new IllegalArgumentException(
+                    "INVALID_LINK_LIMIT: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
+        }
+        if (currentKeyId.equals(pseudonymisationKeyId)) {
+            throw new IllegalStateException(
+                    "LINK_KEY_SHARED: the link key id must differ from the pseudonymisation key id");
+        }
+        byte[] material;
+        try {
+            material = provider.secret(currentKeyId);
+        } catch (RuntimeException failure) {
+            throw new IllegalStateException("LINK_KEY_UNRESOLVED: the link key id could not be resolved");
+        }
+        if (material == null) {
+            throw new IllegalStateException("LINK_KEY_UNRESOLVED: the link key id could not be resolved");
+        }
+        boolean weak = material.length < MIN_KEY_BYTES;
+        if (weak) {
+            throw new IllegalStateException("LINK_KEY_WEAK: the link key must be at least 32 bytes");
+        }
+        this.held = held != null ? held : () -> Set.of(currentKeyId);
+        this.pseudonymisationKeyId = pseudonymisationKeyId;
+        if (pseudonymisationKeyId != null && heldOrEmpty().contains(pseudonymisationKeyId)) {
+            throw new IllegalStateException(
+                    "LINK_KEY_SHARED: the held key ids must not include the pseudonymisation key id");
+        }
+    }
+
+    /** The key id used to issue. */
+    public String currentKeyId() {
+        return currentKeyId;
+    }
+
+    /** The supplied held set; a supplier that returns null or throws is treated as empty (current id only). */
+    private Set<String> heldOrEmpty() {
+        try {
+            Set<String> ids = held.get();
+            return ids != null ? ids : Set.of();
+        } catch (RuntimeException failure) {
+            return Set.of();
+        }
+    }
+
+    /**
+     * The key ids this member verifies with, sorted: the current id and the supplied held set, never the
+     * pseudonymisation key id. For the health endpoint and the loaded-keys gauge.
+     */
+    public Set<String> heldKeyIds() {
+        Set<String> ids = new TreeSet<>(heldOrEmpty());
+        ids.add(currentKeyId);
+        if (pseudonymisationKeyId != null) {
+            ids.remove(pseudonymisationKeyId);
+        }
+        return ids;
+    }
+
+    /** The per-scope keys under the current key id. */
+    public ScopeKeys forScope(String scopeId) {
+        return forScope(scopeId, currentKeyId);
+    }
+
+    /**
+     * The per-scope keys under a named key id; use the id a verified link names so that a walk begun before a
+     * rotation still verifies. Throws {@link IllegalStateException} if the id is unknown.
+     */
+    public ScopeKeys forScope(String scopeId, String keyId) {
+        Objects.requireNonNull(scopeId, "scopeId");
+        byte[] master = master(keyId);
+        if (master == null) {
+            throw new IllegalStateException("LINK_KEY_UNRESOLVED: the link key id could not be resolved");
+        }
+        return new ScopeKeys(derive(master, FINGERPRINT_LABEL, scopeId));
+    }
+
+    /**
+     * The limiter's counter key: {@code HMAC(fingerprintKey, scope | principal)}, truncated to 16 bytes and
+     * hex-encoded. It holds neither the scope id nor the principal id.
+     */
+    public String attemptCounterKey(String scopeId, String principalId) {
+        Objects.requireNonNull(principalId, "principalId");
+        byte[] key = forScope(scopeId).key;
+        byte[] mac = LabelledHkdf.hmac(key, LabelledHkdf.lengthPrefixed(
+                scopeId.getBytes(StandardCharsets.UTF_8), principalId.getBytes(StandardCharsets.UTF_8)));
+        return HexFormat.of().formatHex(mac, 0, 16);
+    }
+
+    /**
+     * The named key's material, or {@code null} when the id is not held, is the pseudonymisation key's, or the
+     * key is unknown, unavailable or under 32 bytes. The held set is read on every call. Never falls back.
+     */
+    byte[] master(String keyId) {
+        if (!heldKeyIds().contains(keyId)) {
+            return null;
+        }
+        try {
+            byte[] material = provider.secret(keyId);
+            return material != null && material.length >= MIN_KEY_BYTES ? material : null;
+        } catch (RuntimeException failure) {
+            return null;
+        }
+    }
+
+    static byte[] dummyMaster() {
+        return DUMMY_KEY.clone();
+    }
+
+    static byte[] derive(byte[] master, String label, String scopeId) {
+        byte[] prk = LabelledHkdf.extract(ZERO_SALT, master);
+        return LabelledHkdf.expand(prk, LabelledHkdf.infoText(label, scopeId), 32);
+    }
+
+    /** The keys a scope derives from one link key: fingerprints and the catalog tag. */
+    public static final class ScopeKeys {
+        private final byte[] key;
+
+        private ScopeKeys(byte[] key) {
+            this.key = key;
+        }
+
+        /** A 12-byte keyed fingerprint, for item ordering and duplicate collapse. */
+        public byte[] fingerprint(byte[] value) {
+            Objects.requireNonNull(value, "value");
+            return Arrays.copyOf(LabelledHkdf.hmac(key, value), LinkLayout.FINGERPRINT_BYTES);
+        }
+
+        /** The 16-byte tag over the whole visible, filtered label list, in the order given, length-prefixed. */
+        public byte[] catalogTag(List<String> labels) {
+            Objects.requireNonNull(labels, "labels");
+            byte[][] items = new byte[labels.size()][];
+            for (int i = 0; i < items.length; i++) {
+                items[i] = Objects.requireNonNull(labels.get(i), "label").getBytes(StandardCharsets.UTF_8);
+            }
+            byte[] mac = LabelledHkdf.hmac(key, LabelledHkdf.lengthPrefixed(items));
+            return Arrays.copyOf(mac, LinkLayout.CATALOG_TAG_BYTES);
+        }
+
+        @Override
+        public String toString() {
+            return "ScopeKeys[redacted]";
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "LinkKeys[redacted]";
+    }
+}
