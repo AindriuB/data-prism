@@ -418,6 +418,21 @@ class LinkCodecTest {
         assertThat(c.seal(follow(5), binding)).isEmpty();
     }
 
+    // ---- review: the payload rules ----
+
+    @Test
+    void aFollowPayloadObeysTheRelationRules() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
+                Optional.of("res-one"), material(3, 5), "source-one", LinkRelation.DIRECT))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
+                Optional.empty(), material(3, 5), "source-one", LinkRelation.TRANSLATED))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "",
+                Optional.empty(), material(3, 5), "source-one", LinkRelation.DIRECT))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     // ---- rotation ----
 
     @Test
