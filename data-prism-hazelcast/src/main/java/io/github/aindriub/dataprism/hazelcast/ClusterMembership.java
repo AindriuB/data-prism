@@ -21,8 +21,6 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
 
     public static final int DEFAULT_PORT = 5701;
 
-    private static final String ISOLATED_MARKER = "dataprism.cluster.isolated.name";
-
     private static final Pattern OCTET = Pattern.compile("\\*|\\d{1,3}(-\\d{1,3})?");
 
     /** Exactly one way of finding the other members. */
@@ -143,12 +141,9 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
      * unguessable per-member suffix (internal, and it appears in logs), and the member listens on loopback only.
      */
     static void isolate(Config config) {
-        // Modifies the Config it is given. The suffix is added once: a Config already isolated (the marker holds
-        // its current name, which only isolate writes) keeps the name it has.
-        if (!config.getClusterName().equals(config.getProperty(ISOLATED_MARKER))) {
-            config.setClusterName(config.getClusterName() + "-solo-" + UUID.randomUUID());
-            config.setProperty(ISOLATED_MARKER, config.getClusterName());
-        }
+        // Modifies the Config it is given. The suffix is always fresh, so nothing in the Config can skip it; a
+        // Config passed twice carries two suffixes, which is harmless.
+        config.setClusterName(config.getClusterName() + "-solo-" + UUID.randomUUID());
         config.getNetworkConfig().getInterfaces().clear().setEnabled(true).addInterface("127.0.0.1");
         config.setProperty("hazelcast.socket.bind.any", "false");
     }

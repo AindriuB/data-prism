@@ -502,7 +502,7 @@ public final class PrivacyCluster implements AutoCloseable {
      * member is made solo, as {@link ClusterMembership.None} does: it listens on {@code 127.0.0.1} only and its
      * cluster name gains a random suffix, replacing whatever interface the config named, so that no keyed member
      * can form a cluster with it. <strong>The {@code Config} passed in is modified</strong> (as it already is by
-     * hardening); passing the same one again does not add the suffix twice.
+     * hardening); passing the same one again adds a second, fresh suffix.
      *
      * @param keys the keys every member of the cluster shares, or {@code null} for none
      * @throws PrivacyClusterRefusal {@code MISSING_CLUSTER_KEY} for a joining config without keys; nothing is started

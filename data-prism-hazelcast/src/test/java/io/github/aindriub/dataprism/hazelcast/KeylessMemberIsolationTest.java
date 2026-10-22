@@ -173,12 +173,15 @@ class KeylessMemberIsolationTest {
     }
 
     @Test
-    void passingTheSameConfigAgainDoesNotAddTheSuffixTwice() {
+    void aConfigCarryingAMarkerLikePropertyStillGetsAFreshSuffixEachTime() {
         Config config = keylessConfig(TestMembers.uniqueName("again"), FreePorts.consecutive(1));
+        config.setProperty("dataprism.cluster.isolated.name", config.getClusterName());
+        config.setProperty("dataprism.cluster.isolated", "true");
+        String original = config.getClusterName();
         ClusterMembership.isolate(config);
-        String once = config.getClusterName();
+        String first = config.getClusterName();
+        assertThat(first).startsWith(original + "-solo-").isNotEqualTo(original);
         ClusterMembership.isolate(config);
-        assertThat(config.getClusterName()).isEqualTo(once);
-        assertThat(once.split("-solo-")).hasSize(2);
+        assertThat(config.getClusterName()).isNotEqualTo(first).startsWith(first + "-solo-");
     }
 }
