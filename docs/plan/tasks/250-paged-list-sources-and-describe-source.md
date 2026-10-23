@@ -2,7 +2,7 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` once 241, 242, 247, 248 and 203 have merged
+**Base branch:** `origin/main` once 241, 242, 269, 247, 248 and 203 have merged
 **Depends on:** 241 (the `PAGING_PAGES` constant), 242 (page links, limiter), 269 (the limiter contract: `AttemptSubject`, atomic `recordFailure`, `LinkAttemptGate`), 247 (labels, visibility, `names`), 248 (`describe`), 203 (203 owns `CapabilityKnownSetTest` and `ExampleApplication.java`)
 **Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
@@ -27,7 +27,7 @@
 - docs/plan/design/batch-and-bulk-follow.md Part A (A.1 to A.10) and section 8 items 1 to 13; OD-B1 to OD-B6 as decided; register OD-200-5 (`FOLLOW`), OD-200-15.
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/GetEntityContextTool.java: the authorisation, scope, admission and audit sequence a tool follows; reserved-argument stripping.
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServer.java:222-249: the `Wiring` record and the one-mapper invariant.
-- From 269 (2026-10-22, owner decisions OD-269-1 to 3; brief revised 2026-10-23): open every page link through the one call `LinkAttemptGate.open(token, binding, accepted)`, which checks the binding bounds and the lock, opens the token, and records a counted refusal; it returns `Proceed`, `Invalid(reason)` or `Exhausted`. Never call `LinkCodec.open` or the limiter directly: an architecture rule forbids it. Catalog-tag and label checks after `Proceed` are uncounted. `LinkKeys.attemptCounterKey` no longer exists. A counted failure over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`, and at the ceiling a new subject is answered the same and not stored. Read 269's "Required shape".
+- From 269 (OD-269-1 to 3 decided (a) by the owner 2026-10-22; brief revised 2026-10-23, after review 4): open every page link through the gate. `LinkAttemptGate.open(token, binding, accepted)` is the one call. It checks the inputs and the binding bounds (`Invalid(MALFORMED)`, uncounted), then `lockState` (a locked principal gets `Exhausted(LOCKED)` before the token is opened, valid links included). It opens the token and records a counted refusal atomically. It returns `Proceed(opened)`, `Invalid(reason)` or `Exhausted(cause)`, where the cause is `LOCKED`, `OVER_LIMIT`, `CEILING`, `LIMITER_UNAVAILABLE` or `OPEN_FAILED`, and it never throws. The client sees `LINK_INVALID` or `LINK_ATTEMPTS_EXHAUSTED` only. Write `decision.auditValue()` (`REFUSED:LINK_<REASON>` or `REFUSED:LINK_ATTEMPTS_<CAUSE>`) under the call's `link` disposition key. An architecture rule forbids calling or referencing `LinkCodec.open` or the limiter outside `core.link`. Catalog-tag and label checks after `Proceed` are uncounted and never touch the limiter. `LinkKeys.attemptCounterKey` no longer exists.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
