@@ -302,7 +302,8 @@ public final class InMemoryLinkAttemptLimiter implements LinkAttemptLimiter {
                 }
                 call.queueOperations++;
                 queue.poll();
-                return true;
+                // The ceiling drain stops as soon as one slot is freed.
+                return !drain;
             }
             case STALE -> {
                 call.queueOperations++;

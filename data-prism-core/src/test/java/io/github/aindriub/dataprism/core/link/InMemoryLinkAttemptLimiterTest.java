@@ -367,10 +367,12 @@ class InMemoryLinkAttemptLimiterTest {
         AttemptSubject e = subject("E");
         assertThat(l.recordFailure(e)).isEqualTo(Admission.WITHIN_LIMIT);
         assertThat(l.lastCall().preCheckRemoved()).isZero();
-        assertThat(l.lastCall().drainRemoved()).isEqualTo(2);
+        assertThat(l.lastCall().drainRemoved()).isEqualTo(1);
         assertThat(l.lastCall().insertAttempts()).isEqualTo(2);
-        assertThat(l.size()).isEqualTo(4);
-        assertThat(l.entryCount()).isEqualTo(4);
+        // C was freed and the drain stopped there: D is still held, and E took the slot.
+        assertThat(l.size()).isEqualTo(5);
+        assertThat(l.entryCount()).isEqualTo(5);
+        assertThat(l.entryIdOf(d)).isPositive();
         l.checkInvariant();
     }
 
