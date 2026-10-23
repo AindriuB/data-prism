@@ -275,6 +275,14 @@ class ClusterConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class SuppliedCluster {
+        /** close() leaves an instance it did not start, so the instances built here are stopped on context close. */
+        static final java.util.List<com.hazelcast.core.HazelcastInstance> STARTED =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Bean(destroyMethod = "run") Runnable stopSuppliedInstances() {
+            return () -> STARTED.forEach(i -> i.getLifecycleService().terminate());
+        }
+
         @Bean(destroyMethod = "close") PrivacyCluster suppliedCluster() {
             Config config = new Config().setClusterName(uniqueName());
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
@@ -283,7 +291,9 @@ class ClusterConfigurationTest {
             config.setProperty("hazelcast.socket.bind.any", "false");
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-            return PrivacyCluster.using(Hazelcast.newHazelcastInstance(hardened(config)), false);
+            com.hazelcast.core.HazelcastInstance instance = Hazelcast.newHazelcastInstance(hardened(config));
+            STARTED.add(instance);
+            return PrivacyCluster.using(instance, false);
         }
     }
 

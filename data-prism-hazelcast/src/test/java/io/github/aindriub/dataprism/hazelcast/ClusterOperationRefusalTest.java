@@ -142,7 +142,7 @@ class ClusterOperationRefusalTest {
     @Test
     void aFailedClusterCallInTheStoreLogsOnce() throws Exception {
         IMap<String, String> pendingSets = cluster.instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
-        pendingSets.put(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "alice"), "garbage");
+        pendingSets.put(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, "alice"), "garbage");
         var recorder = new RecordingLogger();
         try (var ignored = ClusterRefusals.captureTo(recorder.logger())) {
             assertThatThrownBy(() -> accepting.create(pending("g-1"), 5))

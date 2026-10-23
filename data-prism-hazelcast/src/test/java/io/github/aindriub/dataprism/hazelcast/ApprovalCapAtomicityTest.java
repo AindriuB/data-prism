@@ -47,7 +47,7 @@ class ApprovalCapAtomicityTest {
                         .isEqualTo(ApprovalRefusedException.Code.TOO_MANY_PENDING));
         // A refused create leaves neither the approval nor the id claim behind.
         assertThat(store.find(id)).isEmpty();
-        assertThat(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).containsKey(id)).isFalse();
+        assertThat(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).containsKey(TestMembers.SCOPE_KEYS.claim(id))).isFalse();
     }
 
     @Test

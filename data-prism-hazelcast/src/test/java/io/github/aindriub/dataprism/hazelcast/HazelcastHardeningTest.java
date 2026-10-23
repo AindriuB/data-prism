@@ -638,7 +638,7 @@ class HazelcastHardeningTest {
         String key = null;
         String subject = null;
         for (int i = 0; i < 10_000 && key == null; i++) {
-            String candidate = ScopeKeys.budget("scope-a", "subject-" + i);
+            String candidate = pair[0].scopeKeys().budget("scope-a", "subject-" + i);
             if (pair[0].instance().getPartitionService().getPartition(candidate).getOwner().equals(
                     owner.getCluster().getLocalMember())) {
                 key = candidate;
@@ -654,7 +654,7 @@ class HazelcastHardeningTest {
         // The outcome type proves the owner's error reply was not lost: the caller sees the owner's exception,
         // never an OperationTimeoutException.
         IMap<String, Object> counts = pair[0].instance().getMap(PrivacyCluster.BUDGET_MAP);
-        Throwable thrown = catchThrowable(() -> counts.executeOnKey(ScopeKeys.budget("scope-a", finalSubject),
+        Throwable thrown = catchThrowable(() -> counts.executeOnKey(pair[0].scopeKeys().budget("scope-a", finalSubject),
                 new ExpectsAnInteger()));
         assertThat(thrown).isNotNull();
         StringBuilder chain = new StringBuilder();

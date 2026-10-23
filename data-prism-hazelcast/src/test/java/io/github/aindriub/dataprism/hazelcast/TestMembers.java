@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.config.Config;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
+import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
@@ -18,6 +19,9 @@ final class TestMembers {
 
     /** The one set of keys every multi-member test shares: fixed test bytes, never real key material. */
     static final ClusterKeys KEYS = keys("test-cluster-1", "test-name-1");
+
+    /** The keyed map and lock keys of the members above: what a test recomputes a raw key from. */
+    static final ScopeKeys SCOPE_KEYS = new ScopeKeys(new KeyedNames(KEYS));
 
     private TestMembers() {
     }
@@ -50,6 +54,18 @@ final class TestMembers {
         PrivacyCluster a = member(clusterName, first, both, quorum);
         PrivacyCluster b = member(clusterName, first + 1, both, quorum);
         return new PrivacyCluster[]{a, b};
+    }
+
+    /** The keys of the approval entries whose request carries this id, whatever their scope. */
+    static List<String> keysOfApproval(com.hazelcast.map.IMap<String, String> approvals, String approvalId) {
+        return approvals.entrySet().stream().filter(entry -> {
+            try {
+                return HazelcastApprovalStore.Codec.decode(entry.getValue()).approvalId()
+                        .equals(approvalId);
+            } catch (RuntimeException unreadable) {
+                return false;
+            }
+        }).map(java.util.Map.Entry::getKey).toList();
     }
 
     /** A well-formed creation token, distinct per {@code n}. */

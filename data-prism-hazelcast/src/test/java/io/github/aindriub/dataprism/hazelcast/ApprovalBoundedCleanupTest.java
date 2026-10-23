@@ -100,7 +100,7 @@ class ApprovalBoundedCleanupTest {
     }
 
     private static String pendingKey() {
-        return HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "alice");
+        return TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, "alice");
     }
 
     private void sweepPendingOnBothMembers(Instant now) {
@@ -172,7 +172,7 @@ class ApprovalBoundedCleanupTest {
     void forgetBehindAHeldApprovalLockRefusesWithinTheBoundAndLeavesTheEntryItsClaimAndItsSlot() throws Exception {
         store.create(request("f-1", "scope-f", "alice"), 5);
         store.create(request("f-2", "scope-f", "carol"), 5);
-        String heldKey = ScopeKeys.approval("scope-f", "f-1");
+        String heldKey = TestMembers.SCOPE_KEYS.approval("scope-f", "f-1");
         CountDownLatch release = hold(PrivacyCluster.APPROVAL_MAP, heldKey);
         try {
             Duration bound = WITHIN.multipliedBy(2);
@@ -185,12 +185,12 @@ class ApprovalBoundedCleanupTest {
             IMap<String, String> claims = members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
             IMap<String, String> slots = members[0].instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
             assertThat(approvals.containsKey(heldKey)).isTrue();
-            assertThat(ClaimEntries.read(claims.get("f-1"))).isPresent();
+            assertThat(ClaimEntries.read(claims.get(TestMembers.SCOPE_KEYS.claim("f-1")))).isPresent();
             assertThat(PendingSet.decode(slots.get(pendingKey()))).containsOnlyKeys("f-1");
             // The entry whose lock was free was forgotten, completely.
-            assertThat(approvals.containsKey(ScopeKeys.approval("scope-f", "f-2"))).isFalse();
-            assertThat(claims.containsKey("f-2")).isFalse();
-            assertThat(slots.containsKey(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "carol"))).isFalse();
+            assertThat(approvals.containsKey(TestMembers.SCOPE_KEYS.approval("scope-f", "f-2"))).isFalse();
+            assertThat(claims.containsKey(TestMembers.SCOPE_KEYS.claim("f-2"))).isFalse();
+            assertThat(slots.containsKey(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, "carol"))).isFalse();
         } finally {
             release.countDown();
         }
@@ -199,7 +199,7 @@ class ApprovalBoundedCleanupTest {
     @Test
     void endScopeBehindAHeldApprovalLockRefusesWithinTheBoundAndLeavesTheApproval() throws Exception {
         store.create(request("f-1", "scope-f", "alice"), 5);
-        String heldKey = ScopeKeys.approval("scope-f", "f-1");
+        String heldKey = TestMembers.SCOPE_KEYS.approval("scope-f", "f-1");
         CountDownLatch release = hold(PrivacyCluster.APPROVAL_MAP, heldKey);
         try {
             var index = new ScopeIdentityIndex(members[0], metrics, TIMEOUT);
@@ -208,7 +208,7 @@ class ApprovalBoundedCleanupTest {
                 return null;
             })).isInstanceOf(ExecutionException.class).hasCauseInstanceOf(ClusterLockTimeoutException.class);
             assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP).containsKey(heldKey)).isTrue();
-            assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).containsKey("f-1")).isTrue();
+            assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).containsKey(TestMembers.SCOPE_KEYS.claim("f-1"))).isTrue();
             assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP).containsKey(pendingKey()))
                     .isTrue();
         } finally {
@@ -229,7 +229,7 @@ class ApprovalBoundedCleanupTest {
                 return null;
             });
             assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP)
-                    .containsKey(ScopeKeys.approval("scope-a", "x-1"))).isFalse();
+                    .containsKey(TestMembers.SCOPE_KEYS.approval("scope-a", "x-1"))).isFalse();
             assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
         } finally {
             release.countDown();
@@ -252,7 +252,7 @@ class ApprovalBoundedCleanupTest {
             return null;
         });
         IMap<String, String> approvals = members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP);
-        String key = ScopeKeys.approval("scope-a", "x-1");
+        String key = TestMembers.SCOPE_KEYS.approval("scope-a", "x-1");
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (approvals.containsKey(key) && System.nanoTime() < deadline) {
             Thread.onSpinWait();
@@ -265,13 +265,13 @@ class ApprovalBoundedCleanupTest {
 
         String token = HazelcastApprovalStore.Codec.tokenOf(approvals.get(key));
         IMap<String, String> claims = members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP);
-        assertThat(claims.get("x-1")).isEqualTo(ClaimEntries.value(key, token));
+        assertThat(claims.get(TestMembers.SCOPE_KEYS.claim("x-1"))).isEqualTo(ClaimEntries.value(key, token));
         IMap<String, String> slots = members[0].instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP);
-        assertThat(PendingSet.decode(slots.get(HazelcastApprovalStore.pendingKey(Kind.TOOL_CALL, "carol"))))
+        assertThat(PendingSet.decode(slots.get(TestMembers.SCOPE_KEYS.pending(Kind.TOOL_CALL, "carol"))))
                 .containsOnlyKeys("x-1");
         assertThatThrownBy(() -> other.create(request("x-1", "scope-b", "dave"), 5))
                 .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("duplicate approval id");
-        assertThat(approvals.keySet().stream().filter(k -> ScopeKeys.approvalId(k).equals("x-1"))).hasSize(1);
+        assertThat(TestMembers.keysOfApproval(approvals, "x-1")).hasSize(1);
     }
 
     // ----- the pending sweep
@@ -331,7 +331,7 @@ class ApprovalBoundedCleanupTest {
                 threw = true;
             }
             Status status = healthy.find(attempt.id()).orElseThrow().status();
-            String key = ScopeKeys.approval("scope-t", attempt.id());
+            String key = TestMembers.SCOPE_KEYS.approval("scope-t", attempt.id());
             if (threw) {
                 assertThat(status).as("%s after a call that threw", attempt.id()).isEqualTo(attempt.before());
             } else {
@@ -357,7 +357,7 @@ class ApprovalBoundedCleanupTest {
         try {
             assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
             // The stopped call holds the entry lock only until its lease runs out; then another member decides.
-            StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, ScopeKeys.approval("scope-e", "e-1"));
+            StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, TestMembers.SCOPE_KEYS.approval("scope-e", "e-1"));
             assertThat(winner.approve("e-1", "carol", NOW.plusSeconds(1)).status()).isEqualTo(Status.APPROVED);
             stall.resume();
             assertThatThrownBy(() -> expiring.get(10, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
@@ -418,7 +418,7 @@ class ApprovalBoundedCleanupTest {
         faulty.create(request("g-1", "scope-g", "alice"), 5);
         injector.arm();
         faulty.forgetScope("scope-g");
-        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).containsKey("g-1")).isFalse();
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP).containsKey(TestMembers.SCOPE_KEYS.claim("g-1"))).isFalse();
         assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP).containsKey(pendingKey()))
                 .isFalse();
     }

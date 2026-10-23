@@ -12,8 +12,9 @@ import java.util.Optional;
  * expires while its approval lives would let the id be created again. The claim's value is the approval's entry key
  * and the random creation token of that approval ({@code entryKey NUL token}), so a claim from one creation is never
  * mistaken for the claim of a later creation of the same id in the same scope. Every change to a claim, every
- * release and every sweep compares the whole value, token included. A claim in any other form (the bare entry key
- * that earlier versions wrote) is unreadable: it is neither taken over nor released nor swept.
+ * release and every sweep compares the whole value, token included. A claim in any other form is unreadable: it is
+ * neither taken over nor released, and is swept only in the one old form named at {@code sweepLegacy}. The entry key
+ * is a keyed name and holds no NUL, and the claim itself is stored under the keyed claim key of its approval id.
  *
  * <p><b>Creating.</b> The creator {@code putIfAbsent}s the claim, then inserts the entry, then reads the claim again
  * and keeps the entry only if the claim still names it. A claim that names an entry which does not exist is stale
@@ -61,22 +62,22 @@ final class ClaimEntries {
     }
 
     /**
-     * The creation a claim names, or empty if the value is not in the current form. An entry key holds exactly one
-     * NUL, between scope and id; the token follows; a marked claim continues with {@code NUL ~ NUL} and then either
-     * nothing (a sweep) or the entry key and token of the taker.
+     * The creation a claim names, or empty if the value is not in the current form. An entry key holds no NUL; the
+     * token follows it; a marked claim continues with {@code NUL ~ NUL} and then either nothing (a sweep) or the
+     * entry key and token of the taker.
      */
     static Optional<Named> read(String value) {
         if (value == null) {
             return Optional.empty();
         }
         String[] parts = value.split(SEP, -1);
-        if (parts.length == 3 && !parts[2].isEmpty()) {
-            return Optional.of(new Named(parts[0] + SEP + parts[1], parts[2], false));
+        if (parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()) {
+            return Optional.of(new Named(parts[0], parts[1], false));
         }
-        boolean sweepMarker = parts.length == 5 && parts[4].isEmpty();
-        boolean takeMarker = parts.length == 7 && !parts[6].isEmpty();
-        if ((sweepMarker || takeMarker) && parts[3].equals("~") && !parts[2].isEmpty()) {
-            return Optional.of(new Named(parts[0] + SEP + parts[1], parts[2], true));
+        boolean sweepMarker = parts.length == 4 && parts[3].isEmpty();
+        boolean takeMarker = parts.length == 5 && !parts[3].isEmpty() && !parts[4].isEmpty();
+        if ((sweepMarker || takeMarker) && parts[2].equals("~") && !parts[0].isEmpty() && !parts[1].isEmpty()) {
+            return Optional.of(new Named(parts[0], parts[1], true));
         }
         return Optional.empty();
     }
@@ -143,9 +144,10 @@ final class ClaimEntries {
     }
 
     /**
-     * A claim in the form earlier versions wrote (a bare entry key, or one marked with {@code NUL ~ NUL}) is removed
-     * once its entry is absent, by compare-and-set on the whole value. Entries of that form are unreadable and refused,
-     * and no new creator takes such a claim over, so nothing races with this. Any other unreadable value is left.
+     * A claim in the form earlier versions wrote (the bare entry key, a string holding the scope token's dot, or one
+     * marked with {@code NUL ~ NUL}) is removed once its entry is absent, by compare-and-set on the whole value.
+     * Entries of that form are unreadable and refused, and no new creator takes such a claim over, so nothing races
+     * with this. Any other unreadable value is left.
      */
     private static int sweepLegacy(IMap<String, String> claims, IMap<String, String> approvals, String id,
                                    String value) {
@@ -153,8 +155,9 @@ final class ClaimEntries {
             return 0;
         }
         String[] parts = value.split(SEP, -1);
-        boolean legacy = parts.length == 2 || (parts.length >= 4 && parts[2].equals("~"));
-        if (!legacy || approvals.containsKey(parts[0] + SEP + parts[1])) {
+        boolean legacy = (parts.length == 1 && parts[0].indexOf('.') > 0)
+                || (parts.length >= 3 && parts[1].equals("~"));
+        if (!legacy || approvals.containsKey(parts[0])) {
             return 0;
         }
         return claims.remove(id, value) ? 1 : 0;

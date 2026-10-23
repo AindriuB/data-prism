@@ -57,7 +57,7 @@ public final class HazelcastScopeBudget implements ScopeBudget {
      */
     @Override
     public boolean tryRead(String scopeId, String subjectId, int budget) {
-        String key = ScopeKeys.budget(scopeId, subjectId);
+        String key = cluster.scopeKeys().budget(scopeId, subjectId);
         IMap<String, Integer> counts;
         // Obtaining the map and taking the lock are themselves cluster calls and
         // throw when the member is gone. They belong inside the guard: leaving
@@ -104,16 +104,19 @@ public final class HazelcastScopeBudget implements ScopeBudget {
 
     @Override
     public int reads(String scopeId, String subjectId) {
-        return counts().getOrDefault(ScopeKeys.budget(scopeId, subjectId), 0);
+        return counts().getOrDefault(cluster.scopeKeys().budget(scopeId, subjectId), 0);
     }
 
     @Override
     public void forget(String scopeId) {
-        String prefix = ScopeKeys.scopePrefix(scopeId);
+        String prefix = cluster.scopeKeys().scopePrefix(scopeId);
         IMap<String, Integer> counts = counts();
-        counts.keySet().stream()
-                .filter(key -> key.startsWith(prefix))
-                .forEach(counts::delete);
+        // Each delete runs under its key's bounded lock, so a key another member holds cannot make this wait.
+        int skipped = ClusterLocks.deleteAll(counts,
+                counts.keySet().stream().filter(key -> key.startsWith(prefix)).toList(), lockTimeout);
+        if (skipped > 0) {
+            throw new ClusterLockTimeoutException();
+        }
     }
 
     private IMap<String, Integer> counts() {

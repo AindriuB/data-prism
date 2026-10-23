@@ -1,64 +1,100 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
+import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
+import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 
 /**
- * Builds the map keys, scope first.
+ * Builds the map keys and lock keys, scope first, as keyed pseudonymous names
+ * (docs/plan/design/cluster-security.md 2.3.2). No key contains a scope id, subject id, principal, approval id, case
+ * id or pseudonym: each is an HMAC under a subkey of the name key, and a scope's entries share the prefix
+ * {@code scopeToken + "."}, so ending a scope is still a prefix match.
  *
- * <p>Scope leads every key so that ending a scope is a prefix match rather than a
- * walk of the whole cluster, and so that no key from one investigation can be
- * reached from another by construction rather than by care.
+ * <p>The canonical input of an entry is the key the 0.7 code built, with the same parts in the same order, joined
+ * by NUL (it cannot appear in a scope id, a namespace name or an identifier, so no crafted value can make one entry
+ * look like another). Every map name is the full sealed-map name, generation suffix included.
  *
- * <p>Keys are plain strings on purpose. A record key would need a serialiser
- * registered on every member, and a mismatched serialiser across a rolling
- * upgrade is a way to lose a scope's identities mid-investigation.
+ * <p>A lock key is the key of the entry it guards, so there is no separate lock label: the lock a caller takes with
+ * {@link ClusterLocks#acquire} is on the string these methods return, in the same map.
+ *
+ * <p>Keys are plain strings on purpose. A record key would need a serialiser registered on every member, and a
+ * mismatched serialiser across a rolling upgrade is a way to lose a scope's identities mid-investigation.
  */
 final class ScopeKeys {
 
-    /**
-     * Joins key parts. NUL because it cannot appear in a scope id, a namespace
-     * name or an identifier, so no crafted value can make one key look like
-     * another. Declared rather than written inline: an escape for it is invisible
-     * in source and easily mangled by a tool that reformats the file.
-     */
     private static final char SEPARATOR = 0;
 
-    private ScopeKeys() {
+    private final KeyedNames names;
+
+    ScopeKeys(KeyedNames names) {
+        this.names = java.util.Objects.requireNonNull(names, "names");
     }
 
-    static String identity(String scopeId, String subjectId, PrivacyNamespace namespace) {
+    String identity(String scopeId, String subjectId, PrivacyNamespace namespace) {
+        return names.scoped(PrivacyCluster.IDENTITY_MAP, scopeId, identityCanonical(scopeId, subjectId, namespace));
+    }
+
+    static String identityCanonical(String scopeId, String subjectId, PrivacyNamespace namespace) {
         return scopeId + SEPARATOR + namespace.name() + SEPARATOR + subjectId;
     }
 
-    static String reidentification(String scopeId, PrivacyNamespace namespace, String synthetic) {
+    String reidentification(String scopeId, PrivacyNamespace namespace, String synthetic) {
+        return names.scoped(PrivacyCluster.REIDENTIFICATION_MAP, scopeId,
+                reidentificationCanonical(scopeId, namespace, synthetic));
+    }
+
+    static String reidentificationCanonical(String scopeId, PrivacyNamespace namespace, String synthetic) {
         return scopeId + SEPARATOR + namespace.name() + SEPARATOR + synthetic;
     }
 
-    static String budget(String scopeId, String subjectId) {
+    String budget(String scopeId, String subjectId) {
+        return names.scoped(PrivacyCluster.BUDGET_MAP, scopeId, budgetCanonical(scopeId, subjectId));
+    }
+
+    static String budgetCanonical(String scopeId, String subjectId) {
         return scopeId + SEPARATOR + subjectId;
     }
 
     /** Scope first, so ending the scope removes its approvals by prefix. A null scope keys as empty. */
-    static String approval(String scopeId, String approvalId) {
+    String approval(String scopeId, String approvalId) {
+        return names.scoped(PrivacyCluster.APPROVAL_MAP, scopeId == null ? "" : scopeId,
+                approvalCanonical(scopeId, approvalId));
+    }
+
+    static String approvalCanonical(String scopeId, String approvalId) {
         return (scopeId == null ? "" : scopeId) + SEPARATOR + approvalId;
     }
 
-    static String approvalPrefix(String scopeId) {
+    String approvalPrefix(String scopeId) {
         return scopePrefix(scopeId == null ? "" : scopeId);
     }
 
-    /** The approval id is whatever follows the first separator. */
-    static String approvalId(String approvalKey) {
-        return approvalKey.substring(approvalKey.indexOf(SEPARATOR) + 1);
-    }
-
-    static String scopeOf(String approvalKey) {
-        return approvalKey.substring(0, approvalKey.indexOf(SEPARATOR));
+    /** The claim on an approval id: no scope token, so one id has one claim across every scope. */
+    String claim(String approvalId) {
+        return names.mapKey(PrivacyCluster.APPROVAL_ID_MAP, approvalId);
     }
 
     /**
-     * Pause keys. The global and tool keys contain no separator and every scope
-     * prefix ends in one, so ending a scope by prefix can never remove them.
+     * The pending-approval entry of a (kind, requester): the keyed name of the canonical
+     * {@code KIND NUL (=requester or ~)}. A map of its own, so it can equal no approval key, and a null requester
+     * ({@code ~}) differs from any named one ({@code =} first). It is also the lock key of that entry.
+     */
+    String pending(ApprovalRequest.Kind kind, String requesterPrincipalId) {
+        return names.mapKey(PrivacyCluster.APPROVAL_PENDING_MAP, pendingCanonical(kind, requesterPrincipalId));
+    }
+
+    static String pendingCanonical(ApprovalRequest.Kind kind, String requesterPrincipalId) {
+        return kind.name() + SEPARATOR + (requesterPrincipalId == null ? "~" : "=" + requesterPrincipalId);
+    }
+
+    String callerRate(String principalId) {
+        return names.mapKey(PrivacyCluster.CALLER_RATE_MAP, principalId);
+    }
+
+    /**
+     * Pause keys. The global and tool keys are not scoped and contain a colon or no dot, and every scope key is
+     * unpadded URL-safe base64 with one dot, so ending a scope by prefix can never remove them and a scope key can
+     * never be read as a tool key.
      */
     static String pausedAll() {
         return "all";
@@ -68,11 +104,11 @@ final class ScopeKeys {
         return "tool:" + tool;
     }
 
-    static String pausedScope(String scopeId) {
-        return scopeId + SEPARATOR + "paused";
+    String pausedScope(String scopeId) {
+        return names.scoped(PrivacyCluster.OVERSIGHT_MAP, scopeId, scopeId + SEPARATOR + "paused");
     }
 
-    static String scopePrefix(String scopeId) {
-        return scopeId + SEPARATOR;
+    String scopePrefix(String scopeId) {
+        return names.scopeToken(scopeId) + ".";
     }
 }
