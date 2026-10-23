@@ -39,6 +39,7 @@ dataPrismSecurityPolicy | io.github.aindriub.dataprism.security.SecurityPolicy
 dataPrismSensitivePatternValidator | io.github.aindriub.dataprism.validation.LlmResponseValidator
 dataPrismSharedBudgetPreflight | org.springframework.beans.factory.config.BeanFactoryPostProcessor
 dataPrismStdioTransportRefused | java.lang.Object
+dataPrismSuppliedClusterGauge | org.springframework.beans.factory.SmartInitializingSingleton
 dataPrismSyntheticValueSource | io.github.aindriub.dataprism.core.spi.SyntheticValueSource
 dataPrismToolAdmission | io.github.aindriub.dataprism.security.ToolAdmission
 dataPrismValueTokenSource | io.github.aindriub.dataprism.core.spi.ValueTokenSource
