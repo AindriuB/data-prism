@@ -81,3 +81,29 @@ After this task no Hazelcast key, and no lock key, contains a scope id, subject 
 - Say "supports", never "compliant".
 - No Hazelcast Enterprise feature (D-0.4.1-A).
 - No sleeps. Waits are on latches or polled state with a bound.
+
+## Outcome (2026-10-23, 0.8)
+Every Hazelcast map key and lock name is keyed. Adds `ClusterSecuritySettings` and `seal/SealedWrites`. Every write is bounded: `git grep '\.lock('` finds nothing in main. `keyedNames()` is public, marked internal. ClaimEntries values are `entryKey NUL token`, and `sweepLegacy` is kept (224 may delete it). The scope-pause value holds the scope id until 228. `SealedWrites` processors are single-key; a second key throws. Registration is per instance and reference-counted, and a second registrant with different key ids is refused. `PrivacyCluster.close()` now stops only an instance it started (goes in the `docs/migration-0.8.md` notes).
+
+Owner decision, amending OD-215-8 (option a, 2026-10-23): a keyless solo member draws random cluster and name keys once per `HazelcastInstance`, held in its user context, reused on re-wrap, never shared or persisted. `keyIds()` stays empty and a joining membership without keys still refuses with `MISSING_CLUSTER_KEY`. `design/cluster-security.md` section 4.1 and the OD-215-8 row are amended.
+
+Bounded-write call sites (`file:line`, call, bounded by):
+
+| Site | Call | Bounded by |
+|---|---|---|
+| CachingSyntheticValueSource:131, :141, :145 | putIfAbsent, set, re-identification set | `ClusterLocks.putIfAbsent` / `set` |
+| ScopeIdentityIndex:96 | endScope deletes | `ClusterLocks.deleteAll`, then delete |
+| HazelcastScopeBudget:115 | forget | `deleteAll` |
+| HazelcastOversightState:62-87 | set, delete | `ClusterLocks.set` / `delete` |
+| HazelcastApprovalStore:183-185 | admit locks, with :191, 208, 264, 292 under them | the admit lock |
+| HazelcastApprovalStore:357, ClaimEntries:122 | writes | `lockOrSkip` |
+| HazelcastApprovalStore:521, :529 | writes | acquire at :507 |
+| HazelcastApprovalStore:643 | write | :442 and :547 |
+| ClaimEntries:98-114 | writes | admit claim lock |
+| ClaimEntries:163-190 | writes | `tryAcquireNow` |
+| PendingSweeper:93 | write | `tryAcquireNow` |
+| HazelcastScopeBudget:80, HazelcastCallerRateLimiter:51 | `executeOnKey` | after acquire |
+
+Mutation run: making the Computing backup re-seal fails `aComputingWriteLeavesTheSameBytesAndTheSameLifetimeOnThePrimaryAndTheBackup`. The tester ran the full reactor twice, about 2,905 tests, 0 failures.
+
+Follow-ups. Spring does not pass `dataprism.hazelcast.lock-timeout` to the new overloads in `ClusterBackedState`:172 and `ReidentificationWiring`:61 (an autoconfigure task). Test-only instance leaks at `ClusterConfigurationTest`:319 and `ClusterLegacyGaugeTest`:247. The multi-key `ran` guard fires after the first key's primary is written. `SoloMemberKeysTest`'s log capture is JUL only. `KeyedLockHoldTest`:131 has a wall-clock bound. `SealedWrites.unregister` swallows an exception silently. The design table at line 175 still shows the scope-pause key form (213).

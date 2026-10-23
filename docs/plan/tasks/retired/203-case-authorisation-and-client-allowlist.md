@@ -66,3 +66,12 @@ trail through the existing DENY path, which needs no change.
 - Enforcing which model endpoint a client talks to, or where data is transferred. That is a gateway or egress control; tasks 210 and 214 document it.
 - `ClaimNames` and the claims that carry the client and case ids.
 - `docs/tools.md` and every other file under `docs/` (task 213).
+
+## Outcome (2026-10-23, 0.8)
+A `CaseAuthorizer` SPI (`isAuthorised(CaseAccessRequest)` and `tokenTrusted()`) and a `ClientAllowlist` (`unrestricted()` and `of(Set)`) in `data-prism-security`. Three refusal codes: `CASE_NOT_AUTHORISED`, `CASE_AUTHORISATION_UNAVAILABLE` and `CLIENT_NOT_ALLOWED`. The authorizer is called exactly once per request. A caught authorizer `RuntimeException` is logged at WARN with the exception and no case data, and the client sees only the code. `Error` is not caught.
+
+Tests that fail on the base: the new `CaseAuthorizerTest` and `ClientAllowlistTest` (compile failure).
+
+Mutation proof. Removing `requireCaseAccess` fails `falseRefusesWithCaseNotAuthorised`, `authorizerCalledExactlyOnce`, `throwRefusesWithUnavailableAndLeaksNothing` and `errorFromAuthorizerPropagates`. Forcing the allowlist to pass fails `clientOutsideAllowlistIsDenied`.
+
+Notes for later tasks. `SecurityWiring` hard-wires `tokenTrusted()` and `unrestricted()` until 210, so 0.8.0 must not ship without 210. `docs/tools.md` lines 69-70 still show the old constructors (213). 213 should tell implementers to keep case data out of the messages of the exceptions they throw.

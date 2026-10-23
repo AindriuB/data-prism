@@ -336,3 +336,14 @@ The gate checks the bounds before anything else and answers `MALFORMED`, uncount
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
 - Use neutral, invented identifiers in tests, and generated test key bytes.
 - No sleeps. Windows use an injected clock, and ordering uses latches. Nothing a test controls blocks inside a map lambda.
+
+## Outcome (2026-10-23, 0.8)
+The brief was amended on the branch with the four PR #158 follow-ups, and the drain stops at the first freed slot. Adds `AttemptSubject`, `LinkOpener` and `LinkAttemptGate` (`Proceed`, `Invalid` or `Exhausted`; `clientCode()` and `auditValue()` on the `Refusal` interface), a rewritten `InMemoryLinkAttemptLimiter`, ArchUnit rules and design amendments.
+
+Old uses removed: the 15 `attemptCounterKey` / `ATTEMPT_LABEL` references. Six in `InMemoryLinkAttemptLimiterTest` were ported to `AttemptSubject` and `LinkAttemptGateTest`; nine in `LinkKeysTest` were replaced by `linkKeysHasNoMethodThatTakesAPrincipalId`. `LinkVectors.counterKey` became `attemptSubject`, and `counter.key` is gone from `vectors.properties`.
+
+PIT: `excludedMethods` gains `authenticatedOnlyIfHeld`, the defence-in-depth guard in `LinkCodec.open`. Mutants: 37 run, 36 killed. The equivalent survivor is `if (removed[0])` in `appendMarker`. The `LinkCodec` boundary mutants are killed by `theScopeEndAndTheTokenEndAreExactOnOpen`. A new test seam, `countOf(AttemptSubject)`; the race test asserts count = 20 + OVER_LIMIT.
+
+Decisions. The Hazelcast exemption is narrowed to `lockState` and `recordFailure` only, and `LinkCodec.open` is never exempt (new fixture `HzLimiterOpensTokens`). The sealed-links.md reason count is corrected to sixteen. The drain test runs A and B via `whileHeld` (stricter).
+
+Notes. For 264: nested classes inside a Hazelcast limiter are not exempt (it fails closed). The lone-surrogate UTF-8 encoding in `AttemptSubject` is pre-existing.

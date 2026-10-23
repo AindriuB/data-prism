@@ -126,8 +126,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 1 | 268 done 2026-10-21 (Tomcat 11.0.27 override; PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
 | 3 | 222 and 242 landed 2026-10-22 (PR record/0.8-wave3); 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
-| 4 | 223, 241, 248, 269 (settle the link attempt limiter's contract before 250, 251, 252, 255 and 264. OD-269-1 to 3 decided (a) by the owner 2026-10-22, the ceiling consequence accepted 2026-10-23, OD-269-4 done (250 depends on 269), **OD-269-5 decided (b) by the owner 2026-10-23** (a limiter outage answers the new retryable `LINK_CHECK_UNAVAILABLE`; a failure to open answers `LINK_INVALID`; the audit keeps both causes; 269 adds the register row; 261 documents the code). Current shape, after reviews to 2026-10-23: one call `LinkAttemptGate.open` checks inputs (`""` is `MALFORMED`), the lock, opens, and records atomically, returning `Proceed`, `Invalid(reason)` or `Exhausted(cause)` with an audit-only cause; the SPI is `lockState` and `recordFailure` returning `Admission` (`WITHIN_LIMIT`, `OVER_LIMIT`, `CEILING`, `UNAVAILABLE`); `AttemptSubject` with the `dataprism/link/v1/attempt` label and lossless `canonicalText()`; `attemptCounterKey` removed; the in-memory limiter keyed under a `SecureRandom` key, a ceiling of 100,000 reserved by CAS, one expiry marker per entry, and exclusive bounded head examination; 264 keys under the name key with a TTL only for memory); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
-| 4 (added 2026-10-23) | 203, 206: open, not started; no open dependency |
+| 4 | 203, 206, 223, 241, 248 and 269 landed 2026-10-23 (PR wave/0.8-wave4); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
 | 5 | 207, 210, 224, 225, 226, 227 |
 | 6 | 208, 228, 246, 262 |
 | 7 | 211, 229, 247, 256 |
@@ -214,6 +213,20 @@ Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the br
 - Small (no brief): `docs-site/requirements.txt` lacks PyYAML, which `docs-site/hooks/check_site.py` and `docs-site/hooks/check_snippet_markers.py` import, so the check hooks fail in a clean environment.
 
 Planning gap: closed 2026-10-23. The planner audit confirmed that 203, 206, 207, 208, 210 and 211 are not started and that 209 landed. They are placed in the wave table above; 211 lands at wave 7, before 254 (9) and 255 (11), so the link-key and audit-key briefs keep their waves. 211, 254 and 255 now own `ClusterKeyResolution.java`.
+
+Follow-ups from wave 4 (203, 206, 223, 241, 248 and 269 landed 2026-10-23), each belonging to the brief named (the full lists are in the Outcomes under `tasks/retired/`):
+
+- **210: 0.8.0 must not ship without it.** `SecurityWiring` hard-wires `tokenTrusted()` and `unrestricted()` until 210 wires `CaseAuthorizer` and `ClientAllowlist`.
+- 213: `docs/tools.md` lines 69-70 show the old `CaseAuthorizer` constructors; tell implementers to keep case data out of the messages of exceptions they throw; `docs/audit.md` notes that `KEYED_LIMITATION` is not printed when the audit path is unreadable and that a lone non-GENESIS writer carries no key label; `docs/migration-0.8.md` notes that `PrivacyCluster.close()` now stops only an instance it started; the cluster-security design table at line 175 still shows the scope-pause key form.
+- 211: with only `--allow-unkeyed-writers`, a broken writer is still counted as "unkeyed allowed" (Low).
+- Autoconfigure (no brief; fold into 230): Spring does not pass `dataprism.hazelcast.lock-timeout` to the new overloads in `ClusterBackedState`:172 and `ReidentificationWiring`:61.
+- 224 and 228: 224 may delete `ClaimEntries.sweepLegacy`; the scope-pause value holds the scope id until 228 replaces it.
+- Small (no brief), from 223: test-only instance leaks at `ClusterConfigurationTest`:319 and `ClusterLegacyGaugeTest`:247; the multi-key `ran` guard in `SealedWrites` fires after the first key's primary is written; `SoloMemberKeysTest` captures JUL logs only; `KeyedLockHoldTest`:131 has a wall-clock bound; `SealedWrites.unregister` swallows an exception silently.
+- 255: add a pool-size property for `ResolverInvoker` (default 8 concurrent calls). Small, from 241: rename the test `aNullKeyInTheListIsInvalidOutput`; the adapter filters `expand`'s keys to the second source; `PrivacyMetricsTest` does not tie each metric name to its constant.
+- 272 (PR #161): the `SourceFanOut` starvation found in 241.
+- 270 and 271: the scrubber-side leak found in 248 (advisory GHSA-f94h-6mxv-c957, draft, exposure accepted by the owner) goes to 270; `PrivacyEngineWiring` passing the descriptor map to the engine goes to 271. 249 and 250 read 248's description: recursive paths are omitted from it, so the brief's line "single `[]` level describes everything the scrubber emits" excludes them. Accepted residuals: a decorator around `ValueTokenSource.unavailable()` reports as available; `Optional` content is judged by the type-level lookup; `Optional<List<Record>>`'s element path is not described; `profileChangesDescription` only asserts `isNotEqualTo`.
+- 264: nested classes inside a Hazelcast limiter are not exempt from the 269 architecture rule (fails closed). The lone-surrogate UTF-8 encoding in `AttemptSubject` is pre-existing.
+- Tooling: `.claude/scripts/wt-new.sh` cannot base a worktree on a given commit.
 
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 
