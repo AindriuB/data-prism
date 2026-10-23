@@ -21,7 +21,11 @@ import tools.jackson.databind.type.MapLikeType;
 import tools.jackson.databind.type.MapType;
 import tools.jackson.databind.SerializationConfig;
 import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.ser.BeanPropertyWriter;
+import tools.jackson.databind.ser.BeanSerializer;
+import tools.jackson.databind.ser.UnrolledBeanSerializer;
 import tools.jackson.databind.ser.ValueSerializerModifier;
+import tools.jackson.databind.ser.bean.BeanSerializerBase;
 import tools.jackson.databind.module.SimpleModule;
 import tools.jackson.databind.ser.jdk.JavaUtilCalendarSerializer;
 import tools.jackson.databind.ser.jdk.JavaUtilDateSerializer;
@@ -241,6 +245,92 @@ public final class SourceTree {
             }
             // Any other failure is left for the runtime check, which sees the actual object.
         }
+    }
+
+    /**
+     * Whether this reader writes {@code type}, as the value of the record component {@code component} of
+     * {@code holder}, as a plain JSON object of exactly its record components. It asks the reader's own
+     * serializers, so whatever the reader would do is what is judged; the answer is false for anything
+     * else: an array shape, an object id, a {@code @JsonValue} or other custom serializer, a renamed,
+     * ignored or extra property, a filter, and a serializer override or format on the holding component.
+     * If the lookup throws, the answer is false (fail closed).
+     */
+    static boolean readsAsPlainBean(Class<?> holder, String component, Class<?> type) {
+        try {
+            if (!holder.isRecord() || !type.isRecord() || overridden(holder, component)) {
+                return false;
+            }
+            var context = READER._serializationContext();
+            if (!plainBean(context.findValueSerializer(type), type)) {
+                return false;
+            }
+            if (!(context.findValueSerializer(holder) instanceof BeanSerializerBase bean)) {
+                return false;
+            }
+            for (var properties = bean.properties(); properties.hasNext(); ) {
+                var writer = properties.next();
+                if (writer.getName().equals(component) && writer instanceof BeanPropertyWriter bpw
+                        && bpw.getSerializer() != null && bpw.getSerializer().handledType() == type
+                        && !plainBean(bpw.getSerializer(), type)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private static boolean plainBean(ValueSerializer<?> serializer, Class<?> type) {
+        // The plain object serializers only: the as-array, object-id-less variants and everything else differ.
+        if (serializer == null
+                || serializer.getClass() != BeanSerializer.class
+                && serializer.getClass() != UnrolledBeanSerializer.class) {
+            return false;
+        }
+        BeanSerializerBase bean = (BeanSerializerBase) serializer;
+        if (bean.usesObjectId() || bean.getFilterId() != null || bean.isUnwrappingSerializer()) {
+            return false;
+        }
+        java.util.Set<String> components = new java.util.HashSet<>();
+        for (java.lang.reflect.RecordComponent rc : type.getRecordComponents()) {
+            components.add(rc.getName());
+        }
+        java.util.Set<String> written = new java.util.HashSet<>();
+        for (var properties = bean.properties(); properties.hasNext(); ) {
+            var writer = properties.next();
+            if (!(writer instanceof BeanPropertyWriter)) {
+                return false;
+            }
+            written.add(writer.getName());
+        }
+        return written.equals(components);
+    }
+
+    /** A serializer, format, unwrapping or type annotation on the component that holds the value. */
+    private static boolean overridden(Class<?> holder, String component) {
+        for (java.lang.reflect.RecordComponent rc : holder.getRecordComponents()) {
+            if (!rc.getName().equals(component)) {
+                continue;
+            }
+            java.util.List<java.lang.reflect.AnnotatedElement> elements = new java.util.ArrayList<>();
+            elements.add(rc);
+            elements.add(rc.getAccessor());
+            try {
+                elements.add(holder.getDeclaredField(component));
+            } catch (NoSuchFieldException e) {
+                // A record component has its field; nothing more to look at if it does not.
+            }
+            for (java.lang.reflect.AnnotatedElement element : elements) {
+                for (java.lang.annotation.Annotation a : element.getAnnotations()) {
+                    if (a.annotationType().getName().startsWith("com.fasterxml.jackson.")
+                            || a.annotationType().getName().startsWith("tools.jackson.")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private SourceTree() {

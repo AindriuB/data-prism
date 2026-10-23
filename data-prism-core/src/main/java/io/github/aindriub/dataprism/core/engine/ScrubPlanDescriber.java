@@ -46,9 +46,12 @@ import java.util.stream.Collectors;
  * scrubber then applies the field's own policy to the whole value, so it is described only when that
  * agrees with the structure reading.
  *
- * <p>A type with {@code @JsonSerialize} that the scrubber would descend into is omitted outright, since
- * whether it is written as an object or a scalar depends on settings read from Jackson, and a Jackson
- * mix-in is not visible here at all. A decorator wrapping {@code ValueTokenSource.unavailable()} is
+ * <p>A nested record is described through only when the scrubber's own reader
+ * ({@link SourceTree#readsAsPlainBean}) writes it as a plain object of exactly its components: not as an
+ * array, not with an object id, not through {@code @JsonValue} or a custom serializer, and with no
+ * serializer or format override on the holding component. Anything else is omitted, which fails closed.
+ * There is no mix-in route, because that reader is fixed. A type that may instead be written as a scalar
+ * and that the scrubber would descend into is omitted too. A decorator wrapping {@code ValueTokenSource.unavailable()} is
  * reported as having a token source, which is the safe direction: the scrub then refuses.
  *
  * <p>A model that contains itself is described to its shallowest occurrence only. The path grammar
@@ -288,15 +291,24 @@ final class ScrubPlanDescriber {
         }
         boolean mayBeScalar = mayBeScalar(owner, md, nested);
         if (resolver.descendable(nested)) {
-            return new Shape(mayBeScalar ? Kind.OMIT : Kind.RECORD, array, nested);
+            return new Shape(mayBeScalar || !plain(owner, md, nested) ? Kind.OMIT : Kind.RECORD, array, nested);
         }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
             return new Shape(Kind.SCALAR, array, null);
         }
         if (Map.class.isAssignableFrom(nested) || concrete(nested) && !platform(nested)) {
-            return new Shape(mayBeScalar ? Kind.DYNAMIC : Kind.STRUCTURE, array, null);
+            if (mayBeScalar) {
+                return new Shape(Kind.DYNAMIC, array, null);
+            }
+            return new Shape(Map.class.isAssignableFrom(nested) || plain(owner, md, nested)
+                    ? Kind.STRUCTURE : Kind.OMIT, array, null);
         }
         return new Shape(Kind.DYNAMIC, array, null);
+    }
+
+    /** Whether the scrubber's own reader writes the type as a plain object of its components. */
+    private static boolean plain(Class<?> owner, FieldMetadata md, Class<?> nested) {
+        return SourceTree.readsAsPlainBean(owner, md.fieldName(), nested);
     }
 
     private static void supertypes(Class<?> type, Set<Class<?>> out) {

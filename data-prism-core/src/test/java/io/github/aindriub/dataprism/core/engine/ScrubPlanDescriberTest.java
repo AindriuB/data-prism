@@ -1,6 +1,9 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.annotation.ObjectIdGenerators;
 import io.github.aindriub.dataprism.annotations.Chainable;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
@@ -253,6 +256,46 @@ class ScrubPlanDescriberTest {
             @SensitiveData(classifications = DataClassification.CONFIDENTIAL,
                     suggestedAction = PrivacyAction.REDACT)
             @JsonSerialize(typing = JsonSerialize.Typing.STATIC) AInner details) {
+    }
+
+    @SensitiveObject
+    @JsonFormat(shape = JsonFormat.Shape.ARRAY)
+    record ArrContact(
+            @SensitiveData(classifications = DataClassification.CONTACT,
+                    namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT) String email) {
+    }
+
+    @LlmExposedModel
+    record ArrHolder(@InternalIdentifier String ref, @NonSensitive(reason = "x") ArrContact contact) {
+    }
+
+    @SensitiveObject
+    record PContact(
+            @SensitiveData(classifications = DataClassification.CONTACT,
+                    namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT) String email) {
+    }
+
+    @LlmExposedModel
+    record PropArrHolder(@InternalIdentifier String ref,
+                         @NonSensitive(reason = "x") @JsonFormat(shape = JsonFormat.Shape.ARRAY) PContact contact) {
+    }
+
+    @SensitiveObject
+    @JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "email")
+    record IdContact(
+            @SensitiveData(classifications = DataClassification.CONTACT,
+                    namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT) String email) {
+    }
+
+    @LlmExposedModel
+    record IdHolder(@InternalIdentifier String ref, @NonSensitive(reason = "x") List<IdContact> contacts) {
+    }
+
+    @LlmExposedModel
+    record PlainHolder(@InternalIdentifier String ref, @NonSensitive(reason = "x") PContact contact) {
     }
 
     private static final Map<String, PrivacyProfile> BUNDLED = bundled();
@@ -523,5 +566,31 @@ class ScrubPlanDescriberTest {
                 .describe(AsHolder.class, context("DEFAULT"), false).orElseThrow());
 
         assertThat(d).doesNotContainKeys("details", "details.a");
+    }
+
+    @Test
+    @DisplayName("readsAsPlainBean: true only for a record the reader writes as an object of its components")
+    void plainBeanLookup() {
+        assertThat(SourceTree.readsAsPlainBean(PlainHolder.class, "contact", PContact.class)).isTrue();
+        assertThat(SourceTree.readsAsPlainBean(Parcel.class, "details", Inner.class)).isTrue();
+        assertThat(SourceTree.readsAsPlainBean(ArrHolder.class, "contact", ArrContact.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(PropArrHolder.class, "contact", PContact.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(IdHolder.class, "contacts", IdContact.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(IHolder.class, "email", IEmail.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(AsHolder.class, "details", AInner.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(Holder.class, "code", Code.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(PlainHolder.class, "contact", String.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(String.class, "contact", PContact.class)).isFalse();
+    }
+
+    @Test
+    @DisplayName("an array-shaped or object-id record is omitted, a plain one is described through")
+    void serializerShapes() {
+        for (Class<?> model : List.of(ArrHolder.class, PropArrHolder.class, IdHolder.class)) {
+            assertThat(byPath(describe(model, "DEFAULT", false)).keySet())
+                    .noneMatch(path -> path.startsWith("contact") || path.startsWith("contacts"));
+        }
+        assertThat(byPath(describe(PlainHolder.class, "DEFAULT", false)))
+                .containsEntry("contact.email", Protection.MARKER);
     }
 }
