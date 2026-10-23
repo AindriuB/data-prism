@@ -1,5 +1,7 @@
 # 228 — Replace pause flags with one sealed, sequenced, leased pause document
 
+Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instances on a trusted network only, and the sealed-store briefs 224, 225, 226, 229, 230, 231 and 264 are deferred past 1.0 (`docs/plan/tasks/deferred/`). This brief depends on none of them; `SealedWrites`, keyed names and `ClusterSecuritySettings` are on `main` (223). In 1.0 the pause document is the only sealed store besides the member cards and the sentinel (227), so the docs (213) name it as what is protected.
+
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 227.
@@ -24,6 +26,8 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
 - Task 227: `MemberCards.reportPauseSequence`, `highestReportedPauseSequence`, `verifiedMembers`; `ClusterSecurityStatus`; the gate never blocks the pause map; OD-215-16 for oversight writes while not serving.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/oversight/OversightState.java: the SPI, unchanged.
 - From 218/219 (2026-10-21): This task owns the 0.7 fence write (`all` = TRUE in `dataprism.oversight`) and its re-assertion at each lease refresh.
+- From 227 (folded in 2026-10-23): `PrivacyCluster.instance()` refuses while the serving gate is closed, and 227 adds a package-private ungated accessor for the member-card and pause maps. `HazelcastOversightState` reaches the pause document through that accessor, so OD-215-16 (a) holds: while not serving, a pause is accepted and a resume is refused.
+- Settings: 230 is deferred, so `pause-lease` and `clock-skew-tolerance` are not Spring properties in 1.0. The `ClusterSecuritySettings` defaults apply (`PT30S` and `PT5S`), on a joining member and on a solo member alike, and the tests construct settings directly.
 
 ## Required approach
 - One document under a fixed keyed name in `dataprism.oversight.s1`: the full set of pauses, `sequence`, `refresh`, `issuedAt`, and the issuing member. Order is (sequence, refresh), lexicographic.
@@ -40,6 +44,7 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
 - [ ] An attacker document (plaintext, 0.7 format, random envelope, envelope under another key) written by a keyless member or client never lifts a pause, and is counted.
 - [ ] Every existing `HazelcastOversightTest` case passes; changes are only where a raw value was read or written. The `OversightState` SPI and `OversightSnapshot` are unchanged.
 - [ ] `pause.fresh` and `pause.age_seconds` are emitted as decided under OD-215-5, and `ClusterSecurityStatus` reports freshness without any pause content.
+- [ ] OD-215-16 (a), with the serving gate closed by an unverified member under `refuse` (227): a pause is written and seen by every instance; a resume is refused with `CLUSTER_OPERATION_REFUSED` and audited as 245 audits a resume whose apply fails (`ALLOW:RESUMED`, then a linked `DENY`); after the gate reopens, the resume succeeds. `HazelcastOversightState` reaches the document only through 227's ungated accessor (a test fails if it calls `instance()`).
 - [ ] `OversightMapsBoundary`: the oversight map holds exactly the document, which opens under the test key; scope ids appear only inside the plaintext.
 - [ ] `./mvnw -B -pl data-prism-hazelcast -am verify` and `./mvnw -B verify` exit 0. Report the counts.
 
@@ -48,12 +53,13 @@ Pause, resume and snapshot semantics for operators; the audit-first operator flo
 
 ## Out of scope
 - The `resume` audit ordering (core task 245, OD-08-14).
-- Rotation of the key the document is sealed under (229).
-- Spring binding of `pause-lease` and `clock-skew-tolerance` (230).
+- Rotation of the key the document is sealed under (229, deferred past 1.0).
+- Spring binding of `pause-lease` and `clock-skew-tolerance` (230, deferred past 1.0; the defaults apply). The readiness contributor that reports freshness (286).
 - `TestMembers.java` is read only. `docs/` pages: facts for 213 in the Outcome.
 
 ## Rules
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
+- No `mvn install`, no `git stash`, no force-push, no `pkill` or `killall` by pattern.
 - Neutral, invented scope and tool names. Keys are generated test bytes.
 - Say "supports", never "compliant".
 - No Hazelcast Enterprise feature (D-0.4.1-A). No new dependency.

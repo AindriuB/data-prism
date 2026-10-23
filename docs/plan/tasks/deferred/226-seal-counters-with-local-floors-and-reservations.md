@@ -1,10 +1,14 @@
 # 226 — Seal the budget and caller-rate counters, add local floors, and implement budget reservations on Hazelcast
 
+Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 227, 228 and 284 to 287 first, because they changed some of the files named here.
+
+What moved out for 1.0: the unsealed `reserve`, `release` and `scopeReads` on `HazelcastScopeBudget` that core 246 needs are task 285 (OD-08-1 (a) is met there, without sealing or local floors). When this brief is revived, it seals what 285 built and adds the floors and the merge policy; `HazelcastReservationTest` already exists (285) and gains the sealed and floor cases.
+
 **Repo:** `.`
-**Release:** 0.8.0
+**Release:** after 1.0 (untrusted-network clusters); was 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 223 and 243.
 **Depends on:** 219 (answers 8 and 9), 223 (keyed names, `SealedWrites`, `ClusterSecuritySettings`, `CounterMapsBoundary`), 243 (core plan: `ScopeBudget.reserve` and `release`)
-**Wave:** 5 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave:** none (deferred past 1.0; was a 0.8 wave)
 **Decisions:** OD-215-11 (a if 219 shows it possible, otherwise b), OD-215-15 (a, local floor covers the scope total) and core OD-08-1 (a, this brief owns `reserve` and `release` on `HazelcastScopeBudget`) are decided 2026-10-20.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastScopeBudget.java

@@ -5,7 +5,7 @@
 **Base branch:** the 0.8 integration branch once 211, 222, 242, 246, 247, 249 and 250 have merged
 **Depends on:** 211 (serialised with 210, 208 and 211 on the shared Spring files below), 222 (sealed-cluster plan; 222 edits `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json` and `docs/configuration.md` first), 242 (link codec), 246 (new limits), 247 (labels, real names, `OrchestrationOptions`), 249 (configured-source descriptions and hosts), 250 (catalog tools)
 **Decisions:** OD-08-3 (`PT10S`, 50,000, `scope-read-budget` 100), OD-08-9 (a, `MISSING_PAGING_KEY`) and OD-08-18 (a, `dataprism.links.keys.<key-id>.environment-variable` or `.provider-reference`) are decided 2026-10-20.
-**Serialised with:** 222 (before this task, by the edge above), 255 (after), and 230 (after 255, because 230 depends on 255; no edge from 222 or 230 to this task, which would close the cycle 254, 246, 226, 223, 222), on `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, `additional-spring-configuration-metadata.json`, `frozen-property-names.txt`, `bean-inventory/*.txt`, `docs/configuration.md`
+**Serialised with:** 222 and 284 (before this task, through 211), 286 (after this task, by its edge) and 255 (after 286), on `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, `additional-spring-configuration-metadata.json`, `frozen-property-names.txt`, `bean-inventory/*.txt`, `docs/configuration.md`
 **Wave:** 9 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LimitsProperties.java

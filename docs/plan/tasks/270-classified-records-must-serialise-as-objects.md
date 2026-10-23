@@ -23,7 +23,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java *(the `dataPrismContractValidator` bean method only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/validation/ClassifiedRecordStartupTest.java *(new; in the `validation` sub-package, outside 210's `spring/boot/*.java` glob)*
 - data-prism-spring-boot-autoconfigure/src/test/resources/classified-records/** *(new fixture files only)*
-- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ClassifiedShapesArchitectureTest.java *(new; 225 owns `ArchitectureTest.java` in this wave, so the rule lives in its own file)*
+- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ClassifiedShapesArchitectureTest.java *(new; the rule lives in its own file, kept so though 225, which owned `ArchitectureTest.java` in this wave, is now deferred past 1.0)*
 - docs/extending.md *(the source-model shape paragraph, about :355-369, only)*
 - docs/plan/design/contract-register.md *(insertions only: the rows for the codes this task adds, in sections 3.1 and 3.5)*
 - CHANGELOG.md *(`[Unreleased]`, insertions only: one Security entry and one Breaking entry)*
