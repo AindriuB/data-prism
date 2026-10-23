@@ -377,7 +377,8 @@ public final class PrivacyCluster implements AutoCloseable {
             throw missingKeys();
         }
         // toConfig has already made a none membership solo.
-        return launch(membership.toConfig(), reidentificationEnabled,
+        return launch(membership.toConfig(keys == null ? Code.MISSING_CLUSTER_KEY : Code.INVALID_CLUSTER_INTERFACE),
+                reidentificationEnabled,
                 approvalMinimumMembers.isPresent() ? approvalMinimumMembers
                         : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys, false);
     }

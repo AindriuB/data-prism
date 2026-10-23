@@ -104,6 +104,14 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
      *                               followed by {@link #withInterface}.
      */
     public Config toConfig() {
+        return toConfig(Code.INVALID_CLUSTER_INTERFACE);
+    }
+
+    /**
+     * As {@link #toConfig()}; {@code isolationFailure} is the code given when a {@code none} membership cannot be
+     * made loopback-only: a member that holds keys is not told it lacks them.
+     */
+    Config toConfig(Code isolationFailure) {
         if (!(join instanceof None) && interfaceAddress.isEmpty()) {
             throw refuse(Code.MISSING_MEMBER_INTERFACE,
                     "member.interface is required for tcp-ip and kubernetes joins");
@@ -134,7 +142,7 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
                 bindToInterface(config);
             }
             case None none -> {
-                isolate(config);
+                isolate(config, isolationFailure);
             }
         }
         return config;
@@ -146,6 +154,11 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
      * unguessable per-member suffix (internal, and it appears in logs), and the member listens on loopback only.
      */
     static void isolate(Config config) {
+        isolate(config, Code.MISSING_CLUSTER_KEY);
+    }
+
+    /** As above; {@code failure} is the code when the configuration still reaches beyond this host. */
+    static void isolate(Config config, Code failure) {
         // Modifies the Config it is given. The suffix is always fresh, so nothing in the Config can skip it; a
         // Config passed twice carries two suffixes, which is harmless.
         config.setClusterName(config.getClusterName() + "-solo-" + UUID.randomUUID());
@@ -157,9 +170,19 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         // What the member will really do is read the same way Hazelcast reads it, so a setting that still wins
         // over the above (a system property, say) is caught here and not assumed away.
         if (!reachableOnlyFromThisHost(config)) {
-            throw refuse(Code.MISSING_CLUSTER_KEY,
-                    "a member without cluster keys must listen on loopback only, and its configuration does not");
+            throw refuse(failure, failure == Code.MISSING_CLUSTER_KEY
+                    ? "a member without cluster keys must listen on loopback only, and its configuration does not"
+                    : "a single member listens on loopback only, and an address setting makes it reachable elsewhere");
         }
+    }
+
+    /** Hazelcast reads this too; it sets the address a member advertises to the others. */
+    private static final String PUBLIC_ADDRESS = "hazelcast.local.publicAddress";
+
+    /** The host part of {@code host} or {@code host:port}; a bare IPv6 literal has no port to strip. */
+    private static String hostOf(String address) {
+        int colon = address.lastIndexOf(':');
+        return colon > 0 && address.indexOf(':') == colon ? address.substring(0, colon) : address;
     }
 
     private static final Pattern LOOPBACK_LITERAL = Pattern.compile("127\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})");
@@ -183,7 +206,8 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
 
     /**
      * Whether the config makes the member reachable from this host only: neither socket setting binds every
-     * interface, the interfaces are enabled and all loopback entries, no public address is advertised, no member
+     * interface, the interfaces are enabled and all loopback entries, no public address is advertised (field, or the
+     * {@code hazelcast.local.publicAddress} property, loopback literals only), no member
      * address provider is enabled, and no non-loopback {@code hazelcast.local.localAddress} (Config or system
      * property) overrides the address picked. Read the way Hazelcast reads its properties. {@code PrivacyCluster.using} asks
      * the same of a supplied instance, so the two cannot disagree.
@@ -199,6 +223,13 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
             localAddress = System.getProperty(LOCAL_ADDRESS);
         }
         if (localAddress != null && !localAddress.isBlank() && !loopbackLiteral(localAddress.strip())) {
+            return false;
+        }
+        String advertised = config.getProperty(PUBLIC_ADDRESS);
+        if (advertised == null) {
+            advertised = System.getProperty(PUBLIC_ADDRESS);
+        }
+        if (advertised != null && !advertised.isBlank() && !loopbackLiteral(hostOf(advertised.strip()))) {
             return false;
         }
         var network = config.getNetworkConfig();

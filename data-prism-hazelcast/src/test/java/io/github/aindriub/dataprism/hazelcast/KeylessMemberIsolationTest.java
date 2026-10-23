@@ -596,4 +596,61 @@ class KeylessMemberIsolationTest {
             refusedAsMissingKeys(catchThrowable(() -> ClusterMembership.isolate(config)));
         }
     }
+
+    // ---- the advertised address override ------------------------------------------------------------
+
+    private static void withSystemProperty(String key, String value, Runnable body) {
+        String before = System.getProperty(key);
+        System.setProperty(key, value);
+        try {
+            body.run();
+        } finally {
+            if (before == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, before);
+            }
+        }
+    }
+
+    @Test
+    void aNonLoopbackPublicAddressSystemPropertyRefusesAKeylessMember() {
+        withSystemProperty("hazelcast.local.publicAddress", "10.1.2.3:5701", () -> {
+            Config config = keylessConfig(TestMembers.uniqueName("publicprop"), FreePorts.consecutive(1));
+            refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.embedded(config, false)));
+            assertThat(Hazelcast.getAllHazelcastInstances()).isEmpty();
+        });
+        withSystemProperty("hazelcast.local.publicAddress", "127.0.0.1:5701",
+                () -> ClusterMembership.isolate(keylessConfig(TestMembers.uniqueName("publicprop"), 5701)));
+    }
+
+    @Test
+    void aNonLoopbackPublicAddressConfigPropertyRefusesAKeylessMember() {
+        for (String refused : List.of("10.1.2.3", "example.com:5701", "127.lan.example.internal")) {
+            Config config = keylessConfig(TestMembers.uniqueName("publicprop"), 5701);
+            config.setProperty("hazelcast.local.publicAddress", refused);
+            refusedAsMissingKeys(catchThrowable(() -> ClusterMembership.isolate(config)));
+        }
+        Config loopback = keylessConfig(TestMembers.uniqueName("publicprop"), 5701);
+        loopback.setProperty("hazelcast.local.publicAddress", "localhost:5701");
+        ClusterMembership.isolate(loopback);
+    }
+
+    // ---- the code names the cause ---------------------------------------------------------------------
+
+    @Test
+    void aKeyedSoloMemberWithAnOverridingAddressIsNotToldItLacksKeys() {
+        withSystemProperty("hazelcast.local.localAddress", "10.1.2.3", () -> {
+            ClusterMembership none = ClusterMembership.none(TestMembers.uniqueName("keyedsolo"))
+                    .withPort(FreePorts.consecutive(1));
+            Throwable keyed = catchThrowable(() -> PrivacyCluster.embedded(none, false, OptionalInt.empty(),
+                    Duration.ofMinutes(1), TestMembers.KEYS));
+            assertThat(keyed).isInstanceOf(PrivacyClusterRefusal.class);
+            assertThat(((PrivacyClusterRefusal) keyed).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
+            Throwable keyless = catchThrowable(() -> PrivacyCluster.embedded(none, false));
+            refusedAsMissingKeys(keyless);
+            Throwable direct = catchThrowable(none::toConfig);
+            assertThat(((PrivacyClusterRefusal) direct).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
+        });
+    }
 }
