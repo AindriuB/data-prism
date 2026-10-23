@@ -227,7 +227,7 @@ public final class OperatorHarness implements AutoCloseable {
                 "--dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
                 "--dataprism.privacy.profile=DEFAULT", "--dataprism.privacy.scope-lifetime=8h",
                 "--dataprism.privacy.hmac-key.key-id=v1",
-                "--dataprism.privacy.hmac-key.provider-reference=test-key",
+                "--dataprism.privacy.hmac-key.environment-variable=test-key",
                 "--dataprism.audit.sink=approved-sink", "--dataprism.audit.writer-id=operator-test",
                 "--dataprism.metrics.sink=micrometer",
                 "--dataprism.hazelcast.topology=" + (embedded ? "embedded" : "single-node"),
