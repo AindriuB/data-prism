@@ -163,6 +163,15 @@ An external review of PR #154 (the wave-3 record) was addressed in the same PR: 
 
 A second review round on PR #154 (4 Medium, 13 Low, 4 Nit; 2026-10-23) is answered on the same branches. New follow-ups for 251, 252 and 255 are in their Context bullets. The limiter findings belong to task 269 (wave 4 row), which replaces `attemptCounterKey`.
 
+Follow-ups from the external review of PR #154 (rounds 1–4), 2026-10-23. The owner agreed on 2026-10-23 that once a review round finds nothing Medium or worse the PR merges and the Lows become follow-ups; round 4 reached that bar. Each item belongs to the brief named (also a dated Context bullet in 227, 251, 252 and 261; owner decisions stay here only):
+
+- 222/hazelcast, to 227 (the next `PrivacyCluster` editor): fix `PrivacyCluster` import grouping and one remaining inline `java.util.concurrent.atomic.AtomicInteger`. The `INVALID_CLUSTER_INTERFACE` wording in `docs/configuration.md` and the contract register is already fixed.
+- 242/core.link, to 251 unless noted: the `&& knownKey` guard in `LinkCodec` has no test of its own (defence in depth behind `UNKNOWN_KEY`), so add a test or a comment; 251 must fingerprint only values within the chained-key cap, because `ScopeKeys.fingerprint` now refuses values over 65535 bytes, and the Javadoc should say so.
+- 242, owner/254: `SealResult.OmitReason.BINDING_TOO_LONG` also covers empty ids; consider renaming it to `BINDING_INVALID` before the codes are published.
+- 242, owner decision: the `Optional` record components (`FollowPayload.resolverName`, the `CatalogPagePayload` filters, `LinkSettings.lifetime`) need a rule in `docs/conventions.md`, which has none.
+- 252: an MCP client may send "" meaning "no link" and the codec counts "" as `MALFORMED`; decide whether to map "" to null before `open`, so a confused agent does not lock itself out.
+- 261: `docs/audit.md` must list `REFUSED:LINK_ATTEMPTS_{LOCKED,OVER_LIMIT,CEILING,LIMITER_UNAVAILABLE,OPEN_FAILED}` (PR #157, the 269 revision) and `REFUSED:LINK_KEY_UNAVAILABLE`.
+
 Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the brief named (also recorded as dated Context bullets in the briefs, except where noted):
 
 - 211, 254, 255: extend `ClusterKeyResolution`'s shared-key check (today the privacy HMAC key only) to the audit key and the link keys, and add the file and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows to their Owns.

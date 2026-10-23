@@ -426,7 +426,7 @@ Surface: `DataPrismConfigurationException` / `PrivacyClusterRefusal` at context 
 | `INVALID_AUDIT_REFERENCE` | shipped | 0.1.0 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:537 | yes |  |
 | `INVALID_AUDIT_ROUTING_VALUE` | shipped | 0.5.0 | core:AuditRouting.java:17 | yes |  |
 | `INVALID_AUDIT_WRITER` | shipped | 0.3.0 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:534 | yes |  |
-| `INVALID_CLUSTER_INTERFACE` | shipped | 0.4.1 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:281 | yes |  |
+| `INVALID_CLUSTER_INTERFACE` | shipped | 0.4.1 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:281 | yes | an invalid `member.interface`, and also a `hazelcast.*` address property that makes a single member reachable (222) |
 | `INVALID_CLUSTER_MEMBERS` | shipped | 0.4.1 | spring-boot-autoconfigure:DataPrismPropertiesValidator.java:251 | yes |  |
 | `INVALID_CLUSTER_PORT` | shipped | 0.4.1 | hazelcast:PrivacyClusterRefusal.java:14 (enum constant) | yes | declared as an enum constant, not a string literal; the literal extraction alone misses it |
 | `INVALID_CONFIG_BOOLEAN` | shipped | 0.6.0 | core:StrictYaml.java:53 | yes |  |
