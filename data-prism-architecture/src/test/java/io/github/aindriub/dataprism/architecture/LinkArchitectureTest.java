@@ -191,7 +191,8 @@ class LinkArchitectureTest {
             @Override
             public void check(JavaClass javaClass, ConditionEvents events) {
                 boolean fromCore = javaClass.getSource()
-                        .map(source -> Path.of(source.getUri()).startsWith(coreMainClasses))
+                        .map(source -> "file".equals(source.getUri().getScheme())
+                                && Path.of(source.getUri()).startsWith(coreMainClasses))
                         .orElse(false);
                 events.add(new SimpleConditionEvent(javaClass, fromCore,
                         javaClass.getName() + (fromCore ? " is in core's main classes"
@@ -523,7 +524,10 @@ class LinkArchitectureTest {
         assertThat(result.hasViolation()).isTrue();
         assertThat(String.join("\n", result.getFailureReport().getDetails())).contains("SplitPackageFixture");
         // A real core.link class, imported the same way, passes: the rule compares locations, not names.
-        assertThat(linkIsOnlyLoadedFrom(core).evaluate(new ClassFileImporter().importClasses(LinkCodec.class))
-                .hasViolation()).isFalse();
+        JavaClasses fromCore = new ClassFileImporter().importPaths(core);
+        assertThat(fromCore.contain(LinkCodec.class.getName())).isTrue();
+        assertThat(linkIsOnlyLoadedFrom(core).evaluate(fromCore).hasViolation()).isFalse();
+        // The same class read from a jar on the classpath (as under `verify`) is not "in core's main classes".
+        assertThat(linkIsOnlyLoadedFrom(core.resolveSibling("elsewhere")).evaluate(fromCore).hasViolation()).isTrue();
     }
 }
