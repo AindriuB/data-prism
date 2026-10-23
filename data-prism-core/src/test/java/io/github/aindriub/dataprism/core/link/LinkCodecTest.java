@@ -682,22 +682,62 @@ class LinkCodecTest {
     }
 
     @Test
-    void anUnknownKeyNeverSurfacesTheProvidersMessage() {
-        byte[] raw = raw(sealed(follow(5)));
-        raw[2] = 'z';
-        Refused refused = refused(codec.open(token(raw), binding, follows()));
-        assertThat(refused.reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
-        assertThat(refused.toString()).doesNotContain(SENTINEL);
-    }
-
-    @Test
     void payloadConstructorsNameNoValue() {
         String secret = "subject-secret-value-" + "x".repeat(80);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> follow(secret.getBytes(StandardCharsets.UTF_8), ""))
+        // The secret is the value in each field whose validation builds a message.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, secret,
+                Optional.empty(), material(3, 5), "source-one", LinkRelation.DIRECT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("subject-secret"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
+                Optional.of(secret), material(3, 5), "source-one", LinkRelation.TRANSLATED))
+                .isInstanceOf(IllegalArgumentException.class)
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("subject-secret"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new CatalogPagePayload(linkId(), T0,
+                Optional.of(secret), Optional.empty(), LinkLabelKind.ALIAS, 25, "source-one", material(90, 16)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .satisfies(e -> assertThat(e.getMessage()).doesNotContain("subject-secret"));
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> follow(new byte[0], "source-one"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // ---- review 3: the associated data alone, with the key held fixed ----
+
+    private static final byte[] K1 = material(1, 32);
+
+    @Test
+    void anIndependentlyBuiltTokenWithTheFullAssociatedDataOpens() throws Exception {
+        byte[] raw = raw(sealed(follow(5)));
+        byte[] rebuilt = LinkVectors.reauthenticate(K1, "case-1", "alice", true, raw, null, null);
+        assertThat(codec.open(token(rebuilt), binding, follows())).isInstanceOf(Opened.class);
+    }
+
+    @Test
+    void theVersionIsInTheAssociatedData() throws Exception {
+        byte[] raw = raw(sealed(follow(5)));
+        byte[] otherVersion = LinkVectors.reauthenticate(K1, "case-1", "alice", true, raw, 2, null);
+        // The header still says version 1 and the key is unchanged: only the associated data differs.
+        assertThat(otherVersion[0]).isEqualTo((byte) 1);
+        assertThat(refused(codec.open(token(otherVersion), binding, follows())).reason())
+                .isEqualTo(LinkReason.AUTH_FAILED);
+        // A token whose associated data leaves the version out must not open either.
+        byte[] noVersion = LinkVectors.reauthenticate(K1, "case-1", "alice", true, raw,
+                LinkVectors.OMIT_VERSION, null);
+        assertThat(refused(codec.open(token(noVersion), binding, follows())).reason())
+                .isEqualTo(LinkReason.AUTH_FAILED);
+    }
+
+    @Test
+    void theScopeIsInTheAssociatedData() throws Exception {
+        byte[] raw = raw(sealed(follow(5)));
+        byte[] otherScope = LinkVectors.reauthenticate(K1, "case-1", "alice", true, raw, null, "case-2");
+        // The key and the caller tag still come from case-1: only the associated data names another scope.
+        assertThat(refused(codec.open(token(otherScope), binding, follows())).reason())
+                .isEqualTo(LinkReason.AUTH_FAILED);
+        byte[] noScope = LinkVectors.reauthenticate(K1, "case-1", "alice", true, raw, null,
+                LinkVectors.OMIT_SCOPE);
+        assertThat(refused(codec.open(token(noScope), binding, follows())).reason())
+                .isEqualTo(LinkReason.AUTH_FAILED);
     }
 
     private static int indexOf(byte[] haystack, byte[] needle) {

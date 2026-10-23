@@ -42,13 +42,31 @@ final class LinkVectors {
     /** Opens the raw token with the master key and returns the plaintext payload; throws if it does not verify. */
     static byte[] decrypt(byte[] master, String scope, String principal, boolean bind, byte[] raw)
             throws Exception {
-        return crypt(master, scope, principal, bind, raw, null);
+        return crypt(master, scope, principal, bind, raw, null, null, null);
+    }
+
+    /**
+     * The same token with its payload sealed under the same key, but with the associated data changed in one
+     * place: {@code aadVersion} replaces the version byte, {@code aadScope} the scope id. Either may be null to
+     * keep it, or {@link #OMIT_VERSION} / {@link #OMIT_SCOPE} to leave the item out. The key and the caller tag still come from {@code scope}, so only the associated data differs.
+     */
+    static final int OMIT_VERSION = -1;
+    static final String OMIT_SCOPE = "\u0000omit";
+
+    static byte[] reauthenticate(byte[] master, String scope, String principal, boolean bind, byte[] raw,
+                                 Integer aadVersion, String aadScope) throws Exception {
+        byte[] plain = decrypt(master, scope, principal, bind, raw);
+        byte[] sealed = crypt(master, scope, principal, bind, raw, plain, aadVersion, aadScope);
+        int headerLength = raw.length - (plain.length + 16);
+        byte[] out = Arrays.copyOf(raw, headerLength + sealed.length);
+        System.arraycopy(sealed, 0, out, headerLength, sealed.length);
+        return out;
     }
 
     /** The same token with its payload replaced, authenticated under the same header, nonce and key. */
     static byte[] reseal(byte[] master, String scope, String principal, boolean bind, byte[] raw, byte[] payload)
             throws Exception {
-        byte[] sealed = crypt(master, scope, principal, bind, raw, payload);
+        byte[] sealed = crypt(master, scope, principal, bind, raw, payload, null, null);
         int headerLength = raw.length - (decrypt(master, scope, principal, bind, raw).length + 16);
         byte[] out = Arrays.copyOf(raw, headerLength + sealed.length);
         System.arraycopy(sealed, 0, out, headerLength, sealed.length);
@@ -56,7 +74,7 @@ final class LinkVectors {
     }
 
     private static byte[] crypt(byte[] master, String scope, String principal, boolean bind, byte[] raw,
-                                byte[] replacement) throws Exception {
+                                byte[] replacement, Integer aadVersion, String aadScope) throws Exception {
         int at = 1;
         int keyIdLength = raw[at++] & 0xFF;
         byte[] keyId = Arrays.copyOfRange(raw, at, at + keyIdLength);
@@ -75,12 +93,16 @@ final class LinkVectors {
             callerTag = Arrays.copyOf(mac, 16);
         }
         ByteArrayOutputStream aad = new ByteArrayOutputStream();
-        prefixed(aad, new byte[] {raw[0]});
+        if (aadVersion == null || aadVersion != OMIT_VERSION) {
+            prefixed(aad, new byte[] {aadVersion != null ? (byte) aadVersion.intValue() : raw[0]});
+        }
         prefixed(aad, keyId);
         prefixed(aad, expiry);
         prefixed(aad, target);
         prefixed(aad, new byte[] {relation});
-        prefixed(aad, scope.getBytes(StandardCharsets.UTF_8));
+        if (!OMIT_SCOPE.equals(aadScope)) {
+            prefixed(aad, (aadScope != null ? aadScope : scope).getBytes(StandardCharsets.UTF_8));
+        }
         prefixed(aad, callerTag);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(replacement == null ? Cipher.DECRYPT_MODE : Cipher.ENCRYPT_MODE,

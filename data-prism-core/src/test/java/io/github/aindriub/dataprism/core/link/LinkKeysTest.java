@@ -256,11 +256,17 @@ class LinkKeysTest {
     }
 
     @Test
-    void forScopeNamesNoReferenceWhenTheIdIsUnknown() {
-        LinkKeys keys = new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
-        assertThatThrownBy(() -> keys.forScope(SCOPE, "gone"))
+    void forScopeNamesNoReferenceWhenAHeldKeyIsUnavailable() {
+        MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
+        LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2"));
+        provider.keys.remove("k2");
+        // k2 is held, so the provider is asked and throws a message that names a sentinel reference.
+        assertThatThrownBy(() -> provider.secret("k2")).hasMessageContaining(SENTINEL);
+        assertThatThrownBy(() -> keys.forScope(SCOPE, "k2"))
                 .isInstanceOf(IllegalStateException.class)
-                .satisfies(e -> assertThat(e.getMessage()).doesNotContain(SENTINEL));
+                .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
+                        .doesNotContain(SENTINEL))
+                .hasNoCause();
     }
 
     @Test
