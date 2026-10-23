@@ -165,9 +165,11 @@ class ClusterLockTimeoutConfigurationTest {
                 ApprovalRequest request = new ApprovalRequest("ctx-1", ApprovalRequest.Kind.TOOL_CALL, "alice", "c",
                         "scope-1", "search", "fp", null, null, "p", "case", now, now.plusSeconds(60),
                         ApprovalRequest.Status.PENDING, null, null);
-                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP), "ctx-1",
+                holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_ID_MAP),
+                        cluster.keyedNames().mapKey(PrivacyCluster.APPROVAL_ID_MAP, "ctx-1"),
                         () -> refusesWithinTheTimeoutAndHalfASecond(() -> approvals.create(request), caller));
-                holdWhile(cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP), "alice",
+                holdWhile(cluster.instance().getMap(PrivacyCluster.CALLER_RATE_MAP),
+                        cluster.keyedNames().mapKey(PrivacyCluster.CALLER_RATE_MAP, "alice"),
                         () -> refusesWithinTheTimeoutAndHalfASecond(
                                 () -> limiter.tryAcquire("alice", 5, Duration.ofMinutes(1), now), caller));
                 // One read first, so the subject's key exists and can be found without knowing how it is built.
@@ -200,7 +202,7 @@ class ClusterLockTimeoutConfigurationTest {
                 approvals.create(new ApprovalRequest("end-1", ApprovalRequest.Kind.TOOL_CALL, "alice", "c",
                         "scope-end", "search", "fp", null, null, "p", "case", now, now.plusSeconds(60),
                         ApprovalRequest.Status.PENDING, null, null));
-                String entry = "scope-end\0end-1";
+                String entry = cluster.keyedNames().scoped(PrivacyCluster.APPROVAL_MAP, "scope-end", "scope-end\0end-1");
                 // A held approval lock refuses the scope end within the configured 0.2 s, not the default 2 s.
                 holdWhile(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP), entry,
                         () -> refusesWithinTheTimeoutAndHalfASecond(() -> {
