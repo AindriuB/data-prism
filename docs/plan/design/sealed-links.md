@@ -280,7 +280,7 @@ The decision is `DENY:LINK_INVALID`. The real reason must be recorded somewhere 
 | `link:id` | The link's 16 hex-character id, only when the link authenticated | Not recorded under C (a metric-free loss: issue and use are joined by `correlationId` of each call only) |
 | `link:attempts` | The principal's counted failures in the window | Not recorded under C; exposed as a metric without a principal label |
 
-The closed set has twelve reasons, `KEY_UNAVAILABLE` included, and the exhausted causes are a separate closed set of five. A twelfth, `DEPTH_EXCEEDED`, existed only for rejected option (b) and is withdrawn (OD-200-8).
+The closed set has sixteen reasons, `KEY_UNAVAILABLE` included, and the exhausted causes are a separate closed set of five. The table above lists twelve; the other four, `WRONG_TOOL`, `FILTER_MISMATCH`, `LABELS_CHANGED` and `CATALOG_CHANGED`, are decided after authentication and are never counted. `DEPTH_EXCEEDED` existed only for rejected option (b) and is withdrawn (OD-200-8); it is not in the set.
 
 Amendments from the external review of PR #154 (task 242, 2026-10-22), built in `core.link`:
 
@@ -554,7 +554,7 @@ None collides with an existing name; the commands used are recorded in the Outco
 | `dataprism.links.invalid-attempt-limit` | configuration key | 0.8 |
 | `dataprism.links.invalid-attempt-window` | configuration key | 0.8 |
 | `dataprism.links.clock-skew` | configuration key | 0.8 |
-| `LINK_<REASON>` (twelve audit-only reason codes and five `LINK_ATTEMPTS_<CAUSE>` codes, shape C of OD-13; `LINK_DEPTH_EXCEEDED` withdrawn, OD-200-8) | audit value | 0.8 |
+| `LINK_<REASON>` (sixteen audit-only reason codes and five `LINK_ATTEMPTS_<CAUSE>` codes, shape C of OD-13; `LINK_DEPTH_EXCEEDED` withdrawn, OD-200-8) | audit value | 0.8 |
 | `dataprism/link/v1/seal`, `/fingerprint`, `/caller` | key-derivation labels | 0.8 |
 | `dataprism.links.keys.loaded` | metric (gauge, one series per held link key id, value 1) | 0.8 |
 | link key ids held (list) | health-endpoint field | 0.8 |

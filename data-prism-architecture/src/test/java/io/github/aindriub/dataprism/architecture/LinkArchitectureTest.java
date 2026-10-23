@@ -18,6 +18,7 @@ import io.github.aindriub.dataprism.core.link.LinkCodec;
 import io.github.aindriub.dataprism.core.link.LinkKeys;
 import io.github.aindriub.dataprism.core.link.SplitPackageFixture;
 import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
+import io.github.aindriub.dataprism.hazelcast.archfixture.HzLimiterOpensTokens;
 import io.github.aindriub.dataprism.hazelcast.archfixture.LinkLimiterFloorFixture;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -139,24 +140,31 @@ class LinkArchitectureTest {
                 .allowEmptyShould(true);
     }
 
+    /**
+     * A call or method reference to {@code LinkCodec.open}, or to the limiter's two methods. A Hazelcast
+     * implementation of the limiter is exempt from the limiter half only: it may call and reference its own
+     * {@code lockState} and {@code recordFailure}, and it is still forbidden to open a token.
+     */
     private static boolean isLinkOpenOrLimiterCall(JavaAccess<?> access) {
         if (!(access instanceof JavaMethodCall || access instanceof JavaMethodReference)) {
             return false;
         }
         JavaClass owner = access.getTarget().getOwner();
         String name = access.getTarget().getName();
-        return owner.isAssignableTo(LinkCodec.class) && name.equals("open")
-                || owner.isAssignableTo(LinkAttemptLimiter.class)
-                        && (name.equals("lockState") || name.equals("recordFailure"));
+        boolean opensToken = owner.isAssignableTo(LinkCodec.class) && name.equals("open");
+        boolean usesLimiter = owner.isAssignableTo(LinkAttemptLimiter.class)
+                && (name.equals("lockState") || name.equals("recordFailure"))
+                && !isHazelcastLimiter(access.getOriginOwner());
+        return opensToken || usesLimiter;
     }
 
     private static boolean isHazelcastLimiter(JavaClass c) {
         return inPackageOrBelow(c.getPackageName(), HAZELCAST_PACKAGE) && c.isAssignableTo(LinkAttemptLimiter.class);
     }
 
-    private static DescribedPredicate<JavaClass> outsideLinkAndNotAHazelcastLimiter() {
-        return DescribedPredicate.describe("outside core.link and not a Hazelcast implementation of the limiter",
-                c -> !inPackageOrBelow(c.getPackageName(), LINK_PACKAGE) && !isHazelcastLimiter(c));
+    private static DescribedPredicate<JavaClass> outsideLink() {
+        return DescribedPredicate.describe("outside core.link",
+                c -> !inPackageOrBelow(c.getPackageName(), LINK_PACKAGE));
     }
 
     private static ArchRule noBypass(DescribedPredicate<JavaClass> origin) {
@@ -255,7 +263,7 @@ class LinkArchitectureTest {
 
     @Test
     void nothingOutsideLinkBypassesTheGate() {
-        noBypass(outsideLinkAndNotAHazelcastLimiter()).check(CLASSES);
+        noBypass(outsideLink()).check(CLASSES);
     }
 
     @Test
@@ -478,27 +486,29 @@ class LinkArchitectureTest {
                 FixtureCallsLockState.class, FixtureCallsRecordFailureOnTheInterface.class,
                 FixtureCallsRecordFailureOnAnImplementation.class, FixtureReferencesLockState.class,
                 FixtureReferencesRecordFailure.class)) {
-            assertThat(evaluate(noBypass(outsideLinkAndNotAHazelcastLimiterAnd(fixture)), fixture).hasViolation())
+            assertThat(evaluate(noBypass(outsideLinkAnd(fixture)), fixture).hasViolation())
                     .as(fixture.getSimpleName()).isTrue();
         }
-        assertThat(evaluate(noBypass(outsideLinkAndNotAHazelcastLimiterAnd(FixtureNeutral.class)),
+        assertThat(evaluate(noBypass(outsideLinkAnd(FixtureNeutral.class)),
                 FixtureNeutral.class).hasViolation()).isFalse();
     }
 
-    private static DescribedPredicate<JavaClass> outsideLinkAndNotAHazelcastLimiterAnd(Class<?> fixture) {
-        return named(fixture).and(outsideLinkAndNotAHazelcastLimiter());
+    private static DescribedPredicate<JavaClass> outsideLinkAnd(Class<?> fixture) {
+        return named(fixture).and(outsideLink());
     }
 
     @Test
     void bypassRuleFailsOnALimiterImplementedOutsideHazelcastAndPassesTheHazelcastFloorFixture() {
-        assertThat(evaluate(noBypass(outsideLinkAndNotAHazelcastLimiterAnd(
+        assertThat(evaluate(noBypass(outsideLinkAnd(
                 FixtureImplementsTheLimiterOutsideHazelcast.class)),
                 FixtureImplementsTheLimiterOutsideHazelcast.class).hasViolation()).isTrue();
-        assertThat(evaluate(noBypass(outsideLinkAndNotAHazelcastLimiterAnd(LinkLimiterFloorFixture.class)),
+        assertThat(evaluate(noBypass(outsideLinkAnd(LinkLimiterFloorFixture.class)),
                 LinkLimiterFloorFixture.class).hasViolation()).isFalse();
-        // The exception is exactly an implementation: the fixture is outside core.link, so without it the rule
-        // would flag the fixture's own call to lockState.
-        assertThat(evaluate(noBypass(named(LinkLimiterFloorFixture.class)), LinkLimiterFloorFixture.class)
+    }
+
+    @Test
+    void aHazelcastLimiterMayNotOpenTokens() {
+        assertThat(evaluate(noBypass(outsideLinkAnd(HzLimiterOpensTokens.class)), HzLimiterOpensTokens.class)
                 .hasViolation()).isTrue();
     }
 
