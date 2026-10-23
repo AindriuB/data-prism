@@ -5,7 +5,6 @@ import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal;
 import io.github.aindriub.dataprism.spring.boot.DataPrismConfigurationException;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Checks {@code member.interface} with the member factory's own rules. Kept apart from
@@ -19,7 +18,7 @@ final class MemberInterfaceCheck {
     static void check(String interfaceAddress) {
         try {
             new ClusterMembership("interface-check", new ClusterMembership.TcpIp(List.of("127.0.0.1")),
-                    ClusterMembership.DEFAULT_PORT, Optional.of(interfaceAddress));
+                    ClusterMembership.DEFAULT_PORT, interfaceAddress);
         } catch (PrivacyClusterRefusal refusal) {
             throw translate(refusal);
         }

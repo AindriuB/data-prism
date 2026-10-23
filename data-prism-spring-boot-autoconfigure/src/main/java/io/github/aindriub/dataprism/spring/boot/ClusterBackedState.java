@@ -28,7 +28,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
-import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
@@ -61,7 +60,7 @@ class ClusterBackedState {
         try {
             ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
-                    Optional.ofNullable(h.getMember().getInterface()));
+                    h.getMember().getInterface());
             PrivacyCluster cluster = PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
                     approvalMinimum(h, properties), h.getApprovalSweepInterval(), keys);
             try {

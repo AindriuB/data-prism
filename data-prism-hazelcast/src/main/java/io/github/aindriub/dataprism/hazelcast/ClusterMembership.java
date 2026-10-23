@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
  * Hazelcast {@link Config} that always has auto-detection, multicast and phone-home off,
  * so a member can only ever join what the deployer named.
  */
-public record ClusterMembership(String clusterName, Join join, int port, Optional<String> interfaceAddress) {
+public record ClusterMembership(String clusterName, Join join, int port, String interfaceAddressOrNull) {
 
     public static final int DEFAULT_PORT = 5701;
 
@@ -48,7 +48,6 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
     }
 
     public ClusterMembership {
-        interfaceAddress = interfaceAddress == null ? Optional.empty() : interfaceAddress;
         if (clusterName == null || clusterName.isBlank()) {
             throw refuse(Code.MISSING_CLUSTER_NAME, "clusterName is required");
         }
@@ -59,40 +58,45 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         if (!validPort(port)) {
             throw refuse(Code.INVALID_CLUSTER_PORT, "port must be 1-65535");
         }
-        if (interfaceAddress.isPresent() && join instanceof None) {
+        if (interfaceAddressOrNull != null && join instanceof None) {
             throw refuse(Code.INVALID_CLUSTER_INTERFACE,
                     "interface cannot be set for a single member, which is loopback-only");
         }
-        if (interfaceAddress.isPresent() && !validInterface(interfaceAddress.get())) {
+        if (interfaceAddressOrNull != null && !validInterface(interfaceAddressOrNull)) {
             throw refuse(Code.INVALID_CLUSTER_INTERFACE,
                     "interface must be an IPv4 literal or a wildcard pattern such as 10.0.*.*");
         }
-        if (interfaceAddress.isPresent() && matchesEveryAddress(interfaceAddress.get())) {
+        if (interfaceAddressOrNull != null && matchesEveryAddress(interfaceAddressOrNull)) {
             throw refuse(Code.UNBOUNDED_MEMBER_INTERFACE,
                     "member.interface matches every address; name the network the cluster port may listen on");
         }
     }
 
+    /** The interface the member listens on, if one was named. The component itself is nullable. */
+    public Optional<String> interfaceAddress() {
+        return Optional.ofNullable(interfaceAddressOrNull);
+    }
+
     public static ClusterMembership tcpIp(String clusterName, List<String> members) {
-        return new ClusterMembership(clusterName, new TcpIp(members), DEFAULT_PORT, Optional.empty());
+        return new ClusterMembership(clusterName, new TcpIp(members), DEFAULT_PORT, null);
     }
 
     public static ClusterMembership kubernetes(String clusterName, String namespace, String serviceName,
                                                String serviceDns) {
         return new ClusterMembership(clusterName, new Kubernetes(namespace, serviceName, serviceDns),
-                DEFAULT_PORT, Optional.empty());
+                DEFAULT_PORT, null);
     }
 
     public static ClusterMembership none(String clusterName) {
-        return new ClusterMembership(clusterName, new None(), DEFAULT_PORT, Optional.empty());
+        return new ClusterMembership(clusterName, new None(), DEFAULT_PORT, null);
     }
 
     public ClusterMembership withPort(int newPort) {
-        return new ClusterMembership(clusterName, join, newPort, interfaceAddress);
+        return new ClusterMembership(clusterName, join, newPort, interfaceAddressOrNull);
     }
 
     public ClusterMembership withInterface(String address) {
-        return new ClusterMembership(clusterName, join, port, Optional.ofNullable(address));
+        return new ClusterMembership(clusterName, join, port, address);
     }
 
     /**
@@ -112,7 +116,7 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
      * made loopback-only: a member that holds keys is not told it lacks them.
      */
     Config toConfig(Code isolationFailure) {
-        if (!(join instanceof None) && interfaceAddress.isEmpty()) {
+        if (!(join instanceof None) && interfaceAddressOrNull == null) {
             throw refuse(Code.MISSING_MEMBER_INTERFACE,
                     "member.interface is required for tcp-ip and kubernetes joins");
         }
@@ -248,10 +252,11 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
 
     /** With an interface, listen only there; without one Hazelcast binds every interface. */
     private void bindToInterface(Config config) {
-        interfaceAddress.ifPresent(a -> {
+        if (interfaceAddressOrNull != null) {
+            String a = interfaceAddressOrNull;
             config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface(a);
             config.setProperty("hazelcast.socket.bind.any", "false");
-        });
+        }
     }
 
     static boolean isReserved(String name) {

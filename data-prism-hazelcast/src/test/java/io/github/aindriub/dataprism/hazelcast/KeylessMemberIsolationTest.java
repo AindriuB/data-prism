@@ -660,4 +660,12 @@ class KeylessMemberIsolationTest {
             assertThat(((PrivacyClusterRefusal) direct).code()).isEqualTo(Code.INVALID_CLUSTER_INTERFACE);
         });
     }
+
+    @Test
+    void theMembershipRecordHasANullableInterfaceComponentAndAnOptionalAccessor() {
+        var without = new ClusterMembership("c", new ClusterMembership.TcpIp(List.of("127.0.0.1")), 5701, null);
+        assertThat(without.interfaceAddressOrNull()).isNull();
+        assertThat(without.interfaceAddress()).isEmpty();
+        assertThat(without.withInterface("10.0.*.*").interfaceAddress()).contains("10.0.*.*");
+    }
 }
