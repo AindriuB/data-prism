@@ -25,7 +25,10 @@ import java.util.function.DoubleSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Review of task 222: the legacy-entries gauge is registered on the cluster bean, and a failure to register stops the member. */
+/**
+ * Review of task 222: the legacy-entries gauge is registered on the cluster bean, and a failure to register stops
+ * the member.
+ */
 class ClusterLegacyGaugeTest {
 
     @AfterEach

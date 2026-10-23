@@ -31,12 +31,12 @@ final class MemberInterfaceCheck {
         return switch (code) {
             case "UNBOUNDED_MEMBER_INTERFACE" -> new DataPrismConfigurationException(code,
                     "dataprism.hazelcast.member.interface matches every address; name the network the cluster "
-                            + "port may listen on");
+                            + "port may listen on", refusal);
             case "INVALID_CLUSTER_INTERFACE" -> new DataPrismConfigurationException(code,
                     "dataprism.hazelcast.member.interface must be an IPv4 literal or a wildcard pattern such as "
-                            + "10.0.*.*");
+                            + "10.0.*.*", refusal);
             default -> new DataPrismConfigurationException(code,
-                    "dataprism.hazelcast.member.interface was refused by the cluster member");
+                    "dataprism.hazelcast.member.interface was refused by the cluster member", refusal);
         };
     }
 }

@@ -408,7 +408,8 @@ class KeylessMemberIsolationTest {
         String lan = lanAddress();
         if (lan != null) {
             try (java.net.Socket socket = new java.net.Socket()) {
-                Throwable connect = catchThrowable(() -> socket.connect(new java.net.InetSocketAddress(lan, port), 1500));
+                Throwable connect = catchThrowable(
+                        () -> socket.connect(new java.net.InetSocketAddress(lan, port), 1500));
                 assertThat(connect).as("a LAN connect to " + port).isNotNull();
             }
         }

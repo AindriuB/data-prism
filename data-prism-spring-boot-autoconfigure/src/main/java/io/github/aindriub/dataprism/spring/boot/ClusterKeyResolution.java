@@ -43,10 +43,11 @@ final class ClusterKeyResolution {
     }
 
     /**
+     * The resolver is asked for only when a security key is set, so a solo member needs none.
+     *
      * @return the keys, or empty when none are configured (only a solo member may have none)
      * @throws DataPrismConfigurationException with the code the register defines for the first failure
      */
-    /** The resolver is asked for only when a security key is set, so a solo member needs none. */
     static Optional<ClusterKeys> resolve(DataPrismProperties properties,
                                          Supplier<HmacKeyReferenceResolver> resolverSupplier) {
         HazelcastProperties.Security security = properties.getHazelcast().getSecurity();
@@ -152,6 +153,7 @@ final class ClusterKeyResolution {
             throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
                     ref.property() + " could not be resolved");
         } catch (RuntimeException unresolved) {
+            // No cause is kept: a resolver's exception can carry the reference or key material.
             throw new DataPrismConfigurationException(ref.area() + "_UNRESOLVED",
                     ref.property() + " could not be resolved");
         }

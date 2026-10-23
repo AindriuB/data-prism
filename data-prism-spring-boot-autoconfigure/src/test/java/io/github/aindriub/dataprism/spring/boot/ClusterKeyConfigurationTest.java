@@ -14,6 +14,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -342,10 +343,10 @@ class ClusterKeyConfigurationTest {
                     "name-key.environment-variable=REF_UNRESOLVED"),
             row("CLUSTER_KEY_SHARED", "next key is the HMAC key", "cluster-key.next", true, false,
                     "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_HMAC_TWIN"),
-            row("NAME_KEY_SHARED", "name key has the HMAC key's id", "name-key must differ from dataprism.privacy.hmac-key",
-                    true, false, "name-key.key-id=v1"),
-            row("NAME_KEY_SHARED", "name key is a cluster key", "name-key must differ from dataprism.hazelcast.security.cluster-key",
-                    true, false,
+            row("NAME_KEY_SHARED", "name key has the HMAC key's id",
+                    "name-key must differ from dataprism.privacy.hmac-key", true, false, "name-key.key-id=v1"),
+            row("NAME_KEY_SHARED", "name key is a cluster key",
+                    "name-key must differ from dataprism.hazelcast.security.cluster-key", true, false,
                     "cluster-key.environment-variable=REF_FIXED", "name-key.environment-variable=REF_FIXED"),
             row("DUPLICATE_CLUSTER_KEY_ID", "name key id repeats a cluster key id", "name-key.key-id", true, false,
                     "name-key.key-id=cluster-1"));
@@ -457,7 +458,7 @@ class ClusterKeyConfigurationTest {
         p.keySet().removeIf(k -> k.startsWith(SECURITY));
         p.put("dataprism.hazelcast.member.port", String.valueOf(ClusterConfigurationTest.freePort()));
         runner("embedded", p).withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
-                new org.springframework.core.env.SystemEnvironmentPropertySource("systemEnvironment",
+                new SystemEnvironmentPropertySource("systemEnvironment",
                         new LinkedHashMap<String, Object>(environment)))).run(result -> {
             assertThat(result).hasNotFailed();
             PrivacyCluster.KeyIds ids = result.getBean(PrivacyCluster.class).keyIds().orElseThrow();

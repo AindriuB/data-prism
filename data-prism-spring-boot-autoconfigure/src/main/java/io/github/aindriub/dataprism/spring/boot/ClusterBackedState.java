@@ -15,6 +15,8 @@ import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
 import io.github.aindriub.dataprism.oversight.OversightState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
@@ -43,7 +45,7 @@ import java.util.OptionalInt;
 @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
 @Configuration(proxyBeanMethods = false)
 class ClusterBackedState {
-    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ClusterBackedState.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ClusterBackedState.class);
     private static final String SELF_BUILT = "dataPrismPrivacyCluster";
 
     /**
@@ -74,7 +76,8 @@ class ClusterBackedState {
             return cluster;
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
-            throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
+            throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2),
+                    refusal);
         }
     }
 

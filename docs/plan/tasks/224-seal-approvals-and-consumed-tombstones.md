@@ -33,6 +33,7 @@ After this task the three approval maps hold only `dps1` envelopes, and a member
 - docs/plan/tasks/retired/235-*.md: audit-first decisions. retired/236-*.md: `ApprovalView` effective status.
 - docs/plan/PLAN.md, "Follow-ups from the final review of 216": the `PendingSet` CONFLICT sentinel `"\u0001conflict"` could collide with a scope id. Folded in here, because the value format changes anyway.
 - From 218/219 (2026-10-21): Merge-policy unsealing is possible, because a merge policy can implement `HazelcastInstanceAware` (Q9).
+- From 222 external review (2026-10-23): a solo member may hold no keys (`PrivacyCluster.keyIds()` is empty and `keys()` is empty), because `ClusterBackedState` passes `null` when none are configured; no random per-process keys are generated. Sealing and keyed names must therefore refuse when keys are absent (a coded refusal, e.g. `MISSING_CLUSTER_KEY`), never skip sealing or fall back to plaintext or raw names.
 
 ## Required approach
 - Every value in `dataprism.approval.s1`, `dataprism.approval.id.s1` and `dataprism.approval.pending.s1` is sealed through `Sealer`, with the canonical key parts and the creation token inside the plaintext and `expiresAt` authenticated as 218 fixed under OD-215-9. Every write goes through `SealedWrites`: `Commit` and the claim writes are compare-and-set on exact sealed bytes; `PendingSet` processors are computing processors.

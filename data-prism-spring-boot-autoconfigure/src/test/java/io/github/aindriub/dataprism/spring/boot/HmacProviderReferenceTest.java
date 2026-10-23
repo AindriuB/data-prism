@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +46,7 @@ class HmacProviderReferenceTest {
     @Test
     void anHmacKeyGivenAsAProviderReferenceIsReadThroughTheProviderMethodEverywhere() {
         CALLS.clear();
-        List<String> properties = new java.util.ArrayList<>();
+        List<String> properties = new ArrayList<>();
         for (String p : OversightConfigurationTest.base("single-node")) {
             if (!p.startsWith("dataprism.privacy.hmac-key.environment-variable")) {
                 properties.add(p);

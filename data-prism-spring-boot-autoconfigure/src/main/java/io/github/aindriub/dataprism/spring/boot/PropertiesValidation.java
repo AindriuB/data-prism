@@ -128,6 +128,8 @@ class PropertiesValidation {
             // Read only: the resolver's array is not ours to change, and a copy wiped here would protect nothing.
             if (key == null || key.length < 32) throw new DataPrismConfigurationException("HMAC_KEY_WEAK", "configured key material is shorter than 32 bytes");
         } catch (DataPrismConfigurationException e) { throw e;
-        } catch (RuntimeException e) { throw new DataPrismConfigurationException("HMAC_KEY_UNRESOLVED", "configured HMAC key reference could not be resolved"); }
+        } catch (RuntimeException e) {
+            // No cause is kept: a resolver's exception can carry the reference or key material.
+            throw new DataPrismConfigurationException("HMAC_KEY_UNRESOLVED", "configured HMAC key reference could not be resolved"); }
     }
 }

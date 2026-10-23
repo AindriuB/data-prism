@@ -34,6 +34,7 @@ After this task no Hazelcast key, and no lock key, contains a scope id, subject 
 - HazelcastStoredValueBoundaryTest.java:59-247: the single test that enumerates every map. It is the exhaustiveness guard this task splits into per-area checkers.
 - docs/plan/PLAN.md, "Follow-ups from the final review of 216": `useLockTimeout` is last-store-wins. Folded in here as a Javadoc note.
 - From 218/219 (2026-10-21): Backup processors must copy the bytes and set the TTL (Q8). Every compare-and-set runs under a bounded `tryLock` (Q10).
+- From 222 external review (2026-10-23): a solo member may hold no keys (`PrivacyCluster.keyIds()` is empty and `keys()` is empty), because `ClusterBackedState` passes `null` when none are configured; no random per-process keys are generated. Sealing and keyed names must therefore refuse when keys are absent (a coded refusal, e.g. `MISSING_CLUSTER_KEY`), never skip sealing or fall back to plaintext or raw names.
 
 ## Required approach
 - `ScopeKeys` takes `KeyedNames` and returns keyed strings only. The canonical inputs are the same parts, in the same order, as today. Scoped maps (identity, re-identification, budget, approval entries, oversight scope pauses) use `scoped(...)`. Claims use `mapKey(claims, approvalId)`. Pending entries use `mapKey(pending, kind NUL requester)`. The caller-rate map uses `mapKey(callerrate, principal)`.

@@ -1,5 +1,9 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.cluster.InitialMembershipEvent;
+import com.hazelcast.cluster.InitialMembershipListener;
+import com.hazelcast.cluster.MembershipEvent;
+import com.hazelcast.cluster.MembershipListener;
 import com.hazelcast.config.ClassFilter;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.EvictionConfig;
@@ -24,6 +28,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -126,10 +134,9 @@ public final class PrivacyCluster implements AutoCloseable {
     private final ClusterKeys keys;
 
     private final boolean owned;
-    private final java.util.concurrent.atomic.AtomicBoolean refused = new java.util.concurrent.atomic.AtomicBoolean();
-    private final java.util.concurrent.atomic.AtomicInteger refusalsLogged = new java.util.concurrent.atomic.AtomicInteger();
-    private final java.util.concurrent.atomic.AtomicReference<java.util.UUID> joinerWatch =
-            new java.util.concurrent.atomic.AtomicReference<>();
+    private final AtomicBoolean refused = new AtomicBoolean();
+    private final AtomicInteger refusalsLogged = new AtomicInteger();
+    private final AtomicReference<UUID> joinerWatch = new AtomicReference<>();
 
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
                            java.time.Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
@@ -148,15 +155,16 @@ public final class PrivacyCluster implements AutoCloseable {
     /**
      * A member without keys is solo by construction. Should another member appear anyway, nothing here may go on
      * serving a cluster nobody authenticated. This is detection, not prevention: partition replicas reach the joiner
-     * before any listener runs, and an instance somebody else started keeps running. The wrapper is marked refused, so {@link #instance()} fails from then
-     * on, its background work stops, and an instance this class started is shut down. An instance somebody else
-     * started is left running. The refusal is logged by code and carries no key material.
+     * before any listener runs, and an instance somebody else started keeps running. The wrapper is marked refused,
+     * so {@link #instance()} fails from then on, its background work stops, and an instance this class started is
+     * shut down. An instance somebody else started is left running. The refusal is logged by code and carries no
+     * key material.
      */
     private void watchForJoiners(HazelcastInstance watched) {
-        joinerWatch.set(watched.getCluster().addMembershipListener(new com.hazelcast.cluster.InitialMembershipListener() {
+        joinerWatch.set(watched.getCluster().addMembershipListener(new InitialMembershipListener() {
             /** Called as the listener is registered, with the members then present: a join that came earlier. */
             @Override
-            public void init(com.hazelcast.cluster.InitialMembershipEvent event) {
+            public void init(InitialMembershipEvent event) {
                 if (event.getMembers().size() > 1) {
                     refuseAfterJoin();
                 }
@@ -205,7 +213,7 @@ public final class PrivacyCluster implements AutoCloseable {
     /** Removes both listeners this wrapper put on the instance; safe to call twice and after a shutdown. */
     private void removeListeners() {
         for (var holder : List.of(legacyWatch, joinerWatch)) {
-            java.util.UUID id = holder.getAndSet(null);
+            UUID id = holder.getAndSet(null);
             if (id != null) {
                 try {
                     instance.getCluster().removeMembershipListener(id);
@@ -240,8 +248,7 @@ public final class PrivacyCluster implements AutoCloseable {
             ClusterMembership::legacyEntryCounts;
     private final java.util.concurrent.atomic.AtomicInteger legacyEntries = new java.util.concurrent.atomic.AtomicInteger();
     private volatile long lastLegacyWarnNanos = System.nanoTime() - LEGACY_WARN_INTERVAL_NANOS;
-    private final java.util.concurrent.atomic.AtomicReference<java.util.UUID> legacyWatch =
-            new java.util.concurrent.atomic.AtomicReference<>();
+    private final AtomicReference<UUID> legacyWatch = new AtomicReference<>();
 
     /**
      * Re-runs the pre-0.8 check on every member join, off the listener thread and bounded in time (the limit is enforced by a separate watchdog thread). A running
@@ -249,7 +256,7 @@ public final class PrivacyCluster implements AutoCloseable {
      * count is logged at most once a minute, never an entry. The count is exported as the gauge
      * {@code dataprism.cluster.legacy.entries}.
      */
-    private java.util.UUID startLegacyWatch(HazelcastInstance watched) {
+    private UUID startLegacyWatch(HazelcastInstance watched) {
         return watched.getCluster().addMembershipListener(new com.hazelcast.cluster.MembershipListener() {
             @Override
             public void memberAdded(com.hazelcast.cluster.MembershipEvent event) {
@@ -284,7 +291,7 @@ public final class PrivacyCluster implements AutoCloseable {
         }
     }
 
-    /** Entries found in the pre-0.8 maps by the latest membership check; 0 if none. Read by the legacy-entries gauge. */
+    /** Entries found in the pre-0.8 maps by the latest membership check; 0 if none. Read by the gauge. */
     public int legacyEntries() {
         return legacyEntries.get();
     }
