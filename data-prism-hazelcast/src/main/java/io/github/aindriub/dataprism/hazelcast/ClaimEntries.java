@@ -13,8 +13,8 @@ import java.util.Optional;
  * and the random creation token of that approval ({@code entryKey NUL token}), so a claim from one creation is never
  * mistaken for the claim of a later creation of the same id in the same scope. Every change to a claim, every
  * release and every sweep compares the whole value, token included. A claim in any other form is unreadable: it is
- * neither taken over nor released, and is swept only in the one old form named at {@code sweepLegacy}. The entry key is a keyed name and holds no NUL, and the claim itself is
- * stored under the keyed claim key of its approval id.
+ * neither taken over nor released, and is swept only in the one old form named at {@code sweepLegacy}. The entry key
+ * is a keyed name and holds no NUL, and the claim itself is stored under the keyed claim key of its approval id.
  *
  * <p><b>Creating.</b> The creator {@code putIfAbsent}s the claim, then inserts the entry, then reads the claim again
  * and keeps the entry only if the claim still names it. A claim that names an entry which does not exist is stale
