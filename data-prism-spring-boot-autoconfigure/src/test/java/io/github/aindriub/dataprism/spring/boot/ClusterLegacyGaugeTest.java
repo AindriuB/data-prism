@@ -219,4 +219,21 @@ class ClusterLegacyGaugeTest {
             assertThat(result.getBean(PrivacyCluster.class).instance().getLifecycleService().isRunning()).isTrue();
         });
     }
+
+    @Test
+    void anApplicationClusterUnderTheStarterBeanNameStillGetsTheGauge() {
+        GAUGES.clear();
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(RecordingMetrics.class, ClusterConfigurationTest.DefaultNamedCluster.class)
+                .withPropertyValues(OversightConfigurationTest.base("embedded"))
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result.getBeansOfType(PrivacyCluster.class)).containsKey("dataPrismPrivacyCluster");
+                    DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+                    assertThat(gauge).isNotNull();
+                    assertThat(gauge.getAsDouble())
+                            .isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
+                });
+    }
 }
