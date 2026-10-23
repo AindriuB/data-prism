@@ -110,7 +110,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 1 | 268 done 2026-10-21 (Tomcat 11.0.27 override; PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
 | 3 | 222 and 242 landed 2026-10-22 (PR record/0.8-wave3); 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
-| 4 | 223, 241, 248; 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
+| 4 | 223, 241, 248, 269 (settle the link attempt limiter's contract before 251 and 264; owner decision 2026-10-22; OD-269-1 to 4 await the owner); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
 | 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 267, 244, 245, 257, 268) |
 | 6 | 228, 246 |
 | 7 | 229, 247 |
