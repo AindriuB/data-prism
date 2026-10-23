@@ -80,7 +80,7 @@ The only way to open a token from outside `core.link` is one gate call, which ow
 
 **OD-269-5: the client code for a limiter outage or a failure to open. Decided (b), 2026-10-23, owner.** A limiter outage does not depend on the token, so a distinct retryable code reveals nothing. A failure to open does depend on the token, so a distinct code would tell an attacker which input trips it; it stays `LINK_INVALID`. The audit still records the distinct causes. The options as put:
 - (a) Keep `LINK_ATTEMPTS_EXHAUSTED`. No new code; the cause is in the audit.
-- (b) **Decided.** Split the constant in two. `LIMITER_UNAVAILABLE` gets a new retryable code, `LINK_CHECK_UNAVAILABLE`. It is not token-dependent, so it reveals nothing, and it needs a register row and a `docs/configuration.md` / `docs/audit.md` entry (261). `OPEN_FAILED` gets `LINK_INVALID`, because it depends on the token, and any distinct answer would be an oracle for whatever input trips the failure. The gate has no single `UNAVAILABLE_CLIENT_CODE` constant any more.
+- (b) **Decided.** Split the constant in two. `LIMITER_UNAVAILABLE` gets a new retryable code, `LINK_CHECK_UNAVAILABLE`. It is not token-dependent, so it reveals nothing, and it needs a register row and entries in `docs/tools.md` and `docs/audit.md` (261). `OPEN_FAILED` gets `LINK_INVALID`, because it depends on the token, and any distinct answer would be an oracle for whatever input trips the failure. The gate has no single `UNAVAILABLE_CLIENT_CODE` constant any more.
 - (c) One new code for both. This is simple, but the `OPEN_FAILED` half has the oracle concern of (b).
 
 **Binding bounds (planner's choice under the review, 2026-10-23): bound, do not hash.** `AttemptSubject` uses the same bound as `LinkBinding`: each id at most 65,535 UTF-8 bytes and non-empty. Reasons:
@@ -112,13 +112,20 @@ The gate checks the bounds before anything else and answers `MALFORMED`, uncount
     - `(int limit, Duration window, Clock clock)`.
     - `(int limit, Duration window, Clock clock, int maxEntries)`. `maxEntries < 1` is `INVALID_LINK_LIMIT`, and the default is `DEFAULT_MAX_ENTRIES = 100_000`.
     - A package-private test constructor that also takes the HMAC key, a probe and a queue factory. In production, the probe is a no-op and the factory gives a `ConcurrentLinkedQueue`.
-      - The probe is a `Consumer<Stage>`, run at two points and never inside a map lambda: `RESERVED`, after a slot is reserved outside `compute` and before `compute` is entered; and `STORED`, after `compute` has stored a new entry and returned, before its marker is appended.
+      - The probe is a `Consumer<Stage>`, run at two points and never inside a map lambda: `RESERVED`, run only when the `tryReserve()` outside `compute` returned `true`, after that reservation and before `compute` is entered (a failed reservation never runs the probe); and `STORED`, after `compute` has stored a new entry and returned, before its marker is appended.
       - The queue factory is a `Supplier<Queue<Marker>>`, so a test can supply a queue that refuses an `offer`. "Refuses an offer" means `offer` returns `false` or throws a `RuntimeException`; the limiter handles both identically.
+      - **Package-private test seams that Acceptance relies on**, none of them used in production:
+        - `queueSnapshot()`, the markers in queue order;
+        - `queueSize()`;
+        - `checkInvariant()`, which asserts exactly one marker per stored entry id and must be called single-threaded;
+        - `size()`, and the entry count;
+        - per-call counters for the last call on the calling thread: queue operations, entries removed by the pre-check, entries removed by the drain, and insert attempts;
+        - `examinationLock()`, the lock hook that lets a test thread hold the examination lock.
   - **Key.** The HMAC key is 32 bytes from `SecureRandom`, drawn once at construction. The map key is the 16-byte truncated `HMAC-SHA256(k, subject.canonical())`, as 32 hex characters.
   - **Entries.** An entry holds an id, unique per instance (from an `AtomicLong`) and assigned at creation, plus the window start and the count. Re-opening a window in place keeps the id and changes the start. Only `recordFailure` creates or re-opens entries.
   - **Slots.** The entry count is an `AtomicInteger`, and `tryReserve()` is a non-blocking CAS that increments it only while it is below `maxEntries`. `recordFailure` works in this order:
     1. Compute the map key (the HMAC) and run the head examination below, before any slot is reserved.
-    2. If `get(mapKey)` is null, call `tryReserve()` outside `compute`, then run the probe.
+    2. If `get(mapKey)` is null, call `tryReserve()` outside `compute`; only if it returned `true`, run the `RESERVED` probe.
     3. In `compute`:
        - absent key with a reservation held: store a new entry, which consumes the slot;
        - absent key without one: call `tryReserve()` once, inside the lambda (a CAS, never a wait); if it fails, store nothing;
@@ -200,19 +207,24 @@ The gate checks the bounds before anything else and answers `MALFORMED`, uncount
   - With `maxEntries = 4`, four subjects have one failure each. A fifth subject's counted failure returns `CEILING`, `size()` stays 4, and the gate answers `Exhausted(CEILING)`. A valid token for the fifth subject gets `Proceed`, and so does one for a sixth.
   - A subject locked before the map filled stays locked while new subjects keep arriving.
   - A test named for the OD-269-3 consequence shows the fifth subject making 100 counted failures and still getting `Proceed` for a valid token.
-  - Mutants: evict the oldest entry (a lock lifts); refuse every subject at the ceiling (a valid token is refused); store the fifth entry anyway (`size()` is 5); retry the insert without a bound.
-- [ ] **Ceiling drain is reached.** The setup puts live heads in front of ended entries, so that only the drain can free a slot. The window is 10 s and `maxEntries = 4`.
-  1. At t = 0 s, subjects A and B fail, then at t = 1 s, C and D fail. The queue holds markers A(0), B(0), C(1), D(1), in that order.
-  2. At t = 10.5 s a dedicated holder thread takes the examination lock and waits on a latch. A and B then fail again from the test thread. Each pre-check skips (the `tryLock` fails), and `compute` re-opens A and B in place, starting at 10.5 s, keeping their ids and their old markers. The holder then releases the lock and ends.
-  3. Before the call under test, a package-private `queueSnapshot()` returns exactly A(0), B(0), C(1), D(1).
-  4. At t = 11.5 s, C and D have ended, and A and B are live until 20.5 s. A fifth subject E fails:
-     - the two-head pre-check uses both its examinations re-appending A and B with start 10.5, and frees nothing;
+  - Mutants: evict the oldest entry (a lock lifts); refuse every subject at the ceiling (a valid token is refused); store the fifth entry anyway (`size()` is 5); retry the insert without a bound. The last is killed without hanging: the fifth subject's call runs inside `assertTimeoutPreemptively` (5 s), and the insert-attempt counter for that call must be exactly 2.
+- [ ] **Ceiling drain is reached.** The setup puts a live head in front of ended entries when the drain runs, so that only the drain can free a slot and a drain that stops at a live head fails. The window is 10 s and `maxEntries = 5`. Every failure in this test calls the limiter's `recordFailure` directly, never the gate: the gate's `lockState` call would run its own pre-check and shift the counters.
+  1. At t = 0 s, subjects A and B fail. At t = 5 s, L fails (live until 15 s). The clock then steps back to t = 1 s, and C and D fail (live until 11 s). Each of those pre-checks stops at head A, which is live with a start at or before now, so nothing rotates. The queue holds A(0), B(0), L(5), C(1), D(1), in that order.
+  2. At t = 10.5 s, a dedicated holder thread takes the examination lock through `examinationLock()` and waits on a latch. A and B fail again from the test thread. Each pre-check skips (the `tryLock` fails), and `compute` re-opens A and B in place, starting at 10.5 s, keeping their ids and their old markers. The holder then releases the lock and is joined.
+  3. Before the call under test, `queueSnapshot()` returns exactly A(0), B(0), L(5), C(1), D(1).
+  4. At t = 11.5 s, C and D have ended, and A, B and L are live. A sixth subject E fails:
+     - the two-head pre-check spends both examinations re-appending A and B with start 10.5, so the queue is L(5), C(1), D(1), A(10.5), B(10.5), and nothing is freed;
      - `compute` finds the map full;
-     - the drain removes C and D;
-     - the retry stores E: `WITHIN_LIMIT`, and `size()` is 3.
+     - the drain meets L first, a live head whose start matches, and rotates it; it then removes C and D;
+     - the retry stores E: `WITHIN_LIMIT`, and `size()` is 4.
 
-  Package-private per-call counters assert that the pre-check removed 0 entries and the drain removed 2. Mutants: no drain (`CEILING`); a drain that stops at a live head (`CEILING`); a pre-check that examines more than two heads (the pre-check removes 2, and the counter assertion fails).
-- [ ] **Ceiling race, deterministic, nothing blocks inside `compute`.** With `maxEntries = 1`, thread A records subject 1. A's reservation probe, which runs outside `compute` after A's `tryReserve()` succeeded, waits on a latch. Thread B then records subject 2 and gets `CEILING`, because B's `tryReserve()` fails. Then A is released and gets `WITHIN_LIMIT`. Afterwards `size()` is 1 and the count is 1. Mutant: replace `tryReserve()` with a check of `entries.size()`; then B stores subject 2, A stores subject 1, `size()` is 2, and the test fails on every run.
+  The per-call counters assert that the pre-check removed 0 entries, the drain removed 2, and there were 2 insert attempts. **This test kills the "drain stops at a live head" mutant**: that drain stops at L, frees nothing, and the answer is `CEILING`. It also kills "no drain" (`CEILING`) and "pre-check examines more than two heads" (the pre-check removes entries, and the counter assertion fails).
+- [ ] **Ceiling race, deterministic, nothing blocks inside `compute`.** `maxEntries = 1`. The `RESERVED` probe blocks on a latch only for thread A's call, identified by the thread; it runs only when `tryReserve()` returned `true`, so thread B's call never reaches it.
+  - Thread A records subject 1. Its reservation succeeds and its probe waits.
+  - Thread B records subject 2. B's `tryReserve()` fails, no probe runs, and B returns `CEILING`. The test reads B's result through `Future.get` with a 5 s timeout.
+  - The latch is released, and A's result, also read with a 5 s timeout, is `WITHIN_LIMIT`.
+
+  Afterwards `size()` is 1 and the count is 1. Executors are shut down in `finally`. Mutant: replace `tryReserve()` with a check of `entries.size()`. Then B stores subject 2, A stores subject 1, `size()` is 2, and the test fails on every run without hanging.
 - [ ] **Capacity restored after a throw.** With `maxEntries = 1`, the test constructor's reservation probe throws an `IllegalStateException` on its first run. That `recordFailure` returns `UNAVAILABLE`, does not throw, and stores nothing; the count is 0 afterwards. A second subject's failure then returns `WITHIN_LIMIT` and is stored. A marker-append failure, injected through the test constructor's queue factory with a queue that refuses one `offer`, leaves no entry and a count of 0. The test runs twice, once with a refusal that returns `false` and once with one that throws, and the results are identical. Mutants: release the reservation only on the present-key path (the second subject gets `CEILING`); keep the entry when its marker append fails (an entry without a marker, never removed).
 - [ ] **Rollback by id under interleaving.** The test uses the probe seam and a queue factory whose queue refuses the first `offer`.
   1. Thread A records subject S. A's `STORED` probe waits on a latch, so A has stored S's new entry but not yet appended its marker.
@@ -222,7 +234,12 @@ The gate checks the bounds before anything else and answers `MALFORMED`, uncount
   Afterwards S has no entry, `size()` and the count are 0, the queue is empty, and A returns `UNAVAILABLE`. A further failure for S creates a fresh entry with its marker. Mutant: roll back with `remove(mapKey, entryJustCreated)`. Then S's updated entry stays with no marker, the invariant check finds it, and the count stays 1.
 - [ ] **A refused re-append keeps the marker.** Through the queue factory, the queue refuses the next `offer` (once returning `false`, once throwing; the results must be identical). A re-opened entry's head is then examined. The examination stops, the old marker is still at the head, and the invariant check finds exactly one marker for that entry. After the queue accepts offers again, a later examination re-appends it, and once its window ends the entry is removed. Mutant: poll before offering (the entry is left without a marker, and the invariant check fails).
 - [ ] **A throw during examination releases the lock.** Through the queue factory, `peek` throws once. That call returns `UNAVAILABLE` and does not throw. Afterwards a dedicated other thread's `tryLock` on the examination lock succeeds, and the next call examines normally. Mutant: unlock outside `finally` (the other thread's `tryLock` fails, and every later examination is skipped).
-- [ ] **Drain under contention.** `maxEntries = 2`, with two entries whose windows have ended. A dedicated holder thread takes the examination lock through a package-private hook, then waits on a latch. A `ReentrantLock` re-enters on its own thread, so the holder must never be the thread under test. On a second thread, from an executor, a third subject's failure is submitted, and `Future.get` with a bounded timeout of 5 s returns `CEILING` while the holder still holds the lock. The holder is released and joined. The same subject's next failure, from the test thread, drains and is `WITHIN_LIMIT`. Every executor is shut down in `finally`. Mutants: wait on the lock (`Future.get` times out); drain without the lock (the invariant check finds a mismatched marker).
+- [ ] **Drain under contention.** `maxEntries = 2`, with two entries whose windows have ended. A dedicated holder thread takes the examination lock through `examinationLock()`, then waits on a latch; a `ReentrantLock` re-enters on its own thread, so the holder must never be the thread under test.
+  - On a second thread, from an executor, a third subject's failure (a direct `recordFailure`) is submitted. Its pre-check and its drain both skip, because `tryLock` fails. `Future.get` with a 5 s timeout returns `CEILING` while the holder still holds the lock, and the per-call counters show 0 removals.
+  - The holder is released and joined. The same subject's next failure, from the test thread, is `WITHIN_LIMIT`. Its **pre-check** frees an ended entry, so no drain is needed, and the counters show the pre-check removed at least 1 and the drain removed 0.
+  - Every executor is shut down in `finally`.
+
+  Mutants: wait on the lock (`Future.get` times out); drain or pre-check without the lock (the call made while the holder holds the lock frees the ended entries and returns `WITHIN_LIMIT`, not `CEILING`, and the 0-removals assertion fails).
 - [ ] **Sweep, exclusive and leak-free under concurrency.** 16 threads, released by a latch, record failures for subjects drawn from a pool of 2,000, with `maxEntries = 1,000` and a shared test clock that one thread advances one second per 100 operations. The window is 5 s. Afterwards:
   - after every thread has joined, the clock moves past every window, and one thread calls `lockState` on an absent subject until the queue is empty, capped at `queueSize()` calls (measured when the drain starts). The cap holds when entries re-opened: each marker needs at most two examinations, one to re-append a re-opened entry's marker with its stored start and one to remove it, a stale marker needs one, and each call makes two;
   - `size()` is 0, the queue is empty, and the count is 0;
