@@ -5,7 +5,7 @@
 **Base branch:** `origin/main` once 241, 246 and 211 have merged
 **Depends on:** 241 (`ResolverInvoker`, the executor shape to copy or reuse), 246 (rewrites `SourceFanOut.java` and owns it whole), 211 (both edit `docs/plan/design/contract-register.md`; the only shared file)
 **Wave:** 8 (filed 2026-10-23)
-**Decisions:** the executor shape follows the coordinator's decision for 241's `ResolverInvoker` (2026-10-23): a dedicated bounded executor of platform threads, a slot held until the thread actually exits, and an immediate refusal when it is saturated. OD-272-1 below has a recommended default and does not block the build.
+**Decisions:** the executor shape follows the coordinator's decision for 241's `ResolverInvoker` (2026-10-23): a dedicated bounded executor of platform threads, a slot held until the thread actually exits, and an immediate refusal when it is saturated. OD-272-1 decided (a) by the owner 2026-10-23 (below).
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceFanOut.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceCallExecutor.java *(new)*
@@ -31,10 +31,9 @@
 - No slot free: the source is not called. Its outcome is `FAILED`, with `detail` the constant `UNAVAILABLE` (OD-272-1 (a)), at once, without waiting for a slot. The new metric `SOURCE_CALLS_SATURATED`, `dataprism.source.calls_saturated`, is incremented with the source name. The breaker does not record that outcome against the source, because the source did nothing wrong.
 - A timed-out call is still cancelled with an interrupt and reported `TIMED_OUT`, as 246 specifies. The MDC is still opened from the task's own request.
 
-## OD-272-1 (recommended default; not blocking)
+## OD-272-1: decided (a) by the owner, 2026-10-23
 How a saturated call appears to the client.
-- **(a) Recommended:** the existing `FAILED` status with `detail` `UNAVAILABLE`. There is no change to the frozen seven-code status set, and clients already treat `FAILED` as "not answered".
-- **(b)** A new per-source status `UNAVAILABLE`. That changes `source-status-codes.txt`, `SourceStatusCodesTest`, the register's section 2 and `docs/tools.md`, and clients would have to learn a new code before the 0.9 freeze.
+- **Decided:** the existing `FAILED` status with `detail` `UNAVAILABLE`. There is no change to the frozen seven-code status set, and clients already treat `FAILED` as "not answered".
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them and shows the failing output.
@@ -56,5 +55,5 @@ How a saturated call appears to the client.
 - Binding the pool size from configuration. Name it in the Outcome as a follow-up for 254, which owns the `dataprism.limits` wiring.
 - `ResolverInvoker` (241) and any other executor in the codebase.
 - The bulkhead, deadlines and budget reservation (246); this task changes only where a call runs and what happens when no slot is free.
-- A new per-source status, unless OD-272-1 is decided (b).
+- A new per-source status. OD-272-1 decided against one.
 - `docs/tools.md` and `docs/migration-0.8.md` (261).
