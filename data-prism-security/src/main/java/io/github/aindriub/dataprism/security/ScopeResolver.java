@@ -3,6 +3,8 @@ package io.github.aindriub.dataprism.security;
 import io.github.aindriub.dataprism.core.model.InvestigationContext;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -27,6 +29,8 @@ import java.util.Objects;
  * be obtained.
  */
 public final class ScopeResolver {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ScopeResolver.class);
 
     public static final String CASE_NOT_AUTHORISED = "CASE_NOT_AUTHORISED";
     public static final String CASE_AUTHORISATION_UNAVAILABLE = "CASE_AUTHORISATION_UNAVAILABLE";
@@ -101,7 +105,9 @@ public final class ScopeResolver {
             authorised = caseAuthorizer.isAuthorised(new CaseAccessRequest(
                     caller.principalId(), caller.clientId(), caller.caseId(), caller.purpose(), caller.roles()));
         } catch (RuntimeException e) {
-            // The cause is dropped on purpose: its message may carry case or principal data.
+            // Server log only, for the operator; the client message stays code-only. The log
+            // message names no case or principal (docs/conventions.md, deliberate exception).
+            LOG.warn("case authorizer threw; refusing with {}", CASE_AUTHORISATION_UNAVAILABLE, e);
             throw new SecurityRefusedException(CASE_AUTHORISATION_UNAVAILABLE, "case authorisation could not be decided");
         }
         if (!authorised) {

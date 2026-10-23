@@ -25,9 +25,15 @@ class ScopeResolverTest {
     private static final PurposeValidator ALLOWS_FRAUD_INVESTIGATION =
             new PurposeValidator(Set.of("fraud_investigation"));
 
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
+
     private static AuthenticatedCaller caller(String caseId, Instant expiresAt) {
         return new AuthenticatedCaller(
                 "principal-1", "client-1", Set.of("investigator"), "fraud_investigation", caseId, expiresAt);
+    }
+
+    private static ScopeResolver resolverWith(CaseAuthorizer authorizer) {
+        return new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, authorizer);
     }
 
     private static AuthorizationDecision allowed() {
@@ -38,7 +44,8 @@ class ScopeResolverTest {
     @Test
     @DisplayName("the resolved session pins keyId and vocabularyId from resolver configuration")
     void pinsPseudonymisationVersionFromConfiguration() {
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
         Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
         PrivacySession session = resolver.resolve(
@@ -57,7 +64,8 @@ class ScopeResolverTest {
     @Test
     @DisplayName("two different case_id claims resolve to different scopeIds")
     void differentCaseIdsResolveToDifferentScopeIds() {
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
         Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
         String scopeIdOne = resolver.resolve(
@@ -74,8 +82,10 @@ class ScopeResolverTest {
     @DisplayName("the same case_id in two separate resolver instances resolves to the same scopeId")
     void sameCaseIdAcrossResolversResolvesToSameScopeId() {
         Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
-        ScopeResolver resolverOne = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
-        ScopeResolver resolverTwo = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolverOne = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolverTwo = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
 
         String scopeIdOne = resolverOne.resolve(
                 caller("case-shared", Instant.parse("2026-01-01T12:00:00Z")), allowed(), clock)
@@ -90,7 +100,8 @@ class ScopeResolverTest {
     @Test
     @DisplayName("expiresAt is the token expiry when it is earlier than the configured maximum lifetime")
     void expiresAtIsTokenExpiryWhenEarlier() {
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofDays(1), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofDays(1), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         Instant tokenExpiry = now.plusSeconds(30);
@@ -103,7 +114,8 @@ class ScopeResolverTest {
     @Test
     @DisplayName("expiresAt is the configured maximum lifetime when the token expiry is later")
     void expiresAtIsConfiguredMaximumWhenEarlier() {
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofMinutes(30), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofMinutes(30), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         Instant tokenExpiry = now.plus(Duration.ofDays(1));
@@ -116,7 +128,8 @@ class ScopeResolverTest {
     @Test
     @DisplayName("a caller whose token has already expired against the injected clock is refused")
     void expiredTokenIsRefused() {
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
         Instant now = Instant.parse("2026-01-01T00:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         Instant tokenExpiry = now.minusSeconds(1);
@@ -129,7 +142,8 @@ class ScopeResolverTest {
     @Test
     @DisplayName("a denied decision is refused rather than resolved into a session")
     void deniedDecisionIsRefused() {
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
         Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
         AuthorizationDecision denied = AuthorizationDecision.denied("NO_CAPABILITIES");
 
@@ -143,7 +157,8 @@ class ScopeResolverTest {
     @DisplayName("a caller whose purpose is not in the configured list is refused with UNKNOWN_PURPOSE")
     void unknownPurposeIsRefused() {
         PurposeValidator noPurposesAllowed = new PurposeValidator(Set.of());
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), noPurposesAllowed, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), noPurposesAllowed,
+                CaseAuthorizer.tokenTrusted());
         Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
         assertThatThrownBy(() -> resolver.resolve(
@@ -156,19 +171,14 @@ class ScopeResolverTest {
     @Test
     @DisplayName("a caller whose purpose is in the configured list resolves to a session carrying that purpose")
     void configuredPurposeResolvesIntoSession() {
-        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, CaseAuthorizer.tokenTrusted());
+        ScopeResolver resolver = new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION,
+                CaseAuthorizer.tokenTrusted());
         Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
         PrivacySession session = resolver.resolve(
                 caller("case-1", Instant.parse("2026-01-01T12:00:00Z")), allowed(), clock);
 
         assertThat(session.privacyContext().purpose()).isEqualTo("fraud_investigation");
-    }
-
-    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
-
-    private static ScopeResolver resolverWith(CaseAuthorizer authorizer) {
-        return new ScopeResolver(VERSION, Duration.ofHours(8), ALLOWS_FRAUD_INVESTIGATION, authorizer);
     }
 
     @Test
@@ -229,5 +239,16 @@ class ScopeResolverTest {
                     assertThat(e.getMessage()).doesNotContain(sentinel);
                     assertThat(e.getCause()).isNull();
                 });
+    }
+
+    @Test
+    @DisplayName("an Error from the authorizer is not caught and no session is returned")
+    void errorFromAuthorizerPropagates() {
+        ScopeResolver resolver = resolverWith(request -> {
+            throw new AssertionError("boom");
+        });
+
+        assertThatThrownBy(() -> resolver.resolve(caller("case-1", null), allowed(), CLOCK))
+                .isInstanceOf(AssertionError.class);
     }
 }

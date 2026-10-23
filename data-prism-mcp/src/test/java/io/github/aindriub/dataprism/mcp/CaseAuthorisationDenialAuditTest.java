@@ -12,7 +12,6 @@ import io.github.aindriub.dataprism.orchestration.ContextRequest;
 import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
-import io.github.aindriub.dataprism.security.CaseAuthorizer;
 import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;

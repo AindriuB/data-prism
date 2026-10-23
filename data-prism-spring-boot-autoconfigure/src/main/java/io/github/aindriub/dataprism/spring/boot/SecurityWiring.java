@@ -2,9 +2,9 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.security.AuthorizationService;
-import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.CaseAuthorizer;
 import io.github.aindriub.dataprism.security.ClientAllowlist;
+import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;

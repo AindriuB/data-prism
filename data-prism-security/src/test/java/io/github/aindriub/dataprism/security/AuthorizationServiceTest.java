@@ -102,7 +102,8 @@ class AuthorizationServiceTest {
     @Test
     @DisplayName("a client outside the allowlist is denied CLIENT_NOT_ALLOWED even though its roles would be allowed")
     void clientOutsideAllowlistIsDenied() {
-        AuthorizationService service = new AuthorizationService(policy(Map.of("investigator", Set.of("GET_ENTITY_CONTEXT"))), "DEFAULT", PrivacyScopeType.CASE,
+        AuthorizationService service = new AuthorizationService(
+                policy(Map.of("investigator", Set.of("GET_ENTITY_CONTEXT"))), "DEFAULT", PrivacyScopeType.CASE,
                 ClientAllowlist.of(Set.of("Client-1")));
 
         AuthorizationDecision decision = service.authorize(caller(Set.of("investigator")), GET_ENTITY_CONTEXT);
