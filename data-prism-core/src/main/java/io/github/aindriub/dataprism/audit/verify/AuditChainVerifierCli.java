@@ -1,13 +1,18 @@
 package io.github.aindriub.dataprism.audit.verify;
 
+import io.github.aindriub.dataprism.audit.AuditChainKey;
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
 import io.github.aindriub.dataprism.audit.AuditEventHash;
 import io.github.aindriub.dataprism.audit.sink.FileAuditSink;
 import io.github.aindriub.dataprism.audit.sink.SegmentedFileAuditSink;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Period;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 
 import io.github.aindriub.dataprism.audit.verify.AuditChainVerifier.AnomalyType;
 import io.github.aindriub.dataprism.audit.verify.AuditChainVerifier.Break;
@@ -72,6 +77,13 @@ public final class AuditChainVerifierCli {
                     + "noticing -- only that no edit or deletion of a hashed field was found within the records "
                     + "this check could see, by someone who did not also recompute the chain that follows it.";
 
+    /** Printed on every run given a key: what a keyed chain does and does not resist. */
+    public static final String KEYED_LIMITATION =
+            "KEYED CHAIN: a keyed chain resists a writer who lacks the key, not anyone who holds it, including "
+                    + "the operator and the process that writes the file.";
+    /** Prefix of the line printed, with their count, when {@code --allow-unkeyed-writers} was given. */
+    public static final String UNKEYED_WRITERS_PREFIX = "UNKEYED WRITERS ALLOWED: ";
+
     private AuditChainVerifierCli() {
     }
 
@@ -90,6 +102,8 @@ public final class AuditChainVerifierCli {
         Period minimumRetention = AuditChainVerifier.DEFAULT_MINIMUM_RETENTION;
         boolean minimumGiven = false;
         boolean malformed = false;
+        boolean allowUnkeyed = false;
+        List<Path> keyFiles = new ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             if ("--checkpoints".equals(args[i]) && checkpoints == null && i + 1 < args.length) {
                 checkpoints = Path.of(args[++i]);
@@ -100,6 +114,10 @@ public final class AuditChainVerifierCli {
                 } catch (java.time.format.DateTimeParseException e) {
                     malformed = true;
                 }
+            } else if ("--hmac-key-file".equals(args[i]) && i + 1 < args.length) {
+                keyFiles.add(Path.of(args[++i]));
+            } else if ("--allow-unkeyed-writers".equals(args[i]) && !allowUnkeyed) {
+                allowUnkeyed = true;
             } else if (path == null && !args[i].startsWith("--")) {
                 path = Path.of(args[i]);
             } else {
@@ -108,16 +126,36 @@ public final class AuditChainVerifierCli {
         }
         if (malformed || path == null) {
             err.println("Usage: AuditChainVerifierCli <audit-log-file> [--checkpoints <checkpoint-file>] "
-                    + "[--min-retention <ISO-8601 period>]  (or --help for exit codes)");
+                    + "[--min-retention <ISO-8601 period>] [--hmac-key-file <path>]... [--allow-unkeyed-writers]  "
+                    + "(or --help for exit codes)");
             out.println(LIMITATION);
             return EXIT_UNREADABLE_INPUT;
+        }
+        List<AuditChainKey> keys = new ArrayList<>();
+        for (Path keyFile : keyFiles) {
+            AuditChainKey key = readKey(keyFile);
+            if (key == null) {
+                err.println("UNREADABLE INPUT: --hmac-key-file could not be read or is malformed; expected two "
+                        + "lines, the key id then the base64 key (at least " + AuditChainKey.MIN_KEY_BYTES
+                        + " bytes), and ids must be distinct");
+                out.println(LIMITATION);
+                return EXIT_UNREADABLE_INPUT;
+            }
+            if (keys.stream().anyMatch(k -> k.id().equals(key.id()))) {
+                err.println("UNREADABLE INPUT: --hmac-key-file gave two keys with the same id");
+                out.println(LIMITATION);
+                return EXIT_UNREADABLE_INPUT;
+            }
+            keys.add(key);
         }
 
         VerificationReport report;
         try {
-            report = checkpoints == null
-                    ? AuditChainVerifier.verify(path)
-                    : AuditChainVerifier.verify(path, checkpoints, minimumRetention);
+            report = !keys.isEmpty() || allowUnkeyed
+                    ? AuditChainVerifier.verify(path, checkpoints, minimumRetention, keys, allowUnkeyed)
+                    : checkpoints == null
+                            ? AuditChainVerifier.verify(path)
+                            : AuditChainVerifier.verify(path, checkpoints, minimumRetention);
         } catch (IOException e) {
             err.println("UNREADABLE INPUT: could not read " + path + ": " + e.getMessage());
             out.println(LIMITATION);
@@ -126,6 +164,13 @@ public final class AuditChainVerifierCli {
 
         printReport(out, report);
         out.println(LIMITATION);
+        if (!keys.isEmpty()) {
+            out.println(KEYED_LIMITATION);
+        }
+        if (allowUnkeyed) {
+            out.println(UNKEYED_WRITERS_PREFIX + report.unkeyedWriterCount() + " writer(s) verified only as an "
+                    + "unkeyed chain, which anyone able to write the file can forge.");
+        }
 
         if (report.hasBreak()) {
             return EXIT_BREAK_DETECTED;
@@ -174,6 +219,10 @@ public final class AuditChainVerifierCli {
             } else if (writer.nonGenesisStart().isEmpty()) {
                 out.println("  intact: every record in this writer's chain verified against the one before it.");
             }
+            writer.keyId().ifPresent(id -> out.println("  verified under key id: " + id));
+            if (writer.unkeyedAllowed()) {
+                out.println("  verified as an UNKEYED chain only (allowed by --allow-unkeyed-writers).");
+            }
         }
 
         for (StructuralAnomaly anomaly : report.anomalies()) {
@@ -193,6 +242,23 @@ public final class AuditChainVerifierCli {
         });
     }
 
+    /**
+     * Reads a key file: line one the key id, line two the base64 key. Returns {@code null} for anything
+     * unreadable or malformed; the caller reports only the flag, never the file's contents.
+     */
+    private static AuditChainKey readKey(Path file) {
+        try {
+            List<String> lines = Files.readAllLines(file, java.nio.charset.StandardCharsets.UTF_8).stream()
+                    .map(String::strip).filter(l -> !l.isEmpty()).toList();
+            if (lines.size() != 2) {
+                return null;
+            }
+            return new AuditChainKey(lines.get(0), Base64.getDecoder().decode(lines.get(1)));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
     private static String header(AnomalyType type) {
         return switch (type) {
             case INTERRUPTED_WRITE_FRAGMENT -> "INTERRUPTED WRITE, not tampering";
@@ -207,7 +273,15 @@ public final class AuditChainVerifierCli {
 
     private static void printHelp(PrintStream out) {
         out.println("Usage: java -cp <classpath> io.github.aindriub.dataprism.audit.verify.AuditChainVerifierCli "
-                + "<audit-log-file> [--checkpoints <checkpoint-file>] [--min-retention <ISO-8601 period>]");
+                + "<audit-log-file> [--checkpoints <checkpoint-file>] [--min-retention <ISO-8601 period>] "
+                + "[--hmac-key-file <path>]... [--allow-unkeyed-writers]");
+        out.println();
+        out.println("--hmac-key-file <path> (repeatable) names a keyed-chain key file: two lines, the key id");
+        out.println("on the first and the base64 key (at least " + AuditChainKey.MIN_KEY_BYTES
+                + " bytes once decoded) on the second. With keys, each writer must");
+        out.println("verify under exactly one of them; a writer that verifies under none is a break, and so is one");
+        out.println("that verifies only as an unkeyed chain unless --allow-unkeyed-writers is given. Key material");
+        out.println("is never printed. The files do not say whether a chain is keyed; you do, by passing keys.");
         out.println();
         out.println("--min-retention is the shortest retention a retention anchor may stand for (default "
                 + AuditChainVerifier.DEFAULT_MINIMUM_RETENTION + "); pass your own period if you run the purge with");

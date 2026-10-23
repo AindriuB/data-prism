@@ -29,7 +29,8 @@ class AuditWiring {
             ObjectProvider<AuditCheckpointSink> checkpoints,
             @Qualifier("dataPrismAuditEventListeners") AuditEventListeners listeners) {
         AuditCheckpointSink checkpoint = checkpoints.getIfAvailable();
-        return new AuditRecorder(sink, clock, properties.getAudit().getWriterId(), checkpoint, listeners);
+        return new AuditRecorder(sink, clock, properties.getAudit().getWriterId(), checkpoint, listeners,
+                io.github.aindriub.dataprism.audit.AuditChainMode.unkeyed());
     }
 
     /**
@@ -93,7 +94,7 @@ class AuditWiring {
             ObjectProvider<AuditCheckpointSink> checkpoints) {
         AuditProperties audit = properties.getAudit();
         return new AuditRetention(Path.of(audit.getDirectory()), audit.getRetention(),
-                checkpoints.getObject(), clock, audit.isRetentionOverride());
+                checkpoints.getObject(), clock, audit.isRetentionOverride(), java.util.List.of(), false);
     }
     /**
      * Runs the purge once now and then every 24h, and a PERIODIC checkpoint every {@code

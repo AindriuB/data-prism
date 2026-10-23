@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.audit.retention;
 
+import io.github.aindriub.dataprism.audit.AuditChainKey;
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
 import io.github.aindriub.dataprism.audit.AuditCheckpointSink;
 import io.github.aindriub.dataprism.audit.AuditEvent;
@@ -51,6 +52,8 @@ public final class AuditRetention {
     private final AuditCheckpointSink anchors;
     private final Clock clock;
     private final boolean allowBelowMinimum;
+    private final List<AuditChainKey> chainKeys;
+    private final boolean allowUnkeyedWriters;
 
     public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock) {
         this(directory, retention, anchors, clock, false);
@@ -58,6 +61,18 @@ public final class AuditRetention {
 
     public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock,
                           boolean allowBelowMinimum) {
+        this(directory, retention, anchors, clock, allowBelowMinimum, List.of(), false);
+    }
+
+    /**
+     * As above, and additionally verifies expiring segments with {@code chainKeys} the way {@link
+     * AuditChainVerifier#verify(Path, Path, Period, List, boolean)} does: an expiring keyed segment whose
+     * key is not supplied does not verify and is not deleted. An empty list means unkeyed.
+     */
+    public AuditRetention(Path directory, Period retention, AuditCheckpointSink anchors, Clock clock,
+                          boolean allowBelowMinimum, List<AuditChainKey> chainKeys, boolean allowUnkeyedWriters) {
+        this.chainKeys = List.copyOf(Objects.requireNonNull(chainKeys, "chainKeys"));
+        this.allowUnkeyedWriters = allowUnkeyedWriters;
         this.directory = Objects.requireNonNull(directory, "directory");
         this.retention = Objects.requireNonNull(retention, "retention");
         this.anchors = Objects.requireNonNull(anchors, "anchors");
@@ -136,7 +151,7 @@ public final class AuditRetention {
             List<Long> starts = new ArrayList<>();
             AuditChainVerifier.VerificationReport report;
             try {
-                report = AuditChainVerifier.verifySegments(segments, starts);
+                report = AuditChainVerifier.verifySegments(segments, starts, chainKeys, allowUnkeyedWriters);
             } catch (IOException e) {
                 throw new RetentionException(ANCHOR_FAILED + ": could not read the expiring segments", e);
             }
