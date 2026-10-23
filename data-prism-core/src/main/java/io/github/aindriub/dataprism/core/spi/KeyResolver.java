@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.core.spi;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -30,11 +32,12 @@ public interface KeyResolver {
 
     /**
      * The translated keys in the resolver's own stable order, and whether more exist. The constructor does not
-     * reject {@code more} with no keys: that is a contract violation the invoker classifies as invalid output.
+     * reject {@code more} with no keys, nor a null element: those are contract violations the invoker classifies
+     * as invalid output. The list itself is never null.
      */
     record Resolution(List<String> keys, boolean more) {
         public Resolution {
-            keys = List.copyOf(Objects.requireNonNull(keys, "keys"));
+            keys = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(keys, "keys")));
         }
     }
 }

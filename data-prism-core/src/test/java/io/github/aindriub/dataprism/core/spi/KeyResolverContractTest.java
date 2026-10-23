@@ -35,6 +35,12 @@ class KeyResolverContractTest {
     }
 
     @Test
+    void resolutionKeepsANullElementSoTheInvokerCanClassifyIt() {
+        KeyResolver.Resolution resolution = new KeyResolver.Resolution(Arrays.asList("a", null), false);
+        assertThat(resolution.keys()).containsExactly("a", null);
+    }
+
+    @Test
     void resolutionAcceptsMoreWithNoKeysSoTheInvokerCanClassifyIt() {
         KeyResolver.Resolution resolution = new KeyResolver.Resolution(List.of(), true);
         assertThat(resolution.more()).isTrue();
