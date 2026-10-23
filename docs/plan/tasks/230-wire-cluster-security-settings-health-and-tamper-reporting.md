@@ -4,6 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 229 and core task 255.
 **Depends on:** 222 (the key groups and `validateCluster`), 229 (every reader of the settings exists), 255 (core plan; serialised with 254 and 255 on the shared Spring files below, and the link keys whose check values the member card carries)
+**Wave:** 12 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Decisions:** OD-215-6 decided 2026-10-20 (b)+(c): tamper is a metric plus a rate-bounded WARN log with no audit record; `isolation.attestation` is kept, reported on health and in one startup log line, with no audit record.
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/HazelcastProperties.java *(the `security.pause-lease`, `clock-skew-tolerance`, `unverified-member.*`, `local-floor.enabled` and `isolation.attestation` properties only)*
@@ -18,7 +19,10 @@
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterSecurityHealthTest.java *(new)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterTamperReporter.java *(new: the `TamperListener` that applies OD-215-6, rate-bounded)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/ClusterTamperReporterTest.java *(new)*
-- docs/configuration.md *(rows for the keys and startup codes this task adds only)*
+- docs/configuration.md *(rows for the keys and startup codes this task adds, and the `INVALID_CLUSTER_INTERFACE` wording, only)*
+- docs/plan/design/contract-register.md *(the `INVALID_CLUSTER_INTERFACE` row only; added 2026-10-23)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java *(`isFrameworkCluster` only; added 2026-10-23)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterLegacyGaugeTest.java *(the recording map only; added 2026-10-23)*
 
 ## Goal
 Every cluster-security setting the 0.8 code reads is a typed, validated, documented Spring property, bound only now that something reads it (OD-200-14, 222's out-of-scope note). An operator sees cluster security on the readiness probe: `clusterSecurity` is `DOWN` while the pause document is not fresh, an unverified member is present under `refuse`, or the sentinel or a key check value failed. Tamper events are reported as OD-215-6 (b) decided: a metric and a rate-bounded WARN log line with a map-name constant and a count, never entry data and never an audit record.
@@ -29,6 +33,10 @@ Every cluster-security setting the 0.8 code reads is a typed, validated, documen
 - data-prism-spring-boot-autoconfigure/.../AuditIntegrityHealth.java and its `PrivacyExtensionPoints` row: the health pattern to follow.
 - Core task 255 (`git show plan/0.8-core:docs/plan/tasks/255-wire-links-follow-and-key-resolvers.md`): where the link keys are resolved, so their check values can go on the card.
 - Task 222's `ClusterKeyConfigurationTest`: the table-driven refusal style.
+- From the external review of PR #154, round 5 (2026-10-23), for this task as the next editor of `ClusterBackedState` and the cluster rows of `docs/configuration.md`:
+  - Two places decide "is this the starter's cluster": `ClusterBackedState.builtHere` and `PropertiesValidation.isFrameworkCluster`. Make one call the other (or both call one helper), so they cannot drift.
+  - `ClusterLegacyGaugeTest` cannot detect a double gauge registration, because its recording map overwrites. Record every registration and assert exactly one per metric.
+  - The `INVALID_CLUSTER_INTERFACE` wording in `docs/configuration.md` and the contract register says a `hazelcast.*` address property that makes a single member reachable refuses with that code. That is true only for a keyed solo member; a keyless one refuses `MISSING_CLUSTER_KEY`. Say so in both. 213 makes the same correction in `docs/multiple-instances.md`.
 
 ## Acceptance
 - [ ] Each property in 218's 4.1 table that this task owns is bound with its type, default and bounds; a value outside bounds is refused at startup with the code 218 registered, naming the property and never the value. One table-driven test, one row per code.

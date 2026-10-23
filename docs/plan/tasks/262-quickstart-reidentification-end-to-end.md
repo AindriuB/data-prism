@@ -4,11 +4,11 @@
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch once 210, 245, 222 and 223 have merged
 **Depends on:** 210 (210 owns `docker/server/application.yaml`), 245 (the operator denial behaviour the walkthrough shows), 222 (cluster and name keys, and the keyless multi-member refusal), 223 (the solo-member keys of OD-215-8, which decide what an embedded single member needs configured)
-**Wave:** 5 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - docs/quickstart.md
 - docker/server/application.yaml *(the `dataprism.reidentification`, `dataprism.hazelcast` and operator settings only)*
-- compose.yaml *(the quickstart server's environment and the operator port only)*
+- compose.yaml *(the quickstart server's environment, the operator port and, added 2026-10-23, the image-tag default only)*
 - docker/smoke/reidentification-smoke.sh *(new)*
 - docker/smoke/README.md *(the new script's section only)*
 
@@ -20,6 +20,7 @@ The roadmap asks for a quickstart that shows re-identification end to end in 0.8
 - docs/reidentification.md ("The flow", "The operator HTTP surface", "Startup refusals").
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismPropertiesValidator.java:378-395: re-identification needs `dataprism.hazelcast.topology=embedded`, the index, purposes and, for four-eyes, an approver role.
 - docker/smoke/java-runtime-smoke.sh: the existing smoke-script style.
+- From the external review of PR #159 (2026-10-23, security): the root `compose.yaml` defaults every quickstart image to `${QUICKSTART_IMAGE_TAG:-latest}`. `docker/multi-instance/compose.yaml` takes the server image from it, and until 0.8.0 is published `latest` is a 0.7 image that ignores the 0.8 cluster-key and name-key settings. When this task edits the quickstart server's environment, decide whether the default should name the 0.8 version instead of `latest`; 210 handles the multi-instance side.
 
 ## Acceptance
 - [ ] The quickstart's Compose stack starts with re-identification enabled, four-eyes on, an embedded solo member (`topology: embedded`, `join.mode: none`, not `single-node`, which re-identification refuses) with its cluster and name keys supplied by reference from generated local secrets (optional on a solo member and validated as on a joining member when supplied, OD-215-8 (a) as built by 222 and 223); the stack sets no other `dataprism.hazelcast.security.*` property except, optionally, `pause-lease` or `clock-skew-tolerance` (the only others 230 allows on `none`), and the operator surface on its own port; `docker compose up` succeeds from a clean checkout.

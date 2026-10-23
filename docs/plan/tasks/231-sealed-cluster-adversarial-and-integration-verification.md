@@ -4,6 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 230.
 **Depends on:** 230 (and through it 218 to 229 and core 255)
+**Wave:** 13 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/MixedFormatTest.java *(new, T13)*
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/StartupCodeCoverageTest.java *(new, T8 completeness)*
@@ -17,7 +18,7 @@ Prove, across real servers and not only inside the hazelcast module, that the se
 
 ## Context
 - docs/plan/design/cluster-security.md 5.1 (T1 to T16), 2.3.7 (what is not stopped), 6.1 boundary 7, OD-13 (the qualified claim), as amended by 218.
-- docs/plan/tasks/215-plan-sealed-cluster-implementation.md, Outcome: the obligation-to-task map and the gap list.
+- docs/plan/tasks/retired/215-plan-sealed-cluster-implementation.md, Outcome: the obligation-to-task map and the gap list.
 - data-prism-server/src/test/java/io/github/aindriub/dataprism/server/cluster/ClusterMembers.java, MultiMemberOperatorTest.java: how real multi-member servers start (read only).
 - data-prism-integration-tests/.../PiiLogScanTest.java: the scan shape. Core task 255 adds scenarios to the same file; this task adds after it.
 - The Outcomes of 219 to 230.

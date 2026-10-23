@@ -6,7 +6,7 @@
 **Depends on:** 211 (serialised with 210, 208 and 211 on the shared Spring files below), 222 (sealed-cluster plan; 222 edits `DataPrismPropertiesValidator.java`, `frozen-property-names.txt`, `additional-spring-configuration-metadata.json` and `docs/configuration.md` first), 242 (link codec), 246 (new limits), 247 (labels, real names, `OrchestrationOptions`), 249 (configured-source descriptions and hosts), 250 (catalog tools)
 **Decisions:** OD-08-3 (`PT10S`, 50,000, `scope-read-budget` 100), OD-08-9 (a, `MISSING_PAGING_KEY`) and OD-08-18 (a, `dataprism.links.keys.<key-id>.environment-variable` or `.provider-reference`) are decided 2026-10-20.
 **Serialised with:** 222 (before this task, by the edge above), 255 (after), and 230 (after 255, because 230 depends on 255; no edge from 222 or 230 to this task, which would close the cycle 254, 246, 226, 223, 222), on `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, `additional-spring-configuration-metadata.json`, `frozen-property-names.txt`, `bean-inventory/*.txt`, `docs/configuration.md`
-**Wave:** 9 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 9 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LimitsProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/CatalogProperties.java *(new)*
@@ -25,7 +25,11 @@
 - data-prism-spring-boot-autoconfigure/src/test/resources/configuration-metadata-gaps.txt *(insertions only, for map sub-keys)*
 - data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/*.txt *(regenerated; only lines for beans this task adds)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/LimitsConfigurationTest.java, CatalogConfigurationTest.java, PagingConfigurationTest.java, LinkKeyConfigurationTest.java, FactoryBeanPreflightTest.java *(new)*
-- docs/configuration.md *(the rows for the keys this task adds and their startup codes only)*
+- docs/configuration.md *(the rows for the keys this task adds and their startup codes, and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows of the cluster-key refusal-order table, only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterKeyResolution.java *(the shared-key check only: also compare the cluster keys and the name key against the link key this task resolves (page links), by key id and by material; added 2026-10-23 from 222's Outcome item (d))*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterKeyResolutionTest.java *(insertions only: the rows for the link key this task resolves (page links))*
+- docs/plan/design/contract-register.md *(the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows only)*
+- docs/plan/design/cluster-security.md *(the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of the code table only)*
 
 ## Goal
 Expose the 0.8 core's new configuration through `dataprism.*` and start the catalog: the request deadline and per-scope total of 246, `dataprism.catalog.unselected-source-limit` and `real-names-scopes` (OD-C7, OD-C3), `dataprism.paging.*` (OD-B1), and the link key that page links need even while links are off (OD-B2 (a)). Build the `SourceCatalog` at startup and refuse to start on a description that breaks the catalog rules. Register `list_sources` and `describe_source` on the HTTP transport. Close the 0.7 review finding that a raw `FactoryBean` with `allowEagerInit=false` escapes both the `RequestLimits` and the `PrivacyPolicyResolver` guards.
@@ -36,7 +40,7 @@ Expose the 0.8 core's new configuration through `dataprism.*` and start the cata
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/OrchestrationWiring.java:40-74 (`dataPrismRequestLimitsPreflight`) and Preflights.java (`dataPrismPrivacyPolicyResolverPreflight`): the two guards.
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/HmacKeyReferenceResolver.java and PropertiesValidation.java:129-132: the key-reference resolver to reuse and the 32-byte rule.
 - ConfigurationMetadataDocumentedTest, PropertyNamesFrozenTest, AutoConfiguredBeanClassificationTest, AutoConfiguredBeanInventoryTest: the guards every new key and bean must satisfy.
-- From 222 and 242 (2026-10-22): link keys must be added to `ClusterKeyResolution`'s shared-key check (`CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED`), which today compares only the privacy HMAC key. Add `ClusterKeyResolution.java` and those two register rows to this brief's Owns, or leave the extension to 255 and say so in the Outcome.
+- From 222 and 242 (2026-10-22): link keys must be added to `ClusterKeyResolution`'s shared-key check (`CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED`), which today compares only the privacy HMAC key. Add `ClusterKeyResolution.java` and those two register rows to this brief's Owns, or leave the extension to 255 and say so in the Outcome. Done 2026-10-23 (planner audit): both are in the Owns, with the test and the matching rows of `cluster-security.md` and `docs/configuration.md`. 211 extends the check for the audit key first; this task adds the link key it resolves, and 255 any link key it adds.
 - From the external review of PR #154 (2026-10-22, 242's Outcome): `LinkKeys` construction needs the pseudonymisation key resolved through the same provider as the link keys. A null id refuses `LINK_KEY_SHARED` and an unresolvable one `LINK_KEY_UNRESOLVED`, so wire both ids.
 
 ## Acceptance

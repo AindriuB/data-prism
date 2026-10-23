@@ -6,7 +6,7 @@
 **Depends on:** 254 (serialised on the shared Spring files; `LinksProperties`), 253 (the `follow` tool), 241 (registry and invoker), 269 (`LinkAttemptGate`, which this task wires)
 **Decisions:** OD-08-2 (a, shared Hazelcast limiter, brief 264, `MISSING_SHARED_LINK_LIMITER`; fallback (c) agreed if 264 slips: refuse every sealed-token consumer, links and page links, only on members joining via `tcp-ip` or `kubernetes`, never `join.mode: none` or `single-node`; option (b) excluded; extended 2026-10-20 after review of PR #141 to every sealed-token consumer), OD-08-10 (a, else b given OD-215-5) and OD-08-16 (a, ceiling 16) are decided 2026-10-20.
 **Serialised with:** the sealed-cluster wiring tasks on the shared Spring files listed in 254: 222 lands before this task (through 254), and 230 after it (230 depends on 255). `PiiLogScanTest.java` is also edited by 231, which follows 230 and so this task. Sealed-cluster task 264 (the shared Hazelcast limiter) follows 230 and so this task; it edits `LinkWiring.java` (the in-memory limiter bean's condition only) and supplies the cluster-wide bean that this task's refusal looks for
-**Wave:** 11 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 11 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/LinksProperties.java
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/KeyResolverProperties.java *(new)*
@@ -26,7 +26,11 @@
 - data-prism-integration-tests/src/main/resources/application.yaml *(the links and catalog settings only)*
 - data-prism-integration-tests/src/main/java/io/github/aindriub/dataprism/example/*Dto.java, Stub*Adapter.java *(the `description()` overrides and `@Chainable` declarations only)*
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/PiiLogScanTest.java, AuditFilePiiScanTest.java, AuditFieldDispositionTest.java *(new scenarios for `list_sources`, `describe_source`, `follow` and `_links` only)*
-- docs/configuration.md *(the rows for the keys this task adds and their startup codes only)*
+- docs/configuration.md *(the rows for the keys this task adds and their startup codes, and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows of the cluster-key refusal-order table, only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterKeyResolution.java *(the shared-key check only: also compare the cluster keys and the name key against every link key (after 211's audit key and 254's page-link key), by key id and by material; added 2026-10-23 from 222's Outcome item (d))*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterKeyResolutionTest.java *(insertions only: the rows for every link key (after 211's audit key and 254's page-link key))*
+- docs/plan/design/contract-register.md *(the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows only)*
+- docs/plan/design/cluster-security.md *(the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of the code table only)*
 
 ## Goal
 Turn the agent-led surface on through configuration: `dataprism.links.*` (sealed-links "Configuration keys", without the option-(b) key per OD-200-8), `dataprism.key-resolvers.*`, every application `KeyResolver` bean collected into the registry, the attempt limiter, and the `follow` tool registered only when links are enabled. Show which link keys a member holds, so rotation phase 1 can be confirmed (sealed-links section 3). Then prove, over the real HTTP example, that none of the new tools or links puts a real value into a log line or audit record.

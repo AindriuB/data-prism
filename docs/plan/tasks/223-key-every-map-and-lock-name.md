@@ -4,6 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 222.
 **Depends on:** 219 (answers 8, 9 and 10), 220 (`KeyedNames`, `Sealer`), 222 (every multi-member cluster now has keys)
+**Wave:** 4 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ScopeKeys.java
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterLocks.java *(insertions only: bounded write helpers)*

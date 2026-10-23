@@ -4,7 +4,7 @@
 **Release:** 0.8.0 (links stay off by default through 0.9). If this task is cut from 0.8, the fallback below ships instead.
 **Base branch:** the 0.8 integration branch, at a commit that contains 229, 230, core 242, core 269 and core 255.
 **Depends on:** 229 (every sealed store and the rotation sweeper exist; through it 223 `SealedWrites`, keyed names and `ClusterSecuritySettings`, and 226 `CounterMaps`, `LocalFloor` and the counter merge policy), 242 (core plan: the codec and the first limiter SPI, both revised by 269), 230 (serialised after 230 on `ClusterBackedState.java` and the bean-inventory lists; through it core 255, which owns the `MISSING_SHARED_LINK_LIMITER` startup refusal and the in-memory limiter bean), 269 (the settled limiter contract this task implements: `AttemptSubject`, atomic `recordFailure` returning `Admission`, the ceiling, `LinkAttemptGate`)
-**Wave:** 13 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 13 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Decision:** core OD-08-2 (a), decided by the owner 2026-10-20, which also settles OD-215-14 with this id. The owner accepts this task slipping to 0.9.0; the fallback (c) below is agreed for that case. Per-instance limiting on a cluster (option (b)) is excluded outright.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastLinkAttemptLimiter.java *(new)*

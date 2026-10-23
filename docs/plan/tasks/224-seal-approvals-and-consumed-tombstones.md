@@ -4,6 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 223.
 **Depends on:** 219 (answers 8 and 9), 223 (keyed names, `SealedWrites`, per-area boundary checkers)
+**Wave:** 5 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Decisions:** OD-215-12 decided 2026-10-20 (a): 100,000 ids, evicting the earliest-expiring.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastApprovalStore.java

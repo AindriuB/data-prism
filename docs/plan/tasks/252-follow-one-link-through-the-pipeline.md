@@ -5,7 +5,7 @@
 **Base branch:** `origin/main` once 251 and 269 have merged
 **Depends on:** 251 (links, `OrchestrationOptions` fields, both edit `DefaultContextOrchestrator`), 246 (reservations), 241 (invoker), 242 (codec), 269 (`LinkAttemptGate`, the only way to open a link), 243 (release)
 **Decisions:** OD-08-15 decided 2026-10-20 (a): the key read is its own subject, plus the scope total.
-**Wave:** 9 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 9 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/ContextOrchestrator.java *(the `follow` method only)*
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java *(`follow` and the extraction of the shared fetch, scrub and validate steps it reuses)*

@@ -6,6 +6,7 @@ Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 **Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` once 203 and 209 have merged
 **Depends on:** 203, 209 (209 only because both edit the shared Spring files listed below)
+**Wave:** 5 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Serialised with:** 208, 211, and the cluster-wiring successor tasks (shared: `PrivacyExtensionPoints.java`, the bean-inventory lists,
 `frozen-property-names.txt`, `DataPrismPropertiesValidator.java`, `docs/configuration.md`)
 **Decided (owner, 2026-10-15):**
@@ -32,7 +33,7 @@ Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 - data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/http/StarterStartupFailureTest.java *(configuration only)*
 - data-prism-quickstart-extension/src/test/java/io/github/aindriub/dataprism/quickstart/extension/QuickstartSmokeIT.java *(configuration only)*
 - docker/server/application.yaml
-- docker/multi-instance/compose.yaml, docker/multi-instance/kubernetes.yaml *(case-authorisation setting only)*
+- docker/multi-instance/compose.yaml, docker/multi-instance/kubernetes.yaml *(the case-authorisation setting; and, widened 2026-10-23, the server image tag and the check that the 0.8 cluster-key and name-key settings take effect)*
 - docs/configuration.md *(the `dataprism.security-policy` rows and the prose around them only)*
 
 ## Goal
@@ -48,6 +49,8 @@ decided how cases are authorised refuses to start. One that wants the old behavi
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ConfigurationMetadataDocumentedTest.java:27-56 and PropertyNamesFrozenTest.java:23-48 — every new property needs a description, a `docs/configuration.md` row and a frozen-list line
 - `rg -l 'security-policy' --glob '!**/target/**'` lists every configuration that starts a context, and each needs the new setting or a bean
 - docker/distribution/Dockerfile:54-58 — the published image ships no `application.yaml`, so it is not affected; `docker/server/application.yaml` is the quickstart's
+- From the external review of PR #154, round 5 (2026-10-23): `StarterStartupFailureTest` carries a dead property line (one the context never reads). Remove it while adding this task's configuration to the file.
+- From the external review of PR #159 (2026-10-23, Medium, security): `docker/multi-instance/kubernetes.yaml` sets the 0.8 cluster-key and name-key settings (222) but pins `ghcr.io/aindriub/data-prism-server:0.7.0`, which ignores them, so an operator who applies the file runs members without the keys they think they configured. Change the tag to the first version that reads them (0.8.0, published by the 0.8.0 release; say so in a comment), and check that the settings take effect: a test that reads the file and fails when the image tag is older than the project version, or an equivalent check in the existing version sweep. `docker/multi-instance/compose.yaml` has the same gap by another route: with published images it takes the server image from `../../compose.yaml`, which defaults to `${QUICKSTART_IMAGE_TAG:-latest}`, so until 0.8.0 is published `latest` is a 0.7 image that ignores the key settings. Make the multi-instance file refuse or warn on an older image (its header comment at least), and leave the root `compose.yaml` default to 262, which owns that file.
 
 ## Acceptance
 - [ ] `dataprism.security-policy.case-authorisation` binds as a string. Its only accepted value is `token-trusted`; any other value refuses startup with `UNSUPPORTED_CASE_AUTHORISATION`.
