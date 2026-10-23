@@ -21,7 +21,9 @@ import tools.jackson.databind.type.MapLikeType;
 import tools.jackson.databind.type.MapType;
 import tools.jackson.databind.SerializationConfig;
 import tools.jackson.databind.ValueSerializer;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import tools.jackson.databind.ser.BeanPropertyWriter;
+import tools.jackson.databind.ser.std.StdContainerSerializer;
 import tools.jackson.databind.ser.BeanSerializer;
 import tools.jackson.databind.ser.UnrolledBeanSerializer;
 import tools.jackson.databind.ser.ValueSerializerModifier;
@@ -252,12 +254,12 @@ public final class SourceTree {
      * {@code holder}, as a plain JSON object of exactly its record components. It asks the reader's own
      * serializers, so whatever the reader would do is what is judged; the answer is false for anything
      * else: an array shape, an object id, a {@code @JsonValue} or other custom serializer, a renamed,
-     * ignored or extra property, a filter, and a serializer override or format on the holding component.
+     * ignored or extra property, a filter, and any Jackson annotation or non-object format on the holding property.
      * If the lookup throws, the answer is false (fail closed).
      */
     static boolean readsAsPlainBean(Class<?> holder, String component, Class<?> type) {
         try {
-            if (!holder.isRecord() || !type.isRecord() || overridden(holder, component)) {
+            if (!holder.isRecord() || !type.isRecord()) {
                 return false;
             }
             var context = READER._serializationContext();
@@ -269,16 +271,45 @@ public final class SourceTree {
             }
             for (var properties = bean.properties(); properties.hasNext(); ) {
                 var writer = properties.next();
-                if (writer.getName().equals(component) && writer instanceof BeanPropertyWriter bpw
-                        && bpw.getSerializer() != null && bpw.getSerializer().handledType() == type
-                        && !plainBean(bpw.getSerializer(), type)) {
-                    return false;
+                if (writer.getName().equals(component)) {
+                    return writer instanceof BeanPropertyWriter bpw && plainHolder(bpw, type);
                 }
             }
-            return true;
+            return false;
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    /**
+     * Judges the holding property as Jackson merged it (annotations on the component, its accessor, an
+     * interface, or inside a meta-annotation): no Jackson annotation of any kind, a natural or object
+     * shape, and, where the property is a container, a content serializer that is itself plain. A
+     * {@code java.util.Optional} or other reference hides its content serializer, so only the property
+     * checks apply to it; its content is judged by the type-level lookup above.
+     */
+    private static boolean plainHolder(BeanPropertyWriter writer, Class<?> type) {
+        var member = writer.getMember();
+        if (member == null) {
+            return false;
+        }
+        boolean annotated = member.annotations().anyMatch(a -> {
+            String name = a.annotationType().getName();
+            return name.startsWith("com.fasterxml.jackson.") || name.startsWith("tools.jackson.");
+        });
+        if (annotated) {
+            return false;
+        }
+        var shape = writer.findPropertyFormat(READER.serializationConfig(), member.getRawType()).getShape();
+        if (shape != JsonFormat.Shape.ANY && shape != JsonFormat.Shape.NATURAL
+                && shape != JsonFormat.Shape.OBJECT) {
+            return false;
+        }
+        ValueSerializer<?> serializer = writer.getSerializer();
+        if (serializer instanceof StdContainerSerializer<?> container) {
+            return plainBean(container.getContentSerializer(), type);
+        }
+        return serializer == null || serializer.handledType() != type || plainBean(serializer, type);
     }
 
     private static boolean plainBean(ValueSerializer<?> serializer, Class<?> type) {
@@ -305,32 +336,6 @@ public final class SourceTree {
             written.add(writer.getName());
         }
         return written.equals(components);
-    }
-
-    /** A serializer, format, unwrapping or type annotation on the component that holds the value. */
-    private static boolean overridden(Class<?> holder, String component) {
-        for (java.lang.reflect.RecordComponent rc : holder.getRecordComponents()) {
-            if (!rc.getName().equals(component)) {
-                continue;
-            }
-            java.util.List<java.lang.reflect.AnnotatedElement> elements = new java.util.ArrayList<>();
-            elements.add(rc);
-            elements.add(rc.getAccessor());
-            try {
-                elements.add(holder.getDeclaredField(component));
-            } catch (NoSuchFieldException e) {
-                // A record component has its field; nothing more to look at if it does not.
-            }
-            for (java.lang.reflect.AnnotatedElement element : elements) {
-                for (java.lang.annotation.Annotation a : element.getAnnotations()) {
-                    if (a.annotationType().getName().startsWith("com.fasterxml.jackson.")
-                            || a.annotationType().getName().startsWith("tools.jackson.")) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
     }
 
     private SourceTree() {

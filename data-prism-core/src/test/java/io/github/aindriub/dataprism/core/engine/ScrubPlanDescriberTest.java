@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import com.fasterxml.jackson.annotation.JacksonAnnotationsInside;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIdentityInfo;
 import com.fasterxml.jackson.annotation.JsonValue;
@@ -298,6 +299,41 @@ class ScrubPlanDescriberTest {
     record PlainHolder(@InternalIdentifier String ref, @NonSensitive(reason = "x") PContact contact) {
     }
 
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+    @JacksonAnnotationsInside
+    @JsonFormat(shape = JsonFormat.Shape.ARRAY)
+    @interface AsArray {
+    }
+
+    @LlmExposedModel
+    record MetaList(@InternalIdentifier String ref,
+                    @NonSensitive(reason = "x") @AsArray List<PContact> contacts) {
+    }
+
+    @LlmExposedModel
+    record MetaOpt(@InternalIdentifier String ref,
+                   @NonSensitive(reason = "x") @AsArray Optional<PContact> contact) {
+    }
+
+    @LlmExposedModel
+    record MetaArr(@InternalIdentifier String ref,
+                   @NonSensitive(reason = "x") @AsArray PContact[] contacts) {
+    }
+
+    interface HasContacts {
+        @JsonFormat(shape = JsonFormat.Shape.ARRAY)
+        List<PContact> contacts();
+    }
+
+    @LlmExposedModel
+    record IfaceList(@InternalIdentifier String ref,
+                     @NonSensitive(reason = "x") List<PContact> contacts) implements HasContacts {
+    }
+
+    @LlmExposedModel
+    record PlainList(@InternalIdentifier String ref, @NonSensitive(reason = "x") List<PContact> contacts) {
+    }
+
     private static final Map<String, PrivacyProfile> BUNDLED = bundled();
 
     private static Map<String, PrivacyProfile> bundled() {
@@ -592,5 +628,22 @@ class ScrubPlanDescriberTest {
         }
         assertThat(byPath(describe(PlainHolder.class, "DEFAULT", false)))
                 .containsEntry("contact.email", Protection.MARKER);
+    }
+
+    @Test
+    @DisplayName("a format reaching a list, optional or array through a meta-annotation or an interface omits it")
+    void formatOnContainers() {
+        for (Class<?> model : List.of(MetaList.class, MetaOpt.class, MetaArr.class, IfaceList.class)) {
+            assertThat(byPath(describe(model, "DEFAULT", false)).keySet())
+                    .as(model.getSimpleName()).noneMatch(path -> path.startsWith("contact"));
+        }
+        assertThat(byPath(describe(PlainList.class, "DEFAULT", false)))
+                .containsEntry("contacts[].email", Protection.MARKER);
+        assertThat(SourceTree.readsAsPlainBean(PlainList.class, "contacts", PContact.class)).isTrue();
+        assertThat(SourceTree.readsAsPlainBean(MetaList.class, "contacts", PContact.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(MetaOpt.class, "contact", PContact.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(MetaArr.class, "contacts", PContact.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(IfaceList.class, "contacts", PContact.class)).isFalse();
+        assertThat(SourceTree.readsAsPlainBean(PlainList.class, "nope", PContact.class)).isFalse();
     }
 }
