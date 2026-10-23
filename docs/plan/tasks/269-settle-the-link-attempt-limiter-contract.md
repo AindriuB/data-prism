@@ -2,28 +2,28 @@
 
 **Repo:** `.`
 **Release:** 0.8.0 (links stay off by default through 0.9, sealed-links OD-7)
-**Base branch:** the 0.8 integration branch, at a commit that contains 242 and both rounds of its external-review fixes (`record/0.8-wave3` at 7cf7c1a3 or later, PR #154).
+**Base branch:** the 0.8 integration branch, at a commit that contains 242 and both rounds of its external-review fixes (`record/0.8-wave3` at 334f5c52, or `main` once PR #154 has merged), including 242 round 4: `LinkKeys.ATTEMPT_LABEL` (`dataprism/link/v1/attempt`), the purpose-labelled `attemptCounterKey`, and `LinkConfigurationException`.
 **Depends on:** 242 (`core.link`: `LinkAttemptLimiter`, `InMemoryLinkAttemptLimiter`, `LinkKeys`, `LinkCodec.open`, `LinkBinding.withinBounds`, `LinkOpenResult.Refused.counted()`)
-**Decisions:** owner decision 2026-10-22: settle the limiter contract in this separate task, before 251 and 264 build on it. **Decided by the owner 2026-10-22:** OD-269-1 (a), OD-269-2 (a), OD-269-3 (a) and OD-269-4 (coordinator: 269 added to 250's Depends on). "Required shape" is written to these decisions. Revised 2026-10-23 after the external review of PR #155. The review did not change any decision. It replaced the two-step gate with one call, stated the real bounds and the ceiling's consequence, and fixed the sweep and the binding bounds. The owner accepted the ceiling consequence under OD-269-3 on 2026-10-23. Revised again 2026-10-23 after a fourth external review, with no decision changed. The changes are a lossless `canonicalText()` for 264, a package-private `LinkOpener` test seam, `OPEN_FAILED`, audit-only causes on `Exhausted` (so `locked` becomes `lockState`, and `Admission` gains `CEILING` and `UNAVAILABLE`), one marker per entry with bounded head examination, a deterministic ceiling race, method references in the bypass rule, and what 264 may relax.
+**Decisions:** owner decision 2026-10-22: settle the limiter contract in this separate task, before 251 and 264 build on it. **Decided by the owner 2026-10-22:** OD-269-1 (a), OD-269-2 (a), OD-269-3 (a) and OD-269-4 (coordinator: 269 added to 250's Depends on). "Required shape" is written to these decisions. Revised 2026-10-23 after the external review of PR #155. The review did not change any decision. It replaced the two-step gate with one call, stated the real bounds and the ceiling's consequence, and fixed the sweep and the binding bounds. The owner accepted the ceiling consequence under OD-269-3 on 2026-10-23. Revised again 2026-10-23 after a fourth external review, with no decision changed. The changes are a lossless `canonicalText()` for 264, a package-private `LinkOpener` test seam, `OPEN_FAILED`, audit-only causes on `Exhausted` (so `locked` becomes `lockState`, and `Admission` gains `CEILING` and `UNAVAILABLE`), one marker per entry with bounded head examination, a deterministic ceiling race, method references in the bypass rule, and what 264 may relax. Revised 2026-10-24 after a fifth review, again with no decision changed. Head examination becomes exclusive (`tryLock`), with the removal decided inside `computeIfPresent` and markers that carry the entry id. Slots are reserved by a non-blocking CAS outside `compute`. An empty token is `MALFORMED` (coordinator). Null results are refusals. There is a placeholder client code for outages, pending **OD-269-5**. A split-package rule is added. The drain and race tests are reachable and deadlock-free. The design amendments cover 242 round 4's label table and closed set.
 **Wave:** 4 (combined 0.8 graph of 213, 218 to 231 and 238 to 269; 203 and 206 to 211 counted as landed). It runs alongside 223, 241 and 248; it owns none of their files.
 **Serialised with:** none in wave 4. 250, 251, 252, 255 and 264 depend on this task, directly or through 251.
 **Owns:**
-- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/LinkAttemptLimiter.java
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/LinkAttemptLimiter.java *(including its Javadoc reference to `attemptCounterKey`)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/InMemoryLinkAttemptLimiter.java
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/AttemptSubject.java *(new)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/LinkAttemptGate.java *(new; `GateDecision` and `ExhaustedCause` are nested)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/LinkOpener.java *(new, package-private)*
-- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/LinkKeys.java *(removing `attemptCounterKey` and the Javadoc that mentions it only)*
-- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/InMemoryLinkAttemptLimiterTest.java
+- data-prism-core/src/main/java/io/github/aindriub/dataprism/core/link/LinkKeys.java *(removing `attemptCounterKey`, `ATTEMPT_LABEL` (it moves to `AttemptSubject`) and the Javadoc that mentions them only)*
+- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/InMemoryLinkAttemptLimiterTest.java *(rewritten to the new SPI; its 6 `attemptCounterKey` references at the base are removed or ported)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/LinkAttemptGateTest.java *(new)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/AttemptSubjectTest.java *(new)*
-- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/LinkKeysTest.java *(the counter-key test and the vector-writer line only)*
+- data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/LinkKeysTest.java *(remove or port the attempt-key uses only: its 9 references to `attemptCounterKey` or `ATTEMPT_LABEL` at the base, including the vector-writer line)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/LinkVectors.java *(the counter-key entry only)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/link/LinkTestSupport.java *(insertions only)*
 - data-prism-core/src/test/resources/link/vectors.properties *(replace `counter.key` with `attempt.subject.canonical` and `attempt.subject.canonical.text`)*
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/LinkArchitectureTest.java *(insertions only: the rules below and their nested fixtures)*
 - data-prism-architecture/src/test/java/io/github/aindriub/dataprism/hazelcast/archfixture/LinkLimiterFloorFixture.java *(new; a test fixture only, in the Hazelcast package so the bypass rule's one exception can be proven; imported explicitly, never by package scan)*
-- docs/plan/design/sealed-links.md *(section 3 "Fingerprinting" row; section 4: the round-2 "Binding bounds" bullet and the post-authentication `MALFORMED` bullet (about lines 277 and 280), and "Attempt limiter"; section 6 boundary 3; section 7 obligation 22; only as "Design amendments" below says)*
+- docs/plan/design/sealed-links.md *(section 3: the "Fingerprinting" row and the "MAC input labels" table with the sentence after it; section 4: the `link` disposition row, the closed-set sentence, the round-2 "Binding bounds" bullet, the post-authentication `MALFORMED` bullet, and "Attempt limiter"; section 6 boundary 3; section 7 obligation 22; section 9's `LINK_<REASON>` row; only as "Design amendments" below says)*
 - docs/plan/design/batch-and-bulk-follow.md *(Part A "What happens in a call", items 1 and 2 only, as "Design amendments" below says)*
 
 ## Goal
@@ -48,9 +48,10 @@ The only way to open a token from outside `core.link` is one gate call, which ow
 - docs/plan/design/cluster-security.md 2.3.2 and 4.6: the name key is separate from the cluster key, is the same on every member, and does not rotate in the rolling procedure. Each map gets its own name subkey (`dataprism/cluster/v1/name/<map>`).
 - docs/plan/design/batch-and-bulk-follow.md Part A "What happens in a call", items 1 and 2: they describe the counter key and the lock in pre-269 terms.
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/seal/KeyedNames.java: `mapKey(String map, String canonical)` takes a `String`, hence `canonicalText()`.
+- docs/plan/tasks/retired/242-sealed-link-codec-and-attempt-limiter.md, round 4: the purpose labels on every fingerprint-key MAC (`fingerprint`, `catalog-tag`, `attempt`) and `LinkConfigurationException` for construction refusals.
 - docs/conventions.md "Tests": an injected `Clock`, no sleeps. Use latches for ordering.
 
-## Owner decisions (decided 2026-10-22)
+## Owner decisions (OD-269-1 to 4 decided 2026-10-22; OD-269-5 pending)
 
 **OD-269-1: the atomic contract. Decided (a), 2026-10-22, owner.**
 - (a) **Verify, then one atomic record-and-decide (recommended).** The gate checks `locked` first, as a cheap pre-check. It then opens the token, which is pure CPU and no I/O. On a counted refusal it calls `recordFailure`. That call atomically opens or extends the window, increments the count, and returns whether the attempt is still within the limit (`count <= limit` after the increment). An attempt over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`, not `LINK_INVALID`, so at most `limit` counted attempts per window ever learn their verification result, however many run at once. There is one write per failed attempt, with no reservation and no undo. Concurrent valid links are never penalised, and a crash cannot leak a reservation. In Hazelcast this is one entry processor that returns the new count.
@@ -72,6 +73,11 @@ The only way to open a token from outside `core.link` is one gate call, which ow
 
 **OD-269-4: an edge from 250. Decided 2026-10-22, coordinator: done.** 250 counts page-link failures in the same limiter but does not reach this task through 251. `269` is added to 250's Depends on, with a dated Context bullet in 250 (the coordinator's edit, since this task may not edit that file).
 
+**OD-269-5: the client code for a limiter outage or a failure to open. Pending, owner.** Today `LIMITER_UNAVAILABLE` and `OPEN_FAILED` reach the client as `LINK_ATTEMPTS_EXHAUSTED`. That tells an agent to back off for a window when the real cause is an outage or a bug. The brief makes this one constant, `GateDecision.UNAVAILABLE_CLIENT_CODE`, so the decision is a one-line change.
+- (a) Keep `LINK_ATTEMPTS_EXHAUSTED`. No new code; the cause is in the audit.
+- (b) **Recommended.** Split the constant in two. `LIMITER_UNAVAILABLE` gets a new retryable code, `LINK_CHECK_UNAVAILABLE`. It is not token-dependent, so it reveals nothing, and it needs a register row and a `docs/configuration.md` / `docs/audit.md` entry (261). `OPEN_FAILED` gets `LINK_INVALID`, because it depends on the token, and any distinct answer would be an oracle for whatever input trips the failure. This is a two-line change instead of one.
+- (c) One new code for both. This is simple, but the `OPEN_FAILED` half has the oracle concern of (b).
+
 **Binding bounds (planner's choice under the review, 2026-10-23): bound, do not hash.** `AttemptSubject` uses the same bound as `LinkBinding`: each id at most 65,535 UTF-8 bytes and non-empty. Reasons:
 - One rule covers both, and the codec already refuses such a binding as `MALFORMED`, uncounted, because the session is at fault, not the token.
 - Hashing each part would accept a binding that the codec refuses anyway.
@@ -79,167 +85,196 @@ The only way to open a token from outside `core.link` is one gate call, which ow
 
 The gate checks the bounds before anything else and answers `MALFORMED`, uncounted.
 
-## Required shape (later tasks read these; matches the owner's decisions above; revised 2026-10-23 after the fourth review)
+## Required shape (later tasks read these; matches the owner's decisions above; revised 2026-10-24 after the fifth review)
 - **`AttemptSubject`.**
   - A record `AttemptSubject(String scopeId, String principalId)`. Each id must be non-null, non-empty and at most `LinkBinding.MAX_ID_BYTES` (65,535) UTF-8 bytes; otherwise the constructor throws `IllegalArgumentException` with a message that names no value.
-  - `static Optional<AttemptSubject> of(LinkBinding binding)` is empty for a null binding or an id outside those bounds, empty ids included. It never throws.
-  - `canonical()` is `LabelledHkdf.lengthPrefixed` of three items: the ASCII label `dataprism/link/v1/attempt` (exactly this; the parallel 242 fix uses the same label for the attempt input), the scope id and the principal id. The label separates counter inputs from fingerprint inputs and other keyed names, and the length prefixes make `("ab","c")` differ from `("a","bc")`.
+  - `static Optional<AttemptSubject> of(LinkBinding binding)` is empty for a null binding or an id outside those bounds, including an empty id. It never throws.
+  - `canonical()` is `LabelledHkdf.lengthPrefixed` of three items: the ASCII label `dataprism/link/v1/attempt` (exactly this; 242 round 4 already defines it as `LinkKeys.ATTEMPT_LABEL`, which moves to `AttemptSubject`), then the scope id, then the principal id. The label makes the counter input differ from every other MAC input in the section 3 label table, and the length prefixes make `("ab","c")` differ from `("a","bc")`.
   - `canonicalText()` is the lowercase hex of `canonical()`, which is lossless. It is the string a `String`-keyed API takes, such as 264's `KeyedNames.mapKey(map, canonical)`. Never build that string by decoding `canonical()` as UTF-8.
   - `toString()` is `AttemptSubject[redacted]`.
 - **`LinkAttemptLimiter`** (the SPI):
-  - `LockState lockState(AttemptSubject subject)`, where `enum LockState { UNLOCKED, LOCKED, UNAVAILABLE }`. `LOCKED` means `count >= limit` within the current window. `UNAVAILABLE` means the implementation could not decide, and the gate treats it as locked.
-  - `Admission recordFailure(AttemptSubject subject)`, where `enum Admission { WITHIN_LIMIT, OVER_LIMIT, CEILING, UNAVAILABLE }`. It is one atomic operation per subject. It opens a window if none is live (absent, or ended), adds one (saturating), and returns `WITHIN_LIMIT` when the new count is at most `limit`, otherwise `OVER_LIMIT`. It returns `CEILING` when the subject is not held and cannot be stored, and `UNAVAILABLE` on any internal failure. Every value but `WITHIN_LIMIT` refuses.
+  - `LockState lockState(AttemptSubject subject)`, where `enum LockState { UNLOCKED, LOCKED, UNAVAILABLE }`. `LOCKED` means `count >= limit` within the current window. `UNAVAILABLE` means the implementation could not decide.
+  - `Admission recordFailure(AttemptSubject subject)`, where `enum Admission { WITHIN_LIMIT, OVER_LIMIT, CEILING, UNAVAILABLE }`. It is one atomic operation per subject. It opens a window if none is live (absent, or ended), adds one (saturating), and returns `WITHIN_LIMIT` when the new count is at most `limit`, otherwise `OVER_LIMIT`. It returns `CEILING` when the subject is not held and cannot be stored, and `UNAVAILABLE` on any internal failure. Every value except `WITHIN_LIMIT` refuses.
   - `default boolean clusterWide()` returns `false`.
-  - The Javadoc lists what every implementation must keep (264 included): atomic per subject; the window decided by the stored start and the clock, never by an entry expiring; no live entry evicted; a new subject at the ceiling gets `CEILING` and is not stored; fail closed through `UNAVAILABLE`, never by throwing.
+  - The Javadoc lists what every implementation, 264 included, must keep:
+    - atomic per subject;
+    - the window is decided by the stored start and the clock, never by an entry expiring;
+    - no live entry is evicted;
+    - a new subject at the ceiling gets `CEILING` and is not stored;
+    - fail closed through `UNAVAILABLE`, never by throwing or returning `null`.
 - **`InMemoryLinkAttemptLimiter`.**
-  - Constructors:
-    - `(int limit, Duration window, Clock clock)`;
-    - `(int limit, Duration window, Clock clock, int maxEntries)`, where `maxEntries < 1` is `INVALID_LINK_LIMIT` and the default is `DEFAULT_MAX_ENTRIES = 100_000`;
-    - a package-private test constructor that also takes the HMAC key and an insert probe (a `Runnable` run inside `compute` for a new key, after the slot is reserved and before the entry is stored; a no-op in production).
-  - The HMAC key is 32 bytes from `SecureRandom`, drawn once at construction. The map key is the 16-byte truncated `HMAC-SHA256(k, subject.canonical())`, as 32 hex characters.
-  - **Entries and the count.** Only `recordFailure` creates entries or re-opens their windows. The entry count is an `AtomicInteger`. Inside `compute`, a new key reserves a slot with `incrementAndGet`; if the result exceeds `maxEntries`, it decrements again and stores nothing. Every removal decrements the count, and re-opening a window in place leaves it unchanged. The ceiling therefore holds exactly under concurrency.
-  - **One marker per entry.** The expiry queue holds exactly one marker `(mapKey, windowStart)` per stored entry, appended when the entry is created. So the queue never holds more than `maxEntries` markers.
-  - **Examining the queue head**, outside any `compute`. Peek at the head, then:
-    - Its window has ended, and the entry's stored start equals the marker's: poll it and remove the entry through `computeIfPresent` returning `null` (the count is decremented after).
-    - The entry was re-opened in place (stored start differs): poll and re-append a marker carrying the stored start.
-    - The entry is gone: poll and drop the marker.
-    - The marker's start is after `now`, because the clock stepped back: poll and re-append it, so the head never stalls.
-    - Otherwise (a live head started at or before `now`): stop.
-  - **Per-call bounds.**
-    - Every `lockState` and `recordFailure` call examines at most **2** heads before its own work.
-    - When `compute` finds the map full, the call examines at most **16** more heads, outside `compute`. During that drain a live head is rotated (poll, re-append) instead of stopping the drain. The call then retries the insert **once**; if the map is still full the answer is `CEILING`.
-    - Each examination is at most three queue operations (peek, poll, append), and a created entry adds one append. So a call does at most **7** queue operations below the ceiling and at most **55** at it.
-    - There is no full-map sweep, no `removeIf` over the map, and no background thread.
-- **`LinkOpener`**, a package-private functional interface with the one method `LinkOpenResult open(String token, LinkBinding binding, Set<LinkRelation> accepted)`. Only `LinkAttemptGate` uses it. `LinkCodec` is not changed.
-- **`LinkAttemptGate`**, the only way code outside `core.link` opens a token:
-  - Constructors: `public LinkAttemptGate(LinkCodec codec, LinkAttemptLimiter limiter)` delegates to a package-private `LinkAttemptGate(LinkOpener opener, LinkAttemptLimiter limiter)` with `codec::open`. Tests use the package-private constructor with a stub, a spy or a latching `LinkOpener`.
-  - `GateDecision open(String token, LinkBinding binding, Set<LinkRelation> accepted)` runs, in this order:
-    1. A null token, binding or `accepted`, or `AttemptSubject.of(binding)` empty (an empty id or an id over the bound) → `Invalid(MALFORMED)`. Nothing is recorded, neither the limiter nor the opener is called, and nothing throws.
-    2. `lockState(subject)` → `LOCKED` gives `Exhausted(LOCKED)`; `UNAVAILABLE` or a throw gives `Exhausted(LIMITER_UNAVAILABLE)`. In both cases the opener is not called. This is where a locked principal's valid link is refused.
-    3. `opener.open(...)`. If it throws, the answer is `Exhausted(OPEN_FAILED)`, nothing is recorded, and the gate does not throw.
-    4. `Opened` → `Proceed(opened)`. `Refused` with `counted() == false` → `Invalid(reason)`, with nothing recorded.
-    5. `Refused` with `counted() == true` → `recordFailure(subject)`:
-       - `WITHIN_LIMIT` → `Invalid(reason)`;
-       - `OVER_LIMIT` → `Exhausted(OVER_LIMIT)`;
-       - `CEILING` → `Exhausted(CEILING)`;
-       - `UNAVAILABLE`, or a throw → `Exhausted(LIMITER_UNAVAILABLE)`.
-  - `GateDecision` is sealed: `Proceed(LinkOpenResult.Opened opened)`, `Invalid(LinkReason reason)`, `Exhausted(ExhaustedCause cause)`. `enum ExhaustedCause { LOCKED, OVER_LIMIT, CEILING, LIMITER_UNAVAILABLE, OPEN_FAILED }`.
-  - **What the client sees, and the audit.** The client never sees the cause: every `Exhausted` is the same `LINK_ATTEMPTS_EXHAUSTED` result. Each decision has `auditValue()`:
-    - `Invalid` → `REFUSED:LINK_<REASON>`;
-    - `Exhausted` → `REFUSED:LINK_ATTEMPTS_<CAUSE>`, for example `REFUSED:LINK_ATTEMPTS_CEILING`.
+  - **Constructors.**
+    - `(int limit, Duration window, Clock clock)`.
+    - `(int limit, Duration window, Clock clock, int maxEntries)`. `maxEntries < 1` is `INVALID_LINK_LIMIT`, and the default is `DEFAULT_MAX_ENTRIES = 100_000`.
+    - A package-private test constructor that also takes the HMAC key and a reservation probe. The probe is a `Runnable` run after a slot is reserved outside `compute` and before `compute` is entered. It is never run inside a map lambda, and it is a no-op in production.
+  - **Key.** The HMAC key is 32 bytes from `SecureRandom`, drawn once at construction. The map key is the 16-byte truncated `HMAC-SHA256(k, subject.canonical())`, as 32 hex characters.
+  - **Entries.** An entry holds an id, unique per instance (from an `AtomicLong`) and assigned at creation, plus the window start and the count. Re-opening a window in place keeps the id and changes the start. Only `recordFailure` creates or re-opens entries.
+  - **Slots.** The entry count is an `AtomicInteger`, and `tryReserve()` is a non-blocking CAS that increments it only while it is below `maxEntries`. `recordFailure` works in this order:
+    1. Run the head examination below.
+    2. If `get(mapKey)` is null, call `tryReserve()` outside `compute`, then run the probe.
+    3. In `compute`:
+       - absent key with a reservation held: store a new entry, which consumes the slot;
+       - absent key without one: call `tryReserve()` once, inside the lambda (a CAS, never a wait); if it fails, store nothing;
+       - present key: update it, and release any reservation held, after `compute` returns.
+    4. A new entry's marker is appended after `compute` returns.
+    5. If nothing was stored because the map was full, run the ceiling drain, then retry steps 2 and 3 **once**. If still full, the answer is `CEILING`.
 
-    The caller (250, 252) writes that value under the `link` disposition key of the call's audit record, as sealed-links section 4 places the reason (OD-13 shape C; no grammar change). The decision is `DENY:LINK_INVALID` or `DENY:LINK_ATTEMPTS_EXHAUSTED`.
-  - Refusals the caller decides after `Proceed` are uncounted and do not touch the limiter: target permission, relation declared, payload checks, catalog tag.
-  - The gate never reads `LinkReason.counted()` and never throws. No limiter or opener exception text reaches a decision, an exception or `toString()`.
-- **Removed:** `LinkKeys.attemptCounterKey`. The `fingerprint` label keeps its other uses.
+    Every removal decrements the count. The count never exceeds `maxEntries`.
+  - **Markers.** The expiry queue holds markers `(mapKey, entryId, windowStart)`. Each stored entry has exactly one marker; only marker examination removes an entry, and it polls that marker in the same examination. So the queue holds at most one marker per entry, plus markers appended but not yet matched (bounded by the threads in flight).
+  - **Head examination is exclusive.** A `ReentrantLock` guards it, taken with `tryLock()`, which never waits. A call that does not get the lock skips examination entirely. Chosen over removing the exact peeked marker (`queue.remove(marker)` is O(n); a CAS on the head needs a custom queue): with one examiner at a time, peek-then-poll always acts on the marker it peeked, and appends at the tail never interfere. While holding the lock, the examiner peeks at the head and decides **inside `computeIfPresent`**, re-checking the stored entry:
+    - Same id, stored start equal to the marker's, and the window ended: return `null` (remove). Only when the lambda actually removed does the examiner decrement the count and poll the marker.
+    - Same id, stored start different (the window was re-opened in place): keep the entry; poll and re-append the marker with the stored start.
+    - Different id, or the key absent: the marker is stale; poll and drop it.
+    - Same id and live: keep the entry. If the marker's start is after `now` (the clock stepped back), or the call is in the ceiling drain, poll and re-append the marker. Otherwise stop.
+  - **Per-call bounds.**
+    - Each `lockState` and `recordFailure` call examines at most **2** heads before its own work.
+    - The ceiling drain examines at most **16** more.
+    - One examination is at most one peek, one poll and one append, and a created entry adds one append. So, counting every peek, poll and append, a call does at most **7** queue operations below the ceiling and at most **55** with the drain.
+    - There is no full-map sweep, no `removeIf` over the map, no background thread, and no queue or lock operation inside a map lambda.
+- **`LinkOpener`**, a package-private functional interface with the one method `LinkOpenResult open(String token, LinkBinding binding, Set<LinkRelation> accepted)`. It exists only as a test seam: `LinkCodec` is final, `data-prism-core` has no mocking library, and the gate's tests need stub, spy and latching openers. Production code never implements it except through `codec::open`. `LinkCodec` is not changed.
+- **`LinkAttemptGate`**, the only way code outside `core.link` opens a token:
+  - **Constructors.** `public LinkAttemptGate(LinkCodec codec, LinkAttemptLimiter limiter)` delegates to a package-private `LinkAttemptGate(LinkOpener opener, LinkAttemptLimiter limiter)` with `codec::open`.
+  - **`GateDecision open(String token, LinkBinding binding, Set<LinkRelation> accepted)`** runs, in this order:
+    1. A null or empty (`""`) token, a null binding, a null `accepted`, or `AttemptSubject.of(binding)` empty (an empty id or an id over the bound) → `Invalid(MALFORMED)`. Nothing is recorded, neither the limiter nor the opener is called, and nothing throws. This settles 252's question about `""` (coordinator decision, 2026-10-23): an empty token is "no link" gone wrong, not a guess, so it is not counted.
+    2. `lockState(subject)`: `LOCKED` → `Exhausted(LOCKED)`; `UNAVAILABLE`, `null` or a thrown `RuntimeException` → `Exhausted(LIMITER_UNAVAILABLE)`. In each case the opener is not called. This is where a locked principal's valid link is refused.
+    3. `opener.open(...)`. A thrown `RuntimeException` or a `null` result → `Exhausted(OPEN_FAILED)`, and nothing is recorded.
+    4. `Opened` → `Proceed(opened)`. `Refused` with `counted() == false` → `Invalid(reason)`, with nothing recorded.
+    5. `Refused` with `counted() == true` → `recordFailure(subject)`: `WITHIN_LIMIT` → `Invalid(reason)`; `OVER_LIMIT` → `Exhausted(OVER_LIMIT)`; `CEILING` → `Exhausted(CEILING)`; `UNAVAILABLE`, `null` or a thrown `RuntimeException` → `Exhausted(LIMITER_UNAVAILABLE)`.
+
+    The gate catches `RuntimeException` only. An `Error` propagates.
+  - **`GateDecision`** is sealed: `Proceed(LinkOpenResult.Opened opened)`, `Invalid(LinkReason reason)` and `Exhausted(ExhaustedCause cause)`, with `enum ExhaustedCause { LOCKED, OVER_LIMIT, CEILING, LIMITER_UNAVAILABLE, OPEN_FAILED }`.
+  - **Client code.** Each decision has `clientCode()`: `LINK_INVALID` for `Invalid`; `LINK_ATTEMPTS_EXHAUSTED` for `Exhausted` with `LOCKED`, `OVER_LIMIT` or `CEILING`; and the constant `GateDecision.UNAVAILABLE_CLIENT_CODE` for `LIMITER_UNAVAILABLE` and `OPEN_FAILED`. **OD-269-5 is pending:** the constant is `"LINK_ATTEMPTS_EXHAUSTED"` until the owner decides, so the decision is a one-line change. Callers answer with `clientCode()` and never compute the code themselves.
+  - **Audit.** Each decision has `auditValue()`: `REFUSED:LINK_<REASON>` for `Invalid`, and `REFUSED:LINK_ATTEMPTS_<CAUSE>` for `Exhausted`. The caller (250, 252) writes it under the `link` disposition key of the call's audit record (OD-13 shape C, no grammar change). The decision is `DENY:` plus `clientCode()`.
+  - **After `Proceed`.** Refusals the caller decides after `Proceed` are uncounted and do not touch the limiter: target permission, relation declared, payload checks, catalog tag.
+  - The gate never reads `LinkReason.counted()`. No limiter or opener exception text reaches a decision, an exception or `toString()`.
+- **Removed:** `LinkKeys.attemptCounterKey`, and `LinkKeys.ATTEMPT_LABEL` (it moves to `AttemptSubject`). The `fingerprint` and `catalog-tag` MACs and their labels are unchanged. `LinkConfigurationException` (242 round 4) is unchanged; `InMemoryLinkAttemptLimiter`'s `INVALID_LINK_LIMIT` refusals use it.
 - **What 264 may relax, and what it must keep.**
-  - **May relax:**
-    - The ceiling may be approximate (for example `IMap.size()` read before the processor). The Outcome must state the bound.
-    - Memory is bounded by a map time-to-live instead of an expiry queue, so the per-call queue bounds do not apply.
-  - **Must keep:**
-    - every SPI guarantee listed above;
+  - *May relax:*
+    - The ceiling may be approximate, for example `IMap.size()` read before the processor; the Outcome states the bound.
+    - Memory may be bounded by a map time-to-live instead of an expiry queue, so the queue, the lock and the per-call bounds do not apply.
+  - *Must keep:*
+    - every SPI guarantee above;
     - the key: `KeyedNames.mapKey(map, subject.canonicalText())` under the name key;
-    - a time-to-live of at least the window plus the clock-skew tolerance, measured from the entry's last write. Expiry can then remove only an entry whose window has ended on every member's clock, so it never lifts a live lock.
+    - a time-to-live of at least the window plus the clock-skew tolerance, measured from the entry's last write, so expiry never lifts a live lock;
     - no size-based eviction policy.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit (they do not compile against 242's SPI); the Outcome names them. Each failing-input test below names the mutant it kills.
-- [ ] **One call, no bypass.** In `LinkAttemptGateTest`, which uses a stub and a spy `LinkOpener` through the package-private constructor:
+- [ ] **One call, no bypass.** In `LinkAttemptGateTest`, which uses stub and spy `LinkOpener`s through the package-private constructor:
   - After 20 counted failures for a subject, `open` with a valid token returns `Exhausted(LOCKED)`, and the opener spy records no call. So does a genuine token that would be refused uncounted (`EXPIRED`).
   - Another principal in the same scope, and the same principal in another scope, get `Proceed`.
   - Mutants: skip the pre-check; run the pre-check after `open` but return `Proceed` anyway.
-- [ ] **Race, failures (OD-269-1).** With `limit = 20`, 64 threads are released together by a latch. Each calls `open` with a stub opener that returns `Refused(AUTH_FAILED, true)`, for one subject.
-  - Each thread's result counts as follows: `Invalid(AUTH_FAILED)` if its failure was recorded `WITHIN_LIMIT`; `Exhausted(LOCKED)` if it was refused at the pre-check, with nothing recorded; `Exhausted(OVER_LIMIT)` if it was recorded over the limit.
+- [ ] **Race, failures (OD-269-1).** With `limit = 20` and N = 64, 64 threads are released together by a latch. Each calls `open` with a stub opener returning `Refused(AUTH_FAILED, true)`, for one subject.
+  - Each thread's result counts as follows: `Invalid(AUTH_FAILED)` if its failure was recorded `WITHIN_LIMIT`; `Exhausted(LOCKED)` if it was refused at the pre-check (nothing recorded); `Exhausted(OVER_LIMIT)` if it was recorded over the limit.
   - The test asserts exactly 20 `Invalid` and 64 results in all, and that the stored count equals 20 plus the number of `OVER_LIMIT` results. It is repeated 50 times.
   - A deterministic interleaving: two attempts are latched inside the opener, after the pre-check at count 19, and both fail. Exactly one is `Invalid` and one is `Exhausted(OVER_LIMIT)`.
   - Mutants: `recordFailure` deciding from the count before the increment; the gate deciding from `lockState` instead of the `Admission`.
 - [ ] **Race, the stated bound.** A valid token whose pre-check passes at count 19 is latched inside the opener while one forged attempt takes the count to 20. It gets `Proceed`. The test is named for the "limit plus in-flight" bound and documents it; it asserts nothing stronger.
 - [ ] **Lock semantics kept.** The window ends at the stored start plus the window, and increments do not extend it. The `Long.MAX_VALUE`-second window still constructs and locks. Sixteen threads recording concurrently lose no count. Mutants: extend the window on increment; key by scope only; count every reason.
-- [ ] **Gate on `counted()`.** A stub `Refused(MALFORMED, false)` (post-authentication) and a stub `Refused(KEY_UNAVAILABLE, false)` give `Invalid` and record nothing over ten calls each. A `Refused(AUTH_FAILED, true)` records once. Mutant: gating on `reason().counted()`.
-- [ ] **Malformed inputs, one rule.** Each of these gives `Invalid(MALFORMED)` with no limiter call and no opener call (spies), and nothing throws: a null token; a null binding; a null `accepted`; an empty scope id; an empty principal id; a scope id of 65,536 UTF-8 bytes; a principal id of 65,536 UTF-8 bytes. At 65,535 bytes the call proceeds normally. `new AttemptSubject` with any of the bad ids throws `IllegalArgumentException`, and the message contains no part of the id.
-- [ ] **Fail closed, with a cause.** A table of stub rows, each asserting the decision, the cause, `auditValue()`, and that no exception escapes:
-  - `lockState` returns `UNAVAILABLE` → `Exhausted(LIMITER_UNAVAILABLE)`, opener not called;
-  - `lockState` throws → `Exhausted(LIMITER_UNAVAILABLE)`, opener not called;
-  - the opener throws → `Exhausted(OPEN_FAILED)`, `recordFailure` not called;
-  - `recordFailure` returns `UNAVAILABLE` → `Exhausted(LIMITER_UNAVAILABLE)`;
-  - `recordFailure` throws → `Exhausted(LIMITER_UNAVAILABLE)`;
-  - `recordFailure` returns `CEILING` → `Exhausted(CEILING)`.
+- [ ] **Gate on `counted()`.** Stub `Refused(MALFORMED, false)` (post-authentication) and `Refused(KEY_UNAVAILABLE, false)` give `Invalid` and record nothing over ten calls each. A `Refused(AUTH_FAILED, true)` records once. Mutant: gating on `reason().counted()`.
+- [ ] **Malformed inputs, one rule.** Each of these gives `Invalid(MALFORMED)` with no limiter call and no opener call (spies), and nothing throws:
+  - a null token, and an empty token `""`;
+  - a null binding, and a null `accepted`;
+  - an empty scope id, and an empty principal id;
+  - a scope id of 65,536 UTF-8 bytes, and a principal id of 65,536 UTF-8 bytes.
 
-  No limiter or opener message text appears in any decision, `auditValue()`, `toString()` or exception (sentinel). Mutants: let the opener's exception propagate; map every `Exhausted` to one cause.
+  At 65,535 bytes the call proceeds normally. `new AttemptSubject` with any of the bad ids throws `IllegalArgumentException`, and the message contains no part of the id. Mutant: counting `""`.
+- [ ] **Fail closed, with a cause.** A table of stub rows. Each row asserts the decision, the cause, `clientCode()` and `auditValue()`, and that no exception escapes:
+  - `lockState` returns `UNAVAILABLE`, returns `null`, or throws `IllegalStateException` → `Exhausted(LIMITER_UNAVAILABLE)`, and the opener is not called;
+  - the opener throws `IllegalStateException`, or returns `null` → `Exhausted(OPEN_FAILED)`, and `recordFailure` is not called;
+  - `recordFailure` returns `UNAVAILABLE`, returns `null`, or throws `IllegalStateException` → `Exhausted(LIMITER_UNAVAILABLE)`;
+  - `recordFailure` returns `CEILING` → `Exhausted(CEILING)`;
+  - the opener throws an `AssertionError` → it propagates, because the gate catches `RuntimeException` only.
+
+  The `clientCode()` of the `LIMITER_UNAVAILABLE` and `OPEN_FAILED` rows equals `GateDecision.UNAVAILABLE_CLIENT_CODE`. No limiter or opener message text appears in any decision, `auditValue()`, `toString()` or exception (sentinel). Mutants: let a null `Admission` through as `WITHIN_LIMIT`; let the opener's exception propagate; map every `Exhausted` to one cause.
 - [ ] **Ceiling (OD-269-3).**
-  - With `maxEntries = 4`, four subjects have one failure each. A fifth subject's counted failure returns `CEILING`, `size()` stays 4, and the gate answers `Exhausted(CEILING)`. A valid token for the fifth subject gets `Proceed`, and so does one for a sixth subject.
+  - With `maxEntries = 4`, four subjects have one failure each. A fifth subject's counted failure returns `CEILING`, `size()` stays 4, and the gate answers `Exhausted(CEILING)`. A valid token for the fifth subject gets `Proceed`, and so does one for a sixth.
   - A subject locked before the map filled stays locked while new subjects keep arriving.
-  - Once the first entries' windows have ended, the fifth subject's next failure is `WITHIN_LIMIT`, through the drain and one retry, with no explicit sweep call.
   - A test named for the OD-269-3 consequence shows the fifth subject making 100 counted failures and still getting `Proceed` for a valid token.
   - Mutants: evict the oldest entry (a lock lifts); refuse every subject at the ceiling (a valid token is refused); store the fifth entry anyway (`size()` is 5); retry the insert without a bound.
-- [ ] **Ceiling, deterministic race.** With `maxEntries = 1` and the test constructor's insert probe, thread A records subject 1, and the probe blocks A on a latch after A has reserved the slot. Thread B then records subject 2 and gets `CEILING`. Then A is released and gets `WITHIN_LIMIT`. Afterwards `size()` is 1 and the entry count is 1. Mutant: check the size with `entries.size()` before `compute`; both are stored, and the test fails every run.
-- [ ] **Sweep, bounded and complete.**
-  - A package-private counter records each call's queue operations, counting every peek, poll and append. Over 10,000 calls against 10,000 live entries it is at most 7 per call below the ceiling and at most 55 at it.
+- [ ] **Ceiling drain is reached.** The setup makes the two-head pre-check unable to free a slot:
+  - window 10 s, `maxEntries = 4`;
+  - subjects A and B fail at t = 100 s; the clock then steps back to t = 0 s, and C and D fail. The queue order is A, B, C, D.
+  - At t = 105 s a fifth subject fails. The pre-check finds A live with a start at or before now, and stops having freed nothing. `compute` finds the map full. The drain rotates A and B and removes C and D (ended at 10 s). The retry stores the fifth subject: `WITHIN_LIMIT`, and `size()` is 3.
+
+  Mutants: no drain (`CEILING`); a drain that stops at a live head (`CEILING`).
+- [ ] **Ceiling race, deterministic, nothing blocks inside `compute`.** With `maxEntries = 1`, thread A records subject 1. A's reservation probe, which runs outside `compute` after A's `tryReserve()` succeeded, waits on a latch. Thread B then records subject 2 and gets `CEILING`, because B's `tryReserve()` fails. Then A is released and gets `WITHIN_LIMIT`. Afterwards `size()` is 1 and the count is 1. Mutant: replace `tryReserve()` with a check of `entries.size()`; then B stores subject 2, A stores subject 1, `size()` is 2, and the test fails on every run.
+- [ ] **Sweep, exclusive and leak-free under concurrency.** 16 threads, released by a latch, record failures for subjects drawn from a pool of 2,000, with `maxEntries = 1,000` and a shared test clock that one thread advances one second per 100 operations. The window is 5 s. Afterwards:
+  - the clock moves past every window, and one thread calls `lockState` on an absent subject `ceil(size()/2) + 1` times;
+  - `size()` is 0, the queue is empty, and the count is 0;
+  - throughout, a package-private invariant check, run single-threaded at each latch phase, finds exactly one marker for every stored entry's id.
+
+  The test is repeated 20 times. Mutants: drop the `tryLock` (markers are mismatched and an entry is left without one, so `size()` stays above 0); decrement the count without checking that the lambda removed (the count goes negative or below `size()`).
+- [ ] **Sweep, bounded and complete (single thread).**
+  - A package-private counter records each call's queue operations, counting every peek, poll and append. Over 10,000 calls against 10,000 live entries it is at most 7 per call below the ceiling and at most 55 with the drain.
   - With N = 1,000 entries whose windows have all ended and no live ones, after k calls to `lockState` on an absent subject, `size()` equals `max(0, N − 2k)`.
-  - A window re-opened in place (fail, pass the window, fail again) leaves exactly one entry and one marker. The entry is removed once its second window ends.
-  - The clock steps back an hour after 10 entries are created. One hour later, every entry that ended is removed, and no call examines more than its cap.
-  - The queue size never exceeds `size()` (asserted after every call in these tests).
-  - The class contains no `removeIf` over the map, has no public `sweep()`, and calls no queue or removal method inside a `compute` lambda (a review item named in the Outcome).
-  - Mutants: restore the every-256 full sweep (operation count over the cap); drop the marker of a re-opened entry (the entry is never removed); remove without comparing the window start (a live re-opened entry is removed); stop at a future-start head (no removals after the step back).
+  - A window re-opened in place (fail, pass the window, fail again) leaves one entry and one marker, and the entry is removed once its second window ends.
+  - After the clock steps back an hour, entries whose windows end are removed and no call exceeds its cap.
+  - The class contains no `removeIf` over the map and no public `sweep()`, and makes no queue or lock call inside a map lambda (a review item named in the Outcome).
+  - Mutants: restore the every-256 full sweep; drop the marker of a re-opened entry; remove without comparing the window start; stop at a future-start head.
 - [ ] **Counter identity (OD-269-2).**
   - `AttemptSubjectTest`: `canonical()` of `("ab","c")` differs from that of `("a","bc")`, and `canonical()` begins with the length-prefixed label `dataprism/link/v1/attempt`.
-  - `canonicalText()` is lowercase hex, twice the length of `canonical()`, and decodes back to it. A test subject whose canonical bytes are not valid UTF-8 as a whole (the length prefixes) shows that decoding them as UTF-8 would lose bytes and that the hex does not.
-  - `vectors.properties` pins `attempt.subject.canonical` and `attempt.subject.canonical.text` for a fixed subject, and the `counter.key` vector is gone.
+  - `canonicalText()` is lowercase hex, twice the length of `canonical()`, and decodes back to it. A subject whose canonical bytes are not valid UTF-8 as a whole (because of the length prefixes) shows that UTF-8 decoding would lose bytes and the hex does not.
+  - `vectors.properties` pins `attempt.subject.canonical` and `attempt.subject.canonical.text` for a fixed subject; the `counter.key` vector is gone.
   - `LinkKeys` has no public method that takes a principal id (reflection).
+- [ ] **Old uses removed.** No main or test source in the reactor names `attemptCounterKey` or `LinkKeys.ATTEMPT_LABEL`. At the base there are 15 test references: 6 in `InMemoryLinkAttemptLimiterTest` and 9 in `LinkKeysTest`. Each is removed, or ported to `AttemptSubject` or `LinkAttemptGate`, and the Outcome lists each.
 - [ ] **No key dependency (ArchUnit).** `LinkArchitectureTest` fails when `LinkAttemptLimiter`, `InMemoryLinkAttemptLimiter`, `AttemptSubject`, `LinkOpener` or `LinkAttemptGate` depends directly on `LinkKeys` or `SecretKeyProvider`. A nested fixture proves the rule can fail.
 - [ ] **No bypass (ArchUnit).** `LinkArchitectureTest` fails when a main class outside `core.link`, by a call **or a method reference** (`codec::open`, `limiter::recordFailure`):
   - uses `LinkCodec.open`; or
   - uses `LinkAttemptLimiter.lockState` or `recordFailure`, on the interface or on any implementation. The one exception is a class in `io.github.aindriub.dataprism.hazelcast..` that itself implements `LinkAttemptLimiter`.
 
-  Fixtures, imported explicitly as the existing ones are:
-  - nested fixtures that call `open`, reference `codec::open`, call `recordFailure`, and reference `limiter::recordFailure` each make the rule fail;
-  - a nested fixture that implements the SPI outside the Hazelcast package also makes it fail;
-  - the fixture file `LinkLimiterFloorFixture` (see Owns), in package `io.github.aindriub.dataprism.hazelcast.archfixture`, implements the SPI, delegates to an `InMemoryLinkAttemptLimiter`, and passes.
-- [ ] **No leak.** The in-memory map's keys are 32-character hex strings that contain neither id, in plain or hex form. `AttemptSubject.toString()`, `GateDecision.toString()` and the limiter's and the gate's `toString()` contain neither id, nor does any exception message (sentinel ids). `canonicalText()` is used only as an HMAC input and is never logged.
+  Nested fixtures that call or reference each method make the rule fail. So does one that implements the SPI outside the Hazelcast package. `LinkLimiterFloorFixture` (see Owns) passes.
+- [ ] **No split package (ArchUnit).** `LinkArchitectureTest` fails when a main class in `io.github.aindriub.dataprism.core.link..` is loaded from anywhere other than `data-prism-core`'s main classes directory. The test uses the class's source location, compared with `ModuleGraph.mainClassesDirectories` for `data-prism-core`. A fixture class compiled into another directory proves the rule can fail.
+- [ ] **No leak.** The in-memory map's keys are 32-character hex strings that contain neither id, in plain or hex form. `AttemptSubject.toString()`, `GateDecision.toString()`, and the limiter's and the gate's `toString()`, contain neither id; nor does any exception message (sentinel ids). `canonicalText()` is used only as an HMAC input and is never logged.
 - [ ] `clusterWide()` is `false` for `InMemoryLinkAttemptLimiter` and for an implementation that does not override it.
 - [ ] `sealed-links.md` and `batch-and-bulk-follow.md` carry the amendments below, word for word in substance.
-- [ ] A whole-component bug hunt over the limiter, the gate and the sweep (races, the ceiling, the clock stepping back) runs before merge; each finding is fixed or filed and named in the Outcome.
+- [ ] A whole-component bug hunt over the limiter, the gate and the sweep runs before merge: races, the ceiling, the clock stepping back, the exclusive examination, and null returns. Each finding is fixed or filed and named in the Outcome.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-architecture -am verify` passes. Report the counts.
 
 ## Design amendments (recorded by this task)
 
 **sealed-links.md:**
-- **Section 3, "Fingerprinting" row:** drop "and for the attempt-counter key (section 4)". The counter key is no longer derived from the link key.
-- **Section 4, the round-2 "Binding bounds" bullet (about line 277):** replace its last sentence, "`attemptCounterKey` still throws for an id over the limit, so the caller checks the bounds before it (briefs 251, 252; 269 replaces `attemptCounterKey`).", with "`LinkAttemptGate.open` checks the same bounds before anything else and answers `MALFORMED`, uncounted, without calling the limiter or the codec; `attemptCounterKey` is removed (task 269)."
-- **Section 4, the post-authentication `MALFORMED` bullet (about line 280):** replace "Callers gate the limiter on `refused.counted()`." with "`LinkAttemptGate.open` records a failure only when `refused.counted()` is true; no other caller touches the limiter (task 269)."
-- **Section 4, "Attempt limiter", replace the counter-key bullet with:** "It counts per principal within a scope. The limiter receives the subject (scope id and principal id, each 1 to 65,535 UTF-8 bytes; outside that bound, or empty, the call is `MALFORMED`, uncounted). Its input is the length-prefixed label `dataprism/link/v1/attempt` followed by the two ids, and `canonicalText()` is that input as lowercase hex for `String`-keyed APIs. It keys that input under a key that does not rotate with the link key: a per-instance `SecureRandom` key in memory, and the cluster name key (`KeyedNames`) in the shared limiter (task 264). Every member therefore derives the same key, and a link-key rotation neither lifts a lock nor splits a count. Changing the name key is a planned full restart that resets every count at once (cluster-security 4.6). No map holds a scope id or principal id in the clear (boundary 6) (task 269, 2026-10-22)."
+- **Section 3, "Fingerprinting" row:** drop "and for the attempt-counter key (section 4)".
+- **Section 3, "MAC input labels" table (242 round 4):** change the row "Attempt counter key (16 bytes, hex)" to "Attempt subject input (`AttemptSubject.canonical()`; MACed by the limiter under its own key, never under the fingerprint key)", keeping the first item `dataprism/link/v1/attempt` and the rest "the scope id, the principal id". Replace the sentence after the table with "Task 269 removed `LinkKeys.attemptCounterKey`; the label stays as the first item of `AttemptSubject.canonical()`, so a counter input can never equal a fingerprint or catalog-tag input."
+- **Section 4, the `link` disposition row and the closed set:**
+  - Append to the closed-set cell: "and, for `LINK_ATTEMPTS_EXHAUSTED`, the cause from a second closed set: `LOCKED`, `OVER_LIMIT`, `CEILING`, `LIMITER_UNAVAILABLE`, `OPEN_FAILED` (task 269)". Append to the shape cell: "a cause is `REFUSED:LINK_ATTEMPTS_<CAUSE>`".
+  - Replace "The closed set has eleven reasons." with "The closed set has twelve reasons, `KEY_UNAVAILABLE` included, and the exhausted causes are a separate closed set of five."
+  - In section 9's table, change the `LINK_<REASON>` row to "twelve audit-only reason codes and five `LINK_ATTEMPTS_<CAUSE>` codes".
+- **Section 4, the round-2 "Binding bounds" bullet:** replace its last sentence, "`attemptCounterKey` still throws for an id over the limit, so the caller checks the bounds before it (briefs 251, 252; 269 replaces `attemptCounterKey`).", with "`LinkAttemptGate.open` checks the same bounds, and an empty id or token, before anything else and answers `MALFORMED`, uncounted, without calling the limiter or the codec; `attemptCounterKey` is removed (task 269)."
+- **Section 4, the post-authentication `MALFORMED` bullet:** replace "Callers gate the limiter on `refused.counted()`." with "`LinkAttemptGate.open` records a failure only when `refused.counted()` is true; no other caller touches the limiter (task 269)."
+- **Section 4, "Attempt limiter", replace the counter-key bullet (`HMAC(fingerprintKey, scopeId | principalId)`) with:** "It counts per principal within a scope. The limiter receives the subject: the scope id and principal id, each 1 to 65,535 UTF-8 bytes; outside that bound, or empty, the call is `MALFORMED`, uncounted. Its input is `lengthPrefixed("dataprism/link/v1/attempt", scopeId, principalId)`, and `canonicalText()` is that input as lowercase hex for `String`-keyed APIs. The input is keyed under a key that does not rotate with the link key: `HMAC-SHA256(k, input)` truncated to 16 bytes, where `k` is a per-instance `SecureRandom` key in memory, and `KeyedNames.mapKey` under the cluster name key in the shared limiter (task 264). Every member therefore derives the same key, and a link-key rotation neither lifts a lock nor splits a count. Changing the name key is a planned full restart that resets every count at once (cluster-security 4.6). No map holds a scope id or principal id in the clear (boundary 6) (task 269, 2026-10-22)."
 - **Section 4, add:** "Code outside `core.link` opens a token only through `LinkAttemptGate.open`. That one call:
   - checks the inputs and the binding bounds (`MALFORMED`, uncounted);
-  - checks the lock: a locked principal is refused before the token is opened, valid links included;
+  - checks the lock, refusing a locked principal before the token is opened, valid links included;
   - opens the token;
   - on a counted refusal, makes one atomic `recordFailure`, which returns whether the new count is within the limit.
 
-  An attempt over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`. The client sees one code. The audit's `link` value records the cause as `REFUSED:LINK_ATTEMPTS_<CAUSE>`, where the cause is `LOCKED`, `OVER_LIMIT`, `CEILING`, `LIMITER_UNAVAILABLE` or `OPEN_FAILED`.
+  An attempt over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`. A limiter outage or a failure to open is answered with a single placeholder code, `LINK_ATTEMPTS_EXHAUSTED` until OD-269-5 is decided. The audit's `link` value records the cause.
 
   Guarantee: at most `invalid-attempt-limit` counted failures per window are answered `LINK_INVALID`. The number of guesses that can reveal a success is at most that limit plus the attempts already past the lock check when the lock engaged.
 
-  Each instance holds at most a fixed number of entries (100,000 by default), checked atomically. At that ceiling a counted failure for a subject not yet held is answered `LINK_ATTEMPTS_EXHAUSTED` and is not stored. No live entry is evicted, so a flood can neither lift a lock nor lock out a principal with a valid link. The cost, accepted by the owner under OD-269-3: while the ceiling holds, a subject that is not stored is never locked, so it can keep guessing against the 128-bit tag.
+  Each instance holds at most a fixed number of entries (100,000 by default), reserved atomically. At that ceiling a counted failure for a subject not yet held is answered `LINK_ATTEMPTS_EXHAUSTED` and is not stored. No live entry is evicted, so a flood can neither lift a lock nor lock out a principal with a valid link. The cost, accepted by the owner under OD-269-3: while the ceiling holds, a subject that is not stored is never locked, so it can keep guessing against the 128-bit tag.
 
-  In memory, every entry has one expiry marker. Each call examines a fixed, small number of markers, with a bounded drain at the ceiling. A head that has ended is removed only when the stored window start matches, a re-opened entry is re-queued, and a head whose start lies in the future is rotated. There is never a full sweep on the request thread.
-
-  Any limiter failure, or a failure to open, is treated as exhausted, never as a pass (task 269, 2026-10-22; revised 2026-10-23)."
+  In memory, every entry has exactly one expiry marker. One examiner at a time (a non-blocking try-lock) looks at a bounded number of markers per call, and decides inside the map's atomic update whether the entry's window has ended. There is never a full sweep on the request thread. Any limiter failure, `null` answer or failure to open is refused, never passed (task 269, 2026-10-22; revised 2026-10-24)."
 - **Section 6, boundary 3:** replace "with a time-to-live" with "whose time-to-live, at least the window plus the clock-skew tolerance from the last write, only bounds memory; the window is decided by the stored start and the clock".
-- **Section 7, obligation 22, append:** "Concurrency: N parallel forged attempts against a fresh subject yield exactly `invalid-attempt-limit` `LINK_INVALID`, and the rest `LINK_ATTEMPTS_EXHAUSTED`. Ceiling: a full map answers new subjects `CEILING`, keeps existing locks, lets valid links proceed, and does not lock a subject it cannot store (OD-269-3). Gate: a locked principal's valid link is refused before the token is opened, and every `Exhausted` carries an audit-only cause. Architecture: nothing outside `core.link` calls or references `LinkCodec.open` or the limiter, except a Hazelcast implementation of the limiter."
+- **Section 7, obligation 22, append:** "Concurrency: for N > `invalid-attempt-limit` parallel forged attempts against a fresh subject, each a counted failure that passes the lock check, exactly `invalid-attempt-limit` are answered `LINK_INVALID` and the other N − `invalid-attempt-limit` `LINK_ATTEMPTS_EXHAUSTED`. Ceiling: a full map answers new subjects `CEILING`, keeps existing locks, lets valid links proceed, and does not lock a subject it cannot store (OD-269-3). Gate: a locked principal's valid link is refused before the token is opened, and every `Exhausted` carries an audit-only cause. Architecture: nothing outside `core.link` calls or references `LinkCodec.open` or the limiter, except a Hazelcast implementation of the limiter, and `core.link` lives only in `data-prism-core`."
 
-**batch-and-bulk-follow.md, Part A "What happens in a call", item 2 "Verification" (about line 816):**
-- Replace "(the count key is `HMAC(fingerprintKey, scopeId | principalId)` hex-encoded, as there; this design adds no map)" with "(each link is opened through `LinkAttemptGate.open`, keyed by `AttemptSubject` as task 269 specifies; this design adds no map)".
-- Replace "When a failure brings the counter to the limit, verification stops" with "When the gate answers `Exhausted` for a link, verification stops".
-- Item 1's lock pre-check before any link is looked at needs a gate method that checks the lock without opening. That is for the 0.9 bulk-follow task, not 269. Add the sentence "(0.9: through a lock-only method on `LinkAttemptGate`, to be added with bulk follow)" after item 1's limiter sentence.
+**batch-and-bulk-follow.md, Part A "What happens in a call" (0.9 design; these amendments keep it consistent with the gate):**
+- **Item 1:** after the sentence about the limiter pre-check, add "(0.9: through a lock-only method on `LinkAttemptGate`, to be added with bulk follow; task 269 provides only `open`)".
+- **Item 2:** replace "(the count key is `HMAC(fingerprintKey, scopeId | principalId)` hex-encoded, as there; this design adds no map)" with "(each link is opened through `LinkAttemptGate.open`, keyed by `AttemptSubject` as task 269 specifies; this design adds no map)".
+- **Item 2:** replace "When a failure brings the counter to the limit, verification stops, the call is refused as a whole with `LINK_ATTEMPTS_EXHAUSTED`, and nothing is read or returned, including for the links already verified." with "When the gate answers `Exhausted` for a link, verification stops, the call is refused as a whole with that decision's client code, and nothing is read or returned, including for the links already verified. The failure that brings the counter to the limit is still answered `LINK_INVALID`. The next link is refused at the gate's lock check."
+- **Item 2:** replace "a call with many forged links ends at the twentieth counted failure, and a call with fewer counted failures than the limit goes on." with "a call with many forged links ends at the link after the twentieth counted failure in the window (the twentieth locks the principal, and the next link is refused at the lock check), and a call with fewer counted failures than the limit goes on."
 
 ## Out of scope
-- The Hazelcast limiter, its map, its entry processor and its ceiling (264, which implements this contract within the "may relax / must keep" list above).
-- Wiring the gate into `follow` (252), `list_sources` page links (250) and Spring (255), issuing links (251), and documenting the audit values in `docs/audit.md` (261).
+- The Hazelcast limiter, its map, its entry processor and its ceiling (264, which implements this contract within "may relax / must keep").
+- Wiring the gate into `follow` (252), `list_sources` page links (250) and Spring (255); issuing links (251); and documenting the audit values in `docs/audit.md` (261).
+- The client code for an outage or a failure to open (OD-269-5, pending).
 - The lock-only gate method for bulk follow (0.9).
 - Any Spring property or bean, including a capacity property (OD-269-3 (a): none in 0.8).
 - A metric for saturation or attempts: `Metric.java` belongs to 241 in this wave. Expose `size()` package-private only.
-- Changes to `LinkCodec`, `LinkBinding`, `LinkReason` and the rest of `LinkKeys` (`heldKeyIds`, `forScope`, the pseudonymisation digest).
+- Changes to `LinkCodec`, `LinkBinding`, `LinkReason`, `LinkConfigurationException`, and the rest of `LinkKeys` (`heldKeyIds`, `forScope`, the pseudonymisation digest, the fingerprint and catalog-tag MACs).
 
 ## Rules
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
 - Use neutral, invented identifiers in tests, and generated test key bytes.
-- No sleeps. Windows use an injected clock, and ordering uses latches.
+- No sleeps. Windows use an injected clock, and ordering uses latches. Nothing a test controls blocks inside a map lambda.
