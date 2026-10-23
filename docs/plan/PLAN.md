@@ -131,7 +131,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 5 | 207, 210, 224, 225, 226, 227, 270, 271 (270 and 271 filed 2026-10-23, both depend on 248; OD-270-1 decided (a) by the owner 2026-10-23: refuse at startup with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, backstop `CLASSIFIED_RECORD_NOT_AN_OBJECT` at scrub time; OD-270-2 decided (a) 2026-10-23: fixed in 0.8.0 only, no 0.7.2, and a 0.7.x security advisory at the 0.8.0 cut) |
 | 6 | 208, 228, 246, 262 |
 | 7 | 211, 229, 247, 256 |
-| 8 | 249, 250, 251, 272 (272 filed 2026-10-23: source calls on a bounded platform-thread executor; depends on 241, 246 and 211) |
+| 8 | 249, 250, 251, 272 (272 filed 2026-10-23: source calls on bounded dedicated platform threads, with a per-source ceiling; depends on 241, 246 and 211; OD-272-1 decided (a) by the owner 2026-10-23: a saturated call reports the existing `FAILED` with detail `UNAVAILABLE`, no new status) |
 | 9 | 252, 254 |
 | 10 | 253 |
 | 11 | 255 |
@@ -144,7 +144,7 @@ Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copi
 
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23).
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
-- Publish the GitHub security advisory for 0.7.x that 270 drafts in its Outcome. It names 0.8.0 as the fixed version and gives the workaround: do not mark a field `@NonSensitive` when it holds a classified record. Owner decision OD-270-2 (a), 2026-10-23.
+- Publish the GitHub security advisory for 0.7.x that 270 drafts in its Outcome. The 0.8.0 release-cut brief owns this, when it is filed; 261 does not. It names 0.8.0 as the fixed version and gives the workaround: do not mark a field `@NonSensitive` when it holds a classified record. Owner decision OD-270-2 (a), 2026-10-23.
 
 Owner decision 2026-10-23 (on the coordinator's recommendation): no cuts from 0.8.0. 207 (size-capped audit segments) stays. 264 (shared Hazelcast link limiter) stays, with its agreed fallback: if it is not ready, links and page links are refused only on members joining via `tcp-ip` or `kubernetes`, and 264 slips to 0.9.0. The count stays 34.
 

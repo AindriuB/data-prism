@@ -10,6 +10,7 @@
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/descriptor/DescriptorFieldMetadataResolver.java *(insertions only: a public `descriptors()` accessor)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/descriptor/DescriptorFieldMetadataResolverTest.java *(insertions only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/descriptors/ScrubberDescriptorWiringTest.java *(new; in a sub-package so that it stays outside 210's `spring/boot/*.java` glob)*
+- data-prism-spring-boot-autoconfigure/src/test/resources/scrubber-descriptors/** *(new fixture files only)*
 
 ## Goal
 248 lets the scrubber describe a chainable field declared in a descriptor, but only if the engine is given the descriptor map. The Spring-built engine (`PrivacyEngineWiring.dataPrismScrubber`, :156-158) uses the four-argument constructor, so in production a descriptor-declared chainable field is described without its key namespace. Pass the same map, loaded once, that the field-metadata resolver was built from.
@@ -27,6 +28,7 @@
 - [ ] `ScrubberDescriptorWiringTest`: with `dataprism.privacy.descriptor-file` naming a fixture that declares a chainable identifier (`chainable: true`, `keyNamespace`) on a model whose code has no chainable marking, the context's `JsonTreeScrubbingEngine` describes that field with the declared `keyNamespace` when links are enabled. Without a descriptor file it describes no `keyNamespace`. Mutant killed: passing `Map.of()` unconditionally.
 - [ ] The descriptor file is read once per context: a test counts the reads or asserts that one file object backs both the resolver and the engine. The Outcome says which.
 - [ ] An application `FieldMetadataResolver` bean still replaces the default (`@ConditionalOnMissingBean` unchanged). The engine then gets `Map.of()`, which is what the four-argument constructor gave it.
+- [ ] When `dataprism.privacy.descriptor-file` is set but the resolver bean is not a `DescriptorFieldMetadataResolver` (an application bean, or a decorator or wrapper around the default), `dataPrismScrubber` logs one WARN at startup. The message reads `dataprism.privacy.descriptor-file is set but the FieldMetadataResolver bean is not a DescriptorFieldMetadataResolver; the scrubber describes no descriptor-declared chainable fields`. It names the property only: no file path, no file content, no class name. A test captures the log line and asserts that text. With no descriptor file set, nothing is logged.
 - [ ] The bean inventories are unchanged (no bean added or removed).
 - [ ] Every existing test in the two modules passes unmodified.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-spring-boot-autoconfigure -am verify` passes.
