@@ -8,7 +8,7 @@
 **Decisions:** OD-215-6 decided 2026-10-20 (b)+(c): tamper is a metric plus a rate-bounded WARN log with no audit record; `isolation.attestation` is kept, reported on health and in one startup log line, with no audit record.
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/HazelcastProperties.java *(the `security.pause-lease`, `clock-skew-tolerance`, `unverified-member.*`, `local-floor.enabled` and `isolation.attestation` properties only)*
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterBackedState.java *(passing `ClusterSecuritySettings` and link-key check values to the `PrivacyCluster` bean, the health contributor bean and the tamper listener only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterBackedState.java *(passing `ClusterSecuritySettings` and link-key check values to the `PrivacyCluster` bean, the health contributor bean and the tamper listener, and, added 2026-10-23, the `builtHere` unification with `PropertiesValidation.isFrameworkCluster` (Context), only)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterSecurityHealth.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(insertions only)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismPropertiesValidator.java *(`validateCluster` and methods it calls only)*
@@ -21,7 +21,7 @@
 - data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/ClusterTamperReporterTest.java *(new)*
 - docs/configuration.md *(rows for the keys and startup codes this task adds, and the `INVALID_CLUSTER_INTERFACE` wording, only)*
 - docs/plan/design/contract-register.md *(the `INVALID_CLUSTER_INTERFACE` row only; added 2026-10-23)*
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java *(`isFrameworkCluster` only; added 2026-10-23)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java *(`isFrameworkCluster` and the shared helper the `builtHere` unification needs only; added 2026-10-23)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterLegacyGaugeTest.java *(the recording map only; added 2026-10-23)*
 
 ## Goal
