@@ -18,10 +18,15 @@ import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
+import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
+import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
+import io.github.aindriub.dataprism.hazelcast.seal.SealedWrites;
+import io.github.aindriub.dataprism.hazelcast.seal.Sealer;
 
 import java.net.InetAddress;
+import java.security.SecureRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,6 +150,9 @@ public final class PrivacyCluster implements AutoCloseable {
     private final PendingSweeper sweeper;
     private final Duration approvalSweepInterval;
     private final ClusterKeys keys;
+    private final ClusterSecuritySettings settings;
+    private final KeyedNames names;
+    private final ScopeKeys scopeKeys;
 
     private final boolean owned;
     private final AtomicBoolean refused = new AtomicBoolean();
@@ -152,10 +160,19 @@ public final class PrivacyCluster implements AutoCloseable {
     private final AtomicReference<UUID> joinerWatch = new AtomicReference<>();
 
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
-                           Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
+                           Duration approvalSweepInterval, ClusterKeys keys, boolean owned,
+                           ClusterSecuritySettings settings) {
         this.instance = instance;
         this.owned = owned;
         this.keys = keys;
+        this.settings = java.util.Objects.requireNonNull(settings, "settings");
+        // A member without keys is solo by construction (OD-215-8 (a)): it names and seals under keys drawn at random
+        // for this process, which nothing else can share, so two such members never derive the same name. A joining
+        // member never gets here without keys.
+        ClusterKeys effective = keys != null ? keys : generatedSoloKeys();
+        this.names = new KeyedNames(effective);
+        this.scopeKeys = new ScopeKeys(names);
+        SealedWrites.register(instance, Sealer.builder(effective, PrivacyMetrics.none()).build(), names);
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
         this.sweeper = new PendingSweeper(instance, approvalSweepInterval, Clock.systemUTC());
@@ -223,8 +240,22 @@ public final class PrivacyCluster implements AutoCloseable {
         return refusalsLogged.get();
     }
 
-    /** Removes both listeners this wrapper put on the instance; safe to call twice and after a shutdown. */
+    /** Random cluster and name keys for one solo process. The material is never logged, stored or returned. */
+    private static ClusterKeys generatedSoloKeys() {
+        SecureRandom random = new SecureRandom();
+        byte[] cluster = new byte[ClusterKeys.MIN_KEY_BYTES];
+        byte[] name = new byte[ClusterKeys.MIN_KEY_BYTES];
+        random.nextBytes(cluster);
+        random.nextBytes(name);
+        return new ClusterKeys("solo-cluster", cluster, null, null, null, null, "solo-name", name);
+    }
+
+    /**
+     * Removes both listeners this wrapper put on the instance, and the member-local sealing context; safe to call
+     * twice and after a shutdown.
+     */
     private void removeListeners() {
+        SealedWrites.unregister(instance);
         for (var holder : List.of(legacyWatch, joinerWatch)) {
             UUID id = holder.getAndSet(null);
             if (id != null) {
@@ -321,7 +352,13 @@ public final class PrivacyCluster implements AutoCloseable {
         return sweeper.sweepClaims();
     }
 
-    /** Tells the sweep the lock timeout in use, so the locks it takes carry the same lease as everyone's. */
+    /**
+     * Tells the sweep the lock timeout in use, so the locks it takes carry the same lease as everyone's.
+     *
+     * <p>Last store wins: every {@code HazelcastApprovalStore} built over this cluster calls this, so with stores
+     * built with different timeouts the sweep uses the timeout of the one built last. Build every store of a cluster
+     * with the same timeout, as the Spring wiring does.
+     */
     void useLockTimeout(Duration lockTimeout) {
         sweeper.useLockTimeout(lockTimeout);
     }
@@ -387,6 +424,15 @@ public final class PrivacyCluster implements AutoCloseable {
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
                                           Duration approvalSweepInterval, ClusterKeys keys) {
+        return embedded(membership, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
+                ClusterSecuritySettings.defaults());
+    }
+
+    /** As above, with the runtime cluster-security settings (the defaults when the overload above is used). */
+    public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          Duration approvalSweepInterval, ClusterKeys keys,
+                                          ClusterSecuritySettings settings) {
         PendingSweeper.checked(approvalSweepInterval);
         if (keys == null && !(membership.join() instanceof ClusterMembership.None)) {
             throw missingKeys();
@@ -395,7 +441,7 @@ public final class PrivacyCluster implements AutoCloseable {
         return launch(membership.toConfig(keys == null ? Code.MISSING_CLUSTER_KEY : Code.INVALID_CLUSTER_INTERFACE),
                 reidentificationEnabled,
                 approvalMinimumMembers.isPresent() ? approvalMinimumMembers
-                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys, false);
+                        : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys, false, settings);
     }
 
     private static PrivacyClusterRefusal missingKeys() {
@@ -629,18 +675,27 @@ public final class PrivacyCluster implements AutoCloseable {
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
                                           Duration approvalSweepInterval, ClusterKeys keys) {
+        return embedded(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
+                ClusterSecuritySettings.defaults());
+    }
+
+    /** As above, with the runtime cluster-security settings (the defaults when the overload above is used). */
+    public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
+                                          OptionalInt approvalMinimumMembers,
+                                          Duration approvalSweepInterval, ClusterKeys keys,
+                                          ClusterSecuritySettings settings) {
         PendingSweeper.checked(approvalSweepInterval);
         if (keys == null && joins(config)) {
             throw missingKeys();
         }
         return launch(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, keys,
-                keys == null);
+                keys == null, settings);
     }
 
     private static PrivacyCluster launch(Config config, boolean reidentificationEnabled,
                                          OptionalInt approvalMinimumMembers,
                                          Duration approvalSweepInterval, ClusterKeys keys,
-                                         boolean isolate) {
+                                         boolean isolate, ClusterSecuritySettings settings) {
         Config hardened = configure(config, approvalMinimumMembers);
         if (isolate) {
             ClusterMembership.isolate(hardened);
@@ -654,7 +709,7 @@ public final class PrivacyCluster implements AutoCloseable {
             throw refused;
         }
         PrivacyCluster cluster = new PrivacyCluster(started, reidentificationEnabled, approvalSweepInterval, keys,
-                true);
+                true, settings);
         if (cluster.refused.get()) {
             cluster.removeListeners();
             throw missingKeys();
@@ -702,6 +757,14 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
                                        Duration approvalSweepInterval, ClusterKeys keys) {
+        return using(instance, reidentificationEnabled, approvalSweepInterval, keys,
+                ClusterSecuritySettings.defaults());
+    }
+
+    /** As above, with the runtime cluster-security settings (the defaults when the overload above is used). */
+    public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
+                                       Duration approvalSweepInterval, ClusterKeys keys,
+                                       ClusterSecuritySettings settings) {
         PendingSweeper.checked(approvalSweepInterval);
         Config config = instance.getConfig();
         if (keys == null && (joins(config) || instance.getCluster().getMembers().size() > 1
@@ -718,7 +781,7 @@ public final class PrivacyCluster implements AutoCloseable {
         checkInstanceSettings(config);
         ClusterMembership.refuseUnsealedState(instance, true);
         PrivacyCluster wrapped = new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys,
-                false);
+                false, settings);
         if (wrapped.refused.get()) {
             wrapped.removeListeners();
             // A member joined between the checks above and the listener's registration.
@@ -730,7 +793,8 @@ public final class PrivacyCluster implements AutoCloseable {
     /** As {@code using}'s tail, for a test that says whether this class owns the instance. */
     static PrivacyCluster wrap(HazelcastInstance instance, boolean reidentificationEnabled,
                                Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
-        return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys, owned);
+        return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys, owned,
+                ClusterSecuritySettings.defaults());
     }
 
     /**
@@ -1012,6 +1076,24 @@ public final class PrivacyCluster implements AutoCloseable {
      * The keys this member was started with, for the stores of this package. Not public: key material does not
      * leave this module.
      */
+    /** The runtime cluster-security settings: the defaults unless supplied. Read by the stores of tasks 226 to 228. */
+    public ClusterSecuritySettings securitySettings() {
+        return settings;
+    }
+
+    /**
+     * The keyed names this member derives every map key and lock key with: the supplied name key, or for a solo
+     * member without keys the one drawn at random for this process. For diagnostics and tests; a name reveals nothing
+     * without the name key.
+     */
+    public KeyedNames keyedNames() {
+        return names;
+    }
+
+    ScopeKeys scopeKeys() {
+        return scopeKeys;
+    }
+
     Optional<ClusterKeys> keys() {
         return Optional.ofNullable(keys);
     }

@@ -171,7 +171,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         IMap<String, String> claims = idClaims();
         IMap<String, String> pendingSets = pendingSets();
         String id = pending.approvalId();
-        String entryKey = ScopeKeys.approval(pending.scopeId(), id);
+        String claimKey = keys().claim(id);
+        String entryKey = keys().approval(pending.scopeId(), id);
         String pendingKey = pendingKey(pending.kind(), pending.requesterPrincipalId());
         long ttl = Math.max(1L, Duration.between(pending.createdAt(), pending.expiresAt()).toMillis());
         String token = UUID.randomUUID().toString();
@@ -179,10 +180,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         String mine = ClaimEntries.value(entryKey, token);
         String encoded = Codec.encode(pending, token);
         try (HeldLocks locks = new HeldLocks()) {
-            locks.take(claims, id);
+            locks.take(claims, claimKey);
             locks.take(pendingSets, pendingKey);
             locks.take(approvals, entryKey);
-            if (!cluster(() -> ClaimEntries.claim(claims, approvals, id, entryKey, token))) {
+            if (!cluster(() -> ClaimEntries.claim(claims, approvals, claimKey, entryKey, token))) {
                 throw new IllegalArgumentException("duplicate approval id");
             }
             boolean reserved;
@@ -190,16 +191,16 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 reserved = cluster(() -> pendingSets.executeOnKey(pendingKey,
                         new PendingSet.Reserve(id, owner, pending.createdAt(), pending.expiresAt(), cap)));
             } catch (RuntimeException failed) {
-                unclaim(claims, id, entryKey, token);
+                unclaim(claims, claimKey, entryKey, token);
                 throw failed;
             }
             if (!reserved) {
-                unclaim(claims, id, entryKey, token);
+                unclaim(claims, claimKey, entryKey, token);
                 throw new ApprovalRefusedException(Code.TOO_MANY_PENDING);
             }
             // The claim may have been taken over since this caller claimed it. Then the slot reserved above may be
             // the new owner's: leave it (an over-count is the safe side) and do not insert.
-            if (!mine.equals(cluster(() -> claims.get(id)))) {
+            if (!mine.equals(cluster(() -> claims.get(claimKey)))) {
                 throw new IllegalArgumentException("duplicate approval id");
             }
             String existing;
@@ -209,8 +210,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
                 // Only a confirmed absence is undone: if the insert may have happened, keeping the claim and the
                 // count errs towards refusing.
                 if (confirmedAbsent(approvals, entryKey)) {
-                    unreserve(pendingSets, pending, owner);
-                    unclaim(claims, id, entryKey, token);
+                    unreserve(pendingSets, pendingKey, id, owner);
+                    unclaim(claims, claimKey, entryKey, token);
                 }
                 throw failed;
             }
@@ -223,7 +224,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             // be the new owner's, and an over-count is the safe side.
             String after;
             try {
-                after = cluster(() -> claims.get(id));
+                after = cluster(() -> claims.get(claimKey));
             } catch (RuntimeException unknown) {
                 withdraw(approvals, entryKey, token);
                 throw unknown;
@@ -237,11 +238,12 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     /**
-     * Key of a (kind, requester) entry in the pending map. A map of its own, so it can equal no approval key,
-     * and a null requester ({@code ~}) differs from any named one ({@code =} first).
+     * Key of a (kind, requester) entry in the pending map: the keyed name of the canonical
+     * {@code KIND NUL (=requester or ~)}. A map of its own, so it can equal no approval key, and a null requester
+     * ({@code ~}) differs from any named one ({@code =} first). It is also the lock key of that entry.
      */
-    static String pendingKey(Kind kind, String requesterPrincipalId) {
-        return kind.name() + "\0" + (requesterPrincipalId == null ? "~" : "=" + requesterPrincipalId);
+    private String pendingKey(Kind kind, String requesterPrincipalId) {
+        return keys().pending(ScopeKeys.pendingCanonical(kind.name(), requesterPrincipalId));
     }
 
     private static boolean confirmedAbsent(IMap<String, String> approvals, String entryKey) {
@@ -289,10 +291,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      * Best effort, and only for the slot this creation owns: a failure leaves the requester over-counted until
      * expiry. The caller holds the pending key's lock.
      */
-    private static void unreserve(IMap<String, String> pendingSets, ApprovalRequest request, String owner) {
+    private static void unreserve(IMap<String, String> pendingSets, String pendingKey, String approvalId,
+                                  String owner) {
         try {
-            pendingSets.executeOnKey(pendingKey(request.kind(), request.requesterPrincipalId()),
-                    new PendingSet.Release(request.approvalId(), owner));
+            pendingSets.executeOnKey(pendingKey, new PendingSet.Release(approvalId, owner));
         } catch (RuntimeException ignored) {
             // The id is dropped by the reserve prune once it expires, and by the sweep after that.
         }
@@ -367,7 +369,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     /** Releases the claim of a deleted entry, bounded like {@link #leavePending}. */
-    private void releaseClaim(String id, String entryKey, String token) {
+    private void releaseClaim(String approvalId, String entryKey, String token) {
+        String id = keys().claim(approvalId);
         IMap<String, String> claims;
         try {
             claims = idClaims();
@@ -490,7 +493,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      */
     @Override
     public void forgetScope(String scopeId) {
-        String prefix = ScopeKeys.approvalPrefix(scopeId);
+        String prefix = keys().approvalPrefix(scopeId);
         int skipped = 0;
         for (String key : approvals().keySet().stream().filter(k -> k.startsWith(prefix)).toList()) {
             if (!forgetOne(key)) {
@@ -542,7 +545,7 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     private ApprovalRequest decide(String approvalId, Instant now, Function<ApprovalRequest, ApprovalRequest> next) {
         IMap<String, String> approvals = approvals();
         Stored located = locate(approvalId).orElseThrow(() -> new ApprovalRefusedException(Code.UNKNOWN_APPROVAL));
-        String key = ScopeKeys.approval(located.request().scopeId(), located.request().approvalId());
+        String key = keys().approval(located.request().scopeId(), located.request().approvalId());
         ApprovalRequest request;
         String token;
         ApprovalRequest decided;
@@ -624,10 +627,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
             return Optional.empty();
         }
         ApprovalRequest request = stored.request();
-        if (!entryKey.equals(ScopeKeys.approval(request.scopeId(), request.approvalId()))) {
+        if (!entryKey.equals(keys().approval(request.scopeId(), request.approvalId()))) {
             return Optional.empty();
         }
-        String claim = idClaims().get(request.approvalId());
+        String claim = idClaims().get(keys().claim(request.approvalId()));
         return ClaimEntries.value(entryKey, stored.token()).equals(claim) ? Optional.of(stored) : Optional.empty();
     }
 
@@ -672,27 +675,28 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     private List<String> keysOf(String scopeId) {
-        String prefix = ScopeKeys.approvalPrefix(scopeId);
+        String prefix = keys().approvalPrefix(scopeId);
         return approvals().keySet().stream().filter(key -> key.startsWith(prefix)).toList();
     }
 
-    private List<String> locateAll(String approvalId) {
-        return approvals().keySet().stream()
-                .filter(key -> ScopeKeys.approvalId(key).equals(approvalId))
-                .toList();
+    /**
+     * The one usable entry for an id: the entry its claim names, if that entry is there and still names this claim
+     * back. One id has one claim across every scope (the claim key has no scope token), so this is a single get of
+     * the claim and a single get of the entry it names; an id never matches several entries.
+     */
+    private Optional<Stored> locate(String approvalId) {
+        String claim = idClaims().get(keys().claim(approvalId));
+        Optional<ClaimEntries.Named> named = ClaimEntries.read(claim);
+        if (named.isEmpty()) {
+            return Optional.empty();
+        }
+        String entryKey = named.get().entryKey();
+        return valid(entryKey, approvals().get(entryKey))
+                .filter(stored -> stored.request().approvalId().equals(approvalId));
     }
 
-    /** The one usable entry for an id; an id that matches several usable keys is refused, never guessed. */
-    private Optional<Stored> locate(String approvalId) {
-        IMap<String, String> approvals = approvals();
-        List<Stored> usable = locateAll(approvalId).stream()
-                .map(key -> valid(key, approvals.get(key)))
-                .flatMap(Optional::stream)
-                .toList();
-        if (usable.size() > 1) {
-            throw new ApprovalRefusedException(Code.UNKNOWN_APPROVAL);
-        }
-        return usable.stream().findFirst();
+    private ScopeKeys keys() {
+        return cluster.scopeKeys();
     }
 
     private IMap<String, String> idClaims() {

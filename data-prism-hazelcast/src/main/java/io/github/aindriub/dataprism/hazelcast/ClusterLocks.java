@@ -91,4 +91,56 @@ final class ClusterLocks {
             // The lock dies with the member, or its lease ran out; throwing here would mask the real failure.
         }
     }
+
+    /**
+     * Bounded writes. A {@code set}, {@code put}, {@code delete} or {@code putIfAbsent} on a key another owner has
+     * locked waits for that lock without bound (spike 219, answer 10), so each of these takes the key's lock first,
+     * waiting at most {@code timeout}, and refuses with {@link ClusterLockTimeoutException} if it cannot. The write
+     * itself is then not blocked by anyone else's lock. The lock bounds the wait only; correctness never rests on it.
+     */
+    static <V> void set(IMap<String, V> map, String key, V value, long ttlMillis, Duration timeout) {
+        acquire(map, key, timeout);
+        try {
+            map.set(key, value, ttlMillis, TimeUnit.MILLISECONDS);
+        } finally {
+            release(map, key);
+        }
+    }
+
+    /** {@code putIfAbsent} under the key's bounded lock; returns the existing value, or null if it stored. */
+    static <V> V putIfAbsent(IMap<String, V> map, String key, V value, long ttlMillis, Duration timeout) {
+        acquire(map, key, timeout);
+        try {
+            return map.putIfAbsent(key, value, ttlMillis, TimeUnit.MILLISECONDS);
+        } finally {
+            release(map, key);
+        }
+    }
+
+    /** {@code delete} under the key's bounded lock. */
+    static void delete(IMap<String, ?> map, String key, Duration timeout) {
+        acquire(map, key, timeout);
+        try {
+            map.delete(key);
+        } finally {
+            release(map, key);
+        }
+    }
+
+    /**
+     * Deletes each key under its own bounded lock and goes on after a key whose lock times out; returns how many it
+     * left in place for that reason. A caller that must report the failure throws {@link ClusterLockTimeoutException}
+     * when the count is not zero, after the last key, so one held key does not stop the rest of a scope from ending.
+     */
+    static int deleteAll(IMap<String, ?> map, java.util.Collection<String> keys, Duration timeout) {
+        int skipped = 0;
+        for (String key : keys) {
+            try {
+                delete(map, key, timeout);
+            } catch (ClusterLockTimeoutException held) {
+                skipped++;
+            }
+        }
+        return skipped;
+    }
 }
