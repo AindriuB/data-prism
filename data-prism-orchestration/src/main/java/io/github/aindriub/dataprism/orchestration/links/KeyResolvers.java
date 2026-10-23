@@ -24,12 +24,16 @@ public final class KeyResolvers {
     /** A declared (from, to) pair. */
     public record Pair(KeyNamespace from, KeyNamespace to) {}
 
-    private final List<KeyResolver> byName;
+    /** Name and namespaces read once, at construction, so no later call touches resolver code for them. */
+    private record Entry(String name, KeyResolver resolver, Pair pair) {}
+
+    private final List<Entry> byName;
 
     public KeyResolvers(Collection<? extends KeyResolver> resolvers) {
         Objects.requireNonNull(resolvers, "resolvers");
         Set<Pair> seen = new HashSet<>();
-        List<KeyResolver> accepted = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        List<Entry> accepted = new ArrayList<>();
         for (KeyResolver resolver : resolvers) {
             String name = resolver.name();
             if (name == null || !NAME.matcher(name).matches()) {
@@ -43,15 +47,18 @@ public final class KeyResolvers {
             if (!seen.add(new Pair(from, to))) {
                 throw new IllegalArgumentException("DUPLICATE_KEY_RESOLVER: two resolvers are declared for one (from, to) pair");
             }
-            accepted.add(resolver);
+            if (!names.add(name)) {
+                throw new IllegalArgumentException("DUPLICATE_KEY_RESOLVER: two resolvers share one name");
+            }
+            accepted.add(new Entry(name, resolver, new Pair(from, to)));
         }
-        accepted.sort(Comparator.comparing(KeyResolver::name));
+        accepted.sort(Comparator.comparing(Entry::name));
         this.byName = List.copyOf(accepted);
     }
 
     /** The resolvers that accept {@code from}, in ascending name order. */
     public List<KeyResolver> from(KeyNamespace from) {
-        return byName.stream().filter(r -> r.from().equals(from)).toList();
+        return byName.stream().filter(e -> e.pair().from().equals(from)).map(Entry::resolver).toList();
     }
 
     /**
@@ -61,8 +68,8 @@ public final class KeyResolvers {
     public List<Pair> unusedPairs(Set<KeyNamespace> used) {
         Objects.requireNonNull(used, "used");
         return byName.stream()
-                .filter(r -> !used.contains(r.from()) || !used.contains(r.to()))
-                .map(r -> new Pair(r.from(), r.to()))
+                .map(Entry::pair)
+                .filter(p -> !used.contains(p.from()) || !used.contains(p.to()))
                 .toList();
     }
 }

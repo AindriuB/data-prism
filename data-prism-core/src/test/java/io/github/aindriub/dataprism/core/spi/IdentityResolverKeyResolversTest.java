@@ -29,7 +29,8 @@ class IdentityResolverKeyResolversTest {
         @Override
         public List<SourceRef> expand(CanonicalId id, List<String> sourceNames) {
             expandedFor.add(sourceNames);
-            return List.of(new SourceRef("S2", "x-" + id.value()), new SourceRef("S2", "y-" + id.value()));
+            return List.of(new SourceRef("S2", "x-" + id.value()), new SourceRef("S3", "other-" + id.value()),
+                    new SourceRef("S2", "y-" + id.value()));
         }
     }
 

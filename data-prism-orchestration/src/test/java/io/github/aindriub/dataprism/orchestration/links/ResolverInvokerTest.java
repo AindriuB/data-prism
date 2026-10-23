@@ -259,15 +259,148 @@ class ResolverInvokerTest {
     }
 
     @Test
-    void aZeroOrNegativeTimeoutIsATimeoutWithoutCallingTheResolver() {
-        AtomicBoolean called = new AtomicBoolean();
+    void aZeroOrNegativeTimeoutIsATimeoutAndTheResolverIsNeverInvoked() {
+        CountDownLatch invoked = new CountDownLatch(1);
         KeyResolver resolver = resolver(() -> {
-            called.set(true);
+            invoked.countDown();
             return new KeyResolver.Resolution(List.of("x"), false);
         });
         assertThat(failed(invoker.invoke(resolver, SENTINEL, CONTEXT, 5, Duration.ZERO)).reason())
                 .isEqualTo(ResolverOutcome.Reason.TIMEOUT);
-        assertThat(called).isFalse();
+        assertThat(failed(invoker.invoke(resolver, SENTINEL, CONTEXT, 5, Duration.ofMillis(-1))).reason())
+                .isEqualTo(ResolverOutcome.Reason.TIMEOUT);
+        assertThat(invoked.getCount()).as("the resolver was never invoked").isEqualTo(1);
+    }
+
+    @Test
+    void maxResultsBelowOneIsRejectedUpFront() {
+        KeyResolver resolver = resolver(() -> new KeyResolver.Resolution(List.of(), false));
+        for (int bad : new int[] {0, -1}) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> invoke(resolver, bad))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void aResolverThatThrowsStackOverflowErrorIsUnavailable() {
+        ResolverOutcome outcome = invoke(resolver(() -> {
+            throw new StackOverflowError();
+        }), 5);
+        assertThat(failed(outcome).reason()).isEqualTo(ResolverOutcome.Reason.UNAVAILABLE);
+        assertThat(counted).containsExactly(Metric.RESOLVER_UNAVAILABLE);
+    }
+
+    @Test
+    void aCallerInterruptIsUnavailableRestoresTheFlagAndInterruptsTheResolverThread() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch resolverInterrupted = new CountDownLatch(1);
+        CountDownLatch never = new CountDownLatch(1);
+        KeyResolver blocking = resolver(() -> {
+            started.countDown();
+            try {
+                never.await();
+            } catch (InterruptedException e) {
+                resolverInterrupted.countDown();
+            }
+            return new KeyResolver.Resolution(List.of("late"), false);
+        });
+        Thread caller = Thread.currentThread();
+        Thread interrupter = Thread.ofPlatform().start(() -> {
+            try {
+                started.await();
+            } catch (InterruptedException e) {
+                return;
+            }
+            caller.interrupt();
+        });
+        ResolverOutcome outcome = invoker.invoke(blocking, SENTINEL, CONTEXT, 5, Duration.ofSeconds(30));
+        boolean flag = Thread.interrupted();
+        interrupter.join();
+        assertThat(failed(outcome).reason()).isEqualTo(ResolverOutcome.Reason.UNAVAILABLE);
+        assertThat(flag).as("the interrupt flag was restored").isTrue();
+        assertThat(resolverInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void theInvokerNeverCallsNameAndTheLatencyTagIsConstant() {
+        CountDownLatch nameCalled = new CountDownLatch(1);
+        KeyResolver blockingName = new KeyResolver() {
+            @Override
+            public String name() {
+                nameCalled.countDown();
+                try {
+                    new CountDownLatch(1).await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return "blocked";
+            }
+
+            @Override
+            public KeyNamespace from() {
+                return new KeyNamespace("a");
+            }
+
+            @Override
+            public KeyNamespace to() {
+                return new KeyNamespace("b");
+            }
+
+            @Override
+            public Resolution resolve(String key, ResolutionContext context, int maxResults) {
+                return new Resolution(List.of("x"), false);
+            }
+        };
+        assertThat(invoker.invoke(blockingName, SENTINEL, CONTEXT, 5, Duration.ofSeconds(5)))
+                .isInstanceOf(ResolverOutcome.Keys.class);
+        assertThat(nameCalled.getCount()).as("name() was never called").isEqualTo(1);
+        assertThat(allTags).containsExactly("key-resolver");
+    }
+
+    @Test
+    void whenEverySlotIsHeldByAnInterruptIgnoringResolverANewCallFailsAtOnceAndVirtualThreadsAreUnaffected()
+            throws Exception {
+        ResolverInvoker small = new ResolverInvoker(metrics, 2);
+        AtomicBoolean stop = new AtomicBoolean();
+        CountDownLatch spinning = new CountDownLatch(2);
+        KeyResolver spinner = resolver(() -> {
+            spinning.countDown();
+            while (!stop.get()) {
+                Thread.onSpinWait();
+            }
+            return new KeyResolver.Resolution(List.of(), false);
+        });
+        try {
+            for (int i = 0; i < 2; i++) {
+                assertThat(failed(small.invoke(spinner, SENTINEL, CONTEXT, 5, Duration.ofMillis(50))).reason())
+                        .isEqualTo(ResolverOutcome.Reason.TIMEOUT);
+            }
+            assertThat(spinning.await(5, TimeUnit.SECONDS)).isTrue();
+
+            CountDownLatch called = new CountDownLatch(1);
+            KeyResolver healthy = resolver(() -> {
+                called.countDown();
+                return new KeyResolver.Resolution(List.of("x"), false);
+            });
+            long begin = System.nanoTime();
+            ResolverOutcome outcome = small.invoke(healthy, SENTINEL, CONTEXT, 5, Duration.ofSeconds(30));
+            assertThat(failed(outcome).reason()).isEqualTo(ResolverOutcome.Reason.UNAVAILABLE);
+            assertThat(Duration.ofNanos(System.nanoTime() - begin)).isLessThan(Duration.ofSeconds(5));
+            assertThat(called.getCount()).as("the resolver was not called").isEqualTo(1);
+
+            // The spinners hold platform threads, so an unrelated virtual-thread task still runs.
+            java.util.concurrent.CompletableFuture<String> unrelated = new java.util.concurrent.CompletableFuture<>();
+            Thread.ofVirtual().start(() -> unrelated.complete("ran"));
+            assertThat(unrelated.get(5, TimeUnit.SECONDS)).isEqualTo("ran");
+        } finally {
+            stop.set(true);
+        }
+    }
+
+    @Test
+    void aPoolSizeBelowOneIsRejected() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ResolverInvoker(metrics, 0))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

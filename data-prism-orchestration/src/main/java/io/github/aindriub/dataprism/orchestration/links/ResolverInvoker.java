@@ -12,28 +12,55 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Pattern;
 
 /**
  * Calls one resolver with a bounded wait and turns every contract violation into a closed reason.
  *
- * <p>The call runs on its own virtual thread; the caller waits at most {@code timeout}, then interrupts the thread
- * and reports {@code TIMEOUT}. A late result is never used. Nothing here logs, and no exception, message or key
- * leaves this class: a failure is a {@link ResolverOutcome.Failed} and one metric.
+ * <p>Calls run on a dedicated, fixed-size pool of platform threads, never on the shared virtual-thread scheduler,
+ * because a resolver that ignores interrupts would otherwise pin a carrier thread for ever. The caller waits at
+ * most {@code timeout}, then interrupts the thread and reports {@code TIMEOUT}; a late result is never used. A
+ * slot is held until the resolver thread actually returns, not until the timeout, so when every slot is taken a
+ * new call fails at once with {@code UNAVAILABLE} without calling the resolver. Nothing here logs, calls
+ * {@code name()}, or lets an exception, message or key out: a failure is a {@link ResolverOutcome.Failed} and one
+ * metric.
  */
 public final class ResolverInvoker {
 
     /** The longest key a resolver may return, in UTF-8 bytes. */
     static final int MAX_KEY_BYTES = 256;
 
-    private static final Pattern TAG = Pattern.compile("[a-z][a-z0-9-]{0,31}");
+    /** The default number of concurrent resolver calls. */
+    public static final int DEFAULT_MAX_CONCURRENT_CALLS = 8;
+
+    /** The one fixed latency tag: a metric carries no per-resolver label (OD-200-15). */
+    private static final String LATENCY_TAG = "key-resolver";
 
     private final PrivacyMetrics metrics;
+    private final ThreadPoolExecutor executor;
 
     public ResolverInvoker(PrivacyMetrics metrics) {
+        this(metrics, DEFAULT_MAX_CONCURRENT_CALLS);
+    }
+
+    public ResolverInvoker(PrivacyMetrics metrics, int maxConcurrentCalls) {
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        if (maxConcurrentCalls < 1) {
+            throw new IllegalArgumentException("maxConcurrentCalls must be at least 1");
+        }
+        AtomicInteger counter = new AtomicInteger();
+        this.executor = new ThreadPoolExecutor(maxConcurrentCalls, maxConcurrentCalls, 30, TimeUnit.SECONDS,
+                new SynchronousQueue<>(), runnable -> {
+                    Thread thread = new Thread(runnable, "key-resolver-" + counter.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                });
+        this.executor.allowCoreThreadTimeOut(true);
     }
 
     public ResolverOutcome invoke(KeyResolver resolver, String key, ResolutionContext context, int maxResults,
@@ -41,22 +68,29 @@ public final class ResolverInvoker {
         Objects.requireNonNull(resolver, "resolver");
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(timeout, "timeout");
+        if (maxResults < 1) {
+            throw new IllegalArgumentException("maxResults must be at least 1");
+        }
         long started = System.nanoTime();
         ResolverOutcome outcome = run(resolver, key, context, maxResults, timeout);
         if (outcome instanceof ResolverOutcome.Failed failed) {
             metrics.increment(metricFor(failed.reason()));
         }
-        metrics.record(Metric.RESOLVER_LATENCY, tag(resolver), Duration.ofNanos(System.nanoTime() - started));
+        metrics.record(Metric.RESOLVER_LATENCY, LATENCY_TAG, Duration.ofNanos(System.nanoTime() - started));
         return outcome;
     }
 
-    private static ResolverOutcome run(KeyResolver resolver, String key, ResolutionContext context, int maxResults,
+    private ResolverOutcome run(KeyResolver resolver, String key, ResolutionContext context, int maxResults,
                                        Duration timeout) {
         if (timeout.isZero() || timeout.isNegative()) {
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT);
         }
         FutureTask<ResolverOutcome> task = new FutureTask<>(() -> call(resolver, key, context, maxResults));
-        Thread.ofVirtual().name("key-resolver").start(task);
+        try {
+            executor.execute(task);
+        } catch (RejectedExecutionException e) {
+            return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
+        }
         try {
             return task.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
         } catch (TimeoutException e) {
@@ -116,16 +150,5 @@ public final class ResolverInvoker {
             case TOO_MANY -> Metric.RESOLVER_TOO_MANY;
             case INVALID_OUTPUT -> Metric.RESOLVER_INVALID_OUTPUT;
         };
-    }
-
-    /** The resolver's own name when it fits the grammar, so a hostile name cannot become a metric tag. */
-    private static String tag(KeyResolver resolver) {
-        String name;
-        try {
-            name = resolver.name();
-        } catch (RuntimeException e) {
-            return "unnamed";
-        }
-        return name != null && TAG.matcher(name).matches() ? name : "unnamed";
     }
 }

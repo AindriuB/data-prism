@@ -107,4 +107,30 @@ class KeyResolversTest {
     void anEmptyRegistryIsValid() {
         assertThat(new KeyResolvers(List.of()).unusedPairs(Set.of())).isEmpty();
     }
+
+    @Test
+    void refusesTwoResolversWithTheSameNameEvenForDifferentPairs() {
+        assertThatThrownBy(() -> new KeyResolvers(List.of(resolver("same", "a", "b"), resolver("same", "a", "c"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("DUPLICATE_KEY_RESOLVER")
+                .hasMessageNotContaining("same ");
+    }
+
+    @Test
+    void readsEachResolverOnceAndNeverAgainOnLookup() {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        KeyResolver counting = new KeyResolver() {
+            @Override public String name() { calls.incrementAndGet(); return "counted"; }
+            @Override public KeyNamespace from() { calls.incrementAndGet(); return ns("a"); }
+            @Override public KeyNamespace to() { calls.incrementAndGet(); return ns("b"); }
+            @Override public Resolution resolve(String key, ResolutionContext context, int maxResults) {
+                return new Resolution(List.of(), false);
+            }
+        };
+        KeyResolvers registry = new KeyResolvers(List.of(counting));
+        int atConstruction = calls.get();
+        registry.from(ns("a"));
+        registry.unusedPairs(Set.of());
+        assertThat(calls.get()).isEqualTo(atConstruction);
+    }
 }
