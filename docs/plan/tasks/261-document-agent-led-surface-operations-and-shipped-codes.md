@@ -49,4 +49,4 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - `docs/quickstart.md` (262).
 - `docs/data-protection.md` (214).
 - Any code, test, or design document.
-- Publishing 270's GitHub security advisory for 0.7.x: the 0.8.0 release-cut brief, not yet filed, owns it through PLAN.md's release-cut obligations.
+- Updating the 0.7.x security advisory GHSA-f94h-6mxv-c957 with the patched version: the 0.8.0 release-cut brief, not yet filed, owns it through PLAN.md's release-cut obligations.

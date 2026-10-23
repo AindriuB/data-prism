@@ -5,7 +5,7 @@
 **Base branch:** `origin/main` once 248 has merged
 **Depends on:** 248 (both edit `JsonTreeScrubbingEngine.java`; this task also edits 248's `ScrubPlanDescriber`, adds cases to 248's two new tests, and builds on 248's final `SourceTree.readsAsPlainBean`)
 **Wave:** 5 (filed 2026-10-23)
-**Decisions:** OD-270-1 decided (a) and OD-270-2 decided (a), both by the owner on 2026-10-23 (below). `readsAsPlainBean` stays strict, because strict fails closed (coordinator, 2026-10-23, review of PR #161).
+**Decisions:** OD-270-1 decided (a) and OD-270-2 decided (a), both by the owner on 2026-10-23 (below). The repros under "The gap" stay in this public brief: the owner accepted that exposure on 2026-10-23 (review item H1), and the advisory GHSA-f94h-6mxv-c957 is drafted now rather than at the release cut. `readsAsPlainBean` stays strict, because strict fails closed (coordinator, 2026-10-23, review of PR #161).
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java *(the `apply`, `scrubArray` and `scalar` paths, for a value at a classified-record position, and the `SourceTree.of` call in `scrub`; not the `describe` override)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/ClassifiedShapes.java *(new, package-private: the one rule, shared by every site below, for "classified record" and "plain object")*
@@ -146,7 +146,7 @@ The value is never passed through.
     - names the change to `DataPrismContractValidator`'s public constructor;
     - gives the author's fixes: classify the holding field, remove the custom shape, or declare the position as the record.
   - Text for `docs/migration-0.8.md` goes in the Outcome under "for the migration notes" (261 owns that page and depends on this task).
-- [ ] **Security advisory draft (OD-270-2).** The Outcome includes a draft GitHub security advisory under its own heading, for the 0.8.0 release cut to publish. Before it states a workaround or the affected versions, the Outcome does both of the following:
+- [ ] **Security advisory GHSA-f94h-6mxv-c957 (OD-270-2).** The advisory is already drafted (owner decision, 2026-10-23). The Outcome has a heading of its own with the text to update it with: the confirmed affected range, the workaround and the patched version 0.8.0. Before it states the workaround or the range, the Outcome does both of the following:
   - **Workaround matrix.** Runs repro 1 under DEFAULT with each holder annotation, and records which leak:
     - `@NonSensitive`;
     - `@SensitiveData` with each implemented action (`PASS_THROUGH`, `REDACT`, `REMOVE`, `SYNTHESIZE`, `TOKENIZE`, `HASH`, `GENERALIZE`);
@@ -160,12 +160,12 @@ The value is never passed through.
     - copy in the repro test;
     - run `./mvnw -B -pl data-prism-core -am test -Dtest=<repro>`.
 
-    The advisory lists the tags where the repro leaks. Name 0.8.0 as the fixed version, and describe the shapes without real data.
+    The Outcome lists the tags where the repro leaks, as the affected range, and that range replaces the one in GHSA-f94h-6mxv-c957 when this task merges. It names 0.8.0 as the patched version, and it describes the shapes without real data.
 - [ ] Every existing test in the touched modules passes unmodified.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-validation,data-prism-spring-boot-autoconfigure,data-prism-architecture -am verify` passes.
 
 ## OD-270-2: decided (a) by the owner, 2026-10-23
-The fix ships in 0.8.0 only. There is no 0.7.2. A GitHub security advisory for 0.7.x names 0.8.0 as the fixed version and gives the workaround the matrix above establishes. This task drafts the advisory in its Outcome. The 0.8.0 release-cut brief, not yet filed, publishes it; it is listed in PLAN.md's release-cut obligations. The recommendation cited Central's File Count limit, whose grace period ends 2026-11-08, as the reason not to cut a 0.7.2.
+The fix ships in 0.8.0 only. There is no 0.7.2. On 2026-10-23 the owner also decided (H1 (a)) to accept the exposure of the public repros, and to draft the advisory now rather than at 0.8.0. The draft is GHSA-f94h-6mxv-c957. This task's Outcome confirms the affected range tag by tag and the workaround from the matrix above, and the advisory is then updated with that range. The 0.8.0 release-cut brief, not yet filed, updates GHSA-f94h-6mxv-c957 with the patched version 0.8.0; this is listed in PLAN.md's release-cut obligations. The recommendation cited Central's File Count limit, whose grace period ends 2026-11-08, as the reason not to cut a 0.7.2.
 
 ## Out of scope
 - Maps of records, and records inside nested containers (refused already; 0.9).
@@ -175,4 +175,4 @@ The fix ships in 0.8.0 only. There is no 0.7.2. A GitHub security advisory for 0
 - `NamespaceCorrelationService`, which keeps `SourceTree.of(Object)`.
 - `PrivacyEngineWiring` and the descriptor map (271).
 - `docs/migration-0.8.md` and every other user page (261).
-- Publishing the advisory (the 0.8.0 release-cut brief).
+- Updating GHSA-f94h-6mxv-c957 with the patched version once 0.8.0 is released (the 0.8.0 release-cut brief).

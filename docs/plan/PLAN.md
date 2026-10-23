@@ -144,7 +144,7 @@ Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copi
 
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23).
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
-- Publish the GitHub security advisory for 0.7.x that 270 drafts in its Outcome. The 0.8.0 release-cut brief owns this, when it is filed; 261 does not. It names 0.8.0 as the fixed version and gives the workaround: do not mark a field `@NonSensitive` when it holds a classified record. Owner decision OD-270-2 (a), 2026-10-23.
+- Update the GitHub security advisory GHSA-f94h-6mxv-c957 with the patched version 0.8.0, and with the affected range and workaround that 270's Outcome confirms, if those are not already there. The advisory was drafted on 2026-10-23, ahead of the release (owner decision H1 (a): the public repros in 270 are an accepted exposure). The 0.8.0 release-cut brief owns this, when it is filed; 261 does not. Owner decision OD-270-2 (a), 2026-10-23.
 
 Owner decision 2026-10-23 (on the coordinator's recommendation): no cuts from 0.8.0. 207 (size-capped audit segments) stays. 264 (shared Hazelcast link limiter) stays, with its agreed fallback: if it is not ready, links and page links are refused only on members joining via `tcp-ip` or `kubernetes`, and 264 slips to 0.9.0. The count stays 34.
 
