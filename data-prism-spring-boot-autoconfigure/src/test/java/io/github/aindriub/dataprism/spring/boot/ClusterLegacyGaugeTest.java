@@ -236,4 +236,20 @@ class ClusterLegacyGaugeTest {
                             .isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
                 });
     }
+
+    @Test
+    void aClusterRegisteredAsABareSingletonStillGetsTheGaugeAndStartupGoesOn() {
+        GAUGES.clear();
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(RecordingMetrics.class)
+                .withInitializer(context -> context.getBeanFactory().registerSingleton("bareCluster",
+                        new ClusterConfigurationTest.SuppliedCluster().suppliedCluster()))
+                .withPropertyValues(OversightConfigurationTest.base("embedded"))
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES)).isNotNull();
+                    result.getBean("bareCluster", PrivacyCluster.class).close();
+                });
+    }
 }
