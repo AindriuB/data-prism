@@ -66,7 +66,8 @@ public final class LinkCodec {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.nonces = Objects.requireNonNull(nonces, "nonces");
         if (!settings.keyId().equals(keys.currentKeyId())) {
-            throw new IllegalArgumentException("INVALID_LINK_LIMIT: the settings and the keys name different key ids");
+            throw new LinkConfigurationException(
+                    "INVALID_LINK_LIMIT", "the settings and the keys name different key ids");
         }
     }
 
@@ -167,11 +168,12 @@ public final class LinkCodec {
         Objects.requireNonNull(binding, "binding");
         Objects.requireNonNull(accepted, "accepted");
         if (!binding.withinBounds()) {
-            // The session is oversize, not the token: never the attacker's doing, so never counted.
+            // The session is oversize or has an empty id, not the token: never the attacker's doing, so never counted.
             return new LinkOpenResult.Refused(LinkReason.MALFORMED, false);
         }
         if (token == null) {
-            return refuse(LinkReason.MALFORMED);
+            // No token was presented, so nothing was guessed: never counted.
+            return new LinkOpenResult.Refused(LinkReason.MALFORMED, false);
         }
         // 1. Length, before any decoding.
         if (token.length() > settings.maxLength()) {

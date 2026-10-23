@@ -22,17 +22,17 @@ public record FollowPayload(
         LinkRelation relation) implements LinkPayload {
 
     public FollowPayload {
-        linkId = Check.linkId(linkId);
-        issueTime = Check.seconds(issueTime, "issueTime");
-        Check.text(keyNamespace, 1, LinkLayout.MAX_NAMESPACE, "keyNamespace");
+        linkId = PayloadCheck.linkId(linkId);
+        issueTime = PayloadCheck.seconds(issueTime, "issueTime");
+        PayloadCheck.text(keyNamespace, 1, LinkLayout.MAX_NAMESPACE, "keyNamespace");
         Objects.requireNonNull(resolverName, "resolverName");
-        resolverName.ifPresent(name -> Check.text(name, 1, LinkLayout.MAX_RESOLVER, "resolverName"));
+        resolverName.ifPresent(name -> PayloadCheck.text(name, 1, LinkLayout.MAX_RESOLVER, "resolverName"));
         Objects.requireNonNull(chainedKey, "chainedKey");
         if (chainedKey.length == 0) {
             throw new IllegalArgumentException("the chained key is empty");
         }
         chainedKey = chainedKey.clone();
-        Check.text(target, 1, Integer.MAX_VALUE, "target"); // over 64 bytes: the codec omits the link
+        PayloadCheck.text(target, 1, Integer.MAX_VALUE, "target"); // over 64 bytes: the codec omits the link
         Objects.requireNonNull(relation, "relation");
         if (relation != LinkRelation.DIRECT && relation != LinkRelation.TRANSLATED) {
             throw new IllegalArgumentException("a follow payload is DIRECT or TRANSLATED");

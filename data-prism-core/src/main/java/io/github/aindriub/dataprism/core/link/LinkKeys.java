@@ -20,7 +20,8 @@ import java.util.function.Supplier;
  * salt, one expand block, and an {@code info} of the purpose label and the scope id.
  *
  * <p>Construction refuses an unresolvable key id ({@code LINK_KEY_UNRESOLVED}), key material under 32 bytes
- * ({@code LINK_KEY_WEAK}) and the pseudonymisation key's id ({@code LINK_KEY_SHARED}). Messages start with the
+ * ({@code LINK_KEY_WEAK}) and the pseudonymisation key's id ({@code LINK_KEY_SHARED}), each as a
+ * {@link LinkConfigurationException} carrying the code. Messages start with the
  * code and name no key byte or reference; the provider's own exception is dropped, because its message may name
  * a reference.
  *
@@ -31,6 +32,9 @@ public final class LinkKeys {
     static final String SEAL_LABEL = "dataprism/link/v1/seal";
     static final String FINGERPRINT_LABEL = "dataprism/link/v1/fingerprint";
     static final String CALLER_LABEL = "dataprism/link/v1/caller";
+    /** MAC purpose labels: the first item of every MAC input, so no two purposes can produce the same input. */
+    static final String CATALOG_TAG_LABEL = "dataprism/link/v1/catalog-tag";
+    static final String ATTEMPT_LABEL = "dataprism/link/v1/attempt";
 
     private static final int MIN_KEY_BYTES = 32;
     private static final byte[] ZERO_SALT = new byte[32];
@@ -63,38 +67,40 @@ public final class LinkKeys {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.currentKeyId = Objects.requireNonNull(currentKeyId, "currentKeyId");
         if (pseudonymisationKeyId == null) {
-            throw new IllegalStateException("LINK_KEY_SHARED: the pseudonymisation key id setting is required");
+            throw new LinkConfigurationException(
+                    "LINK_KEY_SHARED", "the pseudonymisation key id setting is required");
         }
         this.pseudonymisationKeyId = pseudonymisationKeyId;
         if (!LinkSettings.validKeyId(currentKeyId)) {
-            throw new IllegalArgumentException(
-                    "INVALID_LINK_LIMIT: the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
+            throw new LinkConfigurationException(
+                    "INVALID_LINK_LIMIT", "the link key id must be 1 to 16 characters of A-Z, a-z, 0-9, _ and -");
         }
         if (currentKeyId.equals(pseudonymisationKeyId)) {
-            throw new IllegalStateException(
-                    "LINK_KEY_SHARED: the link key id must differ from the pseudonymisation key id");
+            throw new LinkConfigurationException(
+                    "LINK_KEY_SHARED", "the link key id must differ from the pseudonymisation key id");
         }
         this.held = held != null ? held : () -> Set.of(currentKeyId);
         if (heldOrEmpty().contains(pseudonymisationKeyId)) {
-            throw new IllegalStateException(
-                    "LINK_KEY_SHARED: the held key ids must not include the pseudonymisation key id");
+            throw new LinkConfigurationException(
+                    "LINK_KEY_SHARED", "the held key ids must not include the pseudonymisation key id");
         }
         byte[] pseudonymisationMaterial = resolve(pseudonymisationKeyId);
         if (pseudonymisationMaterial == null) {
-            throw new IllegalStateException(
-                    "LINK_KEY_UNRESOLVED: the pseudonymisation key id setting could not be resolved");
+            throw new LinkConfigurationException(
+                    "LINK_KEY_UNRESOLVED", "the pseudonymisation key id setting could not be resolved");
         }
         this.pseudonymisationDigest = digest(pseudonymisationMaterial);
         for (String id : declaredHeld()) {
             Resolution resolution = resolution(id);
             if (resolution.shared) {
-                throw new IllegalStateException(
-                        "LINK_KEY_SHARED: a link key must not share material with the pseudonymisation key");
+                throw new LinkConfigurationException(
+                        "LINK_KEY_SHARED", "a link key must not share material with the pseudonymisation key");
             }
             if (resolution.material == null) {
-                throw new IllegalStateException(resolution.weak
-                        ? "LINK_KEY_WEAK: the link key must be at least 32 bytes"
-                        : "LINK_KEY_UNRESOLVED: the link key id could not be resolved");
+                throw resolution.weak
+                        ? new LinkConfigurationException("LINK_KEY_WEAK", "the link key must be at least 32 bytes")
+                        : new LinkConfigurationException("LINK_KEY_UNRESOLVED",
+                                "the link key id could not be resolved");
             }
         }
     }
@@ -163,13 +169,14 @@ public final class LinkKeys {
     }
 
     /**
-     * The limiter's counter key: {@code HMAC(fingerprintKey, scope | principal)}, truncated to 16 bytes and
+     * The limiter's counter key: {@code HMAC(fingerprintKey, label | scope | principal)}, truncated to 16 bytes and
      * hex-encoded. It holds neither the scope id nor the principal id.
      */
     public String attemptCounterKey(String scopeId, String principalId) {
         Objects.requireNonNull(principalId, "principalId");
         byte[] key = forScope(scopeId).key;
         byte[] mac = LabelledHkdf.hmac(key, LabelledHkdf.lengthPrefixed(
+                ATTEMPT_LABEL.getBytes(StandardCharsets.US_ASCII),
                 scopeId.getBytes(StandardCharsets.UTF_8), principalId.getBytes(StandardCharsets.UTF_8)));
         return HexFormat.of().formatHex(mac, 0, 16);
     }
@@ -258,15 +265,18 @@ public final class LinkKeys {
         /** A 12-byte keyed fingerprint, for item ordering and duplicate collapse. */
         public byte[] fingerprint(byte[] value) {
             Objects.requireNonNull(value, "value");
-            return Arrays.copyOf(LabelledHkdf.hmac(key, value), LinkLayout.FINGERPRINT_BYTES);
+            byte[] mac = LabelledHkdf.hmac(key, LabelledHkdf.lengthPrefixed(
+                    FINGERPRINT_LABEL.getBytes(StandardCharsets.US_ASCII), value));
+            return Arrays.copyOf(mac, LinkLayout.FINGERPRINT_BYTES);
         }
 
         /** The 16-byte tag over the whole visible, filtered label list, in the order given, length-prefixed. */
         public byte[] catalogTag(List<String> labels) {
             Objects.requireNonNull(labels, "labels");
-            byte[][] items = new byte[labels.size()][];
-            for (int i = 0; i < items.length; i++) {
-                items[i] = Objects.requireNonNull(labels.get(i), "label").getBytes(StandardCharsets.UTF_8);
+            byte[][] items = new byte[labels.size() + 1][];
+            items[0] = CATALOG_TAG_LABEL.getBytes(StandardCharsets.US_ASCII);
+            for (int i = 1; i < items.length; i++) {
+                items[i] = Objects.requireNonNull(labels.get(i - 1), "label").getBytes(StandardCharsets.UTF_8);
             }
             byte[] mac = LabelledHkdf.hmac(key, LabelledHkdf.lengthPrefixed(items));
             return Arrays.copyOf(mac, LinkLayout.CATALOG_TAG_BYTES);
