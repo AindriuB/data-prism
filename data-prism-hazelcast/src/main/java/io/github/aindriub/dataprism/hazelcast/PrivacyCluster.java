@@ -153,6 +153,8 @@ public final class PrivacyCluster implements AutoCloseable {
     private final ClusterSecuritySettings settings;
     private final KeyedNames names;
     private final ScopeKeys scopeKeys;
+    /** The keys names and seals are derived from: the supplied ones, or for a solo member the random ones. Never exposed. */
+    private final ClusterKeys effectiveKeys;
 
     private final boolean owned;
     private final AtomicBoolean refused = new AtomicBoolean();
@@ -170,6 +172,7 @@ public final class PrivacyCluster implements AutoCloseable {
         // for this process, which nothing else can share, so two such members never derive the same name. A joining
         // member never gets here without keys.
         ClusterKeys effective = keys != null ? keys : generatedSoloKeys();
+        this.effectiveKeys = effective;
         this.names = new KeyedNames(effective);
         this.scopeKeys = new ScopeKeys(names);
         SealedWrites.register(instance, Sealer.builder(effective, PrivacyMetrics.none()).build(), names);
