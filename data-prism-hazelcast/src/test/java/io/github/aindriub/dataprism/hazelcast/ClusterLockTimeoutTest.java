@@ -241,4 +241,39 @@ class ClusterLockTimeoutTest {
         new HazelcastApprovalStore(cluster, Duration.ofMillis(100));
         new HazelcastApprovalStore(cluster, Duration.ofSeconds(30));
     }
+
+    @Test
+    void deleteAllSharesOneDeadlineAcrossHeldKeys() throws Exception {
+        IMap<String, Object> map = cluster.instance().getMap("deleteall-deadline");
+        map.put("k1", 1);
+        map.put("k2", 2);
+        map.put("k3", 3);
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            map.lock("k1");
+            map.lock("k2");
+            locked.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        holder.start();
+        assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+        try {
+            long start = System.nanoTime();
+            int skipped = ClusterLocks.deleteAll(map, java.util.List.of("k1", "k2", "k3"), Duration.ofSeconds(1));
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertThat(skipped).isEqualTo(2);
+            assertThat(elapsed).isLessThan(1500);
+            assertThat(map.containsKey("k3")).isFalse();
+        } finally {
+            map.forceUnlock("k1");
+            map.forceUnlock("k2");
+            release.countDown();
+            holder.join();
+        }
+    }
 }

@@ -55,9 +55,12 @@ final class ClusterLocks {
      *                                          {@code hazelcast.lock.max.lease.time.seconds} is below it)
      */
     static void acquire(IMap<String, ?> map, String key, Duration timeout) {
+        acquire(map, key, timeout.toMillis(), leaseMillis(timeout));
+    }
+
+    private static void acquire(IMap<String, ?> map, String key, long waitMillis, long leaseMillis) {
         try {
-            if (!map.tryLock(key, timeout.toMillis(), TimeUnit.MILLISECONDS, leaseMillis(timeout),
-                    TimeUnit.MILLISECONDS)) {
+            if (!map.tryLock(key, waitMillis, TimeUnit.MILLISECONDS, leaseMillis, TimeUnit.MILLISECONDS)) {
                 throw new ClusterLockTimeoutException();
             }
         } catch (InterruptedException interrupted) {
@@ -129,14 +132,24 @@ final class ClusterLocks {
 
     /**
      * Deletes each key under its own bounded lock and goes on after a key whose lock times out; returns how many it
-     * left in place for that reason. A caller that must report the failure throws {@link ClusterLockTimeoutException}
-     * when the count is not zero, after the last key, so one held key does not stop the rest of a scope from ending.
+     * left in place for that reason. The whole call shares one deadline of {@code timeout}: each lock waits for what
+     * is left of it, and once it has passed a key is still deleted if its lock is free right now. A caller that must
+     * report the failure throws {@link ClusterLockTimeoutException} when the count is not zero, after the last key,
+     * so one held key does not stop the rest of a scope from ending.
      */
     static int deleteAll(IMap<String, ?> map, java.util.Collection<String> keys, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        long lease = leaseMillis(timeout);
         int skipped = 0;
         for (String key : keys) {
+            long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
             try {
-                delete(map, key, timeout);
+                acquire(map, key, remaining, lease);
+                try {
+                    map.delete(key);
+                } finally {
+                    release(map, key);
+                }
             } catch (ClusterLockTimeoutException held) {
                 skipped++;
             }
