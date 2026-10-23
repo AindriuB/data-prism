@@ -19,6 +19,8 @@ import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.pseudonymisation.vocabulary.VocabularyRegistry;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
@@ -66,11 +68,11 @@ class GetEntityContextToolTest {
     }
 
     private static AuthorizationService authorizationService(SecurityPolicy policy) {
-        return new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        return new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
     }
 
     private static ScopeResolver scopeResolver(Set<String> allowedPurposes) {
-        return new ScopeResolver(VERSION, Duration.ofHours(8), new PurposeValidator(allowedPurposes));
+        return new ScopeResolver(VERSION, Duration.ofHours(8), new PurposeValidator(allowedPurposes), CaseAuthorizer.tokenTrusted());
     }
 
     private static McpSyncServerExchange exchangeFor(AuthenticatedCaller caller) {
@@ -199,7 +201,7 @@ class GetEntityContextToolTest {
         PseudonymEchoingOrchestrator orchestrator = new PseudonymEchoingOrchestrator(synthetics);
         ScopeResolver resolverPinnedToVocabulary = new ScopeResolver(
                 PseudonymisationVersion.HMAC_SHA256_V1.withVocabulary(vocabulary.id()),
-                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
+                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool tool = new GetEntityContextTool(orchestrator,
                 authorizationService(policyGrantingGetEntityContext()), resolverPinnedToVocabulary,
                 metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());

@@ -65,15 +65,15 @@ class ResponseLimitRefusalTest {
         var caller = new AuthenticatedCaller("principal-1", "client-1", Set.of("operator"), "test", "case-1", null);
         if (comparison) {
             var tool = new CompareEntitySourcesTool(orchestrator,
-                    new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.CASE),
-                    new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(1), new PurposeValidator(Set.of("test"))),
+                    new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.CASE, ClientAllowlist.unrestricted()),
+                    new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(1), new PurposeValidator(Set.of("test")), CaseAuthorizer.tokenTrusted()),
                     PrivacyMetrics.none(), recorder, CLOCK, caller, ToolOptions.defaults().noAdmission().build());
             return tool.specification().callHandler().apply(null,
                     new McpSchema.CallToolRequest(CompareEntitySourcesTool.NAME, Map.of("entityType", "PARCEL", "subjectId", "fixture-1")));
         }
         var tool = new GetEntityContextTool(orchestrator,
-                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.CASE),
-                new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(1), new PurposeValidator(Set.of("test"))),
+                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.CASE, ClientAllowlist.unrestricted()),
+                new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(1), new PurposeValidator(Set.of("test")), CaseAuthorizer.tokenTrusted()),
                 PrivacyMetrics.none(), recorder, CLOCK, caller, ToolOptions.defaults().noAdmission().build());
         return tool.specification().callHandler().apply(null,
                 new McpSchema.CallToolRequest(GetEntityContextTool.NAME, Map.of("entityType", "PARCEL", "subjectId", "fixture-1")));

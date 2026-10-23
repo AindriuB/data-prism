@@ -21,6 +21,8 @@ import io.github.aindriub.dataprism.orchestration.ParameterFingerprinter;
 import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.OversightPolicy;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
@@ -102,9 +104,9 @@ class ToolAdmissionEnforcementTest {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration", "marketing"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES"),
                         "source-viewer", Set.of("EXPOSE_SOURCE_NAMES")));
-        AuthorizationService authz = new AuthorizationService(security, privacyProfile, PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, privacyProfile, PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration", "marketing")));
+                new PurposeValidator(Set.of("demonstration", "marketing")), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
                 metrics, audit, FIXED, null, ToolOptions.defaults().admission(admission, fingerprinter).build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,
@@ -393,9 +395,9 @@ class ToolAdmissionEnforcementTest {
     @DisplayName("an authorisation denial carries the correlationId written to its audit event, on both tools")
     void authorisationDenialCarriesCorrelation() {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"), Map.of("investigator", Set.of()));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
                 metrics, audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,

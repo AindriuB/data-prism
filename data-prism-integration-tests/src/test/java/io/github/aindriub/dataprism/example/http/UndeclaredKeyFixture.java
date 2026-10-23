@@ -24,6 +24,8 @@ import io.github.aindriub.dataprism.mcp.GetEntityContextTool;
 import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.PurposeValidator;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
@@ -157,9 +159,9 @@ final class UndeclaredKeyFixture {
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
         AuthorizationService authorizationService =
-                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                new PurposeValidator(Set.of(purpose)));
+                new PurposeValidator(Set.of(purpose)), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool get = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
                 scopeResolver, PrivacyMetrics.none(), toolAudit, clock, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(assembly.orchestrator(),
@@ -190,9 +192,9 @@ final class UndeclaredKeyFixture {
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT, Capability.COMPARE_ENTITY_SOURCES)));
         AuthorizationService authorizationService =
-                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                new PurposeValidator(Set.of(purpose)));
+                new PurposeValidator(Set.of(purpose)), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool get = new GetEntityContextTool(assembly.orchestrator(), authorizationService,
                 scopeResolver, PrivacyMetrics.none(), toolAudit, clock, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(assembly.orchestrator(),
