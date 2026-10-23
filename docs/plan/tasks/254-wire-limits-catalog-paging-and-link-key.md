@@ -36,6 +36,8 @@ Expose the 0.8 core's new configuration through `dataprism.*` and start the cata
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/OrchestrationWiring.java:40-74 (`dataPrismRequestLimitsPreflight`) and Preflights.java (`dataPrismPrivacyPolicyResolverPreflight`): the two guards.
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/HmacKeyReferenceResolver.java and PropertiesValidation.java:129-132: the key-reference resolver to reuse and the 32-byte rule.
 - ConfigurationMetadataDocumentedTest, PropertyNamesFrozenTest, AutoConfiguredBeanClassificationTest, AutoConfiguredBeanInventoryTest: the guards every new key and bean must satisfy.
+- From 222 and 242 (2026-10-22): link keys must be added to `ClusterKeyResolution`'s shared-key check (`CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED`), which today compares only the privacy HMAC key. Add `ClusterKeyResolution.java` and those two register rows to this brief's Owns, or leave the extension to 255 and say so in the Outcome.
+- From the external review of PR #154 (2026-10-22, 242's Outcome): `LinkKeys` construction needs the pseudonymisation key resolved through the same provider as the link keys. A null id refuses `LINK_KEY_SHARED` and an unresolvable one `LINK_KEY_UNRESOLVED`, so wire both ids.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.

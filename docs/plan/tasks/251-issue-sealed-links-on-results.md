@@ -3,7 +3,7 @@
 **Repo:** `.`
 **Release:** 0.8.0 (off by default through 0.9, sealed-links OD-7)
 **Base branch:** `origin/main` once 240, 241, 242 and 247 have merged
-**Depends on:** 240 (chainable paths), 241 (resolver declarations, metric constants), 242 (codec), 247 (labels, visibility, `OrchestrationOptions`, both edit `DefaultContextOrchestrator`)
+**Depends on:** 240 (chainable paths), 241 (resolver declarations, metric constants), 242 (codec), 247 (labels, visibility, `OrchestrationOptions`, both edit `DefaultContextOrchestrator`), 269 (the settled limiter contract: `AttemptSubject`, `LinkAttemptGate`, no `LinkKeys.attemptCounterKey`)
 **Decisions:** OD-08-7 decided 2026-10-20 (a): no `_links` on `compare_entity_sources` in 0.8.
 **Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
 **Owns:**
@@ -28,6 +28,10 @@ When links are enabled, every `ANSWERED` source result carries one sealed link p
 - docs/plan/design/contract-register.md OD-200-4: a source whose real name is over 64 characters gets no links in 0.8 (counted as omitted).
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/DefaultContextOrchestrator.java: where raw records, scrubbed trees and the `emitted` set meet; the final validation over the assembled tree.
 - From 240 (2026-10-21): `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
+- From the second external review of PR #154 (2026-10-23): an over-bound binding (a scope or principal id over 65535 UTF-8 bytes) is `BINDING_TOO_LONG` on seal; handle the omit. The limiter side of this bullet is settled by 269 (see the 269 bullet).
+- From the external review of PR #154 (2026-10-22, 242's Outcome): gate the limiter on `refused.counted()`, never `reason.counted()` (a post-authentication `MALFORMED` and `KEY_UNAVAILABLE` are uncounted). Supply the issue time from the clock and the link id from a random source; the codec seals whatever it is given. `LinkKeys.forScope` can refuse `LINK_KEY_UNRESOLVED` when the current key is down; handle it (`attemptCounterKey` is removed by 269).
+- From 269 (OD-269-1 to 3 decided (a) by the owner 2026-10-22; brief revised 2026-10-23): `LinkKeys.attemptCounterKey` is removed, and the limiter is reached only through `LinkAttemptGate.open(token, binding, accepted)` is the one call: it checks the binding bounds (`MALFORMED`, uncounted), then `locked` (a locked principal is `Exhausted` before the token is opened, valid links included), opens the token, and records a counted refusal atomically. It returns `Proceed(opened)`, `Invalid(reason)` or `Exhausted`. An architecture rule forbids calling `LinkCodec.open` or the limiter outside `core.link`. This task issues links and opens none, so it uses neither the gate nor the limiter.
+- From the external review of PR #154, rounds 1-4 (2026-10-23): `ScopeKeys.fingerprint` refuses values over 65535 bytes, so fingerprint only values within the chained-key cap, and say so in its Javadoc. The `&& knownKey` guard in `LinkCodec` has no test of its own; it is defence in depth behind the `UNKNOWN_KEY` return, so add a test or a comment.
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.

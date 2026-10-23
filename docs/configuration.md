@@ -135,7 +135,7 @@ for the relevant group.
 | `dataprism.correlation` | All optional. `inbound.header` is unset, which disables the feature; `inbound.format` `opaque`; `inbound.pattern` the strict default; `inbound.required` `false`; `outbound.header` unset. See [`dataprism.correlation`](#dataprismcorrelation) | No | Refuse startup for the refusals listed under [`dataprism.correlation`](#dataprismcorrelation) |
 | `dataprism.limits` | All optional; each default is the framework default. See [`dataprism.limits`](#dataprismlimits) | No | Refuse startup for a zero or negative value, or a response size that does not fit in an `int`, with `INVALID_REQUEST_LIMITS`; and for an application `RequestLimits` bean (`FORBIDDEN_PRIVACY_OVERRIDE`) |
 | `dataprism.metrics` | Defaults to the framework's no-op implementation only for fixture development; production requires an approved sink/registry binding | Sink credentials are **yes, by reference** when applicable | Refuse startup in production for an unknown or absent required sink; metrics failures after startup remain fail-safe and cannot change a privacy decision |
-| `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget, pause state, approvals and rate limits across members that have joined one cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but its state is per process, so a configured budget of 100 becomes 100 times the number of running processes. With `embedded`, `cluster-name` (never `dev`), `join.mode` (`tcp-ip`, `kubernetes` or `none`), `join.members`, `join.kubernetes.namespace`, `join.kubernetes.service-name` or `service-dns`, `member.port` (default 5701), `member.interface` and `approval-minimum-members` are the cluster properties, `lock-timeout` (default `PT2S`) bounds every cluster lock wait, and `approval-sweep-interval` (default `PT5M`) sets how often each member sweeps pending approvals; see [`dataprism.hazelcast`](#dataprismhazelcast). Identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | No | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration (`UNSAFE_HAZELCAST_PERSISTENCE`), TLS references (`HAZELCAST_TLS_UNSUPPORTED`: member TLS is not available in the open-source distribution), a missing or reserved cluster name (`MISSING_CLUSTER_NAME`, `RESERVED_CLUSTER_NAME`), a missing or unsupported join mode (`MISSING_CLUSTER_JOIN`, `UNSUPPORTED_CLUSTER_JOIN`), invalid members, Kubernetes join, port or interface (`INVALID_CLUSTER_MEMBERS`, `INVALID_KUBERNETES_JOIN`, `INVALID_CLUSTER_PORT`, `INVALID_CLUSTER_INTERFACE`), a member port shared with another listener (`CLUSTER_PORT_SHARED`), cluster settings that would be ignored (`CLUSTER_SETTINGS_IGNORED`), a non-positive TTL (`INVALID_HAZELCAST_TTL`), a lock timeout outside `PT100MS` to `PT30S` (`INVALID_LOCK_TIMEOUT`), an approval sweep interval outside `PT1S` to `P1D` (`INVALID_APPROVAL_SWEEP_INTERVAL`), an approval minimum that is below 1, above the listed members or set with `none`, or, with approvals in use, a `tcp-ip` member that cannot be counted (`INVALID_APPROVAL_QUORUM`), or, with approvals in use (approval-required tools set or re-identification enabled), `kubernetes` or a `tcp-ip` hostname member and no minimum (`MISSING_APPROVAL_QUORUM`), or an enabled index without its required controls (`MISSING_REIDENTIFICATION_CONTROLS`) |
+| `dataprism.hazelcast` | `topology` is required for a protected deployment and is one of two honest choices, never a default: `embedded` shares the read budget, pause state, approvals and rate limits across members that have joined one cluster, and is the one a multi-instance deployment must choose; `single-node` is a real, supported choice too, but its state is per process, so a configured budget of 100 becomes 100 times the number of running processes. With `embedded`, `cluster-name` (never `dev`), `join.mode` (`tcp-ip`, `kubernetes` or `none`), `join.members`, `join.kubernetes.namespace`, `join.kubernetes.service-name` or `service-dns`, `member.port` (default 5701), `member.interface` and `approval-minimum-members` are the cluster properties, `lock-timeout` (default `PT2S`) bounds every cluster lock wait, and `approval-sweep-interval` (default `PT5M`) sets how often each member sweeps pending approvals; see [`dataprism.hazelcast`](#dataprismhazelcast). Identity-cache TTL follows the privacy scope regardless of topology; re-identification index defaults to `false`; persistence/MapStore defaults to disabled | No | Refuse startup for a missing topology (`MISSING_CLUSTER_TOPOLOGY`), an unknown topology (`UNSUPPORTED_HAZELCAST_TOPOLOGY`), `embedded` with the optional Hazelcast dependency absent from the classpath (`MISSING_SHARED_BUDGET`, never a silent fall back to the per-process budget), persistence/MapStore enablement without an explicit reviewed configuration (`UNSAFE_HAZELCAST_PERSISTENCE`), TLS references (`HAZELCAST_TLS_UNSUPPORTED`: member TLS is not available in the open-source distribution), a missing or reserved cluster name (`MISSING_CLUSTER_NAME`, `RESERVED_CLUSTER_NAME`), a missing or unsupported join mode (`MISSING_CLUSTER_JOIN`, `UNSUPPORTED_CLUSTER_JOIN`), invalid members, Kubernetes join, port or interface (an invalid `member.interface`, or a `hazelcast.*` address property that makes a single member reachable; `INVALID_CLUSTER_MEMBERS`, `INVALID_KUBERNETES_JOIN`, `INVALID_CLUSTER_PORT`, `INVALID_CLUSTER_INTERFACE`), a member port shared with another listener (`CLUSTER_PORT_SHARED`), cluster settings that would be ignored (`CLUSTER_SETTINGS_IGNORED`), a non-positive TTL (`INVALID_HAZELCAST_TTL`), a lock timeout outside `PT100MS` to `PT30S` (`INVALID_LOCK_TIMEOUT`), an approval sweep interval outside `PT1S` to `P1D` (`INVALID_APPROVAL_SWEEP_INTERVAL`), an approval minimum that is below 1, above the listed members or set with `none`, or, with approvals in use, a `tcp-ip` member that cannot be counted (`INVALID_APPROVAL_QUORUM`), or, with approvals in use (approval-required tools set or re-identification enabled), `kubernetes` or a `tcp-ip` hostname member and no minimum (`MISSING_APPROVAL_QUORUM`), or an enabled index without its required controls (`MISSING_REIDENTIFICATION_CONTROLS`) |
 | `dataprism.oversight` | All optional. `approval-required-tools` defaults to empty; `approval-ttl` `PT15M`; `caller-rate-limit.requests` unset (no limit); `caller-rate-limit.window` `PT1M`; `max-pending-per-requester` `5` | No | Refuse startup for an unknown tool name (`UNKNOWN_OVERSIGHT_TOOL`), a non-positive limit, window, TTL or cap (`INVALID_OVERSIGHT_LIMIT`), or approval-required tools or a rate limit without `dataprism.operator.enabled` (`OVERSIGHT_REQUIRES_OPERATOR_SURFACE`) |
 | `dataprism.reidentification` | `enabled` defaults to `false`; `four-eyes` defaults to `true`; `approval-ttl` `PT15M`; `max-pending-per-requester` `5`; `purposes` and `roles` are required once enabled | No | Refuse startup for the refusals listed under [`dataprism.reidentification`](#dataprismreidentification) |
 | `dataprism.operator` | `enabled` defaults to `false`; `port`, `required-audience` and `required-scope` are required once enabled; `address` is optional and follows `server.address` when unset | No | Refuse startup for an enabled surface missing any of the required three (`MISSING_OPERATOR_SECURITY`), sharing `server.port` (`OPERATOR_PORT_SHARED`), using the MCP audience (`OPERATOR_AUDIENCE_SHARED`), or an `address` that does not resolve (`INVALID_OPERATOR_ADDRESS`); and `dataprism.reidentification.enabled=true` without the `data-prism-reidentification` module on the classpath (`REIDENTIFICATION_MODULE_MISSING`) |
@@ -191,7 +191,23 @@ Each key below is also described in the group table above. Defaults here are the
 | `dataprism.hazelcast.join.kubernetes.service-name` | unset | The service name (API mode); exactly one of this and `service-dns` |
 | `dataprism.hazelcast.join.kubernetes.service-dns` | unset | The service DNS name (DNS mode) |
 | `dataprism.hazelcast.member.port` | unset | The member port; 5701 when unset |
-| `dataprism.hazelcast.member.interface` | unset | The network interface the member binds; every interface when unset |
+| `dataprism.hazelcast.member.interface` | unset | The network interface the member binds. Required for `tcp-ip` and `kubernetes` (`MISSING_MEMBER_INTERFACE`); a value that matches every address is refused (`UNBOUNDED_MEMBER_INTERFACE`). Refused with `none` |
+| `dataprism.hazelcast.security.cluster-key.key-id` | unset | The identifier of the current cluster key. Required for `tcp-ip` and `kubernetes`, with exactly one of the two sources below; optional with `none`, but then the name key is required too. No dot |
+| `dataprism.hazelcast.security.cluster-key.environment-variable` | unset | The environment variable that holds the current cluster key, resolved by the same reviewed resolver as the privacy HMAC key. Exactly one of this and `provider-reference` |
+| `dataprism.hazelcast.security.cluster-key.provider-reference` | unset | A reference to the current cluster key in the key provider. Exactly one of this and `environment-variable` |
+| `dataprism.hazelcast.security.cluster-key.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
+| `dataprism.hazelcast.security.cluster-key.next.key-id` | unset | Optional, for a rotation: a cluster key every member reads and none writes. Needs a current key; must differ from every other key id |
+| `dataprism.hazelcast.security.cluster-key.next.environment-variable` | unset | The environment variable that holds the `next` key. Exactly one of this and `next.provider-reference`, with a `next.key-id` |
+| `dataprism.hazelcast.security.cluster-key.next.provider-reference` | unset | A reference to the `next` key in the key provider. Exactly one of this and `next.environment-variable`, with a `next.key-id` |
+| `dataprism.hazelcast.security.cluster-key.previous.key-id` | unset | Optional, for a rotation: the cluster key being retired. Needs a current key; must differ from every other key id |
+| `dataprism.hazelcast.security.cluster-key.previous.environment-variable` | unset | The environment variable that holds the `previous` key. Exactly one of this and `previous.provider-reference`, with a `previous.key-id` |
+| `dataprism.hazelcast.security.cluster-key.previous.provider-reference` | unset | A reference to the `previous` key in the key provider. Exactly one of this and `previous.environment-variable`, with a `previous.key-id` |
+| `dataprism.hazelcast.security.cluster-key.next.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
+| `dataprism.hazelcast.security.cluster-key.previous.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
+| `dataprism.hazelcast.security.name-key.key-id` | unset | The identifier of the name key, a separate key from every cluster key. Required for `tcp-ip` and `kubernetes`; optional with `none`, but then the cluster key is required too. No dot |
+| `dataprism.hazelcast.security.name-key.environment-variable` | unset | The environment variable that holds the name key. Exactly one of this and `provider-reference` |
+| `dataprism.hazelcast.security.name-key.provider-reference` | unset | A reference to the name key in the key provider. Exactly one of this and `environment-variable` |
+| `dataprism.hazelcast.security.name-key.value` | unset | Refused if set (`LITERAL_SECRET_FORBIDDEN`): a literal key is never accepted |
 | `dataprism.hazelcast.lock-timeout` | `PT2S` | How long a call waits for a cluster lock before it is refused with `CLUSTER_LOCK_TIMEOUT`; from `PT100MS` to `PT30S`. Every lock is leased for five times this, so none is held for ever; locks bound waits only. A lock or lease Hazelcast rejects is refused with `CLUSTER_OPERATION_REFUSED` |
 | `dataprism.hazelcast.approval-sweep-interval` | `PT5M` | How often each member sweeps the pending-approval entries and approval-id claims it owns; from `PT1S` to `P1D`, a `Duration`. A shorter interval clears leftovers sooner at the cost of more cluster calls. Fixed when the cluster is built, so it is refused with `single-node` and beside an application-supplied `PrivacyCluster` (`CLUSTER_SETTINGS_IGNORED`) |
 | `dataprism.hazelcast.approval-minimum-members` | unset | The fewest members that must see each other for approvals to change. Unset: a majority of the distinct `join.members` with `tcp-ip`, 1 with `none`; required with `kubernetes`, and with a hostname among `tcp-ip` members, when approvals are in use (`dataprism.oversight.approval-required-tools` set or `dataprism.reidentification.enabled`); the quorum is not computed or required otherwise |
@@ -561,9 +577,56 @@ phone-home are always off.
 - `members` with a mode other than `tcp-ip` is refused (`INVALID_CLUSTER_MEMBERS`),
   and `kubernetes.*` with a mode other than `kubernetes` is refused
   (`INVALID_KUBERNETES_JOIN`).
-- Without `member.interface`, a `tcp-ip` or `kubernetes` member binds every
-  network interface. Member traffic is not encrypted or authenticated, so isolate
-  it on a private network.
+- A `tcp-ip` or `kubernetes` member requires `member.interface` and listens only
+  there; one that matches every address is refused. Member traffic is not
+  encrypted or authenticated, so isolate it on a private network.
+
+Every cluster that joins other members needs a cluster key and a separate name
+key, each given as a key id and a reference. They are checked at startup, before a
+member starts. The message names the property and never a value. A solo member
+(`join.mode: none`) may leave both out. When it gives either, all of
+this applies to it as well, and it must give both. With `topology: single-node`, or
+beside your own `PrivacyCluster` bean, any `dataprism.hazelcast.security.*` key is
+refused (`CLUSTER_SETTINGS_IGNORED`) because nothing would read it.
+
+A member without keys is always solo: it listens on `127.0.0.1` only, under a
+cluster name with a random suffix, so no keyed member can join it. This holds for
+a `Config` passed to `PrivacyCluster.embedded` too. A `PrivacyCluster` or Hazelcast
+instance you supply without keys must be isolated the same way by you. One that is
+reachable from other hosts is refused (`MISSING_CLUSTER_KEY`): it must have `bind.any` false (both
+`hazelcast.socket.bind.any` and `hazelcast.socket.server.bind.any`), interfaces enabled and listing
+only loopback entries, no public address, and a loopback member address. The same code refuses an
+instance that already has more than one member.
+
+A late join is detected, not prevented. If a member joins a keyless wrapper anyway (or was already
+present when the wrapper registered its listener), the wrapper logs `MISSING_CLUSTER_KEY`, refuses
+every later operation, and shuts the instance down only if `PrivacyCluster` started it. Partition
+replicas reach the joiner before any listener runs, and a supplied instance keeps running, so this
+limits what the wrapper goes on serving; it does not undo any exposure. Isolation at start is the
+control.
+
+The packaged server reads cluster and name keys from environment variables only. A key
+given as `provider-reference` there is refused (`MISSING_KEY_PROVIDER`, naming the
+property) and is never looked up as the name of an environment variable. A custom
+`HmacKeyReferenceResolver` serves provider references by overriding
+`resolveProviderReference`; by default that refuses with `MISSING_KEY_PROVIDER`, so a resolver
+that has not opted in never treats a provider reference as a variable name. The privacy HMAC key follows the same
+rule: a `dataprism.privacy.hmac-key.provider-reference` is read through `resolveProviderReference`
+and an `environment-variable` through `resolve`.
+
+The first failing check is the one reported, and the checks run in this order:
+
+| Step | Code | When |
+|---|---|---|
+| 1 | `MISSING_CLUSTER_KEY` | A key id or its source is missing, both sources are set, one of the two keys is set without the other, or `next` or `previous` is set without a current key. Checked for the cluster key, the name key, `next`, then `previous` |
+| 2 | `LITERAL_SECRET_FORBIDDEN` | A `value` is set on the cluster key, the name key, `next` or `previous` |
+| 3 | `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` is missing for `tcp-ip` or `kubernetes`, or matches every address |
+| 4 | `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | A key id contains a dot (a blank key id is step 1). Checked for the cluster key, `next`, `previous`, then the name key |
+| 5 | `CLUSTER_KEY_UNRESOLVED`, `CLUSTER_KEY_WEAK`, `NAME_KEY_UNRESOLVED`, `NAME_KEY_WEAK` | A reference does not resolve, or resolves to material shorter than 32 bytes. Each key is resolved and measured in turn: the cluster key, `next`, `previous`, then the name key |
+| 6 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
+| 7 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
+| 8 | `NAME_KEY_SHARED` | The name key has the material of a cluster key |
+| 9 | `DUPLICATE_CLUSTER_KEY_ID` | The `current`, `next`, `previous` and name key ids are not pairwise distinct |
 
 The full property list, every refusal code, the Compose and Kubernetes examples
 and the network isolation you must supply are on

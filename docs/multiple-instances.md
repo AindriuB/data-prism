@@ -123,7 +123,7 @@ leaves it running. The code is on the configuration failure.
 | `INVALID_CLUSTER_MEMBERS` | `tcp-ip` with no members, or a blank member, no host or a port outside 1-65535. Also **`join.members` set with `kubernetes` or `none`** |
 | `INVALID_KUBERNETES_JOIN` | `kubernetes` without a namespace, or with both or neither of `service-name` and `service-dns`. Also **`join.kubernetes.*` set with `tcp-ip` or `none`** |
 | `INVALID_CLUSTER_PORT` | `member.port` outside 1-65535 |
-| `INVALID_CLUSTER_INTERFACE` | `member.interface` is not an IPv4 literal or wildcard pattern, or is set with `none` |
+| `INVALID_CLUSTER_INTERFACE` | `member.interface` is not an IPv4 literal or wildcard pattern, or is set with `none`; also a `hazelcast.*` address property that makes a single member reachable |
 | `CLUSTER_PORT_SHARED` | `member.port` equals `server.port`, `management.server.port` or an enabled `dataprism.operator.port` |
 | `CLUSTER_SETTINGS_IGNORED` | Cluster settings with `single-node`, or with an application-supplied `PrivacyCluster` |
 | `INVALID_LOCK_TIMEOUT` | `lock-timeout` below `PT100MS`, above `PT30S`, zero or negative |

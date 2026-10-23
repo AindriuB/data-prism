@@ -180,7 +180,11 @@ class ServerStartupTest {
     @Test
     void providerReferenceWithoutAReviewedResolverRefusesStartup() {
         Throwable failure = catchThrowable(() -> {
-            try (var ignored = start(true, false, true, validConfiguration())) { }
+            String[] configuration = validConfiguration();
+            for (int i = 0; i < configuration.length; i++) {
+                configuration[i] = configuration[i].replace("hmac-key.environment-variable=", "hmac-key.provider-reference=");
+            }
+            try (var ignored = start(true, false, true, configuration)) { }
         });
 
         assertConfigurationFailure(failure, "MISSING_KEY_PROVIDER");
@@ -279,7 +283,7 @@ class ServerStartupTest {
                 "--dataprism.privacy.profile=DEFAULT",
                 "--dataprism.privacy.scope-lifetime=8h",
                 "--dataprism.privacy.hmac-key.key-id=v1",
-                "--dataprism.privacy.hmac-key.provider-reference=test-key",
+                "--dataprism.privacy.hmac-key.environment-variable=test-key",
                 "--dataprism.audit.sink=approved-sink",
                 "--dataprism.audit.writer-id=test-server",
                 "--dataprism.metrics.sink=micrometer",

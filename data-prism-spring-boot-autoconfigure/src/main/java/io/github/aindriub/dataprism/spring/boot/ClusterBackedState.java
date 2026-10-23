@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.spring.boot;
 
 import com.hazelcast.core.HazelcastInstance;
 import io.github.aindriub.dataprism.core.limits.ScopeBudget;
+import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
 import io.github.aindriub.dataprism.hazelcast.ClusterMembership;
 import io.github.aindriub.dataprism.hazelcast.HazelcastApprovalStore;
@@ -10,11 +11,16 @@ import io.github.aindriub.dataprism.hazelcast.HazelcastOversightState;
 import io.github.aindriub.dataprism.hazelcast.HazelcastScopeBudget;
 import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal;
+import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
 import io.github.aindriub.dataprism.oversight.OversightState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -22,7 +28,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
-import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
@@ -39,23 +44,85 @@ import java.util.OptionalInt;
 @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
 @Configuration(proxyBeanMethods = false)
 class ClusterBackedState {
+    private static final Logger LOG = LoggerFactory.getLogger(ClusterBackedState.class);
+
     /**
      * Built from the explicit {@code dataprism.hazelcast} cluster settings, never from a default
      * {@code Config}. Waits for {@link PropertiesValidation#dataPrismPropertiesValidated} so a refused configuration
      * never starts a member.
      */
     @Bean @ConditionalOnMissingBean @DependsOn("dataPrismPropertiesValidated")
-    PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties) {
+    PrivacyCluster dataPrismPrivacyCluster(DataPrismProperties properties,
+            ObjectProvider<HmacKeyReferenceResolver> keyResolver, ObjectProvider<PrivacyMetrics> metrics) {
         HazelcastProperties h = properties.getHazelcast();
+        // Resolved before anything starts; the material lives only as long as ClusterKeys needs to copy it.
+        ClusterKeys keys = ClusterKeyResolution.resolve(properties, keyResolver::getObject).orElse(null);
         try {
             ClusterMembership membership = new ClusterMembership(h.getClusterName().strip(), join(h.getJoin()),
                     h.getMember().getPort() == null ? ClusterMembership.DEFAULT_PORT : h.getMember().getPort(),
-                    Optional.ofNullable(h.getMember().getInterface()));
-            return PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
-                    approvalMinimum(h, properties), h.getApprovalSweepInterval());
+                    h.getMember().getInterface());
+            PrivacyCluster cluster = PrivacyCluster.embedded(membership, h.isReidentificationEnabled(),
+                    approvalMinimum(h, properties), h.getApprovalSweepInterval(), keys);
+            try {
+                metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
+                        cluster::legacyEntries);
+            } catch (RuntimeException | Error registrationFailed) {
+                // A member that was started here is not left running because a gauge would not register.
+                closeSuppressing(cluster::close, registrationFailed);
+                throw registrationFailed;
+            }
+            return cluster;
         } catch (PrivacyClusterRefusal refusal) {
             String code = refusal.code().name();
-            throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
+            throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2),
+                    refusal);
+        }
+    }
+
+    /**
+     * The legacy-entries gauge for a {@link PrivacyCluster} the application supplied, which the bean above does not
+     * build. Fail-safe: that member is not ours to stop, so a gauge that will not register is logged by class and
+     * startup goes on.
+     */
+    @Bean
+    static SmartInitializingSingleton dataPrismSuppliedClusterGauge(ConfigurableListableBeanFactory beans,
+            ObjectProvider<PrivacyMetrics> metrics) {
+        return () -> beans.getBeansOfType(PrivacyCluster.class).forEach((name, cluster) -> {
+            try {
+                if (builtHere(beans, name)) {
+                    return;
+                }
+                metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
+                        cluster::legacyEntries);
+            } catch (RuntimeException registrationFailed) {
+                LOG.warn("the legacy-entries gauge could not be registered for the supplied cluster: {}",
+                        registrationFailed.getClass().getSimpleName());
+            }
+        });
+    }
+
+    /**
+     * Whether the bean was built by {@link #dataPrismPrivacyCluster}, told by its definition's factory method and not
+     * by its name: an application bean may carry the same name.
+     */
+    private static boolean builtHere(ConfigurableListableBeanFactory beans, String name) {
+        // A singleton registered by hand has no definition, and so was not built here.
+        return beans.containsBeanDefinition(name)
+                && beans.getMergedBeanDefinition(name) instanceof RootBeanDefinition root
+                && root.getResolvedFactoryMethod() != null
+                && root.getResolvedFactoryMethod().getDeclaringClass() == ClusterBackedState.class
+                && "dataPrismPrivacyCluster".equals(root.getResolvedFactoryMethod().getName());
+    }
+
+    /**
+     * Runs {@code close}; if it fails too, that failure is added to {@code failure} as suppressed, so the original
+     * is what propagates.
+     */
+    static void closeSuppressing(Runnable close, Throwable failure) {
+        try {
+            close.run();
+        } catch (RuntimeException | Error closeFailure) {
+            failure.addSuppressed(closeFailure);
         }
     }
 

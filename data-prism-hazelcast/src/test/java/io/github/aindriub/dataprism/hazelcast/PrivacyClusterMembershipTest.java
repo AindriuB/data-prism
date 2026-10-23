@@ -142,7 +142,7 @@ class PrivacyClusterMembershipTest {
         refuses(Code.MISSING_MEMBER_INTERFACE,
                 () -> ClusterMembership.kubernetes("c1", "ns", "svc", null).toConfig());
         refuses(Code.MISSING_MEMBER_INTERFACE, () -> PrivacyCluster.embedded(
-                ClusterMembership.tcpIp("c1", List.of("10.1.2.3")), false));
+                ClusterMembership.tcpIp("c1", List.of("10.1.2.3")), false, TestMembers.KEYS));
     }
 
     @Test
@@ -199,7 +199,7 @@ class PrivacyClusterMembershipTest {
         c.getAdvancedNetworkConfig().setJoin(c.getNetworkConfig().getJoin());
         HazelcastInstance instance = Hazelcast.newHazelcastInstance(c);
         try {
-            refuses(Code.UNSAFE_HAZELCAST_DISCOVERY, () -> PrivacyCluster.using(instance, false));
+            refuses(Code.UNSAFE_HAZELCAST_DISCOVERY, () -> PrivacyCluster.using(instance, false, TestMembers.KEYS));
             assertThat(instance.getLifecycleService().isRunning()).isTrue();
         } finally {
             instance.shutdown();
@@ -285,7 +285,7 @@ class PrivacyClusterMembershipTest {
                 java.util.Map.entry(Code.MISSING_CLUSTER_NAME, blank))) {
             HazelcastInstance instance = Hazelcast.newHazelcastInstance(c.getValue());
             try {
-                refuses(c.getKey(), () -> PrivacyCluster.using(instance, false));
+                refuses(c.getKey(), () -> PrivacyCluster.using(instance, false, TestMembers.KEYS));
                 assertThat(instance.getLifecycleService().isRunning()).isTrue();
             } finally {
                 instance.shutdown();
@@ -322,11 +322,11 @@ class PrivacyClusterMembershipTest {
         PrivacyCluster other = null;
         try {
             a = PrivacyCluster.embedded(ClusterMembership.tcpIp(name, members).withPort(base)
-                    .withInterface("127.0.0.1"), false);
+                    .withInterface("127.0.0.1"), false, TestMembers.KEYS);
             b = PrivacyCluster.embedded(ClusterMembership.tcpIp(name, members).withPort(base + 1)
-                    .withInterface("127.0.0.1"), false);
+                    .withInterface("127.0.0.1"), false, TestMembers.KEYS);
             other = PrivacyCluster.embedded(ClusterMembership.tcpIp(name + "-other", members)
-                    .withPort(base + 2).withInterface("127.0.0.1"), false);
+                    .withPort(base + 2).withInterface("127.0.0.1"), false, TestMembers.KEYS);
             var first = a;
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
             while (first.instance().getCluster().getMembers().size() < 2 && System.nanoTime() < deadline) {

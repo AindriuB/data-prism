@@ -38,6 +38,7 @@ be able to verify segments written under a retired key, or it would stop purging
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ConfiguredSecretKeyProvider.java — how the pseudonymisation key is resolved, for the same-key check
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/AuditMaintenance.java and AuditIntegrityHealth.java — the retention run and the `auditIntegrity` health contributor that reports its failure code
 - data-prism-spring-boot-autoconfigure/src/test/resources/configuration-metadata-gaps.txt:3-9 — the `outside-binding` precedent for map sub-keys
+- From 222 (2026-10-22): `ClusterKeyResolution` (spring-boot-autoconfigure, `PrivacyCluster` bean path) compares cluster and name keys only against the privacy HMAC key, by id and by material. Extend it to compare against the audit key, and add it to this brief's Owns together with the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of the contract register.
 
 ## Acceptance
 - [ ] `dataprism.audit.hmac-key.key-id`, `.environment-variable` and `.provider-reference` bind, with exactly one of the last two required when the group is set. There is no inline key-value property. Unset means unkeyed, and a test asserts that default.

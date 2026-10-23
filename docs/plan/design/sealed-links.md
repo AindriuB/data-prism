@@ -170,6 +170,16 @@ Derivation is HKDF-SHA-256 (RFC 5869), written out so there is nothing to interp
 | Fingerprinting | `dataprism/link/v1/fingerprint` | HMAC key for the chained-value fingerprint (option b) and for the attempt-counter key (section 4) |
 | Caller binding | `dataprism/link/v1/caller` | HMAC key for the caller tag in the AAD |
 
+MAC input labels (review 4). The fingerprint key MACs three kinds of input, so each MAC input begins with its own purpose label as the first length-prefixed item, and no two purposes can produce the same input:
+
+| MAC | First item of the input | Rest of the input |
+|---|---|---|
+| Chained-value fingerprint (12 bytes) | `dataprism/link/v1/fingerprint` | the value |
+| Catalog tag (16 bytes) | `dataprism/link/v1/catalog-tag` | each label, in order |
+| Attempt counter key (16 bytes, hex) | `dataprism/link/v1/attempt` | the scope id, the principal id |
+
+Task 269 removes the counter key's HMAC and keeps `dataprism/link/v1/attempt` as the first item of `AttemptSubject.canonical()`.
+
 Different labels mean the sealing key and the fingerprint key never coincide. The scope id in `info` means a key derived for one scope is not the key for another, which narrows what a leak of one derived key gives (not what a leak of the master gives). The JDK 21 baseline has no public HKDF API (`javax.crypto.KDF` arrives in Java 24), so 0.8 implements the two steps over `HmacSHA256` and tests them against the RFC 5869 vectors (OD-6).
 
 Rotation: a token names its key id (see layout). Verification looks up exactly that id with `SecretKeyProvider.secret`, which throws on an unknown id and must not fall back to another key (the trap recorded in HISTORY S2a). Issuance always uses the current `key-id`. Rotation is two-phase, so that a rolling restart never produces a link that some member cannot verify. Phase 1: add the new key to the provider of every member, with `key-id` unchanged; every member now verifies both keys and issues under the old one. The operator confirms phase 1 from a signal each member exposes, the gauge `dataprism.links.keys.loaded` (one series per held key id, value 1) and the same list on the health endpoint: no member may change `key-id` until every member reports the new id. Phase 2: change `key-id` to the new id on the members, in any order or all at once; during the roll some members issue under the old key and some under the new, and all verify both. Phase 3: keep the old key until the maximum link lifetime (plus `clock-skew`) has passed, then retire it. With `lifetime=scope` the maximum lifetime is the maximum scope lifetime, so the key rotates at most that often and the exposure window under (a') widens accordingly (OD-15). After retirement its links are refused as `LINK_INVALID` with audit reason `UNKNOWN_KEY`. Because `UNKNOWN_KEY` is counted by the limiter (section 4), an honest holder of a link under a retired key is counted only if the key was retired before the link expired; a deliberate emergency removal of a key (T9) does exactly that and is accepted to lock out each holder of an old link for one `invalid-attempt-window`, after which the holder can run the origin call again. Retiring from the provider's memory (`MultiKeySecretKeyProvider.remove`) is not destruction; whether a retired key is also gone from the key store is the operator's procedure and decides whether option (a') delivers its benefit.
@@ -226,7 +236,7 @@ The target source is not repeated in the payload. The label in the header is aut
 
 ### Size arithmetic and defaults
 
-Worst case for option (a) and (a'): header 120 + payload (8 + 8 + 1 + 33 + 33 + 258 = 341) = 461 bytes, which is 616 characters. OD-200-4 leaves it unchanged: the sum already used the decided caps (namespace and resolver name 32, source label 64), and the entity type and field path appear only in option (b) fields below. 616 is at most the 1024 default.
+Worst case for option (a) and (a'): header 120 + payload (8 + 8 + 1 + 33 + 33 + 258 = 341) = 461 bytes, which is 616 characters (counting padding; the unpadded worst case as built by task 242 is 615). OD-200-4 leaves it unchanged: the sum already used the decided caps (namespace and resolver name 32, source label 64), and the entity type and field path appear only in option (b) fields below. 616 is at most the 1024 default.
 
 Worst case for option (b), which was rejected (OD-1) and is kept for the record, with d origin levels and the OD-200-4 caps (entity type 1 + 64, field path 1 + 64): header 120 + fixed payload (8 + 8 + 1 + 33 + 33 = 83) + root request 323 + 187 d = 526 + 187 d bytes. Base64url length is 4 x ceil(bytes / 3).
 
@@ -264,11 +274,23 @@ The decision is `DENY:LINK_INVALID`. The real reason must be recorded somewhere 
 
 | Disposition key | Information | Shape under OD-13 shape C |
 |---|---|---|
-| `link` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `ISSUED_IN_FUTURE`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `PAYLOAD_MISMATCH` | `REFUSED:LINK_<REASON>`, for example `REFUSED:LINK_AUTH_FAILED` |
+| `link` | The real reason, from a closed set: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY`, `AUTH_FAILED`, `EXPIRED`, `ISSUED_IN_FUTURE`, `TARGET_NOT_PERMITTED`, `RELATION_UNDECLARED`, `ORIGIN_DRIFT`, `PAYLOAD_MISMATCH`, and (task 242 review, 2026-10-22) `KEY_UNAVAILABLE` | `REFUSED:LINK_<REASON>`, for example `REFUSED:LINK_AUTH_FAILED`; `KEY_UNAVAILABLE` is `REFUSED:LINK_KEY_UNAVAILABLE` |
 | `link:id` | The link's 16 hex-character id, only when the link authenticated | Not recorded under C (a metric-free loss: issue and use are joined by `correlationId` of each call only) |
 | `link:attempts` | The principal's counted failures in the window | Not recorded under C; exposed as a metric without a principal label |
 
 The closed set has eleven reasons. A twelfth, `DEPTH_EXCEEDED`, existed only for rejected option (b) and is withdrawn (OD-200-8).
+
+Amendments from the external review of PR #154 (task 242, 2026-10-22), built in `core.link`:
+
+- `KEY_UNAVAILABLE` is a further reason, uncounted, audit value `REFUSED:LINK_KEY_UNAVAILABLE`. It means a key id the instance holds whose key the provider cannot serve at open time (failure, null, or under 32 bytes). The dummy-key AEAD still runs, so timing is unchanged. An id not held stays `UNKNOWN_KEY`, counted. The sealing side has the matching `SealResult.OmitReason.KEY_UNAVAILABLE`: `sealDetailed` returns `Omitted(KEY_UNAVAILABLE)` when the current key has vanished, and does not throw.
+- Round 2 of the review (task 242, 2026-10-23) adds two further omit reasons, `SealResult.OmitReason.BINDING_TOO_LONG` and `TARGET_TOO_LONG`. A follow target over 64 bytes now constructs, and `sealDetailed` omits it as `TARGET_TOO_LONG`; `FollowPayload` still refuses an empty target.
+- Binding bounds: a scope id or principal id over 65535 UTF-8 bytes (the associated-data item limit; this design gives no tighter bound) makes `open` refuse `MALFORMED`, uncounted, because the session and not the token is at fault, and makes `sealDetailed` omit as `BINDING_TOO_LONG`. Neither throws, and `LinkBinding` still constructs. `attemptCounterKey` still throws for an id over the limit, so the caller checks the bounds before it (briefs 251, 252; 269 replaces `attemptCounterKey`).
+- The `LinkCodec` constructor refusal for a key id mismatch carries the stable code `INVALID_LINK_LIMIT`, as the other settings errors do.
+- What is uniform in verification, stated exactly: after the structural checks, every refusal runs the same key derivation and the same AEAD, using a fixed dummy key for an id not held. What differs: a key id the instance holds costs a provider fetch and a SHA-256 of the key material, which an unknown id costs neither of. Key ids are public, so the difference reveals nothing secret, but a forged token naming a held id costs a key-store round trip per attempt (brief 255 considers caching).
+- A `MALFORMED` decided after authentication (an authenticated payload that does not parse) is uncounted. `Refused.counted()` is authoritative; `LinkReason.counted()` is only the default for the reason. Callers gate the limiter on `refused.counted()`.
+- Follow payload rules, enforced at construction: a resolver is present only for `TRANSLATED` (`DIRECT` with a resolver and `TRANSLATED` without one are refused), and the namespace is 1 to 32 bytes (empty is refused).
+- Held key ids are filtered on every read: `heldKeyIds()` lists only ids that resolve to at least 32 bytes now, and every held key that resolves is compared with a SHA-256 digest of the pseudonymisation key by `MessageDigest.isEqual` at construction and on every resolution. A held key later found equal to the pseudonymisation key is not held, is `UNKNOWN_KEY` at open, and never appears in `heldKeyIds()`.
+- A null pseudonymisation key id refuses at construction (`LINK_KEY_SHARED`), and one that cannot be resolved refuses `LINK_KEY_UNRESOLVED`; there is no id-only fallback. A declared held id that does not resolve refuses `LINK_KEY_UNRESOLVED`, and one under 32 bytes `LINK_KEY_WEAK`.
 
 `AUTH_FAILED` covers forgery, tampering, wrong scope, wrong caller and wrong target, because the AEAD cannot say which input differed. That is a deliberate loss of operator diagnostics in exchange for no oracle (OD-3).
 
@@ -280,11 +302,11 @@ Never in audit, logs, metrics or exceptions: the token, the sealed payload, the 
 
 Purpose: stop a prompt-injected agent from grinding forged links. Properties required:
 
-- It counts only failures decided before the token authenticates: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY` and `AUTH_FAILED`. These are the failures a forger produces. An honest link naming a retired key has expired anyway under the rotation rule in section 3, so counting `UNKNOWN_KEY` does not penalise honest use.
+- It counts only failures decided before the token authenticates: `MALFORMED`, `TOO_LONG`, `VERSION`, `UNKNOWN_KEY` and `AUTH_FAILED`. A `MALFORMED` decided after authentication is not counted, and neither is `KEY_UNAVAILABLE`; `Refused.counted()` decides. These are the failures a forger produces. An honest link naming a retired key has expired anyway under the rotation rule in section 3, so counting `UNKNOWN_KEY` does not penalise honest use.
 - Classification follows the authentication step. A token that fails authentication is always recorded and counted as `AUTH_FAILED`, whatever its cleartext header says: a forged token that names a target the caller cannot see, an expiry in the past or a relation that is not declared is `AUTH_FAILED`, not `TARGET_NOT_PERMITTED`, `EXPIRED` or `RELATION_UNDECLARED`. Those, together with `ORIGIN_DRIFT`, `ISSUED_IN_FUTURE` and `PAYLOAD_MISMATCH` (the reason `DEPTH_EXCEEDED` is withdrawn, OD-200-8), are classified only after authentication succeeds, so they are reachable only with a genuine link, are never counted, and give a prober no information (a prober cannot reach them). Counting them would only lock out honest users, for example on clock skew between members.
 - It counts per principal within a scope, so one principal cannot lock the others out. The counter key is `HMAC(fingerprintKey, scopeId | principalId)` truncated and hex-encoded, so the map holds neither a case id nor a principal id (boundary 6).
-- The window is fixed and does not depend on a stored scope end, which does not exist: the counter entry is created at the first counted failure with a time-to-live of `dataprism.links.invalid-attempt-window` (default `PT10M`) and increments do not extend it. In a single-node deployment the same semantics hold in process.
-- When the count reaches `invalid-attempt-limit` (default 20), every `follow` by that principal in that scope is refused with `LINK_ATTEMPTS_EXHAUSTED` until the entry expires, including calls carrying a valid link. A lock that still accepted valid links would tell the prober which links are valid.
+- The window is fixed and does not depend on a stored scope end, which does not exist: the counter entry is created at the first counted failure and stores the window start; the window ends when the clock passes that start plus `dataprism.links.invalid-attempt-window` (default `PT10M`), decided by comparing the stored start with the clock and never by an entry expiring (task 242; a shared limiter, task 264, must do the same), and increments do not extend it. In a single-node deployment the same semantics hold in process.
+- When the count reaches `invalid-attempt-limit` (default 20), every `follow` by that principal in that scope is refused with `LINK_ATTEMPTS_EXHAUSTED` until the window ends, including calls carrying a valid link. A lock that still accepted valid links would tell the prober which links are valid.
 - The counter is cluster-wide on a shared topology (an integer under a keyed-hash key). Whether to also set an aggregate per-scope ceiling, the limit and window values, and whether to lock at all or only count and audit, are OD-8.
 
 ## 5. The `follow` tool and `_links`
@@ -411,7 +433,7 @@ All proposals. Unknown keys under `dataprism.links` are startup errors like ever
 | Key | Default | Validation, and what a bad value does at startup |
 |---|---|---|
 | `dataprism.links.enabled` | `false` | With `false`, no `_links`, and `follow` is not registered; the product behaves as option (c) |
-| `dataprism.links.key-id` | none | Required when enabled. Unresolvable: `LINK_KEY_UNRESOLVED`. Shorter than 32 bytes: `LINK_KEY_WEAK`. Same id as `dataprism.privacy.hmac-key.key-id`: `LINK_KEY_SHARED` |
+| `dataprism.links.key-id` | none | Required when enabled. Unresolvable: `LINK_KEY_UNRESOLVED`. Shorter than 32 bytes: `LINK_KEY_WEAK`. Same id as `dataprism.privacy.hmac-key.key-id`: `LINK_KEY_SHARED`. A key id that is not 1 to 16 characters of `A-Z`, `a-z`, `0-9`, `_` and `-`: `INVALID_LINK_LIMIT`, as built by task 242 (this design named no key-id code) |
 | `dataprism.links.lifetime` | `PT30M` | Positive duration, or `scope`; otherwise `INVALID_LINK_LIFETIME`. Never effective beyond the scope (D-RM-6) |
 | `dataprism.links.max-per-response` | `50` | 1 to 500; otherwise `INVALID_LINK_LIMIT` |
 | `dataprism.links.max-length` | `1024` (was 768 until 2026-10-19; see OD-B12 of `batch-and-bulk-follow.md`) | At most 4096. Floor 616, the worst case of (a) and (a') in section 3. A value below the floor is `INVALID_LINK_LIMIT`. The option (b) default of 1536 and its floor formula are withdrawn (OD-200-8) |

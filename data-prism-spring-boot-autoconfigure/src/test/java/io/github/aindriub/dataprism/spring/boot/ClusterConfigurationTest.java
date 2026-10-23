@@ -109,6 +109,13 @@ class ClusterConfigurationTest {
         return claimPorts(1);
     }
 
+    /** The cluster key and name key of a test member, by reference; the shared test resolver supplies the bytes. */
+    static final String[] KEYS = {
+            "dataprism.hazelcast.security.cluster-key.key-id=cluster-1",
+            "dataprism.hazelcast.security.cluster-key.environment-variable=DATAPRISM_CLUSTER_KEY_REF",
+            "dataprism.hazelcast.security.name-key.key-id=name-1",
+            "dataprism.hazelcast.security.name-key.environment-variable=DATAPRISM_NAME_KEY_REF"};
+
     /** The settings an existing test adds to run an embedded topology as one member. */
     static String[] singleMember() {
         return new String[] {"dataprism.hazelcast.cluster-name=" + uniqueName(),
@@ -204,8 +211,8 @@ class ClusterConfigurationTest {
         refusesEmbedded("INVALID_CLUSTER_PORT", NAME, NONE, "dataprism.hazelcast.member.port=0");
     }
     @Test void passes_through_an_invalid_interface() {
-        refusesEmbedded("INVALID_CLUSTER_INTERFACE", NAME, "dataprism.hazelcast.join.mode=tcp-ip",
-                "dataprism.hazelcast.join.members[0]=127.0.0.1:5999", "dataprism.hazelcast.member.interface=not-an-ip");
+        refusesEmbedded("INVALID_CLUSTER_INTERFACE", with(KEYS, NAME, "dataprism.hazelcast.join.mode=tcp-ip",
+                "dataprism.hazelcast.join.members[0]=127.0.0.1:5999", "dataprism.hazelcast.member.interface=not-an-ip"));
     }
     @Test void refuses_an_interface_with_a_single_member() {
         refusesEmbedded("INVALID_CLUSTER_INTERFACE", NAME, NONE, "dataprism.hazelcast.member.interface=127.0.0.1");
@@ -271,6 +278,9 @@ class ClusterConfigurationTest {
         @Bean(destroyMethod = "close") PrivacyCluster suppliedCluster() {
             Config config = new Config().setClusterName(uniqueName());
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
+            // A supplied member without keys must be solo: loopback only.
+            config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+            config.setProperty("hazelcast.socket.bind.any", "false");
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
             return PrivacyCluster.using(Hazelcast.newHazelcastInstance(hardened(config)), false);
@@ -282,6 +292,8 @@ class ClusterConfigurationTest {
         @Bean PrivacyCluster suppliedCluster() {
             Config config = new Config().setClusterName(uniqueName());
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
+            config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
+            config.setProperty("hazelcast.socket.bind.any", "false");
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(true);
             HazelcastInstance instance = Hazelcast.newHazelcastInstance(hardened(config));
@@ -344,12 +356,12 @@ class ClusterConfigurationTest {
     }
 
     private static String[] clusterProps(String name, int port, int portA, int portB) {
-        return new String[] {"dataprism.hazelcast.cluster-name=" + name,
+        return with(KEYS, "dataprism.hazelcast.cluster-name=" + name,
                 "dataprism.hazelcast.join.mode=tcp-ip",
                 "dataprism.hazelcast.join.members[0]=127.0.0.1:" + portA,
                 "dataprism.hazelcast.join.members[1]=127.0.0.1:" + portB,
                 "dataprism.hazelcast.member.port=" + port,
-                "dataprism.hazelcast.member.interface=127.0.0.1"};
+                "dataprism.hazelcast.member.interface=127.0.0.1");
     }
 
     // ---- bean graph ----------------------------------------------------------------------------
@@ -369,7 +381,7 @@ class ClusterConfigurationTest {
     @Test void the_environment_variables_reach_the_built_cluster_configuration() {
         int port = freePort();
         String name = uniqueName();
-        runner("embedded").withInitializer(context -> TestPropertyValues.of(
+        runner("embedded", KEYS).withInitializer(context -> TestPropertyValues.of(
                 "DATAPRISM_HAZELCAST_CLUSTERNAME=" + name,
                 "DATAPRISM_HAZELCAST_JOIN_MODE=tcp-ip",
                 "DATAPRISM_HAZELCAST_JOIN_MEMBERS=127.0.0.1:" + port + ",127.0.0.1:" + (port + 1),

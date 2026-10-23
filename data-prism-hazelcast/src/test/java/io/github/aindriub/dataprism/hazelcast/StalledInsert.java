@@ -142,7 +142,7 @@ final class StalledInsert {
                                 return invoke(call, target, callArgs);
                             }));
                 });
-        return PrivacyCluster.using(stalledInstance, false);
+        return PrivacyCluster.using(stalledInstance, false, TestMembers.KEYS);
     }
 
     void resume() {

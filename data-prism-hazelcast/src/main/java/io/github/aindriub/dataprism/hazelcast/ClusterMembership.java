@@ -5,6 +5,8 @@ import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.KubernetesConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 
 import java.util.List;
@@ -17,9 +19,12 @@ import java.util.regex.Pattern;
  * Hazelcast {@link Config} that always has auto-detection, multicast and phone-home off,
  * so a member can only ever join what the deployer named.
  */
-public record ClusterMembership(String clusterName, Join join, int port, Optional<String> interfaceAddress) {
+public record ClusterMembership(String clusterName, Join join, int port, String interfaceAddressOrNull) {
 
     public static final int DEFAULT_PORT = 5701;
+
+    /** Hazelcast reads this as a Config property or a system property, and it overrides the picked address. */
+    private static final String LOCAL_ADDRESS = "hazelcast.local.localAddress";
 
     private static final Pattern OCTET = Pattern.compile("\\*|\\d{1,3}(-\\d{1,3})?");
 
@@ -43,7 +48,6 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
     }
 
     public ClusterMembership {
-        interfaceAddress = interfaceAddress == null ? Optional.empty() : interfaceAddress;
         if (clusterName == null || clusterName.isBlank()) {
             throw refuse(Code.MISSING_CLUSTER_NAME, "clusterName is required");
         }
@@ -54,40 +58,45 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         if (!validPort(port)) {
             throw refuse(Code.INVALID_CLUSTER_PORT, "port must be 1-65535");
         }
-        if (interfaceAddress.isPresent() && join instanceof None) {
+        if (interfaceAddressOrNull != null && join instanceof None) {
             throw refuse(Code.INVALID_CLUSTER_INTERFACE,
                     "interface cannot be set for a single member, which is loopback-only");
         }
-        if (interfaceAddress.isPresent() && !validInterface(interfaceAddress.get())) {
+        if (interfaceAddressOrNull != null && !validInterface(interfaceAddressOrNull)) {
             throw refuse(Code.INVALID_CLUSTER_INTERFACE,
                     "interface must be an IPv4 literal or a wildcard pattern such as 10.0.*.*");
         }
-        if (interfaceAddress.isPresent() && matchesEveryAddress(interfaceAddress.get())) {
+        if (interfaceAddressOrNull != null && matchesEveryAddress(interfaceAddressOrNull)) {
             throw refuse(Code.UNBOUNDED_MEMBER_INTERFACE,
                     "member.interface matches every address; name the network the cluster port may listen on");
         }
     }
 
+    /** The interface the member listens on, if one was named. The component itself is nullable. */
+    public Optional<String> interfaceAddress() {
+        return Optional.ofNullable(interfaceAddressOrNull);
+    }
+
     public static ClusterMembership tcpIp(String clusterName, List<String> members) {
-        return new ClusterMembership(clusterName, new TcpIp(members), DEFAULT_PORT, Optional.empty());
+        return new ClusterMembership(clusterName, new TcpIp(members), DEFAULT_PORT, null);
     }
 
     public static ClusterMembership kubernetes(String clusterName, String namespace, String serviceName,
                                                String serviceDns) {
         return new ClusterMembership(clusterName, new Kubernetes(namespace, serviceName, serviceDns),
-                DEFAULT_PORT, Optional.empty());
+                DEFAULT_PORT, null);
     }
 
     public static ClusterMembership none(String clusterName) {
-        return new ClusterMembership(clusterName, new None(), DEFAULT_PORT, Optional.empty());
+        return new ClusterMembership(clusterName, new None(), DEFAULT_PORT, null);
     }
 
     public ClusterMembership withPort(int newPort) {
-        return new ClusterMembership(clusterName, join, newPort, interfaceAddress);
+        return new ClusterMembership(clusterName, join, newPort, interfaceAddressOrNull);
     }
 
     public ClusterMembership withInterface(String address) {
-        return new ClusterMembership(clusterName, join, port, Optional.ofNullable(address));
+        return new ClusterMembership(clusterName, join, port, address);
     }
 
     /**
@@ -99,7 +108,15 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
      *                               followed by {@link #withInterface}.
      */
     public Config toConfig() {
-        if (!(join instanceof None) && interfaceAddress.isEmpty()) {
+        return toConfig(Code.INVALID_CLUSTER_INTERFACE);
+    }
+
+    /**
+     * As {@link #toConfig()}; {@code isolationFailure} is the code given when a {@code none} membership cannot be
+     * made loopback-only: a member that holds keys is not told it lacks them.
+     */
+    Config toConfig(Code isolationFailure) {
+        if (!(join instanceof None) && interfaceAddressOrNull == null) {
             throw refuse(Code.MISSING_MEMBER_INTERFACE,
                     "member.interface is required for tcp-ip and kubernetes joins");
         }
@@ -129,24 +146,117 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
                 bindToInterface(config);
             }
             case None none -> {
-                // Every joiner stays disabled, so the member starts standalone and discovers no one.
-                // Hazelcast still answers a join request that carries a matching cluster name, so
-                // the effective name also carries an unguessable per-member suffix. It is internal
-                // and appears in logs.
-                config.setClusterName(clusterName + "-solo-" + UUID.randomUUID());
-                config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface("127.0.0.1");
-                config.setProperty("hazelcast.socket.bind.any", "false");
+                isolate(config, isolationFailure);
             }
         }
         return config;
     }
 
+    /**
+     * Makes a member solo: every joiner stays disabled, so it starts standalone and discovers no one. Hazelcast still
+     * answers a join request that carries a matching cluster name, so the effective name also carries an
+     * unguessable per-member suffix (internal, and it appears in logs), and the member listens on loopback only.
+     */
+    static void isolate(Config config) {
+        isolate(config, Code.MISSING_CLUSTER_KEY);
+    }
+
+    /** As above; {@code failure} is the code when the configuration still reaches beyond this host. */
+    static void isolate(Config config, Code failure) {
+        // Modifies the Config it is given. The suffix is always fresh, so nothing in the Config can skip it; a
+        // Config passed twice carries two suffixes, which is harmless.
+        config.setClusterName(config.getClusterName() + "-solo-" + UUID.randomUUID());
+        config.getNetworkConfig().getInterfaces().clear().setEnabled(true).addInterface("127.0.0.1");
+        config.setProperty("hazelcast.socket.bind.any", "false");
+        config.setProperty("hazelcast.socket.server.bind.any", "false");
+        config.getNetworkConfig().setPublicAddress(null);
+        config.getNetworkConfig().getMemberAddressProviderConfig().setEnabled(false);
+        // What the member will really do is read the same way Hazelcast reads it, so a setting that still wins
+        // over the above (a system property, say) is caught here and not assumed away.
+        if (!reachableOnlyFromThisHost(config)) {
+            throw refuse(failure, failure == Code.MISSING_CLUSTER_KEY
+                    ? "a member without cluster keys must listen on loopback only, and its configuration does not"
+                    : "a single member listens on loopback only, and an address setting makes it reachable elsewhere");
+        }
+    }
+
+    /** Hazelcast reads this too; it sets the address a member advertises to the others. */
+    private static final String PUBLIC_ADDRESS = "hazelcast.local.publicAddress";
+
+    /** The host part of {@code host} or {@code host:port}; a bare IPv6 literal has no port to strip. */
+    private static String hostOf(String address) {
+        int colon = address.lastIndexOf(':');
+        return colon > 0 && address.indexOf(':') == colon ? address.substring(0, colon) : address;
+    }
+
+    private static final Pattern LOOPBACK_LITERAL = Pattern.compile("127\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})");
+
+    /** An IPv4 literal in 127/8, {@code localhost} or {@code ::1}; any other name could resolve elsewhere. */
+    static boolean loopbackLiteral(String value) {
+        if (value.equals("localhost") || value.equals("::1")) {
+            return true;
+        }
+        var matcher = LOOPBACK_LITERAL.matcher(value);
+        if (!matcher.matches()) {
+            return false;
+        }
+        for (int i = 1; i <= 3; i++) {
+            if (Integer.parseInt(matcher.group(i)) > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether the config makes the member reachable from this host only: neither socket setting binds every
+     * interface, the interfaces are enabled and all loopback entries, no public address is advertised (field, or the
+     * {@code hazelcast.local.publicAddress} property, loopback literals only), no member
+     * address provider is enabled, and no non-loopback {@code hazelcast.local.localAddress} (Config or system
+     * property) overrides the address picked. Read the way Hazelcast reads its properties. {@code PrivacyCluster.using} asks
+     * the same of a supplied instance, so the two cannot disagree.
+     */
+    static boolean reachableOnlyFromThisHost(Config config) {
+        HazelcastProperties properties = new HazelcastProperties(config);
+        if (properties.getBoolean(ClusterProperty.SOCKET_BIND_ANY)
+                || properties.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY)) {
+            return false;
+        }
+        String localAddress = config.getProperty(LOCAL_ADDRESS);
+        if (localAddress == null) {
+            localAddress = System.getProperty(LOCAL_ADDRESS);
+        }
+        if (localAddress != null && !localAddress.isBlank() && !loopbackLiteral(localAddress.strip())) {
+            return false;
+        }
+        String advertised = config.getProperty(PUBLIC_ADDRESS);
+        if (advertised == null) {
+            advertised = System.getProperty(PUBLIC_ADDRESS);
+        }
+        if (advertised != null && !advertised.isBlank() && !loopbackLiteral(hostOf(advertised.strip()))) {
+            return false;
+        }
+        var network = config.getNetworkConfig();
+        var interfaces = network.getInterfaces();
+        if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()
+                || !interfaces.getInterfaces().stream().allMatch(entry -> entry != null
+                && entry.strip().startsWith("127."))) {
+            return false;
+        }
+        String publicAddress = network.getPublicAddress();
+        if (publicAddress != null && !publicAddress.isBlank()) {
+            return false;
+        }
+        return !network.getMemberAddressProviderConfig().isEnabled();
+    }
+
     /** With an interface, listen only there; without one Hazelcast binds every interface. */
     private void bindToInterface(Config config) {
-        interfaceAddress.ifPresent(a -> {
+        if (interfaceAddressOrNull != null) {
+            String a = interfaceAddressOrNull;
             config.getNetworkConfig().getInterfaces().setEnabled(true).addInterface(a);
             config.setProperty("hazelcast.socket.bind.any", "false");
-        });
+        }
     }
 
     static boolean isReserved(String name) {

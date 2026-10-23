@@ -55,6 +55,22 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 Central warned on 2026-10-22 that the organisation reached its monthly File Count publishing limit; the grace period ends 2026-11-08. Decide before 0.8.0 whether to check the plan or limit in the portal, publish fewer modules, or release at most once a month.
 
+##### Open (owner, deferred 2026-10-23): merge small modules to cut published artifacts
+
+The owner has asked to record the options and return to this later; nothing is decided. This is the architect's assessment of 2026-10-23, and it bears on the File Count item above.
+
+- **Recommended (a):** merge `data-prism-validation`, `data-prism-pseudonymisation` and `data-prism-security` into `data-prism-core`, keeping the package names. Central goes from 13 published jars to 10. Also make `data-prism-spring-boot-starter` pom-only, since it holds only `package-info.java`. Per-release files go from about 400 to about 300 (an estimate). Do it as the last 0.8 task, after 203, 208, 248, 250 and 256 have merged, because their Owns name those module paths.
+  - Cost: three Maven coordinates are removed, which is a breaking change. The build-level barrier goes, leaving ArchUnit as the only guard. `docs/architecture.md:35-52` and `ArchitectureCoverageTest` need updating, and the connectors-rest "depends on core" drift needs fixing (it also depends on validation and orchestration).
+- **(b):** merge only validation and pseudonymisation, keeping security separate if core's published dependency footprint should stay minimal.
+- **(c):** no merge; handle the limit through the Central portal plan, or a release cadence of at most one a month.
+- **Must not merge:**
+  - annotations and processor: the processor must stay off the compile classpath.
+  - connectors-rest: it is an opt-in `-Dloader.path` plug-in.
+  - mcp and orchestration into core: boundary 1, and "core carries no business domain".
+  - hazelcast and reidentification: both are optional for single-node deployments.
+  - reidentification into hazelcast: it weakens boundary 5.
+- **Note:** one release a month matters more than module count for the File Count limit.
+
 #### 0.7.0 release gate: done
 
 All six items are done: the HTTP example re-capture, the owner's go, publication and task 188's five-step verification, the after-action report (presented in chat, not committed), the version-literal updates, and task 235. The verification found two documentation errors in `docs/verifying-releases.md` (the GPG keyserver command and the per-arch digests), corrected in the post-0.7.0 chore PR.
@@ -101,7 +117,7 @@ Related, not fixed in 0.7.1: a Map of a record type has a similar element-type b
 
 #### 0.8 plan (agreed 2026-10-20)
 
-Task 215 (sealed cluster) and the core planning produced 42 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome has the sealed-cluster table. The combined graph counts 203 and 206 to 211 as landed. No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
+Task 215 (sealed cluster) and the core planning produced 42 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome has the sealed-cluster table. The combined graph counts 203 and 206 to 211 as landed, but that is unverified (see the planning gap below). No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
 
 Order by wave (briefs in a wave can run in parallel when their owned files do not overlap; recomputed 2026-10-21 for the 0.7.1 edges: 245 moved to 4, 248 to 4, 262 to 5, 265 added at 3, 266 added at 5):
 
@@ -109,8 +125,8 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 |---|---|
 | 1 | 268 done 2026-10-21 (Tomcat 11.0.27 override; PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
-| 3 | 222, 242; 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
-| 4 | 223, 241, 248; 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
+| 3 | 222 and 242 landed 2026-10-22 (PR record/0.8-wave3); 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
+| 4 | 223, 241, 248, 269 (settle the link attempt limiter's contract before 251 and 264; owner decision 2026-10-22; OD-269-1 to 3 decided (a) by the owner 2026-10-22: a `locked` pre-check then one atomic `recordFailure` judged on the count after the increment; the SPI takes `AttemptSubject(scopeId, principalId)`, `LinkKeys.attemptCounterKey` deleted, in-memory HMAC under a random per-instance key and 264 under the name key; ceiling 100,000 entries per instance as a constructor parameter, no property in 0.8, no live entry evicted, new subject at the ceiling is OVER_LIMIT and not stored, FIFO expiry sweep of at most two per call (at most 18 at the ceiling, revised 2026-10-23); OD-269-4 done: 269 added to 250's Depends on; brief revised 2026-10-23 after the external review of PR #155, decisions unchanged: one `LinkAttemptGate.open` call, the stated bound of limit plus in-flight, and the ceiling consequence (a subject that is not stored is never locked), accepted by the owner 2026-10-23; 252, 255 and 264 updated to the gate); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
 | 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 267, 244, 245, 257, 268) |
 | 6 | 228, 246 |
 | 7 | 229, 247 |
@@ -133,7 +149,7 @@ Follow-ups from wave 1 (landed 2026-10-21), each belonging to the brief named:
 - Spike findings for the cluster briefs (219, in `data-prism-hazelcast/src/test/java/io/github/aindriub/dataprism/hazelcast/spike/package-info.java`): each is recorded as a dated Context bullet in 220, 221, 223, 224, 226, 227, 228 and 231. Q12 (a second 5.7.x patch) was not run because Central has none; revisit when one exists.
 Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (also recorded as dated Context bullets in the briefs):
 
-- 222: map `MISSING_MEMBER_INTERFACE` and `UNBOUNDED_MEMBER_INTERFACE` in `DataPrismPropertiesValidator`; wire `Metric.CLUSTER_LEGACY_ENTRIES` to 221's package-private `legacyEntries()` count (222 edits the `PrivacyCluster` wiring first); rename or document `UNSAFE_HAZELCAST_SERIALIZATION`, which now also covers the REST, memcache, Management Center and phone-home refusals.
+- 222: done 2026-10-22 except the `UNSAFE_HAZELCAST_SERIALIZATION` rename or register note, which moved to 227 (Context bullet).
 - 227: member cards carry each member's sealing salt so known members' salts are pre-admitted and the unknown-salt limiter only affects strangers; enforce that `next` is never written; approval-map locks use `scoped(...)`, not `lockKey`. The verified-member excuse in 221's `UNSEALED_CLUSTER_STATE` check waits for this task.
 - 221 residuals (no brief yet; fold into 222 or 227 when next editing the membership watch): bound the legacy-check thread pool or skip a check while one runs; a late check must not overwrite a newer count; comment that the reply-path test uses a test-only processor.
 - 231 and 263: fail if any member logs "Resolving class ... is not allowed" during integration and soak runs.
@@ -142,6 +158,32 @@ Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (a
 - 248, 249, 251: `ChainableField` is `io.github.aindriub.dataprism.core.engine.ChainableField`; use `ChainableFields.of(Class, Map<String, ModelDescriptor>)`.
 - Release note required for 0.8 (Breaking in `CHANGELOG.md`): `PrivacyCluster.using()` refuses instances it used to accept.
 - Known residual of 240: an enum constant body's `@Chainable` is not visited.
+
+An external review of PR #154 (the wave-3 record) was addressed in the same PR: 4 Medium, 19 Low and 4 Nit findings, fixed on `fix/222-external-review` and `fix/242-external-review` and described in the two Outcomes under "External review of PR #154 — fixes". Its follow-ups for later tasks are in the list below and the dated Context bullets of 251, 252, 254, 255 and 264: gate on `refused.counted()`, issue time and link id from the clock and a random source, `LINK_KEY_UNRESOLVED` from `forScope` and `attemptCounterKey`, a stable counter key across rotation, check-then-record, a bounded limiter map, per-id provider calls in `heldKeyIds`, and the pseudonymisation key through the same provider.
+
+A second review round on PR #154 (4 Medium, 13 Low, 4 Nit; 2026-10-23) is answered on the same branches. New follow-ups for 251, 252 and 255 are in their Context bullets. The limiter findings belong to task 269 (wave 4 row), which replaces `attemptCounterKey`.
+
+Follow-ups from the external review of PR #154 (rounds 1–4), 2026-10-23. The owner agreed on 2026-10-23 that once a review round finds nothing Medium or worse the PR merges and the Lows become follow-ups; round 4 reached that bar. Each item belongs to the brief named (also a dated Context bullet in 227, 251, 252 and 261; owner decisions stay here only):
+
+- 222/hazelcast, to 227 (the next `PrivacyCluster` editor): fix `PrivacyCluster` import grouping and one remaining inline `java.util.concurrent.atomic.AtomicInteger`. The `INVALID_CLUSTER_INTERFACE` wording in `docs/configuration.md` and the contract register is already fixed.
+- 242/core.link, to 251 unless noted: the `&& knownKey` guard in `LinkCodec` has no test of its own (defence in depth behind `UNKNOWN_KEY`), so add a test or a comment; 251 must fingerprint only values within the chained-key cap, because `ScopeKeys.fingerprint` now refuses values over 65535 bytes, and the Javadoc should say so.
+- 242, owner/254: `SealResult.OmitReason.BINDING_TOO_LONG` also covers empty ids; consider renaming it to `BINDING_INVALID` before the codes are published.
+- 242, owner decision: the `Optional` record components (`FollowPayload.resolverName`, the `CatalogPagePayload` filters, `LinkSettings.lifetime`) need a rule in `docs/conventions.md`, which has none.
+- 252: an MCP client may send "" meaning "no link" and the codec counts "" as `MALFORMED`; decide whether to map "" to null before `open`, so a confused agent does not lock itself out.
+- 261: `docs/audit.md` must list `REFUSED:LINK_ATTEMPTS_{LOCKED,OVER_LIMIT,CEILING,LIMITER_UNAVAILABLE,OPEN_FAILED}` (PR #157, the 269 revision) and `REFUSED:LINK_KEY_UNAVAILABLE`.
+
+Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the brief named (also recorded as dated Context bullets in the briefs, except where noted):
+
+- 211, 254, 255: extend `ClusterKeyResolution`'s shared-key check (today the privacy HMAC key only) to the audit key and the link keys, and add the file and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows to their Owns.
+- 255: supply `LinkKeys`' held-key-id set (only the current key verifies until then) and add a health signal for a supplier that returns null or throws.
+- 252: the timing soak should cover the small post-authentication difference between forged and genuine tokens.
+- 264: the per-principal attempt counter splits across key ids in rotation phase 2, so decide whether to accept that or key the counter on something stable; the window is decided by the stored start and the clock, not by entry expiry.
+- 213: `docs/multiple-instances.md` and `docs/migration-0.8.md` still call `member.interface` optional; fix them. Also the packaged server's environment resolver is registered only when `hmac-key.environment-variable` is set, so a cluster key given as `provider-reference` needs the same reviewed resolver extension as the HMAC key.
+- 227: the three deferred items from 222 (see above).
+- Design: sealed-links obligation 10's timing soak is still unwritten (252 writes it, 263 runs it).
+- Small (no brief): `docs-site/requirements.txt` lacks PyYAML, which `docs-site/hooks/check_site.py` and `docs-site/hooks/check_snippet_markers.py` import, so the check hooks fail in a clean environment.
+
+Planning gap, needs a planner audit (owner has not decided): the combined graph above counts 203 and 206 to 211 as landed, but their task files are still open in `docs/plan/tasks/` and their code is not on `main`. 222's implementer confirmed there is no audit key on `main`. Briefs that depend on those tasks (211 for the audit key, 254 and 255 for the link keys) may have been sequenced on a false premise. Run `planner` to check each of 203 and 206 to 211 against `main` and re-wave the dependants.
 
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 
@@ -155,7 +197,7 @@ Follow-ups from the 0.7.1 planning review (2026-10-21), each belonging to the br
 
 - Done: `expressible(null)` hardening.
 - 248 and 251: the `ChainableFields` loop tests prove only the first case, and the refusal tests do not assert the reason text. Strengthen both.
-- 222: the `PrivacyCluster` blacklist check refuses ancestor packages that Hazelcast would not block (over-refusal, so safe); there is no test for a blacklisted subpackage under a required prefix; and the embedded-path message names the wrong fix for a blacklist collision.
+- 222's blacklist items (over-refusal of ancestor packages, no test for a blacklisted subpackage, the wrong-fix message) moved to 227 (Context bullet).
 - `ClusterMembership`: the `getDistributedObjects`-based check assumes the maps were opened on the instance (document this), and `legacyEntryCounts` reads zero on a solo supplied instance.
 
 - Tooling: `.claude/scripts/wt-new.sh` bases branches on local `main`, not `origin/main`.

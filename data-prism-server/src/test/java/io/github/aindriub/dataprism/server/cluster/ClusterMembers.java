@@ -42,7 +42,11 @@ final class ClusterMembers implements AutoCloseable {
                     "--dataprism.hazelcast.cluster-name=" + clusterName,
                     "--dataprism.hazelcast.join.mode=tcp-ip",
                     "--dataprism.hazelcast.member.port=" + ports[i],
-                    "--dataprism.hazelcast.member.interface=127.0.0.1"));
+                    "--dataprism.hazelcast.member.interface=127.0.0.1",
+                    "--dataprism.hazelcast.security.cluster-key.key-id=test-cluster-1",
+                    "--dataprism.hazelcast.security.cluster-key.environment-variable=test-cluster-key",
+                    "--dataprism.hazelcast.security.name-key.key-id=test-name-1",
+                    "--dataprism.hazelcast.security.name-key.environment-variable=test-name-key"));
             for (int m = 0; m < addresses.size(); m++) {
                 cluster.add("--dataprism.hazelcast.join.members[" + m + "]=" + addresses.get(m));
             }

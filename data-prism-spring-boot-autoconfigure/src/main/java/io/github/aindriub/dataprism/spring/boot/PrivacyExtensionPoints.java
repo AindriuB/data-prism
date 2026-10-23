@@ -90,6 +90,7 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismMcpSyncServer", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismMcpServlet", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismPrivacyCluster", Classification.REPLACEABLE, Guard.NONE),
+            entry("dataPrismSuppliedClusterGauge", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismOversightState", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismClusterOversightState", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismApprovalStore", Classification.REPLACEABLE, Guard.NONE),

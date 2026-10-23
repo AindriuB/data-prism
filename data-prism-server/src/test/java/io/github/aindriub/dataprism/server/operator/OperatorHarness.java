@@ -227,7 +227,7 @@ public final class OperatorHarness implements AutoCloseable {
                 "--dataprism.security-policy.roles.investigator[0]=GET_ENTITY_CONTEXT",
                 "--dataprism.privacy.profile=DEFAULT", "--dataprism.privacy.scope-lifetime=8h",
                 "--dataprism.privacy.hmac-key.key-id=v1",
-                "--dataprism.privacy.hmac-key.provider-reference=test-key",
+                "--dataprism.privacy.hmac-key.environment-variable=test-key",
                 "--dataprism.audit.sink=approved-sink", "--dataprism.audit.writer-id=operator-test",
                 "--dataprism.metrics.sink=micrometer",
                 "--dataprism.hazelcast.topology=" + (embedded ? "embedded" : "single-node"),
@@ -271,8 +271,12 @@ public final class OperatorHarness implements AutoCloseable {
                     var beans = applicationContext.getBeanFactory();
                     beans.registerSingleton("testIdentityResolver", new PassThroughIdentityResolver());
                     beans.registerSingleton("testCustomerAdapter", adapter());
+                    // The privacy key keeps its fixed bytes; every other reference (the cluster and name keys)
+                    // resolves to material of its own, because a key shared with the privacy key is refused.
                     beans.registerSingleton("testKeys", (HmacKeyReferenceResolver) (keyId, reference) ->
-                            "task-105-test-key-material-longer-than-thirty-two-bytes"
+                            ("test-key".equals(reference)
+                                    ? "task-105-test-key-material-longer-than-thirty-two-bytes"
+                                    : "task-222-" + reference + "-" + keyId + "-test-key-material-over-32-bytes")
                                     .getBytes(StandardCharsets.UTF_8));
                     beans.registerSingleton("testAudit", (AuditSink) event -> {
                         if (failAudit) throw new IllegalStateException("audit down");
