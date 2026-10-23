@@ -54,7 +54,15 @@ class ClusterKeyConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class KeyIntegrations extends DataPrismAutoConfigurationTest.ReviewedHttpIntegrations {
         @Override @Bean HmacKeyReferenceResolver keys() {
-            return ClusterKeyConfigurationTest::material;
+            return new HmacKeyReferenceResolver() {
+                @Override public byte[] resolve(String keyId, String reference) {
+                    return material(keyId, reference);
+                }
+
+                @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                    return material(keyId, reference);
+                }
+            };
         }
     }
 

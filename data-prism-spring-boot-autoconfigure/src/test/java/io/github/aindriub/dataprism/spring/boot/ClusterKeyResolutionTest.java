@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 /** Review of task 222: what only the resolved material can show, and what happens to it afterwards. */
@@ -177,5 +178,14 @@ class ClusterKeyResolutionTest {
         DataPrismConfigurationException refused = catchThrowableOfType(DataPrismConfigurationException.class,
                 () -> ClusterKeyResolution.resolve(p, () -> resolver));
         assertThat(refused.getMessage()).startsWith("CLUSTER_KEY_SHARED:");
+    }
+
+    @Test
+    void aResolverThatDoesNotOverrideTheProviderMethodRefusesAProviderReferenceWithoutNamingIt() {
+        HmacKeyReferenceResolver envOnly = (id, reference) -> bytes('e');
+        assertThatThrownBy(() -> envOnly.resolveProviderReference("k", "vault:secret-ref"))
+                .isInstanceOf(DataPrismConfigurationException.class)
+                .hasMessageStartingWith("MISSING_KEY_PROVIDER:")
+                .hasMessageNotContaining("vault:secret-ref");
     }
 }
