@@ -27,7 +27,7 @@
 - docs/plan/design/batch-and-bulk-follow.md Part A (A.1 to A.10) and section 8 items 1 to 13; OD-B1 to OD-B6 as decided; register OD-200-5 (`FOLLOW`), OD-200-15.
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/GetEntityContextTool.java: the authorisation, scope, admission and audit sequence a tool follows; reserved-argument stripping.
 - data-prism-mcp/src/main/java/io/github/aindriub/dataprism/mcp/DataPrismMcpServer.java:222-249: the `Wiring` record and the one-mapper invariant.
-- From 269 (2026-10-22, owner decisions OD-269-1 to 3): count page-link failures through `LinkAttemptGate` with an `AttemptSubject(scopeId, principalId)`, never the limiter directly. `LinkKeys.attemptCounterKey` no longer exists. A counted failure over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`, and at the ceiling a new subject is answered the same and not stored. Read 269's "Required shape".
+- From 269 (2026-10-22, owner decisions OD-269-1 to 3; brief revised 2026-10-23): open every page link through the one call `LinkAttemptGate.open(token, binding, accepted)`, which checks the binding bounds and the lock, opens the token, and records a counted refusal; it returns `Proceed`, `Invalid(reason)` or `Exhausted`. Never call `LinkCodec.open` or the limiter directly: an architecture rule forbids it. Catalog-tag and label checks after `Proceed` are uncounted. `LinkKeys.attemptCounterKey` no longer exists. A counted failure over the limit is answered `LINK_ATTEMPTS_EXHAUSTED`, and at the ceiling a new subject is answered the same and not stored. Read 269's "Required shape".
 
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
