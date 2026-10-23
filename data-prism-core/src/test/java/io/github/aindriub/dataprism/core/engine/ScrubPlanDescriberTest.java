@@ -227,6 +227,34 @@ class ScrubPlanDescriberTest {
 
     }
 
+    interface HasValue {
+        @JsonValue
+        String value();
+    }
+
+    @SensitiveObject
+    record IEmail(
+            @SensitiveData(classifications = DataClassification.CONTACT,
+                    namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT) String value) implements HasValue {
+    }
+
+    @LlmExposedModel
+    record IHolder(@InternalIdentifier String ref, @NonSensitive(reason = "wrapper") IEmail email) {
+    }
+
+    @SensitiveObject
+    record AInner(@NonSensitive(reason = "enumerated") String a) {
+    }
+
+    @LlmExposedModel
+    record AsHolder(
+            @InternalIdentifier String ref,
+            @SensitiveData(classifications = DataClassification.CONFIDENTIAL,
+                    suggestedAction = PrivacyAction.REDACT)
+            @JsonSerialize(typing = JsonSerialize.Typing.STATIC) AInner details) {
+    }
+
     private static final Map<String, PrivacyProfile> BUNDLED = bundled();
 
     private static Map<String, PrivacyProfile> bundled() {
@@ -477,5 +505,23 @@ class ScrubPlanDescriberTest {
     void visitCap() {
         assertThat(engine(BUNDLED).describe(Diamond.D14.class, context("DEFAULT"), false)).isEmpty();
         assertThat(engine(BUNDLED).describe(Diamond.D3.class, context("DEFAULT"), false)).isPresent();
+    }
+
+    @Test
+    @DisplayName("a @JsonValue inherited from an interface makes a record scalar-serialised")
+    void inheritedJsonValue() {
+        assertThat(byPath(describe(IHolder.class, "DEFAULT", false))).doesNotContainKeys("email", "email.value");
+    }
+
+    @Test
+    @DisplayName("a descendable type carrying any @JsonSerialize is omitted, not compared with the structure reading")
+    void descendableWithJsonSerialize() {
+        var profile = new PrivacyProfile("DEFAULT", UnclassifiedBehaviour.REDACT_AND_WARN, Map.of(
+                DataClassification.CONFIDENTIAL, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
+
+        Map<String, Protection> d = byPath(engine(Map.of("DEFAULT", profile))
+                .describe(AsHolder.class, context("DEFAULT"), false).orElseThrow());
+
+        assertThat(d).doesNotContainKeys("details", "details.a");
     }
 }

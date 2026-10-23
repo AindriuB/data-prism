@@ -46,6 +46,11 @@ import java.util.stream.Collectors;
  * scrubber then applies the field's own policy to the whole value, so it is described only when that
  * agrees with the structure reading.
  *
+ * <p>A type with {@code @JsonSerialize} that the scrubber would descend into is omitted outright, since
+ * whether it is written as an object or a scalar depends on settings read from Jackson, and a Jackson
+ * mix-in is not visible here at all. A decorator wrapping {@code ValueTokenSource.unavailable()} is
+ * reported as having a token source, which is the safe direction: the scrub then refuses.
+ *
  * <p>A model that contains itself is described to its shallowest occurrence only. The path grammar
  * cannot express recursion, so the deeper paths the scrubber emits ({@code children[].name}) are
  * omitted and no claim is made about them.
@@ -174,6 +179,9 @@ final class ScrubPlanDescriber {
             }
             case STRUCTURE -> structure(md, leaf, removed, null);
             case DYNAMIC -> structure(md, leaf, removed, policy);
+            case OMIT -> {
+                // Descended into or written as a scalar, depending on serialiser settings this cannot read.
+            }
         }
     }
 
@@ -252,7 +260,7 @@ final class ScrubPlanDescriber {
                 : null;
     }
 
-    private enum Kind { SCALAR, RECORD, STRUCTURE, DYNAMIC }
+    private enum Kind { SCALAR, RECORD, STRUCTURE, DYNAMIC, OMIT }
 
     private record Shape(Kind kind, boolean array, Class<?> record) {
     }
@@ -280,7 +288,7 @@ final class ScrubPlanDescriber {
         }
         boolean mayBeScalar = mayBeScalar(owner, md, nested);
         if (resolver.descendable(nested)) {
-            return new Shape(mayBeScalar ? Kind.DYNAMIC : Kind.RECORD, array, nested);
+            return new Shape(mayBeScalar ? Kind.OMIT : Kind.RECORD, array, nested);
         }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
             return new Shape(Kind.SCALAR, array, null);
@@ -289,6 +297,16 @@ final class ScrubPlanDescriber {
             return new Shape(mayBeScalar ? Kind.DYNAMIC : Kind.STRUCTURE, array, null);
         }
         return new Shape(Kind.DYNAMIC, array, null);
+    }
+
+    private static void supertypes(Class<?> type, Set<Class<?>> out) {
+        if (type == null || type == Object.class || !out.add(type)) {
+            return;
+        }
+        supertypes(type.getSuperclass(), out);
+        for (Class<?> i : type.getInterfaces()) {
+            supertypes(i, out);
+        }
     }
 
     /**
@@ -300,22 +318,22 @@ final class ScrubPlanDescriber {
         if (platform(nested)) {
             return false;
         }
-        if (nested.isAnnotationPresent(JsonSerialize.class)) {
-            return true;
-        }
-        for (java.lang.reflect.Method m : nested.getDeclaredMethods()) {
-            if (m.isAnnotationPresent(JsonValue.class)) {
+        // Jackson honours these on any supertype, so every superclass and interface is searched.
+        Set<Class<?>> types = new HashSet<>();
+        supertypes(nested, types);
+        for (Class<?> type : types) {
+            if (type.isAnnotationPresent(JsonSerialize.class)) {
                 return true;
             }
-        }
-        for (java.lang.reflect.Field f : nested.getDeclaredFields()) {
-            if (f.isAnnotationPresent(JsonValue.class)) {
-                return true;
+            for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
+                if (m.isAnnotationPresent(JsonValue.class)) {
+                    return true;
+                }
             }
-        }
-        for (java.lang.reflect.Method m : nested.getMethods()) {
-            if (m.isAnnotationPresent(JsonValue.class)) {
-                return true;
+            for (java.lang.reflect.Field f : type.getDeclaredFields()) {
+                if (f.isAnnotationPresent(JsonValue.class)) {
+                    return true;
+                }
             }
         }
         List<AnnotatedElement> holders = new java.util.ArrayList<>();

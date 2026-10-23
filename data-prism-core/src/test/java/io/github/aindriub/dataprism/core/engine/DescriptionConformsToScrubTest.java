@@ -247,4 +247,33 @@ class DescriptionConformsToScrubTest {
         assertThat(engine.describe(holder.getClass(), context, false).orElseThrow().fields())
                 .contains(new FieldProtection("redactedCode", Protection.MARKER, null, null));
     }
+
+    @Test
+    @DisplayName("under a profile that redacts unclassified data, inherited and over-broad serialiser shapes never contradict the scrub")
+    void ambiguousShapesRedacting() {
+        var profile = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of(
+                DataClassification.CONTACT, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT),
+                DataClassification.CONFIDENTIAL, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
+        var engine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile)), (s, ns, c) -> "syn", TOKENS);
+        var context = ScrubPlanDescriberTest.context("DEFAULT");
+        List<Object> sources = List.of(
+                new ScrubPlanDescriberTest.IHolder("i-1", new ScrubPlanDescriberTest.IEmail("ada@example.invalid")),
+                new ScrubPlanDescriberTest.AsHolder("a-1", new ScrubPlanDescriberTest.AInner("plain-a")),
+                new ScrubPlanDescriberTest.Holder("h-1", new ScrubPlanDescriberTest.Email("e"),
+                        new ScrubPlanDescriberTest.Code("c"), new ScrubPlanDescriberTest.Plain("p"),
+                        new ScrubPlanDescriberTest.Code("d")));
+
+        for (Object source : sources) {
+            ScrubResult scrubbed = engine.scrub(source, context);
+            Map<String, List<JsonNode>> present = new java.util.TreeMap<>();
+            leaves(scrubbed.tree(), "", present);
+            for (FieldProtection f : engine.describe(source.getClass(), context, false).orElseThrow().fields()) {
+                PrivacyAction action = disposition(scrubbed, f.path());
+                assertThat(present).as(f.path()).containsKey(f.path());
+                assertThat(action).as(f.path()).isNotNull();
+                assertThat(f.protection()).as(f.path()).isEqualTo(protection(action));
+            }
+        }
+    }
 }
