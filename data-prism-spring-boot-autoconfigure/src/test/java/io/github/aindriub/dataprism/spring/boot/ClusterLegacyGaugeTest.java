@@ -190,4 +190,30 @@ class ClusterLegacyGaugeTest {
             });
         });
     }
+
+    private static WebApplicationContextRunner suppliedRunner(Class<?> integrations) {
+        return new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(integrations, ClusterConfigurationTest.SuppliedCluster.class)
+                .withPropertyValues(OversightConfigurationTest.base("embedded"));
+    }
+
+    @Test
+    void anApplicationSuppliedClusterGetsTheGaugeToo() {
+        GAUGES.clear();
+        suppliedRunner(RecordingMetrics.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+            assertThat(gauge).isNotNull();
+            assertThat(gauge.getAsDouble()).isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
+        });
+    }
+
+    @Test
+    void aGaugeThatWillNotRegisterOnASuppliedClusterDoesNotStopItsStartup() {
+        suppliedRunner(ThrowingMetrics.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(result.getBean(PrivacyCluster.class).instance().getLifecycleService().isRunning()).isTrue();
+        });
+    }
 }

@@ -15,7 +15,9 @@ import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 import io.github.aindriub.dataprism.oversight.ApprovalStore;
 import io.github.aindriub.dataprism.oversight.CallerRateLimiter;
 import io.github.aindriub.dataprism.oversight.OversightState;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -41,6 +43,9 @@ import java.util.OptionalInt;
 @ConditionalOnProperty(prefix = "dataprism.hazelcast", name = "topology", havingValue = "embedded")
 @Configuration(proxyBeanMethods = false)
 class ClusterBackedState {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ClusterBackedState.class);
+    private static final String SELF_BUILT = "dataPrismPrivacyCluster";
+
     /**
      * Built from the explicit {@code dataprism.hazelcast} cluster settings, never from a default
      * {@code Config}. Waits for {@link PropertiesValidation#dataPrismPropertiesValidated} so a refused configuration
@@ -71,6 +76,28 @@ class ClusterBackedState {
             String code = refusal.code().name();
             throw new DataPrismConfigurationException(code, refusal.getMessage().substring(code.length() + 2));
         }
+    }
+
+    /**
+     * The legacy-entries gauge for a {@link PrivacyCluster} the application supplied, which the bean above does not
+     * build. Fail-safe: that member is not ours to stop, so a gauge that will not register is logged by class and
+     * startup goes on.
+     */
+    @Bean
+    static SmartInitializingSingleton dataPrismSuppliedClusterGauge(ListableBeanFactory beans,
+            ObjectProvider<PrivacyMetrics> metrics) {
+        return () -> beans.getBeansOfType(PrivacyCluster.class).forEach((name, cluster) -> {
+            if (SELF_BUILT.equals(name)) {
+                return;
+            }
+            try {
+                metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
+                        cluster::legacyEntries);
+            } catch (RuntimeException registrationFailed) {
+                LOG.warn("the legacy-entries gauge could not be registered for the supplied cluster: {}",
+                        registrationFailed.getClass().getSimpleName());
+            }
+        });
     }
 
     /**
