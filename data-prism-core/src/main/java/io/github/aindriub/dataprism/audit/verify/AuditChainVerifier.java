@@ -312,7 +312,13 @@ public final class AuditChainVerifier {
                                                      List<AuditChainKey> keys, boolean allowUnkeyedWriters) {
         java.util.Objects.requireNonNull(keys, "keys");
         if (keys.isEmpty()) {
-            return verify(content, checkpoints, minimumRetention, lenientStart);
+            VerificationReport plain = verify(content, checkpoints, minimumRetention, lenientStart);
+            if (!allowUnkeyedWriters) {
+                return plain;
+            }
+            // No key was given and unkeyed writers are allowed: every writer was verified unkeyed.
+            List<WriterResult> marked = plain.writers().stream().map(w -> w.withKey(Optional.empty(), true)).toList();
+            return new VerificationReport(marked, plain.anomalies(), plain.tail(), plain.checkpointFindings());
         }
         java.util.Set<String> ids = new java.util.HashSet<>();
         for (AuditChainKey key : keys) {
@@ -333,8 +339,18 @@ public final class AuditChainVerifier {
             WriterResult chosen = null;
             for (int k = 0; k < keys.size() && chosen == null; k++) {
                 WriterResult candidate = keyed.get(k).report().writers().get(i);
-                if (!candidate.broken()) {
+                if (!candidate.broken() && keyed.get(k).states().get(instance).recomputed > 0) {
                     chosen = candidate.withKey(Optional.of(keys.get(k).id()), false);
+                }
+            }
+            if (chosen == null) {
+                // Nothing of this writer was hashed (for example a lone non-GENESIS start): no key verified
+                // it, so it carries no key label, and its structural finding stands as reported.
+                for (int k = 0; k < keys.size() && chosen == null; k++) {
+                    WriterResult candidate = keyed.get(k).report().writers().get(i);
+                    if (!candidate.broken() && keyed.get(k).states().get(instance).recomputed == 0) {
+                        chosen = candidate;
+                    }
                 }
             }
             if (chosen == null) {
@@ -351,11 +367,18 @@ public final class AuditChainVerifier {
                                     + "unkeyed writers were not allowed -- a forger who recomputed the chain "
                                     + "without the key produces exactly this shape"));
                 } else {
-                    chosen = first.withBreak(new Break(first.firstBreak().orElseThrow().sequence(), instance,
-                            first.firstBreak().orElseThrow().byteOffset(),
+                    // Name the break from the replay under which this writer verified furthest.
+                    Break furthest = first.firstBreak().orElseThrow();
+                    for (Replayed r : keyed) {
+                        Break candidate = r.report().writers().get(i).firstBreak().orElseThrow();
+                        if (candidate.byteOffset() > furthest.byteOffset()) {
+                            furthest = candidate;
+                        }
+                    }
+                    chosen = first.withBreak(new Break(furthest.sequence(), instance, furthest.byteOffset(),
                             "this writer's chain verifies under none of the supplied keys and is not a valid "
                                     + "unkeyed chain either (checked against key ids " + String.join(", ", ids)
-                                    + "): " + first.firstBreak().orElseThrow().reason()));
+                                    + "): " + furthest.reason()));
                 }
             }
             results.add(chosen);
@@ -649,6 +672,7 @@ public final class AuditChainVerifier {
             return;
         }
 
+        writer.recomputed++;
         String recomputed = replay.key() == null ? AuditEventHash.compute(event)
                 : AuditEventHash.compute(event, replay.key());
         if (!recomputed.equals(event.eventHash())) {
@@ -785,6 +809,8 @@ public final class AuditChainVerifier {
         private final Map<Long, String> hashBySequence = new LinkedHashMap<>();
         private boolean checkpointMismatch;
         private long recordCount;
+        /** Records whose hash was recomputed and compared; zero means nothing verified this writer. */
+        private long recomputed;
         private long afterBreakCount;
         private String lastHash;
         private String headHash;

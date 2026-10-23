@@ -348,6 +348,52 @@ class KeyedAuditChainTest {
                 .contains("--allow-unkeyed-writers").contains("base64");
     }
 
+    // -- review round fixes ---------------------------------------------------
+
+    @Test
+    void allowFlagWithoutAKeyCountsEveryUnkeyedWriter() throws IOException {
+        Path path = tempDir.resolve("three.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            for (String w : new String[] {"w1", "w2", "w3"}) {
+                write(new AuditRecorder(sink, FIXED, w, null, null, AuditChainMode.unkeyed()));
+            }
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int code = cli(out, new ByteArrayOutputStream(), path.toString(), "--allow-unkeyed-writers");
+        assertThat(code).isEqualTo(AuditChainVerifierCli.EXIT_INTACT);
+        assertThat(out.toString(StandardCharsets.UTF_8)).contains("UNKEYED WRITERS ALLOWED: 3 writer(s)");
+    }
+
+    @Test
+    void aWriterMissingARecordUnderKeyBNamesTheDeletionNotTheFirstRecord() throws IOException {
+        Path path = keyedFile("b.log", AuditChainMode.keyed(KEY_B), 5);
+        List<String> lines = new ArrayList<>(Files.readAllLines(path));
+        lines.remove(2);
+        Files.write(path, (String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
+
+        VerificationReport report = verify(path, List.of(KEY_A, KEY_B), false);
+
+        assertThat(report.hasBreak()).isTrue();
+        assertThat(report.writers().get(0).firstBreak().orElseThrow().sequence()).isEqualTo(4);
+    }
+
+    @Test
+    void aLoneNonGenesisWriterIsNotLabelledAsVerifiedUnderAKey() throws IOException {
+        Path path = tempDir.resolve("lone.log");
+        AuditEvent draft = new AuditEvent("e-1", FIXED.instant(), "p", "c", "t", "E", "s", "f", "D", "sc", "i", "C",
+                "ALLOW", Set.of(), Set.of(), "co", "forged/1", 1, "f".repeat(64), "x");
+        AuditEvent forged = copy(draft, "p", "f".repeat(64), AuditEventHash.compute(draft, KEY_A));
+        Files.write(path, ("torn fragment\r\n" + AuditRecordFormat.serialize(forged) + "\n")
+                .getBytes(StandardCharsets.UTF_8));
+
+        VerificationReport report = verify(path, List.of(KEY_A), false);
+
+        assertThat(report.writers()).singleElement().satisfies(w -> {
+            assertThat(w.nonGenesisStart()).isPresent();
+            assertThat(w.keyId()).isEmpty();
+        });
+    }
+
     // -- retention ------------------------------------------------------------
 
     @Test
