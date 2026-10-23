@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
@@ -33,9 +34,12 @@ public final class LinkKeys {
 
     private static final int MIN_KEY_BYTES = 32;
     private static final byte[] ZERO_SALT = new byte[32];
-    /** Not a secret: the stand-in key so that an unknown key id still runs the same key derivation and AEAD as a known one.
-     * The provider fetch (and, for a held id, a SHA-256 of the material) is not part of that: a held id costs it, an
-     * unknown id does not. Key ids are public in the token header, so that difference reveals nothing secret. */
+    /**
+     * Not a secret: the stand-in key so that an unknown key id still runs the same key derivation and AEAD as a
+     * known one. The provider fetch (and, for a held id, a SHA-256 of the material) is not part of that: a held id
+     * costs it, an unknown id does not. Key ids are public in the token header, so that difference reveals
+     * nothing secret.
+     */
     private static final byte[] DUMMY_KEY =
             "dataprism-link-dummy-key-0000000".getBytes(StandardCharsets.US_ASCII);
 
@@ -194,13 +198,6 @@ public final class LinkKeys {
                 ? new Lookup(Status.HELD, resolution.material) : new Lookup(Status.UNAVAILABLE, null);
     }
 
-    enum Status { HELD, NOT_HELD, UNAVAILABLE }
-
-    record Lookup(Status status, byte[] material) {}
-
-    /** {@code material} is null unless the key is usable; {@code shared} marks the pseudonymisation key's bytes. */
-    private record Resolution(byte[] material, boolean weak, boolean shared) {}
-
     private Resolution resolution(String keyId) {
         byte[] material = resolve(keyId);
         if (material == null) {
@@ -219,8 +216,9 @@ public final class LinkKeys {
     private static byte[] digest(byte[] material) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(material);
-        } catch (java.security.NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("SHA-256 is unavailable");
+        } catch (NoSuchAlgorithmException impossible) {
+            // The cause names only the algorithm, never key material.
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
         }
     }
 
@@ -241,6 +239,13 @@ public final class LinkKeys {
         byte[] prk = LabelledHkdf.extract(ZERO_SALT, master);
         return LabelledHkdf.expand(prk, LabelledHkdf.infoText(label, scopeId), 32);
     }
+
+    enum Status { HELD, NOT_HELD, UNAVAILABLE }
+
+    record Lookup(Status status, byte[] material) {}
+
+    /** {@code material} is null unless the key is usable; {@code shared} marks the pseudonymisation key's bytes. */
+    private record Resolution(byte[] material, boolean weak, boolean shared) {}
 
     /** The keys a scope derives from one link key: fingerprints and the catalog tag. */
     public static final class ScopeKeys {

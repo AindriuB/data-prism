@@ -6,13 +6,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static io.github.aindriub.dataprism.core.link.LinkTestSupport.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -207,14 +209,14 @@ class InMemoryLinkAttemptLimiterTest {
         byte[] raw = LinkTestSupport.raw(codec.seal(follow(5), alice).orElseThrow().token());
         byte[] plain = LinkVectors.decrypt(material(1, 32), "case-1", "alice", true, raw);
         String authenticatedButBroken = LinkTestSupport.token(LinkVectors.reseal(material(1, 32), "case-1", "alice",
-                true, raw, java.util.Arrays.copyOf(plain, plain.length - 3)));
+                true, raw, Arrays.copyOf(plain, plain.length - 3)));
         for (int i = 0; i < 10; i++) {
             assertThat(gate(codec, keys, alice, authenticatedButBroken)).isEqualTo("REFUSED");
         }
         String underK2 = new LinkCodec(settings("k2", true, Duration.ofSeconds(30)),
                 new LinkKeys(provider, "k2", "pseudo-key"), clock).seal(follow(5), alice).orElseThrow().token();
         LinkCodec member = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
-                new LinkKeys(provider, "k1", "pseudo-key", () -> java.util.Set.of("k1", "k2")), clock);
+                new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2")), clock);
         provider.keys.remove("k2");
         for (int i = 0; i < 10; i++) {
             assertThat(gate(member, keys, alice, underK2)).isEqualTo("REFUSED");

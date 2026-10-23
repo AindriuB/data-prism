@@ -124,3 +124,13 @@ Recorded for later tasks, with no code change here:
 - **Left alone, by instruction.** The limiter's check-then-record contract, its map bound and the counter-key derivation are an open owner decision and are unchanged.
 
 Design amendments for the scribe: `OmitReason.BINDING_TOO_LONG` and `TARGET_TOO_LONG`.
+
+### External review of PR #154 — round 3
+
+- **Sentinel tests.** Three could not fail and now can.
+  - `forScopeNamesNoReferenceWhenAHeldKeyIsUnavailable` declares `k2` held, then removes it so the provider throws with a sentinel in its message, and asserts the refusal text and cause exclude it. It fails when the provider's message is passed into the exception.
+  - `payloadConstructorsNameNoValue` puts the secret in the namespace, resolver name and entity type filter, where validation builds the message, and fails when a message includes the value.
+  - `anUnknownKeyNeverSurfacesTheProvidersMessage` is deleted. A `Refused` holds only an enum and a boolean, so its `toString` cannot carry text; the provider-message guarantee is covered by the key test above and by the outage test, which asserts the reason and that the refusal has no text.
+- **Associated data in isolation.** `LinkVectors.reauthenticate` seals the same payload under the same key but changes only the associated data (another version byte, another scope id, or the item left out). `theVersionIsInTheAssociatedData` and `theScopeIsInTheAssociatedData` assert `AUTH_FAILED` for each, and `anIndependentlyBuiltTokenWithTheFullAssociatedDataOpens` asserts the unchanged form opens. Dropping the version from the codec's associated data, and dropping the scope, each fail these three named tests as well as the vectors.
+- **Nits.** Lines over 120 characters wrapped and fully-qualified names inlined in `core.link` (main and test). `LinkBinding`'s constant is first and `LinkKeys`' nested types sit before `ScopeKeys`. The JCA `GeneralSecurityException` from sealing and the `NoSuchAlgorithmException` from SHA-256 are now kept as causes, because they carry an algorithm or key-size message and no key material. The provider's own exceptions are still dropped, because their messages may name a reference, and the AEAD tag failure in `decrypt` is expected control flow with nothing to keep.
+- **Not touched.** The limiter, `AttemptSubject` and the counter key (task 269).
