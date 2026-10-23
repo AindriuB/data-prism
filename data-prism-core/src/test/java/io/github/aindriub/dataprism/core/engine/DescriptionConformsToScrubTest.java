@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * The description is the scrub plan, not a second reading of the annotations: every path a scrubbed
@@ -212,7 +213,12 @@ class DescriptionConformsToScrubTest {
         var strict = engine.describe(ScrubPlanDescriberTest.Parcel.class,
                 ScrubPlanDescriberTest.context("STRICT"), false).orElseThrow();
 
-        assertThat(strict).isNotEqualTo(normal);
+        // STRICT maps PII to REDACT where DEFAULT synthesises it; recipientName is a PII field.
+        assertThat(normal.fields()).extracting(FieldProtection::path, FieldProtection::protection)
+                .contains(tuple("recipientName", Protection.SYNTHETIC));
+        assertThat(strict.fields()).extracting(FieldProtection::path, FieldProtection::protection)
+                .contains(tuple("recipientName", Protection.MARKER))
+                .doesNotContain(tuple("recipientName", Protection.SYNTHETIC));
     }
 
     @Test
