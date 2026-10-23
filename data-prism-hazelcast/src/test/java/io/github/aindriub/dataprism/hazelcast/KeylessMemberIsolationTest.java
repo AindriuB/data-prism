@@ -524,6 +524,8 @@ class KeylessMemberIsolationTest {
         HazelcastInstance real = soloInstance();
         List<MembershipListener> listeners = new ArrayList<>();
         PrivacyCluster wrapped = PrivacyCluster.using(capturing(real, listeners), false);
+        RecordingLogger recorder = new RecordingLogger();
+        wrapped.refusalLog = recorder.logger();
         var pool = java.util.concurrent.Executors.newFixedThreadPool(16);
         var start = new java.util.concurrent.CountDownLatch(1);
         List<java.util.concurrent.Future<?>> done = new ArrayList<>();
@@ -545,6 +547,11 @@ class KeylessMemberIsolationTest {
         pool.shutdownNow();
         assertThat(wrapped.isRefused()).isTrue();
         assertThat(wrapped.refusalsLogged()).isEqualTo(1);
+        assertThat(recorder.lines()).hasSize(1).allSatisfy(line -> {
+            assertThat(line.level()).isEqualTo(org.slf4j.event.Level.ERROR);
+            assertThat(line.message()).startsWith("MISSING_CLUSTER_KEY:");
+            assertThat(line.withThrowable()).isFalse();
+        });
     }
 
     // ---- the local address override -----------------------------------------------------------------
