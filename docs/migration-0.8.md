@@ -1,11 +1,11 @@
 ---
 title: Migrating to 0.8.0
-description: What changes when upgrading from 0.7.x to 0.8.0. This page is started by the cluster-keys work; tasks 213 and 261 add their sections.
+description: What changes when upgrading from 0.7.x to 0.8.0. Sections for the key resolver change are here now; more are added as 0.8.0 is documented.
 ---
 
 # Migrating from 0.7.x to 0.8.0
 
-This page lists the changes in 0.8.0 that can stop something working. It is built up by several tasks; the
+This page lists the changes in 0.8.0 that can stop something working. It is still being filled in; the
 sections below cover the key-resolver change only.
 
 ## Breaking: provider references reach `resolveProviderReference`

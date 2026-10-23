@@ -12,8 +12,8 @@ import com.hazelcast.config.IndexConfig;
 import com.hazelcast.config.IndexType;
 import com.hazelcast.config.JavaSerializationFilterConfig;
 import com.hazelcast.config.MapConfig;
-import com.hazelcast.config.RestEndpointGroup;
 import com.hazelcast.config.MaxSizePolicy;
+import com.hazelcast.config.RestEndpointGroup;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.spi.properties.ClusterProperty;
@@ -21,6 +21,13 @@ import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 import io.github.aindriub.dataprism.hazelcast.seal.ClusterKeys;
 
+import java.net.InetAddress;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -29,9 +36,15 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -130,7 +143,7 @@ public final class PrivacyCluster implements AutoCloseable {
     private final boolean reidentificationEnabled;
 
     private final PendingSweeper sweeper;
-    private final java.time.Duration approvalSweepInterval;
+    private final Duration approvalSweepInterval;
     private final ClusterKeys keys;
 
     private final boolean owned;
@@ -139,13 +152,13 @@ public final class PrivacyCluster implements AutoCloseable {
     private final AtomicReference<UUID> joinerWatch = new AtomicReference<>();
 
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
-                           java.time.Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
+                           Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
         this.instance = instance;
         this.owned = owned;
         this.keys = keys;
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
-        this.sweeper = new PendingSweeper(instance, approvalSweepInterval, java.time.Clock.systemUTC());
+        this.sweeper = new PendingSweeper(instance, approvalSweepInterval, Clock.systemUTC());
         this.legacyWatch.set(startLegacyWatch(instance));
         if (keys == null) {
             watchForJoiners(instance);
@@ -171,12 +184,12 @@ public final class PrivacyCluster implements AutoCloseable {
             }
 
             @Override
-            public void memberAdded(com.hazelcast.cluster.MembershipEvent event) {
+            public void memberAdded(MembershipEvent event) {
                 refuseAfterJoin();
             }
 
             @Override
-            public void memberRemoved(com.hazelcast.cluster.MembershipEvent event) {
+            public void memberRemoved(MembershipEvent event) {
             }
         }));
     }
@@ -186,7 +199,7 @@ public final class PrivacyCluster implements AutoCloseable {
             return;
         }
         refusalsLogged.incrementAndGet();
-        LOG.error("{}: a member joined a member that holds no cluster key; this member is closed",
+        refusalLog.error("{}: a member joined a member that holds no cluster key; this member is closed",
                 Code.MISSING_CLUSTER_KEY);
         legacyChecks.shutdownNow();
         legacyWatchdog.shutdownNow();
@@ -224,27 +237,29 @@ public final class PrivacyCluster implements AutoCloseable {
         }
     }
 
-    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PrivacyCluster.class);
-    private static final long LEGACY_WARN_INTERVAL_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
+    private static final Logger LOG = LoggerFactory.getLogger(PrivacyCluster.class);
+    /** Where the late-join refusal is logged; a seam for tests. */
+    volatile Logger refusalLog = LOG;
+    private static final long LEGACY_WARN_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1);
 
     /** One thread per check, so a check that ignores its interrupt never holds up the next join's check. */
-    private final java.util.concurrent.ExecutorService legacyChecks = java.util.concurrent.Executors
+    private final ExecutorService legacyChecks = Executors
             .newCachedThreadPool(task -> {
                 Thread thread = new Thread(task, "dataprism-legacy-check");
                 thread.setDaemon(true);
                 return thread;
             });
     /** Enforces the limit from outside the check, so a stalled check cannot be what delays its own cancellation. */
-    private final java.util.concurrent.ScheduledExecutorService legacyWatchdog = java.util.concurrent.Executors
+    private final ScheduledExecutorService legacyWatchdog = Executors
             .newSingleThreadScheduledExecutor(task -> {
                 Thread thread = new Thread(task, "dataprism-legacy-watchdog");
                 thread.setDaemon(true);
                 return thread;
             });
     /** How long one check may run before it is interrupted and abandoned. Settable for tests. */
-    volatile java.time.Duration legacyCheckLimit = java.time.Duration.ofSeconds(10);
+    volatile Duration legacyCheckLimit = Duration.ofSeconds(10);
     /** What a check asks; a seam for tests. */
-    volatile java.util.function.Function<HazelcastInstance, Map<String, Integer>> legacyProbe =
+    volatile Function<HazelcastInstance, Map<String, Integer>> legacyProbe =
             ClusterMembership::legacyEntryCounts;
     private final java.util.concurrent.atomic.AtomicInteger legacyEntries = new java.util.concurrent.atomic.AtomicInteger();
     private volatile long lastLegacyWarnNanos = System.nanoTime() - LEGACY_WARN_INTERVAL_NANOS;
@@ -257,20 +272,20 @@ public final class PrivacyCluster implements AutoCloseable {
      * {@code dataprism.cluster.legacy.entries}.
      */
     private UUID startLegacyWatch(HazelcastInstance watched) {
-        return watched.getCluster().addMembershipListener(new com.hazelcast.cluster.MembershipListener() {
+        return watched.getCluster().addMembershipListener(new MembershipListener() {
             @Override
-            public void memberAdded(com.hazelcast.cluster.MembershipEvent event) {
+            public void memberAdded(MembershipEvent event) {
                 try {
                     var check = legacyChecks.submit(() -> checkLegacy(watched));
                     legacyWatchdog.schedule(() -> check.cancel(true), legacyCheckLimit.toMillis(),
-                            java.util.concurrent.TimeUnit.MILLISECONDS);
-                } catch (java.util.concurrent.RejectedExecutionException closed) {
+                            TimeUnit.MILLISECONDS);
+                } catch (RejectedExecutionException closed) {
                     // Closing; nothing to check.
                 }
             }
 
             @Override
-            public void memberRemoved(com.hazelcast.cluster.MembershipEvent event) {
+            public void memberRemoved(MembershipEvent event) {
             }
         });
     }
@@ -297,7 +312,7 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /** Runs one sweep of the pending-approval entries this member owns, as the schedule does. */
-    int sweepPendingApprovals(java.time.Instant now) {
+    int sweepPendingApprovals(Instant now) {
         return sweeper.sweep(now);
     }
 
@@ -307,12 +322,12 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /** Tells the sweep the lock timeout in use, so the locks it takes carry the same lease as everyone's. */
-    void useLockTimeout(java.time.Duration lockTimeout) {
+    void useLockTimeout(Duration lockTimeout) {
         sweeper.useLockTimeout(lockTimeout);
     }
 
     /** How often this member sweeps the pending-approval entries and id claims it owns. */
-    public java.time.Duration approvalSweepInterval() {
+    public Duration approvalSweepInterval() {
         return approvalSweepInterval;
     }
 
@@ -344,7 +359,7 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
-                                          java.time.Duration approvalSweepInterval) {
+                                          Duration approvalSweepInterval) {
         return embedded(membership, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, null);
     }
 
@@ -371,13 +386,14 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster embedded(ClusterMembership membership, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
-                                          java.time.Duration approvalSweepInterval, ClusterKeys keys) {
+                                          Duration approvalSweepInterval, ClusterKeys keys) {
         PendingSweeper.checked(approvalSweepInterval);
         if (keys == null && !(membership.join() instanceof ClusterMembership.None)) {
             throw missingKeys();
         }
         // toConfig has already made a none membership solo.
-        return launch(membership.toConfig(), reidentificationEnabled,
+        return launch(membership.toConfig(keys == null ? Code.MISSING_CLUSTER_KEY : Code.INVALID_CLUSTER_INTERFACE),
+                reidentificationEnabled,
                 approvalMinimumMembers.isPresent() ? approvalMinimumMembers
                         : defaultApprovalMinimumMembers(membership), approvalSweepInterval, keys, false);
     }
@@ -397,7 +413,7 @@ public final class PrivacyCluster implements AutoCloseable {
         if (!ClusterMembership.reachableOnlyFromThisHost(config)) {
             return false;
         }
-        java.net.InetAddress address = instance.getCluster().getLocalMember().getSocketAddress().getAddress();
+        InetAddress address = instance.getCluster().getLocalMember().getSocketAddress().getAddress();
         return address != null && address.isLoopbackAddress();
     }
 
@@ -589,11 +605,11 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
-                                          java.time.Duration approvalSweepInterval) {
+                                          Duration approvalSweepInterval) {
         return embedded(config, reidentificationEnabled, approvalMinimumMembers, approvalSweepInterval, null);
     }
 
-    /** As {@link #embedded(Config, boolean, OptionalInt, java.time.Duration)}, holding the cluster and name keys. */
+    /** As {@link #embedded(Config, boolean, OptionalInt, Duration)}, holding the cluster and name keys. */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers, ClusterKeys keys) {
         return embedded(config, reidentificationEnabled, approvalMinimumMembers, PendingSweeper.DEFAULT_INTERVAL,
@@ -612,7 +628,7 @@ public final class PrivacyCluster implements AutoCloseable {
      */
     public static PrivacyCluster embedded(Config config, boolean reidentificationEnabled,
                                           OptionalInt approvalMinimumMembers,
-                                          java.time.Duration approvalSweepInterval, ClusterKeys keys) {
+                                          Duration approvalSweepInterval, ClusterKeys keys) {
         PendingSweeper.checked(approvalSweepInterval);
         if (keys == null && joins(config)) {
             throw missingKeys();
@@ -623,7 +639,7 @@ public final class PrivacyCluster implements AutoCloseable {
 
     private static PrivacyCluster launch(Config config, boolean reidentificationEnabled,
                                          OptionalInt approvalMinimumMembers,
-                                         java.time.Duration approvalSweepInterval, ClusterKeys keys,
+                                         Duration approvalSweepInterval, ClusterKeys keys,
                                          boolean isolate) {
         Config hardened = configure(config, approvalMinimumMembers);
         if (isolate) {
@@ -662,7 +678,7 @@ public final class PrivacyCluster implements AutoCloseable {
      * @throws IllegalArgumentException if the interval is outside that range
      */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
-                                       java.time.Duration approvalSweepInterval) {
+                                       Duration approvalSweepInterval) {
         return using(instance, reidentificationEnabled, approvalSweepInterval, null);
     }
 
@@ -685,7 +701,7 @@ public final class PrivacyCluster implements AutoCloseable {
      *                               keys; the instance is left running
      */
     public static PrivacyCluster using(HazelcastInstance instance, boolean reidentificationEnabled,
-                                       java.time.Duration approvalSweepInterval, ClusterKeys keys) {
+                                       Duration approvalSweepInterval, ClusterKeys keys) {
         PendingSweeper.checked(approvalSweepInterval);
         Config config = instance.getConfig();
         if (keys == null && (joins(config) || instance.getCluster().getMembers().size() > 1
@@ -713,7 +729,7 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /** As {@code using}'s tail, for a test that says whether this class owns the instance. */
     static PrivacyCluster wrap(HazelcastInstance instance, boolean reidentificationEnabled,
-                               java.time.Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
+                               Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
         return new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys, owned);
     }
 
