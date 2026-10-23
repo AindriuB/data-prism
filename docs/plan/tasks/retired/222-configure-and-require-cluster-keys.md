@@ -148,3 +148,8 @@ Round 3, last changes:
 - A non-loopback `hazelcast.local.localAddress`, as a Config or a system property, now makes a keyless member refuse `MISSING_CLUSTER_KEY` (`reachableOnlyFromThisHost`), so the `-Dhazelcast.local.localAddress` residual noted in round 1 is closed and "a system property is seen" in `cluster-security.md` holds.
 - The supplied-cluster gauge tells the starter's own cluster bean from an application bean by the bean definition's factory method (`ClusterBackedState#dataPrismPrivacyCluster`), not by name.
 - `docs/configuration.md` says the default `resolveProviderReference` refuses with `MISSING_KEY_PROVIDER`.
+
+Round 3, final two:
+
+- The `hazelcast.local.localAddress` check accepts only an IPv4 literal in 127/8 (each octet at most 255), `localhost` and `::1`, after trimming. A name such as `127.lan.example.internal` is refused, because it could resolve to a LAN address. The residual from round 1 is closed for that setting; the interface list still accepts any entry starting `127.`, but it holds IPv4 patterns, not names.
+- The supplied-cluster gauge treats a `PrivacyCluster` registered as a bare singleton (no bean definition) as "not built here" and registers its gauge; the whole path stays inside the fail-safe.

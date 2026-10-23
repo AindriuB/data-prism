@@ -89,10 +89,10 @@ class ClusterBackedState {
     static SmartInitializingSingleton dataPrismSuppliedClusterGauge(ConfigurableListableBeanFactory beans,
             ObjectProvider<PrivacyMetrics> metrics) {
         return () -> beans.getBeansOfType(PrivacyCluster.class).forEach((name, cluster) -> {
-            if (builtHere(beans, name)) {
-                return;
-            }
             try {
+                if (builtHere(beans, name)) {
+                    return;
+                }
                 metrics.getIfAvailable(PrivacyMetrics::none).gauge(Metric.CLUSTER_LEGACY_ENTRIES,
                         cluster::legacyEntries);
             } catch (RuntimeException registrationFailed) {
@@ -107,7 +107,9 @@ class ClusterBackedState {
      * by its name: an application bean may carry the same name.
      */
     private static boolean builtHere(ConfigurableListableBeanFactory beans, String name) {
-        return beans.getMergedBeanDefinition(name) instanceof RootBeanDefinition root
+        // A singleton registered by hand has no definition, and so was not built here.
+        return beans.containsBeanDefinition(name)
+                && beans.getMergedBeanDefinition(name) instanceof RootBeanDefinition root
                 && root.getResolvedFactoryMethod() != null
                 && root.getResolvedFactoryMethod().getDeclaringClass() == ClusterBackedState.class
                 && "dataPrismPrivacyCluster".equals(root.getResolvedFactoryMethod().getName());
