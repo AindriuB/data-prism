@@ -121,6 +121,19 @@ class InMemoryLinkAttemptLimiterTest {
         }
     }
 
+    /**
+     * Runs a call on another thread with a 5 s bound, for use while a {@link Holder} holds the examination lock.
+     * A limiter that waited for the lock would fail here with a timeout instead of hanging the test.
+     */
+    private static <T> T whileHeld(java.util.concurrent.Callable<T> call) throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            return pool.submit(call).get(WAIT, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     // ---- the lock and the window ----
 
     @Test
@@ -354,8 +367,8 @@ class InMemoryLinkAttemptLimiterTest {
         l.recordFailure(d);
         clock.set(T0.plusMillis(10_500));
         try (Holder holder = new Holder(l)) {
-            l.recordFailure(a);
-            l.recordFailure(b);
+            whileHeld(() -> l.recordFailure(a));
+            whileHeld(() -> l.recordFailure(b));
         }
         assertThat(l.queueSnapshot()).containsExactly(
                 new Marker(l.mapKeyOf(a), l.entryIdOf(a), T0), new Marker(l.mapKeyOf(b), l.entryIdOf(b), T0),
@@ -526,7 +539,7 @@ class InMemoryLinkAttemptLimiterTest {
             c.advance(WINDOW.plusSeconds(1));
             try (Holder holder = new Holder(l)) {
                 // The examination is skipped, so S is re-opened in place and keeps its old marker.
-                assertThat(l.recordFailure(s)).isEqualTo(Admission.WITHIN_LIMIT);
+                assertThat(whileHeld(() -> l.recordFailure(s))).isEqualTo(Admission.WITHIN_LIMIT);
             }
             assertThat(l.size()).isEqualTo(2);
             queue.refuseOffers = 1;
@@ -695,7 +708,7 @@ class InMemoryLinkAttemptLimiterTest {
         l.recordFailure(s);
         clock.advance(WINDOW.plusSeconds(1));
         try (Holder holder = new Holder(l)) {
-            l.recordFailure(s);
+            whileHeld(() -> l.recordFailure(s));
         }
         assertThat(l.size()).isEqualTo(1);
         assertThat(l.queueSize()).isEqualTo(1);
