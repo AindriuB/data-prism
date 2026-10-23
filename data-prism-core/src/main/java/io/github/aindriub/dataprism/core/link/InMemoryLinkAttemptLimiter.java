@@ -384,6 +384,12 @@ public final class InMemoryLinkAttemptLimiter implements LinkAttemptLimiter {
         return new CallStats(call.queueOperations, call.preCheckRemoved, call.drainRemoved, call.insertAttempts);
     }
 
+    /** The stored count of a subject, or 0 when it has no entry. */
+    int countOf(AttemptSubject subject) {
+        Entry entry = entries.get(mapKey(subject));
+        return entry == null ? 0 : entry.count();
+    }
+
     /** The map key of a subject, for tests that append a marker by hand. */
     String mapKeyOf(AttemptSubject subject) {
         return mapKey(subject);

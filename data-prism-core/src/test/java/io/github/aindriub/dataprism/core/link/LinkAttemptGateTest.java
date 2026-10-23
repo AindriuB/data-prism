@@ -158,6 +158,8 @@ class LinkAttemptGateTest {
             assertThat(results).hasSize(n);
             assertThat(invalid).isEqualTo(LIMIT);
             assertThat(invalid + locked + over).isEqualTo(n);
+            // Every recorded failure is stored exactly once: a lost update or a double count shows here.
+            assertThat(fresh.countOf(new AttemptSubject("case-1", "alice"))).isEqualTo(LIMIT + (int) over);
         }
     }
 
@@ -202,6 +204,7 @@ class LinkAttemptGateTest {
             List<GateDecision> results = List.of(one.get(5, TimeUnit.SECONDS), two.get(5, TimeUnit.SECONDS));
             assertThat(results).containsExactlyInAnyOrder(
                     new Invalid(LinkReason.AUTH_FAILED), new Exhausted(ExhaustedCause.OVER_LIMIT));
+            assertThat(limiter.countOf(new AttemptSubject("case-1", "alice"))).isEqualTo(LIMIT + 1);
         } finally {
             latching.release.countDown();
             pool.shutdownNow();

@@ -26,7 +26,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -794,7 +793,5 @@ class InMemoryLinkAttemptLimiterTest {
     void aNullSubjectIsUnavailableNotAnException() {
         assertThat(limiter.lockState(null)).isEqualTo(LockState.UNAVAILABLE);
         assertThat(limiter.recordFailure(null)).isEqualTo(Admission.UNAVAILABLE);
-        AtomicInteger unused = new AtomicInteger();
-        assertThat(unused).hasValue(0);
     }
 }
