@@ -30,14 +30,14 @@ class PendingCapLockTest {
             try {
                 assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
                 // Wait for every lock the paused caller may hold to expire; it is still stopped.
-                String pendingKey = HazelcastApprovalStore.pendingKey(a.kind(), a.requesterPrincipalId());
+                String pendingKey = TestMembers.SCOPE_KEYS.pending(a.kind(), a.requesterPrincipalId());
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_PENDING_MAP, pendingKey);
-                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, a.approvalId());
+                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, TestMembers.SCOPE_KEYS.claim(a.approvalId()));
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, a.approvalId());
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP,
                         "\0requester\0" + a.kind().name() + "\0=" + a.requesterPrincipalId());
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP,
-                        ScopeKeys.approval(a.scopeId(), a.approvalId()));
+                        TestMembers.SCOPE_KEYS.approval(a.scopeId(), a.approvalId()));
                 assertThat(stalled.isDone()).isFalse();
 
                 assertThatThrownBy(() -> other.create(b, 1)).isInstanceOf(ApprovalRefusedException.class)

@@ -237,13 +237,8 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         return pending;
     }
 
-    /**
-     * Key of a (kind, requester) entry in the pending map: the keyed name of the canonical
-     * {@code KIND NUL (=requester or ~)}. A map of its own, so it can equal no approval key, and a null requester
-     * ({@code ~}) differs from any named one ({@code =} first). It is also the lock key of that entry.
-     */
     private String pendingKey(Kind kind, String requesterPrincipalId) {
-        return keys().pending(ScopeKeys.pendingCanonical(kind.name(), requesterPrincipalId));
+        return keys().pending(kind, requesterPrincipalId);
     }
 
     private static boolean confirmedAbsent(IMap<String, String> approvals, String entryKey) {

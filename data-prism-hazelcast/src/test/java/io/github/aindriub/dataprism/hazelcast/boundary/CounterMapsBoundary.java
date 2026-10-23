@@ -1,0 +1,28 @@
+package io.github.aindriub.dataprism.hazelcast.boundary;
+
+import com.hazelcast.map.IMap;
+import io.github.aindriub.dataprism.hazelcast.PrivacyCluster;
+
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** The budget and caller-rate maps: keyed names, and values that are counts. */
+public final class CounterMapsBoundary implements AreaBoundary {
+
+    @Override
+    public Set<String> maps() {
+        return Set.of(PrivacyCluster.BUDGET_MAP, PrivacyCluster.CALLER_RATE_MAP);
+    }
+
+    @Override
+    public void check(String map, IMap<Object, Object> contents, Inputs in) {
+        if (map.equals(PrivacyCluster.BUDGET_MAP)) {
+            in.assertKeys(map, contents, in.budgetKey());
+            assertThat(contents.get(in.budgetKey())).isInstanceOf(Integer.class);
+        } else {
+            in.assertKeys(map, contents, in.callerRateKey());
+            assertThat(contents.get(in.callerRateKey()).toString()).matches("\\d+:\\d+");
+        }
+    }
+}

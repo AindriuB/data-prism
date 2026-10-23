@@ -207,7 +207,7 @@ public final class SealedWrites {
 
         private final String map;
         private final Step step;
-        private transient HazelcastInstance instance;
+        private transient Sealer sealer;
         private transient SetExact backup;
 
         private Computing(String map, Step step) {
@@ -217,13 +217,12 @@ public final class SealedWrites {
 
         @Override
         public void setHazelcastInstance(HazelcastInstance instance) {
-            this.instance = instance;
+            this.sealer = sealerOf(instance);
         }
 
         @Override
         public Applied process(Map.Entry<String, String> entry) {
             backup = null;
-            Sealer sealer = sealerOf(instance);
             if (sealer == null) {
                 throw new IllegalStateException("no sealer is registered on this member");
             }

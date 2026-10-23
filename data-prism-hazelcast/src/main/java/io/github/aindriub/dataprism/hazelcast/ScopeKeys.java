@@ -2,6 +2,7 @@ package io.github.aindriub.dataprism.hazelcast;
 
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
+import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 
 /**
  * Builds the map keys and lock keys, scope first, as keyed pseudonymous names
@@ -73,17 +74,17 @@ final class ScopeKeys {
         return names.mapKey(PrivacyCluster.APPROVAL_ID_MAP, approvalId);
     }
 
-    /** The pending-approval entry of a (kind, requester); {@code canonical} is {@link #pendingCanonical}. */
-    String pending(String canonical) {
-        return names.mapKey(PrivacyCluster.APPROVAL_PENDING_MAP, canonical);
+    /**
+     * The pending-approval entry of a (kind, requester): the keyed name of the canonical
+     * {@code KIND NUL (=requester or ~)}. A map of its own, so it can equal no approval key, and a null requester
+     * ({@code ~}) differs from any named one ({@code =} first). It is also the lock key of that entry.
+     */
+    String pending(ApprovalRequest.Kind kind, String requesterPrincipalId) {
+        return names.mapKey(PrivacyCluster.APPROVAL_PENDING_MAP, pendingCanonical(kind, requesterPrincipalId));
     }
 
-    /**
-     * The canonical pending key: {@code KIND NUL (=requester or ~)}. A null requester ({@code ~}) differs from any
-     * named one ({@code =} first).
-     */
-    static String pendingCanonical(String kind, String requesterPrincipalId) {
-        return kind + SEPARATOR + (requesterPrincipalId == null ? "~" : "=" + requesterPrincipalId);
+    static String pendingCanonical(ApprovalRequest.Kind kind, String requesterPrincipalId) {
+        return kind.name() + SEPARATOR + (requesterPrincipalId == null ? "~" : "=" + requesterPrincipalId);
     }
 
     String callerRate(String principalId) {

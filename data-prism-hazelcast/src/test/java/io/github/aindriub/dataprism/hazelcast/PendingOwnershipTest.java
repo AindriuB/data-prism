@@ -81,10 +81,10 @@ class PendingOwnershipTest {
             var stalled = caller.submit(() -> paused.create(a, 1));
             try {
                 assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
-                String pendingKey = HazelcastApprovalStore.pendingKey(a.kind(), a.requesterPrincipalId());
-                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, "r-1");
+                String pendingKey = TestMembers.SCOPE_KEYS.pending(a.kind(), a.requesterPrincipalId());
+                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_ID_MAP, TestMembers.SCOPE_KEYS.claim("r-1"));
                 StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_PENDING_MAP, pendingKey);
-                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, ScopeKeys.approval("scope-a", "r-1"));
+                StalledInsert.awaitFree(members[1], PrivacyCluster.APPROVAL_MAP, TestMembers.SCOPE_KEYS.approval("scope-a", "r-1"));
 
                 // The new owner takes the claim over and finds the id already reserved, which it adopts.
                 assertThat(other.create(b, 1)).isEqualTo(b);
@@ -118,10 +118,10 @@ class PendingOwnershipTest {
             var stalled = caller.submit(() -> paused.create(a, 1));
             try {
                 assertThat(stall.reached.await(10, TimeUnit.SECONDS)).isTrue();
-                String pendingKey = HazelcastApprovalStore.pendingKey(a.kind(), a.requesterPrincipalId());
-                StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_ID_MAP, "r-1");
+                String pendingKey = TestMembers.SCOPE_KEYS.pending(a.kind(), a.requesterPrincipalId());
+                StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_ID_MAP, TestMembers.SCOPE_KEYS.claim("r-1"));
                 StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_PENDING_MAP, pendingKey);
-                StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_MAP, ScopeKeys.approval("scope-a", "r-1"));
+                StalledInsert.awaitFree(members[0], PrivacyCluster.APPROVAL_MAP, TestMembers.SCOPE_KEYS.approval("scope-a", "r-1"));
                 // The claim names an entry that does not exist yet, so scope-b takes it over and reserves +1 hour.
                 assertThat(other.create(b, 1)).isEqualTo(b);
 

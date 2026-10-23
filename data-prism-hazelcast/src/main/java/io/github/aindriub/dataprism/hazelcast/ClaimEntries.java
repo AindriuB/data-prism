@@ -13,7 +13,7 @@ import java.util.Optional;
  * and the random creation token of that approval ({@code entryKey NUL token}), so a claim from one creation is never
  * mistaken for the claim of a later creation of the same id in the same scope. Every change to a claim, every
  * release and every sweep compares the whole value, token included. A claim in any other form is unreadable: it is
- * neither taken over nor released nor swept. The entry key is a keyed name and holds no NUL, and the claim itself is
+ * neither taken over nor released, and is swept only in the one old form named at {@code sweepLegacy}. The entry key is a keyed name and holds no NUL, and the claim itself is
  * stored under the keyed claim key of its approval id.
  *
  * <p><b>Creating.</b> The creator {@code putIfAbsent}s the claim, then inserts the entry, then reads the claim again
@@ -143,11 +143,31 @@ final class ClaimEntries {
         return removed;
     }
 
+    /**
+     * A claim in the form earlier versions wrote (the bare entry key, a string holding the scope token's dot, or one
+     * marked with {@code NUL ~ NUL}) is removed once its entry is absent, by compare-and-set on the whole value.
+     * Entries of that form are unreadable and refused, and no new creator takes such a claim over, so nothing races
+     * with this. Any other unreadable value is left.
+     */
+    private static int sweepLegacy(IMap<String, String> claims, IMap<String, String> approvals, String id,
+                                   String value) {
+        if (value == null) {
+            return 0;
+        }
+        String[] parts = value.split(SEP, -1);
+        boolean legacy = (parts.length == 1 && parts[0].indexOf('.') > 0)
+                || (parts.length >= 3 && parts[1].equals("~"));
+        if (!legacy || approvals.containsKey(parts[0])) {
+            return 0;
+        }
+        return claims.remove(id, value) ? 1 : 0;
+    }
+
     private static int sweepOne(IMap<String, String> claims, IMap<String, String> approvals, String id) {
         String value = claims.get(id);
         Optional<Named> named = read(value);
         if (named.isEmpty()) {
-            return 0;
+            return sweepLegacy(claims, approvals, id, value);
         }
         String plain = named.get().plain();
         if (approvals.containsKey(named.get().entryKey())) {

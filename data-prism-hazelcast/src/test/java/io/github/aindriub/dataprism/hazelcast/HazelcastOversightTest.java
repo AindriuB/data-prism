@@ -148,15 +148,15 @@ class HazelcastOversightTest {
         var store = new HazelcastApprovalStore(a);
         var raw = a.instance().<String, String>getMap(PrivacyCluster.APPROVAL_MAP);
         String token = "00000000-0000-0000-0000-000000000001";
-        raw.put(ScopeKeys.approval("S1", "x"), HazelcastApprovalStore.Codec.encode(request("x", "S1", NOW.plus(1, ChronoUnit.HOURS)), token));
-        raw.put(ScopeKeys.approval("S2", "x"), HazelcastApprovalStore.Codec.encode(request("x", "S2", NOW.plus(1, ChronoUnit.HOURS)), token));
+        raw.put(a.scopeKeys().approval("S1", "x"), HazelcastApprovalStore.Codec.encode(request("x", "S1", NOW.plus(1, ChronoUnit.HOURS)), token));
+        raw.put(a.scopeKeys().approval("S2", "x"), HazelcastApprovalStore.Codec.encode(request("x", "S2", NOW.plus(1, ChronoUnit.HOURS)), token));
 
         // No claim names either entry, so neither is usable.
         assertThatThrownBy(() -> store.approve("x", "bob", NOW)).isInstanceOf(ApprovalRefusedException.class);
         assertThat(store.find("x")).isEmpty();
 
         a.instance().<String, String>getMap(PrivacyCluster.APPROVAL_ID_MAP)
-                .put("x", ClaimEntries.value(ScopeKeys.approval("S1", "x"), token));
+                .put(a.scopeKeys().claim("x"), ClaimEntries.value(a.scopeKeys().approval("S1", "x"), token));
         assertThat(store.find("x")).hasValueSatisfying(found -> assertThat(found.scopeId()).isEqualTo("S1"));
     }
 
@@ -312,10 +312,10 @@ class HazelcastOversightTest {
         var store = new HazelcastApprovalStore(a);
         store.create(request("ap-1", "CASE-A", NOW.plusSeconds(90)));
         var info = a.instance().getMap(PrivacyCluster.APPROVAL_MAP)
-                .getEntryView("CASE-A\u0000ap-1");
+                .getEntryView(a.scopeKeys().approval("CASE-A", "ap-1"));
         assertThat(info.getTtl()).isEqualTo(90_000L);
         store.approve("ap-1", "bob", NOW.plusSeconds(30));
-        assertThat(a.instance().getMap(PrivacyCluster.APPROVAL_MAP).getEntryView("CASE-A\u0000ap-1").getTtl())
+        assertThat(a.instance().getMap(PrivacyCluster.APPROVAL_MAP).getEntryView(a.scopeKeys().approval("CASE-A", "ap-1")).getTtl())
                 .isEqualTo(60_000L);
     }
 
