@@ -383,4 +383,86 @@ class KeylessMemberIsolationTest {
         refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(joined, false)));
         assertThat(real.getLifecycleService().isRunning()).isTrue();
     }
+
+    // ---- isolation of a keyless Config -------------------------------------------------------------
+
+    /** The host's first non-loopback IPv4 address, or null when it has none. */
+    private static String lanAddress() throws Exception {
+        for (var nic : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+            for (var address : java.util.Collections.list(nic.getInetAddresses())) {
+                if (address instanceof java.net.Inet4Address && !address.isLoopbackAddress() && nic.isUp()) {
+                    return address.getHostAddress();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void assertListensOnLoopbackOnly(PrivacyCluster keyless, int port) throws Exception {
+        Config effective = keyless.instance().getConfig();
+        assertThat(effective.getProperty("hazelcast.socket.bind.any")).isEqualTo("false");
+        assertThat(effective.getProperty("hazelcast.socket.server.bind.any")).isEqualTo("false");
+        assertThat(effective.getNetworkConfig().getPublicAddress()).isNull();
+        assertThat(effective.getNetworkConfig().getMemberAddressProviderConfig().isEnabled()).isFalse();
+        assertThat(effective.getNetworkConfig().getInterfaces().getInterfaces()).containsExactly("127.0.0.1");
+        String lan = lanAddress();
+        if (lan != null) {
+            try (java.net.Socket socket = new java.net.Socket()) {
+                Throwable connect = catchThrowable(() -> socket.connect(new java.net.InetSocketAddress(lan, port), 1500));
+                assertThat(connect).as("a LAN connect to " + port).isNotNull();
+            }
+        }
+    }
+
+    @Test
+    void aKeylessConfigThatBindsServerSocketsEverywhereIsIsolatedAnyway() throws Exception {
+        int port = FreePorts.consecutive(1);
+        Config config = keylessConfig(TestMembers.uniqueName("serverany"), port);
+        config.setProperty("hazelcast.socket.server.bind.any", "true");
+        config.getNetworkConfig().setPublicAddress("203.0.113.9:" + port);
+        config.getNetworkConfig().getMemberAddressProviderConfig().setEnabled(true)
+                .setImplementation(new com.hazelcast.spi.MemberAddressProvider() {
+                    @Override public java.net.InetSocketAddress getBindAddress() {
+                        return null;
+                    }
+
+                    @Override public java.net.InetSocketAddress getBindAddress(
+                            com.hazelcast.instance.EndpointQualifier qualifier) {
+                        return null;
+                    }
+
+                    @Override public java.net.InetSocketAddress getPublicAddress() {
+                        return null;
+                    }
+
+                    @Override public java.net.InetSocketAddress getPublicAddress(
+                            com.hazelcast.instance.EndpointQualifier qualifier) {
+                        return null;
+                    }
+                });
+        try (PrivacyCluster keyless = PrivacyCluster.embedded(config, false)) {
+            assertListensOnLoopbackOnly(keyless, port);
+        }
+    }
+
+    @Test
+    void aSystemPropertyForServerBindAnyDoesNotMakeAKeylessMemberListenEverywhere() throws Exception {
+        String key = "hazelcast.socket.server.bind.any";
+        String before = System.getProperty(key);
+        System.setProperty(key, "true");
+        try {
+            int port = FreePorts.consecutive(1);
+            Config config = keylessConfig(TestMembers.uniqueName("serverprop"), port);
+            config.getProperties().remove("hazelcast.socket.bind.any");
+            try (PrivacyCluster keyless = PrivacyCluster.embedded(config, false)) {
+                assertListensOnLoopbackOnly(keyless, port);
+            }
+        } finally {
+            if (before == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, before);
+            }
+        }
+    }
 }

@@ -363,28 +363,11 @@ public final class PrivacyCluster implements AutoCloseable {
      * loopback address. The advertised address alone says nothing about the listening socket.
      */
     private static boolean boundToLoopback(HazelcastInstance instance, Config config) {
-        HazelcastProperties properties = new HazelcastProperties(config);
-        if (properties.getBoolean(ClusterProperty.SOCKET_BIND_ANY)
-                || properties.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY)) {
-            return false;
-        }
-        var network = config.getNetworkConfig();
-        var interfaces = network.getInterfaces();
-        if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()
-                || !interfaces.getInterfaces().stream().allMatch(PrivacyCluster::loopbackEntry)) {
-            return false;
-        }
-        String publicAddress = network.getPublicAddress();
-        if (publicAddress != null && !publicAddress.isBlank()) {
+        if (!ClusterMembership.reachableOnlyFromThisHost(config)) {
             return false;
         }
         java.net.InetAddress address = instance.getCluster().getLocalMember().getSocketAddress().getAddress();
         return address != null && address.isLoopbackAddress();
-    }
-
-    /** An interface entry within 127.0.0.0/8: an IPv4 literal or a pattern whose first octet is 127. */
-    private static boolean loopbackEntry(String entry) {
-        return entry != null && entry.strip().startsWith("127.");
     }
 
     /** Whether the config names any way of finding other members. */
