@@ -282,6 +282,7 @@ Proposed call refusals (refusal codes in the design closing tables, and the task
 | `CLIENT_NOT_ALLOWED` | proposed | 0.8 | t203:52 | 203 (0.8); D-1.0-1 | `AuthorizationDecision.denied`, before capabilities are looked up. Exact, case-sensitive match. |
 | `LINK_INVALID` | proposed | 0.8 | design/sealed-links.md:476 | sealed-links OD-1..17 (delegated) | refusal code |
 | `LINK_ATTEMPTS_EXHAUSTED` | proposed | 0.8 | design/sealed-links.md:477 | sealed-links OD-1..17 (delegated) | refusal code |
+| `LINK_CHECK_UNAVAILABLE` | proposed | 0.8 | design/sealed-links.md section 9 | OD-269-5 (b), owner, 2026-10-23 | refusal code, retryable. A limiter outage; independent of the token. `OPEN_FAILED` is not a code: it is answered `LINK_INVALID`. |
 | `SOURCE_SELECTION_REQUIRED` | proposed | 0.8 | design/catalog.md:829 | catalog OD-C1..C19 (delegated) | refusal code. none |
 | `SOURCE_SELECTION_TOO_LARGE` | proposed | 0.8 | design/catalog.md:830 | catalog OD-C1..C19 (delegated) | refusal code. `SKIPPED_OVER_LIMIT` (a status, not a refusal) |
 | `SOURCE_NOT_AVAILABLE` | proposed | 0.8 | design/catalog.md:831 | catalog OD-C1..C19 (delegated) | refusal code. none |
