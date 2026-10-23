@@ -398,6 +398,33 @@ class ResolverInvokerTest {
     }
 
     @Test
+    void aSingleSlotIsReusedBackToBackWithoutAFalseUnavailable() {
+        ResolverInvoker single = new ResolverInvoker(metrics, 1);
+        KeyResolver instant = resolver(() -> new KeyResolver.Resolution(List.of("x"), false));
+        int unavailable = 0;
+        for (int i = 0; i < 10_000; i++) {
+            if (!(single.invoke(instant, SENTINEL, CONTEXT, 5, TIMEOUT) instanceof ResolverOutcome.Keys)) {
+                unavailable++;
+            }
+        }
+        assertThat(unavailable).isZero();
+    }
+
+    @Test
+    void resolverCallsRunOnNamedDaemonPlatformThreads() {
+        java.util.concurrent.atomic.AtomicReference<Thread> seen = new java.util.concurrent.atomic.AtomicReference<>();
+        KeyResolver capture = resolver(() -> {
+            seen.set(Thread.currentThread());
+            return new KeyResolver.Resolution(List.of("x"), false);
+        });
+        invoke(capture, 5);
+        assertThat(seen.get()).isNotNull();
+        assertThat(seen.get().isDaemon()).isTrue();
+        assertThat(seen.get().isVirtual()).isFalse();
+        assertThat(seen.get().getName()).startsWith("key-resolver-");
+    }
+
+    @Test
     void aPoolSizeBelowOneIsRejected() {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ResolverInvoker(metrics, 0))
                 .isInstanceOf(IllegalArgumentException.class);

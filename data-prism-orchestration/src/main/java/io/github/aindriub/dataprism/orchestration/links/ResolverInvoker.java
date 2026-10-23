@@ -13,8 +13,10 @@ import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -43,6 +45,7 @@ public final class ResolverInvoker {
 
     private final PrivacyMetrics metrics;
     private final ThreadPoolExecutor executor;
+    private final Semaphore slots;
 
     public ResolverInvoker(PrivacyMetrics metrics) {
         this(metrics, DEFAULT_MAX_CONCURRENT_CALLS);
@@ -55,12 +58,13 @@ public final class ResolverInvoker {
         }
         AtomicInteger counter = new AtomicInteger();
         this.executor = new ThreadPoolExecutor(maxConcurrentCalls, maxConcurrentCalls, 30, TimeUnit.SECONDS,
-                new SynchronousQueue<>(), runnable -> {
+                new LinkedBlockingQueue<>(maxConcurrentCalls), runnable -> {
                     Thread thread = new Thread(runnable, "key-resolver-" + counter.incrementAndGet());
                     thread.setDaemon(true);
                     return thread;
                 });
         this.executor.allowCoreThreadTimeOut(true);
+        this.slots = new Semaphore(maxConcurrentCalls);
     }
 
     public ResolverOutcome invoke(KeyResolver resolver, String key, ResolutionContext context, int maxResults,
@@ -85,10 +89,35 @@ public final class ResolverInvoker {
         if (timeout.isZero() || timeout.isNegative()) {
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT);
         }
-        FutureTask<ResolverOutcome> task = new FutureTask<>(() -> call(resolver, key, context, maxResults));
+        if (!slots.tryAcquire()) {
+            return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
+        }
+        AtomicBoolean released = new AtomicBoolean();
+        Runnable release = () -> {
+            if (released.compareAndSet(false, true)) {
+                slots.release();
+            }
+        };
+        // The slot is released as soon as the resolver code has returned, before the caller can see the result, so
+        // back-to-back calls never see a slot still held by a finished call.
+        FutureTask<ResolverOutcome> task = new FutureTask<>(() -> {
+            try {
+                return call(resolver, key, context, maxResults);
+            } finally {
+                release.run();
+            }
+        });
         try {
-            executor.execute(task);
+            // Also released here, for a task cancelled before it began (its callable then never runs).
+            executor.execute(() -> {
+                try {
+                    task.run();
+                } finally {
+                    release.run();
+                }
+            });
         } catch (RejectedExecutionException e) {
+            release.run();
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
         }
         try {
