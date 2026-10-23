@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.audit.verify;
 
+import io.github.aindriub.dataprism.audit.AuditChainKey;
 import io.github.aindriub.dataprism.audit.AuditCheckpoint;
 import io.github.aindriub.dataprism.audit.AuditEvent;
 import io.github.aindriub.dataprism.audit.AuditEventHash;
@@ -110,9 +111,12 @@ public final class AuditChainVerifier {
     private AuditChainVerifier() {
     }
 
-    /** Everything one replay needs beyond the bytes: the anchors, the retention floor, the start rule. */
+    /**
+     * Everything one replay needs beyond the bytes: the anchors, the retention floor, the start rule, and the
+     * key every hash is recomputed under ({@code null} for the unkeyed chain).
+     */
     private record Replay(Map<String, List<AuditCheckpoint>> anchors, List<AuditCheckpoint> checkpoints,
-                          Period minimumRetention, boolean lenientStart) {
+                          Period minimumRetention, boolean lenientStart, AuditChainKey key) {
     }
 
     /** Reads and verifies {@code path} in one pass. */
@@ -135,6 +139,18 @@ public final class AuditChainVerifier {
     public static VerificationReport verifySegments(List<Path> segments, List<Long> starts) throws IOException {
         byte[] content = join(segments, starts);
         return verify(content, List.of(), DEFAULT_MINIMUM_RETENTION, true);
+    }
+
+    /**
+     * As {@link #verifySegments(List, List)}, with the keys a keyed chain may have been written under and
+     * whether a writer that verifies only unkeyed is tolerated; see {@link #verify(Path, Path, Period, List,
+     * boolean)} for what the keys mean. Used by {@link io.github.aindriub.dataprism.audit.retention.AuditRetention}.
+     */
+    public static VerificationReport verifySegments(List<Path> segments, List<Long> starts,
+                                                    List<AuditChainKey> keys, boolean allowUnkeyedWriters)
+            throws IOException {
+        byte[] content = join(segments, starts);
+        return verifyWithKeys(content, List.of(), DEFAULT_MINIMUM_RETENTION, true, keys, allowUnkeyedWriters);
     }
 
     /**
@@ -205,10 +221,36 @@ public final class AuditChainVerifier {
      */
     public static VerificationReport verify(Path auditFile, Path checkpointFile, Period minimumRetention)
             throws IOException {
+        java.util.Objects.requireNonNull(checkpointFile, "checkpointFile");
+        return verify(auditFile, checkpointFile, minimumRetention, List.of(), false);
+    }
+
+    /**
+     * Verifies {@code auditPath} (a file, or a directory of segments) against an optional {@code
+     * checkpointFile} ({@code null} for none), with the keys a keyed chain may have been written under.
+     * The caller states the mode; nothing in the files does, so a forged file cannot downgrade itself.
+     *
+     * <p>With a non-empty {@code keys}, each writer's chain must verify entirely under exactly one
+     * supplied key, and the report says which key id verified it ({@link WriterResult#keyId()}). A writer
+     * that verifies under no key is a break. A writer that verifies only as an unkeyed chain is a break
+     * unless {@code allowUnkeyedWriters}, in which case it is reported as unkeyed
+     * ({@link WriterResult#unkeyedAllowed()}) and counted ({@link VerificationReport#unkeyedWriterCount()}).
+     * With an empty {@code keys} the chain is verified as unkeyed, as {@link #verify(Path, Path, Period)} does.
+     *
+     * <p>A keyed chain resists a writer who lacks the key; it does not resist anyone who holds it, including
+     * the operator and the process that writes the file.
+     */
+    public static VerificationReport verify(Path auditPath, Path checkpointFile, Period minimumRetention,
+                                            List<AuditChainKey> keys, boolean allowUnkeyedWriters)
+            throws IOException {
         java.util.Objects.requireNonNull(minimumRetention, "minimumRetention");
-        byte[] content = readAudit(auditFile);
+        java.util.Objects.requireNonNull(keys, "keys");
+        byte[] content = readAudit(auditPath);
         List<AuditCheckpoint> checkpoints = new ArrayList<>();
         List<StructuralAnomaly> torn = new ArrayList<>();
+        if (checkpointFile == null) {
+            return verifyWithKeys(content, checkpoints, minimumRetention, false, keys, allowUnkeyedWriters);
+        }
         // Split on '\n' only: Files.readAllLines would swallow the '\r' of a terminated torn line.
         String[] lines = Files.readString(checkpointFile, StandardCharsets.UTF_8).split("\n", -1);
         long offset = 0;
@@ -237,7 +279,8 @@ public final class AuditChainVerifier {
                         + " is not a valid checkpoint: " + e.getMessage(), e);
             }
         }
-        VerificationReport report = verify(content, checkpoints, minimumRetention, false);
+        VerificationReport report = verifyWithKeys(content, checkpoints, minimumRetention, false, keys,
+                allowUnkeyedWriters);
         if (torn.isEmpty()) {
             return report;
         }
@@ -257,6 +300,72 @@ public final class AuditChainVerifier {
 
     private static VerificationReport verify(byte[] content, List<AuditCheckpoint> checkpoints,
                                              Period minimumRetention, boolean lenientStart) {
+        return replay(content, checkpoints, minimumRetention, lenientStart, null).report();
+    }
+
+    /** One replay's report together with the per-writer state it was built from. */
+    private record Replayed(VerificationReport report, Map<String, WriterState> states) {
+    }
+
+    private static VerificationReport verifyWithKeys(byte[] content, List<AuditCheckpoint> checkpoints,
+                                                     Period minimumRetention, boolean lenientStart,
+                                                     List<AuditChainKey> keys, boolean allowUnkeyedWriters) {
+        java.util.Objects.requireNonNull(keys, "keys");
+        if (keys.isEmpty()) {
+            return verify(content, checkpoints, minimumRetention, lenientStart);
+        }
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (AuditChainKey key : keys) {
+            if (!ids.add(java.util.Objects.requireNonNull(key, "key").id())) {
+                throw new IllegalArgumentException("two audit chain keys share the id " + key.id());
+            }
+        }
+        List<Replayed> keyed = new ArrayList<>();
+        for (AuditChainKey key : keys) {
+            keyed.add(replay(content, checkpoints, minimumRetention, lenientStart, key));
+        }
+        Replayed unkeyed = replay(content, checkpoints, minimumRetention, lenientStart, null);
+        Replayed base = keyed.get(0);
+        List<WriterResult> results = new ArrayList<>();
+        for (int i = 0; i < base.report().writers().size(); i++) {
+            WriterResult first = base.report().writers().get(i);
+            String instance = first.instanceId();
+            WriterResult chosen = null;
+            for (int k = 0; k < keys.size() && chosen == null; k++) {
+                WriterResult candidate = keyed.get(k).report().writers().get(i);
+                if (!candidate.broken()) {
+                    chosen = candidate.withKey(Optional.of(keys.get(k).id()), false);
+                }
+            }
+            if (chosen == null) {
+                WriterResult plain = unkeyed.report().writers().get(i);
+                boolean mismatch = base.states().get(instance).checkpointMismatch;
+                if (mismatch) {
+                    chosen = first;
+                } else if (!plain.broken() && allowUnkeyedWriters) {
+                    chosen = plain.withKey(Optional.empty(), true);
+                } else if (!plain.broken()) {
+                    chosen = first.withBreak(new Break(first.firstSequence(), instance,
+                            base.states().get(instance).firstOffset,
+                            "this writer's chain verifies only as an unkeyed chain, but a key was required and "
+                                    + "unkeyed writers were not allowed -- a forger who recomputed the chain "
+                                    + "without the key produces exactly this shape"));
+                } else {
+                    chosen = first.withBreak(new Break(first.firstBreak().orElseThrow().sequence(), instance,
+                            first.firstBreak().orElseThrow().byteOffset(),
+                            "this writer's chain verifies under none of the supplied keys and is not a valid "
+                                    + "unkeyed chain either (checked against key ids " + String.join(", ", ids)
+                                    + "): " + first.firstBreak().orElseThrow().reason()));
+                }
+            }
+            results.add(chosen);
+        }
+        VerificationReport b = base.report();
+        return new VerificationReport(results, b.anomalies(), b.tail(), b.checkpointFindings());
+    }
+
+    private static Replayed replay(byte[] content, List<AuditCheckpoint> checkpoints,
+                                   Period minimumRetention, boolean lenientStart, AuditChainKey key) {
         Map<String, WriterState> writers = new LinkedHashMap<>();
         Map<String, List<AuditCheckpoint>> retentionAnchors = new LinkedHashMap<>();
         for (AuditCheckpoint cp : checkpoints) {
@@ -264,7 +373,7 @@ public final class AuditChainVerifier {
                 retentionAnchors.computeIfAbsent(cp.instanceId(), k -> new ArrayList<>()).add(cp);
             }
         }
-        Replay replay = new Replay(retentionAnchors, checkpoints, minimumRetention, lenientStart);
+        Replay replay = new Replay(retentionAnchors, checkpoints, minimumRetention, lenientStart, key);
         List<StructuralAnomaly> anomalies = new ArrayList<>();
         TailAnomaly tail = null;
 
@@ -305,7 +414,7 @@ public final class AuditChainVerifier {
         for (WriterState state : writers.values()) {
             results.add(state.toResult());
         }
-        return new VerificationReport(results, anomalies, Optional.ofNullable(tail), findings);
+        return new Replayed(new VerificationReport(results, anomalies, Optional.ofNullable(tail), findings), writers);
     }
 
     /**
@@ -540,7 +649,8 @@ public final class AuditChainVerifier {
             return;
         }
 
-        String recomputed = AuditEventHash.compute(event);
+        String recomputed = replay.key() == null ? AuditEventHash.compute(event)
+                : AuditEventHash.compute(event, replay.key());
         if (!recomputed.equals(event.eventHash())) {
             writer.broken = true;
             writer.firstBreak = new Break(event.sequence(), event.instanceId(), offset,
@@ -757,7 +867,26 @@ public final class AuditChainVerifier {
     public record WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
                                 Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
                                 Optional<NonGenesisStart> nonGenesisStart,
-                                Optional<AuditCheckpoint> retentionAnchor) {
+                                Optional<AuditCheckpoint> retentionAnchor, Optional<String> keyId,
+                                boolean unkeyedAllowed) {
+
+        /** As the full form for a result with no key information: unkeyed verification. */
+        public WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
+                            Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
+                            Optional<NonGenesisStart> nonGenesisStart, Optional<AuditCheckpoint> retentionAnchor) {
+            this(instanceId, sequenceCount, headHash, broken, firstBreak, afterBreakCount, firstSequence,
+                    nonGenesisStart, retentionAnchor, Optional.empty(), false);
+        }
+
+        WriterResult withKey(Optional<String> keyId, boolean unkeyedAllowed) {
+            return new WriterResult(instanceId, sequenceCount, headHash, broken, firstBreak, afterBreakCount,
+                    firstSequence, nonGenesisStart, retentionAnchor, keyId, unkeyedAllowed);
+        }
+
+        WriterResult withBreak(Break newBreak) {
+            return new WriterResult(instanceId, sequenceCount, headHash, true, Optional.of(newBreak),
+                    afterBreakCount, firstSequence, nonGenesisStart, retentionAnchor, Optional.empty(), false);
+        }
 
         public WriterResult(String instanceId, long sequenceCount, String headHash, boolean broken,
                             Optional<Break> firstBreak, long afterBreakCount, long firstSequence,
@@ -790,6 +919,11 @@ public final class AuditChainVerifier {
         public VerificationReport(List<WriterResult> writers, List<StructuralAnomaly> anomalies,
                                   Optional<TailAnomaly> tail) {
             this(writers, anomalies, tail, List.of());
+        }
+
+        /** How many writers verified only as unkeyed chains and were tolerated because the caller allowed it. */
+        public long unkeyedWriterCount() {
+            return writers.stream().filter(WriterResult::unkeyedAllowed).count();
         }
 
         /** True if the checkpoint file shows a writer's tail or whole boot missing. */

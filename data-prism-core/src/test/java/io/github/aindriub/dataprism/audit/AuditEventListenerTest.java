@@ -71,7 +71,7 @@ class AuditEventListenerTest {
     }
 
     private static AuditRecorder recorder(AuditSink sink, AuditEventListeners listeners) {
-        return new AuditRecorder(sink, FIXED, "w", null, listeners);
+        return new AuditRecorder(sink, FIXED, "w", null, listeners, AuditChainMode.unkeyed());
     }
 
     private static Set<Thread> dispatcherThreads() {
