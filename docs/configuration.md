@@ -621,7 +621,7 @@ The first failing check is the one reported, and the checks run in this order:
 | 1 | `MISSING_CLUSTER_KEY` | A key id or its source is missing, both sources are set, one of the two keys is set without the other, or `next` or `previous` is set without a current key. Checked for the cluster key, the name key, `next`, then `previous` |
 | 2 | `LITERAL_SECRET_FORBIDDEN` | A `value` is set on the cluster key, the name key, `next` or `previous` |
 | 3 | `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE` | `member.interface` is missing for `tcp-ip` or `kubernetes`, or matches every address |
-| 4 | `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | A key id is blank or contains a dot. Checked for the cluster key, `next`, `previous`, then the name key |
+| 4 | `CLUSTER_KEY_UNRESOLVED`, `NAME_KEY_UNRESOLVED` | A key id contains a dot (a blank key id is step 1). Checked for the cluster key, `next`, `previous`, then the name key |
 | 5 | `CLUSTER_KEY_UNRESOLVED`, `CLUSTER_KEY_WEAK`, `NAME_KEY_UNRESOLVED`, `NAME_KEY_WEAK` | A reference does not resolve, or resolves to material shorter than 32 bytes. Each key is resolved and measured in turn: the cluster key, `next`, `previous`, then the name key |
 | 6 | `HMAC_KEY_UNRESOLVED` | The privacy HMAC key cannot be resolved again to compare the cluster keys with it |
 | 7 | `CLUSTER_KEY_SHARED`, `NAME_KEY_SHARED` | A cluster key (current, `next`, `previous`), then the name key, has the key id or the material of the privacy HMAC key |
