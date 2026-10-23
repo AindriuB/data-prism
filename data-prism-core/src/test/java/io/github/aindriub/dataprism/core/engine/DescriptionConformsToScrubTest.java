@@ -112,6 +112,16 @@ class DescriptionConformsToScrubTest {
     }
 
     private static void assertConforms(FieldMetadataResolver resolver, String profile, Object source) {
+        assertConforms(resolver, profile, source, true);
+    }
+
+    /**
+     * @param complete whether every scrubbed path must be described; false for a shape whose type
+     *                 leaves the reading ambiguous, where omission is the answer but a description must
+     *                 still never contradict the scrub
+     */
+    private static void assertConforms(FieldMetadataResolver resolver, String profile, Object source,
+                                       boolean complete) {
         JsonTreeScrubbingEngine engine = engine(resolver);
         var context = ScrubPlanDescriberTest.context(profile);
         ScrubResult scrubbed = engine.scrub(source, context);
@@ -129,6 +139,9 @@ class DescriptionConformsToScrubTest {
         present.forEach((path, values) -> {
             FieldProtection field = described.get(path);
             PrivacyAction action = disposition(scrubbed, path);
+            if (field == null && !complete) {
+                return;
+            }
             if (field == null || action == null || field.protection() != protection(action)) {
                 problems.add(path + " scrubbed under " + action + " described as " + field);
             }
@@ -141,11 +154,16 @@ class DescriptionConformsToScrubTest {
                 problems.add(path + " described " + field.protection() + " but not present");
             }
             if (field.protection() == Protection.VERBATIM && present.containsKey(path)
-                    && !present.get(path).equals(original.get(path))) {
+                    && !texts(present.get(path)).equals(texts(original.get(path)))) {
                 problems.add(path + " described VERBATIM but changed");
             }
         });
         assertThat(problems).isEmpty();
+    }
+
+    /** Compared as text: a POJO node (bytes) has no value equality across two readings. */
+    private static List<String> texts(List<JsonNode> nodes) {
+        return nodes.stream().map(JsonNode::toString).toList();
     }
 
     private static final List<String> BOTH = List.of("DEFAULT", "STRICT");
@@ -195,5 +213,38 @@ class DescriptionConformsToScrubTest {
                 ScrubPlanDescriberTest.context("STRICT"), false).orElseThrow();
 
         assertThat(strict).isNotEqualTo(normal);
+    }
+
+    @Test
+    @DisplayName("records that serialise as a scalar, bytes and nested arrays never contradict the scrub")
+    void ambiguousShapes() {
+        var email = new ScrubPlanDescriberTest.Email("ada@example.invalid");
+        var holder = new ScrubPlanDescriberTest.Holder("h-1", email, new ScrubPlanDescriberTest.Code("c"),
+                new ScrubPlanDescriberTest.Plain("p"), new ScrubPlanDescriberTest.Code("d"));
+        var blobs = new ScrubPlanDescriberTest.Blobs("b-1", new byte[] {1, 2, 3},
+                new Object[][] {{"a", "b"}}, java.util.Collections.singletonList(new Object[] {"c"}));
+        for (String profile : BOTH) {
+            assertConforms(new DefaultFieldMetadataResolver(), profile, holder, false);
+            assertConforms(new DefaultFieldMetadataResolver(), profile, blobs, false);
+        }
+    }
+
+    @Test
+    @DisplayName("a scalar-serialised record is described as scrubbed when the readings agree")
+    void agreeingScalarRecord() {
+        var profile = new PrivacyProfile("DEFAULT", PrivacyProfile.UnclassifiedBehaviour.REDACT_AND_WARN, Map.of(
+                DataClassification.CONTACT, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
+        var engine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", profile)), (s, ns, c) -> "syn", TOKENS);
+        var holder = new ScrubPlanDescriberTest.Holder("h-1", new ScrubPlanDescriberTest.Email("e"),
+                new ScrubPlanDescriberTest.Code("c"), new ScrubPlanDescriberTest.Plain("p"),
+                new ScrubPlanDescriberTest.Code("d"));
+        var context = ScrubPlanDescriberTest.context("DEFAULT");
+
+        ScrubResult scrubbed = engine.scrub(holder, context);
+
+        assertThat(scrubbed.dispositions()).containsEntry("/redactedCode", PrivacyAction.REDACT);
+        assertThat(engine.describe(holder.getClass(), context, false).orElseThrow().fields())
+                .contains(new FieldProtection("redactedCode", Protection.MARKER, null, null));
     }
 }

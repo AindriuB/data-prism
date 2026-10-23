@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import com.fasterxml.jackson.annotation.JsonValue;
 import io.github.aindriub.dataprism.annotations.Chainable;
 import io.github.aindriub.dataprism.annotations.DataClassification;
 import io.github.aindriub.dataprism.annotations.InternalIdentifier;
@@ -24,7 +25,12 @@ import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.github.aindriub.dataprism.core.descriptor.DescriptorFieldMetadataResolver;
+import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
+import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
+import tools.jackson.databind.annotation.JsonSerialize;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 import java.time.Instant;
 import java.util.List;
@@ -99,6 +105,126 @@ class ScrubPlanDescriberTest {
     record Tree(
             @InternalIdentifier @Chainable(keyNamespace = "node-ref") String id,
             @NonSensitive(reason = "reviewed separately") List<Tree> children) {
+    }
+
+    @SensitiveObject
+    record Email(
+            @SensitiveData(classifications = DataClassification.CONTACT,
+                    namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT) String value) {
+        @JsonValue
+        public String value() {
+            return value;
+        }
+    }
+
+    record Code(String v) {
+        @JsonValue
+        public String v() {
+            return v;
+        }
+    }
+
+    record Plain(String v) {
+    }
+
+    @LlmExposedModel
+    record Holder(
+            @InternalIdentifier String ref,
+            @NonSensitive(reason = "wrapper") Email email,
+            @NonSensitive(reason = "wrapper") Code code,
+            @NonSensitive(reason = "wrapper") @JsonSerialize(using = ToStringSerializer.class) Plain plain,
+            @SensitiveData(classifications = DataClassification.CONTACT,
+                    namespace = PrivacyNamespace.EMAIL,
+                    suggestedAction = PrivacyAction.REDACT) Code redactedCode) {
+    }
+
+    @LlmExposedModel
+    record Blobs(
+            @InternalIdentifier String ref,
+            @NonSensitive(reason = "bytes") byte[] blob,
+            @NonSensitive(reason = "grid") Object[][] grid,
+            @NonSensitive(reason = "rows") List<Object[]> rows) {
+    }
+
+    @LlmExposedModel
+    record Hashed(
+            @InternalIdentifier String ref,
+            @SensitiveData(classifications = DataClassification.PII,
+                    namespace = PrivacyNamespace.PERSON_IDENTITY,
+                    suggestedAction = PrivacyAction.TOKENIZE) String handle,
+            @NonSensitive(reason = "enumerated") String state) {
+    }
+
+    @LlmExposedModel
+    record Plainly(@InternalIdentifier String ref, @NonSensitive(reason = "enumerated") String state) {
+    }
+
+    /** Each level holds the next twice, so a walk of the top costs 2^14 type visits. */
+    static final class Diamond {
+        private Diamond() {
+        }
+
+        @SensitiveObject
+        record D0(@NonSensitive(reason = "x") String v) {
+        }
+
+        @SensitiveObject
+        record D1(@NonSensitive(reason = "x") D0 a, @NonSensitive(reason = "x") D0 b) {
+        }
+
+        @SensitiveObject
+        record D2(@NonSensitive(reason = "x") D1 a, @NonSensitive(reason = "x") D1 b) {
+        }
+
+        @LlmExposedModel
+        record D3(@NonSensitive(reason = "x") D2 a, @NonSensitive(reason = "x") D2 b) {
+        }
+
+        @SensitiveObject
+        record D4(@NonSensitive(reason = "x") D3 a, @NonSensitive(reason = "x") D3 b) {
+        }
+
+        @SensitiveObject
+        record D5(@NonSensitive(reason = "x") D4 a, @NonSensitive(reason = "x") D4 b) {
+        }
+
+        @SensitiveObject
+        record D6(@NonSensitive(reason = "x") D5 a, @NonSensitive(reason = "x") D5 b) {
+        }
+
+        @SensitiveObject
+        record D7(@NonSensitive(reason = "x") D6 a, @NonSensitive(reason = "x") D6 b) {
+        }
+
+        @SensitiveObject
+        record D8(@NonSensitive(reason = "x") D7 a, @NonSensitive(reason = "x") D7 b) {
+        }
+
+        @SensitiveObject
+        record D9(@NonSensitive(reason = "x") D8 a, @NonSensitive(reason = "x") D8 b) {
+        }
+
+        @SensitiveObject
+        record D10(@NonSensitive(reason = "x") D9 a, @NonSensitive(reason = "x") D9 b) {
+        }
+
+        @SensitiveObject
+        record D11(@NonSensitive(reason = "x") D10 a, @NonSensitive(reason = "x") D10 b) {
+        }
+
+        @SensitiveObject
+        record D12(@NonSensitive(reason = "x") D11 a, @NonSensitive(reason = "x") D11 b) {
+        }
+
+        @SensitiveObject
+        record D13(@NonSensitive(reason = "x") D12 a, @NonSensitive(reason = "x") D12 b) {
+        }
+
+        @LlmExposedModel
+        record D14(@NonSensitive(reason = "x") D13 a, @NonSensitive(reason = "x") D13 b) {
+        }
+
     }
 
     private static final Map<String, PrivacyProfile> BUNDLED = bundled();
@@ -270,5 +396,86 @@ class ScrubPlanDescriberTest {
             assertThat(text).doesNotContain("Parcel", "Inner", "ScrubPlanDescriberTest", "io.github",
                     "PII", "CONTACT", "CONFIDENTIAL", "dataprism");
         }
+    }
+
+    @Test
+    @DisplayName("a record that serialises as a scalar is not described by its components")
+    void scalarRecords() {
+        Map<String, Protection> d = byPath(describe(Holder.class, "DEFAULT", false));
+
+        assertThat(d).doesNotContainKeys("email", "email.value", "code", "code.v", "plain", "plain.v");
+    }
+
+    @Test
+    @DisplayName("a scalar-serialised record is described when the scalar and structure readings agree")
+    void scalarRecordsAgreeing() {
+        var profile = new PrivacyProfile("DEFAULT", UnclassifiedBehaviour.REDACT_AND_WARN, Map.of(
+                DataClassification.CONTACT, PrivacyProfile.ClassificationRule.of(PrivacyAction.REDACT)));
+        Map<String, Protection> d = byPath(engine(Map.of("DEFAULT", profile))
+                .describe(Holder.class, context("DEFAULT"), false).orElseThrow());
+
+        assertThat(d).containsEntry("redactedCode", Protection.MARKER).doesNotContainKeys("email", "code");
+    }
+
+    @Test
+    @DisplayName("a descriptor-declared chainable field carries its key namespace with no annotation")
+    void descriptorChainable() {
+        String name = Plainly.class.getName();
+        Map<String, ModelDescriptor> descriptors = Map.of(name, new ModelDescriptor(name, null, null, null,
+                Map.of("ref", new ModelDescriptor.FieldDescriptor(List.of(), null, null, null, null, null,
+                        true, "parcel-ref"))));
+        var engine = new JsonTreeScrubbingEngine(
+                new DescriptorFieldMetadataResolver(new DefaultFieldMetadataResolver(), descriptors),
+                new ProfilePrivacyPolicyResolver(BUNDLED), (s, ns, c) -> "syn", ValueTokenSource.unavailable(),
+                descriptors);
+
+        assertThat(engine.describe(Plainly.class, context("DEFAULT"), true).orElseThrow().fields()).contains(
+                new FieldProtection("ref", Protection.ABSENT, null, new KeyNamespace("parcel-ref")));
+        assertThat(engine.describe(Plainly.class, context("DEFAULT"), false).orElseThrow().fields())
+                .noneMatch(f -> f.keyNamespace() != null);
+    }
+
+    @Test
+    @DisplayName("HASH and TOKENIZE are omitted when the engine has no token source")
+    void noTokenSource() {
+        var strictest = new PrivacyProfile("DEFAULT", UnclassifiedBehaviour.FAIL_REQUEST, Map.of(
+                DataClassification.PII, PrivacyProfile.ClassificationRule.of(PrivacyAction.TOKENIZE)));
+        var tokenising = Map.of("DEFAULT", strictest);
+
+        var noSource = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(tokenising), (s, ns, c) -> "syn");
+        var hasSource = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(tokenising), (s, ns, c) -> "syn", new ValueTokenSource() {
+                    @Override
+                    public String hash(String v, PrivacyNamespace n, PrivacyContext c) {
+                        return "h";
+                    }
+
+                    @Override
+                    public String token(String v, PrivacyNamespace n, PrivacyContext c) {
+                        return "t";
+                    }
+                });
+
+        assertThat(byPath(noSource.describe(Hashed.class, context("DEFAULT"), false).orElseThrow()))
+                .doesNotContainKey("handle").containsKey("state");
+        assertThat(byPath(hasSource.describe(Hashed.class, context("DEFAULT"), false).orElseThrow()))
+                .containsEntry("handle", Protection.TOKEN);
+    }
+
+    @Test
+    @DisplayName("bytes are one scalar, and a nested array is not described with the field's policy")
+    void bytesAndNestedArrays() {
+        Map<String, Protection> d = byPath(describe(Blobs.class, "DEFAULT", false));
+
+        assertThat(d).containsEntry("blob", Protection.VERBATIM).doesNotContainKey("blob[]");
+        assertThat(d).doesNotContainKeys("grid", "grid[]", "rows", "rows[]");
+    }
+
+    @Test
+    @DisplayName("a model too large to walk gives no description")
+    void visitCap() {
+        assertThat(engine(BUNDLED).describe(Diamond.D14.class, context("DEFAULT"), false)).isEmpty();
+        assertThat(engine(BUNDLED).describe(Diamond.D3.class, context("DEFAULT"), false)).isPresent();
     }
 }

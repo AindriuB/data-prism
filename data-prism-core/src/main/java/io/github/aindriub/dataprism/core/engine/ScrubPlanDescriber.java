@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.core.engine;
 
+import com.fasterxml.jackson.annotation.JsonValue;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
@@ -13,8 +14,10 @@ import io.github.aindriub.dataprism.core.policy.PrivacyPolicyResolver;
 import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 
+import tools.jackson.databind.annotation.JsonSerialize;
+
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -38,20 +41,36 @@ import java.util.stream.Collectors;
  * take gives the same protection, and otherwise leaves it out. Leaving a field out is the fail-closed
  * answer: it is never described more loosely than the scrubber treats it.
  *
+ * <p>A record or other structure type that may serialise as a scalar ({@code @JsonValue}, or a
+ * {@code @JsonSerialize} on the type or on the component holding it) is treated the same way: the
+ * scrubber then applies the field's own policy to the whole value, so it is described only when that
+ * agrees with the structure reading.
+ *
+ * <p>A model that contains itself is described to its shallowest occurrence only. The path grammar
+ * cannot express recursion, so the deeper paths the scrubber emits ({@code children[].name}) are
+ * omitted and no claim is made about them.
+ *
  * <p>Nothing here reads a value, a classification name or a class name into the result.
  */
 final class ScrubPlanDescriber {
 
     private static final int MAX_DEPTH = 16;
 
+    /** The most types one description may walk; a diamond-shaped model would otherwise cost k^depth. */
+    static final int MAX_VISITS = 10_000;
+
     private final FieldMetadataResolver resolver;
     private final PrivacyPolicyResolver policies;
     private final PrivacyContext context;
     private final Map<String, KeyNamespace> chainables;
+    private final boolean tokensAvailable;
     private final Map<String, FieldProtection> found = new TreeMap<>();
+    private int visits;
 
     private ScrubPlanDescriber(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
-                               PrivacyContext context, Map<String, KeyNamespace> chainables) {
+                               PrivacyContext context, Map<String, KeyNamespace> chainables,
+                               boolean tokensAvailable) {
+        this.tokensAvailable = tokensAvailable;
         this.resolver = resolver;
         this.policies = policies;
         this.context = context;
@@ -65,14 +84,14 @@ final class ScrubPlanDescriber {
      */
     static Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled,
                                                FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
-                                               List<ChainableField> chainables) {
+                                               List<ChainableField> chainables, boolean tokensAvailable) {
         Objects.requireNonNull(model, "model");
         Objects.requireNonNull(context, "context");
         Map<String, KeyNamespace> keys = new HashMap<>();
         if (linksEnabled) {
             chainables.forEach(c -> keys.put(c.path(), c.keyNamespace()));
         }
-        ScrubPlanDescriber describer = new ScrubPlanDescriber(resolver, policies, context, keys);
+        ScrubPlanDescriber describer = new ScrubPlanDescriber(resolver, policies, context, keys, tokensAvailable);
         try {
             Undeclared undeclared = describer.undeclared();
             if (undeclared == null) {
@@ -111,6 +130,9 @@ final class ScrubPlanDescriber {
         if (depth > MAX_DEPTH) {
             throw new IllegalStateException("nesting exceeded " + MAX_DEPTH + " levels");
         }
+        if (++visits > MAX_VISITS) {
+            throw new IllegalStateException("model too large to describe");
+        }
         if (!inProgress.add(type)) {
             // The path grammar cannot express unbounded depth; the shallowest occurrence is listed.
             return;
@@ -121,12 +143,12 @@ final class ScrubPlanDescriber {
         boolean subject = hasSubject || fields.stream().anyMatch(FieldMetadata::internalIdentifier);
 
         for (FieldMetadata md : fields) {
-            field(md, byName, prefix, gone, subject, inProgress, depth);
+            field(type, md, byName, prefix, gone, subject, inProgress, depth);
         }
         inProgress.remove(type);
     }
 
-    private void field(FieldMetadata md, Map<String, FieldMetadata> siblings, String prefix, boolean gone,
+    private void field(Class<?> owner, FieldMetadata md, Map<String, FieldMetadata> siblings, String prefix, boolean gone,
                        boolean subject, Set<Class<?>> inProgress, int depth) {
         EffectivePrivacyPolicy policy = null;
         if (!gone) {
@@ -139,7 +161,7 @@ final class ScrubPlanDescriber {
         boolean removed = gone || policy.action() == PrivacyAction.REMOVE;
         String path = prefix + md.fieldName();
 
-        Shape shape = shapeOf(md);
+        Shape shape = shapeOf(owner, md);
         String leaf = shape.array ? path + "[]" : path;
         switch (shape.kind) {
             case RECORD -> walk(shape.record, leaf + ".", removed, subject, inProgress, depth + 1);
@@ -199,8 +221,11 @@ final class ScrubPlanDescriber {
     }
 
     /** Whether the scrubber can apply the action to a scalar here without refusing for want of input. */
-    private static boolean applicable(FieldMetadata md, EffectivePrivacyPolicy policy,
+    private boolean applicable(FieldMetadata md, EffectivePrivacyPolicy policy,
                                       Map<String, FieldMetadata> siblings, boolean subject) {
+        if (policy.action() == PrivacyAction.HASH || policy.action() == PrivacyAction.TOKENIZE) {
+            return tokensAvailable;
+        }
         if (policy.action() != PrivacyAction.SYNTHESIZE) {
             return true;
         }
@@ -237,23 +262,77 @@ final class ScrubPlanDescriber {
      * collection or array is described by its element; an array inside an array, or an element whose
      * type is not stated, is dynamic because the scrubber reads it by the value it meets.
      */
-    private Shape shapeOf(FieldMetadata md) {
+    private Shape shapeOf(Class<?> owner, FieldMetadata md) {
         Class<?> value = md.valueType();
+        if (value == byte[].class || value == char[].class) {
+            // Written as one string (base64 for bytes), not as an array of elements.
+            return new Shape(Kind.SCALAR, false, null);
+        }
         boolean array = value != null && (value.isArray() || Collection.class.isAssignableFrom(value));
         Class<?> nested = nestedType(md, array);
-        if (nested == null) {
+        if (nested == null || nested.isArray() && nested != byte[].class && nested != char[].class) {
+            // An array inside an array: its object elements take the unclassified-structure path and
+            // its scalars the field's policy, so no single protection is stated for it.
             return new Shape(Kind.DYNAMIC, array, null);
         }
+        if (nested == byte[].class || nested == char[].class) {
+            return new Shape(Kind.SCALAR, array, null);
+        }
+        boolean mayBeScalar = mayBeScalar(owner, md, nested);
         if (resolver.descendable(nested)) {
-            return new Shape(Kind.RECORD, array, nested);
+            return new Shape(mayBeScalar ? Kind.DYNAMIC : Kind.RECORD, array, nested);
         }
         if (nested.isPrimitive() || nested.isEnum() || scalar(nested)) {
             return new Shape(Kind.SCALAR, array, null);
         }
         if (Map.class.isAssignableFrom(nested) || concrete(nested) && !platform(nested)) {
-            return new Shape(Kind.STRUCTURE, array, null);
+            return new Shape(mayBeScalar ? Kind.DYNAMIC : Kind.STRUCTURE, array, null);
         }
         return new Shape(Kind.DYNAMIC, array, null);
+    }
+
+    /**
+     * Whether a record or user class may be written as a single scalar: a {@code @JsonValue} member or a
+     * {@code @JsonSerialize} on the type, or a {@code @JsonSerialize} on the component, field or accessor
+     * that holds it.
+     */
+    private static boolean mayBeScalar(Class<?> owner, FieldMetadata md, Class<?> nested) {
+        if (platform(nested)) {
+            return false;
+        }
+        if (nested.isAnnotationPresent(JsonSerialize.class)) {
+            return true;
+        }
+        for (java.lang.reflect.Method m : nested.getDeclaredMethods()) {
+            if (m.isAnnotationPresent(JsonValue.class)) {
+                return true;
+            }
+        }
+        for (java.lang.reflect.Field f : nested.getDeclaredFields()) {
+            if (f.isAnnotationPresent(JsonValue.class)) {
+                return true;
+            }
+        }
+        for (java.lang.reflect.Method m : nested.getMethods()) {
+            if (m.isAnnotationPresent(JsonValue.class)) {
+                return true;
+            }
+        }
+        List<AnnotatedElement> holders = new java.util.ArrayList<>();
+        if (owner.isRecord()) {
+            for (java.lang.reflect.RecordComponent rc : owner.getRecordComponents()) {
+                if (rc.getName().equals(md.fieldName())) {
+                    holders.add(rc);
+                    holders.add(rc.getAccessor());
+                }
+            }
+        }
+        try {
+            holders.add(owner.getDeclaredField(md.fieldName()));
+        } catch (NoSuchFieldException e) {
+            // A record component has its field; anything else without one is covered above.
+        }
+        return holders.stream().anyMatch(h -> h.isAnnotationPresent(JsonSerialize.class));
     }
 
     /**

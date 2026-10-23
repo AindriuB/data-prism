@@ -4,6 +4,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
+import io.github.aindriub.dataprism.core.descriptor.ModelDescriptor;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
 import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
@@ -70,6 +71,8 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     private final PrivacyPolicyResolver policies;
     private final SyntheticValueSource synthetics;
     private final ValueTokenSource tokens;
+    private final boolean tokensAvailable;
+    private final Map<String, ModelDescriptor> descriptors;
 
     /** Without a token source, HASH and TOKENIZE refuse rather than degrade. */
     public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
@@ -79,10 +82,23 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
     public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
                                    SyntheticValueSource synthetics, ValueTokenSource tokens) {
+        this(resolver, policies, synthetics, tokens, Map.of());
+    }
+
+    /**
+     * @param descriptors the model descriptors behind {@code resolver}, by type name. Only
+     *                    {@link #describe} reads them, to find the chainable paths a descriptor declares
+     */
+    public JsonTreeScrubbingEngine(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
+                                   SyntheticValueSource synthetics, ValueTokenSource tokens,
+                                   Map<String, ModelDescriptor> descriptors) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
         this.policies = Objects.requireNonNull(policies, "policies");
         this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
         this.tokens = Objects.requireNonNull(tokens, "tokens");
+        // ValueTokenSource.unavailable() is an anonymous class declared in that interface.
+        this.tokensAvailable = tokens.getClass().getEnclosingClass() != ValueTokenSource.class;
+        this.descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
     }
 
     @Override
@@ -108,8 +124,8 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
 
     /**
      * Describes the model from the plan {@link #scrub} applies: the same resolver, the same policy
-     * resolver and the same nested-type rule. A chainable path is read from the annotations; a
-     * descriptor-declared one is the caller's to supply (a configured source overrides this).
+     * resolver and the same nested-type rule. Chainable paths come from the annotations and from the
+     * descriptors given at construction.
      */
     @Override
     public Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled) {
@@ -121,12 +137,12 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         List<ChainableField> chainables = List.of();
         if (linksEnabled) {
             try {
-                chainables = ChainableFields.of(model);
+                chainables = ChainableFields.of(model, descriptors);
             } catch (IllegalStateException e) {
                 return Optional.empty();
             }
         }
-        return ScrubPlanDescriber.describe(model, context, linksEnabled, resolver, policies, chainables);
+        return ScrubPlanDescriber.describe(model, context, linksEnabled, resolver, policies, chainables, tokensAvailable);
     }
 
     /**
