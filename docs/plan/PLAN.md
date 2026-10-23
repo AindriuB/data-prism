@@ -55,6 +55,22 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 Central warned on 2026-10-22 that the organisation reached its monthly File Count publishing limit; the grace period ends 2026-11-08. Decide before 0.8.0 whether to check the plan or limit in the portal, publish fewer modules, or release at most once a month.
 
+##### Open (owner, deferred 2026-10-23): merge small modules to cut published artifacts
+
+The owner has asked to record the options and return to this later; nothing is decided. This is the architect's assessment of 2026-10-23, and it bears on the File Count item above.
+
+- **Recommended (a):** merge `data-prism-validation`, `data-prism-pseudonymisation` and `data-prism-security` into `data-prism-core`, keeping the package names. Central goes from 13 published jars to 10. Also make `data-prism-spring-boot-starter` pom-only, since it holds only `package-info.java`. Per-release files go from about 400 to about 300 (an estimate). Do it as the last 0.8 task, after 203, 208, 248, 250 and 256 have merged, because their Owns name those module paths.
+  - Cost: three Maven coordinates are removed, which is a breaking change. The build-level barrier goes, leaving ArchUnit as the only guard. `docs/architecture.md:35-52` and `ArchitectureCoverageTest` need updating, and the connectors-rest "depends on core" drift needs fixing (it also depends on validation and orchestration).
+- **(b):** merge only validation and pseudonymisation, keeping security separate if core's published dependency footprint should stay minimal.
+- **(c):** no merge; handle the limit through the Central portal plan, or a release cadence of at most one a month.
+- **Must not merge:**
+  - annotations and processor: the processor must stay off the compile classpath.
+  - connectors-rest: it is an opt-in `-Dloader.path` plug-in.
+  - mcp and orchestration into core: boundary 1, and "core carries no business domain".
+  - hazelcast and reidentification: both are optional for single-node deployments.
+  - reidentification into hazelcast: it weakens boundary 5.
+- **Note:** one release a month matters more than module count for the File Count limit.
+
 #### 0.7.0 release gate: done
 
 All six items are done: the HTTP example re-capture, the owner's go, publication and task 188's five-step verification, the after-action report (presented in chat, not committed), the version-literal updates, and task 235. The verification found two documentation errors in `docs/verifying-releases.md` (the GPG keyserver command and the per-arch digests), corrected in the post-0.7.0 chore PR.
@@ -110,7 +126,7 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 1 | 268 done 2026-10-21 (Tomcat 11.0.27 override; PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 218, 219, 238, 239, 243, 258 landed 2026-10-21 (PR record/0.8-wave1a); 259 done 2026-10-21 (baseline in `perf/baseline-0.7-quiet.md`) |
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
 | 3 | 222 and 242 landed 2026-10-22 (PR record/0.8-wave3); 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
-| 4 | 223, 241, 248; 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
+| 4 | 223, 241, 248, 269 (settle the link attempt limiter's contract before 251 and 264; owner decision 2026-10-22; OD-269-1 to 3 decided (a) by the owner 2026-10-22: a `locked` pre-check then one atomic `recordFailure` judged on the count after the increment; the SPI takes `AttemptSubject(scopeId, principalId)`, `LinkKeys.attemptCounterKey` deleted, in-memory HMAC under a random per-instance key and 264 under the name key; ceiling 100,000 entries per instance as a constructor parameter, no property in 0.8, no live entry evicted, new subject at the ceiling is OVER_LIMIT and not stored, FIFO expiry sweep of at most two per call (at most 18 at the ceiling, revised 2026-10-23); OD-269-4 done: 269 added to 250's Depends on; brief revised 2026-10-23 after the external review of PR #155, decisions unchanged: one `LinkAttemptGate.open` call, the stated bound of limit plus in-flight, and the ceiling consequence (a subject that is not stored is never locked), accepted by the owner 2026-10-23; 252, 255 and 264 updated to the gate); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
 | 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 267, 244, 245, 257, 268) |
 | 6 | 228, 246 |
 | 7 | 229, 247 |
@@ -145,7 +161,7 @@ Follow-ups from wave 2 (landed 2026-10-21), each belonging to the brief named (a
 
 An external review of PR #154 (the wave-3 record) was addressed in the same PR: 4 Medium, 19 Low and 4 Nit findings, fixed on `fix/222-external-review` and `fix/242-external-review` and described in the two Outcomes under "External review of PR #154 — fixes". Its follow-ups for later tasks are in the list below and the dated Context bullets of 251, 252, 254, 255 and 264: gate on `refused.counted()`, issue time and link id from the clock and a random source, `LINK_KEY_UNRESOLVED` from `forScope` and `attemptCounterKey`, a stable counter key across rotation, check-then-record, a bounded limiter map, per-id provider calls in `heldKeyIds`, and the pseudonymisation key through the same provider.
 
-A second review round on PR #154 (4 Medium, 13 Low, 4 Nit; 2026-10-23) is answered on the same branches; OD-269 (a, a, a) is decided and creates task 269, which replaces `attemptCounterKey`. New follow-ups for 251, 252 and 255 are in their Context bullets.
+A second review round on PR #154 (4 Medium, 13 Low, 4 Nit; 2026-10-23) is answered on the same branches. New follow-ups for 251, 252 and 255 are in their Context bullets. The limiter findings belong to task 269 (wave 4 row), which replaces `attemptCounterKey`.
 
 Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the brief named (also recorded as dated Context bullets in the briefs, except where noted):
 
