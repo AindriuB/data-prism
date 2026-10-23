@@ -5,6 +5,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import io.github.aindriub.dataprism.annotations.PrivacyAction;
 import io.github.aindriub.dataprism.core.model.FieldMetadata;
+import io.github.aindriub.dataprism.core.model.ModelDescription;
 import io.github.aindriub.dataprism.core.model.PrivacyContext;
 import io.github.aindriub.dataprism.core.model.ScrubResult;
 import io.github.aindriub.dataprism.core.policy.EffectivePrivacyPolicy;
@@ -22,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -102,6 +104,29 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         Run run = new Run(context, new HashSet<>(), new TreeMap<>());
         ObjectNode tree = scrubObject((ObjectNode) read, type, run, "$", "", 0, null);
         return new ScrubResult(tree, run.emitted(), run.dispositions());
+    }
+
+    /**
+     * Describes the model from the plan {@link #scrub} applies: the same resolver, the same policy
+     * resolver and the same nested-type rule. A chainable path is read from the annotations; a
+     * descriptor-declared one is the caller's to supply (a configured source overrides this).
+     */
+    @Override
+    public Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled) {
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(context, "context");
+        if (!resolver.exposed(model)) {
+            return Optional.empty();
+        }
+        List<ChainableField> chainables = List.of();
+        if (linksEnabled) {
+            try {
+                chainables = ChainableFields.of(model);
+            } catch (IllegalStateException e) {
+                return Optional.empty();
+            }
+        }
+        return ScrubPlanDescriber.describe(model, context, linksEnabled, resolver, policies, chainables);
     }
 
     /**
