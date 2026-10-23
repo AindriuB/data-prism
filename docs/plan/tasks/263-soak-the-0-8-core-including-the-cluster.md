@@ -5,7 +5,7 @@
 **Executor:** the owner, or an agent on a dedicated host; not a shared CI runner.
 **Base branch:** the 0.8 integration branch once every dependency has merged
 **Depends on:** 258 (soak mode), 252 (`LinkTimingSoakTest`), 255 (links and catalog wired), 257 (257 owns `.github/workflows/*.yml`), 231 (sealed-cluster plan; 231 follows 230 and through it every sealed-cluster task 218 to 229, so a three-member sealed cluster runs), and 264 (sealed-cluster plan; the shared link limiter, without which a joined member refuses `dataprism.links.enabled=true` and a configured link key (page links) with `MISSING_SHARED_LINK_LIMITER`. If 264 is cut from 0.8, drop this edge and run the three-member mix with links disabled and no link key, and the link and paging mix on a single node only)
-**Wave:** 14 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 14 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - load-test/soak/** *(new: scenario files, a Compose overlay for the three-member run, and the fault, rotation and capture scripts of design 5.2)*
 - docs/plan/perf/soak-0.8.md *(new)*
@@ -19,7 +19,7 @@ The roadmap's 0.8 readiness includes a soak, including the cluster. Run the 0.8 
 - load-test/README.md after 258: soak mode, token and scope rotation.
 - docs/plan/perf/baseline-0.7-quiet.md (259): the figures to compare against.
 - docs/plan/design/cluster-security.md 5.2 (as amended by 218): every step, negative case and pass criterion of the cluster soak, including the rotation steps (1) to (5) and negatives (a) to (c), and the environment verification. 4.6 (rotation phases), 4.4 (the `rotation.*` and `seal.*` metrics).
-- docs/plan/tasks/215-plan-sealed-cluster-implementation.md, Outcome: the soak (design 5.2), rotation under load and the packet capture are this task's.
+- docs/plan/tasks/retired/215-plan-sealed-cluster-implementation.md, Outcome: the soak (design 5.2), rotation under load and the packet capture are this task's.
 - Sealed-cluster tasks 229 (`RotationPhasesTest`, the in-process version of the rotation steps), 231 (`HostileMemberEndToEndTest`) and 264 (the shared link limiter). Read with `git show plan/0.8-sealed-cluster:docs/plan/tasks/<id>-*.md`.
 - docs/multiple-instances.md: the isolation claims the capture tests.
 - From 221 (2026-10-21): fail if any member logs "Resolving class ... is not allowed" during the soak runs.

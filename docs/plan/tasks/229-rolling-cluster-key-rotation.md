@@ -4,6 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 224, 225, 226 and 228.
 **Depends on:** 219 (answer 7), 224, 225, 226 (every store sealed), 227 (cards, sentinel), 228 (pause document)
+**Wave:** 7 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Decisions:** OD-215-13 decided 2026-10-20 (a): re-sealing in phase 2 by the sweeper only.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/seal/CardWriteKeyPolicy.java *(new)*

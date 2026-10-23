@@ -5,7 +5,7 @@
 **Base branch:** the 0.8 integration branch once 243, 244, 203 and 226 have merged
 **Depends on:** 243 (reservation SPI), 244 (both edit `DefaultContextOrchestrator`), 203 (203 owns existing `data-prism-mcp` test files), 226 (sealed-cluster plan; 226 implements `reserve` and `release` on `HazelcastScopeBudget`, OD-08-1 is decided as option (a), 2026-10-20)
 **Decisions:** OD-08-1 (a), OD-08-3 (`PT10S` deadline, scope total 50,000, `scope-read-budget` stays 100 and counts source reads), OD-08-4 (a, remove `SKIPPED_OVER_LIMIT`) and OD-08-5 (a, release reads never started) are decided 2026-10-20.
-**Wave:** 6 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceFanOut.java
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/SourceFanOutOptions.java
