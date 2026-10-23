@@ -334,6 +334,23 @@ class ScrubPlanDescriberTest {
     record PlainList(@InternalIdentifier String ref, @NonSensitive(reason = "x") List<PContact> contacts) {
     }
 
+    @LlmExposedModel
+    record OptOfArr(@InternalIdentifier String ref, @NonSensitive(reason = "x") Optional<ArrContact> contact) {
+    }
+
+    @LlmExposedModel
+    record PlainOpt(@InternalIdentifier String ref, @NonSensitive(reason = "x") Optional<PContact> contact) {
+    }
+
+    @LlmExposedModel
+    record IdOpt(@InternalIdentifier String ref, @NonSensitive(reason = "x") Optional<IdContact> contact) {
+    }
+
+    @LlmExposedModel
+    record AtomicRef(@InternalIdentifier String ref,
+                     @NonSensitive(reason = "x") java.util.concurrent.atomic.AtomicReference<PContact> contact) {
+    }
+
     private static final Map<String, PrivacyProfile> BUNDLED = bundled();
 
     private static Map<String, PrivacyProfile> bundled() {
@@ -645,5 +662,21 @@ class ScrubPlanDescriberTest {
         assertThat(SourceTree.readsAsPlainBean(MetaArr.class, "contacts", PContact.class)).isFalse();
         assertThat(SourceTree.readsAsPlainBean(IfaceList.class, "contacts", PContact.class)).isFalse();
         assertThat(SourceTree.readsAsPlainBean(PlainList.class, "nope", PContact.class)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a class-level array format on an optional's content is seen; plain and object-id contents are as before")
+    void optionalContent() {
+        assertThat(byPath(describe(OptOfArr.class, "DEFAULT", false)).keySet()).noneMatch(p -> p.startsWith("contact"));
+        assertThat(byPath(describe(IdOpt.class, "DEFAULT", false)).keySet()).noneMatch(p -> p.startsWith("contact"));
+        assertThat(byPath(describe(PlainOpt.class, "DEFAULT", false)))
+                .containsEntry("contact.email", Protection.MARKER);
+        assertThat(SourceTree.readsAsPlainBean(OptOfArr.class, "contact", ArrContact.class)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a platform reference type is not a scalar, so it is never described VERBATIM")
+    void referenceTypes() {
+        assertThat(byPath(describe(AtomicRef.class, "DEFAULT", false))).doesNotContainKey("contact");
     }
 }

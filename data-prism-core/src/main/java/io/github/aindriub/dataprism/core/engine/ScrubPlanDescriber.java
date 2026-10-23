@@ -388,6 +388,9 @@ final class ScrubPlanDescriber {
                 && !Iterable.class.isAssignableFrom(type)
                 && type != Object.class
                 && type != Optional.class
+                // A reference to a value is written as that value, so it is not a scalar of its own.
+                && !java.util.concurrent.atomic.AtomicReference.class.isAssignableFrom(type)
+                && !java.lang.ref.Reference.class.isAssignableFrom(type)
                 && !type.isInterface()
                 || Number.class.isAssignableFrom(type) || CharSequence.class.isAssignableFrom(type);
     }

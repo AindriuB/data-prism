@@ -260,6 +260,10 @@ class DescriptionConformsToScrubTest {
                 new ScrubPlanDescriberTest.MetaArr("m-3", new ScrubPlanDescriberTest.PContact[] {new ScrubPlanDescriberTest.PContact("ada@example.invalid")}),
                 new ScrubPlanDescriberTest.IfaceList("m-4", List.of(new ScrubPlanDescriberTest.PContact("ada@example.invalid"))),
                 new ScrubPlanDescriberTest.PlainList("m-5", List.of(new ScrubPlanDescriberTest.PContact("ada@example.invalid"))),
+                new ScrubPlanDescriberTest.OptOfArr("o-1", java.util.Optional.of(new ScrubPlanDescriberTest.ArrContact("ada@example.invalid"))),
+                new ScrubPlanDescriberTest.PlainOpt("o-2", java.util.Optional.of(new ScrubPlanDescriberTest.PContact("ada@example.invalid"))),
+                new ScrubPlanDescriberTest.IdOpt("o-3", java.util.Optional.of(new ScrubPlanDescriberTest.IdContact("ada@example.invalid"))),
+                new ScrubPlanDescriberTest.AtomicRef("o-4", new java.util.concurrent.atomic.AtomicReference<>(new ScrubPlanDescriberTest.PContact("ada@example.invalid"))),
                 new ScrubPlanDescriberTest.IdHolder("d-1", List.of(contact, contact)),
                 new ScrubPlanDescriberTest.Holder("h-1", new ScrubPlanDescriberTest.Email("e"),
                         new ScrubPlanDescriberTest.Code("c"), new ScrubPlanDescriberTest.Plain("p"),
@@ -268,7 +272,15 @@ class DescriptionConformsToScrubTest {
 
     private static void assertNeverContradicts(JsonTreeScrubbingEngine engine, String profile, Object source) {
         var context = ScrubPlanDescriberTest.context(profile);
-        ScrubResult scrubbed = engine.scrub(source, context);
+        ScrubResult scrubbed;
+        try {
+            scrubbed = engine.scrub(source, context);
+        } catch (io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException refused) {
+            // Nothing is emitted, so nothing can be contradicted; the field must still not be VERBATIM.
+            assertThat(engine.describe(source.getClass(), context, false).orElseThrow().fields())
+                    .noneMatch(f -> f.path().startsWith("contact") && f.protection() == Protection.VERBATIM);
+            return;
+        }
         Map<String, List<JsonNode>> present = new java.util.TreeMap<>();
         leaves(scrubbed.tree(), "", present);
         for (FieldProtection f : engine.describe(source.getClass(), context, false).orElseThrow().fields()) {

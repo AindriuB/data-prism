@@ -263,7 +263,8 @@ public final class SourceTree {
                 return false;
             }
             var context = READER._serializationContext();
-            if (!plainBean(context.findValueSerializer(type), type)) {
+            // A class-level format (and the like) is applied when the serializer is contextualised.
+            if (!plainBean(contextual(context, context.findValueSerializer(type)), type)) {
                 return false;
             }
             if (!(context.findValueSerializer(holder) instanceof BeanSerializerBase bean)) {
@@ -279,6 +280,11 @@ public final class SourceTree {
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    /** The serializer as the writer would use it, or null when it cannot be contextualised. */
+    private static ValueSerializer<?> contextual(SerializationContext context, ValueSerializer<?> serializer) {
+        return serializer == null ? null : serializer.createContextual(context, null);
     }
 
     /**
