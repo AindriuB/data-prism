@@ -41,7 +41,10 @@ class ApprovalStoreContractTest {
     void shutDown() {
         for (PrivacyCluster c : new PrivacyCluster[]{cluster, second}) {
             if (c != null) {
+                com.hazelcast.core.HazelcastInstance started = c.instance();
                 c.close();
+                // close() leaves an instance it did not start, and this test started it.
+                started.getLifecycleService().terminate();
             }
         }
     }

@@ -56,6 +56,17 @@ public final class SealedWrites {
     }
 
     private static final String COUNT_CONTEXT_KEY = "dataprism.cluster.sealing.count";
+    private static final String IDENTITY_CONTEXT_KEY = "dataprism.cluster.sealing.identity";
+
+    /** The key ids a registration was made with: every held cluster key id, in order, and the name key id. */
+    private static String identityOf(ClusterKeys keys) {
+        StringBuilder out = new StringBuilder();
+        for (ClusterKeys.Key held : keys.held()) {
+            out.append(held.id()).append('\0');
+        }
+        return out.append(keys.nameKeyId()).toString();
+    }
+
     private static final Object REGISTRATION = new Object();
 
     /**
@@ -65,18 +76,25 @@ public final class SealedWrites {
      * <p>Registration belongs to the instance and is reference-counted: the first call stores the sealer and names,
      * later calls on the same instance only count, and the sealer and names are removed by the {@link #unregister}
      * that balances the last {@code register}. A second wrapper therefore neither replaces nor removes the first
-     * one's registration.
+     * one's registration. A wrapper holding different cluster key ids or a different name key id is refused with an
+     * {@link IllegalStateException}.
      */
-    public static void register(HazelcastInstance instance, Sealer sealer, KeyedNames names) {
+    public static void register(HazelcastInstance instance, ClusterKeys keys, Sealer sealer, KeyedNames names) {
         Objects.requireNonNull(instance, "instance");
         Objects.requireNonNull(sealer, "sealer");
         Objects.requireNonNull(names, "names");
+        String identity = identityOf(Objects.requireNonNull(keys, "keys"));
         synchronized (REGISTRATION) {
             var context = instance.getUserContext();
             int count = (Integer) context.getOrDefault(COUNT_CONTEXT_KEY, 0);
             if (count == 0) {
                 context.put(SEALER_CONTEXT_KEY, sealer);
                 context.put(NAMES_CONTEXT_KEY, names);
+                context.put(IDENTITY_CONTEXT_KEY, identity);
+            } else if (!identity.equals(context.get(IDENTITY_CONTEXT_KEY))) {
+                // Fail closed: the first registrant would otherwise serve the second wrapper's writes under keys it
+                // does not hold. The message names no key id.
+                throw new IllegalStateException("another wrapper of this instance holds different cluster keys");
             }
             context.put(COUNT_CONTEXT_KEY, count + 1);
         }
@@ -92,6 +110,7 @@ public final class SealedWrites {
                     context.remove(COUNT_CONTEXT_KEY);
                     context.remove(SEALER_CONTEXT_KEY);
                     context.remove(NAMES_CONTEXT_KEY);
+                    context.remove(IDENTITY_CONTEXT_KEY);
                 } else {
                     context.put(COUNT_CONTEXT_KEY, count - 1);
                 }

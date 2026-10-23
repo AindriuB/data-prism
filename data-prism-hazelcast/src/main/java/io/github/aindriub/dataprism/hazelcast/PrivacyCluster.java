@@ -174,7 +174,7 @@ public final class PrivacyCluster implements AutoCloseable {
         ClusterKeys effective = keys != null ? keys : soloKeysOf(instance);
         this.names = new KeyedNames(effective);
         this.scopeKeys = new ScopeKeys(names);
-        SealedWrites.register(instance, Sealer.builder(effective, PrivacyMetrics.none()).build(), names);
+        SealedWrites.register(instance, effective, Sealer.builder(effective, PrivacyMetrics.none()).build(), names);
         this.sealingRegistered.set(true);
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;

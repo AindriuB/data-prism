@@ -216,7 +216,7 @@ class SealedWritesTest {
     void aSecondRegistrationOnOneInstanceNeitherReplacesNorLosesTheFirstOnClose() {
         ClusterKeys keys = Fixtures.keys();
         Sealer other = Sealer.builder(keys, PrivacyMetrics.none()).build();
-        SealedWrites.register(caller, other, new KeyedNames(keys)); // second wrapper; counted only
+        SealedWrites.register(caller, keys, other, new KeyedNames(keys)); // second wrapper; counted only
         assertThat(SealedWrites.sealerOf(caller)).isSameAs(callerSealer);
         SealedWrites.unregister(caller); // the second wrapper closes
         IMap<String, String> map = caller.getMap(MAP);
@@ -225,6 +225,16 @@ class SealedWritesTest {
         assertThat(applied.result()).isEqualTo(1);
         SealedWrites.unregister(caller); // the first closes: now gone
         assertThat(SealedWrites.sealerOf(caller)).isNull();
+    }
+
+    @Test
+    void aSecondRegistrationWithOtherKeyIdsIsRefused() {
+        ClusterKeys others = new ClusterKeys("other-id", Fixtures.currentKey(), null, null, null, null, "other-name",
+                Fixtures.nameKey());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> SealedWrites.register(caller, others,
+                        Sealer.builder(others, PrivacyMetrics.none()).build(), new KeyedNames(others)))
+                .isInstanceOf(IllegalStateException.class).hasMessageNotContaining("other-id");
+        assertThat(SealedWrites.sealerOf(caller)).isSameAs(callerSealer);
     }
 
     /** Adds one to the decimal count in the stored plaintext. */
@@ -277,7 +287,7 @@ class SealedWritesTest {
     private static Sealer register(HazelcastInstance instance) {
         ClusterKeys keys = Fixtures.keys();
         Sealer sealer = Sealer.builder(keys, PrivacyMetrics.none()).build();
-        SealedWrites.register(instance, sealer, new KeyedNames(keys));
+        SealedWrites.register(instance, keys, sealer, new KeyedNames(keys));
         return sealer;
     }
 

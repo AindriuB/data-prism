@@ -275,7 +275,8 @@ class ClusterConfigurationTest {
 
     @Configuration(proxyBeanMethods = false)
     static class SuppliedCluster {
-        @Bean(destroyMethod = "close") PrivacyCluster suppliedCluster() {
+        /** Stopped after the cluster wrapper: close() leaves an instance it did not start. */
+        @Bean(destroyMethod = "shutdown") com.hazelcast.core.HazelcastInstance suppliedInstance() {
             Config config = new Config().setClusterName(uniqueName());
             config.getNetworkConfig().setPort(freePort()).setPortAutoIncrement(false);
             // A supplied member without keys must be solo: loopback only.
@@ -283,7 +284,11 @@ class ClusterConfigurationTest {
             config.setProperty("hazelcast.socket.bind.any", "false");
             config.getNetworkConfig().getJoin().getAutoDetectionConfig().setEnabled(false);
             config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-            return PrivacyCluster.using(Hazelcast.newHazelcastInstance(hardened(config)), false);
+            return Hazelcast.newHazelcastInstance(hardened(config));
+        }
+
+        @Bean(destroyMethod = "close") PrivacyCluster suppliedCluster(com.hazelcast.core.HazelcastInstance instance) {
+            return PrivacyCluster.using(instance, false);
         }
     }
 

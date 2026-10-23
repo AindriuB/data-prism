@@ -285,6 +285,19 @@ class SoloMemberKeysTest {
     }
 
     @Test
+    void aSecondWrapperOfOneInstanceWithOtherKeyIdsIsRefused() {
+        try (PrivacyCluster base = solo(TestMembers.KEYS)) {
+            var other = TestMembers.keys("other-cluster", "other-name");
+            Throwable refused = catchThrowable(() -> PrivacyCluster.using(base.instance(), false,
+                    PendingSweeper.DEFAULT_INTERVAL, other));
+            assertThat(refused).isInstanceOf(IllegalStateException.class);
+            PrivacyCluster same = PrivacyCluster.using(base.instance(), false, PendingSweeper.DEFAULT_INTERVAL,
+                    TestMembers.KEYS);
+            same.close();
+        }
+    }
+
+    @Test
     void aJoiningMembershipNeverGetsGeneratedKeys() {
         Throwable refused = catchThrowable(() -> PrivacyCluster.embedded(
                 ClusterMembership.tcpIp(TestMembers.uniqueName("joiner"), List.of("127.0.0.1:1")).withPort(1)

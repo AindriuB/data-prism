@@ -36,7 +36,10 @@ class HazelcastOversightTest {
         for (PrivacyCluster c : new PrivacyCluster[]{a, b}) {
             if (c != null) {
                 try {
+                    com.hazelcast.core.HazelcastInstance started = c.instance();
                     c.close();
+                    // close() leaves an instance it did not start, and this test started it.
+                    started.getLifecycleService().terminate();
                 } catch (RuntimeException alreadyDown) {
                     // closed by the test
                 }
