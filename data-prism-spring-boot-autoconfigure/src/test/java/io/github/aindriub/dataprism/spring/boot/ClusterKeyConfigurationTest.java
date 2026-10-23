@@ -42,7 +42,9 @@ class ClusterKeyConfigurationTest {
     }
 
     /** Resolves like the shared test resolver, with a few references that stand for particular key states. */
-    static byte[] material(String id, String reference) {
+    static byte[] material(String id, String markedReference) {
+        // Every reference in these tests carries the marker, so a message that echoed one would fail the leak check.
+        String reference = markedReference.replace(LEAK, "");
         return switch (reference) {
             case "REF_UNRESOLVED" -> throw new IllegalStateException(LEAK + "unresolved-reason");
             case "REF_WEAK" -> (LEAK + "weak-1").getBytes(StandardCharsets.UTF_8);
@@ -122,9 +124,9 @@ class ClusterKeyConfigurationTest {
             }
         }
         p.put(SECURITY + "cluster-key.key-id", "cluster-1");
-        p.put(SECURITY + "cluster-key.environment-variable", "DATAPRISM_CLUSTER_KEY_REF");
+        p.put(SECURITY + "cluster-key.environment-variable", LEAK + "DATAPRISM_CLUSTER_KEY_REF");
         p.put(SECURITY + "name-key.key-id", "name-1");
-        p.put(SECURITY + "name-key.environment-variable", "DATAPRISM_NAME_KEY_REF");
+        p.put(SECURITY + "name-key.environment-variable", LEAK + "DATAPRISM_NAME_KEY_REF");
         return p;
     }
 
@@ -152,17 +154,17 @@ class ClusterKeyConfigurationTest {
             row("MISSING_CLUSTER_KEY", "no cluster key source", "cluster-key.environment-variable", true, true,
                     "-cluster-key.environment-variable"),
             row("MISSING_CLUSTER_KEY", "both cluster key sources", "cluster-key.environment-variable", true, true,
-                    "cluster-key.provider-reference=SOME_REF"),
+                    "cluster-key.provider-reference=" + LEAK + "SOME_REF"),
             row("MISSING_CLUSTER_KEY", "both name key sources", "name-key.environment-variable", true, true,
-                    "name-key.provider-reference=SOME_REF"),
+                    "name-key.provider-reference=" + LEAK + "SOME_REF"),
             row("MISSING_CLUSTER_KEY", "next without a current key", "cluster-key.key-id", true, true,
                     "-cluster-key.key-id", "-cluster-key.environment-variable", "-name-key.key-id",
                     "-name-key.environment-variable", "cluster-key.next.key-id=cluster-2",
-                    "cluster-key.next.environment-variable=DATAPRISM_NEXT_KEY_REF"),
+                    "cluster-key.next.environment-variable=" + LEAK + "DATAPRISM_NEXT_KEY_REF"),
             row("MISSING_CLUSTER_KEY", "previous without a current key", "cluster-key.key-id", true, true,
                     "-cluster-key.key-id", "-cluster-key.environment-variable", "-name-key.key-id",
                     "-name-key.environment-variable", "cluster-key.previous.key-id=cluster-0",
-                    "cluster-key.previous.environment-variable=DATAPRISM_PREVIOUS_KEY_REF"),
+                    "cluster-key.previous.environment-variable=" + LEAK + "DATAPRISM_PREVIOUS_KEY_REF"),
             row("MISSING_CLUSTER_KEY", "next key id without a source", "cluster-key.next.environment-variable",
                     true, true, "cluster-key.next.key-id=cluster-2"),
             row("MISSING_CLUSTER_KEY", "absence is checked before a literal", "name-key.key-id", true, true,
@@ -173,18 +175,20 @@ class ClusterKeyConfigurationTest {
                     "name-key.value=" + LEAK + "literal"),
             row("LITERAL_SECRET_FORBIDDEN", "a literal is checked before resolution", "cluster-key.value", true,
                     true, "cluster-key.value=" + LEAK + "literal",
-                    "cluster-key.environment-variable=REF_UNRESOLVED"),
+                    "cluster-key.environment-variable=" + LEAK + "REF_UNRESOLVED"),
             row("CLUSTER_KEY_UNRESOLVED", "current does not resolve", "cluster-key", true, true,
-                    "cluster-key.environment-variable=REF_UNRESOLVED"),
+                    "cluster-key.environment-variable=" + LEAK + "REF_UNRESOLVED"),
             row("CLUSTER_KEY_UNRESOLVED", "next does not resolve", "cluster-key.next", true, true,
-                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_UNRESOLVED"),
+                    "cluster-key.next.key-id=cluster-2",
+                    "cluster-key.next.environment-variable=" + LEAK + "REF_UNRESOLVED"),
             row("CLUSTER_KEY_UNRESOLVED", "previous does not resolve", "cluster-key.previous", true, true,
                     "cluster-key.previous.key-id=cluster-0",
-                    "cluster-key.previous.provider-reference=REF_UNRESOLVED"),
+                    "cluster-key.previous.provider-reference=" + LEAK + "REF_UNRESOLVED"),
             row("CLUSTER_KEY_UNRESOLVED", "key id with a dot", "cluster-key.key-id", true, true,
                     "cluster-key.key-id=cluster.1"),
             row("CLUSTER_KEY_UNRESOLVED", "next key id with a dot", "cluster-key.next.key-id", true, true,
-                    "cluster-key.next.key-id=cluster.2", "cluster-key.next.environment-variable=DATAPRISM_NEXT_KEY_REF"),
+                    "cluster-key.next.key-id=cluster.2",
+                    "cluster-key.next.environment-variable=" + LEAK + "DATAPRISM_NEXT_KEY_REF"),
             row("NAME_KEY_UNRESOLVED", "name key id with a dot", "name-key.key-id", true, true,
                     "name-key.key-id=name.1"),
             row("LITERAL_SECRET_FORBIDDEN", "next key value", "cluster-key.next.value", true, true,
@@ -192,35 +196,41 @@ class ClusterKeyConfigurationTest {
             row("LITERAL_SECRET_FORBIDDEN", "previous key value", "cluster-key.previous.value", true, true,
                     "cluster-key.previous.value=" + LEAK + "literal"),
             row("NAME_KEY_UNRESOLVED", "name key does not resolve", "name-key", true, true,
-                    "name-key.environment-variable=REF_UNRESOLVED"),
+                    "name-key.environment-variable=" + LEAK + "REF_UNRESOLVED"),
             row("CLUSTER_KEY_WEAK", "current under 32 bytes", "cluster-key", true, true,
-                    "cluster-key.environment-variable=REF_WEAK"),
+                    "cluster-key.environment-variable=" + LEAK + "REF_WEAK"),
             row("CLUSTER_KEY_WEAK", "next under 32 bytes", "cluster-key.next", true, true,
-                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_WEAK"),
+                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=" + LEAK + "REF_WEAK"),
             row("NAME_KEY_WEAK", "name key under 32 bytes", "name-key", true, true,
-                    "name-key.environment-variable=REF_WEAK"),
+                    "name-key.environment-variable=" + LEAK + "REF_WEAK"),
             row("CLUSTER_KEY_SHARED", "same material as the privacy HMAC key", "cluster-key", true, true,
-                    "cluster-key.environment-variable=REF_HMAC_TWIN"),
+                    "cluster-key.environment-variable=" + LEAK + "REF_HMAC_TWIN"),
             row("CLUSTER_KEY_SHARED", "same key id as the privacy HMAC key", "cluster-key", true, true,
                     "cluster-key.key-id=v1"),
             row("CLUSTER_KEY_SHARED", "next has the HMAC key's material", "cluster-key.next", true, true,
-                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_HMAC_TWIN"),
+                    "cluster-key.next.key-id=cluster-2",
+                    "cluster-key.next.environment-variable=" + LEAK + "REF_HMAC_TWIN"),
             row("NAME_KEY_SHARED", "name key has the HMAC key's material", "name-key", true, true,
-                    "name-key.environment-variable=REF_HMAC_TWIN"),
+                    "name-key.environment-variable=" + LEAK + "REF_HMAC_TWIN"),
             row("NAME_KEY_SHARED", "name key equals the cluster key", "name-key", true, true,
-                    "cluster-key.environment-variable=REF_FIXED", "name-key.environment-variable=REF_FIXED"),
+                    "cluster-key.environment-variable=" + LEAK + "REF_FIXED",
+                    "name-key.environment-variable=" + LEAK + "REF_FIXED"),
             row("NAME_KEY_SHARED", "name key equals a rotation key", "name-key", true, true,
-                    "cluster-key.previous.key-id=cluster-0", "cluster-key.previous.environment-variable=REF_FIXED",
-                    "name-key.environment-variable=REF_FIXED"),
+                    "cluster-key.previous.key-id=cluster-0",
+                    "cluster-key.previous.environment-variable=" + LEAK + "REF_FIXED",
+                    "name-key.environment-variable=" + LEAK + "REF_FIXED"),
             row("NAME_KEY_SHARED", "equal keys are refused before equal ids", "name-key", true, true,
-                    "cluster-key.environment-variable=REF_FIXED", "name-key.environment-variable=REF_FIXED",
+                    "cluster-key.environment-variable=" + LEAK + "REF_FIXED",
+                    "name-key.environment-variable=" + LEAK + "REF_FIXED",
                     "name-key.key-id=cluster-1"),
             row("DUPLICATE_CLUSTER_KEY_ID", "next repeats current", "cluster-key.next.key-id", true, true,
-                    "cluster-key.next.key-id=cluster-1", "cluster-key.next.environment-variable=DATAPRISM_NEXT_KEY_REF"),
+                    "cluster-key.next.key-id=cluster-1",
+                    "cluster-key.next.environment-variable=" + LEAK + "DATAPRISM_NEXT_KEY_REF"),
             row("DUPLICATE_CLUSTER_KEY_ID", "previous repeats next", "cluster-key.previous.key-id", true, true,
-                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=DATAPRISM_NEXT_KEY_REF",
+                    "cluster-key.next.key-id=cluster-2",
+                    "cluster-key.next.environment-variable=" + LEAK + "DATAPRISM_NEXT_KEY_REF",
                     "cluster-key.previous.key-id=cluster-2",
-                    "cluster-key.previous.environment-variable=DATAPRISM_PREVIOUS_KEY_REF"),
+                    "cluster-key.previous.environment-variable=" + LEAK + "DATAPRISM_PREVIOUS_KEY_REF"),
             row("DUPLICATE_CLUSTER_KEY_ID", "name key id repeats a cluster key id", "name-key.key-id", true, true,
                     "name-key.key-id=cluster-1"),
             row("MISSING_MEMBER_INTERFACE", "a joining member names no interface", "member.interface", true, false,
@@ -327,27 +337,31 @@ class ClusterKeyConfigurationTest {
                     "cluster-key.key-id=cluster.1"),
             row("CLUSTER_KEY_UNRESOLVED", "next key id has a dot", "cluster-key.next.key-id", true, false,
                     "cluster-key.next.key-id=cluster.2",
-                    "cluster-key.next.environment-variable=DATAPRISM_NEXT_KEY_REF"),
+                    "cluster-key.next.environment-variable=" + LEAK + "DATAPRISM_NEXT_KEY_REF"),
             row("CLUSTER_KEY_UNRESOLVED", "previous key id has a dot", "cluster-key.previous.key-id", true, false,
                     "cluster-key.previous.key-id=cluster.0",
-                    "cluster-key.previous.environment-variable=DATAPRISM_PREVIOUS_KEY_REF"),
+                    "cluster-key.previous.environment-variable=" + LEAK + "DATAPRISM_PREVIOUS_KEY_REF"),
             row("NAME_KEY_UNRESOLVED", "name key id has a dot", "name-key.key-id", true, false,
                     "name-key.key-id=name.1"),
             row("CLUSTER_KEY_WEAK", "current key is weak", "cluster-key", true, false,
-                    "cluster-key.environment-variable=REF_WEAK"),
+                    "cluster-key.environment-variable=" + LEAK + "REF_WEAK"),
             row("CLUSTER_KEY_UNRESOLVED", "next key does not resolve", "cluster-key.next", true, false,
-                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_UNRESOLVED"),
+                    "cluster-key.next.key-id=cluster-2",
+                    "cluster-key.next.environment-variable=" + LEAK + "REF_UNRESOLVED"),
             row("CLUSTER_KEY_WEAK", "previous key is weak", "cluster-key.previous", true, false,
-                    "cluster-key.previous.key-id=cluster-0", "cluster-key.previous.environment-variable=REF_WEAK"),
+                    "cluster-key.previous.key-id=cluster-0",
+                    "cluster-key.previous.environment-variable=" + LEAK + "REF_WEAK"),
             row("NAME_KEY_UNRESOLVED", "name key does not resolve", "name-key", true, false,
-                    "name-key.environment-variable=REF_UNRESOLVED"),
+                    "name-key.environment-variable=" + LEAK + "REF_UNRESOLVED"),
             row("CLUSTER_KEY_SHARED", "next key is the HMAC key", "cluster-key.next", true, false,
-                    "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_HMAC_TWIN"),
+                    "cluster-key.next.key-id=cluster-2",
+                    "cluster-key.next.environment-variable=" + LEAK + "REF_HMAC_TWIN"),
             row("NAME_KEY_SHARED", "name key has the HMAC key's id",
                     "name-key must differ from dataprism.privacy.hmac-key", true, false, "name-key.key-id=v1"),
             row("NAME_KEY_SHARED", "name key is a cluster key",
                     "name-key must differ from dataprism.hazelcast.security.cluster-key", true, false,
-                    "cluster-key.environment-variable=REF_FIXED", "name-key.environment-variable=REF_FIXED"),
+                    "cluster-key.environment-variable=" + LEAK + "REF_FIXED",
+                    "name-key.environment-variable=" + LEAK + "REF_FIXED"),
             row("DUPLICATE_CLUSTER_KEY_ID", "name key id repeats a cluster key id", "name-key.key-id", true, false,
                     "name-key.key-id=cluster-1"));
 
@@ -413,7 +427,7 @@ class ClusterKeyConfigurationTest {
     @Test
     void a_solo_member_with_a_weak_cluster_key_is_refused_as_weak() {
         Map<String, String> p = valid("none");
-        p.put(SECURITY + "cluster-key.environment-variable", "REF_WEAK");
+        p.put(SECURITY + "cluster-key.environment-variable", LEAK + "REF_WEAK");
         runner("embedded", p).run(result -> {
             assertThat(result).hasFailed();
             assertThat(rootMessage(result.getStartupFailure())).startsWith("CLUSTER_KEY_WEAK:");
@@ -496,7 +510,8 @@ class ClusterKeyConfigurationTest {
                     .contains(SECURITY + "cluster-key.key-id");
         });
         for (String key : new String[] {"cluster-key.environment-variable", "cluster-key.provider-reference",
-                "cluster-key.value", "cluster-key.next.value", "cluster-key.previous.value", "cluster-key.next.key-id", "cluster-key.next.environment-variable",
+                "cluster-key.value",
+                "cluster-key.next.value", "cluster-key.previous.value", "cluster-key.next.key-id", "cluster-key.next.environment-variable",
                 "cluster-key.next.provider-reference", "cluster-key.previous.key-id",
                 "cluster-key.previous.environment-variable", "cluster-key.previous.provider-reference",
                 "name-key.key-id", "name-key.environment-variable", "name-key.provider-reference",
