@@ -35,6 +35,7 @@ Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 - docker/server/application.yaml
 - docker/multi-instance/compose.yaml, docker/multi-instance/kubernetes.yaml *(the case-authorisation setting; and, widened 2026-10-23, the server image tag and the check that the 0.8 cluster-key and name-key settings take effect)*
 - docs/configuration.md *(the `dataprism.security-policy` rows and the prose around them only)*
+- data-prism-integration-tests/src/test/java/io/github/aindriub/dataprism/example/DeploymentImageTagTest.java *(new, if the image-tag check is a test rather than the version sweep; added 2026-10-23)*
 
 ## Goal
 Expose task 203's case authoriser and client allowlist through `dataprism.*`. A deployment that has not
@@ -61,6 +62,8 @@ decided how cases are authorised refuses to start. One that wants the old behavi
 - [ ] Every configuration under Owns that starts a context still starts. The quickstart and test configurations use `case-authorisation: token-trusted`, each with a comment saying that a real deployment supplies a `CaseAuthorizer`. `docker/multi-instance/kubernetes.yaml` gets the setting with the same comment.
 - [ ] `docs/configuration.md` documents both properties, their defaults and all five refusal codes. It says how a standalone-server deployment supplies a `CaseAuthorizer` (an extension jar on `loader.path`, as in `data-prism-quickstart-extension`). It contains one sentence saying that the client allowlist does not control which model endpoint a client sends output to, or where the data is transferred, and that enforcing those belongs to an API gateway or egress control outside Data Prism.
 - [ ] `AutoConfiguredBeanClassificationTest`, `PrivacyExtensionPointsTest`, `ConfigurationMetadataDocumentedTest` and `PropertyNamesFrozenTest` pass. The frozen list and bean-inventory diffs contain only lines for what this task adds.
+- [ ] No image older than the project version (review of PR #160, security): `grep -rnE 'data-prism-[a-z-]+:(0\.[0-7]\.[0-9]+|latest)' docker/multi-instance/` prints nothing, `docker/multi-instance/kubernetes.yaml` names `ghcr.io/aindriub/data-prism-server:0.8.0`, and the same check runs in the build (`DeploymentImageTagTest`, which reads the file and compares the tag with the project version, or the existing version sweep; the Outcome names which) so the pin cannot fall behind again. `docker/multi-instance/compose.yaml`'s header says the published-image route needs 0.8.0 or later for the key settings to take effect.
+- [ ] `StarterStartupFailureTest` no longer carries the dead property line from the round-5 review: the diff removes it, the Outcome names it, and the test still passes.
 - [ ] `./mvnw -B verify` (full reactor) passes.
 
 ## Out of scope

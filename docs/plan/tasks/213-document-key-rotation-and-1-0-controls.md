@@ -39,6 +39,8 @@ Document controls when they ship in 0.8, before the 0.9 freeze. Keep 1.0 a stabi
 - [ ] `docs/extending.md` shows how a standalone server loads a `CaseAuthorizer` extension and how to supply a recogniser. Constructor examples compile against the merged APIs.
 - [ ] Migration and changelog cover all changed public constructors, map formats, startup refusals, properties, audit behaviour, and recogniser functionality. Use `[Unreleased]`; no version bump, tag or publication.
 - [ ] Replace the old statement that no rotation procedure exists with a link to the procedure. Segment examples still match `audit-*.log`.
+- [ ] `docs/multiple-instances.md` no longer calls `member.interface` optional or says a member binds every interface without it, and its `INVALID_CLUSTER_INTERFACE` row (:126 at filing) states the address-property refusal for a keyed solo member only, with `MISSING_CLUSTER_KEY` for a keyless one. `docs/migration-0.8.md` has a `member.interface` entry (required on `tcp-ip` and `kubernetes`, bounded, valid).
+- [ ] `docs/migration-0.8.md` and `CHANGELOG.md` (`[Unreleased]`, Breaking) state that `ClusterMembership`'s interface component changed from `Optional<String>` to `String` (null when unset), with the before and after of a plain-Java constructor call.
 - [ ] Wording says “supports”, never “compliant” or “compliance”, and makes no claim that a deployment meets a legal duty.
 - [ ] `mkdocs build --strict` and every `docs-site/hooks/check_*.py` pass, with `DP_REQUIRE_NO_STUBS=true`. Build success alone is insufficient.
 

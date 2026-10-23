@@ -30,6 +30,7 @@ Give the agent the `follow` tool: it takes nothing but a link string, authentica
 - [ ] Every invalid link, including one longer than the schema allows sent by a client that ignores the schema, gives the identical `LINK_INVALID` result; the link string appears in no result, log line or audit record (sentinel).
 - [ ] A valid link returns the 252 envelope through the shared mapper; the existing one-mapper test covers `FollowTool`.
 - [ ] A denial whose audit fails answers `AUDIT_UNAVAILABLE` as 244 established.
+- [ ] `LinkArchitectureTest`'s sanity check asserts a non-zero imported class count for `mcp` and for `connectors` separately; with either package left out of the import the check fails (the Outcome shows it).
 - [ ] `./mvnw -B verify` (full reactor) passes.
 
 ## Out of scope

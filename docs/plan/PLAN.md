@@ -140,6 +140,11 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 14 | 260, 263 |
 | last (14) | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
 
+Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
+
+- Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23).
+- Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
+
 Owner decision 2026-10-23 (on the coordinator's recommendation): no cuts from 0.8.0. 207 (size-capped audit segments) stays. 264 (shared Hazelcast link limiter) stays, with its agreed fallback: if it is not ready, links and page links are refused only on members joining via `tcp-ip` or `kubernetes`, and 264 slips to 0.9.0. The count stays 34.
 
 Follow-ups from wave 1 (landed 2026-10-21), each belonging to the brief named:
@@ -179,7 +184,7 @@ Follow-ups from the external review of PR #154, round 5 (2026-10-23). Each belon
 
 - [security] 227: a keyless member accepts `localhost` as `localAddress`, and `PrivacyCluster.launch()` never checks the bound address (`using()` does). Coordinator decision 2026-10-23: a keyless member's `localAddress` and `publicAddress` must be a literal loopback address (`127.x.x.x` or `::1`); `localhost` is no longer accepted, because it is resolved through the hosts file. Acceptance items in 227.
 - [security] 227: on a keyed member, `-Dhazelcast.socket.server.bind.any=true` overrides the required interface; the keyless path closes this and the keyed path does not. An Acceptance item in 227, which owns `ClusterMembership.java` (no fallback to 230, which does not).
-- [security] 210 (rerouted 2026-10-23 after the review of PR #159; 210 owns both files): `docker/multi-instance/kubernetes.yaml` adds the 0.8 key settings but pins `ghcr.io/aindriub/data-prism-server:0.7.0`, which ignores them. `docker/multi-instance/compose.yaml` has the same gap: with published images it takes the server from `../../compose.yaml`, whose default tag `latest` is a 0.7 image until 0.8.0 is published. 210's Owns note now covers the image tag and the check that the key settings take effect; the root `compose.yaml` default goes to 262, its owner. Context bullets in 210 and 262.
+- [security] 210 (rerouted 2026-10-23 after the review of PR #159; 210 owns both files): `docker/multi-instance/kubernetes.yaml` adds the 0.8 key settings but pins `ghcr.io/aindriub/data-prism-server:0.7.0`, which ignores them. `docker/multi-instance/compose.yaml` has the same gap: with published images it takes the server from `../../compose.yaml`, whose default tag `latest` is a 0.7 image until 0.8.0 is published. 210's Owns note now covers the image tag and the check that the key settings take effect; the root `compose.yaml` default goes to 262, its owner. Acceptance items in 210 and 262 (210 also has the Context bullet).
 - 213: `docs/multiple-instances.md` says `member.interface` is optional and binds every interface. Context bullet in 213.
 - 213: the `ClusterMembership` interface component changed from `Optional<String>` to `String`, a breaking change for plain-Java callers with no migration note; add it to `docs/migration-0.8.md` and `CHANGELOG.md`. Context bullet in 213.
 - 230: two places decide "is this the starter's cluster" (`ClusterBackedState.builtHere` and `PropertiesValidation.isFrameworkCluster`); unify them. Context bullet in 230.
