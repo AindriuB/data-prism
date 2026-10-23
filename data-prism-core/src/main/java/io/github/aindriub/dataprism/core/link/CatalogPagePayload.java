@@ -23,17 +23,17 @@ public record CatalogPagePayload(
         byte[] catalogTag) implements LinkPayload {
 
     public CatalogPagePayload {
-        linkId = Check.linkId(linkId);
-        issueTime = Check.seconds(issueTime, "issueTime");
+        linkId = PayloadCheck.linkId(linkId);
+        issueTime = PayloadCheck.seconds(issueTime, "issueTime");
         Objects.requireNonNull(entityTypeFilter, "entityTypeFilter");
-        entityTypeFilter.ifPresent(v -> Check.text(v, 1, LinkLayout.MAX_ENTITY_TYPE, "entityTypeFilter"));
+        entityTypeFilter.ifPresent(v -> PayloadCheck.text(v, 1, LinkLayout.MAX_ENTITY_TYPE, "entityTypeFilter"));
         Objects.requireNonNull(keyNamespaceFilter, "keyNamespaceFilter");
-        keyNamespaceFilter.ifPresent(v -> Check.text(v, 1, LinkLayout.MAX_NAMESPACE, "keyNamespaceFilter"));
+        keyNamespaceFilter.ifPresent(v -> PayloadCheck.text(v, 1, LinkLayout.MAX_NAMESPACE, "keyNamespaceFilter"));
         Objects.requireNonNull(labelKind, "labelKind");
         if (pageSize < 1 || pageSize > 0xFFFF) {
             throw new IllegalArgumentException("pageSize is outside 1 to 65535");
         }
-        Check.text(lastLabel, 1, LinkLayout.MAX_LABEL, "lastLabel");
+        PayloadCheck.text(lastLabel, 1, LinkLayout.MAX_LABEL, "lastLabel");
         Objects.requireNonNull(catalogTag, "catalogTag");
         if (catalogTag.length != LinkLayout.CATALOG_TAG_BYTES) {
             throw new IllegalArgumentException("a catalog tag is 16 bytes");

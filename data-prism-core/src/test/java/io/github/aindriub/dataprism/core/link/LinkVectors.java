@@ -39,6 +39,61 @@ final class LinkVectors {
         return hmac(prk, info.toByteArray());
     }
 
+    private static byte[] prefixedAll(byte[]... items) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for (byte[] item : items) {
+            prefixed(out, item);
+        }
+        return out.toByteArray();
+    }
+
+    private static byte[] ascii(String text) {
+        return text.getBytes(StandardCharsets.US_ASCII);
+    }
+
+    private static byte[] utf8(String text) {
+        return text.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** HMAC(fingerprint key, prefixed(label) || prefixed(value)), first 12 bytes. */
+    static byte[] fingerprint(byte[] master, String scope, byte[] value) throws Exception {
+        byte[] key = derive(master, "dataprism/link/v1/fingerprint", scope);
+        return Arrays.copyOf(hmac(key, prefixedAll(ascii("dataprism/link/v1/fingerprint"), value)), 12);
+    }
+
+    /** HMAC(fingerprint key, prefixed(label) || prefixed(each label)), first 16 bytes. */
+    static byte[] catalogTag(byte[] master, String scope, java.util.List<String> labels) throws Exception {
+        byte[] key = derive(master, "dataprism/link/v1/fingerprint", scope);
+        ByteArrayOutputStream message = new ByteArrayOutputStream();
+        prefixed(message, ascii("dataprism/link/v1/catalog-tag"));
+        for (String label : labels) {
+            prefixed(message, utf8(label));
+        }
+        return Arrays.copyOf(hmac(key, message.toByteArray()), 16);
+    }
+
+    /** Hex of HMAC(fingerprint key, prefixed(label) || prefixed(scope) || prefixed(principal)), first 16 bytes. */
+    static String counterKey(byte[] master, String scope, String principal) throws Exception {
+        byte[] key = derive(master, "dataprism/link/v1/fingerprint", scope);
+        byte[] mac = hmac(key, prefixedAll(ascii("dataprism/link/v1/attempt"), utf8(scope), utf8(principal)));
+        return java.util.HexFormat.of().formatHex(mac, 0, 16);
+    }
+
+    /**
+     * Seals {@code raw}'s payload (opened under {@code payloadMaster}) again under {@code sealMaster}, with the
+     * header of {@code patchedHeader} (which may differ from {@code raw}'s in its key id or expiry; the length
+     * must be the same). The associated data is rebuilt from the patched header.
+     */
+    static byte[] rebind(byte[] payloadMaster, byte[] sealMaster, String scope, String principal, boolean bind,
+                         byte[] raw, byte[] patchedHeader) throws Exception {
+        byte[] plain = decrypt(payloadMaster, scope, principal, bind, raw);
+        int headerLength = raw.length - (plain.length + 16);
+        byte[] sealed = crypt(sealMaster, scope, principal, bind, patchedHeader, plain, null, null);
+        byte[] out = Arrays.copyOf(patchedHeader, headerLength + sealed.length);
+        System.arraycopy(sealed, 0, out, headerLength, sealed.length);
+        return out;
+    }
+
     /** Opens the raw token with the master key and returns the plaintext payload; throws if it does not verify. */
     static byte[] decrypt(byte[] master, String scope, String principal, boolean bind, byte[] raw)
             throws Exception {

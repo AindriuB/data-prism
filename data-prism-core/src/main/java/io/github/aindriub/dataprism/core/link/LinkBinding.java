@@ -23,9 +23,13 @@ public record LinkBinding(String scopeId, String principalId, Instant scopeExpir
         Objects.requireNonNull(tokenExpiry, "tokenExpiry");
     }
 
-    /** Whether both ids fit the associated-data item limit. The codec refuses or omits otherwise; it never throws. */
+    /**
+     * Whether both ids are non-empty and fit the associated-data item limit. The codec refuses or omits otherwise;
+     * it never throws.
+     */
     boolean withinBounds() {
-        return utf8Length(scopeId) <= MAX_ID_BYTES && utf8Length(principalId) <= MAX_ID_BYTES;
+        return !scopeId.isEmpty() && !principalId.isEmpty()
+                && utf8Length(scopeId) <= MAX_ID_BYTES && utf8Length(principalId) <= MAX_ID_BYTES;
     }
 
     private static int utf8Length(String value) {

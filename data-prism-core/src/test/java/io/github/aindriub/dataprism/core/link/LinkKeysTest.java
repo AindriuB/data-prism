@@ -3,6 +3,8 @@ package io.github.aindriub.dataprism.core.link;
 import io.github.aindriub.dataprism.core.link.LinkTestSupport.MapKeys;
 import org.junit.jupiter.api.Test;
 
+import io.github.aindriub.dataprism.core.crypto.LabelledHkdf;
+
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -33,7 +35,7 @@ class LinkKeysTest {
     void anUnresolvableKeyIdRefuses() {
         MapKeys empty = new MapKeys();
         assertThatThrownBy(() -> new LinkKeys(empty, "k1", "pseudo-key"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
                         .doesNotContain(SENTINEL).doesNotContain("k1"))
                 .hasNoCause();
@@ -49,7 +51,7 @@ class LinkKeysTest {
     void materialUnder32BytesRefuses() {
         MapKeys weak = new MapKeys().with("k1", material(1, 31));
         assertThatThrownBy(() -> new LinkKeys(weak, "k1", "pseudo-key"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_WEAK"));
         new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
     }
@@ -58,7 +60,7 @@ class LinkKeysTest {
     void theSameIdAsThePseudonymisationKeyRefuses() {
         MapKeys keys = new MapKeys().with("shared", material(1, 32));
         assertThatThrownBy(() -> new LinkKeys(keys, "shared", "shared"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED").doesNotContain("shared-"));
     }
 
@@ -66,7 +68,7 @@ class LinkKeysTest {
     void aHeldSetContainingThePseudonymisationKeyRefuses() {
         MapKeys keys = new MapKeys().with("k1", material(1, 32)).with("pseudo", material(2, 32));
         assertThatThrownBy(() -> new LinkKeys(keys, "k1", "pseudo", () -> Set.of("k1", "pseudo")))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED"));
     }
 
@@ -101,7 +103,7 @@ class LinkKeysTest {
     void aHeldIdThatDoesNotResolveRefusesAtConstruction() {
         MapKeys provider = new MapKeys().with("k1", material(1, 32));
         assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2")))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
                         .doesNotContain(SENTINEL).doesNotContain("k2"))
                 .hasNoCause();
@@ -111,7 +113,7 @@ class LinkKeysTest {
     void aWeakHeldIdRefusesAtConstruction() {
         MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 31));
         assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo-key", () -> Set.of("k1", "k2")))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_WEAK").doesNotContain("k2"));
     }
 
@@ -134,7 +136,7 @@ class LinkKeysTest {
     void aNullPseudonymisationKeyIdRefuses() {
         MapKeys provider = new MapKeys().with("k1", material(1, 32));
         assertThatThrownBy(() -> new LinkKeys(provider, "k1", null))
-                .isInstanceOf(IllegalStateException.class).hasMessageStartingWith("LINK_KEY_SHARED");
+                .isInstanceOf(LinkConfigurationException.class).hasMessageStartingWith("LINK_KEY_SHARED");
         assertThatThrownBy(() -> new LinkKeys(provider, "k1", null, () -> Set.of("k1")))
                 .hasMessageStartingWith("LINK_KEY_SHARED");
     }
@@ -143,7 +145,7 @@ class LinkKeysTest {
     void anUnresolvablePseudonymisationKeyRefuses() {
         MapKeys provider = new MapKeys().with("k1", material(1, 32));
         assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo-ref-9"))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_UNRESOLVED")
                         .doesNotContain("pseudo-ref-9").doesNotContain(SENTINEL))
                 .hasNoCause();
@@ -156,7 +158,7 @@ class LinkKeysTest {
         MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(9, 32))
                 .with("pseudo", material(9, 32));
         assertThatThrownBy(() -> new LinkKeys(provider, "k1", "pseudo", () -> Set.of("k1", "k2")))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(LinkConfigurationException.class)
                 .satisfies(e -> assertThat(e.getMessage()).startsWith("LINK_KEY_SHARED"));
         MapKeys current = new MapKeys().with("k1", material(9, 32)).with("pseudo", material(9, 32));
         assertThatThrownBy(() -> new LinkKeys(current, "k1", "pseudo"))
@@ -208,6 +210,12 @@ class LinkKeysTest {
                 .hasMessageStartingWith("INVALID_LINK_LIMIT");
         assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(Duration.ZERO), 1024, true, Duration.ZERO))
                 .hasMessageStartingWith("INVALID_LINK_LIFETIME");
+        for (Duration tooShort : List.of(Duration.ofMillis(999), Duration.ofNanos(1), Duration.ofSeconds(-5))) {
+            assertThatThrownBy(() -> new LinkSettings("k1", Optional.of(tooShort), 1024, true, Duration.ZERO))
+                    .isInstanceOf(LinkConfigurationException.class)
+                    .hasMessageStartingWith("INVALID_LINK_LIFETIME");
+        }
+        new LinkSettings("k1", Optional.of(Duration.ofSeconds(1)), 1024, true, Duration.ZERO);
         for (String bad : List.of("", "a".repeat(17), "has space", "dot.id", "slash/id", "é")) {
             assertThatThrownBy(() -> new LinkSettings(bad, Optional.empty(), 1024, true, Duration.ZERO))
                     .hasMessageStartingWith("INVALID_LINK_LIMIT");
@@ -221,6 +229,41 @@ class LinkKeysTest {
         assertThatThrownBy(() -> new LinkCodec(settings("k2", true, Duration.ZERO),
                 new LinkKeys(keys, "k1", "pseudo-key"), new TestClockHolder().clock))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void everyConstructionRefusalCarriesItsCode() {
+        MapKeys ok = new MapKeys().with("k1", material(1, 32));
+        assertCode("LINK_KEY_UNRESOLVED", () -> new LinkKeys(new MapKeys(), "k1", "pseudo-key"));
+        assertCode("LINK_KEY_UNRESOLVED", () -> new LinkKeys(ok, "k1", "absent"));
+        assertCode("LINK_KEY_UNRESOLVED", () -> new LinkKeys(ok, "k1", "pseudo-key", () -> Set.of("k1", "k2")));
+        assertCode("LINK_KEY_WEAK", () -> new LinkKeys(new MapKeys().with("k1", material(1, 31)), "k1",
+                "pseudo-key"));
+        assertCode("LINK_KEY_SHARED", () -> new LinkKeys(ok, "k1", null));
+        assertCode("LINK_KEY_SHARED", () -> new LinkKeys(ok, "k1", "k1"));
+        assertCode("LINK_KEY_SHARED", () -> new LinkKeys(ok, "k1", "pseudo-key", () -> Set.of("k1", "pseudo-key")));
+        assertCode("LINK_KEY_SHARED", () -> new LinkKeys(new MapKeys().with("k1", material(9, 32))
+                .with("pseudo-key", material(9, 32)), "k1", "pseudo-key"));
+        assertCode("INVALID_LINK_LIMIT", () -> new LinkKeys(ok, "bad id", "pseudo-key"));
+        assertCode("INVALID_LINK_LIMIT", () -> new LinkSettings("", Optional.empty(), 1024, true, Duration.ZERO));
+        assertCode("INVALID_LINK_LIMIT", () -> new LinkSettings("k1", Optional.empty(), 615, true, Duration.ZERO));
+        assertCode("INVALID_LINK_LIMIT", () -> new LinkSettings("k1", Optional.empty(), 1024, true,
+                Duration.ofSeconds(31)));
+        assertCode("INVALID_LINK_LIFETIME", () -> new LinkSettings("k1", Optional.of(Duration.ZERO), 1024, true,
+                Duration.ZERO));
+        assertCode("INVALID_LINK_LIFETIME", () -> new LinkSettings("k1", Optional.of(Duration.ofMillis(999)), 1024,
+                true, Duration.ZERO));
+        MapKeys two = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
+        assertCode("INVALID_LINK_LIMIT", () -> new LinkCodec(settings("k2", true, Duration.ZERO),
+                new LinkKeys(two, "k1", "pseudo-key"), new TestClockHolder().clock));
+    }
+
+    private static void assertCode(String code, org.junit.jupiter.api.function.Executable construction) {
+        Throwable thrown = org.junit.jupiter.api.Assertions.assertThrows(LinkConfigurationException.class,
+                construction);
+        assertThat(((LinkConfigurationException) thrown).code()).isEqualTo(code);
+        assertThat(thrown.getMessage()).startsWith(code + ": ").doesNotContain(SENTINEL);
+        assertThat(thrown).hasNoCause();
     }
 
     private static final class TestClockHolder {
@@ -294,6 +337,52 @@ class LinkKeysTest {
         assertThat(new LinkKeys(provider, "new", "pseudo-key").heldKeyIds()).containsExactly("new");
     }
 
+    // ---- review 4: purpose labels on every MAC input ----
+
+    @Test
+    void theThreeMacPurposesNeverProduceTheSameOutputForTheSameInput() throws Exception {
+        LinkKeys keys = new LinkKeys(new MapKeys().with("k1", material(1, 32)), "k1", "pseudo-key");
+        String scope = "case-1";
+        String principal = "alice";
+        // The input of the old, unlabelled counter key, offered to the fingerprint and to the catalog tag.
+        byte[] counterInput = LabelledHkdf.lengthPrefixed(scope.getBytes(StandardCharsets.UTF_8),
+                principal.getBytes(StandardCharsets.UTF_8));
+        String counter = keys.attemptCounterKey(scope, principal);
+        String tag = HEX.formatHex(keys.forScope(scope).catalogTag(List.of(scope, principal)));
+        String fingerprint = HEX.formatHex(keys.forScope(scope).fingerprint(counterInput));
+        assertThat(counter).isNotEqualTo(tag);
+        assertThat(counter).doesNotStartWith(fingerprint).doesNotStartWith(tag);
+        assertThat(tag).isNotEqualTo(fingerprint);
+        // Pre-fix, all three were HMAC(fingerprintKey, the same bytes).
+        byte[] unlabelled = LinkVectors.hmac(LinkVectors.derive(material(1, 32), "dataprism/link/v1/fingerprint",
+                scope), counterInput);
+        assertThat(counter).isNotEqualTo(HEX.formatHex(unlabelled, 0, 16));
+        assertThat(tag).isNotEqualTo(HEX.formatHex(unlabelled, 0, 16));
+        assertThat(fingerprint).isNotEqualTo(HEX.formatHex(unlabelled, 0, 12));
+    }
+
+    @Test
+    void theMacLabelsAreTheDocumentedOnes() {
+        assertThat(LinkKeys.FINGERPRINT_LABEL).isEqualTo("dataprism/link/v1/fingerprint");
+        assertThat(LinkKeys.CATALOG_TAG_LABEL).isEqualTo("dataprism/link/v1/catalog-tag");
+        assertThat(LinkKeys.ATTEMPT_LABEL).isEqualTo("dataprism/link/v1/attempt");
+    }
+
+    @Test
+    void theMacsMatchAnIndependentDerivation() throws Exception {
+        byte[] master = material(1, 32);
+        LinkKeys keys = new LinkKeys(new MapKeys().with("k1", master), "k1", "pseudo-key");
+        byte[] value = "subject-1".getBytes(StandardCharsets.UTF_8);
+        assertThat(keys.forScope(SCOPE).fingerprint(value))
+                .isEqualTo(LinkVectors.fingerprint(master, SCOPE, value));
+        assertThat(keys.forScope(SCOPE).catalogTag(List.of("alpha", "beta")))
+                .isEqualTo(LinkVectors.catalogTag(master, SCOPE, List.of("alpha", "beta")));
+        assertThat(keys.forScope(SCOPE).catalogTag(List.of()))
+                .isEqualTo(LinkVectors.catalogTag(master, SCOPE, List.of()));
+        assertThat(keys.attemptCounterKey(SCOPE, "alice"))
+                .isEqualTo(LinkVectors.counterKey(master, SCOPE, "alice"));
+    }
+
     // ---- known answers ----
 
     private static Properties expected() throws Exception {
@@ -357,6 +446,12 @@ class LinkKeysTest {
         assertThat(plain).hasSize(8 + 8 + 1 + 5 + 1 + 2 + 64);
         byte[] pagePlain = LinkVectors.decrypt(master, SCOPE, "alice", true,
                 Base64.getUrlDecoder().decode(pinned.getProperty("page.token")));
+        // The pinned MAC vectors equal an independent derivation, not merely the main code's own output.
+        assertThat(pinned.getProperty("fingerprint")).isEqualTo(HEX.formatHex(
+                LinkVectors.fingerprint(master, SCOPE, "subject-1".getBytes(StandardCharsets.UTF_8))));
+        assertThat(pinned.getProperty("catalog.tag")).isEqualTo(HEX.formatHex(
+                LinkVectors.catalogTag(master, SCOPE, List.of("alpha", "beta"))));
+        assertThat(pinned.getProperty("counter.key")).isEqualTo(LinkVectors.counterKey(master, SCOPE, "alice"));
         assertThat(pagePlain.length).isEqualTo(8 + 8 + 1 + 6 + 5 + 1 + 2 + 11 + 16);
         assertThat(Arrays.copyOfRange(pagePlain, pagePlain.length - 16, pagePlain.length))
                 .isEqualTo(material(90, 16));

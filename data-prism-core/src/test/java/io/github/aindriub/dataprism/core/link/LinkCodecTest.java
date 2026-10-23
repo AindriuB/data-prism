@@ -112,6 +112,73 @@ class LinkCodecTest {
         assertThat(refused(codec.open(null, binding, follows())).reason()).isEqualTo(LinkReason.MALFORMED);
     }
 
+    // ---- review 4 ----
+
+    @Test
+    void aNullTokenIsRefusedMalformedAndNotCounted() {
+        Refused refused = refused(codec.open(null, binding, follows()));
+        assertThat(refused.reason()).isEqualTo(LinkReason.MALFORMED);
+        assertThat(refused.counted()).isFalse();
+    }
+
+    @Test
+    void emptyIdsAreRefusedMalformedNotCountedAndNeverThrow() {
+        String token = sealed(follow(5));
+        for (LinkBinding empty : List.of(binding("", "alice"), binding("case-1", ""), binding("", ""))) {
+            Refused refused = refused(codec.open(token, empty, follows()));
+            assertThat(refused.reason()).isEqualTo(LinkReason.MALFORMED);
+            assertThat(refused.counted()).isFalse();
+            assertThat(refused(codec.open(null, empty, follows())).counted()).isFalse();
+            assertThat(codec.sealDetailed(follow(5), empty)).isEqualTo(
+                    new SealResult.Omitted(SealResult.OmitReason.BINDING_TOO_LONG));
+            assertThat(codec.seal(follow(5), empty)).isEmpty();
+        }
+    }
+
+    @Test
+    void aTokenSealedUnderThePublicDummyKeyNamingAnUnheldKeyIdIsRefused() throws Exception {
+        String token = sealed(follow(5));
+        byte[] raw = raw(token);
+        assertThat(new String(raw, 2, 2, StandardCharsets.US_ASCII)).isEqualTo("k1");
+        byte[] forged = raw.clone();
+        forged[3] = (byte) 'z'; // key id "kz": not held by this member
+        byte[] sealedUnderDummy = LinkVectors.rebind(material(1, 32), LinkKeys.dummyMaster(), "case-1", "alice",
+                true, raw, forged);
+        // The forgery is a perfectly valid link under the public dummy key.
+        assertThat(LinkVectors.decrypt(LinkKeys.dummyMaster(), "case-1", "alice", true, sealedUnderDummy))
+                .isNotEmpty();
+        Refused refused = refused(codec.open(token(sealedUnderDummy), binding, follows()));
+        assertThat(refused.reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
+        assertThat(refused.counted()).isTrue();
+        assertThat(codec.open(token(sealedUnderDummy), binding, follows())).isNotInstanceOf(Opened.class);
+    }
+
+    @Test
+    void aHostileExpiryIsClampedAndNeverThrows() {
+        String token = sealed(follow(5));
+        for (long hostile : new long[] {Long.MAX_VALUE, Long.MIN_VALUE, 1L << 62, -(1L << 62)}) {
+            byte[] forged = raw(token);
+            ByteBuffer.wrap(forged).putLong(4, hostile);
+            Refused refused = refused(codec.open(token(forged), binding, follows()));
+            assertThat(refused.reason()).as("expiry " + hostile).isEqualTo(LinkReason.AUTH_FAILED);
+        }
+    }
+
+    @Test
+    void anAuthenticatedFarFutureExpiryIsReportedAsTheClampedValue() throws Exception {
+        byte[] raw = raw(sealed(follow(5)));
+        byte[] forged = raw.clone();
+        ByteBuffer.wrap(forged).putLong(4, 1L << 50);
+        byte[] resealed = LinkVectors.rebind(material(1, 32), material(1, 32), "case-1", "alice", true, raw, forged);
+        assertThat(LinkVectors.expiryOf(resealed)).isEqualTo(1L << 50);
+        Opened opened = (Opened) codec.open(token(resealed), binding, follows());
+        assertThat(opened.expiry()).isEqualTo(Instant.ofEpochSecond(1L << 40));
+        // And the other end.
+        ByteBuffer.wrap(forged).putLong(4, -(1L << 50));
+        byte[] past = LinkVectors.rebind(material(1, 32), material(1, 32), "case-1", "alice", true, raw, forged);
+        assertThat(refused(codec.open(token(past), binding, follows())).reason()).isEqualTo(LinkReason.EXPIRED);
+    }
+
     @Test
     void nonCanonicalBase64IsMalformed() {
         // A raw length that is not a multiple of 3 leaves spare bits in the final character.
