@@ -48,7 +48,8 @@ final class LinkVectors {
     /**
      * The same token with its payload sealed under the same key, but with the associated data changed in one
      * place: {@code aadVersion} replaces the version byte, {@code aadScope} the scope id. Either may be null to
-     * keep it, or {@link #OMIT_VERSION} / {@link #OMIT_SCOPE} to leave the item out. The key and the caller tag still come from {@code scope}, so only the associated data differs.
+     * keep it, or {@link #OMIT_VERSION} / {@link #OMIT_SCOPE} to leave the item out. The key and the caller tag
+     * still come from {@code scope}, so only the associated data differs.
      */
     static final int OMIT_VERSION = -1;
     static final String OMIT_SCOPE = "\u0000omit";
@@ -89,7 +90,8 @@ final class LinkVectors {
         at += 12;
         byte[] callerTag = new byte[16];
         if (bind) {
-            byte[] mac = hmac(derive(master, "dataprism/link/v1/caller", scope), principal.getBytes(StandardCharsets.UTF_8));
+            byte[] mac = hmac(derive(master, "dataprism/link/v1/caller", scope),
+                    principal.getBytes(StandardCharsets.UTF_8));
             callerTag = Arrays.copyOf(mac, 16);
         }
         ByteArrayOutputStream aad = new ByteArrayOutputStream();

@@ -1,5 +1,6 @@
 package io.github.aindriub.dataprism.core.link;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -9,6 +10,12 @@ import java.util.Objects;
  */
 public record LinkBinding(String scopeId, String principalId, Instant scopeExpiry, Instant tokenExpiry) {
 
+    /**
+     * The most UTF-8 bytes a scope id or principal id may have: the associated data prefixes each item with 2
+     * bytes.
+     */
+    static final int MAX_ID_BYTES = 65535;
+
     public LinkBinding {
         Objects.requireNonNull(scopeId, "scopeId");
         Objects.requireNonNull(principalId, "principalId");
@@ -16,16 +23,13 @@ public record LinkBinding(String scopeId, String principalId, Instant scopeExpir
         Objects.requireNonNull(tokenExpiry, "tokenExpiry");
     }
 
-    /** The most UTF-8 bytes a scope id or principal id may have: the associated data prefixes each item with 2 bytes. */
-    static final int MAX_ID_BYTES = 65535;
-
     /** Whether both ids fit the associated-data item limit. The codec refuses or omits otherwise; it never throws. */
     boolean withinBounds() {
         return utf8Length(scopeId) <= MAX_ID_BYTES && utf8Length(principalId) <= MAX_ID_BYTES;
     }
 
     private static int utf8Length(String value) {
-        return value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        return value.getBytes(StandardCharsets.UTF_8).length;
     }
 
     @Override

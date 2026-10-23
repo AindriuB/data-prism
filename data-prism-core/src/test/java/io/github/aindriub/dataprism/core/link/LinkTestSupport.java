@@ -9,7 +9,9 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -94,7 +96,7 @@ final class LinkTestSupport {
     static LinkCodec codec(MapKeys provider, LinkSettings settings, Clock clock) {
         LinkKeys keys = new LinkKeys(provider, settings.keyId(), "pseudo-key",
                 () -> {
-                    Set<String> ids = new java.util.HashSet<>(provider.keys.keySet());
+                    Set<String> ids = new HashSet<>(provider.keys.keySet());
                     ids.remove("pseudo-key");
                     return ids;
                 });
@@ -142,7 +144,7 @@ final class LinkTestSupport {
         return () -> value;
     }
 
-    static java.util.List<String> noLabels() {
+    static List<String> noLabels() {
         return new ArrayList<>();
     }
 }

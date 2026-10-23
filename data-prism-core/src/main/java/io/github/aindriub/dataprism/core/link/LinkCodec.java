@@ -36,8 +36,8 @@ import java.util.function.Supplier;
  * <p><b>Verification order</b> (no oracle): the length first, before any decoding; then the structure, which
  * depends only on the public layout; then AEAD verification always, against the key the token names or a fixed
  * dummy key when that id is unknown (the AEAD work is uniform; a held key id also costs a provider fetch and a
- * digest, which an unknown id does not, and key ids are public); and only then expiry, issue time and relation, evaluated as booleans. A
- * token that fails authentication is {@code AUTH_FAILED} whatever its header says.
+ * digest, which an unknown id does not, and key ids are public); and only then expiry, issue time and relation,
+ * evaluated as booleans. A token that fails authentication is {@code AUTH_FAILED} whatever its header says.
  *
  * <p>This is the only place in the project, with the cluster seal, that creates an {@code AES/GCM} cipher. No
  * token, payload, chained key or key byte appears in an exception message, {@code toString} or log line; this
@@ -336,7 +336,8 @@ public final class LinkCodec {
             cipher.updateAAD(aad);
             return cipher.doFinal(plain);
         } catch (GeneralSecurityException failure) {
-            throw new IllegalStateException("the link could not be sealed");
+            // The cause is a JCA exception about algorithm or key size and carries no key material.
+            throw new IllegalStateException("the link could not be sealed", failure);
         }
     }
 

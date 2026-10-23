@@ -5,13 +5,18 @@ import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeSet;
 
 import static io.github.aindriub.dataprism.core.link.LinkTestSupport.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -161,7 +166,7 @@ class LinkKeysTest {
     @Test
     void aKeyAddedLaterWithThePseudonymisationBytesIsNotHeld() {
         MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(200, 32));
-        java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
+        Set<String> held = new HashSet<>(Set.of("k1"));
         LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> held);
         held.add("k2");
         assertThat(keys.heldKeyIds()).containsExactly("k1");
@@ -175,7 +180,7 @@ class LinkKeysTest {
     @Test
     void aNullEntryInTheHeldSetIsTreatedAsAbsent() {
         MapKeys provider = new MapKeys().with("k1", material(1, 32)).with("k2", material(2, 32));
-        java.util.Set<String> withNull = new java.util.HashSet<>(Arrays.asList("k1", "k2", null));
+        Set<String> withNull = new HashSet<>(Arrays.asList("k1", "k2", null));
         LinkKeys keys = new LinkKeys(provider, "k1", "pseudo-key", () -> withNull);
         assertThat(keys.heldKeyIds()).containsExactly("k1", "k2");
         assertThat(keys.master(null)).isNull();
@@ -319,7 +324,8 @@ class LinkKeysTest {
         out.setProperty("seal.key", HEX.formatHex(LinkKeys.derive(master, LinkKeys.SEAL_LABEL, SCOPE)));
         out.setProperty("fingerprint.key", HEX.formatHex(LinkKeys.derive(master, LinkKeys.FINGERPRINT_LABEL, SCOPE)));
         out.setProperty("caller.key", HEX.formatHex(LinkKeys.derive(master, LinkKeys.CALLER_LABEL, SCOPE)));
-        out.setProperty("fingerprint", HEX.formatHex(keys.forScope(SCOPE).fingerprint("subject-1".getBytes(StandardCharsets.UTF_8))));
+        out.setProperty("fingerprint", HEX.formatHex(
+                keys.forScope(SCOPE).fingerprint("subject-1".getBytes(StandardCharsets.UTF_8))));
         out.setProperty("catalog.tag", HEX.formatHex(keys.forScope(SCOPE).catalogTag(List.of("alpha", "beta"))));
         out.setProperty("counter.key", keys.attemptCounterKey(SCOPE, "alice"));
         out.setProperty("follow.token", codec.seal(follow("subject-1".getBytes(StandardCharsets.UTF_8), "source-one"),
@@ -333,7 +339,7 @@ class LinkKeysTest {
         Properties regenerated = regenerate();
         String writeTo = System.getProperty("link.vectors.write");
         if (writeTo != null) {
-            java.nio.file.Files.writeString(java.nio.file.Path.of(writeTo), render(regenerated));
+            Files.writeString(Path.of(writeTo), render(regenerated));
         }
         Properties pinned = expected();
         assertThat(regenerated.stringPropertyNames()).isEqualTo(pinned.stringPropertyNames());
@@ -347,19 +353,21 @@ class LinkKeysTest {
         Properties pinned = expected();
         byte[] master = material(1, 32);
         byte[] plain = LinkVectors.decrypt(master, SCOPE, "alice", true,
-                java.util.Base64.getUrlDecoder().decode(pinned.getProperty("follow.token")));
+                Base64.getUrlDecoder().decode(pinned.getProperty("follow.token")));
         assertThat(plain).hasSize(8 + 8 + 1 + 5 + 1 + 2 + 64);
         byte[] pagePlain = LinkVectors.decrypt(master, SCOPE, "alice", true,
-                java.util.Base64.getUrlDecoder().decode(pinned.getProperty("page.token")));
+                Base64.getUrlDecoder().decode(pinned.getProperty("page.token")));
         assertThat(pagePlain.length).isEqualTo(8 + 8 + 1 + 6 + 5 + 1 + 2 + 11 + 16);
         assertThat(Arrays.copyOfRange(pagePlain, pagePlain.length - 16, pagePlain.length))
                 .isEqualTo(material(90, 16));
     }
 
     private static String render(Properties props) {
-        StringBuilder sb = new StringBuilder("# Known-answer vectors for the sealed-link codec. Invented key material.\n");
-        sb.append("# Inputs: master = material(1,32), scope case-1, principal alice, nonce a0..ab, clock 2030-01-01T00:00:00Z.\n");
-        for (String name : new java.util.TreeSet<>(props.stringPropertyNames())) {
+        StringBuilder sb = new StringBuilder(
+                "# Known-answer vectors for the sealed-link codec. Invented key material.\n");
+        sb.append("# Inputs: master = material(1,32), scope case-1, principal alice, nonce a0..ab, "
+                + "clock 2030-01-01T00:00:00Z.\n");
+        for (String name : new TreeSet<>(props.stringPropertyNames())) {
             sb.append(name).append('=').append(props.getProperty(name)).append('\n');
         }
         return sb.toString();

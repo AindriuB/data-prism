@@ -26,6 +26,7 @@ import java.util.stream.Stream;
 
 import static io.github.aindriub.dataprism.core.link.LinkTestSupport.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LinkCodecTest {
 
@@ -295,7 +296,8 @@ class LinkCodecTest {
     @Test
     void expiryIsTheMinimumOfLifetimeScopeAndToken() {
         FollowPayload payload = follow(5);
-        LinkBinding byLifetime = new LinkBinding("case-1", "alice", T0.plus(Duration.ofDays(1)), T0.plus(Duration.ofDays(2)));
+        LinkBinding byLifetime = new LinkBinding("case-1", "alice", T0.plus(Duration.ofDays(1)),
+                T0.plus(Duration.ofDays(2)));
         LinkBinding byScope = new LinkBinding("case-1", "alice", T0.plusSeconds(600), T0.plus(Duration.ofDays(2)));
         LinkBinding byToken = new LinkBinding("case-1", "alice", T0.plus(Duration.ofDays(2)), T0.plusSeconds(300));
         assertThat(codec.seal(payload, byLifetime).orElseThrow().expiry()).isEqualTo(T0.plusSeconds(1800));
@@ -434,13 +436,13 @@ class LinkCodecTest {
 
     @Test
     void aFollowPayloadObeysTheRelationRules() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
+        assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
                 Optional.of("res-one"), material(3, 5), "source-one", LinkRelation.DIRECT))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
+        assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
                 Optional.empty(), material(3, 5), "source-one", LinkRelation.TRANSLATED))
                 .isInstanceOf(IllegalArgumentException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "",
+        assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "",
                 Optional.empty(), material(3, 5), "source-one", LinkRelation.DIRECT))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -476,7 +478,7 @@ class LinkCodecTest {
 
     @Test
     void aKeyIdMismatchHasAStableCode() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new LinkCodec(
+        assertThatThrownBy(() -> new LinkCodec(
                 settings("k2", true, Duration.ofSeconds(30)),
                 new LinkKeys(provider, "k1", "pseudo-key"), clock))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageStartingWith("INVALID_LINK_LIMIT");
@@ -548,7 +550,7 @@ class LinkCodecTest {
         LinkCodec issuer = new LinkCodec(settings("pseudo", true, Duration.ofSeconds(30)),
                 new LinkKeys(both, "pseudo", "pseudo-key"), clock);
         String token = issuer.seal(follow(5), binding).orElseThrow().token();
-        java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
+        Set<String> held = new HashSet<>(Set.of("k1"));
         LinkCodec verifier = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
                 new LinkKeys(both, "k1", "pseudo", () -> held), clock);
         assertThat(refused(verifier.open(token, binding, follows())).reason()).isEqualTo(LinkReason.UNKNOWN_KEY);
@@ -564,7 +566,7 @@ class LinkCodecTest {
         String token = new LinkCodec(settings("k2", true, Duration.ofSeconds(30)),
                 new LinkKeys(keys, "k2", "other-pseudo", () -> Set.of("k2")), clock)
                 .seal(follow(5), binding).orElseThrow().token();
-        java.util.Set<String> held = new java.util.HashSet<>(Set.of("k1"));
+        Set<String> held = new HashSet<>(Set.of("k1"));
         LinkCodec verifier = new LinkCodec(settings("k1", true, Duration.ofSeconds(30)),
                 new LinkKeys(keys, "k1", "pseudo-key", () -> held), clock);
         held.add("k2");
@@ -685,19 +687,19 @@ class LinkCodecTest {
     void payloadConstructorsNameNoValue() {
         String secret = "subject-secret-value-" + "x".repeat(80);
         // The secret is the value in each field whose validation builds a message.
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, secret,
+        assertThatThrownBy(() -> new FollowPayload(linkId(), T0, secret,
                 Optional.empty(), material(3, 5), "source-one", LinkRelation.DIRECT))
                 .isInstanceOf(IllegalArgumentException.class)
                 .satisfies(e -> assertThat(e.getMessage()).doesNotContain("subject-secret"));
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
+        assertThatThrownBy(() -> new FollowPayload(linkId(), T0, "ns-a",
                 Optional.of(secret), material(3, 5), "source-one", LinkRelation.TRANSLATED))
                 .isInstanceOf(IllegalArgumentException.class)
                 .satisfies(e -> assertThat(e.getMessage()).doesNotContain("subject-secret"));
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new CatalogPagePayload(linkId(), T0,
+        assertThatThrownBy(() -> new CatalogPagePayload(linkId(), T0,
                 Optional.of(secret), Optional.empty(), LinkLabelKind.ALIAS, 25, "source-one", material(90, 16)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .satisfies(e -> assertThat(e.getMessage()).doesNotContain("subject-secret"));
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> follow(new byte[0], "source-one"))
+        assertThatThrownBy(() -> follow(new byte[0], "source-one"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
