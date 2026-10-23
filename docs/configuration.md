@@ -609,7 +609,8 @@ The packaged server reads cluster and name keys from environment variables only.
 given as `provider-reference` there is refused (`MISSING_KEY_PROVIDER`, naming the
 property) and is never looked up as the name of an environment variable. A custom
 `HmacKeyReferenceResolver` serves provider references by overriding
-`resolveProviderReference`; by default that calls `resolve`. The privacy HMAC key follows the same
+`resolveProviderReference`; by default that refuses with `MISSING_KEY_PROVIDER`, so a resolver
+that has not opted in never treats a provider reference as a variable name. The privacy HMAC key follows the same
 rule: a `dataprism.privacy.hmac-key.provider-reference` is read through `resolveProviderReference`
 and an `environment-variable` through `resolve`.
 
