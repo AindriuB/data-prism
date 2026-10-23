@@ -3,7 +3,7 @@
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 239, 240, 246, 247 and 248 have merged
-**Depends on:** 239, 240, 248 (the SPI pieces it implements), 246 and 247 (both edit `ConfiguredJsonSourcesAutoConfiguration`)
+**Depends on:** 239, 240, 248 (the SPI pieces it implements), 246 and 247 (both edit `ConfiguredJsonSourcesAutoConfiguration`), 271 (the `DescriptorFieldMetadataResolver.descriptors()` accessor; added 2026-10-23)
 **Decisions:** OD-08-8 decided 2026-10-20 (a): `config-location` takes a list; a source name in two files refuses with `DUPLICATE_JSON_SOURCE`.
 **Wave:** 8 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
@@ -12,7 +12,7 @@
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDataSourceAdapter.java
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonScrubbingEngine.java *(the `describe` override only)*
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesInitializer.java
-- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesAutoConfiguration.java *(location binding and description plumbing only)*
+- data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSourcesAutoConfiguration.java *(location binding, description plumbing, and the descriptor map passed to the `javaFirst` engine at :177 only; the last added 2026-10-23)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDescriptionTest.java *(new)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonChainableTest.java *(new)*
 - data-prism-connectors-rest/src/test/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonDescribeConformanceTest.java *(new)*
@@ -36,6 +36,7 @@ A configured JSON source is declared in a `json-sources:` file, not in Java, so 
 - [ ] `ConfiguredJsonScrubbingEngine.describe` describes every `fields:` entry and nested catalogue as 248 specifies. `ConfiguredJsonDescribeConformanceTest` proves, over the existing fixtures, that every path a scrubbed response contains is described with the protection it was scrubbed under.
 - [ ] Several files, as OD-08-8 decides. Under its option (a): `dataprism.json-sources.config-location` accepts a list of locations (a single value still works unchanged); every file is parsed strictly; a source name declared in two files refuses startup with the code OD-08-8 names, and the message names the source and neither location; the resulting source order does not depend on file order; an unreadable file refuses as today, with the location shown only by the existing `describe(location)` rule.
 - [ ] The base-url host of each configured source is available to the catalog's rule 5 check (an accessor read by 254).
+- [ ] The `javaFirst` `JsonTreeScrubbingEngine` in `ConfiguredJsonSourcesAutoConfiguration` is built with 248's five-argument constructor, passing `metadata instanceof DescriptorFieldMetadataResolver d ? d.descriptors() : Map.of()` (the rule 271 uses for the Spring-built engine). A test shows that a descriptor-declared chainable field on a Java-first model is described with its `keyNamespace` (added 2026-10-23).
 - [ ] Every existing `data-prism-connectors-rest` test passes unmodified.
 - [ ] `./mvnw -B -pl data-prism-connectors-rest -am verify` passes.
 
