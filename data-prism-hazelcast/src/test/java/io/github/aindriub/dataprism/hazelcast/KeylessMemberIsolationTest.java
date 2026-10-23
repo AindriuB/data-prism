@@ -465,4 +465,84 @@ class KeylessMemberIsolationTest {
             }
         }
     }
+
+    // ---- listeners are removed ------------------------------------------------------------------
+
+    /** Records which listener ids were handed out and which were removed, forwarding to the real cluster. */
+    private static HazelcastInstance tracking(HazelcastInstance real, List<java.util.UUID> added,
+                                              List<java.util.UUID> removed, boolean twoMembersAtInit) {
+        Member local = real.getCluster().getLocalMember();
+        Member other = forwarding(Member.class, local, (m, a) -> m.getName().equals("equals") ? Boolean.FALSE
+                : m.getName().equals("hashCode") ? Integer.valueOf(1) : NOT_OVERRIDDEN);
+        Cluster cluster = forwarding(Cluster.class, real.getCluster(), (m, a) -> {
+            if (m.getName().equals("addMembershipListener")) {
+                java.util.UUID id;
+                if (twoMembersAtInit && a[0] instanceof com.hazelcast.cluster.InitialMembershipListener initial) {
+                    initial.init(new com.hazelcast.cluster.InitialMembershipEvent(real.getCluster(),
+                            new LinkedHashSet<>(List.of(local, other))));
+                    id = java.util.UUID.randomUUID();
+                } else {
+                    id = real.getCluster().addMembershipListener((MembershipListener) a[0]);
+                }
+                added.add(id);
+                return id;
+            }
+            if (m.getName().equals("removeMembershipListener")) {
+                removed.add((java.util.UUID) a[0]);
+                return Boolean.TRUE;
+            }
+            return NOT_OVERRIDDEN;
+        });
+        return forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getCluster") ? cluster : NOT_OVERRIDDEN);
+    }
+
+    @Test
+    void aRefusedUsingLeavesNoListenerOnTheCallersInstance() {
+        HazelcastInstance real = soloInstance();
+        List<java.util.UUID> added = new ArrayList<>();
+        List<java.util.UUID> removed = new ArrayList<>();
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(tracking(real, added, removed, true), false)));
+        assertThat(added).hasSize(2);
+        assertThat(removed).containsExactlyInAnyOrderElementsOf(added);
+    }
+
+    @Test
+    void closingRemovesTheLegacyAndTheJoinerListeners() {
+        HazelcastInstance real = soloInstance();
+        List<java.util.UUID> added = new ArrayList<>();
+        List<java.util.UUID> removed = new ArrayList<>();
+        PrivacyCluster wrapped = PrivacyCluster.using(tracking(real, added, removed, false), false);
+        assertThat(added).hasSize(2);
+        wrapped.close();
+        assertThat(removed).containsExactlyInAnyOrderElementsOf(added);
+    }
+
+    @Test
+    void theRefusalIsLoggedOnceWhenJoinsAreAnnouncedConcurrently() {
+        HazelcastInstance real = soloInstance();
+        List<MembershipListener> listeners = new ArrayList<>();
+        PrivacyCluster wrapped = PrivacyCluster.using(capturing(real, listeners), false);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(16);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<?>> done = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            done.add(pool.submit(() -> {
+                start.await();
+                memberJoins(real, listeners);
+                return null;
+            }));
+        }
+        start.countDown();
+        for (var future : done) {
+            try {
+                future.get(20, TimeUnit.SECONDS);
+            } catch (Exception failed) {
+                throw new AssertionError(failed);
+            }
+        }
+        pool.shutdownNow();
+        assertThat(wrapped.isRefused()).isTrue();
+        assertThat(wrapped.refusalsLogged()).isEqualTo(1);
+    }
 }
