@@ -50,7 +50,21 @@ class PrivacyMetricsTest {
                 "dataprism.cluster.seal.entries_under_previous",
                 "dataprism.cluster.lock.timeout",
                 "dataprism.cluster.floor.refusal",
-                "dataprism.cluster.legacy.entries");
+                "dataprism.cluster.legacy.entries",
+                "dataprism.resolver.unavailable",
+                "dataprism.resolver.timeout",
+                "dataprism.resolver.rejected",
+                "dataprism.resolver.too_many",
+                "dataprism.resolver.invalid_output",
+                "dataprism.resolver.latency",
+                "dataprism.links.issued",
+                "dataprism.links.omitted",
+                "dataprism.links.refused",
+                "dataprism.links.attempts_exhausted",
+                "dataprism.links.keys.loaded",
+                "dataprism.paging.pages",
+                "dataprism.catalog.descriptions.generated",
+                "dataprism.catalog.source_names.nonconforming");
 
         Set<String> actual = Arrays.stream(Metric.values())
                 .map(Metric::metricName)
