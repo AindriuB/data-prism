@@ -169,7 +169,7 @@ A second review round on PR #154 (4 Medium, 13 Low, 4 Nit; 2026-10-23) is answer
 Follow-ups from the external review of PR #154 (rounds 1–4), 2026-10-23. The owner agreed on 2026-10-23 that once a review round finds nothing Medium or worse the PR merges and the Lows become follow-ups; round 4 reached that bar. Each item belongs to the brief named (also a dated Context bullet in 227, 251, 252 and 261; owner decisions stay here only):
 
 - 222/hazelcast, to 227 (the next `PrivacyCluster` editor): fix `PrivacyCluster` import grouping. Corrected 2026-10-23 (round 5): not "one remaining inline name" but dozens of inline fully qualified names in the tests 222 added, and the `ClusterMembership` constants are misplaced; 227 now owns `ClusterMembership.java` for this. The `INVALID_CLUSTER_INTERFACE` wording added to `docs/configuration.md`, `docs/multiple-instances.md` and the contract register is not fixed: it holds for a keyed solo member only, and a keyless one refuses `MISSING_CLUSTER_KEY`. 230 corrects `docs/configuration.md` and the register, 213 corrects `docs/multiple-instances.md`.
-- 242/core.link, to 251 unless noted: the `&& knownKey` guard in `LinkCodec` is defence in depth behind `UNKNOWN_KEY`, and no test can kill its mutant, so add a comment saying so and exclude it from PIT (corrected 2026-10-23; 251's Context bullet still says "add a test or a comment" and is read as this, because 251's body belongs to the 269 revision, PR #158); 251 must fingerprint only values within the chained-key cap, because `ScopeKeys.fingerprint` now refuses values over 65535 bytes, and the Javadoc should say so.
+- 242/core.link, to 251 unless noted: the `&& knownKey` guard in `LinkCodec` is defence in depth behind `UNKNOWN_KEY`, and no test can kill its mutant, so add a comment saying so and exclude it from PIT. Moved to 269 (2026-10-23; 269 owns `LinkCodec.java` and `LinkCodecTest.java`, Acceptance "LinkCodec and LinkKeys follow-ups"); 251 must fingerprint only values within the chained-key cap, because `ScopeKeys.fingerprint` now refuses values over 65535 bytes, and the Javadoc should say so.
 - 242, owner/254: `SealResult.OmitReason.BINDING_TOO_LONG` also covers empty ids; consider renaming it to `BINDING_INVALID` before the codes are published.
 - 242, owner decision: the `Optional` record components (`FollowPayload.resolverName`, the `CatalogPagePayload` filters, `LinkSettings.lifetime`) need a rule in `docs/conventions.md`, which has none.
 - 252: an MCP client may send "" meaning "no link" and the codec counts "" as `MALFORMED`. Closed 2026-10-23: 269's gate treats a null or empty token as `Invalid(MALFORMED)`, uncounted, without calling the codec (252's Context bullet); OD-269-5 settles the client codes.
@@ -177,8 +177,8 @@ Follow-ups from the external review of PR #154 (rounds 1–4), 2026-10-23. The o
 
 Follow-ups from the external review of PR #154, round 5 (2026-10-23). Each belongs to the brief named; where a brief's body is not edited here (the bodies of 250, 251, 252, 255, 264 and 269 belong to the 269 revision, PR #158), the item is recorded here only:
 
-- [security] 227: a keyless member accepts `localhost` as `localAddress`, and `PrivacyCluster.launch()` never checks the bound address (`using()` does). Context bullet in 227.
-- [security] 227 (230 if 227 has merged): on a keyed member, `-Dhazelcast.socket.server.bind.any=true` overrides the required interface; the keyless path closes this and the keyed path does not. Context bullet in 227.
+- [security] 227: a keyless member accepts `localhost` as `localAddress`, and `PrivacyCluster.launch()` never checks the bound address (`using()` does). Coordinator decision 2026-10-23: a keyless member's `localAddress` and `publicAddress` must be a literal loopback address (`127.x.x.x` or `::1`); `localhost` is no longer accepted, because it is resolved through the hosts file. Acceptance items in 227.
+- [security] 227: on a keyed member, `-Dhazelcast.socket.server.bind.any=true` overrides the required interface; the keyless path closes this and the keyed path does not. An Acceptance item in 227, which owns `ClusterMembership.java` (no fallback to 230, which does not).
 - [security] 210 (rerouted 2026-10-23 after the review of PR #159; 210 owns both files): `docker/multi-instance/kubernetes.yaml` adds the 0.8 key settings but pins `ghcr.io/aindriub/data-prism-server:0.7.0`, which ignores them. `docker/multi-instance/compose.yaml` has the same gap: with published images it takes the server from `../../compose.yaml`, whose default tag `latest` is a 0.7 image until 0.8.0 is published. 210's Owns note now covers the image tag and the check that the key settings take effect; the root `compose.yaml` default goes to 262, its owner. Context bullets in 210 and 262.
 - 213: `docs/multiple-instances.md` says `member.interface` is optional and binds every interface. Context bullet in 213.
 - 213: the `ClusterMembership` interface component changed from `Optional<String>` to `String`, a breaking change for plain-Java callers with no migration note; add it to `docs/migration-0.8.md` and `CHANGELOG.md`. Context bullet in 213.
@@ -186,14 +186,14 @@ Follow-ups from the external review of PR #154, round 5 (2026-10-23). Each belon
 - 230: `ClusterLegacyGaugeTest` cannot detect a double registration, because its recording map overwrites. Context bullet in 230.
 - 227: `KeylessMemberIsolationTest:300` sleep-polls against a 20 s deadline, against the "no sleeps" rule. Context bullet in 227.
 - 269: two `LinkKeysTest` leak assertions cannot fail (one checks for "shared-", the other a constant `toString`). Moved to 269 (Acceptance, PR #158).
-- 251 (PLAN only): no open-side test sits at the exact scope or token end, so an off-by-one mutant survives in `LinkCodec.open`.
+- 269: no open-side test sits at the exact scope or token end, so an off-by-one mutant survives in `LinkCodec.open`. Moved to 269 (2026-10-23, Acceptance).
 - 269: the limiter constructor throws a bare `IllegalArgumentException` instead of `LinkConfigurationException`. Moved to 269 (Acceptance, PR #158).
-- 255 (PLAN only): held key ids from the supplier are not checked against the key-id grammar.
+- 269: held key ids from the supplier are not checked against the key-id grammar. Moved to 269 (2026-10-23, Acceptance: `LinkKeys` checks each held id).
 - Nits:
   - 269: the gauge-outage case asserts only `counted()`. Moved to 269 (Acceptance, PR #158: the outage stub row asserts the reason and the audit value too).
   - 269: `InMemoryLinkAttemptLimiterTest` shuts its pool down only on success. Moved to 269 (Acceptance, PR #158).
   - 253: `LinkArchitectureTest`'s sanity check counts `mcp` and `connectors` together. Context bullet in 253.
-  - 251 (PLAN only): an unused `java.time.Duration` import in `LinkCodec`.
+  - 269: an unused `java.time.Duration` import in `LinkCodec`. Moved to 269 (2026-10-23, Acceptance).
   - 210: a dead property line in `StarterStartupFailureTest`. Context bullet in 210.
   - Not recorded: sealed-links section 4's counter-key formula lacks its label; 269 handles it.
 
