@@ -162,6 +162,25 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         }
     }
 
+    private static final Pattern LOOPBACK_LITERAL = Pattern.compile("127\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})");
+
+    /** An IPv4 literal in 127/8, {@code localhost} or {@code ::1}; any other name could resolve elsewhere. */
+    static boolean loopbackLiteral(String value) {
+        if (value.equals("localhost") || value.equals("::1")) {
+            return true;
+        }
+        var matcher = LOOPBACK_LITERAL.matcher(value);
+        if (!matcher.matches()) {
+            return false;
+        }
+        for (int i = 1; i <= 3; i++) {
+            if (Integer.parseInt(matcher.group(i)) > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * Whether the config makes the member reachable from this host only: neither socket setting binds every
      * interface, the interfaces are enabled and all loopback entries, no public address is advertised, no member
@@ -179,8 +198,7 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         if (localAddress == null) {
             localAddress = System.getProperty(LOCAL_ADDRESS);
         }
-        if (localAddress != null && !localAddress.isBlank() && !localAddress.strip().startsWith("127.")
-                && !localAddress.strip().equals("localhost") && !localAddress.strip().equals("::1")) {
+        if (localAddress != null && !localAddress.isBlank() && !loopbackLiteral(localAddress.strip())) {
             return false;
         }
         var network = config.getNetworkConfig();

@@ -581,4 +581,19 @@ class KeylessMemberIsolationTest {
                 (m, a) -> m.getName().equals("getConfig") ? exposed : NOT_OVERRIDDEN);
         refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(reported, false)));
     }
+
+    @Test
+    void onlyLoopbackLiteralsAreAcceptedAsALocalAddress() {
+        for (String accepted : List.of("127.0.0.1", "127.1.2.3", " localhost ", "::1")) {
+            Config config = keylessConfig(TestMembers.uniqueName("literal"), 5701);
+            config.setProperty("hazelcast.local.localAddress", accepted);
+            ClusterMembership.isolate(config);
+        }
+        for (String refused : List.of("127.lan.example.internal", "127.0.0.256", "127.0.0.1.example.com",
+                "127.0.0", "10.1.2.3", "example.com")) {
+            Config config = keylessConfig(TestMembers.uniqueName("literal"), 5701);
+            config.setProperty("hazelcast.local.localAddress", refused);
+            refusedAsMissingKeys(catchThrowable(() -> ClusterMembership.isolate(config)));
+        }
+    }
 }
