@@ -171,7 +171,7 @@ public final class PrivacyCluster implements AutoCloseable {
         // A member without keys is solo by construction (OD-215-8 (a)): it names and seals under keys drawn at random
         // for this process, which nothing else can share, so two such members never derive the same name. A joining
         // member never gets here without keys.
-        ClusterKeys effective = keys != null ? keys : generatedSoloKeys();
+        ClusterKeys effective = keys != null ? keys : soloKeysOf(instance);
         this.names = new KeyedNames(effective);
         this.scopeKeys = new ScopeKeys(names);
         SealedWrites.register(instance, Sealer.builder(effective, PrivacyMetrics.none()).build(), names);
@@ -243,7 +243,20 @@ public final class PrivacyCluster implements AutoCloseable {
         return refusalsLogged.get();
     }
 
-    /** Random cluster and name keys for one solo process. The material is never logged, stored or returned. */
+    private static final String SOLO_KEYS_CONTEXT_KEY = "dataprism.cluster.solo.keys";
+
+    /**
+     * The random cluster and name keys of a keyless solo instance, drawn once per {@code HazelcastInstance}: every
+     * wrapper of the instance, including a re-wrap after {@code close()}, reuses them, so the keyed names it wrote
+     * stay reachable. They live in the instance's member-local user context, so they die with the instance; they are
+     * never shared with another member, never persisted and never logged. Owner decision of 2026-10-23, amending
+     * OD-215-8.
+     */
+    private static ClusterKeys soloKeysOf(HazelcastInstance instance) {
+        return (ClusterKeys) instance.getUserContext().computeIfAbsent(SOLO_KEYS_CONTEXT_KEY,
+                key -> generatedSoloKeys());
+    }
+
     private static ClusterKeys generatedSoloKeys() {
         SecureRandom random = new SecureRandom();
         byte[] cluster = new byte[ClusterKeys.MIN_KEY_BYTES];
@@ -1137,6 +1150,10 @@ public final class PrivacyCluster implements AutoCloseable {
         legacyChecks.shutdownNow();
         legacyWatchdog.shutdownNow();
         sweeper.close();
-        instance.shutdown();
+        if (owned) {
+            // An instance somebody else started is left running, as the class Javadoc says of using(): it may be
+            // wrapped again, and the random solo keys it holds stay with it.
+            instance.shutdown();
+        }
     }
 }

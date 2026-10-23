@@ -257,6 +257,34 @@ class SoloMemberKeysTest {
     }
 
     @Test
+    void aReWrapOfAKeylessInstanceKeepsSeeingWhatTheFirstWrapperWrote() {
+        try (PrivacyCluster base = solo(null)) {
+            var inst = base.instance();
+            PrivacyCluster a = PrivacyCluster.using(inst, false);
+            new HazelcastOversightState(a, TIMEOUT).pauseScope("s");
+            new HazelcastScopeBudget(a, TIMEOUT).tryRead(SCOPE, SUBJECT, 5);
+            new HazelcastApprovalStore(a, TIMEOUT).create(new io.github.aindriub.dataprism.oversight.ApprovalRequest(
+                    APPROVAL, io.github.aindriub.dataprism.oversight.ApprovalRequest.Kind.TOOL_CALL, PRINCIPAL,
+                    "client", SCOPE, "search", "fp", "PERSON_NAME", "synthetic", "audit", "CASE-1",
+                    TestMembers.NOW, TestMembers.NOW.plus(1, ChronoUnit.HOURS), Status.PENDING, null, null));
+            // Side by side: the same names, so the same counts and the same approvals.
+            PrivacyCluster side = PrivacyCluster.using(inst, false);
+            assertThat(new HazelcastScopeBudget(side, TIMEOUT).reads(SCOPE, SUBJECT)).isEqualTo(1);
+            assertThat(new HazelcastApprovalStore(side, TIMEOUT).find(APPROVAL)).isPresent();
+            side.close();
+            // The reviewer's repro: close the first wrapper, wrap again.
+            a.close();
+            PrivacyCluster b = PrivacyCluster.using(inst, false);
+            assertThat(new HazelcastOversightState(b, TIMEOUT).scopePaused("s")).isTrue();
+            assertThat(new HazelcastScopeBudget(b, TIMEOUT).reads(SCOPE, SUBJECT)).isEqualTo(1);
+            assertThat(new HazelcastApprovalStore(b, TIMEOUT).find(APPROVAL)).isPresent();
+            assertThat(b.keyedNames().mapKey(PrivacyCluster.CALLER_RATE_MAP, "x"))
+                    .isEqualTo(base.keyedNames().mapKey(PrivacyCluster.CALLER_RATE_MAP, "x"));
+            b.close();
+        }
+    }
+
+    @Test
     void aJoiningMembershipNeverGetsGeneratedKeys() {
         Throwable refused = catchThrowable(() -> PrivacyCluster.embedded(
                 ClusterMembership.tcpIp(TestMembers.uniqueName("joiner"), List.of("127.0.0.1:1")).withPort(1)
