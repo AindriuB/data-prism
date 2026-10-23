@@ -383,4 +383,202 @@ class KeylessMemberIsolationTest {
         refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(joined, false)));
         assertThat(real.getLifecycleService().isRunning()).isTrue();
     }
+
+    // ---- isolation of a keyless Config -------------------------------------------------------------
+
+    /** The host's first non-loopback IPv4 address, or null when it has none. */
+    private static String lanAddress() throws Exception {
+        for (var nic : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+            for (var address : java.util.Collections.list(nic.getInetAddresses())) {
+                if (address instanceof java.net.Inet4Address && !address.isLoopbackAddress() && nic.isUp()) {
+                    return address.getHostAddress();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void assertListensOnLoopbackOnly(PrivacyCluster keyless, int port) throws Exception {
+        Config effective = keyless.instance().getConfig();
+        assertThat(effective.getProperty("hazelcast.socket.bind.any")).isEqualTo("false");
+        assertThat(effective.getProperty("hazelcast.socket.server.bind.any")).isEqualTo("false");
+        assertThat(effective.getNetworkConfig().getPublicAddress()).isNull();
+        assertThat(effective.getNetworkConfig().getMemberAddressProviderConfig().isEnabled()).isFalse();
+        assertThat(effective.getNetworkConfig().getInterfaces().getInterfaces()).containsExactly("127.0.0.1");
+        String lan = lanAddress();
+        if (lan != null) {
+            try (java.net.Socket socket = new java.net.Socket()) {
+                Throwable connect = catchThrowable(
+                        () -> socket.connect(new java.net.InetSocketAddress(lan, port), 1500));
+                assertThat(connect).as("a LAN connect to " + port).isNotNull();
+            }
+        }
+    }
+
+    @Test
+    void aKeylessConfigThatBindsServerSocketsEverywhereIsIsolatedAnyway() throws Exception {
+        int port = FreePorts.consecutive(1);
+        Config config = keylessConfig(TestMembers.uniqueName("serverany"), port);
+        config.setProperty("hazelcast.socket.server.bind.any", "true");
+        config.getNetworkConfig().setPublicAddress("203.0.113.9:" + port);
+        config.getNetworkConfig().getMemberAddressProviderConfig().setEnabled(true)
+                .setImplementation(new com.hazelcast.spi.MemberAddressProvider() {
+                    @Override public java.net.InetSocketAddress getBindAddress() {
+                        return null;
+                    }
+
+                    @Override public java.net.InetSocketAddress getBindAddress(
+                            com.hazelcast.instance.EndpointQualifier qualifier) {
+                        return null;
+                    }
+
+                    @Override public java.net.InetSocketAddress getPublicAddress() {
+                        return null;
+                    }
+
+                    @Override public java.net.InetSocketAddress getPublicAddress(
+                            com.hazelcast.instance.EndpointQualifier qualifier) {
+                        return null;
+                    }
+                });
+        try (PrivacyCluster keyless = PrivacyCluster.embedded(config, false)) {
+            assertListensOnLoopbackOnly(keyless, port);
+        }
+    }
+
+    @Test
+    void aSystemPropertyForServerBindAnyDoesNotMakeAKeylessMemberListenEverywhere() throws Exception {
+        String key = "hazelcast.socket.server.bind.any";
+        String before = System.getProperty(key);
+        System.setProperty(key, "true");
+        try {
+            int port = FreePorts.consecutive(1);
+            Config config = keylessConfig(TestMembers.uniqueName("serverprop"), port);
+            config.getProperties().remove("hazelcast.socket.bind.any");
+            try (PrivacyCluster keyless = PrivacyCluster.embedded(config, false)) {
+                assertListensOnLoopbackOnly(keyless, port);
+            }
+        } finally {
+            if (before == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, before);
+            }
+        }
+    }
+
+    // ---- listeners are removed ------------------------------------------------------------------
+
+    /** Records which listener ids were handed out and which were removed, forwarding to the real cluster. */
+    private static HazelcastInstance tracking(HazelcastInstance real, List<java.util.UUID> added,
+                                              List<java.util.UUID> removed, boolean twoMembersAtInit) {
+        Member local = real.getCluster().getLocalMember();
+        Member other = forwarding(Member.class, local, (m, a) -> m.getName().equals("equals") ? Boolean.FALSE
+                : m.getName().equals("hashCode") ? Integer.valueOf(1) : NOT_OVERRIDDEN);
+        Cluster cluster = forwarding(Cluster.class, real.getCluster(), (m, a) -> {
+            if (m.getName().equals("addMembershipListener")) {
+                java.util.UUID id;
+                if (twoMembersAtInit && a[0] instanceof com.hazelcast.cluster.InitialMembershipListener initial) {
+                    initial.init(new com.hazelcast.cluster.InitialMembershipEvent(real.getCluster(),
+                            new LinkedHashSet<>(List.of(local, other))));
+                    id = java.util.UUID.randomUUID();
+                } else {
+                    id = real.getCluster().addMembershipListener((MembershipListener) a[0]);
+                }
+                added.add(id);
+                return id;
+            }
+            if (m.getName().equals("removeMembershipListener")) {
+                removed.add((java.util.UUID) a[0]);
+                return Boolean.TRUE;
+            }
+            return NOT_OVERRIDDEN;
+        });
+        return forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getCluster") ? cluster : NOT_OVERRIDDEN);
+    }
+
+    @Test
+    void aRefusedUsingLeavesNoListenerOnTheCallersInstance() {
+        HazelcastInstance real = soloInstance();
+        List<java.util.UUID> added = new ArrayList<>();
+        List<java.util.UUID> removed = new ArrayList<>();
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(tracking(real, added, removed, true), false)));
+        assertThat(added).hasSize(2);
+        assertThat(removed).containsExactlyInAnyOrderElementsOf(added);
+    }
+
+    @Test
+    void closingRemovesTheLegacyAndTheJoinerListeners() {
+        HazelcastInstance real = soloInstance();
+        List<java.util.UUID> added = new ArrayList<>();
+        List<java.util.UUID> removed = new ArrayList<>();
+        PrivacyCluster wrapped = PrivacyCluster.using(tracking(real, added, removed, false), false);
+        assertThat(added).hasSize(2);
+        wrapped.close();
+        assertThat(removed).containsExactlyInAnyOrderElementsOf(added);
+    }
+
+    @Test
+    void theRefusalIsLoggedOnceWhenJoinsAreAnnouncedConcurrently() {
+        HazelcastInstance real = soloInstance();
+        List<MembershipListener> listeners = new ArrayList<>();
+        PrivacyCluster wrapped = PrivacyCluster.using(capturing(real, listeners), false);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(16);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<?>> done = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            done.add(pool.submit(() -> {
+                start.await();
+                memberJoins(real, listeners);
+                return null;
+            }));
+        }
+        start.countDown();
+        for (var future : done) {
+            try {
+                future.get(20, TimeUnit.SECONDS);
+            } catch (Exception failed) {
+                throw new AssertionError(failed);
+            }
+        }
+        pool.shutdownNow();
+        assertThat(wrapped.isRefused()).isTrue();
+        assertThat(wrapped.refusalsLogged()).isEqualTo(1);
+    }
+
+    // ---- the local address override -----------------------------------------------------------------
+
+    @Test
+    void aNonLoopbackLocalAddressSystemPropertyRefusesAKeylessMember() {
+        String key = "hazelcast.local.localAddress";
+        String before = System.getProperty(key);
+        System.setProperty(key, "10.1.2.3");
+        try {
+            Config config = keylessConfig(TestMembers.uniqueName("localaddr"), FreePorts.consecutive(1));
+            refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.embedded(config, false)));
+            assertThat(Hazelcast.getAllHazelcastInstances()).isEmpty();
+            System.setProperty(key, "127.0.0.1");
+            ClusterMembership.isolate(keylessConfig(TestMembers.uniqueName("localaddr"), 5701));
+        } finally {
+            if (before == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, before);
+            }
+        }
+    }
+
+    @Test
+    void aNonLoopbackLocalAddressConfigPropertyRefusesAKeylessMember() {
+        Config config = keylessConfig(TestMembers.uniqueName("localaddr"), FreePorts.consecutive(1));
+        config.setProperty("hazelcast.local.localAddress", "10.1.2.3");
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.embedded(config, false)));
+        HazelcastInstance real = soloInstance();
+        Config exposed = keylessConfig(TestMembers.uniqueName("localaddr"), 5701);
+        exposed.setProperty("hazelcast.local.localAddress", "10.1.2.3");
+        HazelcastInstance reported = forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getConfig") ? exposed : NOT_OVERRIDDEN);
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(reported, false)));
+    }
 }

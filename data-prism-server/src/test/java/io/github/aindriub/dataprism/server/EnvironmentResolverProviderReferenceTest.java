@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Review of task 222: the packaged server's environment resolver never reads a provider reference as a variable name. */
+/** Review of task 222: the packaged server's environment resolver never reads a provider reference as a name. */
 class EnvironmentResolverProviderReferenceTest {
 
     @Test

@@ -15,9 +15,9 @@
 - docs/extending.md *(the adapter description and `KeyResolver` sections only)*
 - docs/developer-guide/write-an-adapter.md *(the description section only)*
 - docs/operations.md *(new: draft operations guide)*
-- docs/migration-0.8.md *(new: the core sections; task 213 adds its own sections afterwards)*
+- docs/migration-0.8.md *(extend; created by 222's review round: the core sections are added here, and task 213 adds its own afterwards)*
 - CHANGELOG.md *(`[Unreleased]`, the core entries only)*
-- mkdocs.yml *(nav and llmstxt entries for `operations.md` and `migration-0.8.md` only)*
+- mkdocs.yml *(nav and llmstxt entries for `operations.md` only; the `migration-0.8.md` nav entries already exist)*
 
 ## Goal
 Make the 0.8 core usable by someone who has never seen the project: the three new tools and `targetSources` in the tool reference, the new audit keys, how an adapter or a configured source describes itself and how a resolver is written, a first operations guide for running against many sources, and the migration notes for every behaviour the core changed. The roadmap asks for a draft operations guide in 0.8; the register's successor S3 asks that every shipped code be documented on the page for its surface.
@@ -29,6 +29,7 @@ Make the 0.8 core usable by someone who has never seen the project: the three ne
 - docs/migration-0.7.md and docs/tools.md: the existing structure, the status table and the unknown-status rule (OD-200-1: "not answered").
 - Recorded 2026-10-21 (244 merged): the pages 244 leaves to this task are listed in `PLAN.md`, "Documentation owed by 244": `docs/tools.md`, `docs/audit.md`, `docs/conventions.md:74-77`, `contract-register.md:253`, and `docs/eu-ai-act.md:114-117` and `docs/configuration.md:359-361` (checkpoint failures: `AUDIT_UNAVAILABLE`, not `AUDIT_CHECKPOINT_UNAVAILABLE`, or an owner decision to map it through).
 - docs-site/hooks/check_*.py: the documentation checks, including captured examples.
+- From 222 external review (2026-10-23): `docs/migration-0.8.md` and its `mkdocs.yml` nav entries (both lists) already exist, created by 222's review round with the Breaking note on `HmacKeyReferenceResolver.resolveProviderReference`. Extend the page; do not recreate it, and keep that section.
 
 ## Acceptance
 - [ ] `docs/tools.md` documents `list_sources` (filters, paging, `page`, `labels`), `describe_source` (the protection vocabulary, `undeclared`, `valueNamespace`, `chainable`), `follow` (input, envelope, `items`, `itemsTruncated`, the uniform `LINK_INVALID`, `LINK_ATTEMPTS_EXHAUSTED`), `targetSources`, `_links` and `_linksOmitted`, the `RESOLVER_FAILED` status, `AUDIT_UNAVAILABLE` on every denial path, and the capabilities `LIST_SOURCES`, `DESCRIBE_SOURCE` and `FOLLOW` with the upgrade note that adding a tool grants nothing. Each example was captured against the real stack and the capture command is in the Outcome.

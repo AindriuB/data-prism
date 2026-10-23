@@ -25,7 +25,10 @@ import java.util.function.DoubleSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Review of task 222: the legacy-entries gauge is registered on the cluster bean, and a failure to register stops the member. */
+/**
+ * Review of task 222: the legacy-entries gauge is registered on the cluster bean, and a failure to register stops
+ * the member.
+ */
 class ClusterLegacyGaugeTest {
 
     @AfterEach
@@ -189,5 +192,48 @@ class ClusterLegacyGaugeTest {
                 assertThat(bytes).as(reference).isEqualTo(expected);
             });
         });
+    }
+
+    private static WebApplicationContextRunner suppliedRunner(Class<?> integrations) {
+        return new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(integrations, ClusterConfigurationTest.SuppliedCluster.class)
+                .withPropertyValues(OversightConfigurationTest.base("embedded"));
+    }
+
+    @Test
+    void anApplicationSuppliedClusterGetsTheGaugeToo() {
+        GAUGES.clear();
+        suppliedRunner(RecordingMetrics.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+            assertThat(gauge).isNotNull();
+            assertThat(gauge.getAsDouble()).isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
+        });
+    }
+
+    @Test
+    void aGaugeThatWillNotRegisterOnASuppliedClusterDoesNotStopItsStartup() {
+        suppliedRunner(ThrowingMetrics.class).run(result -> {
+            assertThat(result).hasNotFailed();
+            assertThat(result.getBean(PrivacyCluster.class).instance().getLifecycleService().isRunning()).isTrue();
+        });
+    }
+
+    @Test
+    void anApplicationClusterUnderTheStarterBeanNameStillGetsTheGauge() {
+        GAUGES.clear();
+        new WebApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataPrismAutoConfiguration.class))
+                .withUserConfiguration(RecordingMetrics.class, ClusterConfigurationTest.DefaultNamedCluster.class)
+                .withPropertyValues(OversightConfigurationTest.base("embedded"))
+                .run(result -> {
+                    assertThat(result).hasNotFailed();
+                    assertThat(result.getBeansOfType(PrivacyCluster.class)).containsKey("dataPrismPrivacyCluster");
+                    DoubleSupplier gauge = GAUGES.get(Metric.CLUSTER_LEGACY_ENTRIES);
+                    assertThat(gauge).isNotNull();
+                    assertThat(gauge.getAsDouble())
+                            .isEqualTo(result.getBean(PrivacyCluster.class).legacyEntries());
+                });
     }
 }

@@ -12,12 +12,13 @@ public interface HmacKeyReferenceResolver {
     byte[] resolve(String keyId, String reference);
 
     /**
-     * Resolves a reference configured as a {@code provider-reference}. The default hands it to
-     * {@link #resolve}, which is right for a resolver that understands both kinds of reference. A resolver that
-     * reads only environment variables overrides this to refuse, so that a provider reference is never silently
-     * looked up as the name of an environment variable.
+     * Resolves a reference configured as a {@code provider-reference}. The default refuses with
+     * {@code MISSING_KEY_PROVIDER}, naming no reference: a resolver that reads only environment variables must never
+     * treat a provider reference as the name of a variable. A resolver that serves provider references overrides
+     * this. (Before 0.8 such a resolver took them in {@link #resolve}; see the migration guide.)
      */
     default byte[] resolveProviderReference(String keyId, String reference) {
-        return resolve(keyId, reference);
+        throw new DataPrismConfigurationException("MISSING_KEY_PROVIDER",
+                "this HmacKeyReferenceResolver does not resolve provider references");
     }
 }

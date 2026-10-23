@@ -5,6 +5,8 @@ import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.KubernetesConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.spi.properties.HazelcastProperties;
 import io.github.aindriub.dataprism.hazelcast.PrivacyClusterRefusal.Code;
 
 import java.util.List;
@@ -20,6 +22,9 @@ import java.util.regex.Pattern;
 public record ClusterMembership(String clusterName, Join join, int port, Optional<String> interfaceAddress) {
 
     public static final int DEFAULT_PORT = 5701;
+
+    /** Hazelcast reads this as a Config property or a system property, and it overrides the picked address. */
+    private static final String LOCAL_ADDRESS = "hazelcast.local.localAddress";
 
     private static final Pattern OCTET = Pattern.compile("\\*|\\d{1,3}(-\\d{1,3})?");
 
@@ -146,6 +151,50 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
         config.setClusterName(config.getClusterName() + "-solo-" + UUID.randomUUID());
         config.getNetworkConfig().getInterfaces().clear().setEnabled(true).addInterface("127.0.0.1");
         config.setProperty("hazelcast.socket.bind.any", "false");
+        config.setProperty("hazelcast.socket.server.bind.any", "false");
+        config.getNetworkConfig().setPublicAddress(null);
+        config.getNetworkConfig().getMemberAddressProviderConfig().setEnabled(false);
+        // What the member will really do is read the same way Hazelcast reads it, so a setting that still wins
+        // over the above (a system property, say) is caught here and not assumed away.
+        if (!reachableOnlyFromThisHost(config)) {
+            throw refuse(Code.MISSING_CLUSTER_KEY,
+                    "a member without cluster keys must listen on loopback only, and its configuration does not");
+        }
+    }
+
+    /**
+     * Whether the config makes the member reachable from this host only: neither socket setting binds every
+     * interface, the interfaces are enabled and all loopback entries, no public address is advertised, no member
+     * address provider is enabled, and no non-loopback {@code hazelcast.local.localAddress} (Config or system
+     * property) overrides the address picked. Read the way Hazelcast reads its properties. {@code PrivacyCluster.using} asks
+     * the same of a supplied instance, so the two cannot disagree.
+     */
+    static boolean reachableOnlyFromThisHost(Config config) {
+        HazelcastProperties properties = new HazelcastProperties(config);
+        if (properties.getBoolean(ClusterProperty.SOCKET_BIND_ANY)
+                || properties.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY)) {
+            return false;
+        }
+        String localAddress = config.getProperty(LOCAL_ADDRESS);
+        if (localAddress == null) {
+            localAddress = System.getProperty(LOCAL_ADDRESS);
+        }
+        if (localAddress != null && !localAddress.isBlank() && !localAddress.strip().startsWith("127.")
+                && !localAddress.strip().equals("localhost") && !localAddress.strip().equals("::1")) {
+            return false;
+        }
+        var network = config.getNetworkConfig();
+        var interfaces = network.getInterfaces();
+        if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()
+                || !interfaces.getInterfaces().stream().allMatch(entry -> entry != null
+                && entry.strip().startsWith("127."))) {
+            return false;
+        }
+        String publicAddress = network.getPublicAddress();
+        if (publicAddress != null && !publicAddress.isBlank()) {
+            return false;
+        }
+        return !network.getMemberAddressProviderConfig().isEnabled();
     }
 
     /** With an interface, listen only there; without one Hazelcast binds every interface. */

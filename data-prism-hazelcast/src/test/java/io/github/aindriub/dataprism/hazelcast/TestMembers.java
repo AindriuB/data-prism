@@ -22,7 +22,10 @@ final class TestMembers {
     private TestMembers() {
     }
 
-    /** Keys made of fixed test bytes; the same ids give the same keys, so members of one test agree. */
+    /**
+     * Keys made of fixed test bytes. The material does not depend on the ids: every call gives the same cluster key
+     * bytes and the same name key bytes, so members of one test agree whatever ids they pass.
+     */
     static ClusterKeys keys(String clusterKeyId, String nameKeyId) {
         return new ClusterKeys(clusterKeyId, filled('c'), null, null, null, null, nameKeyId, filled('n'));
     }

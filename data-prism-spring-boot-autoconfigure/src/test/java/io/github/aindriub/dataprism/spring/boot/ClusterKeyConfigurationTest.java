@@ -14,6 +14,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -54,7 +55,15 @@ class ClusterKeyConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class KeyIntegrations extends DataPrismAutoConfigurationTest.ReviewedHttpIntegrations {
         @Override @Bean HmacKeyReferenceResolver keys() {
-            return ClusterKeyConfigurationTest::material;
+            return new HmacKeyReferenceResolver() {
+                @Override public byte[] resolve(String keyId, String reference) {
+                    return material(keyId, reference);
+                }
+
+                @Override public byte[] resolveProviderReference(String keyId, String reference) {
+                    return material(keyId, reference);
+                }
+            };
         }
     }
 
@@ -334,10 +343,10 @@ class ClusterKeyConfigurationTest {
                     "name-key.environment-variable=REF_UNRESOLVED"),
             row("CLUSTER_KEY_SHARED", "next key is the HMAC key", "cluster-key.next", true, false,
                     "cluster-key.next.key-id=cluster-2", "cluster-key.next.environment-variable=REF_HMAC_TWIN"),
-            row("NAME_KEY_SHARED", "name key has the HMAC key's id", "name-key must differ from dataprism.privacy.hmac-key",
-                    true, false, "name-key.key-id=v1"),
-            row("NAME_KEY_SHARED", "name key is a cluster key", "name-key must differ from dataprism.hazelcast.security.cluster-key",
-                    true, false,
+            row("NAME_KEY_SHARED", "name key has the HMAC key's id",
+                    "name-key must differ from dataprism.privacy.hmac-key", true, false, "name-key.key-id=v1"),
+            row("NAME_KEY_SHARED", "name key is a cluster key",
+                    "name-key must differ from dataprism.hazelcast.security.cluster-key", true, false,
                     "cluster-key.environment-variable=REF_FIXED", "name-key.environment-variable=REF_FIXED"),
             row("DUPLICATE_CLUSTER_KEY_ID", "name key id repeats a cluster key id", "name-key.key-id", true, false,
                     "name-key.key-id=cluster-1"));
@@ -428,6 +437,33 @@ class ClusterKeyConfigurationTest {
             assertThat(result).hasFailed();
             assertThat(rootMessage(result.getStartupFailure())).startsWith("MISSING_CLUSTER_KEY:")
                     .contains(SECURITY + "cluster-key.key-id");
+        });
+    }
+
+    /** The environment names the Compose and Kubernetes files set bind to the same properties as the dotted names. */
+    @Test
+    void the_environment_names_the_deployment_files_use_bind_through_relaxed_binding() throws Exception {
+        Map<String, String> environment = new LinkedHashMap<>();
+        environment.put("DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_KEYID", "cluster-1");
+        environment.put("DATAPRISM_HAZELCAST_SECURITY_CLUSTERKEY_ENVIRONMENTVARIABLE",
+                "DATAPRISM_CLUSTER_KEY_MATERIAL");
+        environment.put("DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_KEYID", "name-1");
+        environment.put("DATAPRISM_HAZELCAST_SECURITY_NAMEKEY_ENVIRONMENTVARIABLE", "DATAPRISM_NAME_KEY_MATERIAL");
+        for (String file : List.of("../docker/multi-instance/compose.yaml",
+                "../docker/multi-instance/kubernetes.yaml")) {
+            String text = java.nio.file.Files.readString(java.nio.file.Path.of(file));
+            environment.keySet().forEach(name -> assertThat(text).as(file).contains(name));
+        }
+        Map<String, String> p = valid("none");
+        p.keySet().removeIf(k -> k.startsWith(SECURITY));
+        p.put("dataprism.hazelcast.member.port", String.valueOf(ClusterConfigurationTest.freePort()));
+        runner("embedded", p).withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new SystemEnvironmentPropertySource("systemEnvironment",
+                        new LinkedHashMap<String, Object>(environment)))).run(result -> {
+            assertThat(result).hasNotFailed();
+            PrivacyCluster.KeyIds ids = result.getBean(PrivacyCluster.class).keyIds().orElseThrow();
+            assertThat(ids.current()).isEqualTo("cluster-1");
+            assertThat(ids.name()).isEqualTo("name-1");
         });
     }
 

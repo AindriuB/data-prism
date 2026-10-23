@@ -1,5 +1,9 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.cluster.InitialMembershipEvent;
+import com.hazelcast.cluster.InitialMembershipListener;
+import com.hazelcast.cluster.MembershipEvent;
+import com.hazelcast.cluster.MembershipListener;
 import com.hazelcast.config.ClassFilter;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.EvictionConfig;
@@ -24,6 +28,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -126,7 +134,9 @@ public final class PrivacyCluster implements AutoCloseable {
     private final ClusterKeys keys;
 
     private final boolean owned;
-    private volatile boolean refused;
+    private final AtomicBoolean refused = new AtomicBoolean();
+    private final AtomicInteger refusalsLogged = new AtomicInteger();
+    private final AtomicReference<UUID> joinerWatch = new AtomicReference<>();
 
     private PrivacyCluster(HazelcastInstance instance, boolean reidentificationEnabled,
                            java.time.Duration approvalSweepInterval, ClusterKeys keys, boolean owned) {
@@ -136,7 +146,7 @@ public final class PrivacyCluster implements AutoCloseable {
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
         this.sweeper = new PendingSweeper(instance, approvalSweepInterval, java.time.Clock.systemUTC());
-        this.legacyWatch = startLegacyWatch(instance);
+        this.legacyWatch.set(startLegacyWatch(instance));
         if (keys == null) {
             watchForJoiners(instance);
         }
@@ -145,15 +155,16 @@ public final class PrivacyCluster implements AutoCloseable {
     /**
      * A member without keys is solo by construction. Should another member appear anyway, nothing here may go on
      * serving a cluster nobody authenticated. This is detection, not prevention: partition replicas reach the joiner
-     * before any listener runs, and an instance somebody else started keeps running. The wrapper is marked refused, so {@link #instance()} fails from then
-     * on, its background work stops, and an instance this class started is shut down. An instance somebody else
-     * started is left running. The refusal is logged by code and carries no key material.
+     * before any listener runs, and an instance somebody else started keeps running. The wrapper is marked refused,
+     * so {@link #instance()} fails from then on, its background work stops, and an instance this class started is
+     * shut down. An instance somebody else started is left running. The refusal is logged by code and carries no
+     * key material.
      */
     private void watchForJoiners(HazelcastInstance watched) {
-        watched.getCluster().addMembershipListener(new com.hazelcast.cluster.InitialMembershipListener() {
+        joinerWatch.set(watched.getCluster().addMembershipListener(new InitialMembershipListener() {
             /** Called as the listener is registered, with the members then present: a join that came earlier. */
             @Override
-            public void init(com.hazelcast.cluster.InitialMembershipEvent event) {
+            public void init(InitialMembershipEvent event) {
                 if (event.getMembers().size() > 1) {
                     refuseAfterJoin();
                 }
@@ -167,19 +178,20 @@ public final class PrivacyCluster implements AutoCloseable {
             @Override
             public void memberRemoved(com.hazelcast.cluster.MembershipEvent event) {
             }
-        });
+        }));
     }
 
     private void refuseAfterJoin() {
-        if (refused) {
+        if (!refused.compareAndSet(false, true)) {
             return;
         }
-        refused = true;
+        refusalsLogged.incrementAndGet();
         LOG.error("{}: a member joined a member that holds no cluster key; this member is closed",
                 Code.MISSING_CLUSTER_KEY);
         legacyChecks.shutdownNow();
         legacyWatchdog.shutdownNow();
         sweeper.close();
+        removeListeners();
         if (owned) {
             // Off the listener thread: a shutdown from inside a membership event can wait on itself.
             Thread stopper = new Thread(instance::shutdown, "dataprism-keyless-stop");
@@ -190,7 +202,26 @@ public final class PrivacyCluster implements AutoCloseable {
 
     /** Whether this member was closed for finding another member beside it without a cluster key. */
     boolean isRefused() {
-        return refused;
+        return refused.get();
+    }
+
+    /** How many times the refusal was logged; one, however many joins were announced. */
+    int refusalsLogged() {
+        return refusalsLogged.get();
+    }
+
+    /** Removes both listeners this wrapper put on the instance; safe to call twice and after a shutdown. */
+    private void removeListeners() {
+        for (var holder : List.of(legacyWatch, joinerWatch)) {
+            UUID id = holder.getAndSet(null);
+            if (id != null) {
+                try {
+                    instance.getCluster().removeMembershipListener(id);
+                } catch (RuntimeException ignored) {
+                    // The instance may already be gone.
+                }
+            }
+        }
     }
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PrivacyCluster.class);
@@ -217,7 +248,7 @@ public final class PrivacyCluster implements AutoCloseable {
             ClusterMembership::legacyEntryCounts;
     private final java.util.concurrent.atomic.AtomicInteger legacyEntries = new java.util.concurrent.atomic.AtomicInteger();
     private volatile long lastLegacyWarnNanos = System.nanoTime() - LEGACY_WARN_INTERVAL_NANOS;
-    private final java.util.UUID legacyWatch;
+    private final AtomicReference<UUID> legacyWatch = new AtomicReference<>();
 
     /**
      * Re-runs the pre-0.8 check on every member join, off the listener thread and bounded in time (the limit is enforced by a separate watchdog thread). A running
@@ -225,7 +256,7 @@ public final class PrivacyCluster implements AutoCloseable {
      * count is logged at most once a minute, never an entry. The count is exported as the gauge
      * {@code dataprism.cluster.legacy.entries}.
      */
-    private java.util.UUID startLegacyWatch(HazelcastInstance watched) {
+    private UUID startLegacyWatch(HazelcastInstance watched) {
         return watched.getCluster().addMembershipListener(new com.hazelcast.cluster.MembershipListener() {
             @Override
             public void memberAdded(com.hazelcast.cluster.MembershipEvent event) {
@@ -260,7 +291,7 @@ public final class PrivacyCluster implements AutoCloseable {
         }
     }
 
-    /** Entries found in the pre-0.8 maps by the latest membership check; 0 if none. Read by the legacy-entries gauge. */
+    /** Entries found in the pre-0.8 maps by the latest membership check; 0 if none. Read by the gauge. */
     public int legacyEntries() {
         return legacyEntries.get();
     }
@@ -363,28 +394,11 @@ public final class PrivacyCluster implements AutoCloseable {
      * loopback address. The advertised address alone says nothing about the listening socket.
      */
     private static boolean boundToLoopback(HazelcastInstance instance, Config config) {
-        HazelcastProperties properties = new HazelcastProperties(config);
-        if (properties.getBoolean(ClusterProperty.SOCKET_BIND_ANY)
-                || properties.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY)) {
-            return false;
-        }
-        var network = config.getNetworkConfig();
-        var interfaces = network.getInterfaces();
-        if (!interfaces.isEnabled() || interfaces.getInterfaces().isEmpty()
-                || !interfaces.getInterfaces().stream().allMatch(PrivacyCluster::loopbackEntry)) {
-            return false;
-        }
-        String publicAddress = network.getPublicAddress();
-        if (publicAddress != null && !publicAddress.isBlank()) {
+        if (!ClusterMembership.reachableOnlyFromThisHost(config)) {
             return false;
         }
         java.net.InetAddress address = instance.getCluster().getLocalMember().getSocketAddress().getAddress();
         return address != null && address.isLoopbackAddress();
-    }
-
-    /** An interface entry within 127.0.0.0/8: an IPv4 literal or a pattern whose first octet is 127. */
-    private static boolean loopbackEntry(String entry) {
-        return entry != null && entry.strip().startsWith("127.");
     }
 
     /** Whether the config names any way of finding other members. */
@@ -625,7 +639,8 @@ public final class PrivacyCluster implements AutoCloseable {
         }
         PrivacyCluster cluster = new PrivacyCluster(started, reidentificationEnabled, approvalSweepInterval, keys,
                 true);
-        if (cluster.refused) {
+        if (cluster.refused.get()) {
+            cluster.removeListeners();
             throw missingKeys();
         }
         return cluster;
@@ -688,7 +703,8 @@ public final class PrivacyCluster implements AutoCloseable {
         ClusterMembership.refuseUnsealedState(instance, true);
         PrivacyCluster wrapped = new PrivacyCluster(instance, reidentificationEnabled, approvalSweepInterval, keys,
                 false);
-        if (wrapped.refused) {
+        if (wrapped.refused.get()) {
+            wrapped.removeListeners();
             // A member joined between the checks above and the listener's registration.
             throw missingKeys();
         }
@@ -965,7 +981,7 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     public HazelcastInstance instance() {
-        if (refused) {
+        if (refused.get()) {
             throw new PrivacyClusterRefusal(Code.MISSING_CLUSTER_KEY,
                     "a member joined this member, which holds no cluster key; it is closed");
         }
@@ -1007,11 +1023,7 @@ public final class PrivacyCluster implements AutoCloseable {
 
     @Override
     public void close() {
-        try {
-            instance.getCluster().removeMembershipListener(legacyWatch);
-        } catch (RuntimeException ignored) {
-            // The instance may already be gone.
-        }
+        removeListeners();
         legacyChecks.shutdownNow();
         legacyWatchdog.shutdownNow();
         sweeper.close();

@@ -374,7 +374,7 @@ public final class DataPrismPropertiesValidator {
         }
         try {
             MemberInterfaceCheck.check(h.getMember().getInterface());
-        } catch (LinkageError hazelcastAbsent) {
+        } catch (NoClassDefFoundError hazelcastAbsent) {
             // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
         }
     }
@@ -398,7 +398,7 @@ public final class DataPrismPropertiesValidator {
                 members = io.github.aindriub.dataprism.hazelcast.PrivacyCluster.countTcpIpMembers(
                         h.getJoin().getMembers(), port);
                 hostname = io.github.aindriub.dataprism.hazelcast.PrivacyCluster.hasHostname(h.getJoin().getMembers());
-            } catch (LinkageError hazelcastAbsent) {
+            } catch (NoClassDefFoundError hazelcastAbsent) {
                 return; // The optional dependency is missing; startup is refused later for that (MISSING_SHARED_BUDGET).
             } catch (IllegalArgumentException unexpandable) {
                 uncountable = true;
