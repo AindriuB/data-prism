@@ -23,6 +23,9 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
 
     public static final int DEFAULT_PORT = 5701;
 
+    /** Hazelcast reads this as a Config property or a system property, and it overrides the picked address. */
+    private static final String LOCAL_ADDRESS = "hazelcast.local.localAddress";
+
     private static final Pattern OCTET = Pattern.compile("\\*|\\d{1,3}(-\\d{1,3})?");
 
     /** Exactly one way of finding the other members. */
@@ -161,14 +164,23 @@ public record ClusterMembership(String clusterName, Join join, int port, Optiona
 
     /**
      * Whether the config makes the member reachable from this host only: neither socket setting binds every
-     * interface, the interfaces are enabled and all loopback entries, no public address is advertised, and no member
-     * address provider is enabled. Read the way Hazelcast reads its properties. {@code PrivacyCluster.using} asks
+     * interface, the interfaces are enabled and all loopback entries, no public address is advertised, no member
+     * address provider is enabled, and no non-loopback {@code hazelcast.local.localAddress} (Config or system
+     * property) overrides the address picked. Read the way Hazelcast reads its properties. {@code PrivacyCluster.using} asks
      * the same of a supplied instance, so the two cannot disagree.
      */
     static boolean reachableOnlyFromThisHost(Config config) {
         HazelcastProperties properties = new HazelcastProperties(config);
         if (properties.getBoolean(ClusterProperty.SOCKET_BIND_ANY)
                 || properties.getBoolean(ClusterProperty.SOCKET_SERVER_BIND_ANY)) {
+            return false;
+        }
+        String localAddress = config.getProperty(LOCAL_ADDRESS);
+        if (localAddress == null) {
+            localAddress = System.getProperty(LOCAL_ADDRESS);
+        }
+        if (localAddress != null && !localAddress.isBlank() && !localAddress.strip().startsWith("127.")
+                && !localAddress.strip().equals("localhost") && !localAddress.strip().equals("::1")) {
             return false;
         }
         var network = config.getNetworkConfig();

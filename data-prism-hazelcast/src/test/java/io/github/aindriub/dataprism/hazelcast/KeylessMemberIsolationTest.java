@@ -546,4 +546,39 @@ class KeylessMemberIsolationTest {
         assertThat(wrapped.isRefused()).isTrue();
         assertThat(wrapped.refusalsLogged()).isEqualTo(1);
     }
+
+    // ---- the local address override -----------------------------------------------------------------
+
+    @Test
+    void aNonLoopbackLocalAddressSystemPropertyRefusesAKeylessMember() {
+        String key = "hazelcast.local.localAddress";
+        String before = System.getProperty(key);
+        System.setProperty(key, "10.1.2.3");
+        try {
+            Config config = keylessConfig(TestMembers.uniqueName("localaddr"), FreePorts.consecutive(1));
+            refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.embedded(config, false)));
+            assertThat(Hazelcast.getAllHazelcastInstances()).isEmpty();
+            System.setProperty(key, "127.0.0.1");
+            ClusterMembership.isolate(keylessConfig(TestMembers.uniqueName("localaddr"), 5701));
+        } finally {
+            if (before == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, before);
+            }
+        }
+    }
+
+    @Test
+    void aNonLoopbackLocalAddressConfigPropertyRefusesAKeylessMember() {
+        Config config = keylessConfig(TestMembers.uniqueName("localaddr"), FreePorts.consecutive(1));
+        config.setProperty("hazelcast.local.localAddress", "10.1.2.3");
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.embedded(config, false)));
+        HazelcastInstance real = soloInstance();
+        Config exposed = keylessConfig(TestMembers.uniqueName("localaddr"), 5701);
+        exposed.setProperty("hazelcast.local.localAddress", "10.1.2.3");
+        HazelcastInstance reported = forwarding(HazelcastInstance.class, real,
+                (m, a) -> m.getName().equals("getConfig") ? exposed : NOT_OVERRIDDEN);
+        refusedAsMissingKeys(catchThrowable(() -> PrivacyCluster.using(reported, false)));
+    }
 }
