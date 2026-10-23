@@ -117,9 +117,9 @@ Related, not fixed in 0.7.1: a Map of a record type has a similar element-type b
 
 #### 0.8 plan (agreed 2026-10-20)
 
-Task 215 (sealed cluster) and the core planning produced 42 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome has the sealed-cluster table. The combined graph counts 203 and 206 to 211 as landed, but that is unverified (see the planning gap below). No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
+Task 215 (sealed cluster) and the core planning produced 42 briefs: 213, the sealed-cluster tasks 218 to 231 and 264, and the core tasks 238 to 263. Each brief carries its dependencies and a **Wave** line; 215's Outcome (now in `tasks/retired/`) has the sealed-cluster table, superseded by the table below. The waves used to count 203 and 206 to 211 as landed. A planner audit on 2026-10-23 found that only 209 landed: 203, 206, 207, 208, 210 and 211 have no commits, branches or code on `main`. They are now placed in the table by their Depends-on edges, and every open brief's **Wave** line says so. The superseded briefs 204, 205 and 212 and the landed 215 are retired. 34 briefs remain to build for 0.8.0 (32 if the owner cuts both 207 and 264; see the open decisions under the table). No decisions remain open for 0.8: the 34 in `tasks/OD-08-core-open-decisions.md` (OD-08-1 to 18) and `tasks/OD-215-open-decisions.md` (OD-215-1 to 16) are recorded as decided. 264 is the one brief the owner accepts slipping to 0.9.0; its fallback is agreed (links refused only on members joining via `tcp-ip` or `kubernetes`).
 
-Order by wave (briefs in a wave can run in parallel when their owned files do not overlap; recomputed 2026-10-21 for the 0.7.1 edges: 245 moved to 4, 248 to 4, 262 to 5, 265 added at 3, 266 added at 5):
+Order by wave (briefs in a wave can run in parallel when their owned files do not overlap; recomputed 2026-10-21 for the 0.7.1 edges: 245 moved to 4, 248 to 4, 262 to 5, 265 added at 3, 266 added at 5; recomputed 2026-10-23 from every open brief's Depends on, with 203, 206, 207, 208, 210 and 211 as open: 203 and 206 join wave 4, 207 and 210 wave 5, 208 wave 6 and 211 wave 7; 262 moves to 6 and 256 to 7, because 262 waits for 210 and 256 for 208; nothing at wave 8 or later moves. Owns were intersected pairwise inside every wave and no two briefs in one wave share a file):
 
 | Wave | Briefs |
 |---|---|
@@ -127,9 +127,10 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 2 | 220, 221, 240 landed 2026-10-21 (PR record/0.8-wave2) |
 | 3 | 222 and 242 landed 2026-10-22 (PR record/0.8-wave3); 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
 | 4 | 223, 241, 248, 269 (settle the link attempt limiter's contract before 251 and 264; owner decision 2026-10-22; OD-269-1 to 3 decided (a) by the owner 2026-10-22: a `locked` pre-check then one atomic `recordFailure` judged on the count after the increment; the SPI takes `AttemptSubject(scopeId, principalId)`, `LinkKeys.attemptCounterKey` deleted, in-memory HMAC under a random per-instance key and 264 under the name key; ceiling 100,000 entries per instance as a constructor parameter, no property in 0.8, no live entry evicted, new subject at the ceiling is OVER_LIMIT and not stored, FIFO expiry sweep of at most two per call (at most 18 at the ceiling, revised 2026-10-23); OD-269-4 done: 269 added to 250's Depends on; brief revised 2026-10-23 after the external review of PR #155, decisions unchanged: one `LinkAttemptGate.open` call, the stated bound of limit plus in-flight, and the ceiling consequence (a subject that is not stored is never locked), accepted by the owner 2026-10-23; 252, 255 and 264 updated to the gate); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
-| 5 | 224, 225, 226, 227, 256, 262; 266 (0.7.1 release, after 265, 267, 244, 245, 257, 268) |
-| 6 | 228, 246 |
-| 7 | 229, 247 |
+| 4 (added 2026-10-23) | 203, 206: open, not started; no open dependency |
+| 5 | 207, 210, 224, 225, 226, 227; 266 (0.7.1 release, after 265, 267, 244, 245, 257, 268) |
+| 6 | 208, 228, 246, 262 |
+| 7 | 211, 229, 247, 256 |
 | 8 | 249, 250, 251 |
 | 9 | 252, 254 |
 | 10 | 253 |
@@ -138,6 +139,11 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 13 | 231, 261, 264 |
 | 14 | 260, 263 |
 | last (14) | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
+
+Open owner decisions from the 2026-10-23 re-plan (flagged, not decided):
+
+- Cut 207 (size-capped audit segments) from 0.8? Only 211 and 213 depend on it. Cutting it removes one brief and 211's segment-size property; it moves no other brief, because 211 still waits for 208 at wave 6, and the critical path runs through 223, 226, 246, 247, 250, 254, 255 and 230.
+- Cut 264 (shared Hazelcast link limiter) from 0.8? The owner already accepts it slipping to 0.9.0, with the fallback agreed. Cutting it now drops the 264 edges of 213, 260 and 263 (each brief says how); 260 moves from wave 14 to 13, and 213 and 263 stay at 14 behind 231.
 
 Follow-ups from wave 1 (landed 2026-10-21), each belonging to the brief named:
 
@@ -165,25 +171,47 @@ A second review round on PR #154 (4 Medium, 13 Low, 4 Nit; 2026-10-23) is answer
 
 Follow-ups from the external review of PR #154 (rounds 1–4), 2026-10-23. The owner agreed on 2026-10-23 that once a review round finds nothing Medium or worse the PR merges and the Lows become follow-ups; round 4 reached that bar. Each item belongs to the brief named (also a dated Context bullet in 227, 251, 252 and 261; owner decisions stay here only):
 
-- 222/hazelcast, to 227 (the next `PrivacyCluster` editor): fix `PrivacyCluster` import grouping and one remaining inline `java.util.concurrent.atomic.AtomicInteger`. The `INVALID_CLUSTER_INTERFACE` wording in `docs/configuration.md` and the contract register is already fixed.
-- 242/core.link, to 251 unless noted: the `&& knownKey` guard in `LinkCodec` has no test of its own (defence in depth behind `UNKNOWN_KEY`), so add a test or a comment; 251 must fingerprint only values within the chained-key cap, because `ScopeKeys.fingerprint` now refuses values over 65535 bytes, and the Javadoc should say so.
+- 222/hazelcast, to 227 (the next `PrivacyCluster` editor): fix `PrivacyCluster` import grouping. Corrected 2026-10-23 (round 5): not "one remaining inline name" but dozens of inline fully qualified names in the tests 222 added, and the `ClusterMembership` constants are misplaced; 227 now owns `ClusterMembership.java` for this. The `INVALID_CLUSTER_INTERFACE` wording added to `docs/configuration.md`, `docs/multiple-instances.md` and the contract register is not fixed: it holds for a keyed solo member only, and a keyless one refuses `MISSING_CLUSTER_KEY`. 230 corrects `docs/configuration.md` and the register, 213 corrects `docs/multiple-instances.md`.
+- 242/core.link, to 251 unless noted: the `&& knownKey` guard in `LinkCodec` is defence in depth behind `UNKNOWN_KEY`, and no test can kill its mutant, so add a comment saying so and exclude it from PIT (corrected 2026-10-23; 251's Context bullet still says "add a test or a comment" and is read as this, because 251's body is being revised in another PR); 251 must fingerprint only values within the chained-key cap, because `ScopeKeys.fingerprint` now refuses values over 65535 bytes, and the Javadoc should say so.
 - 242, owner/254: `SealResult.OmitReason.BINDING_TOO_LONG` also covers empty ids; consider renaming it to `BINDING_INVALID` before the codes are published.
 - 242, owner decision: the `Optional` record components (`FollowPayload.resolverName`, the `CatalogPagePayload` filters, `LinkSettings.lifetime`) need a rule in `docs/conventions.md`, which has none.
 - 252: an MCP client may send "" meaning "no link" and the codec counts "" as `MALFORMED`; decide whether to map "" to null before `open`, so a confused agent does not lock itself out.
 - 261: `docs/audit.md` must list `REFUSED:LINK_ATTEMPTS_{LOCKED,OVER_LIMIT,CEILING,LIMITER_UNAVAILABLE,OPEN_FAILED}` (PR #157, the 269 revision) and `REFUSED:LINK_KEY_UNAVAILABLE`.
 
+Follow-ups from the external review of PR #154, round 5 (2026-10-23). Each belongs to the brief named; where a brief's body is not edited here (250, 251, 252, 255, 264 and 269 are being revised in another PR), the item is recorded here only:
+
+- [security] 227: a keyless member accepts `localhost` as `localAddress`, and `PrivacyCluster.launch()` never checks the bound address (`using()` does). Context bullet in 227.
+- [security] 227 (230 if 227 has merged): on a keyed member, `-Dhazelcast.socket.server.bind.any=true` overrides the required interface; the keyless path closes this and the keyed path does not. Context bullet in 227.
+- [security] 0.8.0 release cut (no brief yet), version sweep: `docker/multi-instance/kubernetes.yaml` adds the 0.8 key settings but pins `ghcr.io/aindriub/data-prism-server:0.7.0`, which ignores them. `docker/multi-instance/compose.yaml` likely has the same problem through the images it takes from `../../compose.yaml`; check both.
+- 213: `docs/multiple-instances.md` says `member.interface` is optional and binds every interface. Context bullet in 213.
+- 213: the `ClusterMembership` interface component changed from `Optional<String>` to `String`, a breaking change for plain-Java callers with no migration note; add it to `docs/migration-0.8.md` and `CHANGELOG.md`. Context bullet in 213.
+- 230: two places decide "is this the starter's cluster" (`ClusterBackedState.builtHere` and `PropertiesValidation.isFrameworkCluster`); unify them. Context bullet in 230.
+- 230: `ClusterLegacyGaugeTest` cannot detect a double registration, because its recording map overwrites. Context bullet in 230.
+- 227: `KeylessMemberIsolationTest:300` sleep-polls against a 20 s deadline, against the "no sleeps" rule. Context bullet in 227.
+- 269 (PLAN only): two `LinkKeysTest` leak assertions cannot fail (one checks for "shared-", the other a constant `toString`).
+- 251 (PLAN only): no open-side test sits at the exact scope or token end, so an off-by-one mutant survives in `LinkCodec.open`.
+- 269 (PLAN only): the limiter constructor throws a bare `IllegalArgumentException` instead of `LinkConfigurationException`.
+- 255 (PLAN only): held key ids from the supplier are not checked against the key-id grammar.
+- Nits:
+  - 251 or 269, whichever owns the test (PLAN only): the gauge-outage case asserts only `counted()`.
+  - 269 (PLAN only): `InMemoryLinkAttemptLimiterTest` shuts its pool down only on success; use try/finally or try-with-resources.
+  - 253: `LinkArchitectureTest`'s sanity check counts `mcp` and `connectors` together. Context bullet in 253.
+  - 251 (PLAN only): an unused `java.time.Duration` import in `LinkCodec`.
+  - 210: a dead property line in `StarterStartupFailureTest`. Context bullet in 210.
+  - Not recorded: sealed-links section 4's counter-key formula lacks its label; 269 handles it.
+
 Follow-ups from wave 3 (222 and 242 landed 2026-10-22), each belonging to the brief named (also recorded as dated Context bullets in the briefs, except where noted):
 
-- 211, 254, 255: extend `ClusterKeyResolution`'s shared-key check (today the privacy HMAC key only) to the audit key and the link keys, and add the file and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows to their Owns.
+- 211, 254, 255: extend `ClusterKeyResolution`'s shared-key check (today the privacy HMAC key only) to the audit key and the link keys. The file, its test and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows are in all three Owns since 2026-10-23 (255's in its Owns lines only).
 - 255: supply `LinkKeys`' held-key-id set (only the current key verifies until then) and add a health signal for a supplier that returns null or throws.
 - 252: the timing soak should cover the small post-authentication difference between forged and genuine tokens.
 - 264: the per-principal attempt counter splits across key ids in rotation phase 2, so decide whether to accept that or key the counter on something stable; the window is decided by the stored start and the clock, not by entry expiry.
-- 213: `docs/multiple-instances.md` and `docs/migration-0.8.md` still call `member.interface` optional; fix them. Also the packaged server's environment resolver is registered only when `hmac-key.environment-variable` is set, so a cluster key given as `provider-reference` needs the same reviewed resolver extension as the HMAC key.
+- 213 (corrected 2026-10-23): `docs/multiple-instances.md` calls `member.interface` optional and says a member without it binds every interface; correct it. `docs/migration-0.8.md` is not wrong but is missing the `member.interface` entry; add it. The packaged server's environment resolver no longer reads every reference with `System.getenv`: since 222's round-2 fix it refuses a `provider-reference` with `MISSING_KEY_PROVIDER`, and it is registered only when `dataprism.privacy.hmac-key.environment-variable` is set, so a cluster or name key given as `provider-reference` needs a reviewed resolver extension, as the HMAC key does.
 - 227: the three deferred items from 222 (see above).
 - Design: sealed-links obligation 10's timing soak is still unwritten (252 writes it, 263 runs it).
 - Small (no brief): `docs-site/requirements.txt` lacks PyYAML, which `docs-site/hooks/check_site.py` and `docs-site/hooks/check_snippet_markers.py` import, so the check hooks fail in a clean environment.
 
-Planning gap, needs a planner audit (owner has not decided): the combined graph above counts 203 and 206 to 211 as landed, but their task files are still open in `docs/plan/tasks/` and their code is not on `main`. 222's implementer confirmed there is no audit key on `main`. Briefs that depend on those tasks (211 for the audit key, 254 and 255 for the link keys) may have been sequenced on a false premise. Run `planner` to check each of 203 and 206 to 211 against `main` and re-wave the dependants.
+Planning gap: closed 2026-10-23. The planner audit confirmed that 203, 206, 207, 208, 210 and 211 are not started and that 209 landed. They are placed in the wave table above; 211 lands at wave 7, before 254 (9) and 255 (11), so the link-key and audit-key briefs keep their waves. 211, 254 and 255 now own `ClusterKeyResolution.java`.
 
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 

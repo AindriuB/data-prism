@@ -6,6 +6,7 @@ Renumbered from 191 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 **Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` after 0.7.0 integration; refresh the cited paths and call sites against that base before implementation.
 **Depends on:** none
+**Wave:** 4 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Decided (owner, 2026-10-15), D-1.0-4:** the keyed chain is opt-in and off by default. It uses a key
 separate from the pseudonymisation key; using the same key is a startup refusal (task 211). It claims
 only to resist a writer who lacks the key, not the operator. **This partly reverses the 2026-09-23

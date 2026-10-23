@@ -6,6 +6,7 @@ Renumbered from 192 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 **Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` once 206 has merged
 **Depends on:** 206 (both edit `AuditChainVerifier` and `AuditRetention`)
+**Wave:** 5 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/sink/SegmentedFileAuditSink.java
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/audit/retention/AuditRetention.java *(segment discovery, ordering and per-day deletion only)*

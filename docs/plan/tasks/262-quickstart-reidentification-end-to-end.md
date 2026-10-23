@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch once 210, 245, 222 and 223 have merged
 **Depends on:** 210 (210 owns `docker/server/application.yaml`), 245 (the operator denial behaviour the walkthrough shows), 222 (cluster and name keys, and the keyless multi-member refusal), 223 (the solo-member keys of OD-215-8, which decide what an embedded single member needs configured)
-**Wave:** 5 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - docs/quickstart.md
 - docker/server/application.yaml *(the `dataprism.reidentification`, `dataprism.hazelcast` and operator settings only)*

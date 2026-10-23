@@ -5,7 +5,7 @@
 **Base branch:** `origin/main` once 239, 240, 246, 247 and 248 have merged
 **Depends on:** 239, 240, 248 (the SPI pieces it implements), 246 and 247 (both edit `ConfiguredJsonSourcesAutoConfiguration`)
 **Decisions:** OD-08-8 decided 2026-10-20 (a): `config-location` takes a list; a source name in two files refuses with `DUPLICATE_JSON_SOURCE`.
-**Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 8 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSources.java
 - data-prism-connectors-rest/src/main/java/io/github/aindriub/dataprism/connectors/rest/ConfiguredJsonSource.java

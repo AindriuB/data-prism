@@ -5,7 +5,7 @@
 **Base branch:** `origin/main` once 240, 241, 242 and 247 have merged
 **Depends on:** 240 (chainable paths), 241 (resolver declarations, metric constants), 242 (codec), 247 (labels, visibility, `OrchestrationOptions`, both edit `DefaultContextOrchestrator`), 269 (the settled limiter contract: `AttemptSubject`, `LinkAttemptGate`, no `LinkKeys.attemptCounterKey`)
 **Decisions:** OD-08-7 decided 2026-10-20 (a): no `_links` on `compare_entity_sources` in 0.8.
-**Wave:** 8 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 8 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/links/LinkBuilder.java *(new)*
 - data-prism-orchestration/src/main/java/io/github/aindriub/dataprism/orchestration/links/LinkTargets.java *(new)*

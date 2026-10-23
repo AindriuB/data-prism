@@ -6,6 +6,7 @@ Renumbered from 195 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 **Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` once 203 and 209 have merged
 **Depends on:** 203, 209 (209 only because both edit the shared Spring files listed below)
+**Wave:** 5 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Serialised with:** 208, 211, and the cluster-wiring successor tasks (shared: `PrivacyExtensionPoints.java`, the bean-inventory lists,
 `frozen-property-names.txt`, `DataPrismPropertiesValidator.java`, `docs/configuration.md`)
 **Decided (owner, 2026-10-15):**
@@ -48,6 +49,7 @@ decided how cases are authorised refuses to start. One that wants the old behavi
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ConfigurationMetadataDocumentedTest.java:27-56 and PropertyNamesFrozenTest.java:23-48 — every new property needs a description, a `docs/configuration.md` row and a frozen-list line
 - `rg -l 'security-policy' --glob '!**/target/**'` lists every configuration that starts a context, and each needs the new setting or a bean
 - docker/distribution/Dockerfile:54-58 — the published image ships no `application.yaml`, so it is not affected; `docker/server/application.yaml` is the quickstart's
+- From the external review of PR #154, round 5 (2026-10-23): `StarterStartupFailureTest` carries a dead property line (one the context never reads). Remove it while adding this task's configuration to the file.
 
 ## Acceptance
 - [ ] `dataprism.security-policy.case-authorisation` binds as a string. Its only accepted value is `token-trusted`; any other value refuses startup with `UNSUPPORTED_CASE_AUTHORISATION`.

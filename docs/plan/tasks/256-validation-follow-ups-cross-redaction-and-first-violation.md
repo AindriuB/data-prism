@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 208 has merged
 **Depends on:** 208 (208 owns `SensitivePatternValidator.java` and the recogniser cases of `PatternValidatorWiringTest`), 223 (and through it 222)
-**Wave:** 5 (combined 0.8 graph of 213, 218 to 231 and 238 to 264; 203 and 206 to 211 counted as landed)
+**Wave:** 7 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/RawValueLeakValidator.java *(the path-redaction step only)*
 - data-prism-validation/src/main/java/io/github/aindriub/dataprism/validation/SensitivePatternValidator.java *(the path-redaction step only)*

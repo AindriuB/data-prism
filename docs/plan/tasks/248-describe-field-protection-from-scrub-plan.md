@@ -4,7 +4,7 @@
 **Release:** 0.8.0
 **Base branch:** `origin/main` once 240, 265 and 267 have merged
 **Depends on:** 240 (`ChainableFields`), 265 (both edit `JsonTreeScrubbingEngine.java`. 265 corrects the nested-type rule, so the type an object value or array element descends into, and the `describe` override must copy that corrected rule; added 2026-10-21), 267 (both edit `JsonTreeScrubbingEngine.java`. 267 makes an array inside an array keep the field's policy only for its scalars, and sends an object inside an inner array to the unclassified-structure path, so the describer must never describe such an object's fields; added 2026-10-21)
-**Wave:** 5 (combined 0.8 graph of 213, 218 to 231 and 238 to 267; 203 and 206 to 211 counted as landed)
+**Wave:** 4 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/spi/ScrubbingEngine.java *(the `describe` default method only)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/model/ModelDescription.java *(new)*

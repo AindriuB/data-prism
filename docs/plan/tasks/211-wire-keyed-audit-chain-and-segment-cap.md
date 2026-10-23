@@ -6,6 +6,7 @@ Renumbered from 196 on 2026-10-19 (id collision with the 0.7.0 plan). Reconciled
 **Release:** 0.8.0 (before the 0.9 API freeze)
 **Base branch:** `origin/main` once 206, 207, 208 and 210 have merged
 **Depends on:** 206, 207, 208, 210 (210 only because both edit the shared Spring files below)
+**Wave:** 7 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Serialised with:** 210, 208, and the cluster-wiring successor tasks
 **Decided (owner, 2026-10-15), D-1.0-4:** the keyed chain is opt-in and off by default. It uses a key
 separate from the pseudonymisation key, and configuring the same key is a startup refusal. It claims
@@ -24,7 +25,11 @@ only to resist a writer without the key, not the operator.
 - data-prism-spring-boot-autoconfigure/src/test/resources/bean-inventory/*.txt *(regenerated; only lines for beans this task adds)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/KeyedAuditChainConfigurationTest.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/AuditSegmentSizeConfigurationTest.java *(new)*
-- docs/configuration.md *(the `dataprism.audit` rows and the prose around them only)*
+- docs/configuration.md *(the `dataprism.audit` rows and the prose around them, and the `CLUSTER_KEY_SHARED` / `NAME_KEY_SHARED` rows of the cluster-key refusal-order table, only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ClusterKeyResolution.java *(the shared-key check only: also compare the cluster keys and the name key against the audit key (current and retired), by key id and by material; added 2026-10-23 from 222's Outcome item (d))*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/ClusterKeyResolutionTest.java *(insertions only: the rows for the audit key (current and retired))*
+- docs/plan/design/contract-register.md *(the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows only)*
+- docs/plan/design/cluster-security.md *(the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of the code table only)*
 
 ## Goal
 Expose task 206's keyed chain and task 207's segment size cap through `dataprism.audit.*`. A key that is
@@ -38,7 +43,7 @@ be able to verify segments written under a retired key, or it would stop purging
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/ConfiguredSecretKeyProvider.java — how the pseudonymisation key is resolved, for the same-key check
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/AuditMaintenance.java and AuditIntegrityHealth.java — the retention run and the `auditIntegrity` health contributor that reports its failure code
 - data-prism-spring-boot-autoconfigure/src/test/resources/configuration-metadata-gaps.txt:3-9 — the `outside-binding` precedent for map sub-keys
-- From 222 (2026-10-22): `ClusterKeyResolution` (spring-boot-autoconfigure, `PrivacyCluster` bean path) compares cluster and name keys only against the privacy HMAC key, by id and by material. Extend it to compare against the audit key, and add it to this brief's Owns together with the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of the contract register.
+- From 222 (2026-10-22): `ClusterKeyResolution` (spring-boot-autoconfigure, `PrivacyCluster` bean path) compares cluster and name keys only against the privacy HMAC key, by id and by material. Extend it to compare against the audit key, and add it to this brief's Owns together with the `CLUSTER_KEY_SHARED` and `NAME_KEY_SHARED` rows of the contract register. Done 2026-10-23 (planner audit): the file, its test, the two register rows, the two code-table rows of `cluster-security.md` and the two refusal-order rows of `docs/configuration.md` are in the Owns. 254 and 255 extend the same check for the link keys after this task.
 
 ## Acceptance
 - [ ] `dataprism.audit.hmac-key.key-id`, `.environment-variable` and `.provider-reference` bind, with exactly one of the last two required when the group is set. There is no inline key-value property. Unset means unkeyed, and a test asserts that default.
