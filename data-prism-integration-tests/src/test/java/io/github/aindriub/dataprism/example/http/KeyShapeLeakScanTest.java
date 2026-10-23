@@ -22,6 +22,8 @@ import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -148,9 +150,9 @@ class KeyShapeLeakScanTest {
         SecurityPolicy policy = new SecurityPolicy(Set.of(purpose),
                 Map.of(role, Set.of(Capability.GET_ENTITY_CONTEXT)));
         AuthorizationService authorization =
-                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                new PurposeValidator(Set.of(purpose)));
+                new PurposeValidator(Set.of(purpose)), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool get = new GetEntityContextTool(assembly.orchestrator(), authorization, scopes,
                 PrivacyMetrics.none(), new AuditRecorder(sink, CLOCK, "key-shape-mcp"), CLOCK, null,
                 ToolOptions.defaults().noAdmission().build());

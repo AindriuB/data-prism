@@ -32,6 +32,8 @@ import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.OversightPolicy;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.security.ToolAdmission;
@@ -139,11 +141,11 @@ class DenialAuditUnavailableToolTest {
         boolean noCapability = path.equals("authorisation");
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"), Map.of("investigator",
                 noCapability ? Set.<String>of() : Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         Set<String> purposes = path.equals("scope") ? Set.of("other") : Set.of("demonstration");
         ScopeResolver scopes = new ScopeResolver(
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
-                Duration.ofHours(8), new PurposeValidator(purposes));
+                Duration.ofHours(8), new PurposeValidator(purposes), CaseAuthorizer.tokenTrusted());
 
         ToolOptions.Builder options = ToolOptions.defaults();
         if (path.equals("admission")) {

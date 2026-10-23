@@ -47,6 +47,8 @@ import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.OversightPolicy;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.security.ToolAdmission;
@@ -200,9 +202,9 @@ class UnregisteredEntityTypeAuditTest {
                                                  AuditRecorder audit) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         ParameterFingerprinter fingerprinter = new ParameterFingerprinter(KEYS);
         InMemoryOversightState state = new InMemoryOversightState();
         if (path == Path_.ADMISSION_REFUSED) {
@@ -395,9 +397,9 @@ class UnregisteredEntityTypeAuditTest {
         }, FIXED, "test-150-stdio");
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         String init = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{"
                 + "\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"synthetic-client\",\"version\":\"1\"}}}\n"

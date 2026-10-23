@@ -29,6 +29,8 @@ import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
@@ -113,10 +115,10 @@ class OrchestratorRefusalCorrelationTest {
             DefaultContextOrchestrator orchestrator) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(
                 PseudonymisationVersion.HMAC_SHA256_V1.withKey("key-1").withVocabulary("vocab-1"),
-                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
+                Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         GetEntityContextTool get = new GetEntityContextTool(orchestrator, authz, scopes,
                 PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().noAdmission().build());
         CompareEntitySourcesTool compare = new CompareEntitySourcesTool(orchestrator, authz, scopes,

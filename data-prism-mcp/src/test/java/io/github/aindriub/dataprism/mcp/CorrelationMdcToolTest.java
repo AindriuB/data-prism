@@ -34,6 +34,8 @@ import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.security.ToolAdmission;
@@ -150,9 +152,9 @@ class CorrelationMdcToolTest {
                                                  InboundCorrelation inbound, String subject) {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        AuthorizationService authz = new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopes = new ScopeResolver(VERSION, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
         ParameterFingerprinter fingerprinter = new ParameterFingerprinter(KEYS);
         BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> handler = tool == 0
                 ? new GetEntityContextTool(orchestrator, authz, scopes, PrivacyMetrics.none(), audit, FIXED, null, ToolOptions.defaults().admission(ToolAdmission.none(), fingerprinter).correlationRequirement(CorrelationRequirement.OPTIONAL).mdc(mdc).build()).specification().callHandler()

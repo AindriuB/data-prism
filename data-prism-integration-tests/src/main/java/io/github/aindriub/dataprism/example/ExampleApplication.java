@@ -12,6 +12,8 @@ import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.security.ToolAdmission;
@@ -81,9 +83,9 @@ public final class ExampleApplication {
 
         SecurityPolicy policy = shippedSecurityPolicy();
         AuthorizationService authorizationService =
-                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+                new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
         ScopeResolver scopeResolver = new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                new PurposeValidator(Set.of(DEVELOPMENT_PURPOSE)));
+                new PurposeValidator(Set.of(DEVELOPMENT_PURPOSE)), CaseAuthorizer.tokenTrusted());
         AuthenticatedCaller developmentCaller = new AuthenticatedCaller("stdio-development", "stdio-development",
                 Set.of(DEVELOPMENT_ROLE), DEVELOPMENT_PURPOSE, DEVELOPMENT_CASE, null);
         AuditRecorder toolAudit = new AuditRecorder(new Slf4jAuditSink(), assembly.clock(), "example-1-mcp");

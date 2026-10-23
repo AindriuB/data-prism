@@ -44,6 +44,8 @@ import io.github.aindriub.dataprism.pseudonymisation.StaticSecretKeyProvider;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.validation.LlmResponseValidator;
@@ -129,12 +131,12 @@ class CompareEntitySourcesToolTest {
     }
 
     private static AuthorizationService authorizationService(SecurityPolicy policy) {
-        return new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        return new AuthorizationService(policy, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
     }
 
     private static ScopeResolver scopeResolver() {
         return new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
     }
 
     private static McpSyncServerExchange exchangeFor(AuthenticatedCaller caller) {

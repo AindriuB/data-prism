@@ -14,6 +14,8 @@ import io.github.aindriub.dataprism.orchestration.ContextResponse;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -89,12 +91,12 @@ class FactoryEntityTypesDeliveryTest {
     private static AuthorizationService authz() {
         return new AuthorizationService(new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES"))),
-                "DEFAULT", PrivacyScopeType.INVESTIGATION);
+                "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
     }
 
     private static ScopeResolver scopes() {
         return new ScopeResolver(PseudonymisationVersion.HMAC_SHA256_V1, Duration.ofHours(8),
-                new PurposeValidator(Set.of("demonstration")));
+                new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
     }
 
     private static String call(String tool) {

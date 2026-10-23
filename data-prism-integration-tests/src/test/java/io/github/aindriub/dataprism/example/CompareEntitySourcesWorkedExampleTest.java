@@ -15,6 +15,8 @@ import io.github.aindriub.dataprism.mcp.ToolOptions;
 import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -83,12 +85,12 @@ class CompareEntitySourcesWorkedExampleTest {
     }
 
     private static AuthorizationService authorizationServiceGranting(Set<String> capabilities) {
-        return new AuthorizationService(policyGranting(capabilities), "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        return new AuthorizationService(policyGranting(capabilities), "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
     }
 
     private static ScopeResolver scopeResolverFor(DataPrismAssembly assembly) {
         return new ScopeResolver(assembly.pseudonymisationVersion(), Duration.ofHours(8),
-                new PurposeValidator(Set.of(PURPOSE)));
+                new PurposeValidator(Set.of(PURPOSE)), CaseAuthorizer.tokenTrusted());
     }
 
     private static McpSyncServerExchange exchangeFor(AuthenticatedCaller caller) {

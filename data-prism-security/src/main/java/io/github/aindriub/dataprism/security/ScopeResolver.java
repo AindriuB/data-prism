@@ -22,21 +22,29 @@ import java.util.Objects;
  *
  * <p>{@link #resolve} fails closed on purpose: a caller whose purpose is not in
  * the configured list is refused rather than resolved into a session, with
- * code {@code UNKNOWN_PURPOSE}.
+ * code {@code UNKNOWN_PURPOSE}. It then asks the {@link CaseAuthorizer} whether
+ * the principal may work on the case, and refuses if the answer is no or cannot
+ * be obtained.
  */
 public final class ScopeResolver {
+
+    public static final String CASE_NOT_AUTHORISED = "CASE_NOT_AUTHORISED";
+    public static final String CASE_AUTHORISATION_UNAVAILABLE = "CASE_AUTHORISATION_UNAVAILABLE";
 
     private final PseudonymisationVersion pseudonymisationVersion;
     private final Duration maxScopeLifetime;
     private final PurposeValidator purposeValidator;
+    private final CaseAuthorizer caseAuthorizer;
 
     public ScopeResolver(
             PseudonymisationVersion pseudonymisationVersion,
             Duration maxScopeLifetime,
-            PurposeValidator purposeValidator) {
+            PurposeValidator purposeValidator,
+            CaseAuthorizer caseAuthorizer) {
         this.pseudonymisationVersion = Objects.requireNonNull(pseudonymisationVersion, "pseudonymisationVersion");
         this.maxScopeLifetime = Objects.requireNonNull(maxScopeLifetime, "maxScopeLifetime");
         this.purposeValidator = Objects.requireNonNull(purposeValidator, "purposeValidator");
+        this.caseAuthorizer = Objects.requireNonNull(caseAuthorizer, "caseAuthorizer");
         if (maxScopeLifetime.isZero() || maxScopeLifetime.isNegative()) {
             throw new IllegalArgumentException("maxScopeLifetime must be positive");
         }
@@ -48,7 +56,10 @@ public final class ScopeResolver {
      *                                  {@code clock}, with the decision's own
      *                                  {@code denialCode} when {@code decision} is not allowed, or
      *                                  with code {@link PurposeValidator#UNKNOWN_PURPOSE} when
-     *                                  {@code caller}'s purpose is not in the configured list
+     *                                  {@code caller}'s purpose is not in the configured list,
+     *                                  with code {@code CASE_NOT_AUTHORISED} when the
+     *                                  {@link CaseAuthorizer} refuses, or with code
+     *                                  {@code CASE_AUTHORISATION_UNAVAILABLE} when it throws
      */
     public PrivacySession resolve(AuthenticatedCaller caller, AuthorizationDecision decision, Clock clock) {
         Objects.requireNonNull(caller, "caller");
@@ -63,6 +74,7 @@ public final class ScopeResolver {
             throw new SecurityRefusedException(decision.denialCode(), "caller is not authorised");
         }
         String purpose = purposeValidator.validate(caller.purpose());
+        requireCaseAccess(caller);
 
         Instant configuredExpiry = now.plus(maxScopeLifetime);
         Instant expiresAt = caller.expiresAt() == null || configuredExpiry.isBefore(caller.expiresAt())
@@ -81,6 +93,20 @@ public final class ScopeResolver {
                 caller.principalId(), caller.clientId(), caller.caseId(), decision.capabilities());
 
         return new PrivacySession(privacyContext, investigationContext);
+    }
+
+    private void requireCaseAccess(AuthenticatedCaller caller) {
+        boolean authorised;
+        try {
+            authorised = caseAuthorizer.isAuthorised(new CaseAccessRequest(
+                    caller.principalId(), caller.clientId(), caller.caseId(), caller.purpose(), caller.roles()));
+        } catch (RuntimeException e) {
+            // The cause is dropped on purpose: its message may carry case or principal data.
+            throw new SecurityRefusedException(CASE_AUTHORISATION_UNAVAILABLE, "case authorisation could not be decided");
+        }
+        if (!authorised) {
+            throw new SecurityRefusedException(CASE_NOT_AUTHORISED, "caller is not authorised for the case");
+        }
     }
 
     private static String scopeId(String caseId) {

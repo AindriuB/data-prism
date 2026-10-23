@@ -19,6 +19,8 @@ import io.github.aindriub.dataprism.security.AuthenticatedCaller;
 import io.github.aindriub.dataprism.security.AuthorizationDecision;
 import io.github.aindriub.dataprism.security.AuthorizationService;
 import io.github.aindriub.dataprism.security.PurposeValidator;
+import io.github.aindriub.dataprism.security.CaseAuthorizer;
+import io.github.aindriub.dataprism.security.ClientAllowlist;
 import io.github.aindriub.dataprism.security.ScopeResolver;
 import io.github.aindriub.dataprism.security.SecurityPolicy;
 import io.github.aindriub.dataprism.security.SecurityRefusedException;
@@ -111,11 +113,11 @@ class MalformedRefusalCodeTest {
     private static AuthorizationService allowingAuthz() {
         SecurityPolicy security = new SecurityPolicy(Set.of("demonstration"),
                 Map.of("investigator", Set.of("GET_ENTITY_CONTEXT", "COMPARE_ENTITY_SOURCES")));
-        return new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION);
+        return new AuthorizationService(security, "DEFAULT", PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
     }
 
     private static ScopeResolver realScopes() {
-        return new ScopeResolver(VERSION, Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")));
+        return new ScopeResolver(VERSION, Duration.ofHours(8), new PurposeValidator(Set.of("demonstration")), CaseAuthorizer.tokenTrusted());
     }
 
     private static ContextOrchestrator unreachable() {
