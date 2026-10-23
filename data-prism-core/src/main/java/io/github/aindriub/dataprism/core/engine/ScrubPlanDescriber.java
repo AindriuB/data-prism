@@ -219,7 +219,12 @@ final class ScrubPlanDescriber {
     }
 
     private void add(String path, Protection protection, String valueNamespace) {
-        found.putIfAbsent(path, new FieldProtection(path, protection, valueNamespace, chainables.get(path)));
+        found.putIfAbsent(path, new FieldProtection(path, protection, valueNamespace, keyNamespace(path)));
+    }
+
+    private String keyNamespace(String path) {
+        KeyNamespace key = chainables.get(path);
+        return key == null ? null : key.value();
     }
 
     private EffectivePrivacyPolicy resolve(FieldMetadata md) {

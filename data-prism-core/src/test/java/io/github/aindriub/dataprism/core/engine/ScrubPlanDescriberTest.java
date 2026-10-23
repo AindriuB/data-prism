@@ -25,7 +25,6 @@ import io.github.aindriub.dataprism.core.policy.PrivacyProfile;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfile.UnclassifiedBehaviour;
 import io.github.aindriub.dataprism.core.policy.PrivacyProfiles;
 import io.github.aindriub.dataprism.core.policy.ProfilePrivacyPolicyResolver;
-import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -405,7 +404,7 @@ class ScrubPlanDescriberTest {
         ModelDescription d = describe(Parcel.class, "DEFAULT", true);
 
         assertThat(d.fields()).contains(
-                new FieldProtection("parcel", Protection.ABSENT, null, new KeyNamespace("parcel-ref")));
+                new FieldProtection("parcel", Protection.ABSENT, null, "parcel-ref"));
         assertThat(d.fields().stream().filter(f -> f.keyNamespace() != null)).hasSize(1);
     }
 
@@ -481,7 +480,7 @@ class ScrubPlanDescriberTest {
         ModelDescription d = describe(Tree.class, "DEFAULT", true);
 
         assertThat(d.fields()).containsExactly(
-                new FieldProtection("id", Protection.ABSENT, null, new KeyNamespace("node-ref")));
+                new FieldProtection("id", Protection.ABSENT, null, "node-ref"));
     }
 
     @Test
@@ -554,7 +553,7 @@ class ScrubPlanDescriberTest {
                 descriptors);
 
         assertThat(engine.describe(Plainly.class, context("DEFAULT"), true).orElseThrow().fields()).contains(
-                new FieldProtection("ref", Protection.ABSENT, null, new KeyNamespace("parcel-ref")));
+                new FieldProtection("ref", Protection.ABSENT, null, "parcel-ref"));
         assertThat(engine.describe(Plainly.class, context("DEFAULT"), false).orElseThrow().fields())
                 .noneMatch(f -> f.keyNamespace() != null);
     }
