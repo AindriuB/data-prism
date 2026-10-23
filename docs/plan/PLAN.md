@@ -55,6 +55,22 @@ Facts found during design, for the 0.7 planner (each checked against the code on
 
 Central warned on 2026-10-22 that the organisation reached its monthly File Count publishing limit; the grace period ends 2026-11-08. Decide before 0.8.0 whether to check the plan or limit in the portal, publish fewer modules, or release at most once a month.
 
+##### Open (owner, deferred 2026-10-23): merge small modules to cut published artifacts
+
+The owner has asked to record the options and return to this later; nothing is decided. This is the architect's assessment of 2026-10-23, and it bears on the File Count item above.
+
+- **Recommended (a):** merge `data-prism-validation`, `data-prism-pseudonymisation` and `data-prism-security` into `data-prism-core`, keeping the package names. Central goes from 13 published jars to 10. Also make `data-prism-spring-boot-starter` pom-only, since it holds only `package-info.java`. Per-release files go from about 400 to about 300 (an estimate). Do it as the last 0.8 task, after 203, 208, 248, 250 and 256 have merged, because their Owns name those module paths.
+  - Cost: three Maven coordinates are removed, which is a breaking change. The build-level barrier goes, leaving ArchUnit as the only guard. `docs/architecture.md:35-52` and `ArchitectureCoverageTest` need updating, and the connectors-rest "depends on core" drift needs fixing (it also depends on validation and orchestration).
+- **(b):** merge only validation and pseudonymisation, keeping security separate if core's published dependency footprint should stay minimal.
+- **(c):** no merge; handle the limit through the Central portal plan, or a release cadence of at most one a month.
+- **Must not merge:**
+  - annotations and processor: the processor must stay off the compile classpath.
+  - connectors-rest: it is an opt-in `-Dloader.path` plug-in.
+  - mcp and orchestration into core: boundary 1, and "core carries no business domain".
+  - hazelcast and reidentification: both are optional for single-node deployments.
+  - reidentification into hazelcast: it weakens boundary 5.
+- **Note:** one release a month matters more than module count for the File Count limit.
+
 #### 0.7.0 release gate: done
 
 All six items are done: the HTTP example re-capture, the owner's go, publication and task 188's five-step verification, the after-action report (presented in chat, not committed), the version-literal updates, and task 235. The verification found two documentation errors in `docs/verifying-releases.md` (the GPG keyserver command and the per-arch digests), corrected in the post-0.7.0 chore PR.
