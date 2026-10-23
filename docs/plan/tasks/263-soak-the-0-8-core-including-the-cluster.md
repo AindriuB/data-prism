@@ -1,6 +1,6 @@
 # 263 — Soak the 0.8 core on one node and on a three-member cluster, including the cluster-security soak
 
-Re-planned 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a trusted network only. The sealed stores (224 to 226), rotation (229), the settings and tamper wiring (230), the adversarial suite (231) and the shared link limiter (264) are deferred past 1.0. The three-member run is therefore a trusted-network cluster in which only the pause document, the member cards and the sentinel are sealed (227, 228). It runs with links disabled and no link key, and rotation under load is not run.
+Re-planned 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a trusted network only. The sealed approval and counter stores (224, 226), rotation (229), the settings and tamper wiring (230), the adversarial suite (231) and the shared link limiter (264) are deferred past 1.0. The three-member run is therefore a trusted-network cluster in which the pause document, the member cards, the sentinel (227, 228) and the identity and re-identification entries (225) are sealed, and approvals and counters are not. It runs with links disabled and no link key, and rotation under load is not run.
 
 **Repo:** `.`
 **Release:** 0.8.0 (evidence)
@@ -34,14 +34,14 @@ The roadmap's 0.8 readiness includes a soak, including the cluster. Run the 0.8 
 - [ ] Faults under load: kill and restart a member, kill a partition owner and its backup together, and roll all members. Each is recorded with its effect. No stale pause is accepted outside the lease, and re-identification index loss behaves as `docs/multiple-instances.md` documents.
 - [ ] Key change: changing the cluster key and the name key, each as a planned full restart (rolling rotation is deferred with 229), is recorded as state loss: approvals pending, the re-identification index and counters start empty, and a pause is re-issued.
 - [ ] Hostile member under load (tamper flood): CPU stays bounded, the `clusterSecurity` readiness contributor (286) goes `DOWN` under the default `unverified-member.action` (`refuse`; not a property in 1.0), and the cluster recovers after the member leaves. Network partition with a pause issued on one side: lease behaviour, split-brain approval consumption and rejoin are recorded. Clock skew injected on one member: the pause lease and `expiresAt` behave within the tolerance.
-- [ ] Environment verification, once per supported platform. A packet capture on the member port is taken in each transport profile the deployment guide names. `soak-0.8.md` records, per profile, whether plaintext appears. In 1.0, approvals, identity entries, re-identification entries and counters cross the member port unsealed, so plaintext is expected in every profile except E3; only the pause document, the member cards and the sentinel are envelopes. Each isolation claim in `docs/multiple-instances.md` is recorded as tested, with its result. Capture files are not committed. The record holds counts and findings only, never an address, a payload byte or a key.
+- [ ] Environment verification, once per supported platform. A packet capture on the member port is taken in each transport profile the deployment guide names. `soak-0.8.md` records, per profile, whether plaintext appears. In 1.0, approvals and counters cross the member port unsealed, so plaintext is expected in every profile except E3; the pause document, the member cards, the sentinel and the identity and re-identification entries are envelopes, and no subject id appears in the clear. Each isolation claim in `docs/multiple-instances.md` is recorded as tested, with its result. Capture files are not committed. The record holds counts and findings only, never an address, a payload byte or a key.
 - [ ] Each failed cluster-soak criterion is filed as a successor task named in the Outcome. None is waived in `soak-0.8.md`.
 - [ ] `LinkTimingSoakTest` is run on the soak host and its result, with the tolerance, is in `soak-0.8.md`.
 - [ ] The new soak scenarios and 258's failure-path scenarios are in the `load-test.yml` choice list.
 - [ ] No hostname, address, user name or workplace detail is recorded; the machine is described by its specification only.
 
 ## Out of scope
-- Changing the stores or `docs/multiple-instances.md` (213); this task measures and records. Rotation under load and the sealing cost (deferred with 229 and 224 to 226).
+- Changing the stores or `docs/multiple-instances.md` (213); this task measures and records. Rotation under load and the sealing cost (rotation deferred with 229; sealing cost measured only for 225's maps, if at all, as a short note).
 - Editing `docker/multi-instance/**`; the overlay lives under `load-test/soak/`.
 - 100, 300 and 500-source scale evidence for 1.0 (0.9).
 - Fixing defects the soak finds: each becomes a successor task named in the Outcome.

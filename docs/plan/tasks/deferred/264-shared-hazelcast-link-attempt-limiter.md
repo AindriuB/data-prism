@@ -1,6 +1,6 @@
 # 264 — Share the sealed-link failed-attempt limiter across a Hazelcast cluster
 
-Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 227, 228 and 284 to 287 first, because they changed some of the files named here.
+Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 225, 227, 228 and 284 to 287 first, because they changed some of the files named here.
 
 In effect for 1.0: fallback (c) below. Core 255's `MISSING_SHARED_LINK_LIMITER` refusal is the shipped behaviour: a member joining via `tcp-ip` or `kubernetes` refuses `dataprism.links.enabled=true` and a configured link key; `join.mode: none` and `single-node` use the in-memory limiter. The edges named in fallback (c) are removed from 260, 263 and 213.
 

@@ -1,6 +1,6 @@
 # 284 — Refuse a joining member that is not declared and bound to a trusted network
 
-Filed 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a trusted network only (D-RM-1 (a) as amended, `PLAN.md`). The sealed-store briefs 224 to 226, 229 to 231 and 264 are deferred past 1.0, so on a multi-member cluster approvals, the identity cache, the re-identification index and the counters stay unsealed. This task makes that limit a startup refusal instead of a sentence in the docs.
+Filed 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a trusted network only (D-RM-1 (a) as amended, `PLAN.md`). The sealed-store briefs 224, 226, 229 to 231 and 264 are deferred past 1.0, so on a multi-member cluster approvals and counters stay unsealed (225 seals identity and re-identification entries in 0.8). This task makes that limit a startup refusal instead of a sentence in the docs.
 
 **Repo:** `.`
 **Release:** 0.8.0
@@ -23,7 +23,7 @@ Filed 2026-10-23 for owner decision (b): 1.0 supports multiple instances on a tr
 - docs/plan/design/contract-register.md *(the rows for `PUBLIC_MEMBER_INTERFACE`, `MISSING_TRUSTED_NETWORK`, `INVALID_TRUSTED_RANGE`, the two property rows, and the `INVALID_CLUSTER_INTERFACE` row, only)*
 
 ## Goal
-A Spring-configured member that joins other members (`join.mode` `tcp-ip` or `kubernetes`) starts only when the operator has declared the network trusted and the member listens only on a private interface. Otherwise it refuses at startup with a code that names the property. 1.0 keeps approvals, identity entries, the re-identification index and counters unsealed on a cluster. These refusals stop that state being exposed on a network nobody chose. The plain-Java entry points get the same rule in 287.
+A Spring-configured member that joins other members (`join.mode` `tcp-ip` or `kubernetes`) starts only when the operator has declared the network trusted and the member listens only on a private interface. Otherwise it refuses at startup with a code that names the property. 1.0 keeps approvals and counters unsealed on a cluster. These refusals stop that state being exposed on a network nobody chose. The plain-Java entry points get the same rule in 287.
 
 ## Context
 - Owner decision (b), 2026-10-23, and D-RM-1 (a) as amended (`PLAN.md`, "Road to 1.0").
@@ -37,7 +37,7 @@ A Spring-configured member that joins other members (`join.mode` `tcp-ip` or `ku
 - `ClusterKeyConfigurationTest` (222): the table-driven refusal style to follow.
 
 ## Required shape
-- `dataprism.hazelcast.trusted-network`: boolean, default `false`. On `embedded` with `join.mode` `tcp-ip` or `kubernetes` it must be `true`; otherwise startup refuses with `MISSING_TRUSTED_NETWORK`. The message names the property and says that 1.0 does not seal approvals, identity entries, the re-identification index or counters on a cluster. With `single-node`, with `join.mode: none`, or beside an application-supplied `PrivacyCluster`, setting it (to either value) refuses with `CLUSTER_SETTINGS_IGNORED`, as 222 does for the keys.
+- `dataprism.hazelcast.trusted-network`: boolean, default `false`. On `embedded` with `join.mode` `tcp-ip` or `kubernetes` it must be `true`; otherwise startup refuses with `MISSING_TRUSTED_NETWORK`. The message names the property and says that 1.0 does not seal approvals or counters on a cluster. With `single-node`, with `join.mode: none`, or beside an application-supplied `PrivacyCluster`, setting it (to either value) refuses with `CLUSTER_SETTINGS_IGNORED`, as 222 does for the keys.
 - `dataprism.hazelcast.member.trusted-ranges`: a list of IPv4 CIDR blocks, default empty. It applies only where `trusted-network` does, and is refused with `CLUSTER_SETTINGS_IGNORED` elsewhere. An entry that does not parse, or whose prefix is shorter than `/8`, refuses with `INVALID_TRUSTED_RANGE` (the message names the property and the entry's index, never the value).
 - Private means: every address `member.interface` can match lies in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `127.0.0.0/8`, or in one `trusted-ranges` entry. ULA (`fc00::/7`) and `::1` count as private when the grammar accepts IPv6. Because each octet of a pattern is a range, the set is contained in a block when its lowest and highest addresses both are. A pattern that spans two blocks without lying inside one (`172.15-16.*.*`) is refused. Link-local (`169.254.0.0/16`), shared (`100.64.0.0/10`) and every other address refuse with `PUBLIC_MEMBER_INTERFACE` unless a `trusted-ranges` entry covers them.
 - Order: after `MISSING_MEMBER_INTERFACE`, `UNBOUNDED_MEMBER_INTERFACE` and `INVALID_CLUSTER_INTERFACE`, then `PUBLIC_MEMBER_INTERFACE`, then `MISSING_TRUSTED_NETWORK`. A value that fails an earlier check never reaches a later one. `docs/configuration.md`'s refusal-order table shows the order.

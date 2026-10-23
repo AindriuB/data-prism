@@ -1,6 +1,6 @@
 # 231 — Verify the sealed cluster end to end: mixed formats, hostile members, leak scans and the obligation matrix
 
-Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 227, 228 and 284 to 287 first, because they changed some of the files named here.
+Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 225, 227, 228 and 284 to 287 first, because they changed some of the files named here.
 
 For 1.0: 263 keeps the "Resolving class ... is not allowed" log check, and 213 documents what 1.0 does not seal; nothing else from this brief runs before the milestone.
 

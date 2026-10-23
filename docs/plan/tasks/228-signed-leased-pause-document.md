@@ -1,6 +1,6 @@
 # 228 — Replace pause flags with one sealed, sequenced, leased pause document
 
-Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instances on a trusted network only, and the sealed-store briefs 224, 225, 226, 229, 230, 231 and 264 are deferred past 1.0 (`docs/plan/tasks/deferred/`). This brief depends on none of them; `SealedWrites`, keyed names and `ClusterSecuritySettings` are on `main` (223). In 1.0 the pause document is the only sealed store besides the member cards and the sentinel (227), so the docs (213) name it as what is protected.
+Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instances on a trusted network only, and the sealed-cluster briefs 224, 226, 229, 230, 231 and 264 are deferred past 1.0 (`docs/plan/tasks/deferred/`; 225 was restored to 0.8 by a second owner decision the same day). This brief depends on none of them; `SealedWrites`, keyed names and `ClusterSecuritySettings` are on `main` (223). In 1.0 the sealed stores are the pause document, the member cards and the sentinel (227), and the identity cache and re-identification index (225); the docs (213) name them as what is protected.
 
 **Repo:** `.`
 **Release:** 0.8.0

@@ -5,7 +5,7 @@ Filed 2026-10-23 for owner decision (b), as the second half of 284. 284 refuses 
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 227, 228 and 284.
-**Depends on:** 227 (owns `PrivacyCluster.java`, `ClusterMembership.java`, `PrivacyClusterRefusal.java` and `KeylessMemberIsolationTest.java` in wave 5), 228 (owns `HazelcastOversightTest.java` in wave 6), 284 (the rule, the codes and `MemberInterfaceCheck`, which this task makes delegate here)
+**Depends on:** 225 (owns `CachingSyntheticValueSource`, `ScopeIdentityIndex` and their tests in wave 5), 227 (owns `PrivacyCluster.java`, `ClusterMembership.java`, `PrivacyClusterRefusal.java` and `KeylessMemberIsolationTest.java` in wave 5), 228 (owns `HazelcastOversightTest.java` in wave 6), 284 (the rule, the codes and `MemberInterfaceCheck`, which this task makes delegate here)
 **Wave:** 7
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterSecuritySettings.java *(the trusted-network declaration only)*
@@ -48,7 +48,7 @@ Every entry point that starts or wraps a member that joins, or already has, othe
 
 ## Out of scope
 - New properties, `docs/configuration.md` and the contract register (284 owns them, and its rows already name the condition independently of the entry point).
-- Sealing any store, and member cards (224 to 226 deferred; 227).
+- Sealing any store, and member cards (224 and 226 deferred; 225; 227).
 - IPv6 interfaces.
 - `docs/` pages and `CHANGELOG.md`: put the before and after of a plain-Java joining member, with the declaration, in the Outcome for 213.
 
