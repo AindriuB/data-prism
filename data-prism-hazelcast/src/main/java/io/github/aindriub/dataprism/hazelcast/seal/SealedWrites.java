@@ -36,6 +36,11 @@ import java.util.concurrent.TimeUnit;
  * member-local user context. That context is never replicated or serialised (answer 9). A processor that finds no
  * sealer refuses; it never writes an unsealed value.
  *
+ * <p><b>Single key only.</b> A processor instance remembers what its run produced so that its backup processor can
+ * carry exactly those bytes, so one instance serves one key. A second {@code process} call on the same instance
+ * (as {@code executeOnKeys} and {@code executeOnEntries} make) throws {@link IllegalStateException}, which fails the
+ * call loudly instead of giving one key's backup another key's bytes.
+ *
  * <p>The caller holds the key's lock for a bounded time before invoking either shape (spike 219 answer 10: an
  * {@code executeOnKey} does not wait on a lock, but every other write to a locked key does), so a writer that cannot
  * lock refuses instead of racing.
@@ -45,24 +50,52 @@ public final class SealedWrites {
     static final String SEALER_CONTEXT_KEY = "dataprism.cluster.sealer";
     static final String NAMES_CONTEXT_KEY = "dataprism.cluster.names";
 
+    private static final String SINGLE_KEY = "a sealed-write processor serves one key";
+
     private SealedWrites() {
     }
+
+    private static final String COUNT_CONTEXT_KEY = "dataprism.cluster.sealing.count";
+    private static final Object REGISTRATION = new Object();
 
     /**
      * Makes the sealer and the keyed names reachable from processors and merge policies that run on this member.
      * Kept in the member's user context only: never replicated, never serialised.
+     *
+     * <p>Registration belongs to the instance and is reference-counted: the first call stores the sealer and names,
+     * later calls on the same instance only count, and the sealer and names are removed by the {@link #unregister}
+     * that balances the last {@code register}. A second wrapper therefore neither replaces nor removes the first
+     * one's registration.
      */
     public static void register(HazelcastInstance instance, Sealer sealer, KeyedNames names) {
         Objects.requireNonNull(instance, "instance");
-        instance.getUserContext().put(SEALER_CONTEXT_KEY, Objects.requireNonNull(sealer, "sealer"));
-        instance.getUserContext().put(NAMES_CONTEXT_KEY, Objects.requireNonNull(names, "names"));
+        Objects.requireNonNull(sealer, "sealer");
+        Objects.requireNonNull(names, "names");
+        synchronized (REGISTRATION) {
+            var context = instance.getUserContext();
+            int count = (Integer) context.getOrDefault(COUNT_CONTEXT_KEY, 0);
+            if (count == 0) {
+                context.put(SEALER_CONTEXT_KEY, sealer);
+                context.put(NAMES_CONTEXT_KEY, names);
+            }
+            context.put(COUNT_CONTEXT_KEY, count + 1);
+        }
     }
 
-    /** Removes what {@link #register} stored. Safe on an instance that is already gone. */
+    /** Balances one {@link #register}; removes the registration with the last one. Safe on a gone instance. */
     public static void unregister(HazelcastInstance instance) {
         try {
-            instance.getUserContext().remove(SEALER_CONTEXT_KEY);
-            instance.getUserContext().remove(NAMES_CONTEXT_KEY);
+            synchronized (REGISTRATION) {
+                var context = instance.getUserContext();
+                int count = (Integer) context.getOrDefault(COUNT_CONTEXT_KEY, 0);
+                if (count <= 1) {
+                    context.remove(COUNT_CONTEXT_KEY);
+                    context.remove(SEALER_CONTEXT_KEY);
+                    context.remove(NAMES_CONTEXT_KEY);
+                } else {
+                    context.put(COUNT_CONTEXT_KEY, count - 1);
+                }
+            }
         } catch (RuntimeException ignored) {
             // The instance may already be shut down.
         }
@@ -151,6 +184,7 @@ public final class SealedWrites {
         private final long ttlMillis;
         /** Whether this run wrote on the primary; the backup is told to do the same, or nothing. */
         private transient boolean wrote;
+        private transient boolean ran;
 
         private CompareAndSet(String expected, String next, long ttlMillis) {
             this.expected = expected;
@@ -160,6 +194,10 @@ public final class SealedWrites {
 
         @Override
         public Boolean process(Map.Entry<String, String> entry) {
+            if (ran) {
+                throw new IllegalStateException(SINGLE_KEY);
+            }
+            ran = true;
             wrote = false;
             String stored = entry.getValue();
             if (next.equals(stored)) {
@@ -209,6 +247,7 @@ public final class SealedWrites {
         private final Step step;
         private transient Sealer sealer;
         private transient SetExact backup;
+        private transient boolean ran;
 
         private Computing(String map, Step step) {
             this.map = map;
@@ -222,6 +261,10 @@ public final class SealedWrites {
 
         @Override
         public Applied process(Map.Entry<String, String> entry) {
+            if (ran) {
+                throw new IllegalStateException(SINGLE_KEY);
+            }
+            ran = true;
             backup = null;
             if (sealer == null) {
                 throw new IllegalStateException("no sealer is registered on this member");

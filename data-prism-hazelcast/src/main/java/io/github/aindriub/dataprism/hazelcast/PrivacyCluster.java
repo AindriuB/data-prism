@@ -153,8 +153,8 @@ public final class PrivacyCluster implements AutoCloseable {
     private final ClusterSecuritySettings settings;
     private final KeyedNames names;
     private final ScopeKeys scopeKeys;
-    /** The keys names and seals are derived from: the supplied ones, or for a solo member the random ones. Never exposed. */
-    private final ClusterKeys effectiveKeys;
+    /** Whether this wrapper still holds its share of the instance's sealing registration. */
+    private final AtomicBoolean sealingRegistered = new AtomicBoolean();
 
     private final boolean owned;
     private final AtomicBoolean refused = new AtomicBoolean();
@@ -172,10 +172,10 @@ public final class PrivacyCluster implements AutoCloseable {
         // for this process, which nothing else can share, so two such members never derive the same name. A joining
         // member never gets here without keys.
         ClusterKeys effective = keys != null ? keys : generatedSoloKeys();
-        this.effectiveKeys = effective;
         this.names = new KeyedNames(effective);
         this.scopeKeys = new ScopeKeys(names);
         SealedWrites.register(instance, Sealer.builder(effective, PrivacyMetrics.none()).build(), names);
+        this.sealingRegistered.set(true);
         this.reidentificationEnabled = reidentificationEnabled;
         this.approvalSweepInterval = approvalSweepInterval;
         this.sweeper = new PendingSweeper(instance, approvalSweepInterval, Clock.systemUTC());
@@ -250,7 +250,11 @@ public final class PrivacyCluster implements AutoCloseable {
         byte[] name = new byte[ClusterKeys.MIN_KEY_BYTES];
         random.nextBytes(cluster);
         random.nextBytes(name);
-        return new ClusterKeys("solo-cluster", cluster, null, null, null, null, "solo-name", name);
+        ClusterKeys built = new ClusterKeys("solo-cluster", cluster, null, null, null, null, "solo-name", name);
+        // ClusterKeys holds its own copy; clear only the copy this code holds.
+        java.util.Arrays.fill(cluster, (byte) 0);
+        java.util.Arrays.fill(name, (byte) 0);
+        return built;
     }
 
     /**
@@ -258,7 +262,9 @@ public final class PrivacyCluster implements AutoCloseable {
      * twice and after a shutdown.
      */
     private void removeListeners() {
-        SealedWrites.unregister(instance);
+        if (sealingRegistered.compareAndSet(true, false)) {
+            SealedWrites.unregister(instance);
+        }
         for (var holder : List.of(legacyWatch, joinerWatch)) {
             UUID id = holder.getAndSet(null);
             if (id != null) {
@@ -1076,10 +1082,9 @@ public final class PrivacyCluster implements AutoCloseable {
     }
 
     /**
-     * The keys this member was started with, for the stores of this package. Not public: key material does not
-     * leave this module.
+     * The runtime cluster-security settings this member was started with: the defaults of design 4.1 unless supplied.
+     * The stores of tasks 226 to 228 read them.
      */
-    /** The runtime cluster-security settings: the defaults unless supplied. Read by the stores of tasks 226 to 228. */
     public ClusterSecuritySettings securitySettings() {
         return settings;
     }
@@ -1087,7 +1092,7 @@ public final class PrivacyCluster implements AutoCloseable {
     /**
      * The keyed names this member derives every map key and lock key with: the supplied name key, or for a solo
      * member without keys the one drawn at random for this process. For diagnostics and tests; a name reveals nothing
-     * without the name key.
+     * without the name key. Internal: for tests and cluster code; not a stable API.
      */
     public KeyedNames keyedNames() {
         return names;
@@ -1097,6 +1102,10 @@ public final class PrivacyCluster implements AutoCloseable {
         return scopeKeys;
     }
 
+    /**
+     * The keys this member was started with, for the stores of this package. Not public: key material does not
+     * leave this module.
+     */
     Optional<ClusterKeys> keys() {
         return Optional.ofNullable(keys);
     }

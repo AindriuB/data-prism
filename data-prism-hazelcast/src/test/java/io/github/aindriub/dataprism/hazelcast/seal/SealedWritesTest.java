@@ -172,6 +172,61 @@ class SealedWritesTest {
         }
     }
 
+    @Test
+    void aProcessorRunOverTwoKeysFailsInsteadOfCorruptingABackup() {
+        IMap<String, String> map = caller.getMap(MAP);
+        String second = null;
+        for (int i = 0; i < 10_000 && second == null; i++) {
+            String candidate = key + "-x" + i;
+            if (caller.getPartitionService().getPartition(candidate).getPartitionId()
+                    == caller.getPartitionService().getPartition(key).getPartitionId()) {
+                second = candidate;
+            }
+        }
+        assertThat(second).isNotNull();
+        final String samePartition = second;
+        map.put(key, callerSealer.seal(MAP, key, bytes("0")));
+        map.put(samePartition, callerSealer.seal(MAP, samePartition, bytes("0")));
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> map.executeOnKeys(java.util.Set.of(key, samePartition),
+                        SealedWrites.computing(MAP, new Increment())))
+                .isInstanceOf(RuntimeException.class);
+        killOwner();
+        // Whatever the failed call left, every surviving value still opens.
+        for (String k : List.of(key, samePartition)) {
+            assertThat(callerSealer.open(MAP, k, map.get(k)).outcome()).isEqualTo(Opened.Outcome.AUTHENTIC);
+        }
+    }
+
+    @Test
+    void anUnchangedPlanLeavesPrimaryAndBackupByteIdenticalAndSealsNothing() {
+        IMap<String, String> map = caller.getMap(MAP);
+        String sealed = callerSealer.seal(MAP, key, bytes("kept"));
+        map.put(key, sealed);
+        SealedWrites.Applied applied = (SealedWrites.Applied) map.executeOnKey(key,
+                SealedWrites.computing(MAP, current -> SealedWrites.Plan.unchanged("same")));
+        assertThat(applied.sealed()).isNull();
+        assertThat(applied.result()).isEqualTo("same");
+        assertThat(map.get(key)).isEqualTo(sealed);
+        killOwner();
+        assertThat(map.get(key)).isEqualTo(sealed);
+    }
+
+    @Test
+    void aSecondRegistrationOnOneInstanceNeitherReplacesNorLosesTheFirstOnClose() {
+        ClusterKeys keys = Fixtures.keys();
+        Sealer other = Sealer.builder(keys, PrivacyMetrics.none()).build();
+        SealedWrites.register(caller, other, new KeyedNames(keys)); // second wrapper; counted only
+        assertThat(SealedWrites.sealerOf(caller)).isSameAs(callerSealer);
+        SealedWrites.unregister(caller); // the second wrapper closes
+        IMap<String, String> map = caller.getMap(MAP);
+        SealedWrites.Applied applied = (SealedWrites.Applied) map.executeOnKey(key,
+                SealedWrites.computing(MAP, new Increment()));
+        assertThat(applied.result()).isEqualTo(1);
+        SealedWrites.unregister(caller); // the first closes: now gone
+        assertThat(SealedWrites.sealerOf(caller)).isNull();
+    }
+
     /** Adds one to the decimal count in the stored plaintext. */
     record Increment() implements SealedWrites.Step {
         @Override

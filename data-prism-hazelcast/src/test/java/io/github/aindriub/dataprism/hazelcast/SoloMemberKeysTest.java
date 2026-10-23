@@ -248,10 +248,12 @@ class SoloMemberKeysTest {
                 HexFormat.of().formatHex(material), java.util.Arrays.toString(material));
     }
 
+    /** The keys a cluster's registered sealer holds, reached by reflection: the cluster itself keeps no copy. */
     private static ClusterKeys effectiveKeys(PrivacyCluster cluster) throws ReflectiveOperationException {
-        Field field = PrivacyCluster.class.getDeclaredField("effectiveKeys");
+        Object sealer = cluster.instance().getUserContext().get("dataprism.cluster.sealer");
+        Field field = sealer.getClass().getDeclaredField("keys");
         field.setAccessible(true);
-        return (ClusterKeys) field.get(cluster);
+        return (ClusterKeys) field.get(sealer);
     }
 
     @Test
