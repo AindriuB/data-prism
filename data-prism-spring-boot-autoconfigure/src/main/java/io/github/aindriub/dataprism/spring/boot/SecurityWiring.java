@@ -10,6 +10,7 @@ import io.github.aindriub.dataprism.security.SecurityPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,18 +20,51 @@ import java.util.Set;
 
 /**
  * Authorization, purpose and scope resolution. A deployer's own {@link CaseAuthorizer} and
- * {@link ClientAllowlist} bean is used when present; more than one of either refuses startup.
+ * {@link ClientAllowlist} bean is used when present; more than one of either refuses startup. An
+ * application that replaces {@link ScopeResolver} while a {@link CaseAuthorizer} bean exists, or
+ * {@link AuthorizationService} while a {@link ClientAllowlist} bean exists, would silently bypass
+ * the deployer's check, so startup refuses ({@code CASE_AUTHORIZER_BYPASSED},
+ * {@code CLIENT_ALLOWLIST_BYPASSED}).
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityWiring {
     private static final Logger LOG = LoggerFactory.getLogger(SecurityWiring.class);
+
+    @Bean
+    static BeanFactoryPostProcessor dataPrismSecurityBypassCheck() {
+        return beanFactory -> {
+            if (replaced(beanFactory, ScopeResolver.class, "dataPrismScopeResolver")
+                    && beanFactory.getBeanNamesForType(CaseAuthorizer.class, true, false).length > 0) {
+                throw new DataPrismConfigurationException("CASE_AUTHORIZER_BYPASSED",
+                        "a ScopeResolver bean replaces the default, so the CaseAuthorizer bean would never be consulted; "
+                                + "call the CaseAuthorizer from your ScopeResolver and remove the bean, or remove your ScopeResolver");
+            }
+            if (replaced(beanFactory, AuthorizationService.class, "dataPrismAuthorizationService")
+                    && beanFactory.getBeanNamesForType(ClientAllowlist.class, true, false).length > 0) {
+                throw new DataPrismConfigurationException("CLIENT_ALLOWLIST_BYPASSED",
+                        "an AuthorizationService bean replaces the default, so the ClientAllowlist bean would never be consulted; "
+                                + "apply the ClientAllowlist in your AuthorizationService and remove the bean, or remove your AuthorizationService");
+            }
+        };
+    }
+
+    private static boolean replaced(org.springframework.beans.factory.ListableBeanFactory beanFactory, Class<?> type, String ours) {
+        String[] names = beanFactory.getBeanNamesForType(type, true, false);
+        return names.length > 0 && !java.util.Arrays.asList(names).contains(ours);
+    }
 
     @Bean @ConditionalOnMissingBean
     SecurityPolicy dataPrismSecurityPolicy(DataPrismProperties properties) {
         return new SecurityPolicy(Set.copyOf(properties.getSecurityPolicy().getPurposes()), properties.getSecurityPolicy().getRoles().entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> Set.copyOf(entry.getValue()))));
     }
     @Bean @ConditionalOnMissingBean
-    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties, ObjectProvider<ClientAllowlist> allowlist) { return new AuthorizationService(policy, properties.getPrivacy().getProfile(), io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, allowlist.getIfAvailable(ClientAllowlist::unrestricted)); }
+    AuthorizationService dataPrismAuthorizationService(SecurityPolicy policy, DataPrismProperties properties, ObjectProvider<ClientAllowlist> allowlist) {
+        ClientAllowlist clients = allowlist.getIfAvailable();
+        if (clients == null) {
+            LOG.warn("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
+            clients = ClientAllowlist.unrestricted();
+        }
+        return new AuthorizationService(policy, properties.getPrivacy().getProfile(), io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, clients); }
     @Bean @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties, ObjectProvider<CaseAuthorizer> caseAuthorizer) {
         CaseAuthorizer authorizer = caseAuthorizer.getIfAvailable();

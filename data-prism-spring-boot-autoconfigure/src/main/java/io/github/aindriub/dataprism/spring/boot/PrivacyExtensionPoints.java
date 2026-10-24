@@ -57,6 +57,7 @@ public final class PrivacyExtensionPoints {
             entry("dataPrismScrubber", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismRawValueLeakValidator", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
             entry("dataPrismSensitivePatternValidator", Classification.PRIVACY_CRITICAL, Guard.COMPETING_BEAN_REFUSAL),
+            entry("dataPrismSecurityBypassCheck", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismSecurityPolicy", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismAuthorizationService", Classification.REPLACEABLE, Guard.NONE),
             entry("dataPrismScopeResolver", Classification.REPLACEABLE, Guard.NONE),

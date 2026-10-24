@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.aindriub.dataprism.audit.AuditSink;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
+import io.github.aindriub.dataprism.core.refusal.RefusalCodes;
 import io.github.aindriub.dataprism.core.spi.DataRequest;
 import io.github.aindriub.dataprism.core.spi.DataSourceAdapter;
 import io.github.aindriub.dataprism.core.spi.IdentityResolver;
@@ -78,7 +79,7 @@ class SecurityWiringTest {
             assertThatThrownBy(() -> resolver.resolve(CALLER, decision, CLOCK))
                     .isInstanceOfSatisfying(SecurityRefusedException.class,
                             e -> assertThat(e.code()).isEqualTo(ScopeResolver.CASE_NOT_AUTHORISED));
-            assertThat(warnings()).isEmpty();
+            assertThat(warnings()).noneMatch(w -> w.contains("CaseAuthorizer"));
         });
     }
 
@@ -114,8 +115,45 @@ class SecurityWiringTest {
                     .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
             assertThat(decision.allowed()).isTrue();
             assertThat(resolver.resolve(CALLER, decision, CLOCK)).isNotNull();
-            assertThat(warnings()).hasSize(1);
-            assertThat(warnings().get(0)).contains("CaseAuthorizer").contains("without assignment checks");
+            assertThat(warnings()).filteredOn(w -> w.contains("CaseAuthorizer")).hasSize(1)
+                    .allMatch(w -> w.contains("without assignment checks"));
+        });
+    }
+
+    @Test
+    void replacing_the_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
+        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, OwnScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void replacing_the_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
+        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, OwnAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void replacing_either_with_no_such_bean_present_is_allowed() {
+        context.withUserConfiguration(Base.class, OwnScopeResolver.class, OwnAuthorizationService.class)
+                .run(result -> assertThat(result).hasNotFailed());
+    }
+
+    @Test
+    void the_unrestricted_allowlist_fallback_logs_one_fixed_warning() {
+        context.withUserConfiguration(Base.class).run(result -> {
+            assertThat(warnings()).contains("No ClientAllowlist bean is defined: every client is allowed. Supply a ClientAllowlist bean.");
+        });
+    }
+
+    private static void assertRefusal(Throwable failure, String code) {
+        assertThat(failure).isNotNull();
+        Throwable t = failure;
+        while (t != null && !(t instanceof DataPrismConfigurationException)) {
+            t = t.getCause();
+        }
+        assertThat(t).isInstanceOfSatisfying(DataPrismConfigurationException.class, e -> {
+            assertThat(e.code()).isEqualTo(code);
+            assertThat(RefusalCodes.sanitise(e.code())).isEqualTo(code);
         });
     }
 
@@ -162,6 +200,22 @@ class SecurityWiringTest {
     @Configuration(proxyBeanMethods = false)
     static class RefusingCaseAuthorizer {
         @Bean CaseAuthorizer refusing() { return request -> false; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class OwnScopeResolver {
+        @Bean ScopeResolver ownScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version) {
+            return new ScopeResolver(version, java.time.Duration.ofHours(1),
+                    new io.github.aindriub.dataprism.security.PurposeValidator(Set.of("investigation")), CaseAuthorizer.tokenTrusted());
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class OwnAuthorizationService {
+        @Bean AuthorizationService ownAuthorizationService(io.github.aindriub.dataprism.security.SecurityPolicy policy, DataPrismProperties properties) {
+            return new AuthorizationService(policy, properties.getPrivacy().getProfile(),
+                    io.github.aindriub.dataprism.core.model.PrivacyScopeType.INVESTIGATION, ClientAllowlist.unrestricted());
+        }
     }
 
     @Configuration(proxyBeanMethods = false)
