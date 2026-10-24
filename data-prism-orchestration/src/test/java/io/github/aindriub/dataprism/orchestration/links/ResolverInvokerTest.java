@@ -13,6 +13,7 @@ import io.github.aindriub.dataprism.core.spi.ResolutionContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
@@ -253,9 +254,19 @@ class ResolverInvokerTest {
             }
             return new KeyResolver.Resolution(List.of("late"), false);
         });
-        ResolverOutcome outcome = invoker.invoke(stubborn, SENTINEL, CONTEXT, 5, Duration.ofMillis(50));
+        ResolverInvoker single = new ResolverInvoker(metrics, 1);
+        ResolverOutcome outcome = single.invoke(stubborn, SENTINEL, CONTEXT, 5, Duration.ofMillis(50));
         release.countDown();
         assertThat(failed(outcome).reason()).isEqualTo(ResolverOutcome.Reason.TIMEOUT);
+        // The slot is released when the stubborn resolver finally returns; a follow-up call then succeeds.
+        KeyResolver instant = resolver(() -> new KeyResolver.Resolution(List.of("x"), false));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        ResolverOutcome followUp = single.invoke(instant, SENTINEL, CONTEXT, 5, TIMEOUT);
+        while (!(followUp instanceof ResolverOutcome.Keys) && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+            followUp = single.invoke(instant, SENTINEL, CONTEXT, 5, TIMEOUT);
+        }
+        assertThat(followUp).isInstanceOf(ResolverOutcome.Keys.class);
     }
 
     @Test
@@ -291,6 +302,7 @@ class ResolverInvokerTest {
     }
 
     @Test
+    @Timeout(60)
     void aCallerInterruptIsUnavailableRestoresTheFlagAndInterruptsTheResolverThread() throws Exception {
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch resolverInterrupted = new CountDownLatch(1);
@@ -307,7 +319,9 @@ class ResolverInvokerTest {
         Thread caller = Thread.currentThread();
         Thread interrupter = Thread.ofPlatform().start(() -> {
             try {
-                started.await();
+                if (!started.await(10, TimeUnit.SECONDS)) {
+                    return;
+                }
             } catch (InterruptedException e) {
                 return;
             }
@@ -315,7 +329,8 @@ class ResolverInvokerTest {
         });
         ResolverOutcome outcome = invoker.invoke(blocking, SENTINEL, CONTEXT, 5, Duration.ofSeconds(30));
         boolean flag = Thread.interrupted();
-        interrupter.join();
+        interrupter.join(10_000);
+        assertThat(interrupter.isAlive()).isFalse();
         assertThat(failed(outcome).reason()).isEqualTo(ResolverOutcome.Reason.UNAVAILABLE);
         assertThat(flag).as("the interrupt flag was restored").isTrue();
         assertThat(resolverInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
