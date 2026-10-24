@@ -271,4 +271,99 @@ class KeyedScopeEndTest {
             holder.join();
         }
     }
+
+    @Test
+    void aRefusedApprovalDoesNotStopLaterApprovalsAndTheCallThrows() {
+        singleMember();
+        populate(ENDED, "subject-1");
+        var store = new HazelcastApprovalStore(members[0], TIMEOUT);
+        store.create(TestMembers.request("approval-2-" + ENDED, ENDED, Status.PENDING));
+        store.create(TestMembers.request("approval-3-" + ENDED, ENDED, Status.PENDING));
+        PrivacyCluster real = members[0];
+        java.util.concurrent.atomic.AtomicBoolean thrown = new java.util.concurrent.atomic.AtomicBoolean();
+        com.hazelcast.core.HazelcastInstance wrapped = (com.hazelcast.core.HazelcastInstance)
+                java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                        new Class<?>[] {com.hazelcast.core.HazelcastInstance.class}, (proxy, method, args) -> {
+                            Object target = invokeOn(method, real.instance(), args);
+                            if (!method.getName().equals("getMap")
+                                    || !PrivacyCluster.APPROVAL_MAP.equals(args[0])) {
+                                return target;
+                            }
+                            return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                                    new Class<?>[] {IMap.class}, (mapProxy, call, callArgs) -> {
+                                        if (call.getName().equals("tryLock") && thrown.compareAndSet(false, true)) {
+                                            throw new IllegalArgumentException("lease too long");
+                                        }
+                                        return invokeOn(call, target, callArgs);
+                                    });
+                        });
+        PrivacyCluster faulty = PrivacyCluster.using(wrapped, false, TestMembers.KEYS);
+
+        assertThatThrownBy(() -> new ScopeIdentityIndex(faulty,
+                io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), TIMEOUT).endScope(ENDED))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+
+        assertThat(real.instance().getMap(PrivacyCluster.APPROVAL_MAP).size())
+                .as("only the approval whose lock was refused is left").isEqualTo(1);
+    }
+
+    private static Object invokeOn(java.lang.reflect.Method method, Object target, Object[] args) throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
+
+    @Test
+    void endScopeWithTwoHeldApprovalsTakesAboutOneTimeout() throws Exception {
+        singleMember();
+        Duration timeout = Duration.ofSeconds(1);
+        populate(ENDED, "subject-1");
+        PrivacyCluster cluster = members[0];
+        new HazelcastApprovalStore(cluster, timeout).create(
+                TestMembers.request("approval-2-" + ENDED, ENDED, Status.PENDING));
+        IMap<String, Object> approvals = cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP);
+        java.util.List<String> keys = new java.util.ArrayList<>(approvals.keySet());
+        assertThat(keys).hasSize(2);
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            keys.forEach(approvals::lock);
+            locked.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        holder.start();
+        assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        try {
+            var index = new ScopeIdentityIndex(cluster,
+                    io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), timeout);
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> index.endScope(ENDED)).isInstanceOf(ClusterLockTimeoutException.class);
+            long elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertThat(elapsed).as("the approvals share the call's deadline").isLessThan(1700);
+        } finally {
+            keys.forEach(approvals::forceUnlock);
+            release.countDown();
+            holder.join();
+        }
+    }
+
+    @Test
+    void aLegacyPauseStaysPausedAfterEndScopeAndResumeScope() {
+        singleMember();
+        PrivacyCluster cluster = members[0];
+        var state = new HazelcastOversightState(cluster, TIMEOUT);
+        cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).put(ENDED + "\0paused", Boolean.TRUE);
+
+        new ScopeIdentityIndex(cluster, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), TIMEOUT)
+                .endScope(ENDED);
+        state.resumeScope(ENDED);
+
+        assertThat(state.scopePaused(ENDED)).isTrue();
+    }
 }

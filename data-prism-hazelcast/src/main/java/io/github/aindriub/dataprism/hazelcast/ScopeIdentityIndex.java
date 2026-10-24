@@ -97,36 +97,38 @@ public final class ScopeIdentityIndex {
         String prefix = cluster.scopeKeys().scopePrefix(scopeId);
         // One deadline for the whole call, shared by every map, so it waits about one lock timeout, not one per map.
         long deadline = System.nanoTime() + lockTimeout.toNanos();
-        ClusterLocks.Sweep total = new ClusterLocks.Sweep(0, null);
+        int skipped = 0;
         RuntimeException failure = null;
         for (String map : new String[]{PrivacyCluster.IDENTITY_MAP,
                 PrivacyCluster.REIDENTIFICATION_MAP, PrivacyCluster.BUDGET_MAP,
                 PrivacyCluster.OVERSIGHT_MAP}) {
             try {
                 IMap<String, ?> entries = maps.apply(map);
-                total = total.plus(ClusterLocks.deleteAll(entries,
+                ClusterLocks.Sweep sweep = ClusterLocks.deleteAll(entries,
                         entries.keySet().stream().filter(key -> key.startsWith(prefix)).toList(), deadline,
-                        lockTimeout));
+                        lockTimeout);
+                skipped += sweep.skipped();
+                failure = failure != null ? failure : sweep.refusal();
             } catch (HazelcastException failed) {
                 failure = failure != null ? failure : ClusterRefusals.refused(failed);
             }
         }
-        // Approvals go with their id claims and pending counts, so those ids and slots are free again.
+        // Approvals go with their id claims and pending counts, so those ids and slots are free again. They share
+        // the call's deadline, so held approvals do not each wait a full lock timeout.
         try {
-            approvals.forgetScope(scopeId);
+            approvals.forgetScope(scopeId, deadline);
+        } catch (ClusterLockTimeoutException held) {
+            skipped++;
         } catch (PrivacyRefusedException refused) {
             failure = failure != null ? failure : refused;
         } catch (HazelcastException failed) {
             failure = failure != null ? failure : ClusterRefusals.refused(failed);
         }
-        // Everything has run; now report the first refusal, else a timeout.
-        if (total.refusal() != null) {
-            throw total.refusal();
-        }
+        // Everything has run; now report the first refusal in the order seen, else a timeout.
         if (failure != null) {
             throw failure;
         }
-        if (total.skipped() > 0) {
+        if (skipped > 0) {
             throw new ClusterLockTimeoutException();
         }
     }

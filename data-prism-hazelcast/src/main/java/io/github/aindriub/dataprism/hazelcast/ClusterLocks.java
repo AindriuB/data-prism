@@ -58,6 +58,12 @@ final class ClusterLocks {
         acquire(map, key, timeout.toMillis(), leaseMillis(timeout));
     }
 
+    /** As {@link #acquire(IMap, String, Duration)}, waiting only for what is left of a deadline the caller fixed. */
+    static void acquireUntil(IMap<String, ?> map, String key, long deadlineNanos, Duration timeout) {
+        long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+        acquire(map, key, remaining, leaseMillis(timeout));
+    }
+
     private static void acquire(IMap<String, ?> map, String key, long waitMillis, long leaseMillis) {
         try {
             if (!map.tryLock(key, waitMillis, TimeUnit.MILLISECONDS, leaseMillis, TimeUnit.MILLISECONDS)) {
