@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -110,12 +111,13 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     @Override
     public void forget(String scopeId) {
         String prefix = cluster.scopeKeys().scopePrefix(scopeId);
-        IMap<String, Integer> counts = counts();
-        java.util.List<String> keys;
+        IMap<String, Integer> counts;
+        List<String> keys;
         try {
-            keys = counts.keySet().stream().filter(key -> key.startsWith(prefix)).toList();
-        } catch (com.hazelcast.core.HazelcastException failed) {
-            throw ClusterRefusals.refused(failed);
+            counts = counts();
+            keys = ScopeKeys.keysWithPrefix(counts, prefix);
+        } catch (RuntimeException failed) {
+            throw ClusterRefusals.mapped(failed);
         }
         // Each delete runs under its key's bounded lock, so a key another member holds cannot make this wait.
         int skipped = ClusterLocks.deleteAll(counts, keys, lockTimeout);

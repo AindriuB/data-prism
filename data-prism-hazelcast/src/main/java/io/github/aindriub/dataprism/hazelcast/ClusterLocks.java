@@ -5,6 +5,7 @@ import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -144,7 +145,7 @@ final class ClusterLocks {
      * so one held key does not stop the rest of a scope from ending. A lock Hazelcast refuses is treated the same way
      * for the remaining keys, and the first such refusal is rethrown after the last key.
      */
-    static int deleteAll(IMap<String, ?> map, java.util.Collection<String> keys, Duration timeout) {
+    static int deleteAll(IMap<String, ?> map, Collection<String> keys, Duration timeout) {
         Sweep sweep = deleteAll(map, keys, System.nanoTime() + timeout.toNanos(), timeout);
         if (sweep.refusal() != null) {
             throw sweep.refusal();
@@ -156,22 +157,22 @@ final class ClusterLocks {
      * What a sweep left behind: how many keys it skipped for a lock timeout, and the first refusal, if any. Nothing
      * is thrown, so a caller sweeping several maps can finish them all and then throw once.
      */
-    record Sweep(int skipped, ClusterOperationRefusedException refusal) {
+    record Sweep(int skipped, RuntimeException refusal) {
         Sweep plus(Sweep other) {
             return new Sweep(skipped + other.skipped, refusal != null ? refusal : other.refusal);
         }
     }
 
     /**
-     * As {@link #deleteAll(IMap, java.util.Collection, Duration)} against a deadline the caller fixed ({@link
-     * System#nanoTime()} units), so several sweeps can share one. A {@code HazelcastException} from a delete counts as
-     * a refusal for that key and the sweep goes on. Never throws for a key.
+     * As {@link #deleteAll(IMap, Collection, Duration)} against a deadline the caller fixed ({@link
+     * System#nanoTime()} units), so several sweeps can share one. Any other failure of a delete counts as a refusal
+     * for that key ({@link ClusterRefusals#mapped}) and the sweep goes on. Never throws for a key.
      */
-    static Sweep deleteAll(IMap<String, ?> map, java.util.Collection<String> keys, long deadlineNanos,
+    static Sweep deleteAll(IMap<String, ?> map, Collection<String> keys, long deadlineNanos,
                            Duration timeout) {
         long lease = leaseMillis(timeout);
         int skipped = 0;
-        ClusterOperationRefusedException firstRefusal = null;
+        RuntimeException firstRefusal = null;
         for (String key : keys) {
             long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
             try {
@@ -187,10 +188,10 @@ final class ClusterLocks {
                 if (firstRefusal == null) {
                     firstRefusal = refused;
                 }
-            } catch (com.hazelcast.core.HazelcastException failed) {
-                ClusterOperationRefusedException refused = ClusterRefusals.refused(failed);
+            } catch (RuntimeException failed) {
+                RuntimeException mapped = ClusterRefusals.mapped(failed);
                 if (firstRefusal == null) {
-                    firstRefusal = refused;
+                    firstRefusal = mapped;
                 }
             }
         }

@@ -1,5 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.core.HazelcastException;
+import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import org.junit.jupiter.api.Test;
@@ -50,7 +52,7 @@ class ClusterLocksDeleteAllTest {
                             return Boolean.TRUE;
                         case "delete":
                             if ("a".equals(args[0])) {
-                                throw new com.hazelcast.core.HazelcastException("boom");
+                                throw new HazelcastException("boom");
                             }
                             deleted.add(args[0]);
                             return null;
@@ -65,5 +67,54 @@ class ClusterLocksDeleteAllTest {
         assertThat(deleted).containsExactly("b", "c");
         assertThat(sweep.refusal()).isInstanceOf(ClusterOperationRefusedException.class);
         assertThat(sweep.skipped()).isZero();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aMemberThatIsNotActiveIsARefusalForThatKeyAndTheSweepGoesOn() {
+        List<Object> deleted = new ArrayList<>();
+        IMap<String, Object> map = (IMap<String, Object>) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[] {IMap.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "tryLock":
+                            return Boolean.TRUE;
+                        case "delete":
+                            if ("a".equals(args[0])) {
+                                throw new HazelcastInstanceNotActiveException();
+                            }
+                            deleted.add(args[0]);
+                            return null;
+                        default:
+                            return null;
+                    }
+                });
+
+        ClusterLocks.Sweep sweep = ClusterLocks.deleteAll(map, List.of("a", "b", "c"),
+                System.nanoTime() + Duration.ofSeconds(1).toNanos(), Duration.ofSeconds(1));
+
+        assertThat(deleted).containsExactly("b", "c");
+        assertThat(sweep.refusal()).isInstanceOf(ClusterOperationRefusedException.class)
+                .hasCauseInstanceOf(HazelcastInstanceNotActiveException.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void whenTwoKeysAreRefusedTheFirstFailureIsTheOneThrown() {
+        IMap<String, Object> map = (IMap<String, Object>) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[] {IMap.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "tryLock":
+                            return Boolean.TRUE;
+                        case "delete":
+                            throw "a".equals(args[0]) ? new HazelcastInstanceNotActiveException()
+                                    : new HazelcastException("second");
+                        default:
+                            return null;
+                    }
+                });
+
+        assertThatThrownBy(() -> ClusterLocks.deleteAll(map, List.of("a", "b"), Duration.ofSeconds(1)))
+                .isInstanceOf(ClusterOperationRefusedException.class)
+                .hasCauseInstanceOf(HazelcastInstanceNotActiveException.class);
     }
 }

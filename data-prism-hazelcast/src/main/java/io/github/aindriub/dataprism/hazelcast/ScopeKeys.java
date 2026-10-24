@@ -1,8 +1,13 @@
 package io.github.aindriub.dataprism.hazelcast;
 
+import com.hazelcast.map.IMap;
+import com.hazelcast.query.Predicates;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.hazelcast.seal.KeyedNames;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest;
+
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Builds the map keys and lock keys, scope first, as keyed pseudonymous names
@@ -23,11 +28,13 @@ import io.github.aindriub.dataprism.oversight.ApprovalRequest;
 final class ScopeKeys {
 
     private static final char SEPARATOR = 0;
+    /** Hazelcast's name for the key of an entry in a query. */
+    private static final String KEY_ATTRIBUTE = "__key";
 
     private final KeyedNames names;
 
     ScopeKeys(KeyedNames names) {
-        this.names = java.util.Objects.requireNonNull(names, "names");
+        this.names = Objects.requireNonNull(names, "names");
     }
 
     String identity(String scopeId, String subjectId, PrivacyNamespace namespace) {
@@ -110,5 +117,30 @@ final class ScopeKeys {
 
     String scopePrefix(String scopeId) {
         return names.scopeToken(scopeId) + ".";
+    }
+
+    /**
+     * The keys of {@code map} that start with {@code prefix}, chosen on the members that own them by the Hazelcast
+     * predicate {@code Predicates.like("__key", escaped prefix + "%")}, so only matching keys come back to the
+     * caller, not every key of the map. {@code _} is a base64url character and a LIKE wildcard, so the prefix is
+     * escaped ({@code %} and {@code _} get a backslash) and the match is exactly {@code startsWith}. A prefix with
+     * a backslash is refused: a scope prefix is base64url and a dot, and the escape of a backslash is not relied on.
+     *
+     * @throws IllegalArgumentException if the prefix contains a backslash
+     */
+    static <V> List<String> keysWithPrefix(IMap<String, V> map, String prefix) {
+        StringBuilder pattern = new StringBuilder(prefix.length() + 8);
+        for (char c : prefix.toCharArray()) {
+            if (c == '\\') {
+                throw new IllegalArgumentException("not a scope prefix");
+            }
+            if (c == '%' || c == '_') {
+                pattern.append('\\');
+            }
+            pattern.append(c);
+        }
+        pattern.append('%');
+        return List.copyOf(map.keySet(Predicates.<String, V>like(KEY_ATTRIBUTE,
+                pattern.toString())));
     }
 }
