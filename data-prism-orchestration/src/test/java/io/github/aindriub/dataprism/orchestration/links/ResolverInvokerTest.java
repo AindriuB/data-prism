@@ -487,7 +487,32 @@ class ResolverInvokerTest {
                 TIMEOUT);
         assertThat(outcome).isEqualTo(new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT));
         assertThat(called).isFalse();
-        assertThat(counted).contains(Metric.RESOLVER_TIMEOUT);
+        assertThat(counted).containsExactly(Metric.RESOLVER_TIMEOUT);
+        // The slot was never taken: the only slot of a second invoker is still free for a real call.
+        ResolverInvoker single = new ResolverInvoker(metrics, 1, java.time.Clock.fixed(NOW, java.time.ZoneOffset.UTC));
+        single.invoke(resolver, SENTINEL, contextWithDeadline(NOW.minusSeconds(1)), 5, TIMEOUT);
+        KeyResolver ok = resolver(() -> new KeyResolver.Resolution(List.of("x"), false));
+        assertThat(single.invoke(ok, SENTINEL, contextWithDeadline(NOW.plusSeconds(60)), 5, TIMEOUT))
+                .isInstanceOf(ResolverOutcome.Keys.class);
+    }
+
+    @Test
+    void aTimeoutBeyondTheNanosecondRangeDoesNotOverflow() {
+        KeyResolver ok = resolver(() -> new KeyResolver.Resolution(List.of("x"), false));
+        ResolverOutcome outcome = invoker.invoke(ok, SENTINEL, null, 5, Duration.ofDays(365L * 300));
+        assertThat(outcome).isInstanceOf(ResolverOutcome.Keys.class);
+    }
+
+    @Test
+    void anErrorFromTheResolverFailsClosedAndReleasesTheSlot() {
+        ResolverInvoker single = new ResolverInvoker(metrics, 1);
+        KeyResolver failing = resolver(() -> {
+            throw new OutOfMemoryError("simulated");
+        });
+        assertThat(single.invoke(failing, SENTINEL, CONTEXT, 5, TIMEOUT))
+                .isEqualTo(new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE));
+        KeyResolver ok = resolver(() -> new KeyResolver.Resolution(List.of("x"), false));
+        assertThat(single.invoke(ok, SENTINEL, CONTEXT, 5, TIMEOUT)).isInstanceOf(ResolverOutcome.Keys.class);
     }
 
     @Test
