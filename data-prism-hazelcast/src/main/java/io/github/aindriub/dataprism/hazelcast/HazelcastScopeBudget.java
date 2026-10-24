@@ -111,9 +111,14 @@ public final class HazelcastScopeBudget implements ScopeBudget {
     public void forget(String scopeId) {
         String prefix = cluster.scopeKeys().scopePrefix(scopeId);
         IMap<String, Integer> counts = counts();
+        java.util.List<String> keys;
+        try {
+            keys = counts.keySet().stream().filter(key -> key.startsWith(prefix)).toList();
+        } catch (com.hazelcast.core.HazelcastException failed) {
+            throw ClusterRefusals.refused(failed);
+        }
         // Each delete runs under its key's bounded lock, so a key another member holds cannot make this wait.
-        int skipped = ClusterLocks.deleteAll(counts,
-                counts.keySet().stream().filter(key -> key.startsWith(prefix)).toList(), lockTimeout);
+        int skipped = ClusterLocks.deleteAll(counts, keys, lockTimeout);
         if (skipped > 0) {
             throw new ClusterLockTimeoutException();
         }

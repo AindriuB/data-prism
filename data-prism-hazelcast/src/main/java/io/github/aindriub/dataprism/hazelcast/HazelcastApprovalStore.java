@@ -488,12 +488,33 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      */
     @Override
     public void forgetScope(String scopeId) {
+        forgetScope(scopeId, System.nanoTime() + lockTimeout.toNanos());
+    }
+
+    /**
+     * As {@link #forgetScope(String)}, with its lock waits bounded by a deadline the caller fixed ({@link
+     * System#nanoTime()} units) so several steps can share one. A refusal or Hazelcast failure on one entry does not
+     * stop the others; the first is thrown after the last entry, ahead of a lock timeout.
+     */
+    void forgetScope(String scopeId, long deadlineNanos) {
         String prefix = keys().approvalPrefix(scopeId);
         int skipped = 0;
+        RuntimeException failure = null;
         for (String key : approvals().keySet().stream().filter(k -> k.startsWith(prefix)).toList()) {
-            if (!forgetOne(key)) {
+            try {
+                if (!forgetOne(key, deadlineNanos)) {
+                    skipped++;
+                }
+            } catch (ClusterLockTimeoutException held) {
                 skipped++;
+            } catch (io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException refused) {
+                failure = failure != null ? failure : refused;
+            } catch (com.hazelcast.core.HazelcastException failed) {
+                failure = failure != null ? failure : ClusterRefusals.refused(failed);
             }
+        }
+        if (failure != null) {
+            throw failure;
         }
         if (skipped > 0) {
             throw new ClusterLockTimeoutException();
@@ -501,10 +522,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     /** Returns false if the entry's lock timed out and the entry was left as it is. */
-    private boolean forgetOne(String key) {
+    private boolean forgetOne(String key, long deadlineNanos) {
         IMap<String, String> approvals = approvals();
         try {
-            ClusterLocks.acquire(approvals, key, lockTimeout);
+            ClusterLocks.acquireUntil(approvals, key, deadlineNanos, lockTimeout);
         } catch (ClusterLockTimeoutException timedOut) {
             return false;
         }
