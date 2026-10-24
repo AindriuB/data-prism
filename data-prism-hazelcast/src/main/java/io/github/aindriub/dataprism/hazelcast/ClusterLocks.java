@@ -135,12 +135,14 @@ final class ClusterLocks {
      * left in place for that reason. The whole call shares one deadline of {@code timeout}: each lock waits for what
      * is left of it, and once it has passed a key is still deleted if its lock is free right now. A caller that must
      * report the failure throws {@link ClusterLockTimeoutException} when the count is not zero, after the last key,
-     * so one held key does not stop the rest of a scope from ending.
+     * so one held key does not stop the rest of a scope from ending. A lock Hazelcast refuses is treated the same way
+     * for the remaining keys, and the first such refusal is rethrown after the last key.
      */
     static int deleteAll(IMap<String, ?> map, java.util.Collection<String> keys, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();
         long lease = leaseMillis(timeout);
         int skipped = 0;
+        ClusterOperationRefusedException firstRefusal = null;
         for (String key : keys) {
             long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
             try {
@@ -152,7 +154,14 @@ final class ClusterLocks {
                 }
             } catch (ClusterLockTimeoutException held) {
                 skipped++;
+            } catch (ClusterOperationRefusedException refused) {
+                if (firstRefusal == null) {
+                    firstRefusal = refused;
+                }
             }
+        }
+        if (firstRefusal != null) {
+            throw firstRefusal;
         }
         return skipped;
     }

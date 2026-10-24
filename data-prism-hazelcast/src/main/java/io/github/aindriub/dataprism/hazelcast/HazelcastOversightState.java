@@ -107,8 +107,11 @@ public final class HazelcastOversightState implements OversightState {
     }
 
     /**
-     * A 0.7 scope pause is keyed by the raw scope id, NUL and {@code paused}. No 0.8 key holds a NUL, and 0.8 would
-     * neither see such a pause nor remove it, so a paused scope would silently resume. Refuses instead.
+     * A scope pause written before the keyed names of task 223 is keyed by the raw scope id, NUL and {@code paused}.
+     * No current key holds a NUL, and this member would neither see such a pause nor remove it, so a paused scope
+     * would silently resume. Refuses instead. Only this map is scanned, here at construction and by the cluster's
+     * membership watch afterwards; raw NUL keys in the other maps are not looked for, so upgrading from 0.7 or from
+     * before 223 needs the cluster state wiped by a full restart.
      */
     private void refuseLegacyEntries() {
         for (String key : flags().keySet()) {
