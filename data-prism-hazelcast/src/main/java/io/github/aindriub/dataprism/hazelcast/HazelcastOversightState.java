@@ -24,6 +24,8 @@ import java.util.Set;
  */
 public final class HazelcastOversightState implements OversightState {
 
+    private static final String LEGACY_PAUSED_SUFFIX = "\0paused";
+
     private final PrivacyCluster cluster;
     private final Duration lockTimeout;
 
@@ -55,7 +57,11 @@ public final class HazelcastOversightState implements OversightState {
 
     @Override
     public boolean scopePaused(String scopeId) {
-        return flags().containsKey(cluster.scopeKeys().pausedScope(scopeId));
+        IMap<String, Object> flags = flags();
+        // A 0.7 pause written after construction is keyed by the raw scope id, NUL and "paused". It is matched
+        // exactly, one lookup, so that scope stays paused (fail closed) though this member cannot resume it.
+        return flags.containsKey(cluster.scopeKeys().pausedScope(scopeId))
+                || flags.containsKey(scopeId + LEGACY_PAUSED_SUFFIX);
     }
 
     @Override
@@ -99,6 +105,8 @@ public final class HazelcastOversightState implements OversightState {
                 all = true;
             } else if (key.startsWith("tool:")) {
                 tools.add(key.substring("tool:".length()));
+            } else if (key.endsWith(LEGACY_PAUSED_SUFFIX)) {
+                scopes.add(key.substring(0, key.length() - LEGACY_PAUSED_SUFFIX.length()));
             } else if (flag.getValue() instanceof String scopeId) {
                 scopes.add(scopeId);
             }
@@ -109,7 +117,8 @@ public final class HazelcastOversightState implements OversightState {
     /**
      * A scope pause written before the keyed names of task 223 is keyed by the raw scope id, NUL and {@code paused}.
      * No current key holds a NUL, and this member would neither see such a pause nor remove it, so a paused scope
-     * would silently resume. Refuses instead. Only this map is scanned, here at construction and by the cluster's
+     * would silently resume. Refuses instead. A pause written after construction cannot be refused, so
+     * {@link #scopePaused} also looks for the legacy key of the scope asked about and treats it as paused. Only this map is scanned, here at construction and by the cluster's
      * membership watch afterwards; raw NUL keys in the other maps are not looked for, so upgrading from 0.7 or from
      * before 223 needs the cluster state wiped by a full restart.
      */

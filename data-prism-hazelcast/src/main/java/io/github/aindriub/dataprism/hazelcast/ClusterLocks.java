@@ -139,12 +139,35 @@ final class ClusterLocks {
      * for the remaining keys, and the first such refusal is rethrown after the last key.
      */
     static int deleteAll(IMap<String, ?> map, java.util.Collection<String> keys, Duration timeout) {
-        long deadline = System.nanoTime() + timeout.toNanos();
+        Sweep sweep = deleteAll(map, keys, System.nanoTime() + timeout.toNanos(), timeout);
+        if (sweep.refusal() != null) {
+            throw sweep.refusal();
+        }
+        return sweep.skipped();
+    }
+
+    /**
+     * What a sweep left behind: how many keys it skipped for a lock timeout, and the first refusal, if any. Nothing
+     * is thrown, so a caller sweeping several maps can finish them all and then throw once.
+     */
+    record Sweep(int skipped, ClusterOperationRefusedException refusal) {
+        Sweep plus(Sweep other) {
+            return new Sweep(skipped + other.skipped, refusal != null ? refusal : other.refusal);
+        }
+    }
+
+    /**
+     * As {@link #deleteAll(IMap, java.util.Collection, Duration)} against a deadline the caller fixed ({@link
+     * System#nanoTime()} units), so several sweeps can share one. A {@code HazelcastException} from a delete counts as
+     * a refusal for that key and the sweep goes on. Never throws for a key.
+     */
+    static Sweep deleteAll(IMap<String, ?> map, java.util.Collection<String> keys, long deadlineNanos,
+                           Duration timeout) {
         long lease = leaseMillis(timeout);
         int skipped = 0;
         ClusterOperationRefusedException firstRefusal = null;
         for (String key : keys) {
-            long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+            long remaining = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
             try {
                 acquire(map, key, remaining, lease);
                 try {
@@ -158,11 +181,13 @@ final class ClusterLocks {
                 if (firstRefusal == null) {
                     firstRefusal = refused;
                 }
+            } catch (com.hazelcast.core.HazelcastException failed) {
+                ClusterOperationRefusedException refused = ClusterRefusals.refused(failed);
+                if (firstRefusal == null) {
+                    firstRefusal = refused;
+                }
             }
         }
-        if (firstRefusal != null) {
-            throw firstRefusal;
-        }
-        return skipped;
+        return new Sweep(skipped, firstRefusal);
     }
 }
