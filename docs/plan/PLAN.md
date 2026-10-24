@@ -128,10 +128,10 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 3 | 222 and 242 landed 2026-10-22 (PR record/0.8-wave3); 265 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1); 244 and 257 done 2026-10-21 (PR record/0.7.1-wave1-244, also go to 0.7.1) |
 | 4 | 223, 241, 248, 269 (settle the link attempt limiter's contract before 250, 251, 252, 255 and 264. OD-269-1 to 3 decided (a) by the owner 2026-10-22, the ceiling consequence accepted 2026-10-23, OD-269-4 done (250 depends on 269), **OD-269-5 decided (b) by the owner 2026-10-23** (a limiter outage answers the new retryable `LINK_CHECK_UNAVAILABLE`; a failure to open answers `LINK_INVALID`; the audit keeps both causes; 269 adds the register row; 261 documents the code). Current shape, after reviews to 2026-10-23: one call `LinkAttemptGate.open` checks inputs (`""` is `MALFORMED`), the lock, opens, and records atomically, returning `Proceed`, `Invalid(reason)` or `Exhausted(cause)` with an audit-only cause; the SPI is `lockState` and `recordFailure` returning `Admission` (`WITHIN_LIMIT`, `OVER_LIMIT`, `CEILING`, `UNAVAILABLE`); `AttemptSubject` with the `dataprism/link/v1/attempt` label and lossless `canonicalText()`; `attemptCounterKey` removed; the in-memory limiter keyed under a `SecureRandom` key, a ceiling of 100,000 reserved by CAS, one expiry marker per entry, and exclusive bounded head examination; 264 keys under the name key with a TTL only for memory); 245 done 2026-10-21 (PR record/0.7.1-wave3-245-268, also goes to 0.7.1); 267 done 2026-10-21 (PR record/0.7.1-wave2-265-267, also goes to 0.7.1) |
 | 4 (added 2026-10-23) | 203, 206: open, not started; no open dependency |
-| 5 | 207, 210, 224, 225, 226, 227 |
-| 6 | 208, 228, 246, 262 |
+| 5 | 207, 210, 224, 225, 226, 227, 271 (271 filed 2026-10-23, depends on 248; 271 refuses startup with `MODEL_DESCRIPTOR_RESOLVER_REPLACED` when a descriptor file is set and the resolver bean is replaced, coordinator 2026-10-24) |
+| 6 | 208, 228, 246, 262, 270 (270 filed 2026-10-23, moved from wave 5 on 2026-10-24: depends on 248 and 271; OD-270-1 decided (a) by the owner 2026-10-23: refuse at startup with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`, backstop `CLASSIFIED_RECORD_NOT_AN_OBJECT` at scrub time; OD-270-2 decided (a) 2026-10-23: fixed in 0.8.0 only, no 0.7.2, and the 0.7.x advisory GHSA-f94h-6mxv-c957 drafted 2026-10-23, updated with the patched version at the 0.8.0 cut) |
 | 7 | 211, 229, 247, 256 |
-| 8 | 249, 250, 251 |
+| 8 | 249, 250, 251, 272 (272 filed 2026-10-23: source calls on bounded dedicated platform threads, with a per-source ceiling; depends on 241, 246 and 211; OD-272-1 decided (a) by the owner 2026-10-23: a saturated call reports the existing `FAILED` with detail `UNAVAILABLE`, no new status) |
 | 9 | 252, 254 |
 | 10 | 253 |
 | 11 | 255 |
@@ -144,6 +144,7 @@ Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copi
 
 - Re-run 262's clean-checkout `docker compose up` against the published 0.8.0 images, not the local build overlay (coordinator decision 2026-10-23).
 - Keep `compose.yaml` and `docker/multi-instance/kubernetes.yaml` on the version-literal list, and confirm that no image reference is older than the released version.
+- Update the GitHub security advisory GHSA-f94h-6mxv-c957 with the patched version 0.8.0, and with the affected range and workaround that 270's Outcome confirms, if those are not already there. The advisory was drafted on 2026-10-23, ahead of the release (owner decision H1 (a): the public repros in 270 are an accepted exposure). The 0.8.0 release-cut brief owns this, when it is filed; 261 does not. Owner decision OD-270-2 (a), 2026-10-23.
 
 Owner decision 2026-10-23 (on the coordinator's recommendation): no cuts from 0.8.0. 207 (size-capped audit segments) stays. 264 (shared Hazelcast link limiter) stays, with its agreed fallback: if it is not ready, links and page links are refused only on members joining via `tcp-ip` or `kubernetes`, and 264 slips to 0.9.0. The count stays 34.
 
