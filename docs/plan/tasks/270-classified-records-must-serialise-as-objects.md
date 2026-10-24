@@ -2,9 +2,9 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** `origin/main` once 248 has merged
-**Depends on:** 248 (both edit `JsonTreeScrubbingEngine.java`; this task also edits 248's `ScrubPlanDescriber`, adds cases to 248's two new tests, and builds on 248's final `SourceTree.readsAsPlainBean`)
-**Wave:** 5 (filed 2026-10-23)
+**Base branch:** `origin/main` once 248 and 271 have merged
+**Depends on:** 271 (both insert into `CHANGELOG.md` `[Unreleased]` and `docs/plan/design/contract-register.md`; added 2026-10-24), 248 (both edit `JsonTreeScrubbingEngine.java`; this task also edits 248's `ScrubPlanDescriber`, adds cases to 248's two new tests, and builds on 248's final `SourceTree.readsAsPlainBean`)
+**Wave:** 6 (filed 2026-10-23 at wave 5; moved to 6 on 2026-10-24 by the edge on 271)
 **Decisions:** OD-270-1 decided (a) and OD-270-2 decided (a), both by the owner on 2026-10-23 (below). The repros under "The gap" stay in this public brief: the owner accepted that exposure on 2026-10-23 (review item H1), and the advisory GHSA-f94h-6mxv-c957 is drafted now rather than at the release cut. `readsAsPlainBean` stays strict, because strict fails closed (coordinator, 2026-10-23, review of PR #161).
 **Owns:**
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/JsonTreeScrubbingEngine.java *(the `apply`, `scrubArray` and `scalar` paths, for a value at a classified-record position, and the `SourceTree.of` call in `scrub`; not the `describe` override)*
@@ -23,7 +23,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PropertiesValidation.java *(the `dataPrismContractValidator` bean method only)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/validation/ClassifiedRecordStartupTest.java *(new; in the `validation` sub-package, outside 210's `spring/boot/*.java` glob)*
 - data-prism-spring-boot-autoconfigure/src/test/resources/classified-records/** *(new fixture files only)*
-- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ClassifiedShapesArchitectureTest.java *(new; 225 owns `ArchitectureTest.java` in this wave, so the rule lives in its own file)*
+- data-prism-architecture/src/test/java/io/github/aindriub/dataprism/architecture/ClassifiedShapesArchitectureTest.java *(new; 225 owns `ArchitectureTest.java`, so the rule lives in its own file)*
 - docs/extending.md *(the source-model shape paragraph, about :355-369, only)*
 - docs/plan/design/contract-register.md *(insertions only: the rows for the codes this task adds, in sections 3.1 and 3.5)*
 - CHANGELOG.md *(`[Unreleased]`, insertions only: one Security entry and one Breaking entry)*
