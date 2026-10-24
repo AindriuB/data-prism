@@ -408,6 +408,37 @@ class KeyedAuditChainTest {
     }
 
     @Test
+    void aKeyBWriterWithABadCheckpointIsReportedFromTheKeyBReplayAndLabelledKeyB() throws IOException {
+        Path audit = tempDir.resolve("b-cp.log");
+        Path cp = tempDir.resolve("b-cp.jsonl");
+        try (FileAuditSink sink = new FileAuditSink(audit);
+             FileAuditCheckpointSink cps = new FileAuditCheckpointSink(cp, tempDir.resolve("unused"))) {
+            AuditRecorder recorder = new AuditRecorder(sink, FIXED, "w", cps, null, AuditChainMode.keyed(KEY_B));
+            for (int i = 0; i < 5; i++) {
+                write(recorder);
+            }
+            recorder.checkpoint();
+        }
+        // Replace the last record with one that is a valid keyed record, so only the checkpoint disagrees.
+        List<String> lines = new ArrayList<>(Files.readAllLines(audit));
+        AuditEvent last = AuditRecordFormat.parse(lines.get(4));
+        AuditEvent draft = copy(last, "someone-else", last.previousHash(), "x");
+        lines.set(4, AuditRecordFormat.serialize(copy(last, "someone-else", last.previousHash(),
+                AuditEventHash.compute(draft, KEY_B))));
+        Files.write(audit, (String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
+
+        VerificationReport report = AuditChainVerifier.verify(audit, cp, Period.ofMonths(6),
+                List.of(KEY_A, KEY_B), false);
+
+        assertThat(report.hasBreak()).isTrue();
+        assertThat(report.writers()).singleElement().satisfies(w -> {
+            assertThat(w.broken()).isTrue();
+            assertThat(w.firstBreak().orElseThrow().sequence()).isEqualTo(5);
+            assertThat(w.keyId()).contains("key-b");
+        });
+    }
+
+    @Test
     void aLoneNonGenesisWriterIsNotLabelledAsVerifiedUnderAKey() throws IOException {
         Path path = tempDir.resolve("lone.log");
         AuditEvent draft = new AuditEvent("e-1", FIXED.instant(), "p", "c", "t", "E", "s", "f", "D", "sc", "i", "C",
