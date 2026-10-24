@@ -257,6 +257,10 @@ class ApprovalBoundedCleanupTest {
 
         assertThatThrownBy(() -> faulty.forgetScope("scope-k"))
                 .isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP)
+                .containsKey(TestMembers.SCOPE_KEYS.approval("scope-k", "k-1"))).isFalse();
+        assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_PENDING_MAP)
+                .containsKey(pendingKey())).isTrue();
         assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
         assertThat(members[0].instance().getMap(PrivacyCluster.APPROVAL_ID_MAP)
                 .containsKey(TestMembers.SCOPE_KEYS.claim("k-1"))).isFalse();

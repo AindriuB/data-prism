@@ -409,6 +409,15 @@ class KeyedAuditChainTest {
 
     @Test
     void aKeyBWriterWithABadCheckpointIsReportedFromTheKeyBReplayAndLabelledKeyB() throws IOException {
+        assertKeyBCheckpointBreak(List.of(KEY_A, KEY_B));
+    }
+
+    @Test
+    void theKeyOrderDoesNotChangeWhichKeyLabelsABadCheckpointWriter() throws IOException {
+        assertKeyBCheckpointBreak(List.of(KEY_B, KEY_A));
+    }
+
+    private void assertKeyBCheckpointBreak(List<AuditChainKey> order) throws IOException {
         Path audit = tempDir.resolve("b-cp.log");
         Path cp = tempDir.resolve("b-cp.jsonl");
         try (FileAuditSink sink = new FileAuditSink(audit);
@@ -428,13 +437,14 @@ class KeyedAuditChainTest {
         Files.write(audit, (String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
 
         VerificationReport report = AuditChainVerifier.verify(audit, cp, Period.ofMonths(6),
-                List.of(KEY_A, KEY_B), false);
+                order, false);
 
         assertThat(report.hasBreak()).isTrue();
         assertThat(report.writers()).singleElement().satisfies(w -> {
             assertThat(w.broken()).isTrue();
             assertThat(w.firstBreak().orElseThrow().sequence()).isEqualTo(5);
             assertThat(w.keyId()).contains("key-b");
+            assertThat(w.firstBreak().orElseThrow().reason()).contains("checkpoint file recorded");
         });
     }
 

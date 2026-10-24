@@ -357,8 +357,10 @@ public final class AuditChainVerifier {
             }
             if (chosen == null) {
                 WriterResult plain = unkeyed.report().writers().get(i);
-                // Only a replay whose reported break IS the checkpoint break counts: a writer that failed on
-                // a hash first (unkeyed, forged) must fall through to the unkeyed and forger branches.
+                // The mismatch flag reads the stored hashes, so it is the same under every key; what differs per
+                // replay is whether the checkpoint break is that replay's reported break. Only such a replay
+                // counts: a writer that failed on a hash first (unkeyed, forged) falls through to the unkeyed
+                // and forger branches.
                 boolean mismatch = keyed.stream().anyMatch(r -> r.states().get(instance).checkpointBreak);
                 if (mismatch) {
                     // Report the replay that hashed furthest, not key 0's by default, and name its key.
