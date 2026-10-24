@@ -59,3 +59,5 @@ Routed. `PrivacyEngineWiring` passing the descriptor map goes to task 271. The s
 Follow-ups. `profileChangesDescription` only asserts `isNotEqualTo`. `Optional<List<Record>>`'s element path is not described.
 
 **Review round (PR #163).** `profileChangesDescription` asserts the exact STRICT tightening of `recipientName`, and the mutant was shown failing.
+
+**Review round 3 (PR #163).** `ValueTokenSource.available()` (default true, false for `unavailable()`) replaces the enclosing-class check and the engine uses it. Decorators of `ValueTokenSource` must delegate it.

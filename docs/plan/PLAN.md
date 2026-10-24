@@ -91,7 +91,19 @@ Order: 265, 244 and 257 in parallel; then 267 (stacked on 265) and 245; then 266
 - 257: `34bcce2b`, `4c8a070b`, `e5864921`, `9118afc7`, `61ec2f94` (docs only), `00810a75`, `752d867a` (docs only), `f456a12b`. Pick `e34a738c` (the post-tag correction to `docs/verifying-releases.md`) before `61ec2f94`.
 - 265 (core-fix commits only, pick first): `484cf7c7`, `7c23172a`, `d4469c7e`. Skip `5445c0b8` (main only).
 - 267 (core-fix commits only, pick after 265's): `82329385`, `34a6a0e3`, `f2090cae`, `096a823e`. Skip `2d5e5c30` (main only).
-- 245: `168ca025`, `f0cfdb10`, `811a73eb`, `5fd20ef7`, `212fceb5`, `c81fa46f`, `846d9b2f`. Seven commits, all code and tests, none under `docs/plan/`. The first two and the third are tests and a refactor that precede the fixes; pick all seven in this order. One existing test line changed (see "Follow-ups from 245" below).
+- 245: `168ca025`, `f0cfdb10`, `811a73eb`, `5fd20ef7`, `212fceb5`, `c81fa46f`, `846d9b2f`. Seven commits, all code and tests, none under `docs/plan/`. The first two and the third are tests and a refactor that precede the fixes; pick all seven in this order. One existing test line changed (see "Third external review round on PR #163 (Lows and Nits; none scheduled, each fold into the next edit of the named code):
+
+- `HazelcastApprovalStore.forgetScope` and `HazelcastScopeBudget.forget` do not catch `HazelcastException` and throw a bare timeout; give them the refusal handling `endScope` now has.
+- `SealedWrites.unregister` should log the exception class.
+- `SourceTree`:270: the holder serializer is not contextualised.
+- `SourceTree`:317: allow-list `ReferenceTypeSerializer`.
+- `ScrubPlanDescriberTest`:624 has no non-record-holder test and no catch-path test.
+- `AuditChainVerifier`:320 counts broken writers as unkeyed.
+- `AuditChainVerifier`:357 reports key 0 on a checkpoint mismatch; report the furthest break.
+- `LinkArchitectureTest`:213 hard-codes the core classes directory; use `ModuleGraph`.
+- Nits: a reassigned timeout parameter; a new `Mac` per event hash; the `cancel(true)` in the invoker catch is covered without a failing-first assertion. (Inline FQNs and import order, `Holder.close()`, the stats ThreadLocal and `ResolverInvoker` shutdown are already listed above.)
+
+Follow-ups from 245" below).
 - 268: `b12f0966` (`pom.xml`) then `7175ed4e` (`docs/extending.md`). There is no Outcome commit to skip: the Outcome lands in the record commit.
 
 Pick order for 266: 265 core, 267 core, 244, 245, the `e34a738c` docs carry, 257, 268 (its `pom.xml` and `docs/extending.md` commits only).

@@ -61,3 +61,5 @@ Follow-ups. The `SourceFanOut` starvation is now task 272 (PR #161). The test na
 **Review round (PR #163).** `Resolution` keeps null elements, so a null key gives INVALID_OUTPUT.
 
 **Review round 2 (PR #163).** The invoker waits for the shorter of the timeout and the time to the deadline; if the deadline has already passed it returns `TIMEOUT` without calling the resolver. `toString` of `Resolution`, `Keys` and `ResolutionContext` prints counts only, or the deadline, never key material. The test `CONTEXT` deadline moved a year ahead so it cannot expire during a run.
+
+**Review round 3 (PR #163).** The wait is converted to a duration with saturation before the slot is taken. Every abnormal branch calls `cancel(true)`. The deadline-passed test asserts the TIMEOUT metric and that the slot is free.
