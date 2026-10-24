@@ -316,8 +316,10 @@ public final class AuditChainVerifier {
             if (!allowUnkeyedWriters) {
                 return plain;
             }
-            // No key was given and unkeyed writers are allowed: every writer was verified unkeyed.
-            List<WriterResult> marked = plain.writers().stream().map(w -> w.withKey(Optional.empty(), true)).toList();
+            // No key was given and unkeyed writers are allowed: every intact writer was verified unkeyed.
+            // A broken writer verified nothing, so it is not marked as allowed.
+            List<WriterResult> marked = plain.writers().stream()
+                    .map(w -> w.broken() ? w : w.withKey(Optional.empty(), true)).toList();
             return new VerificationReport(marked, plain.anomalies(), plain.tail(), plain.checkpointFindings());
         }
         java.util.Set<String> ids = new java.util.HashSet<>();
@@ -357,7 +359,16 @@ public final class AuditChainVerifier {
                 WriterResult plain = unkeyed.report().writers().get(i);
                 boolean mismatch = base.states().get(instance).checkpointMismatch;
                 if (mismatch) {
+                    // Report the replay that hashed furthest, not key 0's by default.
                     chosen = first;
+                    long most = base.states().get(instance).recomputed;
+                    for (Replayed r : keyed) {
+                        long hashed = r.states().get(instance).recomputed;
+                        if (hashed > most) {
+                            most = hashed;
+                            chosen = r.report().writers().get(i);
+                        }
+                    }
                 } else if (!plain.broken() && allowUnkeyedWriters) {
                     chosen = plain.withKey(Optional.empty(), true);
                 } else if (!plain.broken()) {

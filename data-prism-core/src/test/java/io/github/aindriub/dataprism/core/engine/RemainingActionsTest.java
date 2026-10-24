@@ -45,6 +45,11 @@ class RemainingActionsTest {
         public String token(String value, PrivacyNamespace namespace, PrivacyContext context) {
             return "token:" + Integer.toHexString(value.hashCode());
         }
+
+        @Override
+        public boolean available() {
+            return true;
+        }
     };
 
     private static final SyntheticValueSource SYNTHETICS =

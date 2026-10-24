@@ -19,6 +19,7 @@ import io.github.aindriub.dataprism.core.link.LinkKeys;
 import io.github.aindriub.dataprism.core.link.SplitPackageFixture;
 import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
 import io.github.aindriub.dataprism.hazelcast.archfixture.HzLimiterDelegatesToAnother;
+import io.github.aindriub.dataprism.hazelcast.archfixture.HzLimiterDelegatesToItsOwnType;
 import io.github.aindriub.dataprism.hazelcast.archfixture.HzLimiterOpensTokens;
 import io.github.aindriub.dataprism.hazelcast.archfixture.LinkLimiterFloorFixture;
 import org.junit.jupiter.api.BeforeAll;
@@ -46,10 +47,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>(Task 269) The limiter, subject, opener and gate depend directly on neither {@code LinkKeys} nor
  *       {@code SecretKeyProvider}.
  *   <li>(Task 269) Nothing outside {@code core.link} calls or references {@code LinkCodec.open} or the limiter's
- *       two methods, except a Hazelcast class that itself implements the limiter.
+ *       two methods, except a Hazelcast class that itself implements the limiter and holds no limiter-typed field.
  *   <li>(Task 269) No class in this repository outside {@code core.link} and {@code dataprism.hazelcast}
  *       implements {@code LinkAttemptLimiter}.
- *   <li>(Task 269) Every class in {@code core.link} is loaded from {@code data-prism-core}'s main classes.
+ *   <li>(Task 269) Every {@code core.link} class in the repository's modules is loaded from {@code data-prism-core}'s main
+ *       classes. A split package supplied by a third-party jar outside the repository is not covered.
  * </ol>
  */
 class LinkArchitectureTest {
@@ -159,10 +161,16 @@ class LinkArchitectureTest {
         return opensToken || usesLimiter;
     }
 
-    /** A Hazelcast limiter calling its own method: the call's target owner is the origin class itself. */
+    /**
+     * A Hazelcast limiter calling its own method: the call's target owner is the origin class itself. A limiter
+     * with a field typed as a limiter (the interface, or its own type) may hold another instance and delegate to
+     * it, which the owner check cannot tell from a call on itself, so such a class has no exemption.
+     */
     private static boolean isHazelcastSelfCall(JavaAccess<?> access) {
         JavaClass origin = access.getOriginOwner();
-        return isHazelcastLimiter(origin) && access.getTarget().getOwner().equals(origin);
+        return isHazelcastLimiter(origin) && access.getTarget().getOwner().equals(origin)
+                && origin.getAllFields().stream()
+                        .noneMatch(f -> f.getRawType().isAssignableTo(LinkAttemptLimiter.class));
     }
 
     private static boolean isHazelcastLimiter(JavaClass c) {
@@ -213,7 +221,7 @@ class LinkArchitectureTest {
                         javaClass.getName() + (fromCore ? " is in core's main classes"
                                 : " is not loaded from data-prism-core's main classes")));
             }
-        }).because("core.link lives only in data-prism-core, so a split package cannot hide a second codec")
+        }).because("core.link lives only in data-prism-core, so a split package among the repository modules cannot hide a second codec")
                 .allowEmptyShould(true);
     }
 
@@ -523,6 +531,12 @@ class LinkArchitectureTest {
     void aHazelcastLimiterMayNotCallAnotherLimiter() {
         assertThat(evaluate(noBypass(outsideLinkAnd(HzLimiterDelegatesToAnother.class)),
                 HzLimiterDelegatesToAnother.class).hasViolation()).isTrue();
+    }
+
+    @Test
+    void aHazelcastLimiterMayNotDelegateToAnotherInstanceOfItsOwnType() {
+        assertThat(evaluate(noBypass(outsideLinkAnd(HzLimiterDelegatesToItsOwnType.class)),
+                HzLimiterDelegatesToItsOwnType.class).hasViolation()).isTrue();
     }
 
     @Test

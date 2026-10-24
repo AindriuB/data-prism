@@ -371,6 +371,30 @@ class KeyedAuditChainTest {
     }
 
     @Test
+    void allowFlagWithoutAKeyDoesNotCountABrokenWriterAsAllowed() throws IOException {
+        Path path = tempDir.resolve("broken.log");
+        try (FileAuditSink sink = new FileAuditSink(path)) {
+            AuditRecorder w1 = new AuditRecorder(sink, FIXED, "w1", null, null, AuditChainMode.unkeyed());
+            for (int i = 0; i < 3; i++) {
+                write(w1);
+            }
+            AuditRecorder w2 = new AuditRecorder(sink, FIXED, "w2", null, null, AuditChainMode.unkeyed());
+            write(w2);
+        }
+        List<String> lines = new ArrayList<>(Files.readAllLines(path));
+        lines.remove(1);
+        Files.write(path, (String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
+
+        VerificationReport report = verify(path, List.of(), true);
+
+        assertThat(report.hasBreak()).isTrue();
+        assertThat(report.writers()).filteredOn(AuditChainVerifier.WriterResult::broken)
+                .allSatisfy(w -> assertThat(w.unkeyedAllowed()).isFalse());
+        assertThat(report.writers()).filteredOn(w -> !w.broken())
+                .allSatisfy(w -> assertThat(w.unkeyedAllowed()).isTrue());
+    }
+
+    @Test
     void aWriterMissingARecordUnderKeyBNamesTheDeletionNotTheFirstRecord() throws IOException {
         Path path = keyedFile("b.log", AuditChainMode.keyed(KEY_B), 5);
         List<String> lines = new ArrayList<>(Files.readAllLines(path));
