@@ -6,6 +6,9 @@ import io.github.aindriub.dataprism.core.model.PrivacyScopeType;
 import io.github.aindriub.dataprism.core.model.PseudonymisationVersion;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import io.github.aindriub.dataprism.oversight.ApprovalRequest.Status;
+import com.hazelcast.map.IMap;
+import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +19,7 @@ import java.util.OptionalInt;
 
 import static io.github.aindriub.dataprism.hazelcast.TestMembers.NOW;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Ending a scope is still a prefix match once keys are keyed names: {@code endScope}, {@code forgetScope} and the
@@ -192,5 +196,79 @@ class KeyedScopeEndTest {
         assertThat(state.toolPaused("search")).isTrue();
         assertThat(state.scopePaused(ENDED)).isFalse();
         assertThat(state.snapshot().pausedScopes()).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aRefusalInTheFirstMapStillEmptiesTheOthersRunsForgetScopeAndThrows() {
+        singleMember();
+        populate(ENDED, "subject-1");
+        PrivacyCluster cluster = members[0];
+        var index = new ScopeIdentityIndex(cluster, io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(),
+                TIMEOUT);
+        index.maps = name -> {
+            IMap<String, ?> real = cluster.instance().getMap(name);
+            if (!PrivacyCluster.IDENTITY_MAP.equals(name)) {
+                return real;
+            }
+            return (IMap<String, ?>) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[] {IMap.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("tryLock")) {
+                            throw new IllegalArgumentException("lease too long");
+                        }
+                        try {
+                            return method.invoke(real, args);
+                        } catch (java.lang.reflect.InvocationTargetException e) {
+                            throw e.getCause();
+                        }
+                    });
+        };
+
+        assertThatThrownBy(() -> index.endScope(ENDED)).isInstanceOf(ClusterOperationRefusedException.class);
+
+        assertThat(cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP).size()).as("refused map").isPositive();
+        assertThat(cluster.instance().getMap(PrivacyCluster.REIDENTIFICATION_MAP).size()).isZero();
+        assertThat(cluster.instance().getMap(PrivacyCluster.BUDGET_MAP).size()).isZero();
+        assertThat(cluster.instance().getMap(PrivacyCluster.OVERSIGHT_MAP).size()).isZero();
+        assertThat(cluster.instance().getMap(PrivacyCluster.APPROVAL_MAP).size()).as("forgetScope ran").isZero();
+    }
+
+    @Test
+    void endScopeWithHeldKeysInTwoMapsTakesAboutOneTimeout() throws Exception {
+        singleMember();
+        Duration timeout = Duration.ofSeconds(1);
+        populate(ENDED, "subject-1");
+        PrivacyCluster cluster = members[0];
+        IMap<String, Object> identity = cluster.instance().getMap(PrivacyCluster.IDENTITY_MAP);
+        IMap<String, Object> budget = cluster.instance().getMap(PrivacyCluster.BUDGET_MAP);
+        String identityKey = identity.keySet().iterator().next();
+        String budgetKey = budget.keySet().iterator().next();
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            identity.lock(identityKey);
+            budget.lock(budgetKey);
+            locked.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        holder.start();
+        assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        try {
+            var index = new ScopeIdentityIndex(cluster,
+                    io.github.aindriub.dataprism.core.metrics.PrivacyMetrics.none(), timeout);
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> index.endScope(ENDED)).isInstanceOf(ClusterLockTimeoutException.class);
+            long elapsed = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            assertThat(elapsed).as("one shared deadline, not one per map").isLessThan(1700);
+        } finally {
+            identity.forceUnlock(identityKey);
+            budget.forceUnlock(budgetKey);
+            release.countDown();
+            holder.join();
+        }
     }
 }

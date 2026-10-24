@@ -48,4 +48,16 @@ class LegacyOversightStateTest {
         assertThat(restarted.allPaused()).isTrue();
         assertThat(restarted.scopePaused("CASE-A")).isTrue();
     }
+
+    @Test
+    void aLegacyPauseWrittenAfterConstructionPausesThatScopeOnly() {
+        var state = new HazelcastOversightState(members[0]);
+        assertThat(state.scopePaused("CASE-A")).isFalse();
+
+        members[1].instance().getMap(PrivacyCluster.OVERSIGHT_MAP).put("CASE-A\0paused", Boolean.TRUE);
+
+        assertThat(state.scopePaused("CASE-A")).isTrue();
+        assertThat(state.scopePaused("CASE-B")).isFalse();
+        assertThat(state.snapshot().pausedScopes()).containsExactly("CASE-A");
+    }
 }
