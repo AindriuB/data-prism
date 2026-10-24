@@ -19,6 +19,9 @@ import io.github.aindriub.dataprism.core.spi.FieldMetadataResolver;
 import io.github.aindriub.dataprism.core.spi.ScrubbingEngine;
 import io.github.aindriub.dataprism.core.spi.SyntheticValueSource;
 import io.github.aindriub.dataprism.core.spi.ValueTokenSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -66,6 +69,8 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * pathologically deep data rather than true cycles.
      */
     private static final int MAX_DEPTH = 16;
+
+    private static final Logger LOG = LoggerFactory.getLogger(JsonTreeScrubbingEngine.class);
 
     private final FieldMetadataResolver resolver;
     private final PrivacyPolicyResolver policies;
@@ -124,15 +129,6 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * resolver and the same nested-type rule. Chainable paths come from the annotations and from the
      * descriptors given at construction.
      */
-    /** Read on every description, and fail closed: a source whose {@code available()} throws is unavailable. */
-    private boolean tokensAvailable() {
-        try {
-            return tokens.available();
-        } catch (RuntimeException e) {
-            return false;
-        }
-    }
-
     @Override
     public Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled) {
         Objects.requireNonNull(model, "model");
@@ -150,6 +146,20 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         }
         return ScrubPlanDescriber.describe(model, context, linksEnabled, resolver, policies, chainables,
                 tokensAvailable());
+    }
+
+    /**
+     * Read on every description, and fail closed: a source whose {@code available()} throws is unavailable.
+     * Only the exception's class is logged, never its message, which could carry a value.
+     */
+    private boolean tokensAvailable() {
+        try {
+            return tokens.available();
+        } catch (RuntimeException e) {
+            LOG.warn("ValueTokenSource.available() threw {}; treating the token source as unavailable",
+                    e.getClass().getName());
+            return false;
+        }
     }
 
     /**

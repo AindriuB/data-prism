@@ -17,7 +17,10 @@ import io.github.aindriub.dataprism.core.spi.KeyNamespace;
 import tools.jackson.databind.annotation.JsonSerialize;
 
 import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.RecordComponent;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -51,8 +54,12 @@ import java.util.stream.Collectors;
  * array, not with an object id, not through {@code @JsonValue} or a custom serializer, and with no
  * serializer or format override on the holding component. Anything else is omitted, which fails closed.
  * There is no mix-in route, because that reader is fixed. A type that may instead be written as a scalar
- * and that the scrubber would descend into is omitted too. A decorator wrapping {@code ValueTokenSource.unavailable()} is
- * reported as having a token source, which is the safe direction: the scrub then refuses.
+ * and that the scrubber would descend into is omitted too.
+ *
+ * <p>Whether the {@code ValueTokenSource} can hash and tokenize is read afresh for each description, by the
+ * caller, and passed in. When it cannot (or its {@code available()} throws), every HASH or TOKENIZE field is
+ * omitted, because the scrubber would refuse it. That is fail closed: a source reporting {@code true} wrongly
+ * is the only way to over-claim, and the interface default is {@code false}.
  *
  * <p>A model that contains itself is described to its shallowest occurrence only. The path grammar
  * cannot express recursion, so the deeper paths the scrubber emits ({@code children[].name}) are
@@ -78,11 +85,11 @@ final class ScrubPlanDescriber {
     private ScrubPlanDescriber(FieldMetadataResolver resolver, PrivacyPolicyResolver policies,
                                PrivacyContext context, Map<String, KeyNamespace> chainables,
                                boolean tokensAvailable) {
-        this.tokensAvailable = tokensAvailable;
         this.resolver = resolver;
         this.policies = policies;
         this.context = context;
         this.chainables = chainables;
+        this.tokensAvailable = tokensAvailable;
     }
 
     /**
@@ -342,12 +349,12 @@ final class ScrubPlanDescriber {
             if (type.isAnnotationPresent(JsonSerialize.class)) {
                 return true;
             }
-            for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
+            for (Method m : type.getDeclaredMethods()) {
                 if (m.isAnnotationPresent(JsonValue.class)) {
                     return true;
                 }
             }
-            for (java.lang.reflect.Field f : type.getDeclaredFields()) {
+            for (Field f : type.getDeclaredFields()) {
                 if (f.isAnnotationPresent(JsonValue.class)) {
                     return true;
                 }
@@ -355,7 +362,7 @@ final class ScrubPlanDescriber {
         }
         List<AnnotatedElement> holders = new java.util.ArrayList<>();
         if (owner.isRecord()) {
-            for (java.lang.reflect.RecordComponent rc : owner.getRecordComponents()) {
+            for (RecordComponent rc : owner.getRecordComponents()) {
                 if (rc.getName().equals(md.fieldName())) {
                     holders.add(rc);
                     holders.add(rc.getAccessor());

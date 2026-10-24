@@ -42,6 +42,11 @@ class DescriptionConformsToScrubTest {
         public String token(String value, PrivacyNamespace namespace, io.github.aindriub.dataprism.core.model.PrivacyContext c) {
             return "t-" + namespace;
         }
+
+        @Override
+        public boolean available() {
+            return true;
+        }
     };
 
     private static Map<String, PrivacyProfile> profiles() {

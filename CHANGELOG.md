@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- `ValueTokenSource.available()` now defaults to `false` (it was `true`). A custom
+  `ValueTokenSource` that hashes and tokenizes must override it to return `true`;
+  until it does, a model describing HASH or TOKENIZE fields omits them and says the
+  source cannot tokenize. A decorator must delegate it to the source it wraps.
+
 ## [0.7.1] - 2026-10-21
 
 ### Security

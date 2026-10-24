@@ -578,6 +578,11 @@ class ScrubPlanDescriberTest {
                     public String token(String v, PrivacyNamespace n, PrivacyContext c) {
                         return "t";
                     }
+
+                    @Override
+                    public boolean available() {
+                        return true;
+                    }
                 });
 
         assertThat(byPath(noSource.describe(Hashed.class, context("DEFAULT"), false).orElseThrow()))

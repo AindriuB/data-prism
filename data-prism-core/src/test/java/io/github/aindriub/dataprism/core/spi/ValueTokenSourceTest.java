@@ -36,8 +36,8 @@ class ValueTokenSourceTest {
     }
 
     @Test
-    void aDecoratorThatDoesNotDelegateHidesAnUnavailableSource() {
-        // Documents why the javadoc says a decorator MUST delegate available(): the default is true.
+    void aDecoratorThatDoesNotDelegateFailsClosedAsUnavailable() {
+        // The default is false, so a decorator that forgets to delegate cannot over-claim tokens.
         ValueTokenSource inner = ValueTokenSource.unavailable();
         ValueTokenSource careless = new ValueTokenSource() {
             @Override
@@ -50,6 +50,6 @@ class ValueTokenSourceTest {
                 return inner.token(value, namespace, context);
             }
         };
-        assertThat(careless.available()).isTrue();
+        assertThat(careless.available()).isFalse();
     }
 }
