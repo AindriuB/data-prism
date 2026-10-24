@@ -65,3 +65,5 @@ Follow-ups. `profileChangesDescription` only asserts `isNotEqualTo`. `Optional<L
 **Review round 5 (PR #163; reviewer ids 163-1 to 163-15).** `tokens.available()` is checked on every describe, and an `available()` that throws counts as unavailable.
 
 **Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** `ValueTokenSource.available()` defaults to false (fail closed), `HmacValueTokenSource` overrides it, and CHANGELOG has a Breaking line. The describer Javadoc is rewritten, `tokensAvailable` logs the exception class on failure, and imports and field order are fixed.
+
+**Review round 7 (PR #163; reviewer ids 163-1 to 163-12).** A throwing `available()` warns once per source class, then logs at DEBUG.

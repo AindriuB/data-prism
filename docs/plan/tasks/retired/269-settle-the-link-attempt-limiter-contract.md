@@ -351,3 +351,5 @@ Notes. For 264: nested classes inside a Hazelcast limiter are not exempt (it fai
 **Review round 5 (PR #163; reviewer ids 163-1 to 163-15).** The Hazelcast exemption covers self-calls only, with the new fixture `HzLimiterDelegatesToAnother`. The concurrency tests now assert that no outcome is UNAVAILABLE.
 
 **Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** The Hazelcast self-call exemption is withdrawn for any limiter with a field assignable to `LinkAttemptLimiter` (fixture `HzLimiterDelegatesToItsOwnType`). Split-package docs say repo modules only.
+
+**Review round 7 (PR #163; reviewer ids 163-1 to 163-12).** The Hazelcast self-call exemption is removed entirely, because 264 is deferred past 1.0; 264 must re-introduce a method-level allow-list. `LinkLimiterFloorFixture`'s bypass assertion is flipped.

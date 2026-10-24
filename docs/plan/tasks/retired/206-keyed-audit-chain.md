@@ -77,3 +77,5 @@ Follow-ups. With only `--allow-unkeyed-writers`, a broken writer is still counte
 **Review round (PR #163).** Keyed runs no longer print the "needs a keyed MAC" sentence; they keep the shared scope caveats.
 
 **Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** With no keys, broken writers are not marked unkeyed-allowed. A checkpoint mismatch reports the replay with the most hashed records.
+
+**Review round 7 (PR #163; reviewer ids 163-1 to 163-12).** A checkpoint mismatch is detected per key, and the writer is labelled with the furthest key.
