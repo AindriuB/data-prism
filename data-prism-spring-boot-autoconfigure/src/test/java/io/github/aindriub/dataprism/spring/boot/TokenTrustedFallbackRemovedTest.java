@@ -25,30 +25,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The token-trusted case authorizer and the unrestricted client allowlist are fallbacks for a deployment that
- * supplies neither bean. They must not ship in a release from 0.8.0 on (task 210 removes them). This fails
- * the build when the project version is a non-SNAPSHOT 0.8 or later and the fallback is still wired.
+ * The token-trusted case authorizer is a fallback for a deployment that supplies no {@code CaseAuthorizer} bean.
+ * It must not ship in a release from 0.8.0 on (task 210 removes it). This fails the build when the project
+ * version is a non-SNAPSHOT 0.8 or later and the fallback is still wired. It passes when startup refuses with
+ * {@code MISSING_CASE_AUTHORIZER}, or startup succeeds and an unassigned case no longer resolves. Any other
+ * startup failure fails it. Only {@code -SNAPSHOT} skips the gate; release candidates do not.
+ *
+ * <p>The unset-allowlist default {@code ClientAllowlist.unrestricted()} is deliberately not gated: it is the
+ * intended 1.0 design (D-1.0-1), and the unrestricted-allowlist WARN stays.
  *
  * <p>The version comes from {@code project-version.properties}, a test resource Maven filters with
  * {@code ${project.version}} (see this module's pom), so it cannot drift from the build.
- *
- * <p>Each fallback is probed separately and passes when startup refuses with its specific code
- * ({@code MISSING_CASE_AUTHORIZER} for the case authorizer; task 210 defines no refusal for an unset allowlist, so
- * only a non-fallback wiring passes there) or the wired bean no longer behaves as the fallback. Only {@code -SNAPSHOT}
- * skips the gate; release candidates do not.
  */
-class UnrestrictedFallbackRemovedTest {
+class TokenTrustedFallbackRemovedTest {
 
     private static final Pattern VERSION = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(-.+)?$");
 
     private static final String CASE_REFUSAL = "MISSING_CASE_AUTHORIZER";
 
     @Test
-    void the_fallbacks_are_gone_before_a_0_8_release() throws IOException {
+    void the_fallback_is_gone_before_a_0_8_release() throws IOException {
         String version = projectVersion();
         assertFallbackAllowed(version, "CaseAuthorizer.tokenTrusted()", caseFailure(), CASE_REFUSAL, caseFallbackWired());
-        assertFallbackAllowed(version, "ClientAllowlist.unrestricted()", allowlistFailure(), null,
-                allowlistFallbackWired());
     }
 
     @Test
@@ -81,19 +79,6 @@ class UnrestrictedFallbackRemovedTest {
         assertThatThrownBy(() -> assertFallbackAllowed("0.8.0", "f",
                 new DataPrismConfigurationException("SOME_OTHER_CODE", "x"), CASE_REFUSAL, false))
                 .isInstanceOf(AssertionError.class);
-        // an allowlist with no defined refusal accepts no startup failure at all
-        assertThatThrownBy(() -> assertFallbackAllowed("0.8.0", "f", new IllegalStateException("boom"), null, false))
-                .isInstanceOf(AssertionError.class);
-    }
-
-    @Test
-    void the_guard_fails_when_only_one_fallback_is_removed() {
-        // case authorizer removed (startup refused with its code), allowlist fallback still wired
-        assertThatThrownBy(() -> {
-            assertFallbackAllowed("0.8.0", "tokenTrusted", new DataPrismConfigurationException(CASE_REFUSAL, "x"),
-                    CASE_REFUSAL, false);
-            assertFallbackAllowed("0.8.0", "unrestricted", null, null, true);
-        }).isInstanceOf(AssertionError.class);
     }
 
     static void assertFallbackAllowed(String version, String fallback, Throwable startupFailure,
@@ -123,7 +108,7 @@ class UnrestrictedFallbackRemovedTest {
 
     private static String projectVersion() throws IOException {
         Properties properties = new Properties();
-        try (InputStream in = UnrestrictedFallbackRemovedTest.class.getResourceAsStream("/project-version.properties")) {
+        try (InputStream in = TokenTrustedFallbackRemovedTest.class.getResourceAsStream("/project-version.properties")) {
             assertThat(in).as("project-version.properties on the test classpath").isNotNull();
             properties.load(in);
         }
@@ -160,28 +145,6 @@ class UnrestrictedFallbackRemovedTest {
                 wired.set(result.getBean(ScopeResolver.class).resolve(CALLER, decision, CLOCK) != null);
             }
         });
-        return wired.get();
-    }
-
-    /** Context with a CaseAuthorizer bean but no ClientAllowlist bean. */
-    private static Throwable allowlistFailure() {
-        AtomicReference<Throwable> failure = new AtomicReference<>();
-        runner().withUserConfiguration(SecurityWiringTest.Base.class, SecurityWiringTest.RefusingCaseAuthorizer.class)
-                .run(result -> failure.set(result.getStartupFailure()));
-        return failure.get();
-    }
-
-    /** True when that context starts and permits a client nobody listed. */
-    private static boolean allowlistFallbackWired() {
-        AtomicBoolean wired = new AtomicBoolean();
-        runner().withUserConfiguration(SecurityWiringTest.Base.class, SecurityWiringTest.RefusingCaseAuthorizer.class)
-                .run(result -> {
-                    if (result.getStartupFailure() == null) {
-                        wired.set(result.getBean(AuthorizationService.class)
-                                .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"))
-                                .allowed());
-                    }
-                });
         return wired.get();
     }
 }
