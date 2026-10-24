@@ -1,10 +1,12 @@
 # 224 — Seal approval entries, claims and pending slots, and add consumed tombstones
 
+Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 225, 227, 228 and 284 to 287 first, because they changed some of the files named here.
+
 **Repo:** `.`
-**Release:** 0.8.0
+**Release:** after 1.0 (untrusted-network clusters); was 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 223.
 **Depends on:** 219 (answers 8 and 9), 223 (keyed names, `SealedWrites`, per-area boundary checkers)
-**Wave:** 5 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave:** none (deferred past 1.0; was a 0.8 wave)
 **Decisions:** OD-215-12 decided 2026-10-20 (a): 100,000 ids, evicting the earliest-expiring.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastApprovalStore.java

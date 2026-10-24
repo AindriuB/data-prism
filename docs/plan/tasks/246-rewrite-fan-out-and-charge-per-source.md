@@ -2,8 +2,8 @@
 
 **Repo:** `.`
 **Release:** 0.8.0
-**Base branch:** the 0.8 integration branch once 243, 244, 203 and 226 have merged
-**Depends on:** 243 (reservation SPI), 244 (both edit `DefaultContextOrchestrator`), 203 (203 owns existing `data-prism-mcp` test files), 226 (sealed-cluster plan; 226 implements `reserve` and `release` on `HazelcastScopeBudget`, OD-08-1 is decided as option (a), 2026-10-20)
+**Base branch:** the 0.8 integration branch once 243, 244, 203 and 285 have merged
+**Depends on:** 243 (reservation SPI), 244 (both edit `DefaultContextOrchestrator`), 203 (203 owns existing `data-prism-mcp` test files), 285 (implements `reserve` and `release` on `HazelcastScopeBudget`, unsealed; OD-08-1 is decided as option (a), 2026-10-20. Re-wired 2026-10-23 from 226, which owner decision (b) deferred past 1.0)
 **Decisions:** OD-08-1 (a), OD-08-3 (`PT10S` deadline, scope total 50,000, `scope-read-budget` stays 100 and counts source reads), OD-08-4 (a, remove `SKIPPED_OVER_LIMIT`) and OD-08-5 (a, release reads never started) are decided 2026-10-20.
 **Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
 **Owns:**
@@ -41,7 +41,7 @@ The fan-out measures every source's timeout from the start of the whole fan-out 
 - [ ] No permit leaks: after 1,000 requests mixing answers, failures, timeouts and cancellations, the bulkhead is back at `maxConcurrency` (asserted through a test hook, not by timing).
 - [ ] More sources to call than `maxSources` refuses the whole call with `SOURCE_SELECTION_TOO_LARGE` before any adapter call or budget reservation (counting adapter and counting budget). `SKIPPED_OVER_LIMIT` is removed from `SourceOutcome.Status` (OD-08-4 (a)), and `source-status-codes.txt` and `SourceStatusCodesTest` agree with it.
 - [ ] After the circuit-breaker filter, the orchestrator reserves one read per source it will call, against the subject budget and the scope total, in one `ScopeBudget.reserve` call, before any adapter is called. A refused reservation refuses the call with `SCOPE_READ_BUDGET` and calls nothing. A source whose circuit is open is not charged. `compare_entity_sources` follows the same rule (a test through its path).
-- [ ] With the in-memory budget, two concurrent requests for one subject never jointly exceed the subject budget or the scope total. The same test runs against `HazelcastScopeBudget` in the cluster brief named under OD-08-1; this task's Outcome records that brief's test name.
+- [ ] With the in-memory budget, two concurrent requests for one subject never jointly exceed the subject budget or the scope total. The same test runs against `HazelcastScopeBudget` in 285 (`HazelcastReservationTest`); this task's Outcome names it.
 - [ ] Before merge, a whole-component concurrency hunt covers `SourceFanOut`, the reservation path and cancellation; each finding is fixed or filed and named in the Outcome.
 - [ ] The Outcome lists the behaviour changes for the 0.8 migration notes (261): per-source timeout semantics, per-source charging, the refusal that replaces the cut-off.
 - [ ] `./mvnw -B verify` (full reactor) passes.
@@ -50,4 +50,4 @@ The fan-out measures every source's timeout from the start of the whole fan-out 
 - Binding the new limits from configuration (254).
 - `targetSources`, D-RM-9 and labels (247).
 - The 0.9 batch, per-source truncation and per-source size caps.
-- `HazelcastScopeBudget` (OD-08-1).
+- `HazelcastScopeBudget` (285, OD-08-1).

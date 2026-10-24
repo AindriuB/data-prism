@@ -1,10 +1,14 @@
 # 264 — Share the sealed-link failed-attempt limiter across a Hazelcast cluster
 
+Deferred 2026-10-23, owner decision (b): 1.0 supports multiple instances on a trusted network only, and cluster security for untrusted networks is deferred past 1.0 (D-RM-1 (a) as amended; `docs/plan/PLAN.md`, "After 1.0: untrusted-network clusters"). This brief is kept as written for that milestone. Its dependencies, wave and base branch below are those of the 0.8 plan and must be re-planned when the milestone opens; read the 1.0 briefs 225, 227, 228 and 284 to 287 first, because they changed some of the files named here.
+
+In effect for 1.0: fallback (c) below. Core 255's `MISSING_SHARED_LINK_LIMITER` refusal is the shipped behaviour: a member joining via `tcp-ip` or `kubernetes` refuses `dataprism.links.enabled=true` and a configured link key; `join.mode: none` and `single-node` use the in-memory limiter. The edges named in fallback (c) are removed from 260, 263 and 213.
+
 **Repo:** `.`
-**Release:** 0.8.0 (links stay off by default through 0.9). If this task is cut from 0.8, the fallback below ships instead.
+**Release:** after 1.0 (untrusted-network clusters); was 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 229, 230, core 242, core 269 and core 255.
 **Depends on:** 229 (every sealed store and the rotation sweeper exist; through it 223 `SealedWrites`, keyed names and `ClusterSecuritySettings`, and 226 `CounterMaps`, `LocalFloor` and the counter merge policy), 242 (core plan: the codec and the first limiter SPI, both revised by 269), 230 (serialised after 230 on `ClusterBackedState.java` and the bean-inventory lists; through it core 255, which owns the `MISSING_SHARED_LINK_LIMITER` startup refusal and the in-memory limiter bean), 269 (the settled limiter contract this task implements: `AttemptSubject`, atomic `recordFailure` returning `Admission`, the ceiling, `LinkAttemptGate`)
-**Wave:** 13 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave:** none (deferred past 1.0; was a 0.8 wave)
 **Decision:** core OD-08-2 (a), decided by the owner 2026-10-20, which also settles OD-215-14 with this id. The owner accepts this task slipping to 0.9.0; the fallback (c) below is agreed for that case. Per-instance limiting on a cluster (option (b)) is excluded outright.
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastLinkAttemptLimiter.java *(new)*
