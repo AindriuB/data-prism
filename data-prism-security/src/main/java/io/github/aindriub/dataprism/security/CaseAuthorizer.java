@@ -16,9 +16,9 @@ public interface CaseAuthorizer {
     /**
      * An authorizer that always permits. It trusts the token's case claim
      * without checking that the principal is assigned to that case. A Spring
-     * deployment gets it only through the explicit
-     * {@code dataprism.security-policy.case-authorisation=token-trusted}
-     * setting (D-1.0-1).
+     * deployment uses it only when it defines no {@code CaseAuthorizer} bean,
+     * and logs a startup warning when it does; a bean of the deployer's own
+     * replaces it. Task 210 will make the choice an explicit required setting.
      */
     static CaseAuthorizer tokenTrusted() {
         return request -> true;
