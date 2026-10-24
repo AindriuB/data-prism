@@ -263,6 +263,35 @@ class ApprovalBoundedCleanupTest {
     }
 
     @Test
+    void forgetWhoseGuardLockFailsWithAClusterFaultThrowsTheRefusalNotATimeout() {
+        StalledInsert injector = StalledInsert.passive().inactive(PrivacyCluster.APPROVAL_PENDING_MAP, "tryLock");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("n-1", "scope-n", "alice"), 5);
+        injector.arm();
+
+        assertThatThrownBy(() -> faulty.forgetScope("scope-n"))
+                .isInstanceOf(ClusterOperationRefusedException.class);
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+    }
+
+    @Test
+    void aDecisionWhoseGuardLockIsRefusedByTheClusterStillCommitsCountsTheSkipAndKeepsTheSlot() {
+        StalledInsert injector = StalledInsert.passive().rejecting(PrivacyCluster.APPROVAL_PENDING_MAP, "tryLock");
+        var faulty = new HazelcastApprovalStore(injector.over(members[0]), TIMEOUT, metrics);
+        faulty.create(request("d-1", "scope-d", "alice"), 1);
+        injector.arm();
+
+        ApprovalRequest decided = faulty.approve("d-1", "bob", NOW.plusSeconds(1));
+
+        assertThat(decided.status()).isEqualTo(Status.APPROVED);
+        assertThat(metrics.countOf(Metric.APPROVAL_RELEASE_SKIPPED)).isEqualTo(1);
+        assertThatThrownBy(() -> store.create(request("d-2", "scope-d", "alice"), 1))
+                .isInstanceOf(ApprovalRefusedException.class)
+                .satisfies(failure -> assertThat(((ApprovalRefusedException) failure).code())
+                        .isEqualTo(Code.TOO_MANY_PENDING));
+    }
+
+    @Test
     void forgetOfAnUnreadableEntryRemovesItCountsItAndReportsThatItsClaimAndSlotWereLeft() {
         IMap<String, String> approvals = members[0].instance().getMap(PrivacyCluster.APPROVAL_MAP);
         String key = TestMembers.SCOPE_KEYS.approval("scope-u", "u-1");

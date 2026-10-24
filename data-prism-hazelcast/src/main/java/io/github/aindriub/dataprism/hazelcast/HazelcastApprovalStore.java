@@ -387,9 +387,9 @@ public final class HazelcastApprovalStore implements ApprovalStore {
     }
 
     /**
-     * Takes a lock for a release after a commit, waiting only for what is left of the deadline. A lock timeout or
-     * other failure skips the release and is counted. A refusal by the cluster (a lock or lease it rejected) is
-     * not a timeout and is thrown, so the caller can report it.
+     * Takes a lock for a release after a commit, waiting only for what is left of the deadline.
+     * Every failure is counted. Only a lock timeout skips the release; any other failure (a refusal by the cluster,
+     * or a Hazelcast fault) is not a timeout and is thrown as a refusal, so the caller can report it.
      */
     private boolean lockOrSkip(IMap<String, String> map, String key, long deadlineNanos) {
         try {
@@ -401,9 +401,10 @@ public final class HazelcastApprovalStore implements ApprovalStore {
         } catch (PrivacyRefusedException refused) {
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
             throw refused;
-        } catch (RuntimeException notTaken) {
+        } catch (RuntimeException failed) {
+            // A cluster fault on a guard lock is not a timeout: refuse it, so the caller reports it as one.
             metrics.increment(Metric.APPROVAL_RELEASE_SKIPPED);
-            return false;
+            throw ClusterRefusals.mapped(failed);
         }
     }
 
@@ -494,7 +495,9 @@ public final class HazelcastApprovalStore implements ApprovalStore {
      *
      * @throws ClusterLockTimeoutException after the last entry, if the lock of any entry timed out: that entry, its
      *                                     claim and its slot are left intact. State is over-counted, never
-     *                                     half-released. A release skipped after the entry was removed is also
+     *                                     half-released. An entry that cannot be read is removed and counted in
+     *                                     {@link Metric#APPROVAL_RELEASE_SKIPPED}, and its claim and slot are
+     *                                     left. A release skipped after the entry was removed is also
      *                                     counted in {@link Metric#APPROVAL_RELEASE_SKIPPED} and makes the call
      *                                     throw, so the caller learns the slot or claim was left behind
      */
