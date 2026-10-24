@@ -26,6 +26,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -193,6 +194,50 @@ class SecurityWiringTest {
         });
     }
 
+    /*
+     * ScopeResolver and AuthorizationService are final, so neither CGLIB nor a JDK proxy can wrap them and an
+     * end-to-end proxied-default context cannot be built; the unwrapping the guard relies on is tested directly.
+     */
+    @Test
+    void unwrapping_sees_through_one_proxy_to_the_target() {
+        Runnable target = () -> { };
+        assertThat(SecurityWiring.unwrap(proxyOf(target))).isSameAs(target);
+    }
+
+    @Test
+    void unwrapping_sees_through_nested_proxies_to_the_target() {
+        Runnable target = () -> { };
+        assertThat(SecurityWiring.unwrap(proxyOf(proxyOf(proxyOf(target))))).isSameAs(target);
+    }
+
+    @Test
+    void unwrapping_leaves_an_unproxied_bean_alone() {
+        Runnable target = () -> { };
+        assertThat(SecurityWiring.unwrap(target)).isSameAs(target);
+    }
+
+    @Test
+    void a_proxy_of_a_different_object_is_not_the_target() {
+        Runnable ours = () -> { };
+        Runnable theirs = () -> { };
+        assertThat(SecurityWiring.unwrap(proxyOf(theirs))).isNotSameAs(ours);
+    }
+
+    private static Runnable proxyOf(Runnable target) {
+        return (Runnable) new ProxyFactory(target).getProxy();
+    }
+
+    @Test
+    void an_application_bean_shadowing_the_bypass_check_refuses_startup() {
+        context.withUserConfiguration(Base.class, ShadowingBypassCheck.class)
+                .run(result -> assertThat(result).hasFailed());
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ShadowingBypassCheck {
+        @Bean("dataPrismSecurityBypassCheck") Object shadow() { return new Object(); }
+    }
+
     private static void assertRefusal(Throwable failure, String code) {
         assertThat(failure).isNotNull();
         Throwable t = failure;
@@ -210,7 +255,7 @@ class SecurityWiringTest {
                 .map(ILoggingEvent::getFormattedMessage).toList();
     }
 
-    private static String[] valid() {
+    static String[] valid() {
         return new String[] {
                 "dataprism.security.jwt.issuer=https://issuer.example", "dataprism.security.jwt.audience=mcp",
                 "dataprism.security.jwt.jwk-set-uri=https://issuer.example/jwks",
