@@ -109,6 +109,8 @@ public final class ResolverInvoker {
                 timeout = remaining;
             }
         }
+        // Converted before a slot is taken or a task submitted: toNanos() overflows above about 292 years.
+        long waitNanos = saturatedNanos(timeout);
         if (!slots.tryAcquire()) {
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
         }
@@ -141,7 +143,7 @@ public final class ResolverInvoker {
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
         }
         try {
-            return task.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+            return task.get(waitNanos, TimeUnit.NANOSECONDS);
         } catch (TimeoutException e) {
             task.cancel(true);
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.TIMEOUT);
@@ -150,7 +152,16 @@ public final class ResolverInvoker {
             Thread.currentThread().interrupt();
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
         } catch (ExecutionException | RuntimeException e) {
+            task.cancel(true);
             return new ResolverOutcome.Failed(ResolverOutcome.Reason.UNAVAILABLE);
+        }
+    }
+
+    private static long saturatedNanos(Duration timeout) {
+        try {
+            return timeout.toNanos();
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
         }
     }
 
