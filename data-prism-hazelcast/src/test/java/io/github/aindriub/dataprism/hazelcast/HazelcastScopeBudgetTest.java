@@ -1,6 +1,7 @@
 package io.github.aindriub.dataprism.hazelcast;
 
 import com.hazelcast.config.Config;
+import io.github.aindriub.dataprism.core.refusal.ClusterOperationRefusedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class HazelcastScopeBudgetTest {
 
@@ -98,5 +100,16 @@ class HazelcastScopeBudgetTest {
         assertThat(budget.tryRead("CASE-A", "s-2", 1)).isTrue();
         assertThat(budget.tryRead("CASE-B", "s-1", 1)).isTrue();
         assertThat(budget.tryRead("CASE-A", "s-1", 1)).isFalse();
+    }
+
+    @Test
+    @DisplayName("ending a scope refuses, rather than skipping, when the member's keys cannot be listed")
+    void forgetRefusesWhenTheKeysCannotBeListed() {
+        var budget = budget();
+        budget.tryRead("CASE-A", "s-1", 5);
+
+        cluster.close();
+
+        assertThatThrownBy(() -> budget.forget("CASE-A")).isInstanceOf(ClusterOperationRefusedException.class);
     }
 }

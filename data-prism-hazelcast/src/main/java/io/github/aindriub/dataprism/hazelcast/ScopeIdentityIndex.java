@@ -4,13 +4,12 @@ import com.hazelcast.map.IMap;
 import io.github.aindriub.dataprism.annotations.PrivacyNamespace;
 import io.github.aindriub.dataprism.core.metrics.Metric;
 import io.github.aindriub.dataprism.core.metrics.PrivacyMetrics;
-import com.hazelcast.core.HazelcastException;
 import io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException;
-import io.github.aindriub.dataprism.core.refusal.PrivacyRefusedException;
 
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Maps a pseudonym back to the subject it stands for, and ends scopes.
@@ -37,7 +36,7 @@ public final class ScopeIdentityIndex {
     private final HazelcastApprovalStore approvals;
     private final Duration lockTimeout;
     /** Resolves a map by name; a seam for tests. */
-    java.util.function.Function<String, IMap<String, ?>> maps;
+    Function<String, IMap<String, ?>> maps;
 
     /** With the default lock timeout of two seconds. */
     public ScopeIdentityIndex(PrivacyCluster cluster) {
@@ -90,7 +89,7 @@ public final class ScopeIdentityIndex {
      * four maps. A refusal in one map does not stop the others or the approvals: all of them run, then the first
      * refusal (else the timeout) is thrown.
      *
-     * @throws io.github.aindriub.dataprism.core.refusal.ClusterLockTimeoutException if the lock of an entry of the
+     * @throws ClusterLockTimeoutException if the lock of an entry of the
      *         scope timed out; that entry is left in place (for an approval, with its id claim and its pending slot)
      */
     public void endScope(String scopeId) {
@@ -105,12 +104,11 @@ public final class ScopeIdentityIndex {
             try {
                 IMap<String, ?> entries = maps.apply(map);
                 ClusterLocks.Sweep sweep = ClusterLocks.deleteAll(entries,
-                        entries.keySet().stream().filter(key -> key.startsWith(prefix)).toList(), deadline,
-                        lockTimeout);
+                        ScopeKeys.keysWithPrefix(entries, prefix), deadline, lockTimeout);
                 skipped += sweep.skipped();
                 failure = failure != null ? failure : sweep.refusal();
-            } catch (HazelcastException failed) {
-                failure = failure != null ? failure : ClusterRefusals.refused(failed);
+            } catch (RuntimeException failed) {
+                failure = failure != null ? failure : ClusterRefusals.mapped(failed);
             }
         }
         // Approvals go with their id claims and pending counts, so those ids and slots are free again. They share
@@ -119,10 +117,8 @@ public final class ScopeIdentityIndex {
             approvals.forgetScope(scopeId, deadline);
         } catch (ClusterLockTimeoutException held) {
             skipped++;
-        } catch (PrivacyRefusedException refused) {
-            failure = failure != null ? failure : refused;
-        } catch (HazelcastException failed) {
-            failure = failure != null ? failure : ClusterRefusals.refused(failed);
+        } catch (RuntimeException failed) {
+            failure = failure != null ? failure : ClusterRefusals.mapped(failed);
         }
         // Everything has run; now report the first refusal in the order seen, else a timeout.
         if (failure != null) {
