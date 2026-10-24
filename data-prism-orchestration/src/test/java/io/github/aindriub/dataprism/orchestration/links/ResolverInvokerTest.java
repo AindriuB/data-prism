@@ -492,7 +492,8 @@ class ResolverInvokerTest {
         ResolverInvoker single = new ResolverInvoker(metrics, 1, java.time.Clock.fixed(NOW, java.time.ZoneOffset.UTC));
         single.invoke(resolver, SENTINEL, contextWithDeadline(NOW.minusSeconds(1)), 5, TIMEOUT);
         KeyResolver ok = resolver(() -> new KeyResolver.Resolution(List.of("x"), false));
-        assertThat(single.invoke(ok, SENTINEL, CONTEXT, 5, TIMEOUT)).isInstanceOf(ResolverOutcome.Keys.class);
+        assertThat(single.invoke(ok, SENTINEL, contextWithDeadline(NOW.plusSeconds(60)), 5, TIMEOUT))
+                .isInstanceOf(ResolverOutcome.Keys.class);
     }
 
     @Test
