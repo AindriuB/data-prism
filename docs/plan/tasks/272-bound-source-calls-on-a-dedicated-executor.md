@@ -26,13 +26,14 @@ Run source calls on dedicated platform threads instead, bounded in total and per
 - A misbehaving adapter can hold at most its source's ceiling of slots and cannot starve the virtual-thread scheduler.
 - Calls to other sources keep answering until the pool as a whole is full.
 
-It does not stop a hung adapter from holding its own slots. Those come back only when its calls return.
+It does not stop a hung adapter from holding its own slots; those come back only when its calls return. Four sources hung at their ceiling (4 × 32) fill the whole 128-slot pool, and every source is then `UNAVAILABLE` until a hung call returns. The circuit breaker is the component that would stop a hung source reaching its ceiling: it opens after repeated `TIMED_OUT` outcomes, and a source with an open breaker is not called. But every shipped wiring builds `SourceFanOut` with `SourceCircuitBreaker.disabled()` (`OrchestrationWiring.java:70`, `ConfiguredJsonSourcesAutoConfiguration.java:183`, `DefaultContextOrchestrator.java:105`), so today nothing limits it. Enabling the breaker is out of scope here, and the Outcome names it as a follow-up.
 
 ## What adapters will see (also for the migration notes)
 - Adapter calls run on platform daemon threads named `dataprism-source-<n>`, not on virtual threads.
 - Each call runs on a fresh thread that exits when the call returns, so no `ThreadLocal` set by one call is visible to another. The thread is created with `inheritInheritableThreadLocals=false`, so it also inherits no `InheritableThreadLocal` from the requesting thread.
 - The MDC is opened from the call's own request and closed in the call's own `finally`, as today.
 - When the pool or the source's ceiling is full, the source is not called. It is reported `FAILED` with `detail` `UNAVAILABLE`.
+- A source can have at most 32 calls in flight across all requests. Four sources hung at that ceiling fill the 128-slot pool, and then every source answers `UNAVAILABLE` until a hung call returns. Only the circuit breaker would limit that, and it is disabled in every shipped wiring today.
 
 ## What this keeps from 241, and what it changes
 - **Kept:**
@@ -125,4 +126,5 @@ How a saturated call appears to the client.
 - `ResolverInvoker` (241) and any other executor in the codebase.
 - The bulkhead, deadlines and budget reservation (246); this task changes only where a call runs and what happens when no slot is free.
 - A new per-source status; OD-272-1 decided against one.
+- Enabling the circuit breaker in `OrchestrationWiring`, `ConfiguredJsonSourcesAutoConfiguration` or `DefaultContextOrchestrator` (a follow-up named in the Outcome).
 - `docs/tools.md` and `docs/migration-0.8.md` (261).

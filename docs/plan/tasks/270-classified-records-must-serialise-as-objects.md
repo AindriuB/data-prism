@@ -12,6 +12,7 @@
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceModels.java *(insertions only: the new startup refusal, its code constant and the `require(Class, FieldMetadataResolver)` overload)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceTree.java *(the `of` path and its `of(Object, FieldMetadataResolver)` overload, the `RecordsOnly` serializer-modifier callbacks for the runtime position check, and 248's `readsAsPlainBean`: calls into it, or fixes confined to that method that the Outcome names)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/SourceValues.java *(the non-object value at a classified-record position, and the `SourceTree.of` call, only)*
+- data-prism-orchestration/src/test/java/io/github/aindriub/dataprism/orchestration/ClassifiedRecordSourceRefusalTest.java *(new: the two-source test; no main code in `data-prism-orchestration` changes)*
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/core/engine/ScrubPlanDescriber.java *(the branch that decides such a type is ambiguous only)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/ClassifiedRecordShapeTest.java *(new: the repros and the scrub-time cases)*
 - data-prism-core/src/test/java/io/github/aindriub/dataprism/core/engine/ClassifiedRecordPositionTest.java *(new: the runtime position check)*
@@ -58,7 +59,7 @@ The value is never passed through.
    - a type variable: `record Holder<T>(@NonSensitive(reason="x") T payload)` holding an `Email`. A generic record is refused today with `SOURCE_MODEL_GENERIC`, at startup and by `refuseSerializer` at runtime. The characterisation records which refusal fires. The untyped-position check must refuse it too if that refusal is ever relaxed, which a test proves by calling the position check directly.
 
    Nothing at startup sees the record (except the type-variable case). At scrub time the scalar takes the holder's policy.
-7. Transitive wrapper: `@SensitiveObject record Wrapper(@NonSensitive(reason="x") Email inner) { @JsonValue public String v() { return inner.value(); } }`, held by `@NonSensitive(reason="x") Wrapper w`. A second variant has `@JsonValue public Email inner()`, so Jackson writes the inner `Email` through its own `@JsonValue`. `Wrapper`'s only component is `@NonSensitive`, so under a non-transitive rule it would not be classified, and the email would leave as a scalar.
+7. Transitive wrapper: `@SensitiveObject record Wrapper(@NonSensitive(reason="x") Email inner) { @JsonValue public String v() { return inner.value(); } }`, held by `@NonSensitive(reason="x") Wrapper w`. A second variant has `@JsonValue public Email inner()`, so Jackson writes the inner `Email` through its own `@JsonValue`. A third variant replaces `Email` with a plain object, `@SensitiveObject record Inner(@SensitiveData(classifications=CONTACT, namespace=EMAIL, suggestedAction=REDACT) String email)`, which has no `@JsonValue`: `record Wrapper(@NonSensitive(reason="x") Inner inner) { @JsonValue public String v() { return inner.email(); } }`. `Wrapper`'s only component is `@NonSensitive`, so under a non-transitive rule it would not be classified, and the email would leave as a scalar. In the third variant nothing under `Wrapper.inner` is refused on its own, so only the transitive rule refuses it.
 
 `SourceValues.prohibited` is blind to all of these for the same reason: it descends only into objects, and the holder is not sensitive. So `RawValueLeakValidator` does not catch the emitted value either.
 
@@ -82,7 +83,12 @@ The value is never passed through.
   - `ClassifiedShapes` calls that method and implements no second check. If a repro shows the method answering `true` for a shape that is not a plain object (a type-info wrapper, for example), fix the method itself and name the change in the Outcome.
 - **Classified-record position:** a field value or array element whose type, under the existing `nestedType` rule, is a classified record.
 - **Component-exact object:** a JSON object whose property names are exactly the classified record's component names: no extra key, none missing, none renamed. This is the only shape the scrubber accepts at a classified-record position. It is checked on the tree at scrub time, independently of `readsAsPlainBean`, because a scrubbed tree carries no serializer.
-- **Untyped position:** a property or element whose declared type is `Object`, an interface, an abstract type, a type variable, or a wildcard or raw collection element.
+- **Untyped position:** a property or element whose declared type is `Object`, an interface, an abstract type, a type variable, an unbounded wildcard, or a raw collection element. A bounded wildcard is read by its upper bound. `List<? extends Email>` is a classified-record position for `Email`, not an untyped one; records are final, so the bound is exact.
+- **`SourceValues.prohibited` never throws for this task's refusals.**
+  - `DefaultContextOrchestrator.fetchAndScrub` (`:387`) calls it outside the per-source `try`, so a throw there would fail the whole request, not just the source.
+  - Instead, where the scrubber refuses with `CLASSIFIED_RECORD_NOT_AN_OBJECT` or `CLASSIFIED_RECORD_UNTYPED_POSITION`, `prohibited` adds every scalar under that value, which fails closed, and returns normally. It reads the tree through a non-refusing variant of the same position check.
+  - The refusal then comes from `scrubber.scrub`, inside the existing per-source `try`: that source is `REFUSED` and dropped whole, its values stay prohibited for every other source, and the other sources still answer.
+  - No change to `DefaultContextOrchestrator` is needed. `ConfiguredJsonScrubbingEngine` calls `prohibited` after `scrub`, so it is unaffected.
 
 ## OD-270-1: decided (a) by the owner, 2026-10-23
 - **Decided: refuse at startup, and refuse at scrub time.**
@@ -126,9 +132,9 @@ The value is never passed through.
   - every repro under "The gap" (1 to 7, each variant separately);
   - the property-level `@JsonFormat(shape=ARRAY)` variant of repro 2.
 
-  The Outcome reports the per-repro result. Each of 1, 2, 3, 4 and 6 emits `ada@example.invalid` (or the Email sentinel) somewhere in the scrubbed tree.
+  The Outcome reports the per-repro result. Each of 1, 2, 3, 4, 6 and 7 emits `ada@example.invalid` (or the Email sentinel) somewhere in the scrubbed tree. The exception is repro 6's type-variable variant, which `main` already refuses with `SOURCE_MODEL_GENERIC`. The Outcome records whether that comes from `SourceModels.require` or from `refuseSerializer` at runtime, and the variant is not required to leak.
 - [ ] **Startup refusal.** `SourceModels.require` refuses each of the following with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT`:
-  - the holders of repros 1, 2 (class-level and property-level), 3, 4 (all four containers) 5 (both `@JsonTypeInfo` variants and `@JsonAppend`) and 7 (both variants);
+  - the holders of repros 1, 2 (class-level and property-level), 3, 4 (all four containers), 5 (both `@JsonTypeInfo` variants and `@JsonAppend`) and 7 (all three variants). For repro 7's third variant the message starts `Holder.w:`, the wrapper's holder, not `Wrapper.inner:`, which pins that the transitive rule refused it;
   - a classified record with a `@JsonProperty`-renamed component;
   - a holding component of a classified record that carries `@JsonInclude`.
 
@@ -141,14 +147,19 @@ The value is never passed through.
   - one with a `@JsonProperty`-renamed component.
 
   The message is `classified record value is not an object of exactly its components`. Neither the message nor the path contains a value or a property name.
-- [ ] **Untyped positions.** Repro 6, in each of its first six declarations (`Object`, interface, `java.lang.Record`, `List<?>`, raw `List`, `Optional<Object>`), is refused while the tree is built, with `CLASSIFIED_RECORD_UNTYPED_POSITION`, both through the engine and through `SourceValues.prohibited`. The same holds for a plain, classified record in an `Object` position. An unclassified record at an untyped position keeps today's behaviour, pinned by a test.
+- [ ] **Untyped positions.** Repro 6, in each of its first six declarations (`Object`, interface, `java.lang.Record`, `List<?>`, raw `List`, `Optional<Object>`), is refused while the tree is built, with `CLASSIFIED_RECORD_UNTYPED_POSITION`, through the engine. `SourceValues.prohibited` on the same source returns normally and contains every scalar under the value. A `List<? extends Email>` holding plain `Email` objects is descended into as a classified-record position, not refused; holding repro 1's `Email` it is refused with `CLASSIFIED_RECORD_NOT_AN_OBJECT`. The same holds for a plain, classified record in an `Object` position. An unclassified record at an untyped position keeps today's behaviour, pinned by a test.
 - [ ] **Descriptor-only classification, scrub time.** A record classified only by a descriptor (`DescriptorFieldMetadataResolver` classifying the `@JsonValue` component of an otherwise `@NonSensitive` record) is refused at scrub time with `CLASSIFIED_RECORD_NOT_AN_OBJECT`. At an untyped position it is refused with `CLASSIFIED_RECORD_UNTYPED_POSITION`.
 - [ ] **Descriptor-only classification, startup (M3).** `ClassifiedRecordStartupTest` starts a context whose descriptor file (under `src/test/resources/classified-records/`) classifies the `@JsonValue` component of an otherwise `@NonSensitive` record. One adapter returns a model that holds it. Startup fails with `SOURCE_MODEL_CLASSIFIED_RECORD_NOT_AN_OBJECT` and the source name. Without the descriptor, the same context starts. The bean inventories are unchanged.
 - [ ] **Unchanged behaviour (characterisation, each pinned by a test):**
   - a classified record written as a plain object at a declared position is descended into as today;
   - a `null` at a classified-record position stays `null`;
   - a record with `@JsonValue` that is unclassified under the transitive rule (no classified component at any depth) takes the holder's policy as today. Repro 7 is not such a record, and no test pins its current output except the characterisation item.
-- [ ] **Prohibited values.** `SourceValues.prohibited` contains every scalar under a non-object value at a classified-record position (repros 1 to 5 and 7). `ClassifiedRecordProhibitedValuesTest` shows this, and that on the base commit the set misses them.
+- [ ] **Prohibited values.** `SourceValues.prohibited` contains every scalar under a non-object value at a classified-record position (repros 1 to 5 and 7), and under every classified record at an untyped position (repro 6). It throws for none of them. `ClassifiedRecordProhibitedValuesTest` shows this, and that on the base commit the set misses them.
+- [ ] **One bad source does not fail the request.** `ClassifiedRecordSourceRefusalTest` builds a `DefaultContextOrchestrator` with two sources. Source `a` returns repro 1's `Holder`; source `b` returns a well-formed model.
+  - The response is answered: `a` is `REFUSED` with disposition `a:<refused>` = `REFUSED:CLASSIFIED_RECORD_NOT_AN_OBJECT`, and `b` is `ANSWERED`.
+  - `a`'s email is in the prohibited set.
+  - A second case uses repro 6's `Object` variant for `a`, with `REFUSED:CLASSIFIED_RECORD_UNTYPED_POSITION`.
+  - Mutant killed: letting `prohibited` throw fails the whole request, which fails this test.
 - [ ] **Describer.** `ScrubPlanDescriber` decides "ambiguous" through `ClassifiedShapes` and nothing else. `DescriptionConformsToScrubTest` gains repros 1 to 4. No field the scrubber refuses or changes is described `VERBATIM`, and the existing cases pass unchanged.
 - [ ] **One check.** `ClassifiedShapesArchitectureTest` (ArchUnit) asserts two things:
   - `ClassifiedShapes` calls `SourceTree.readsAsPlainBean`;
@@ -183,16 +194,19 @@ The value is never passed through.
 
     The advisory's workaround is derived from that table. It is expected to read "do not mark a field `@NonSensitive` (or `@SensitiveData` with `PASS_THROUGH`) when it holds a classified record", and is corrected if the table says otherwise.
   - **Affected versions.**
-    - Run every repro (1 to 7, each variant) on every release tag from `v0.1.0` (or the earliest release tag, if that is later) through `v0.7.1`. The scalar repros (1 and 6) need no record descent, so no tag is skipped on that ground. The Outcome also names the commit that introduced nested-record descent, for the advisory's description. For each tag:
-      - check the tag out in its own scratch worktree;
-      - copy in the repro tests, adapted only where an API they use did not yet exist (each adaptation recorded);
-      - run `./mvnw -B -pl data-prism-core -am test -Dtest=<repro class>`.
-
-      A repro that cannot compile on a tag, because the annotation or shape did not exist yet, is recorded as "not applicable", not as "not affected".
-    - The Outcome tabulates tag × repro (leaks, refused, not applicable).
-    - The affected range for GHSA-f94h-6mxv-c957 is the union: every tag on which any repro leaks. That range replaces the advisory's current one when this task merges. It names 0.8.0 as the patched version, and it describes the shapes without real data.
+    - Cover every release tag from `v0.1.0` (or the earliest release tag, if that is later) through `v0.7.1`. The scalar repros (1 and 6) need no record descent, so no tag is skipped on that ground. The Outcome also names the commit that introduced nested-record descent, for the advisory's description.
+    - For each tag, write a leak probe against that tag's own API: its annotations, its engine constructor and its resolver. Do not copy this task's repro classes.
+      - The probe expresses each repro shape (1 to 7, each variant) in that API.
+      - Check the tag out in its own scratch worktree, add the probe as a test there, and run `./mvnw -B -pl data-prism-core -am test -Dtest=<probe class>`.
+      - Each shape's result is one of four:
+        - **leaks:** the raw value appears in the scrubbed output;
+        - **refused**;
+        - **inexpressible:** with the evidence, such as the annotation or type absent from that tag's sources, cited by path;
+        - **unknown:** the probe could not be built or run, or the result is ambiguous.
+    - The Outcome tabulates tag × shape with those four results, and keeps each probe's source in the Outcome or in a linked scratch branch.
+    - The affected range for GHSA-f94h-6mxv-c957 fails closed. It is every tag on which any shape leaks, plus every tag with any shape whose result is unknown. Only a tag where every shape is refused or inexpressible, with evidence, is left out. That range replaces the advisory's current one when this task merges. It names 0.8.0 as the patched version, and it describes the shapes without real data.
 - [ ] Every existing test in the touched modules passes unmodified.
-- [ ] `./mvnw -B -pl data-prism-core,data-prism-validation,data-prism-spring-boot-autoconfigure,data-prism-architecture -am verify` passes.
+- [ ] `./mvnw -B -pl data-prism-core,data-prism-validation,data-prism-orchestration,data-prism-connectors-rest,data-prism-spring-boot-autoconfigure,data-prism-architecture -am verify` passes.
 
 ## OD-270-2: decided (a) by the owner, 2026-10-23
 The fix ships in 0.8.0 only. There is no 0.7.2. On 2026-10-23 the owner also decided (H1 (a)) to accept the exposure of the public repros, and to draft the advisory now rather than at 0.8.0. The draft is GHSA-f94h-6mxv-c957. This task's Outcome confirms the affected range tag by tag and the workaround from the matrix above, and the advisory is then updated with that range. The 0.8.0 release-cut brief, not yet filed, updates GHSA-f94h-6mxv-c957 with the patched version 0.8.0; this is listed in PLAN.md's release-cut obligations. The recommendation cited Central's File Count limit, whose grace period ends 2026-11-08, as the reason not to cut a 0.7.2.
