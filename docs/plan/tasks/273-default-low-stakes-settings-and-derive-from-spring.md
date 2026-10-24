@@ -18,7 +18,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/EffectiveSettingsReport.java *(new; name may differ: the startup log block that lists every defaulted or derived value)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismAutoConfiguration.java *(insertions only, if the report is a bean)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(insertions only)*
-- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismPropertiesValidator.java *(the privacy, identity, security-JWT, operator-audience (:487), audit `writer-id` and hazelcast `topology` checks only)*
+- data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismPropertiesValidator.java *(the privacy, identity, security-JWT, operator-audience (:487), audit `writer-id` and hazelcast `topology` checks, including the `CLUSTER_SETTINGS_IGNORED` checks at about :229-233 and :655-662 and the re-identification topology check at about :463, only)*
 - data-prism-spring-boot-autoconfigure/src/main/resources/META-INF/additional-spring-configuration-metadata.json
 - data-prism-spring-boot-autoconfigure/src/test/resources/io/github/aindriub/dataprism/spring/boot/frozen-property-names.txt *(only as OD-273-2 decides)*
 - data-prism-spring-boot-autoconfigure/src/test/resources/configuration-metadata-gaps.txt
@@ -51,7 +51,11 @@ A Spring Boot developer should set only what is a security decision. Default the
   - `dataprism.privacy.profile`: `DEFAULT`.
   - `dataprism.privacy.scope-lifetime`: OD-273-1.
   - `dataprism.identity.resolver`: `pass-through`, but only when exactly one source is configured (OD-273-3, decided (a) 2026-10-24). `IdentityResolverSelection.java` (its `@ConditionalOnProperty(prefix = "dataprism.identity", name = "resolver", havingValue = "pass-through")`) and `Preflights.java:25-45` (`dataPrismIdentityResolverPreflight`).
-  - `dataprism.hazelcast.topology`: `single-node`.
+  - `dataprism.hazelcast.topology`: `single-node`. Coordinator decision of 2026-10-24, after the second external review of PR #162: the default removes `MISSING_CLUSTER_TOPOLOGY` (`DataPrismPropertiesValidator.java:627`), so a deployment that meant to cluster must not silently run alone.
+    - Any `dataprism.hazelcast` member, join, cluster-name, security (cluster key, name key, rotation), trusted-network (284's `trusted-network` and `member.trusted-ranges`), approval-quorum, lock-timeout or approval-sweep-interval setting without an explicit `topology: embedded` refuses with the existing `CLUSTER_SETTINGS_IGNORED`. That covers both the defaulted and the explicit `single-node` topology. The message names the first such property set and says to set `dataprism.hazelcast.topology: embedded` or remove it. Today's checks (about :229-233 and :655-662) already refuse explicit `single-node` with these settings; extend them to every setting in that list, and to the defaulted case.
+    - `dataprism.reidentification.enabled: true` without an explicit `embedded` topology still refuses as today (about :463).
+    - `MISSING_CLUSTER_TOPOLOGY` is retired. It is removed from the validator, the contract register and `freeze/codes.txt`, and the Outcome gives 281 a migration line and a CHANGELOG entry (Removed: the code; Changed: the default).
+    - The effective topology is always in the startup report, once at INFO, whether it was defaulted or set.
   - `dataprism.transport.mode`: already `http` (`TransportProperties.java:7`); list it in the report only.
   - `dataprism.metrics.sink` is **not** this task's; 276 defaults it with the Micrometer bean.
 - Derivations:
@@ -75,7 +79,7 @@ A pass-through resolver uses the requested subject id as every source's key. Wit
 - **Decided (a):** default to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses as today. This was the coordinator's recommendation.
 - **Required shape:**
   - `IdentityResolverSelection`'s bean condition gains `matchIfMissing = true`, so the pass-through bean is defined when the property is unset. `@ConditionalOnMissingBean(IdentityResolver.class)` stays, so an application resolver always wins.
-  - The count cannot be a bean condition, because configured JSON adapters (`ConfiguredJsonSourcesInitializer`) and 278's generated adapters are registered by other means. `dataPrismIdentityResolverPreflight`, a `BeanFactoryPostProcessor` that runs after every bean definition is registered, counts the `DataSourceAdapter` bean definitions. When `dataprism.identity.resolver` is unset, the only `IdentityResolver` is the defaulted pass-through bean, and the count is two or more, it refuses `MISSING_IDENTITY_RESOLVER`. The message names `dataprism.identity.resolver` and says that two or more sources need a resolver or an explicit `pass-through`.
+  - The count cannot be a bean condition, because configured JSON adapters (`ConfiguredJsonSourcesInitializer`) and 278's generated adapters are registered by other means. `dataPrismIdentityResolverPreflight` counts the sources with `factory.getBeanNamesForType(DataSourceAdapter.class, true, false)`. That call returns bean definitions and manually registered singletons alike, which matters because `ConfiguredJsonSourcesInitializer` registers configured JSON adapters with `registerSingleton` (`ConfiguredJsonSourcesInitializer.java:59-62`), not as definitions. The check runs where it already runs: in the static `BeanFactoryPostProcessor`'s `postProcessBeanFactory`. By then the initializer's singletons are registered (an `ApplicationContextInitializer` runs before refresh), and so are the definitions from `ConfigurationClassPostProcessor`, a `BeanDefinitionRegistryPostProcessor` that runs before every plain `BeanFactoryPostProcessor`, including 278's generated adapters. It initialises no bean (`allowEagerInit` false). A hand-written adapter is counted by its `@Bean` method's declared return type. The Javadoc says so, and a test pins an adapter declared as its concrete type. When `dataprism.identity.resolver` is unset, the only `IdentityResolver` is the defaulted pass-through bean, and the count is two or more, it refuses `MISSING_IDENTITY_RESOLVER`. The message names `dataprism.identity.resolver` and says that two or more sources need a resolver or an explicit `pass-through`.
   - An explicit `dataprism.identity.resolver: pass-through` is still accepted with any number of sources, because the operator has stated it.
   - The startup report lists the defaulted resolver with the origin "default: one source configured".
 - **Rejected:** (b) default to pass-through regardless of the source count, as the spec's list reads; this removes a refusal that prevents silent joins. (c) no default; the resolver stays required.
@@ -100,10 +104,17 @@ A pass-through resolver uses the requested subject id as every source's key. Wit
   281 maps its mandatory rows to these.
 - [ ] OD-273-3 (a):
   - One configured source with no resolver set starts, using pass-through.
-  - Two sources with no resolver set refuse `MISSING_IDENTITY_RESOLVER`. This is tested twice: with two Java adapters, and with one Java adapter and one configured JSON source.
+  - Two sources with no resolver set refuse `MISSING_IDENTITY_RESOLVER`. One row each: two Java adapters; two configured JSON sources (registered as singletons by `ConfiguredJsonSourcesInitializer`, with no Java adapter); one Java adapter and one configured JSON source. Each row must refuse.
+  - One configured JSON source alone, with no Java adapter, starts with pass-through.
   - Two sources with explicit `pass-through` start.
   - An application `IdentityResolver` bean with two sources starts and is the only resolver.
-  - Mutants killed: removing `matchIfMissing`, and counting `>= 1` instead of `>= 2`.
+  - Mutants killed: removing `matchIfMissing`; counting `>= 1` instead of `>= 2`; counting with `getBeanDefinitionNames` or `includeNonSingletons` false, which the two-JSON-sources row catches.
+- [ ] Topology (coordinator decision 2026-10-24):
+  - With no `dataprism.hazelcast` setting, the context starts single-node, and the startup report shows `dataprism.hazelcast.topology=single-node (default)` once.
+  - One row per setting family, each with the topology unset and again with an explicit `single-node`, refuses `CLUSTER_SETTINGS_IGNORED` naming that property: `join.mode`, `join.members`, `member.interface`, `cluster-name`, the cluster key, the name key, `trusted-network` (284), `approval-minimum-members`, `lock-timeout` and `approval-sweep-interval`.
+  - `dataprism.reidentification.enabled: true` with the topology unset refuses as today.
+  - Each of those settings with an explicit `embedded` topology passes this check.
+  - `git grep -n MISSING_CLUSTER_TOPOLOGY` outside `docs/plan/`, `CHANGELOG.md` and `docs/migration-*.md` returns nothing.
 - [ ] `SpringDerivedSettingsTest`: with only `spring.security.oauth2.resourceserver.jwt.issuer-uri`, `jwk-set-uri` and `audiences` set, the context's single `JwtDecoder` accepts a token signed by the fixture key with a listed audience, and rejects one with an unlisted audience and one from another issuer. With `jwk-set-uri` unset it uses issuer discovery. A plain-HTTP non-local `issuer-uri` refuses with the existing location code.
 - [ ] `spring.application.name: library-loans` with no `dataprism.audit.writer-id` gives writer id `library-loans`. An explicit `writer-id` wins. Neither set refuses `MISSING_AUDIT_WRITER`. `spring.application.name: a/b` refuses `INVALID_AUDIT_WRITER`.
 - [ ] OD-273-2 is implemented as decided. Under (a): any `dataprism.security.jwt.*` key refuses `JWT_SETTINGS_MOVED`, and the message names the Spring key and no configured value; `frozen-property-names.txt` loses the removed names; the register and `freeze/codes.txt` change in the same commit; `git grep -n 'dataprism.security.jwt\|DATAPRISM_SECURITY_JWT'` outside `docs/plan/` and `CHANGELOG.md` returns nothing. Under (b): the conflict refusal is tested both ways and both names are documented.
@@ -112,7 +123,7 @@ A pass-through resolver uses the requested subject id as every source's key. Wit
 - [ ] The standalone server's no-configuration refusal still names a `MISSING_*` code, so `.github/workflows/publish-image.yml:167-190` needs no change. Shown by `ServerStartupTest` or `ConfigurationRefusalMessageIT`.
 - [ ] Every existing test passes, with only configuration arguments changed in the owned test files.
 - [ ] `./mvnw -B -pl data-prism-spring-boot-autoconfigure,data-prism-server,data-prism-integration-tests -am verify` passes, then `./mvnw -B verify`.
-- [ ] The Outcome lists, for 281's migration notes and CHANGELOG, each new default, each derivation and OD-273-2's outcome.
+- [ ] The Outcome lists, for 281's migration notes and CHANGELOG, each new default, each derivation, OD-273-2's outcome, the retired `MISSING_CLUSTER_TOPOLOGY` code, and the new topology rule.
 
 ## Out of scope
 - `dataprism.metrics.sink` and the `PrivacyMetrics` bean, and the `SecurityFilterChain` (276).

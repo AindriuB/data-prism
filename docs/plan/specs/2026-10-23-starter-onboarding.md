@@ -16,7 +16,7 @@ rejected one explicitly.
   - `dataprism.metrics.sink`: Micrometer when it is on the classpath.
   - `privacy.profile`: `DEFAULT`.
   - `privacy.scope-lifetime`: a sensible value; the planner proposes it.
-  - `identity.resolver`: `pass-through`.
+  - `identity.resolver`: `pass-through`, only when exactly one source is configured; with two or more sources and no resolver configured, startup refuses as before (amended 2026-10-24, OD-273-3 (a)).
   - `hazelcast.topology`: `single-node`.
   - `transport.mode`: `http`.
 - **Derived from Spring:**

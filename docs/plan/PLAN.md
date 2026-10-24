@@ -256,6 +256,10 @@ Open owner decisions (each brief carries options and a recommendation):
 
 - OD-273-1: the default `dataprism.privacy.scope-lifetime`. Recommended: `PT8H`.
 - OD-273-3: **decided (a) by the owner, 2026-10-24.** `dataprism.identity.resolver` defaults to pass-through only when exactly one source is configured. With two or more sources and no resolver configured, startup refuses `MISSING_IDENTITY_RESOLVER`, as today. Found in the external review of PR #162.
+- Topology default (coordinator decision 2026-10-24, second external review of PR #162): `single-node` stays the default.
+  - Any `dataprism.hazelcast` member, join, security or trusted-network setting without an explicit `topology: embedded` refuses `CLUSTER_SETTINGS_IGNORED`.
+  - `MISSING_CLUSTER_TOPOLOGY` is retired, with a migration line and a CHANGELOG entry (281).
+  - The effective topology is logged once at INFO. 273 carries the rows.
 - OD-273-2: what happens to `dataprism.security.jwt.*` now that Spring's keys are read. Recommended (a): Spring's keys only, with a coded migration refusal. This is breaking for server operators and touches `server.json`, docker, compose and the quickstart. (b) accepts both and refuses on conflict.
 - OD-275-1: existing catalogues. Recommended (a): bare names keep working as `$.<name>`, and `nested-catalogues:` is retired with a coded refusal and a migration note.
 - OD-276-1: what the auto-configured chain protects when the host application has none. Recommended (a): every request needs a JWT except the health probe, so the host application fails closed.

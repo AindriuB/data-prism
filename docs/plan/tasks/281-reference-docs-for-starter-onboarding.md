@@ -30,8 +30,8 @@ Bring the reference documentation into line with what 273 to 279 changed, from t
 - [ ] The group table and the property reference each say, per key, whether it is mandatory (no default; startup refuses without it) or optional, with its default or derivation. A short paragraph above the tables lists the mandatory set in one place.
 - [ ] Every mandatory row is checked against the code by a refusal test that already exists: 273's still-required test, whose rows include the JWT issuer, the JWT audience and the writer id. The Outcome maps each row to its test.
 - [ ] The JSON section states the restricted JSONPath grammar: what is allowed, what is refused and with which codes, the exactly-one-path coverage rule, `subject-json-path` and chainable fields, and how to use it from the starter and from the server. `docs/architecture.md`'s grammar paragraph matches it.
-- [ ] `docs/migration-0.9.md` exists, is in `mkdocs.yml` `nav` and `llmstxt`, and has a before-and-after example for each breaking change.
-- [ ] `CHANGELOG.md` `[Unreleased]` has Added, Changed and Breaking entries for 273 to 280, including that the examples are not published.
+- [ ] `docs/migration-0.9.md` exists, is in `mkdocs.yml` `nav` and `llmstxt`, and has a before-and-after example for each breaking change, including the retired `MISSING_CLUSTER_TOPOLOGY` and the new rule that cluster settings need an explicit `topology: embedded` (273).
+- [ ] `CHANGELOG.md` `[Unreleased]` has Added, Changed, Removed (`MISSING_CLUSTER_TOPOLOGY`) and Breaking entries for 273 to 280, including that the examples are not published.
 - [ ] `ConfigurationMetadataDocumentedTest` passes. `mkdocs build --strict` passes, if the docs build is part of CI (`pages.yml`); otherwise the Outcome shows a local strict build.
 - [ ] No owned page states a default or a required setting that the code contradicts. The Outcome lists the claims checked and the source line for each.
 

@@ -43,7 +43,7 @@ Give a developer three tiny applications to copy, each one protected endpoint an
 - [ ] `./mvnw -B -Prelease -DskipTests -Dgpg.skip package` stages no example artifact. The Outcome shows the staged artifact list, and the published count is unchanged from before this task.
 - [ ] `ArchitectureCoverageTest` and `ArchitectureTest` pass with the three modules included in the imported graph.
 - [ ] Each example's dependencies are the starter (plus the connector only if OD-277-1 is (b)) and test-scoped test libraries. `./mvnw -B -pl examples/starter-yaml dependency:tree` in the Outcome shows this.
-- [ ] No key material is committed. Each example has a `KeyMaterialNotCommittedTest` that walks the whole `examples/` directory and fails on any file with a `.pem`, `.key`, `.p12`, `.jks` or `.jwk` extension, or whose content matches `-----BEGIN` or a JWK `"d":` private member. That scope covers `examples/starter-application-template.yaml` once 282 adds it. The test is shown to fail once with a planted PEM header in a recorded run.
+- [ ] No key material is committed. One shared `KeyMaterialNotCommittedTest`, in `examples/starter-yaml`'s tests only (not copied into the other two), walks the whole `examples/` directory from the repository root and fails on any file with a `.pem`, `.key`, `.p12`, `.jks` or `.jwk` extension, or whose content matches `-----BEGIN` or a JWK `"d":` private member. That scope covers `examples/starter-application-template.yaml` once 282 adds it. The test is shown to fail once with a planted PEM header in a recorded run.
 - [ ] `./mvnw -B verify` passes.
 
 ## Out of scope

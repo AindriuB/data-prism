@@ -15,6 +15,7 @@
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/EffectiveSettingsReport.java *(insertions only: the `dataprism.metrics.sink` line; the file is 273's)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/validation/DataPrismPropertiesValidator.java *(the `dataprism.metrics` checks, about :620-626, only)*
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPoints.java *(insertions only)*
+- data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/PrivacyExtensionPointsTest.java *(insertions only: the MCP chain's guard case)*
 - data-prism-spring-boot-autoconfigure/pom.xml *(optional `micrometer-core`; the Spring Security dependencies the chain needs, as `optional` or `provided`)*
 - data-prism-spring-boot-autoconfigure/src/main/resources/META-INF/additional-spring-configuration-metadata.json *(the `dataprism.metrics.sink` entry only)*
 - data-prism-spring-boot-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports *(insertions only, if a separate auto-configuration class is needed for ordering)*
@@ -36,7 +37,13 @@ Today every embedding application writes the same three beans by hand: a `Securi
 - DataPrismContractValidator.java:104: `MISSING_METRICS_BINDING` when no `PrivacyMetrics` bean exists. Reuse it: with `micrometer` as the sink and no `MeterRegistry` bean there is no auto-configured bean, and that code refuses as today. This task adds no refusal code and does not touch `freeze/codes.txt`.
 - The default sink depends on the classpath, so it cannot be a field initialiser in `MetricsProperties`. Apply it where the classpath is known, and show it in 273's startup report with the origin "default: Micrometer on the classpath".
 - Ordering: the chain must be registered before Spring Boot's default web-security configuration evaluates its "no `SecurityFilterChain` bean" condition, or Spring Boot's default chain would win. Test the outcome, not the annotation.
-- `PrivacyExtensionPoints`: the three beans are `REPLACEABLE`, as the spec decides. Rule 2 still holds when an application replaces the chain with a weaker one: the MCP tools refuse a call with no authenticated caller (`GetEntityContextTool.java:89`). Pin that with one test.
+- **Two chains (second external review of PR #162).** A single chain that backs off on any application `SecurityFilterChain` would also drop MCP protection when the application only adds, say, an `/admin/**` chain. So there are two chains.
+  - **The MCP chain.** It is matched to `dataprism.transport.http.path` and its sub-paths, at a fixed, documented high precedence (a named constant, for example `Ordered.HIGHEST_PRECEDENCE + 10`). It has no `@ConditionalOnMissingBean` and never backs off.
+  - **The catch-all chain.** It is OD-276-1's scope for every other path, and it backs off when the application defines any `SecurityFilterChain`.
+  - **Classification.** The MCP chain is `PRIVACY_CRITICAL` with `Guard.COMPETING_BEAN_REFUSAL`, in its list-collected sense: `FilterChainProxy` collects chains into a list, so an application chain can be added but cannot remove ours. `PrivacyExtensionPointsTest` proves it.
+  - **Residual risk.** An application chain registered at an even higher precedence and matching the MCP path would still win. Javadoc and the docs say so, and the tool-level refusal below is the backstop.
+  - **The server.** `ServerSecurityConfiguration` keeps its own chains. The MCP chain then also exists on the server, and the server's tests must pass unmodified. If they cannot, stop and report rather than adding an opt-out.
+- `PrivacyExtensionPoints`: the catch-all chain, the extractor and the metrics bean are `REPLACEABLE`, as the spec decides. Rule 2 still holds when an application replaces the chain with a weaker one: the MCP tools refuse a call with no authenticated caller (`GetEntityContextTool.java:89`). Pin that with one test.
 - docs/conventions.md: `ApplicationContextRunner` and `WebApplicationContextRunner`, latches, no sleeps.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
 
@@ -49,7 +56,9 @@ When the application defines no `SecurityFilterChain`, Spring Boot's default cha
 ## Acceptance
 - [ ] Tests are written first and fail on the base commit; the Outcome names them.
 - [ ] `McpSecurityAutoConfigurationTest`, with no application security beans, as OD-276-1 decides. Under (a): a request to the MCP path with no token gets 401, with a valid token reaches the transport, and with a token for the wrong audience gets 401; an arbitrary application path with no token gets 401; the health status and the `liveness` and `readiness` groups get 200 with no token; `/actuator/health/<component>`, another health group and every other Actuator endpoint get 401 with no token. Each path is a test row.
-- [ ] Back-off: with an application `SecurityFilterChain` bean, ours is absent, and the application's chain alone decides. With an application `McpTransportContextExtractor<HttpServletRequest>`, ours is absent. With an application `PrivacyMetrics`, ours is absent. One test each.
+- [ ] Back-off: with an application `SecurityFilterChain` bean, our catch-all chain is absent and our MCP chain is present.
+- [ ] With an application chain matched only to `/admin/**`, three things hold. `/admin/x` is decided by the application's chain alone. The MCP path with no token still gets 401 from our MCP chain. A token for the wrong audience still gets 401. Mutant killed: putting `@ConditionalOnMissingBean` on the MCP chain.
+- [ ] With an application catch-all chain that permits everything, at the default order, the MCP path with no token still gets 401. With an application `McpTransportContextExtractor<HttpServletRequest>`, ours is absent. With an application `PrivacyMetrics`, ours is absent. One test each.
 - [ ] With the application's chain replaced by one that permits everything, an MCP tool call with no token is refused by the tool, not answered.
 - [ ] `MicrometerMetricsAutoConfigurationTest`:
   - With Micrometer and a `MeterRegistry` bean, and no `dataprism.metrics.sink` set, the sink is `micrometer`, and a `PrivacyMetrics` increment shows in the registry with only the `source` tag.
