@@ -75,3 +75,5 @@ Tests that fail on the base: the new `CaseAuthorizerTest` and `ClientAllowlistTe
 Mutation proof. Removing `requireCaseAccess` fails `falseRefusesWithCaseNotAuthorised`, `authorizerCalledExactlyOnce`, `throwRefusesWithUnavailableAndLeaksNothing` and `errorFromAuthorizerPropagates`. Forcing the allowlist to pass fails `clientOutsideAllowlistIsDenied`.
 
 Notes for later tasks. `SecurityWiring` hard-wires `tokenTrusted()` and `unrestricted()` until 210, so 0.8.0 must not ship without 210. `docs/tools.md` lines 69-70 still show the old constructors (213). 213 should tell implementers to keep case data out of the messages of the exceptions they throw.
+
+**Review round (PR #163).** `SecurityWiring` now uses a deployer-supplied `CaseAuthorizer` or `ClientAllowlist` bean, and two beans of either type refuse startup. With none it falls back to `tokenTrusted()` and `unrestricted()` and logs one WARN. The Javadoc is corrected: it had referred to a `token-trusted` setting that was never built. 210 remains the 0.8.0 gate.

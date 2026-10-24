@@ -107,3 +107,5 @@ Bounded-write call sites (`file:line`, call, bounded by):
 Mutation run: making the Computing backup re-seal fails `aComputingWriteLeavesTheSameBytesAndTheSameLifetimeOnThePrimaryAndTheBackup`. The tester ran the full reactor twice, about 2,905 tests, 0 failures.
 
 Follow-ups. Spring does not pass `dataprism.hazelcast.lock-timeout` to the new overloads in `ClusterBackedState`:172 and `ReidentificationWiring`:61 (an autoconfigure task). Test-only instance leaks at `ClusterConfigurationTest`:319 and `ClusterLegacyGaugeTest`:247. The multi-key `ran` guard fires after the first key's primary is written. `SoloMemberKeysTest`'s log capture is JUL only. `KeyedLockHoldTest`:131 has a wall-clock bound. `SealedWrites.unregister` swallows an exception silently. The design table at line 175 still shows the scope-pause key form (213).
+
+**Review round (PR #163).** `LEGACY_OVERSIGHT_STATE`: `HazelcastOversightState` refuses at construction if any oversight key holds a NUL, which is the 0.7 raw form. `ClusterLocks.deleteAll` now shares one deadline across all its keys.

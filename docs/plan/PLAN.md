@@ -216,10 +216,10 @@ Planning gap: closed 2026-10-23. The planner audit confirmed that 203, 206, 207,
 
 Follow-ups from wave 4 (203, 206, 223, 241, 248 and 269 landed 2026-10-23), each belonging to the brief named (the full lists are in the Outcomes under `tasks/retired/`):
 
-- **210: 0.8.0 must not ship without it.** `SecurityWiring` hard-wires `tokenTrusted()` and `unrestricted()` until 210 wires `CaseAuthorizer` and `ClientAllowlist`.
+- **210: 0.8.0 must not ship without it.** `SecurityWiring` uses a deployer-supplied `CaseAuthorizer` or `ClientAllowlist` bean (two of either refuse startup). With none it falls back to `tokenTrusted()` and `unrestricted()` with one WARN; 210 makes the property-driven wiring.
 - 213: `docs/tools.md` lines 69-70 show the old `CaseAuthorizer` constructors; tell implementers to keep case data out of the messages of exceptions they throw; `docs/audit.md` notes that `KEYED_LIMITATION` is not printed when the audit path is unreadable and that a lone non-GENESIS writer carries no key label; `docs/migration-0.8.md` notes that `PrivacyCluster.close()` now stops only an instance it started; the cluster-security design table at line 175 still shows the scope-pause key form.
 - 211: with only `--allow-unkeyed-writers`, a broken writer is still counted as "unkeyed allowed" (Low).
-- Autoconfigure (no brief; fold into 230): Spring does not pass `dataprism.hazelcast.lock-timeout` to the new overloads in `ClusterBackedState`:172 and `ReidentificationWiring`:61.
+- Autoconfigure (task 286, planned on PR #164): Spring does not pass `dataprism.hazelcast.lock-timeout` to the new overloads in `ClusterBackedState`:172 and `ReidentificationWiring`:61.
 - 224 and 228: 224 may delete `ClaimEntries.sweepLegacy`; the scope-pause value holds the scope id until 228 replaces it.
 - Small (no brief), from 223: test-only instance leaks at `ClusterConfigurationTest`:319 and `ClusterLegacyGaugeTest`:247; the multi-key `ran` guard in `SealedWrites` fires after the first key's primary is written; `SoloMemberKeysTest` captures JUL logs only; `KeyedLockHoldTest`:131 has a wall-clock bound; `SealedWrites.unregister` swallows an exception silently.
 - 255: add a pool-size property for `ResolverInvoker` (default 8 concurrent calls). Small, from 241: rename the test `aNullKeyInTheListIsInvalidOutput`; the adapter filters `expand`'s keys to the second source; `PrivacyMetricsTest` does not tie each metric name to its constant.
@@ -227,6 +227,17 @@ Follow-ups from wave 4 (203, 206, 223, 241, 248 and 269 landed 2026-10-23), each
 - 270 and 271: the scrubber-side leak found in 248 (advisory GHSA-f94h-6mxv-c957, draft, exposure accepted by the owner) goes to 270; `PrivacyEngineWiring` passing the descriptor map to the engine goes to 271. 249 and 250 read 248's description: recursive paths are omitted from it, so the brief's line "single `[]` level describes everything the scrubber emits" excludes them. Accepted residuals: a decorator around `ValueTokenSource.unavailable()` reports as available; `Optional` content is judged by the type-level lookup; `Optional<List<Record>>`'s element path is not described; `profileChangesDescription` only asserts `isNotEqualTo`.
 - 264: nested classes inside a Hazelcast limiter are not exempt from the 269 architecture rule (fails closed). The lone-surrogate UTF-8 encoding in `AttemptSubject` is pre-existing.
 - Tooling: `.claude/scripts/wt-new.sh` cannot base a worktree on a given commit.
+- Migration note, for 261 or `docs/migration-0.8.md`: upgrade from 0.7.x requires a full cluster restart, no rolling upgrade. A cluster whose oversight map still holds a 0.7 scope pause refuses to start with LEGACY_OVERSIGHT_STATE; stop every member, clear the oversight map (or re-pause the scopes after upgrade), then start 0.8.
+
+External review round on PR #163 (Lows and Nits; none scheduled, each fold into the next edit of the named code):
+
+- Security: `ScopeResolver`:110 logs the authorizer exception in full; log the class only. `AuditChainVerifier`:344 accepts a writer with zero recomputed records as verified in keyed mode; that should be a break unless `--allow-unkeyed-writers` is set.
+- `ResolverInvoker`: it is never shut down; make it `AutoCloseable` and the bean's destroy method. The `valueOf(name())` reason mapping should be an exhaustive switch. `ResolutionContext`'s deadline and context are not validated.
+- Core and engine: add `ValueTokenSource.isAvailable()` instead of `getEnclosingClass`. Add `ModelDescription` null checks. Fix `SourceTree` and `ScrubPlanDescriber` import grouping and inline FQNs.
+- `SealedWrites`: the `ran` flag can reject a local retry; guard on the key. `unregister` should catch only `HazelcastInstanceNotActiveException`.
+- `InMemoryLinkAttemptLimiter`: its test stats ThreadLocal is on the hot path; use a sink through the test constructor. Its cleanup is only approximately FIFO; document it. The test `Holder.close()` should assert the thread finished, as a daemon.
+- Nits: inline FQNs in 206, 223 and 269; long lines and import order in 241; the parameter list on 248's `field(...)`; use `String.equals` for the HMAC in the verifier.
+- Smaller: the keyed-run shared tail wording, "by someone who did not also recompute the chain", is loose for keyed chains.
 
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 

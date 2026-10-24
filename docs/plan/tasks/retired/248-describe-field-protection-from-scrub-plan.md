@@ -57,3 +57,5 @@ Accepted residuals. Recursive paths are omitted: the brief's line "single `[]` l
 Routed. `PrivacyEngineWiring` passing the descriptor map goes to task 271. The scrubber-side leak goes to task 270 and advisory GHSA-f94h-6mxv-c957 (draft; the owner accepted the exposure).
 
 Follow-ups. `profileChangesDescription` only asserts `isNotEqualTo`. `Optional<List<Record>>`'s element path is not described.
+
+**Review round (PR #163).** `profileChangesDescription` asserts the exact STRICT tightening of `recipientName`, and the mutant was shown failing.

@@ -57,3 +57,5 @@ Tests that fail on the base: `ResolverInvokerTest`, `KeyResolversTest`, `KeyReso
 Decisions. Resolver calls run on a dedicated pool of daemon platform threads (`key-resolver-N`), default `DEFAULT_MAX_CONCURRENT_CALLS = 8`, set by `ResolverInvoker(PrivacyMetrics, int)`. Slots are counted by a Semaphore and released when the resolver code returns; when every slot is taken the call returns `Failed[UNAVAILABLE]` at once and the resolver is not called. `RESOLVER_LATENCY` uses the fixed tag `"key-resolver"` (OD-200-15). Duplicate resolver names are refused with `DUPLICATE_KEY_RESOLVER`. `maxResults` below 1 is rejected. The invoker never calls `name()`; the registry reads name, from and to once.
 
 Follow-ups. The `SourceFanOut` starvation is now task 272 (PR #161). The test name `aNullKeyInTheListIsInvalidOutput` is misleading. The adapter filters `expand`'s keys to the second source. `PrivacyMetricsTest` does not tie each metric name to its constant. 255 needs a pool-size property.
+
+**Review round (PR #163).** `Resolution` keeps null elements, so a null key gives INVALID_OUTPUT.
