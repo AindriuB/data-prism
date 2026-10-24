@@ -65,3 +65,5 @@ Follow-ups. The `SourceFanOut` starvation is now task 272 (PR #161). The test na
 **Review round 3 (PR #163).** The wait is converted to a duration with saturation before the slot is taken. Every abnormal branch calls `cancel(true)`. The deadline-passed test asserts the TIMEOUT metric and that the slot is free.
 
 **Review round 5 (PR #163; reviewer ids 163-1 to 163-15).** Imports sorted and `THREAD_KEEP_ALIVE` named.
+
+**Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** The resolver tests are bounded and check that the slot is returned.

@@ -349,3 +349,5 @@ Decisions. The Hazelcast exemption is narrowed to `lockState` and `recordFailure
 Notes. For 264: nested classes inside a Hazelcast limiter are not exempt (it fails closed). The lone-surrogate UTF-8 encoding in `AttemptSubject` is pre-existing.
 
 **Review round 5 (PR #163; reviewer ids 163-1 to 163-15).** The Hazelcast exemption covers self-calls only, with the new fixture `HzLimiterDelegatesToAnother`. The concurrency tests now assert that no outcome is UNAVAILABLE.
+
+**Review round 6 (PR #163; reviewer ids 163-1 to 163-19).** The Hazelcast self-call exemption is withdrawn for any limiter with a field assignable to `LinkAttemptLimiter` (fixture `HzLimiterDelegatesToItsOwnType`). Split-package docs say repo modules only.

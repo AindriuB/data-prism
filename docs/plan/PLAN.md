@@ -267,6 +267,8 @@ Second external review round on PR #163 (Lows and Nits; none scheduled, each fol
 Third, fourth and fifth external review rounds on PR #163 are fixed in full except one item (round 5, 2026-10-24):
 
 - 163-15: `AuditChainVerifier.verifyWithKeys` pairs writers by list index; look them up by instance id. Belongs to the next edit of `AuditChainVerifier` (206's successors).
+- 163 round 6: `ClusterMembership.java:418` scans the oversight `keySet` client-side; use a predicate as `ScopeKeys.keysWithPrefix` now does. Belongs to the next edit of `ClusterMembership` (223's successors).
+- 163 round 6: the limiter field check in the architecture rule (269) does not cover a field typed `Object`. Belongs to 269's successors.
 
 Follow-ups from 245 (found in its review and verify, 2026-10-21, none scheduled; fold into the next edit of the operator controller):
 
