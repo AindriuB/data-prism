@@ -14,14 +14,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Calls one resolver with a bounded wait and turns every contract violation into a closed reason.
@@ -38,6 +38,9 @@ public final class ResolverInvoker {
 
     /** The longest key a resolver may return, in UTF-8 bytes. */
     static final int MAX_KEY_BYTES = 256;
+
+    /** How long an idle resolver thread lives before the pool lets it go. */
+    private static final Duration THREAD_KEEP_ALIVE = Duration.ofSeconds(30);
 
     /** The default number of concurrent resolver calls. */
     public static final int DEFAULT_MAX_CONCURRENT_CALLS = 8;
@@ -65,7 +68,8 @@ public final class ResolverInvoker {
             throw new IllegalArgumentException("maxConcurrentCalls must be at least 1");
         }
         AtomicInteger counter = new AtomicInteger();
-        this.executor = new ThreadPoolExecutor(maxConcurrentCalls, maxConcurrentCalls, 30, TimeUnit.SECONDS,
+        this.executor = new ThreadPoolExecutor(maxConcurrentCalls, maxConcurrentCalls,
+                THREAD_KEEP_ALIVE.toSeconds(), TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(maxConcurrentCalls), runnable -> {
                     Thread thread = new Thread(runnable, "key-resolver-" + counter.incrementAndGet());
                     thread.setDaemon(true);

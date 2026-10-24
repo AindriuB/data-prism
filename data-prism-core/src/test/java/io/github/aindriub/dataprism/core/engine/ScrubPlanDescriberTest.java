@@ -587,6 +587,44 @@ class ScrubPlanDescriberTest {
     }
 
     @Test
+    @DisplayName("token availability is read on every description, and a throwing source is unavailable")
+    void tokenAvailabilityIsLiveAndFailsClosed() {
+        var strictest = new PrivacyProfile("DEFAULT", UnclassifiedBehaviour.FAIL_REQUEST, Map.of(
+                DataClassification.PII, PrivacyProfile.ClassificationRule.of(PrivacyAction.TOKENIZE)));
+        var available = new java.util.concurrent.atomic.AtomicReference<Object>(Boolean.TRUE);
+        var engine = new JsonTreeScrubbingEngine(new DefaultFieldMetadataResolver(),
+                new ProfilePrivacyPolicyResolver(Map.of("DEFAULT", strictest)), (s, ns, c) -> "syn",
+                new ValueTokenSource() {
+                    @Override
+                    public String hash(String v, PrivacyNamespace n, PrivacyContext c) {
+                        return "h";
+                    }
+
+                    @Override
+                    public String token(String v, PrivacyNamespace n, PrivacyContext c) {
+                        return "t";
+                    }
+
+                    @Override
+                    public boolean available() {
+                        if (available.get() instanceof RuntimeException e) {
+                            throw e;
+                        }
+                        return (Boolean) available.get();
+                    }
+                });
+
+        assertThat(byPath(engine.describe(Hashed.class, context("DEFAULT"), false).orElseThrow()))
+                .containsEntry("handle", Protection.TOKEN);
+        available.set(Boolean.FALSE);
+        assertThat(byPath(engine.describe(Hashed.class, context("DEFAULT"), false).orElseThrow()))
+                .doesNotContainKey("handle");
+        available.set(new IllegalStateException("boom"));
+        assertThat(byPath(engine.describe(Hashed.class, context("DEFAULT"), false).orElseThrow()))
+                .doesNotContainKey("handle");
+    }
+
+    @Test
     @DisplayName("bytes are one scalar, and a nested array is not described with the field's policy")
     void bytesAndNestedArrays() {
         Map<String, Protection> d = byPath(describe(Blobs.class, "DEFAULT", false));

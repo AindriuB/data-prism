@@ -71,7 +71,6 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
     private final PrivacyPolicyResolver policies;
     private final SyntheticValueSource synthetics;
     private final ValueTokenSource tokens;
-    private final boolean tokensAvailable;
     private final Map<String, ModelDescriptor> descriptors;
 
     /** Without a token source, HASH and TOKENIZE refuse rather than degrade. */
@@ -96,7 +95,6 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         this.policies = Objects.requireNonNull(policies, "policies");
         this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
         this.tokens = Objects.requireNonNull(tokens, "tokens");
-        this.tokensAvailable = tokens.available();
         this.descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
     }
 
@@ -126,6 +124,15 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * resolver and the same nested-type rule. Chainable paths come from the annotations and from the
      * descriptors given at construction.
      */
+    /** Read on every description, and fail closed: a source whose {@code available()} throws is unavailable. */
+    private boolean tokensAvailable() {
+        try {
+            return tokens.available();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     @Override
     public Optional<ModelDescription> describe(Class<?> model, PrivacyContext context, boolean linksEnabled) {
         Objects.requireNonNull(model, "model");
@@ -141,7 +148,8 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
                 return Optional.empty();
             }
         }
-        return ScrubPlanDescriber.describe(model, context, linksEnabled, resolver, policies, chainables, tokensAvailable);
+        return ScrubPlanDescriber.describe(model, context, linksEnabled, resolver, policies, chainables,
+                tokensAvailable());
     }
 
     /**
