@@ -414,6 +414,15 @@ public record ClusterMembership(String clusterName, Join join, int port, String 
                 found.put(name, 1);
             }
         }
+        try {
+            long raw = instance.<Object, Object>getMap(PrivacyCluster.OVERSIGHT_MAP).keySet().stream()
+                    .filter(key -> key instanceof String text && text.indexOf('\0') >= 0).count();
+            if (raw > 0) {
+                found.put(PrivacyCluster.OVERSIGHT_MAP, (int) raw);
+            }
+        } catch (RuntimeException unreadable) {
+            found.put(PrivacyCluster.OVERSIGHT_MAP, 1);
+        }
         return found;
     }
 
