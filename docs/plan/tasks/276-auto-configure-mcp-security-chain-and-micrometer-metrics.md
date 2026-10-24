@@ -2,9 +2,9 @@
 
 **Repo:** `.`
 **Release:** 0.9.0 (changes the starter's public contract; must land before the 0.9.0 freeze)
-**Base branch:** `origin/main` once 273 has merged
-**Depends on:** 273 (both edit `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, the bean inventories, the metadata file, `docs/configuration.md` and 273's startup report; this task builds on 273's derived `JwtDecoder`), 210 (0.8; the last editor of `SecurityWiring`)
-**Wave:** 16 (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
+**Base branch:** `origin/main` once 273 and 275 have merged
+**Depends on:** 275 (both edit `freeze/codes.txt` and the contract register, since this task adds `MISSING_MCP_SECURITY`; added 2026-10-24), 273 (both edit `DataPrismPropertiesValidator.java`, `PrivacyExtensionPoints.java`, the bean inventories, the metadata file, `docs/configuration.md` and 273's startup report; this task builds on 273's derived `JwtDecoder`), 210 (0.8; the last editor of `SecurityWiring`)
+**Wave:** 17 (moved from 16 on 2026-10-24, after the third external review of PR #162 gave it a refusal code; 0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Decisions:** OD-276-1 is open (below). "Auto-configured, back-off on user bean" for the chain and the metrics bean, and "`dataprism.metrics.sink` defaults to Micrometer when it is on the classpath", are owner decisions already made in the spec, section 1.
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/McpSecurityWiring.java *(new; name may differ: the `SecurityFilterChain` and the `JwtCallerContextExtractor` beans)*
@@ -24,6 +24,9 @@
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/MicrometerMetricsAutoConfigurationTest.java *(new)*
 - data-prism-spring-boot-autoconfigure/src/test/java/io/github/aindriub/dataprism/spring/boot/*.java *(existing tests: the property sets or beans that start a context only)*
 - docs/configuration.md *(the `dataprism.metrics` rows, and a new "Auto-configured beans" section listing the chain, the extractor and the metrics bean with their back-off conditions)*
+- data-prism-server/src/test/java/io/github/aindriub/dataprism/server/McpChainPrecedenceTest.java *(new)*
+- data-prism-architecture/src/test/resources/freeze/codes.txt *(the `MISSING_MCP_SECURITY` insertion only)*
+- docs/plan/design/contract-register.md *(insertions only: the `MISSING_MCP_SECURITY` row)*
 - docs/reidentification.md *(the sentence at about :104 that calls `PrivacyMetrics` "the application's" bean)*
 
 ## Goal
@@ -34,15 +37,24 @@ Today every embedding application writes the same three beans by hand: a `Securi
 - data-prism-integration-tests/src/main/java/io/github/aindriub/dataprism/example/http/SecurityConfig.java: the chain to auto-configure (stateless, CSRF off for a bearer-token API, a health path open, everything else authenticated with the JWT decoder) and the extractor bean. MicrometerPrivacyMetrics.java in the same package: the fail-safe metrics contract (the only tag is `source`; every Micrometer call guarded). Leave both files in place. They now prove the back-off.
 - data-prism-server/src/main/java/io/github/aindriub/dataprism/server/ServerSecurityConfiguration.java and ServerPrivacyMetrics.java: the server keeps its own beans. The auto-configuration must back off there, and the server's behaviour must not change.
 - McpTransportWiring.java:60-70: `MISSING_CALLER_CONTEXT_EXTRACTOR` is refused today when no extractor bean exists. After this task an auto-configured extractor exists whenever the chain's preconditions hold.
-- DataPrismContractValidator.java:104: `MISSING_METRICS_BINDING` when no `PrivacyMetrics` bean exists. Reuse it: with `micrometer` as the sink and no `MeterRegistry` bean there is no auto-configured bean, and that code refuses as today. This task adds no refusal code and does not touch `freeze/codes.txt`.
+- DataPrismContractValidator.java:104: `MISSING_METRICS_BINDING` when no `PrivacyMetrics` bean exists. Reuse it: with `micrometer` as the sink and no `MeterRegistry` bean there is no auto-configured bean, and that code refuses as today. The metrics part adds no refusal code. This task's only new code is the security chain's `MISSING_MCP_SECURITY`, below.
 - The default sink depends on the classpath, so it cannot be a field initialiser in `MetricsProperties`. Apply it where the classpath is known, and show it in 273's startup report with the origin "default: Micrometer on the classpath".
 - Ordering: the chain must be registered before Spring Boot's default web-security configuration evaluates its "no `SecurityFilterChain` bean" condition, or Spring Boot's default chain would win. Test the outcome, not the annotation.
 - **Two chains (second external review of PR #162).** A single chain that backs off on any application `SecurityFilterChain` would also drop MCP protection when the application only adds, say, an `/admin/**` chain. So there are two chains.
-  - **The MCP chain.** It is matched to `dataprism.transport.http.path` and its sub-paths, at a fixed, documented high precedence (a named constant, for example `Ordered.HIGHEST_PRECEDENCE + 10`). It has no `@ConditionalOnMissingBean` and never backs off.
+  - **The MCP chain** (corrected after the third external review of PR #162).
+    - **Matcher.** Its `securityMatcher` is exactly the path the transport serves, `dataprism.transport.http.path`, matched as the server's `exactPath(mcpPath, null)` matches it (`ServerSecurityConfiguration.java:41-48`), and nothing else. It does not match sub-paths. `/mcp/x` therefore falls to whatever chain the application has; on the server, that is a chain whose `anyRequest().denyAll()` refuses it.
+    - **Rules.** Inside the chain: the exact path, authenticated with the JWT decoder; then `anyRequest().denyAll()` for anything else the matcher lets through (other dispatcher types, for example). The `ERROR` dispatch is permitted, as the server does.
+    - **Order.** A named constant of `10`, documented in Javadoc and docs. Why 10: the server's operator chain is `@Order(1)` and matches by the operator port (`:62-69`), so it must still run first. A request to the operator port must never reach the MCP chain. Application chains with no `@Order` sit at the lowest precedence, so they still come after the MCP chain. The matcher also excludes a request whose local port is `dataprism.operator.port` when the operator surface is enabled, so the order is not the only guard.
+    - It has no `@ConditionalOnMissingBean` and never backs off.
+  - **Preconditions** (each listed in the Javadoc and in `docs/configuration.md`'s "Auto-configured beans" section). The MCP chain and the extractor register when all of these hold:
+    1. `dataprism.transport.mode` is `http` (the default);
+    2. the application is a servlet web application;
+    3. Spring Security's web configuration (`org.springframework.security.config.annotation.web.builders.HttpSecurity`) and the OAuth2 resource server's JWT support (`org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider`) are on the classpath. The starter brings both through `spring-boot-starter-oauth2-resource-server`.
+  - **Refusal when they do not.** If conditions 1 and 2 hold but the MCP chain bean is absent, startup refuses with a new code, `MISSING_MCP_SECURITY`. Causes include condition 3 failing, or the auto-configuration being excluded. The message names the missing class or says the chain was not registered, and never a configured value. The check is a preflight that tests the classes with `ClassUtils.isPresent` and the bean by name with `containsBeanDefinition`, so it works when Spring Security is absent. Today such an application fails later and less clearly, or depends on the tool-level refusal only.
   - **The catch-all chain.** It is OD-276-1's scope for every other path, and it backs off when the application defines any `SecurityFilterChain`.
   - **Classification.** The MCP chain is `PRIVACY_CRITICAL` with `Guard.COMPETING_BEAN_REFUSAL`, in its list-collected sense: `FilterChainProxy` collects chains into a list, so an application chain can be added but cannot remove ours. `PrivacyExtensionPointsTest` proves it.
   - **Residual risk.** An application chain registered at an even higher precedence and matching the MCP path would still win. Javadoc and the docs say so, and the tool-level refusal below is the backstop.
-  - **The server.** `ServerSecurityConfiguration` keeps its own chains. The MCP chain then also exists on the server, and the server's tests must pass unmodified. If they cannot, stop and report rather than adding an opt-out.
+  - **The server.** `ServerSecurityConfiguration` keeps its own chains. The MCP chain then also exists on the server at order 10, after the operator chain and ahead of the server's MCP chain. Because it matches only the exact MCP path, with the same authentication the server's chain applies there, the server's behaviour is unchanged. The server's tests must pass unmodified, and `McpChainPrecedenceTest` proves the cases below. If they cannot pass, stop and report rather than adding an opt-out.
 - `PrivacyExtensionPoints`: the catch-all chain, the extractor and the metrics bean are `REPLACEABLE`, as the spec decides. Rule 2 still holds when an application replaces the chain with a weaker one: the MCP tools refuse a call with no authenticated caller (`GetEntityContextTool.java:89`). Pin that with one test.
 - docs/conventions.md: `ApplicationContextRunner` and `WebApplicationContextRunner`, latches, no sleeps.
 - Never read `~/.m2/settings.xml`, `~/.m2/settings-security.xml`, `~/.gnupg` or any other credential file.
@@ -65,9 +77,15 @@ When the application defines no `SecurityFilterChain`, Spring Boot's default cha
   - With Micrometer absent (a `FilteredClassLoader`) and no sink set, startup refuses `MISSING_METRICS_SINK` as today.
   - With Micrometer present but no `MeterRegistry` bean, startup refuses `MISSING_METRICS_BINDING`.
   - A registry that throws on registration never fails the reported call.
-- [ ] The standalone server's bean set and behaviour are unchanged. `ServerSecurityBoundaryTest`, `ServerPrivacyMetricsGaugeTest` and the operator tests pass unmodified.
+- [ ] `McpChainPrecedenceTest` (server):
+  - `/mcp/x` and `/mcp/` are refused, both with no token (401 or 403) and with a valid MCP token (403). Both are refused on the base commit too, which pins that this task does not open them.
+  - The exact `/mcp` with a valid token reaches the transport.
+  - With the operator surface enabled, a request to the operator port at path `/mcp` is decided by the operator chain, not ours: an MCP-audience token gets 401.
+  - Mutants killed: matching `/mcp/**`; dropping the final `denyAll`; an order ahead of the operator chain.
+- [ ] Preconditions: with Spring Security's web classes hidden by a `FilteredClassLoader`, and again with the auto-configuration excluded, a servlet application with the HTTP transport refuses `MISSING_MCP_SECURITY`. A non-web application, or `transport.mode` set to anything else that is accepted, does not raise it. The code is in the register and `freeze/codes.txt`.
+- [ ] The standalone server's bean set and behaviour are unchanged, apart from the added MCP chain bean, which the bean inventory lists. `ServerSecurityBoundaryTest`, `ServerPrivacyMetricsGaugeTest` and the operator tests pass unmodified.
 - [ ] `data-prism-integration-tests` passes unmodified. Its own `SecurityConfig` and `MicrometerPrivacyMetrics` win over the auto-configuration.
-- [ ] `freeze/codes.txt` and `frozen-property-names.txt` are unchanged.
+- [ ] `freeze/codes.txt` gains only `MISSING_MCP_SECURITY`, and `frozen-property-names.txt` is unchanged.
 - [ ] `docs/configuration.md` documents the `micrometer` default and its condition, and the new "Auto-configured beans" section names each bean, what it does and how to replace it. `docs/reidentification.md` no longer implies the application must supply `PrivacyMetrics`. `ConfigurationMetadataDocumentedTest` passes.
 - [ ] `./mvnw -B -pl data-prism-spring-boot-autoconfigure,data-prism-server,data-prism-integration-tests -am verify` passes, then `./mvnw -B verify`.
 - [ ] The Outcome lists, for 281's migration notes and CHANGELOG: the three auto-configured beans, the metrics default and OD-276-1's outcome.

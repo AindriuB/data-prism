@@ -4,7 +4,7 @@
 **Release:** 0.9.0
 **Base branch:** `origin/main` once 273, 275, 276, 277, 278, 279 and 280 have merged
 **Depends on:** 279 (both edit `docs/configuration.md`; 279's startup-refusal anchors are linked from here), 273, 275, 276, 277, 278 and 280 (their Outcomes carry the text this task publishes; 280's says what the examples are and that they are not published), 213 and 261 (0.8: the last editors of `CHANGELOG.md`, `mkdocs.yml` and `docs/migration-0.8.md`)
-**Wave:** 20 (moved from 19 on 2026-10-24, after the external review of PR #162, because it cites 280's Outcome; 0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
+**Wave:** 21 (moved from 19 on 2026-10-24: after the external review of PR #162 because it cites 280's Outcome, then with 276 and 278; 0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Owns:**
 - docs/configuration.md *(the group table at about :119-148, the property reference at about :150-225, and the JSON section at about :709-795)*
 - docs/migration-0.9.md *(new)*
@@ -31,6 +31,7 @@ Bring the reference documentation into line with what 273 to 279 changed, from t
 - [ ] Every mandatory row is checked against the code by a refusal test that already exists: 273's still-required test, whose rows include the JWT issuer, the JWT audience and the writer id. The Outcome maps each row to its test.
 - [ ] The JSON section states the restricted JSONPath grammar: what is allowed, what is refused and with which codes, the exactly-one-path coverage rule, `subject-json-path` and chainable fields, and how to use it from the starter and from the server. `docs/architecture.md`'s grammar paragraph matches it.
 - [ ] `docs/migration-0.9.md` exists, is in `mkdocs.yml` `nav` and `llmstxt`, and has a before-and-after example for each breaking change, including the retired `MISSING_CLUSTER_TOPOLOGY` and the new rule that cluster settings need an explicit `topology: embedded` (273).
+- [ ] The topology reference and the migration page state the cost of the single-node default: replicas with no `dataprism.hazelcast` settings each run alone, so read budgets, link limits and pseudonym state are per replica, not shared. They also name 273's startup WARN for Kubernetes.
 - [ ] `CHANGELOG.md` `[Unreleased]` has Added, Changed, Removed (`MISSING_CLUSTER_TOPOLOGY`) and Breaking entries for 273 to 280, including that the examples are not published.
 - [ ] `ConfigurationMetadataDocumentedTest` passes. `mkdocs build --strict` passes, if the docs build is part of CI (`pages.yml`); otherwise the Outcome shows a local strict build.
 - [ ] No owned page states a default or a required setting that the code contradicts. The Outcome lists the claims checked and the source line for each.

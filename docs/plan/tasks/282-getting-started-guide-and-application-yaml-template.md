@@ -4,7 +4,7 @@
 **Release:** 0.9.0
 **Base branch:** `origin/main` once 280 and 281 have merged
 **Depends on:** 280 (the guide walks through `examples/starter-yaml`), 281 (both edit `mkdocs.yml`; the guide links to 281's mandatory-settings paragraph and grammar section)
-**Wave:** 21 (moved from 20 on 2026-10-24 with 281; 0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
+**Wave:** 22 (moved from 20 on 2026-10-24 with 281; 0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Decisions:** the guide, its 15-minute target and the template are owner decisions already made in the spec, section 4. The page name and the template's location are decided at filing (below).
 **Owns:**
 - docs/getting-started-starter.md *(new)*
@@ -32,6 +32,7 @@ A medium-level Java developer who has never seen Data Prism should get one prote
 - [ ] The guide's steps are, in order: prerequisites, the dependency, the mandatory properties, the API description, run, call with a token, read the result, see a refusal and fix it, next steps. Each command and file in it is copied from `examples/starter-yaml` or verified against it.
 - [ ] A timed walkthrough by someone who did not write the guide (a fresh agent with no repository context, following only the page) reaches a scrubbed answer. The Outcome records the time and every point where the reader got stuck, and the page is fixed for each.
 - [ ] `StarterTemplateTest` passes, and fails once in a recorded run when a mandatory key is removed from the template.
+- [ ] The guide says, where it runs the application, that the default topology is single-node and that more than one replica needs `dataprism.hazelcast.topology: embedded`, linking 281's topology section.
 - [ ] The guide is in `mkdocs.yml` `nav` and `llmstxt`, and is linked from `README.md`, `docs/index.md` and the end of `docs/quickstart.md`.
 - [ ] No owned page states a default, a required setting or a refusal text that the code contradicts. The Outcome lists the claims checked.
 - [ ] `./mvnw -B -pl data-prism-spring-boot-autoconfigure -am verify` passes. `mkdocs build --strict` passes, as 281 established.

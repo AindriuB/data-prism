@@ -36,7 +36,7 @@ Give developers a GitHub "Use this template" starting point. It is the `starter-
 - [ ] The repository exists under the name and timing OD-283-1 decides, is public, and is marked as a template.
 - [ ] In a clean container with an empty `~/.m2/repository`, `./mvnw -B verify` passes, and the build log shows every Data Prism artifact resolved from `repo.maven.apache.org`.
 - [ ] Its test is the `starter-yaml` test, adapted only for the parent and the package. It passes in the repository's own CI on the first push.
-- [ ] A grep in the Outcome shows no owner-domain names, no credentials and no `SNAPSHOT` versions. The test keys are generated per run, as in 280, and the repository carries 280's committed-key-material test, which runs in its CI.
+- [ ] A grep in the Outcome shows no owner-domain names, no credentials and no `SNAPSHOT` versions. The test keys are generated per run, as in 280, and the repository carries 280's committed-key-material test, which runs in its CI. Its scan root is set to the repository root (`keymaterial.scan.root=.`, excluding `target/` and `.git/`), because the template has no `examples/` directory. The test's more-than-zero-files assertion is shown to hold in the Outcome, with the scanned count.
 - [ ] README.md and the getting-started guide in this repository link to it.
 
 ## Out of scope

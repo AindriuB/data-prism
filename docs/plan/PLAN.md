@@ -141,12 +141,13 @@ Order by wave (briefs in a wave can run in parallel when their owned files do no
 | 14 | 260, 263 |
 | last (14) | 213 (depends on 208, 210, 211, 261, 218 to 231 and 264) |
 | 15 (0.9) | 273, 274 (0.9 starter onboarding, filed 2026-10-23; see "0.9 starter onboarding plan" after the 0.8 follow-ups). 214, the 0.9 data-protection annex (depends only on 213), is not placed by this plan; its Owns are disjoint from 273 and 274, so it can join this wave |
-| 16 (0.9) | 275, 276, 277 |
-| 17 (0.9) | 278 |
-| 18 (0.9) | 279 |
-| 19 (0.9) | 280 |
-| 20 (0.9) | 281 (moved from 19 on 2026-10-24: it cites 280's Outcome) |
-| 21 (0.9) | 282 (moved from 20 with 281) |
+| 16 (0.9) | 275, 277 |
+| 17 (0.9) | 276 (moved from 16 on 2026-10-24: it now adds `MISSING_MCP_SECURITY`, so it follows 275 on `freeze/codes.txt`) |
+| 18 (0.9) | 278 (after 276, on `freeze/codes.txt`) |
+| 19 (0.9) | 279 |
+| 20 (0.9) | 280 |
+| 21 (0.9) | 281 (after 280: it cites 280's Outcome) |
+| 22 (0.9) | 282 |
 | after the 0.9.0 publication | 283 (external template repository; OD-283-1) |
 
 Obligations for the 0.8.0 release cut (no brief filed yet; whoever files it copies these into its Acceptance):
@@ -245,10 +246,10 @@ Owner decisions that change behaviour and belong in `docs/migration-0.8.md`: the
 
 #### 0.9 starter onboarding plan (filed 2026-10-23)
 
-Goal: adopting Data Prism should feel like adopting any Spring Boot starter. Spec: `specs/2026-10-23-starter-onboarding.md` (owner-agreed design). Eleven briefs, 273 to 283, in waves 15 to 21 above. They change the starter's public contract, so they must land before the 0.9.0 freeze. Every 0.8 brief precedes wave 15, and none of these runs alongside wave 4.
+Goal: adopting Data Prism should feel like adopting any Spring Boot starter. Spec: `specs/2026-10-23-starter-onboarding.md` (owner-agreed design). Eleven briefs, 273 to 283, in waves 15 to 22 above. They change the starter's public contract, so they must land before the 0.9.0 freeze. Every 0.8 brief precedes wave 15, and none of these runs alongside wave 4.
 
 - 273 defaults the low-stakes settings and derives the JWT settings and writer id from Spring. 274 adds the restricted JSONPath library. 275 keys `json-sources:` fields by restricted JSONPath. 276 auto-configures the security chain, the caller-context extractor and Micrometer metrics. 277 makes configured JSON sources work in an embedded starter application. 278 adds `@DataPrismSource`. 279 makes startup refusals name the property, an example and the doc anchor. 280 adds three runnable examples, built in the reactor and never published. 281 updates the reference docs. 282 writes the getting-started guide and the `application.yaml` template. 283 is the public template repository.
-- The order is mostly serial because 273, 275, 278 and 279 all add refusal codes, so each edits 260's `freeze/codes.txt` and the contract register. 273, 276, 279 and 281 all edit `docs/configuration.md`.
+- The order is mostly serial because 273, 275, 276, 278 and 279 all add refusal codes, so each edits 260's `freeze/codes.txt` and the contract register. 273, 276, 279 and 281 all edit `docs/configuration.md`.
 - 279's `RefusalGuide` coverage test is a new shared exhaustiveness guard. Any brief filed after it that adds a startup code must own `RefusalGuide.java` (insertions only).
 - Interactions: 210 (case authorisation stays required), 249 and 251 (275 keys chainable fields by path), 213 and 261 (281 follows their docs), 270 and 271 (PR #161; 275 and 278 build on them), and the pending module-merge decision above (277 and 280 gain an edge to the merge brief if one is filed; every option is compatible with this plan).
 

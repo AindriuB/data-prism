@@ -4,7 +4,7 @@
 **Release:** 0.9.0 (changes the operator-facing refusal text; must land before the 0.9.0 freeze)
 **Base branch:** `origin/main` once 273, 275, 276, 277 and 278 have merged
 **Depends on:** 278 (its refusal sites in `connectors.rest.declared`; both edit `freeze/codes.txt` and the register), 275 (its coded refusals in `ConfiguredJsonSources`), 273 and 276 (both edit `docs/configuration.md`; their codes and derived properties are among the ones this task hints), 277 (owns `ConfiguredJsonSourcesInitializer`, which may need to wrap a coded refusal), 261 (0.8: the startup-refusal index section of `docs/configuration.md` that the anchors point into), 260 (0.8: `freeze/codes.txt` and its "startup" surface, which the coverage test reads)
-**Wave:** 18 (0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
+**Wave:** 19 (moved from 18 on 2026-10-24, with 276 and 278; 0.9 starter onboarding; filed 2026-10-23 from `docs/plan/specs/2026-10-23-starter-onboarding.md`)
 **Decisions:** what a refusal must say, and that it never echoes a secret, are owner decisions already made in the spec, section 3. The link base is decided at filing (below).
 **Owns:**
 - data-prism-spring-boot-autoconfigure/src/main/java/io/github/aindriub/dataprism/spring/boot/DataPrismConfigurationException.java
