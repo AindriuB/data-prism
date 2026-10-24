@@ -41,9 +41,23 @@ public interface ValueTokenSource {
      */
     String token(String value, PrivacyNamespace namespace, PrivacyContext context);
 
+    /**
+     * Whether this source can hash and tokenize. The scrubbing engine reads this to describe a policy, so it must
+     * agree with what {@link #hash} and {@link #token} do. A decorator must delegate this to the source it wraps;
+     * the default of {@code true} would otherwise hide an unavailable source.
+     */
+    default boolean available() {
+        return true;
+    }
+
     /** Refuses both, for a deployment that has not chosen an implementation. */
     static ValueTokenSource unavailable() {
         return new ValueTokenSource() {
+            @Override
+            public boolean available() {
+                return false;
+            }
+
             @Override
             public String hash(String value, PrivacyNamespace namespace, PrivacyContext context) {
                 throw new PrivacyRefusedException("NO_TOKEN_SOURCE", namespace.name(),

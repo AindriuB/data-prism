@@ -96,8 +96,7 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
         this.policies = Objects.requireNonNull(policies, "policies");
         this.synthetics = Objects.requireNonNull(synthetics, "synthetics");
         this.tokens = Objects.requireNonNull(tokens, "tokens");
-        // ValueTokenSource.unavailable() is an anonymous class declared in that interface.
-        this.tokensAvailable = tokens.getClass().getEnclosingClass() != ValueTokenSource.class;
+        this.tokensAvailable = tokens.available();
         this.descriptors = Map.copyOf(Objects.requireNonNull(descriptors, "descriptors"));
     }
 
