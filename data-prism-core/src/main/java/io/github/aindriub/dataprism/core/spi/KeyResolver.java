@@ -39,5 +39,11 @@ public interface KeyResolver {
         public Resolution {
             keys = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(keys, "keys")));
         }
+
+        /** Counts only: a key is never printed. */
+        @Override
+        public String toString() {
+            return "Resolution[count=" + keys.size() + ", more=" + more + "]";
+        }
     }
 }
