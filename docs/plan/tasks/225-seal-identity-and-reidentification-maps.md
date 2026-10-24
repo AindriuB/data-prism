@@ -36,7 +36,7 @@ After this task the identity cache and the re-identification index hold only sea
 - [ ] T14, second rule: `ArchitectureTest` fails when any class other than `ScopeIdentityIndex` opens an envelope read from the re-identification map. A nested fixture shows the rule can fail. `onlyReidentificationCallsSubjectFor` is unchanged.
 - [ ] `IdentityMapsBoundary`: every value opens under the test key and its decrypted parts recompute the keyed name and the allowed value; the raw-value fixture is still rejected.
 - [ ] Public constructors of `CachingSyntheticValueSource` and `ScopeIdentityIndex` are unchanged, so `ReidentificationWiring` needs no edit.
-- [ ] A closed serving gate (227, same wave) is not tamper: a `Sealer` refusal because the member is not serving surfaces from `subjectFor` as `CLUSTER_OPERATION_REFUSED`, never as an empty result and never counted as `seal.tamper`; the identity cache recomputes, as for any cache failure. A test closes the gate with a stub `ServingGate`.
+- [ ] A closed serving gate (227, next wave; tested here with a stub gate) is not tamper: a `Sealer` refusal because the member is not serving surfaces from `subjectFor` as `CLUSTER_OPERATION_REFUSED`, never as an empty result and never counted as `seal.tamper`; the identity cache recomputes, as for any cache failure. A test closes the gate with a stub `ServingGate`.
 - [ ] Only the current key: with no `previous` configured, values are sealed and opened under `current`; the Outcome states, for 213, that a cluster-key change empties both maps (index entries are lost, pseudonyms already issued cannot be re-identified).
 - [ ] `./mvnw -B -pl data-prism-hazelcast,data-prism-reidentification,data-prism-architecture -am verify` and `./mvnw -B verify` exit 0. Report the counts.
 

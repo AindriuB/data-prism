@@ -6,7 +6,7 @@ Kept for 1.0 under owner decision (b), 2026-10-23: 1.0 supports multiple instanc
 **Release:** 0.8.0
 **Base branch:** `origin/main` (or the 0.8 integration branch), at a commit that contains 227.
 **Depends on:** 219 (answers 10 and 11), 223 (keyed names, `SealedWrites`, `ClusterSecuritySettings`), 227 (`MemberCards`, `ClusterSecurityStatus`, the gate's pause-map exemption)
-**Wave:** 6 (re-planned 2026-10-23 on the open 0.8 graph: 203, 206, 207, 208, 210 and 211 have not landed and are placed by their edges; 209 has landed)
+**Wave:** 7 (moved from 6 on 2026-10-23, after 227)
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/HazelcastOversightState.java
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/PauseDocument.java *(new)*
@@ -26,7 +26,7 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
 - Task 227: `MemberCards.reportPauseSequence`, `highestReportedPauseSequence`, `verifiedMembers`; `ClusterSecurityStatus`; the gate never blocks the pause map; OD-215-16 for oversight writes while not serving.
 - data-prism-core/src/main/java/io/github/aindriub/dataprism/oversight/OversightState.java: the SPI, unchanged.
 - From 218/219 (2026-10-21): This task owns the 0.7 fence write (`all` = TRUE in `dataprism.oversight`) and its re-assertion at each lease refresh.
-- From 227 (folded in 2026-10-23): `PrivacyCluster.instance()` refuses while the serving gate is closed, and 227 adds a package-private ungated accessor for the member-card and pause maps. `HazelcastOversightState` reaches the pause document through that accessor, so OD-215-16 (a) holds: while not serving, a pause is accepted and a resume is refused.
+- From 227 (folded in 2026-10-23, shape changed after the review of PR #164): the stores use the gated `PrivacyCluster.servingInstance()`; `instance()` stays ungated, and `HazelcastOversightState` keeps using it, so the pause document stays readable and writable while not serving. OD-215-16 (a) is enforced here: while `ClusterSecurityStatus` says not serving, a pause is accepted and a resume is refused.
 - Settings: 230 is deferred, so `pause-lease` and `clock-skew-tolerance` are not Spring properties in 1.0. The `ClusterSecuritySettings` defaults apply (`PT30S` and `PT5S`), on a joining member and on a solo member alike, and the tests construct settings directly.
 
 ## Required approach
@@ -44,7 +44,7 @@ A deleted, forged or replayed entry can no longer lift a pause. Pause state beco
 - [ ] An attacker document (plaintext, 0.7 format, random envelope, envelope under another key) written by a keyless member or client never lifts a pause, and is counted.
 - [ ] Every existing `HazelcastOversightTest` case passes; changes are only where a raw value was read or written. The `OversightState` SPI and `OversightSnapshot` are unchanged.
 - [ ] `pause.fresh` and `pause.age_seconds` are emitted as decided under OD-215-5, and `ClusterSecurityStatus` reports freshness without any pause content.
-- [ ] OD-215-16 (a), with the serving gate closed by an unverified member under `refuse` (227): a pause is written and seen by every instance; a resume is refused with `CLUSTER_OPERATION_REFUSED` and audited as 245 audits a resume whose apply fails (`ALLOW:RESUMED`, then a linked `DENY`); after the gate reopens, the resume succeeds. `HazelcastOversightState` reaches the document only through 227's ungated accessor (a test fails if it calls `instance()`).
+- [ ] OD-215-16 (a), with the serving gate closed by an unverified member under `refuse` (227): a pause is written and seen by every instance; a resume is refused with `CLUSTER_OPERATION_REFUSED` and audited as 245 audits a resume whose apply fails (`ALLOW:RESUMED`, then a linked `DENY`); after the gate reopens, the resume succeeds. `HazelcastOversightState` reaches the document through `instance()`, never `servingInstance()` (227's `ServingInstanceArchitectureTest` allows it), and the resume refusal comes from the status check, not from the accessor.
 - [ ] `OversightMapsBoundary`: the oversight map holds exactly the document, which opens under the test key; scope ids appear only inside the plaintext.
 - [ ] `./mvnw -B -pl data-prism-hazelcast -am verify` and `./mvnw -B verify` exit 0. Report the counts.
 

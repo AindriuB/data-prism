@@ -5,8 +5,8 @@ Filed 2026-10-23 for owner decision (b), as the second half of 284. 284 refuses 
 **Repo:** `.`
 **Release:** 0.8.0
 **Base branch:** the 0.8 integration branch, at a commit that contains 227, 228 and 284.
-**Depends on:** 225 (owns `CachingSyntheticValueSource`, `ScopeIdentityIndex` and their tests in wave 5), 227 (owns `PrivacyCluster.java`, `ClusterMembership.java`, `PrivacyClusterRefusal.java` and `KeylessMemberIsolationTest.java` in wave 5), 228 (owns `HazelcastOversightTest.java` in wave 6), 284 (the rule, the codes and `MemberInterfaceCheck`, which this task makes delegate here)
-**Wave:** 7
+**Depends on:** 225 (owns `CachingSyntheticValueSource`, `ScopeIdentityIndex` and their tests in wave 5), 227 (owns `PrivacyCluster.java`, `ClusterMembership.java`, `PrivacyClusterRefusal.java` and `KeylessMemberIsolationTest.java`, and switches five store files, in wave 6), 228 (owns `HazelcastOversightTest.java` in wave 7), 284 (the rule, the codes and `MemberInterfaceCheck`, which this task makes delegate here)
+**Wave:** 8 (moved from 7 on 2026-10-23, after 228)
 **Owns:**
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/ClusterSecuritySettings.java *(the trusted-network declaration only)*
 - data-prism-hazelcast/src/main/java/io/github/aindriub/dataprism/hazelcast/TrustedNetwork.java *(new: the declaration and the private-range rule)*
@@ -30,7 +30,7 @@ Every entry point that starts or wraps a member that joins, or already has, othe
 - `ClusterSecuritySettings` is new in 0.8 (223) and unreleased, so adding a component needs no migration note of its own. The plain-Java refusal is a behaviour change, and 213 documents it.
 
 ## Required shape
-- `TrustedNetwork`: `undeclared()`, the default in `ClusterSecuritySettings.defaults()`, and `declared(List<String> extraRanges)`, which validates each range as 284 does (`INVALID_TRUSTED_RANGE`). `ClusterSecuritySettings` carries one. The rule "every address this interface pattern can match is private or in a declared range" lives here, once.
+- `TrustedNetwork`: `undeclared()`, the default in `ClusterSecuritySettings.defaults()`, and `declared(List<String> extraRanges)`, which validates each range as 284 does (`INVALID_TRUSTED_RANGE`, including the refusal of a non-private range broader than `/24`). Its Javadoc states 284's isolation assertion word for word: declaring it asserts that only Data Prism members can reach the member port. A member started with a declaration logs that assertion at INFO once, with the member port and no address; on the Spring path the line is not logged twice. `ClusterSecuritySettings` carries one. The rule "every address this interface pattern can match is private or in a declared range" lives here, once.
 - `embedded(ClusterMembership, …)` with a `tcp-ip` or `kubernetes` join: undeclared refuses with `MISSING_TRUSTED_NETWORK`, and an interface that is not private refuses with `PUBLIC_MEMBER_INTERFACE`, in 284's order and before any member starts.
 - `embedded(Config, …)` on a config with `tcp-ip` or Kubernetes discovery enabled: no enabled interface refuses with `MISSING_MEMBER_INTERFACE`, and otherwise the same two checks apply, to every configured interface, before any member starts.
 - `using(…)` on an instance whose config joins or which already has more than one member: the same two checks apply to the configured interfaces and to the address the member is bound to. On refusal the instance is left running, as `using` does today.
