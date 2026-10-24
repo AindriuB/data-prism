@@ -34,4 +34,22 @@ class ValueTokenSourceTest {
         };
         assertThat(decorator.available()).isFalse();
     }
+
+    @Test
+    void aDecoratorThatDoesNotDelegateHidesAnUnavailableSource() {
+        // Documents why the javadoc says a decorator MUST delegate available(): the default is true.
+        ValueTokenSource inner = ValueTokenSource.unavailable();
+        ValueTokenSource careless = new ValueTokenSource() {
+            @Override
+            public String hash(String value, PrivacyNamespace namespace, PrivacyContext context) {
+                return inner.hash(value, namespace, context);
+            }
+
+            @Override
+            public String token(String value, PrivacyNamespace namespace, PrivacyContext context) {
+                return inner.token(value, namespace, context);
+            }
+        };
+        assertThat(careless.available()).isTrue();
+    }
 }
