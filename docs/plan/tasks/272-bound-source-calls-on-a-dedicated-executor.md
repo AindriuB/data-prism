@@ -47,9 +47,9 @@ It does not stop a hung adapter from holding its own slots. Those come back only
   - a second, per-source semaphore beside the pool's.
 
 ## Required shape
-- `SourceCallSlots` holds one pool semaphore of 128 permits, and one semaphore per source name of 16 permits, created on first use. Both sizes are constants with these one-line reasons in their Javadoc:
+- `SourceCallSlots` holds one pool semaphore of 128 permits, and one semaphore per source name of 32 permits, created on first use. Both sizes are constants with these one-line reasons in their Javadoc:
   - **Pool, 128:** 32 concurrent requests each running `RequestLimits.DEFAULT.maxConcurrency()` (4) calls. Each platform thread reserves a native stack, so the bound is fixed rather than elastic.
-  - **Per source, 16:** the pool divided by `RequestLimits.DEFAULT.maxSources()` (8). A single hung source can hold at most an eighth of the pool. All eight of a request's sources would have to hang together to fill it.
+  - **Per source, 32:** the number of concurrent requests the pool is sized for (128 / 4). A request calls a given source at most once at a time, so all 32 of those requests can call the same healthy source at once without hitting its ceiling. A single hung source holds at most a quarter of the pool, which leaves 96 slots for every other source. Under more than 32 concurrent requests to one source, the excess is reported `UNAVAILABLE`, which is the intended back-pressure.
 - `SourceFanOut` uses one shared default `SourceCallSlots` for the process. A package-private constructor takes an instance and its sizes, for tests. The public constructors, and every `new SourceFanOut(` and `new SourceFanOutOptions(` call site, are unchanged.
 - **Order.** Inside a call, after 246's bulkhead permit is held:
   1. take the source's slot (`tryAcquire`), then the pool's;
@@ -87,13 +87,13 @@ How a saturated call appears to the client.
 - [ ] **Starvation repro** (`SourceFanOutStarvationTest`), failing on the base commit.
   - **Spinners.** Let `n = Runtime.getRuntime().availableProcessors()`. Use `n` adapters, all for one source `spin`, each looping `while (!released) Thread.onSpinWait();` on a `volatile boolean released`. They ignore interrupts and never block.
   - **Spinner calls.** Each spinner's `fetchAll` runs on its own platform thread, started by the test with a per-source timeout of 200 ms.
-  - **Probe.** Once every spinner has entered its loop (a `CountDownLatch` of `n`, counted down on entry), call `fetchAll` from the test thread with one adapter for source `probe`, which answers at once, also with a 200 ms timeout.
+  - **Probe.** Once every spinner has entered its loop (a `CountDownLatch` of `n`, counted down on entry), run the probe's `fetchAll` on its own platform thread, never on the test thread. It has one adapter, for source `probe`, which answers at once, also with a 200 ms timeout. The probe thread stores its result in an `AtomicReference`.
   - **Assertions.**
-    - The probe reports `ANSWERED`.
-    - Its `fetchAll` returns within 1,200 ms, measured with `System.nanoTime`. That margin is for slow CI; the expected time is far below it.
-    - On the base commit the probe reports `TIMED_OUT`, or the call overruns.
+    - The test joins the probe thread with a bound of 1,200 ms. That margin is for slow CI; the expected time is far below it.
+    - If the join times out, the test sets `released`, joins the probe thread again (5 s bound), and fails with "probe did not return within 1,200 ms". The base commit therefore fails rather than hangs.
+    - If the join succeeds, the probe's result reports `ANSWERED`. On the base commit it reports `TIMED_OUT`, or the join times out.
   - **Sizes.** Inject them through the package-private constructor: pool `n + 4`, per-source ceiling `n`.
-  - **Cleanup.** In `finally`, set `released`, then join every spinner thread with a 5 s bound and fail the test if any is still alive.
+  - **Cleanup.** In `finally`, set `released`, then join every spinner thread and the probe thread with a 5 s bound each, and fail the test if any is still alive.
 - [ ] **Per-source ceiling (H2).**
   - Inject a pool of 8 and a ceiling of 2.
   - Two interrupt-ignoring spinners for source `a` hold their slots.
@@ -110,11 +110,11 @@ How a saturated call appears to the client.
   - A timed-out call's slots stay taken until its adapter call returns, and are then released exactly once (the double-release guard is exercised by a call that completes as it is cancelled).
   - After 1,000 mixed calls, `SourceCallSlots` reports every pool and per-source permit free. The mix covers answers, failures, timeouts, and interrupt-ignoring calls that are later released.
   - Both are checked through a package-private test hook, not by timing.
-- [ ] **Thread isolation (H3).** Inject a pool of 1 so that request B's call follows request A's.
+- [ ] **Thread isolation (H3).** Inject a pool of 1 so that request B's call follows request A's. Before starting B, wait until A's slots are back: poll `SourceCallSlots`'s package-private permit hook (pool and per-source `availablePermits`) in a loop bounded at 2 s by `System.nanoTime`, with `Thread.onSpinWait()` between polls. Fail if the bound passes. B never races A's release.
   - An adapter in request A sets a `ThreadLocal` and an `InheritableThreadLocal` it owns. The adapter in request B reads both and sees neither value.
   - The requesting thread sets an `InheritableThreadLocal`, and the adapter does not see it.
   - The adapter thread's name starts with `dataprism-source-`, and it is a daemon, platform (`!isVirtual()`) thread.
-  - The MDC is empty on that thread after the call. This is checked by a probe call on the same `SourceCallSlots` that reads the MDC first.
+  - The MDC is cleared inside the call thread's own `finally`. A package-private test hook on `SourceCallSlots`, run as the last statement of that `finally` (after the MDC scope closes), captures `MDC.getCopyOfContextMap()`. The test asserts the capture is `null` or empty, and also that the adapter saw the request's correlation id while it ran. Mutant killed: removing the MDC close from the `finally` makes the capture non-empty.
 - [ ] `Metric` gains `SOURCE_CALLS_SATURATED`, pinned by `PrivacyMetricsTest`; no existing constant changes. The contract register's section 5 gains its row. `SourceOutcome.Status.FAILED`'s Javadoc carries the sentence above.
 - [ ] Every existing `data-prism-orchestration` test passes unmodified, including 246's `SourceFanOutTest` and `SourceFanOutDeadlineTest`.
 - [ ] `./mvnw -B -pl data-prism-core,data-prism-orchestration -am verify` passes.
