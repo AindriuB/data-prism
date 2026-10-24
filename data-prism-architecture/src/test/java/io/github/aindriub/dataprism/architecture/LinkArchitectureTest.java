@@ -18,6 +18,7 @@ import io.github.aindriub.dataprism.core.link.LinkCodec;
 import io.github.aindriub.dataprism.core.link.LinkKeys;
 import io.github.aindriub.dataprism.core.link.SplitPackageFixture;
 import io.github.aindriub.dataprism.core.spi.SecretKeyProvider;
+import io.github.aindriub.dataprism.hazelcast.archfixture.HzLimiterDelegatesToAnother;
 import io.github.aindriub.dataprism.hazelcast.archfixture.HzLimiterOpensTokens;
 import io.github.aindriub.dataprism.hazelcast.archfixture.LinkLimiterFloorFixture;
 import org.junit.jupiter.api.BeforeAll;
@@ -154,8 +155,14 @@ class LinkArchitectureTest {
         boolean opensToken = owner.isAssignableTo(LinkCodec.class) && name.equals("open");
         boolean usesLimiter = owner.isAssignableTo(LinkAttemptLimiter.class)
                 && (name.equals("lockState") || name.equals("recordFailure"))
-                && !isHazelcastLimiter(access.getOriginOwner());
+                && !isHazelcastSelfCall(access);
         return opensToken || usesLimiter;
+    }
+
+    /** A Hazelcast limiter calling its own method: the call's target owner is the origin class itself. */
+    private static boolean isHazelcastSelfCall(JavaAccess<?> access) {
+        JavaClass origin = access.getOriginOwner();
+        return isHazelcastLimiter(origin) && access.getTarget().getOwner().equals(origin);
     }
 
     private static boolean isHazelcastLimiter(JavaClass c) {
@@ -510,6 +517,12 @@ class LinkArchitectureTest {
     void aHazelcastLimiterMayNotOpenTokens() {
         assertThat(evaluate(noBypass(outsideLinkAnd(HzLimiterOpensTokens.class)), HzLimiterOpensTokens.class)
                 .hasViolation()).isTrue();
+    }
+
+    @Test
+    void aHazelcastLimiterMayNotCallAnotherLimiter() {
+        assertThat(evaluate(noBypass(outsideLinkAnd(HzLimiterDelegatesToAnother.class)),
+                HzLimiterDelegatesToAnother.class).hasViolation()).isTrue();
     }
 
     @Test

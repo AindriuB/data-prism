@@ -226,7 +226,7 @@ class InMemoryLinkAttemptLimiterTest {
                 futures.add(pool.submit(() -> {
                     start.await();
                     for (int i = 0; i < 62; i++) {
-                        big.recordFailure(subject("shared"));
+                        assertThat(big.recordFailure(subject("shared"))).isNotEqualTo(Admission.UNAVAILABLE);
                     }
                     return null;
                 }));
@@ -655,7 +655,7 @@ class InMemoryLinkAttemptLimiterTest {
                         start.await();
                         java.util.Random random = new java.util.Random(thread * 31L);
                         for (int i = 0; i < 1_500; i++) {
-                            l.recordFailure(subject(random.nextInt(2_000)));
+                            assertThat(l.recordFailure(subject(random.nextInt(2_000)))).isNotEqualTo(Admission.UNAVAILABLE);
                             if (thread == 0 && i % 100 == 99) {
                                 shared.tick();
                             }
