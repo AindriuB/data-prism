@@ -21,6 +21,8 @@ import org.springframework.context.annotation.Configuration;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -30,10 +32,45 @@ import java.util.stream.Collectors;
  * {@link AuthorizationService} while a {@link ClientAllowlist} bean exists, would silently bypass
  * the deployer's check, so startup refuses ({@code CASE_AUTHORIZER_BYPASSED},
  * {@code CLIENT_ALLOWLIST_BYPASSED}).
+ *
+ * <p>The token-trusted {@link CaseAuthorizer} fallback (no bean) is for development only. From version
+ * 0.8.0 on, a non-SNAPSHOT build refuses to start with it ({@code MISSING_CASE_AUTHORIZER}). The version is
+ * the jar manifest's {@code Implementation-Version}; it is absent when classes run unpackaged (an IDE), and
+ * then the fallback is kept with its WARN.
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityWiring {
     private static final Logger LOG = LoggerFactory.getLogger(SecurityWiring.class);
+    private static final Pattern VERSION = Pattern.compile("^(\\d+)\\.(\\d+)\\.(\\d+)(-.+)?$");
+
+    /** Where the running library's version comes from; a bean of this package-private type lets a test drive it. */
+    @FunctionalInterface
+    interface LibraryVersion {
+        /** The version, or null when unknown. */
+        String get();
+    }
+
+    private static String manifestVersion() {
+        return SecurityWiring.class.getPackage().getImplementationVersion();
+    }
+
+    /**
+     * True for a non-SNAPSHOT version at or above 0.8.0 (a release candidate included). An unparseable
+     * non-null version counts as a release: fail closed.
+     */
+    static boolean fallbackForbidden(String version) {
+        if (version == null) {
+            return false;
+        }
+        Matcher m = VERSION.matcher(version);
+        if (!m.matches()) {
+            return true;
+        }
+        if ("-SNAPSHOT".equals(m.group(4))) {
+            return false;
+        }
+        return Long.parseLong(m.group(1)) > 0 || Long.parseLong(m.group(2)) >= 8;
+    }
 
     /**
      * Remembers the instances this auto-configuration built and, once every singleton exists,
@@ -122,9 +159,15 @@ class SecurityWiring {
     @Bean
     @ConditionalOnMissingBean
     ScopeResolver dataPrismScopeResolver(PseudonymisationVersion version, DataPrismProperties properties,
-            ObjectProvider<CaseAuthorizer> caseAuthorizer, BypassCheck built) {
+            ObjectProvider<CaseAuthorizer> caseAuthorizer, ObjectProvider<LibraryVersion> libraryVersion,
+            BypassCheck built) {
         CaseAuthorizer authorizer = caseAuthorizer.getIfAvailable();
         if (authorizer == null) {
+            if (fallbackForbidden(libraryVersion.getIfAvailable(() -> SecurityWiring::manifestVersion).get())) {
+                throw new DataPrismConfigurationException("MISSING_CASE_AUTHORIZER",
+                        "a CaseAuthorizer bean is required from 0.8.0; the token-trusted fallback is not "
+                                + "available in a release");
+            }
             LOG.warn("No CaseAuthorizer bean is defined: the case claim in the token is trusted without "
                     + "assignment checks. Supply a CaseAuthorizer bean.");
             authorizer = CaseAuthorizer.tokenTrusted();
