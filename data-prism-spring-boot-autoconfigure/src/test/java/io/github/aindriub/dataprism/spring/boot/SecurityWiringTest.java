@@ -133,6 +133,54 @@ class SecurityWiringTest {
     }
 
     @Test
+    void a_same_named_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
+        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, SameNamedScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void a_factory_bean_scope_resolver_while_a_case_authorizer_exists_refuses_startup() {
+        context.withUserConfiguration(Base.class, RefusingCaseAuthorizer.class, FactoryScopeResolver.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CASE_AUTHORIZER_BYPASSED"));
+    }
+
+    @Test
+    void a_same_named_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
+        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, SameNamedAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void a_factory_bean_authorization_service_while_a_client_allowlist_exists_refuses_startup() {
+        context.withUserConfiguration(Base.class, RestrictiveAllowlist.class, FactoryAuthorizationService.class)
+                .run(result -> assertRefusal(result.getStartupFailure(), "CLIENT_ALLOWLIST_BYPASSED"));
+    }
+
+    @Test
+    void a_throwing_case_authorizer_is_logged_by_class_name_only() {
+        String sentinel = "sentinel-case-and-principal";
+        Logger resolverLog = (Logger) LoggerFactory.getLogger(ScopeResolver.class);
+        ListAppender<ILoggingEvent> resolverAppender = new ListAppender<>();
+        resolverAppender.start();
+        resolverLog.addAppender(resolverAppender);
+        try {
+            context.withUserConfiguration(Base.class, ThrowingCaseAuthorizer.class).run(result -> {
+                AuthorizationDecision decision = result.getBean(AuthorizationService.class)
+                        .authorize(CALLER, new ToolInvocation("get_entity_context", "GET_ENTITY_CONTEXT"));
+                assertThatThrownBy(() -> result.getBean(ScopeResolver.class).resolve(CALLER, decision, CLOCK))
+                        .isInstanceOf(SecurityRefusedException.class);
+            });
+            assertThat(resolverAppender.list).isNotEmpty();
+            assertThat(resolverAppender.list).allSatisfy(e -> {
+                assertThat(e.getFormattedMessage()).doesNotContain(sentinel).contains("IllegalStateException");
+                assertThat(e.getThrowableProxy()).isNull();
+            });
+        } finally {
+            resolverLog.detachAppender(resolverAppender);
+        }
+    }
+
+    @Test
     void replacing_either_with_no_such_bean_present_is_allowed() {
         context.withUserConfiguration(Base.class, OwnScopeResolver.class, OwnAuthorizationService.class)
                 .run(result -> assertThat(result).hasNotFailed());
@@ -203,6 +251,13 @@ class SecurityWiringTest {
     }
 
     @Configuration(proxyBeanMethods = false)
+    static class ThrowingCaseAuthorizer {
+        @Bean CaseAuthorizer throwing() {
+            return request -> { throw new IllegalStateException("sentinel-case-and-principal"); };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
     static class OwnScopeResolver {
         @Bean ScopeResolver ownScopeResolver(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version) {
             return new ScopeResolver(version, java.time.Duration.ofHours(1),
@@ -231,5 +286,39 @@ class SecurityWiringTest {
     @Configuration(proxyBeanMethods = false)
     static class SecondAllowlist {
         @Bean ClientAllowlist secondAllowlist() { return ClientAllowlist.of(Set.of("another-client")); }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class SameNamedScopeResolver {
+        @Bean("dataPrismScopeResolver") ScopeResolver same(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version) {
+            return new OwnScopeResolver().ownScopeResolver(version);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FactoryScopeResolver {
+        @Bean org.springframework.beans.factory.FactoryBean<ScopeResolver> factory(io.github.aindriub.dataprism.core.model.PseudonymisationVersion version) {
+            return new org.springframework.beans.factory.FactoryBean<>() {
+                public ScopeResolver getObject() { return new OwnScopeResolver().ownScopeResolver(version); }
+                public Class<?> getObjectType() { return ScopeResolver.class; }
+            };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class SameNamedAuthorizationService {
+        @Bean("dataPrismAuthorizationService") AuthorizationService same(io.github.aindriub.dataprism.security.SecurityPolicy policy, DataPrismProperties properties) {
+            return new OwnAuthorizationService().ownAuthorizationService(policy, properties);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class FactoryAuthorizationService {
+        @Bean org.springframework.beans.factory.FactoryBean<AuthorizationService> factory(io.github.aindriub.dataprism.security.SecurityPolicy policy, DataPrismProperties properties) {
+            return new org.springframework.beans.factory.FactoryBean<>() {
+                public AuthorizationService getObject() { return new OwnAuthorizationService().ownAuthorizationService(policy, properties); }
+                public Class<?> getObjectType() { return AuthorizationService.class; }
+            };
+        }
     }
 }
