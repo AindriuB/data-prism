@@ -40,6 +40,7 @@ public final class HazelcastOversightState implements OversightState {
     public HazelcastOversightState(PrivacyCluster cluster, Duration lockTimeout) {
         this.cluster = Objects.requireNonNull(cluster, "cluster");
         this.lockTimeout = ClusterLocks.checked(lockTimeout);
+        refuseLegacyEntries();
     }
 
     @Override
@@ -103,6 +104,18 @@ public final class HazelcastOversightState implements OversightState {
             }
         }
         return new OversightSnapshot(all, tools, scopes);
+    }
+
+    /**
+     * A 0.7 scope pause is keyed by the raw scope id, NUL and {@code paused}. No 0.8 key holds a NUL, and 0.8 would
+     * neither see such a pause nor remove it, so a paused scope would silently resume. Refuses instead.
+     */
+    private void refuseLegacyEntries() {
+        for (String key : flags().keySet()) {
+            if (key.indexOf('\0') >= 0) {
+                throw new LegacyOversightStateException();
+            }
+        }
     }
 
     private IMap<String, Object> flags() {
