@@ -47,11 +47,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>(Task 269) The limiter, subject, opener and gate depend directly on neither {@code LinkKeys} nor
  *       {@code SecretKeyProvider}.
  *   <li>(Task 269) Nothing outside {@code core.link} calls or references {@code LinkCodec.open} or the limiter's
- *       two methods, except a Hazelcast class that itself implements the limiter and holds no limiter-typed field.
+ *       two methods, with no exemption (task 264 must add a narrow one when it lands).
  *   <li>(Task 269) No class in this repository outside {@code core.link} and {@code dataprism.hazelcast}
  *       implements {@code LinkAttemptLimiter}.
- *   <li>(Task 269) Every {@code core.link} class in the repository's modules is loaded from {@code data-prism-core}'s main
- *       classes. A split package supplied by a third-party jar outside the repository is not covered.
+ *   <li>(Task 269) Every {@code core.link} class in the repository's modules is loaded from
+ *       {@code data-prism-core}'s main classes. A split package supplied by a third-party jar outside the repository is not covered.
  * </ol>
  */
 class LinkArchitectureTest {
@@ -144,9 +144,10 @@ class LinkArchitectureTest {
     }
 
     /**
-     * A call or method reference to {@code LinkCodec.open}, or to the limiter's two methods. A Hazelcast
-     * implementation of the limiter is exempt from the limiter half only: it may call and reference its own
-     * {@code lockState} and {@code recordFailure}, and it is still forbidden to open a token.
+     * A call or method reference to {@code LinkCodec.open}, or to the limiter's two methods. There is no
+     * exemption: no Hazelcast limiter exists in 1.0 (task 264 is deferred past 1.0). When 264 lands it must
+     * re-introduce a narrowly scoped exemption, for example by allow-listing exact methods, not by a
+     * self-call test, which a local instance or a limiter held in a List, Supplier or AtomicReference defeats.
      */
     private static boolean isLinkOpenOrLimiterCall(JavaAccess<?> access) {
         if (!(access instanceof JavaMethodCall || access instanceof JavaMethodReference)) {
@@ -156,25 +157,8 @@ class LinkArchitectureTest {
         String name = access.getTarget().getName();
         boolean opensToken = owner.isAssignableTo(LinkCodec.class) && name.equals("open");
         boolean usesLimiter = owner.isAssignableTo(LinkAttemptLimiter.class)
-                && (name.equals("lockState") || name.equals("recordFailure"))
-                && !isHazelcastSelfCall(access);
+                && (name.equals("lockState") || name.equals("recordFailure"));
         return opensToken || usesLimiter;
-    }
-
-    /**
-     * A Hazelcast limiter calling its own method: the call's target owner is the origin class itself. A limiter
-     * with a field typed as a limiter (the interface, or its own type) may hold another instance and delegate to
-     * it, which the owner check cannot tell from a call on itself, so such a class has no exemption.
-     */
-    private static boolean isHazelcastSelfCall(JavaAccess<?> access) {
-        JavaClass origin = access.getOriginOwner();
-        return isHazelcastLimiter(origin) && access.getTarget().getOwner().equals(origin)
-                && origin.getAllFields().stream()
-                        .noneMatch(f -> f.getRawType().isAssignableTo(LinkAttemptLimiter.class));
-    }
-
-    private static boolean isHazelcastLimiter(JavaClass c) {
-        return inPackageOrBelow(c.getPackageName(), HAZELCAST_PACKAGE) && c.isAssignableTo(LinkAttemptLimiter.class);
     }
 
     private static DescribedPredicate<JavaClass> outsideLink() {
@@ -221,7 +205,8 @@ class LinkArchitectureTest {
                         javaClass.getName() + (fromCore ? " is in core's main classes"
                                 : " is not loaded from data-prism-core's main classes")));
             }
-        }).because("core.link lives only in data-prism-core, so a split package among the repository modules cannot hide a second codec")
+        }).because("core.link lives only in data-prism-core, so a split package among the repository modules "
+                + "cannot hide a second codec")
                 .allowEmptyShould(true);
     }
 
@@ -466,7 +451,10 @@ class LinkArchitectureTest {
         }
     }
 
-    /** Implements the SPI outside the Hazelcast package: the bypass rule and the sanctioned-implementation rule fail. */
+    /**
+     * Implements the SPI outside the Hazelcast package: the bypass rule and the sanctioned-implementation rule
+     * fail.
+     */
     static final class FixtureImplementsTheLimiterOutsideHazelcast implements LinkAttemptLimiter {
         @Override
         public LockState lockState(io.github.aindriub.dataprism.core.link.AttemptSubject subject) {
@@ -475,7 +463,7 @@ class LinkArchitectureTest {
 
         @Override
         public Admission recordFailure(io.github.aindriub.dataprism.core.link.AttemptSubject subject) {
-            // A call on itself: inside a Hazelcast limiter that is allowed, anywhere else it is a bypass.
+            // A call on itself is still a call to the limiter's method: no class outside core.link may make one.
             return lockState(subject) == LockState.LOCKED ? Admission.OVER_LIMIT : Admission.WITHIN_LIMIT;
         }
     }
@@ -518,7 +506,7 @@ class LinkArchitectureTest {
                 FixtureImplementsTheLimiterOutsideHazelcast.class)),
                 FixtureImplementsTheLimiterOutsideHazelcast.class).hasViolation()).isTrue();
         assertThat(evaluate(noBypass(outsideLinkAnd(LinkLimiterFloorFixture.class)),
-                LinkLimiterFloorFixture.class).hasViolation()).isFalse();
+                LinkLimiterFloorFixture.class).hasViolation()).isTrue();
     }
 
     @Test

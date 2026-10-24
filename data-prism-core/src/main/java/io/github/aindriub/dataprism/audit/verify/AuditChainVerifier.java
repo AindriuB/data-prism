@@ -357,18 +357,20 @@ public final class AuditChainVerifier {
             }
             if (chosen == null) {
                 WriterResult plain = unkeyed.report().writers().get(i);
-                boolean mismatch = base.states().get(instance).checkpointMismatch;
+                // A checkpoint mismatch is detected per replay, not read from key 0's alone.
+                boolean mismatch = keyed.stream().anyMatch(r -> r.states().get(instance).checkpointMismatch);
                 if (mismatch) {
-                    // Report the replay that hashed furthest, not key 0's by default.
-                    chosen = first;
-                    long most = base.states().get(instance).recomputed;
-                    for (Replayed r : keyed) {
-                        long hashed = r.states().get(instance).recomputed;
+                    // Report the replay that hashed furthest, not key 0's by default, and name its key.
+                    int best = 0;
+                    long most = keyed.get(0).states().get(instance).recomputed;
+                    for (int k = 1; k < keyed.size(); k++) {
+                        long hashed = keyed.get(k).states().get(instance).recomputed;
                         if (hashed > most) {
                             most = hashed;
-                            chosen = r.report().writers().get(i);
+                            best = k;
                         }
                     }
+                    chosen = keyed.get(best).report().writers().get(i).withKey(Optional.of(keys.get(best).id()), false);
                 } else if (!plain.broken() && allowUnkeyedWriters) {
                     chosen = plain.withKey(Optional.empty(), true);
                 } else if (!plain.broken()) {

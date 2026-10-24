@@ -21,7 +21,10 @@ public final class LinkAttemptGate {
     /** Why a call was refused by the limiter or by a failure; an audit-only closed set. */
     public enum ExhaustedCause { LOCKED, OVER_LIMIT, CEILING, LIMITER_UNAVAILABLE, OPEN_FAILED }
 
-    /** The gate's answer. The caller answers with {@link Refusal#clientCode()} and audits {@link Refusal#auditValue()}. */
+    /**
+     * The gate's answer. The caller answers with {@link Refusal#clientCode()} and audits
+     * {@link Refusal#auditValue()}.
+     */
     public sealed interface GateDecision permits Proceed, Invalid, Exhausted {
     }
 

@@ -30,6 +30,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -152,12 +153,21 @@ public final class JsonTreeScrubbingEngine implements ScrubbingEngine {
      * Read on every description, and fail closed: a source whose {@code available()} throws is unavailable.
      * Only the exception's class is logged, never its message, which could carry a value.
      */
+    private final Set<Class<?>> warnedTokenSources = ConcurrentHashMap.newKeySet();
+
     private boolean tokensAvailable() {
         try {
             return tokens.available();
         } catch (RuntimeException e) {
-            LOG.warn("ValueTokenSource.available() threw {}; treating the token source as unavailable",
-                    e.getClass().getName());
+            // One WARN per source class; a source that keeps throwing then logs at DEBUG.
+            Class<?> source = tokens.getClass();
+            if (warnedTokenSources.add(source)) {
+                LOG.warn("ValueTokenSource.available() threw {}; treating the token source as unavailable",
+                        e.getClass().getName());
+            } else {
+                LOG.debug("ValueTokenSource.available() threw {}; treating the token source as unavailable",
+                        e.getClass().getName());
+            }
             return false;
         }
     }

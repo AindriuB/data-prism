@@ -5,7 +5,7 @@ import io.github.aindriub.dataprism.core.link.LinkAttemptLimiter;
 
 /**
  * Negative fixture for {@code LinkArchitectureTest}: a Hazelcast limiter that holds another instance of its own
- * type and delegates to it. The call's owner is the class itself, so only the field check can fail the bypass rule.
+ * type and delegates to it. The bypass rule has no self-call exemption, so this fails it.
  * Imported explicitly, never by a package scan.
  */
 public final class HzLimiterDelegatesToItsOwnType implements LinkAttemptLimiter {
